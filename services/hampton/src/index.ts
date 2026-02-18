@@ -69,6 +69,16 @@ const gapDetector = new BookingGapDetector(supabase, taskQueue)
 
 // ─── Express + WS ───────────────────────────────────────────────
 const app = express()
+
+// CORS — allow dashboard at app.hosthampton.com
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Access-Control-Allow-Origin', 'https://app.hosthampton.com')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.sendStatus(204); return }
+  next()
+})
+
 app.use(express.json())
 
 const httpServer = createServer(app)
