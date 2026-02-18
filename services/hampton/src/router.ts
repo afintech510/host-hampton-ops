@@ -176,7 +176,7 @@ export class Router {
       manifests.push({
         task_id: taskIds[i]!,
         assigned_to: agent,
-        priority: raw.priority ?? 'normal',
+        priority: (raw.priority ?? 'normal') as 'urgent' | 'high' | 'normal' | 'low' | 'async',
         depends_on: depends_on.length > 0 ? depends_on : undefined,
         input: raw.input ?? {},
         approval_tier: raw.approval_tier as ApprovalTier ?? 'DRAFT_AND_SHOW'

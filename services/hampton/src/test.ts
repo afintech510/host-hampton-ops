@@ -50,7 +50,7 @@ const mockSupabase = {
     update: () => ({ eq: () => ({ data: null, error: null }) }),
     insert: async () => ({ error: null })
   })
-} as unknown as Parameters<typeof MemoryManager>[0]
+} as unknown as import('@supabase/supabase-js').SupabaseClient
 
 const PHASE_1A: PhaseStatus = {
   current_phase: '1A',
