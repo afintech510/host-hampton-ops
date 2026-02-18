@@ -24,14 +24,14 @@ const KEYWORD_RULES: Array<{
   {
     patterns: [/\bpost\b.*photo/i, /\bschedule\b.*post/i, /\bpublish\b/i, /\bshare\b.*to\b.*(ig|instagram|facebook|fb|gbp|google)/i],
     intent: 'PUBLISH_CONTENT',
-    agents: ['SOC', 'COPY', 'PIXEL'],
+    agents: ['SOC', 'COPY', 'IMAGE'],
     namespaces: ['brand.voice', 'brand.hashtags', 'brand.visual', 'social.posting_schedule'],
     approval: 'AUTO_EXECUTE'
   },
   {
     patterns: [/\blaunch\b.*campaign/i, /\bcampaign\b/i, /\bspring\b.*birthday/i, /\bsummer\b.*campaign/i, /\bfall\b.*campaign/i, /\bholiday\b.*campaign/i],
     intent: 'CAMPAIGN_LAUNCH',
-    agents: ['COPY', 'PIXEL', 'SOC', 'OUTBOUND', 'LIST'],
+    agents: ['COPY', 'IMAGE', 'SOC', 'OUTBOUND', 'LIST'],
     namespaces: ['brand.voice', 'services.priority_order', 'calendar.seasonal_priorities', 'market.positioning'],
     approval: 'DRAFT_AND_SHOW'
   },
@@ -45,7 +45,7 @@ const KEYWORD_RULES: Array<{
   {
     patterns: [/\bads?\b/i, /\bgoogle ads/i, /\bmeta ads/i, /\bpaid\b/i, /\badvertis/i, /\bppc\b/i],
     intent: 'PAID_ADS',
-    agents: ['PAID', 'COPY', 'PIXEL', 'LIST'],
+    agents: ['PAID', 'COPY', 'IMAGE', 'LIST'],
     namespaces: ['market.positioning', 'market.target_keywords'],
     approval: 'DRAFT_AND_SHOW',
     phase: '1B'
@@ -61,7 +61,7 @@ const KEYWORD_RULES: Array<{
   {
     patterns: [/\blanding page/i, /\bwebsite\b/i, /\bbuild\b.*page/i, /\bnew page/i, /\bseo\b/i],
     intent: 'WEBSITE_PAGE',
-    agents: ['BUILD', 'COPY', 'PIXEL'],
+    agents: ['BUILD', 'COPY', 'IMAGE'],
     namespaces: ['brand.voice', 'brand.visual', 'market.target_keywords', 'website.migration_status'],
     approval: 'DRAFT_AND_SHOW',
     phase: '2A'
@@ -76,7 +76,7 @@ const KEYWORD_RULES: Array<{
   {
     patterns: [/\bimages?\b/i, /\bresize\b/i, /\bprocess\b.*photo/i, /\boptimize\b.*photo/i, /\bphotos?\b.*format/i],
     intent: 'IMAGE_PROCESSING',
-    agents: ['PIXEL'],
+    agents: ['IMAGE'],
     namespaces: ['brand.visual'],
     approval: 'AUTO_EXECUTE'
   },

@@ -29,7 +29,7 @@ const mockMemory: Record<string, unknown> = {
   'campaigns.active': {},
   'operations.phase_status': {
     current_phase: '1A',
-    active_agents: ['HAMPTON', 'SOC', 'COPY', 'PIXEL', 'OUTBOUND', 'LIST']
+    active_agents: ['HAMPTON', 'SOC', 'COPY', 'IMAGE', 'OUTBOUND', 'LIST']
   },
   'market.positioning': {
     positioning_statement: 'Host Hampton is the modern celebration studio for families who want something beautiful, effortless, and real.'
@@ -54,7 +54,7 @@ const mockSupabase = {
 
 const PHASE_1A: PhaseStatus = {
   current_phase: '1A',
-  active_agents: ['HAMPTON', 'SOC', 'COPY', 'PIXEL', 'OUTBOUND', 'LIST'],
+  active_agents: ['HAMPTON', 'SOC', 'COPY', 'IMAGE', 'OUTBOUND', 'LIST'],
   phase_1b_start: null,
   phase_2_start: null,
   squarespace_status: 'active — do not modify'
@@ -75,14 +75,14 @@ const TEST_CASES: TestCase[] = [
     name: 'T1 — Social post (AUTO_EXECUTE)',
     command: 'Post our Swiftie party photos with a caption for tonight',
     expected_intent: 'PUBLISH_CONTENT',
-    expected_agents: ['SOC', 'COPY', 'PIXEL'],
+    expected_agents: ['SOC', 'COPY', 'IMAGE'],
     expected_approval: 'AUTO_EXECUTE'
   },
   {
     name: 'T2 — Campaign launch (DRAFT_AND_SHOW)',
     command: 'Launch spring birthday campaign — target parents with kids ages 5–12, Speonk to Riverhead, lead with Glow Party and Swiftie Party',
     expected_intent: 'CAMPAIGN_LAUNCH',
-    expected_agents: ['COPY', 'PIXEL', 'SOC', 'OUTBOUND', 'LIST'],
+    expected_agents: ['COPY', 'IMAGE', 'SOC', 'OUTBOUND', 'LIST'],
     expected_approval: 'DRAFT_AND_SHOW'
   },
   {

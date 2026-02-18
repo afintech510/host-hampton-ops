@@ -87,10 +87,10 @@ services:
     networks:
       - hampton_net
 
-  # ─── IMAGE AGENT (PIXEL) ──────────────────────────────────────
-  pixel:
-    build: ./services/pixel
-    container_name: hampton_pixel
+  # ─── IMAGE AGENT (IMAGE) ──────────────────────────────────────
+  image:
+    build: ./services/image
+    container_name: hampton_image
     restart: unless-stopped
     environment:
       - REPLICATE_API_KEY=${REPLICATE_API_KEY}

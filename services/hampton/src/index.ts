@@ -28,6 +28,7 @@ import { createServer } from 'http'
 import cron from 'node-cron'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
+import Redis from 'ioredis'
 
 import { MemoryManager } from './memoryManager.js'
 import { IntentClassifier } from './intentClassifier.js'
@@ -66,6 +67,25 @@ const gate = new ApprovalGate(supabase, async (manifest: TaskManifest) => {
 })
 
 const gapDetector = new BookingGapDetector(supabase, taskQueue)
+
+// ─── Task completion subscriber ──────────────────────────────────
+const taskCompleteSubscriber = new Redis(process.env.REDIS_URL!)
+taskCompleteSubscriber.on('error', (err) => console.error('[HAMPTON] Redis task_complete error:', err))
+
+taskCompleteSubscriber.subscribe('hampton:task_complete', (err) => {
+  if (err) console.error('[HAMPTON] Failed to subscribe to task_complete:', err)
+  else console.log('[HAMPTON] Listening on hampton:task_complete')
+})
+
+taskCompleteSubscriber.on('message', (_channel: string, data: string) => {
+  try {
+    const event = JSON.parse(data) as { task_id: string; agent: string; status: string; output?: unknown }
+    console.log(`[HAMPTON] Task complete: ${event.task_id} by ${event.agent} — ${event.status}`)
+    broadcast({ type: 'task_complete', ...event })
+  } catch (err) {
+    console.error('[HAMPTON] Failed to parse task_complete event:', err)
+  }
+})
 
 // ─── Express + WS ───────────────────────────────────────────────
 const app = express()
@@ -123,7 +143,7 @@ RESPONSE FORMAT:
 - For ALWAYS_ASK items: Clearly explain what requires confirmation and why.
 
 BRAND: warm, fun, community-first, never corporate or pushy.
-PHASE: 1A — SOC, COPY, PIXEL, OUTBOUND, LIST are active. Website stays on Squarespace. No PAID or INTEL yet.`
+PHASE: 1A — SOC, COPY, IMAGE, OUTBOUND, LIST are active. Website stays on Squarespace. No PAID or INTEL yet.`
 
 async function handleOwnerCommand(
   ownerMessage: string,
@@ -415,5 +435,6 @@ httpServer.listen(PORT, () => {
 process.on('SIGTERM', async () => {
   console.log('[HAMPTON] SIGTERM received — shutting down gracefully...')
   await taskQueue.disconnect()
+  await taskCompleteSubscriber.quit()
   process.exit(0)
 })

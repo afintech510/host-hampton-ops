@@ -124,7 +124,7 @@ export class MemoryManager {
     const phase = await this.load('operations', 'phase_status')
     return (phase as { current_phase: string; active_agents: string[] }) ?? {
       current_phase: '1A',
-      active_agents: ['HAMPTON', 'SOC', 'COPY', 'PIXEL', 'OUTBOUND', 'LIST']
+      active_agents: ['HAMPTON', 'SOC', 'COPY', 'IMAGE', 'OUTBOUND', 'LIST']
     }
   }
 

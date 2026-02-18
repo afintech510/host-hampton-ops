@@ -3,7 +3,7 @@
  * Decomposes a classified owner intent into an ordered list of TaskManifests.
  * Enforces:
  *   - Phase gating (no BUILD until Phase 2, no PAID/INTEL until 1B)
- *   - Dependency ordering (COPY → PIXEL → SOC, LIST before OUTBOUND, etc.)
+ *   - Dependency ordering (COPY → IMAGE → SOC, LIST before OUTBOUND, etc.)
  *   - Correct approval tiers per action type
  */
 
@@ -49,10 +49,10 @@ const HAMPTON_SYSTEM_PROMPT = `You are HAMPTON, the AI orchestrator for Host Ham
 
 Your job right now is to decompose an owner command into a structured list of agent tasks.
 
-AGENT ROSTER (Phase 1A active: SOC, COPY, PIXEL, OUTBOUND, LIST, HAMPTON):
+AGENT ROSTER (Phase 1A active: SOC, COPY, IMAGE, OUTBOUND, LIST, HAMPTON):
 - SOC: Social media — IG, FB, GBP, Nextdoor, FB Groups
 - COPY: All written content — captions, email, SMS, page copy, ads
-- PIXEL: Image processing — resize, brand, format for all platforms
+- IMAGE: Image processing — resize, brand, format for all platforms
 - BUILD: Website (Phase 2 only — not active yet)
 - LIST: CRM + audiences — segmentation, retargeting lists, list health
 - OUTBOUND: Email + SMS sequences — welcome, nurture, review velocity, direct outreach
@@ -60,8 +60,8 @@ AGENT ROSTER (Phase 1A active: SOC, COPY, PIXEL, OUTBOUND, LIST, HAMPTON):
 - INTEL: Analytics + reporting (Phase 1B only — not active yet)
 
 DEPENDENCY RULES (enforce strictly):
-1. COPY must complete before PIXEL (PIXEL needs copy for overlay text)
-2. COPY + PIXEL must complete before SOC (posts need both assets)
+1. COPY must complete before IMAGE (IMAGE needs copy for overlay text)
+2. COPY + IMAGE must complete before SOC (posts need both assets)
 3. LIST segment must complete before OUTBOUND sends (need the audience first)
 4. BUILD page must exist before PAID drives traffic to it
 

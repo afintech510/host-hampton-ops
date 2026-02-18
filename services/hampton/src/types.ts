@@ -7,7 +7,7 @@ export type AgentName =
   | 'HAMPTON'
   | 'SOC'
   | 'COPY'
-  | 'PIXEL'
+  | 'IMAGE'
   | 'BUILD'
   | 'LIST'
   | 'OUTBOUND'
