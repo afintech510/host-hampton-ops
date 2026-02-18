@@ -375,7 +375,7 @@ async function bootstrap_v1_2() {
     const { error } = await supabase
       .from('agent_memory')
       .upsert(
-        { ...entry, updated_by: 'bootstrap_v1.2' },
+        { ...entry, updated_by: 'HAMPTON' },
         { onConflict: 'namespace,key' }
       )
 
