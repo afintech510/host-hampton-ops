@@ -1,0 +1,32 @@
+# ── Secrets ─────────────────────────────────────────────────
+.env
+.env.*
+!.env.example.template
+
+# ── SSH Keys (never commit) ──────────────────────────────────
+host-hampton-ssh-config
+host-hampton-ssh-config.pub
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# ── Node / TypeScript ────────────────────────────────────────
+node_modules/
+dist/
+*.js.map
+*.tsbuildinfo
+
+# ── Logs ─────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE / Claude Code ─────────────────────────────────────────
+.vscode/
+.idea/
+.claude/
+*.swp

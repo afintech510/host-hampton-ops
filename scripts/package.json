@@ -1,0 +1,21 @@
+{
+  "name": "hosthampton-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "bootstrap": "tsx memory_bootstrap.ts",
+    "bootstrap:v1.2": "tsx memory_bootstrap_v1.2.ts",
+    "bootstrap:all": "tsx memory_bootstrap.ts && tsx memory_bootstrap_v1.2.ts",
+    "db:setup": "bash db_setup.sh",
+    "db:verify": "bash db_verify.sh"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0",
+    "dotenv": "^16.4.0"
+  }
+}
