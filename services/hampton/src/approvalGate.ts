@@ -60,7 +60,7 @@ export class ApprovalGate {
     this.cancelAutoExecuteTimer(taskId)
 
     const { data } = await this.supabase
-      .from('tasks')
+      .from('agent_tasks')
       .select('*')
       .eq('task_id', taskId)
       .single()
@@ -68,7 +68,7 @@ export class ApprovalGate {
     if (!data) throw new Error(`Task ${taskId} not found`)
 
     await this.supabase
-      .from('tasks')
+      .from('agent_tasks')
       .update({ status: 'approved', approved_at: new Date().toISOString() })
       .eq('task_id', taskId)
 
@@ -83,7 +83,7 @@ export class ApprovalGate {
     this.cancelAutoExecuteTimer(taskId)
 
     await this.supabase
-      .from('tasks')
+      .from('agent_tasks')
       .update({
         status: 'rejected' as TaskStatus,
         rejected_at: new Date().toISOString(),
@@ -101,7 +101,7 @@ export class ApprovalGate {
 
   private async holdForApproval(manifest: TaskManifest, status: TaskStatus): Promise<void> {
     await this.supabase
-      .from('tasks')
+      .from('agent_tasks')
       .update({ status })
       .eq('task_id', manifest.task_id)
   }
@@ -112,7 +112,7 @@ export class ApprovalGate {
       console.log(`[ApprovalGate] 4-hour timeout reached — auto-executing ${manifest.task_id}`)
 
       await this.supabase
-        .from('tasks')
+        .from('agent_tasks')
         .update({ status: 'approved', approved_at: new Date().toISOString() })
         .eq('task_id', manifest.task_id)
 

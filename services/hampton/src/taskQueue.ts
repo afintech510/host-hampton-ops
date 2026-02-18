@@ -32,7 +32,7 @@ export class TaskQueue {
     const full: TaskManifest = { ...manifest, task_id }
 
     // Persist to Supabase tasks table
-    const { error } = await this.supabase.from('tasks').insert({
+    const { error } = await this.supabase.from('agent_tasks').insert({
       task_id,
       assigned_to: full.assigned_to,
       status: 'pending' as TaskStatus,
@@ -59,7 +59,7 @@ export class TaskQueue {
    */
   async dispatch(manifest: TaskManifest): Promise<void> {
     await this.supabase
-      .from('tasks')
+      .from('agent_tasks')
       .update({ status: 'in_progress' as TaskStatus })
       .eq('task_id', manifest.task_id)
 
@@ -86,7 +86,7 @@ export class TaskQueue {
     if (output) update.output = output
 
     await this.supabase
-      .from('tasks')
+      .from('agent_tasks')
       .update(update)
       .eq('task_id', taskId)
   }
@@ -96,7 +96,7 @@ export class TaskQueue {
    */
   async getPending(agent?: AgentName): Promise<TaskRecord[]> {
     let query = this.supabase
-      .from('tasks')
+      .from('agent_tasks')
       .select('*')
       .in('status', ['pending', 'awaiting_approval'])
       .order('created_at', { ascending: true })
@@ -113,7 +113,7 @@ export class TaskQueue {
    */
   async getOutput(taskId: string): Promise<Record<string, unknown> | null> {
     const { data } = await this.supabase
-      .from('tasks')
+      .from('agent_tasks')
       .select('output, status')
       .eq('task_id', taskId)
       .single()
@@ -127,7 +127,7 @@ export class TaskQueue {
    */
   async getActive(): Promise<TaskRecord[]> {
     const { data } = await this.supabase
-      .from('tasks')
+      .from('agent_tasks')
       .select('*')
       .in('status', ['pending', 'in_progress', 'awaiting_approval'])
       .order('created_at', { ascending: false })
@@ -141,7 +141,7 @@ export class TaskQueue {
    */
   async cancel(taskId: string): Promise<void> {
     await this.supabase
-      .from('tasks')
+      .from('agent_tasks')
       .update({ status: 'cancelled' as TaskStatus })
       .eq('task_id', taskId)
 
