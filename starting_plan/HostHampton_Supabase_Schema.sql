@@ -847,13 +847,15 @@ create policy "users_update_own_profile"
 -- agent_credentials: only owner/admin can manage
 create policy "only_owner_manages_credentials"
   on public.agent_credentials for all
-  using (current_user_role() in ('owner', 'admin'));
+  using (current_user_role() in ('owner', 'admin'))
+  with check (current_user_role() in ('owner', 'admin'));
 
 
 -- contacts: all authenticated ops users
 create policy "ops_full_access_contacts"
   on public.contacts for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "readonly_can_view_contacts"
   on public.contacts for select
@@ -863,19 +865,22 @@ create policy "readonly_can_view_contacts"
 -- contact_tags
 create policy "ops_full_access_contact_tags"
   on public.contact_tags for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 
 -- contact_interactions
 create policy "ops_full_access_interactions"
   on public.contact_interactions for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 
 -- bookings
 create policy "ops_full_access_bookings"
   on public.bookings for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "readonly_view_bookings"
   on public.bookings for select
@@ -885,13 +890,15 @@ create policy "readonly_view_bookings"
 -- agent_tasks
 create policy "ops_full_access_tasks"
   on public.agent_tasks for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 
 -- campaigns
 create policy "ops_full_access_campaigns"
   on public.campaigns for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "readonly_view_campaigns"
   on public.campaigns for select
@@ -901,7 +908,8 @@ create policy "readonly_view_campaigns"
 -- content_library
 create policy "ops_full_access_content"
   on public.content_library for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "readonly_view_content"
   on public.content_library for select
@@ -911,7 +919,8 @@ create policy "readonly_view_content"
 -- social_posts
 create policy "ops_full_access_posts"
   on public.social_posts for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "readonly_view_posts"
   on public.social_posts for select
@@ -921,33 +930,39 @@ create policy "readonly_view_posts"
 -- email_sequences + steps
 create policy "ops_full_access_sequences"
   on public.email_sequences for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "ops_full_access_sequence_steps"
   on public.email_sequence_steps for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 
 -- contact_sequence_enrollments
 create policy "ops_full_access_enrollments"
   on public.contact_sequence_enrollments for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 
 -- audience_segments
 create policy "ops_full_access_segments"
   on public.audience_segments for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "ops_full_access_segment_contacts"
   on public.segment_contacts for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 
 -- ad_campaigns
 create policy "ops_full_access_ads"
   on public.ad_campaigns for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "readonly_view_ads"
   on public.ad_campaigns for select
@@ -957,7 +972,8 @@ create policy "readonly_view_ads"
 -- image_assets
 create policy "ops_full_access_images"
   on public.image_assets for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "readonly_view_approved_images"
   on public.image_assets for select
@@ -971,7 +987,7 @@ create policy "all_ops_read_memory"
 
 create policy "owner_admin_write_memory"
   on public.agent_memory for insert
-  using (current_user_role() in ('owner', 'admin', 'agent_system'));
+  with check (current_user_role() in ('owner', 'admin', 'agent_system'));
 
 create policy "owner_admin_update_memory"
   on public.agent_memory for update
@@ -989,7 +1005,8 @@ create policy "all_ops_read_memory_history"
 -- reviews
 create policy "ops_full_access_reviews"
   on public.reviews for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "readonly_view_reviews"
   on public.reviews for select
@@ -999,7 +1016,8 @@ create policy "readonly_view_reviews"
 -- landing_pages
 create policy "ops_full_access_landing_pages"
   on public.landing_pages for all
-  using (is_owner_or_admin());
+  using (is_owner_or_admin())
+  with check (is_owner_or_admin());
 
 create policy "readonly_view_landing_pages"
   on public.landing_pages for select
@@ -1009,7 +1027,7 @@ create policy "readonly_view_landing_pages"
 -- analytics_events: agents write; ops read
 create policy "ops_insert_analytics"
   on public.analytics_events for insert
-  using (is_owner_or_admin());
+  with check (is_owner_or_admin());
 
 create policy "ops_read_analytics"
   on public.analytics_events for select
