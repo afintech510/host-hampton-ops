@@ -56,21 +56,23 @@ export class ApprovalGate {
   /**
    * Owner explicitly approves a pending task
    */
-  async approve(taskId: string): Promise<void> {
-    this.cancelAutoExecuteTimer(taskId)
-
+  async approve(rowId: string): Promise<void> {
+    // rowId is the DB primary key (id column) passed from the frontend
     const { data } = await this.supabase
       .from('agent_tasks')
       .select('*')
-      .eq('task_id', taskId)
+      .eq('id', rowId)
       .single()
 
-    if (!data) throw new Error(`Task ${taskId} not found`)
+    if (!data) throw new Error(`Task ${rowId} not found`)
+
+    // Cancel any pending auto-execute timer using the task_id
+    this.cancelAutoExecuteTimer(data.task_id)
 
     await this.supabase
       .from('agent_tasks')
       .update({ status: 'approved', approved_at: new Date().toISOString() })
-      .eq('task_id', taskId)
+      .eq('id', rowId)
 
     const manifest = data as unknown as TaskManifest
     await this.onAutoExecute(manifest)
@@ -79,8 +81,15 @@ export class ApprovalGate {
   /**
    * Owner explicitly rejects a pending task
    */
-  async reject(taskId: string, reason?: string): Promise<void> {
-    this.cancelAutoExecuteTimer(taskId)
+  async reject(rowId: string, reason?: string): Promise<void> {
+    // rowId is the DB primary key (id column) passed from the frontend
+    const { data } = await this.supabase
+      .from('agent_tasks')
+      .select('task_id')
+      .eq('id', rowId)
+      .single()
+
+    if (data?.task_id) this.cancelAutoExecuteTimer(data.task_id)
 
     await this.supabase
       .from('agent_tasks')
@@ -89,7 +98,7 @@ export class ApprovalGate {
         rejected_at: new Date().toISOString(),
         rejection_reason: reason ?? 'Rejected by owner'
       })
-      .eq('task_id', taskId)
+      .eq('id', rowId)
   }
 
   /**

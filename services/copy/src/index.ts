@@ -77,15 +77,18 @@ Respond with ONLY valid JSON:
 
 // Content type → content_library content_type enum mapping
 // Adjust if your DB enum differs
+// Maps COPY output content_type → content_library DB enum values
+// DB enum: caption, email_subject, email_body, ad_headline, ad_description,
+//          sms, blog_post, hashtag_set, review_response, dm_reply, other
 const CONTENT_TYPE_MAP: Record<string, string> = {
-  social_caption:   'social_post',
-  email_subject:    'email',
-  email_body:       'email',
+  social_caption:   'caption',
+  email_subject:    'email_subject',
+  email_body:       'email_body',
   sms:              'sms',
-  ad_headline:      'ad_copy',
-  ad_body:          'ad_copy',
+  ad_headline:      'ad_headline',
+  ad_body:          'ad_description',
   blog_post:        'blog_post',
-  content_calendar: 'content_calendar'
+  content_calendar: 'other'
 }
 
 // ─── Load memory context from Supabase ──────────────────────────
@@ -129,16 +132,17 @@ async function saveToContentLibrary(
 ): Promise<void> {
   const dbContentType = CONTENT_TYPE_MAP[output.content_type] ?? 'social_post'
 
+  const title = (output.headline ?? (input.task_type as string) ?? dbContentType).slice(0, 200)
+
   const { error } = await supabase
     .from('content_library')
     .insert({
-      task_id: taskId,
+      title,
       content_type: dbContentType,
       platform: (input.platform as string) ?? null,
       campaign_id: (input.campaign_id as string) ?? null,
-      headline: output.headline ?? null,
+      subject_line: output.headline ?? null,
       body: output.body,
-      cta: output.cta ?? null,
       hashtags: output.hashtags ?? null,
       status: 'draft',
       created_by: 'COPY'
