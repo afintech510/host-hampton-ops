@@ -14,6 +14,7 @@ services:
       - /etc/ssl/hosthampton:/etc/ssl/hosthampton:ro
     depends_on:
       - hampton
+      - frontend
     networks:
       - hampton_net
 
@@ -107,6 +108,14 @@ services:
       - hampton
     volumes:
       - uploads:/app/uploads
+    networks:
+      - hampton_net
+
+  # 🖥️ DASHBOARD (served behind /app on VPS)
+  frontend:
+    build: ./frontend
+    container_name: hampton_frontend
+    restart: unless-stopped
     networks:
       - hampton_net
 
