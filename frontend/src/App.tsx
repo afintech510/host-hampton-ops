@@ -191,6 +191,14 @@ export default function App() {
     loadTasks()
   }
 
+  const quickPrompts = [
+    { label: '📣 Social Post', text: 'Write an Instagram caption for our Glow Party this weekend in Speonk. Keep it warm, local, and include a CTA.' },
+    { label: '✉️ Email Draft', text: 'Draft an email subject + body for a Swiftie Party promo for Hamptons families. Keep it non-pushy and scannable.' },
+    { label: '📱 SMS Draft', text: 'Write a short SMS for leads who inquired but did not book in the last 14 days. Friendly, one question at the end.' },
+    { label: '🧩 Build Segment', text: 'Create a CRM segment for families with kids ages 6–10 on the East End who have not booked in 6 months. Recommend channels.' },
+    { label: '🖼️ Image Prompt', text: 'Generate an image for a Princess Party promo: bright, celebratory, no text overlay. Square format for Instagram.' },
+  ]
+
   const pendingApproval = tasks.filter(t =>
     t.status === 'pending' &&
     t.approval_tier !== 'AUTO_EXECUTE' &&
@@ -252,7 +260,7 @@ export default function App() {
                     ? 'bg-hampton-navy text-white rounded-br-sm'
                     : 'bg-white border border-stone-200 text-hampton-navy rounded-bl-sm shadow-sm'
                 }`}>
-                  {m.text}
+                  <div className="whitespace-pre-wrap break-words">{m.text}</div>
                   <div className={`text-xs mt-1 ${m.role === 'user' ? 'text-blue-200' : 'text-stone-400'}`}>
                     {m.ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
@@ -284,6 +292,19 @@ export default function App() {
             >
               Send
             </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 pt-2">
+            {quickPrompts.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => setInput(p.text)}
+                className="text-xs px-3 py-2 rounded-full border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 hover:text-stone-800 transition"
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
         </div>
       )}
