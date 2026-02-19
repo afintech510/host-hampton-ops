@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   sendCommand, getTasks, approveTask, rejectTask, getStatus,
-  connectWebSocket, Task, ChatResponse, SystemStatus
+  getHistory, getContentLibrary,
+  connectWebSocket, Task, ContentItem, ChatResponse, SystemStatus
 } from './api'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -26,11 +27,28 @@ function tierBadge(t: Task['approval_tier']) {
   }[t] ?? ''
 }
 
+function contentTypeBadge(t: string) {
+  return {
+    caption:          'bg-pink-100 text-pink-800',
+    email_subject:    'bg-purple-100 text-purple-800',
+    email_body:       'bg-purple-100 text-purple-800',
+    sms:              'bg-green-100 text-green-800',
+    ad_headline:      'bg-orange-100 text-orange-800',
+    ad_description:   'bg-orange-100 text-orange-800',
+    blog_post:        'bg-blue-100 text-blue-800',
+    hashtag_set:      'bg-teal-100 text-teal-800',
+    review_response:  'bg-yellow-100 text-yellow-800',
+    dm_reply:         'bg-indigo-100 text-indigo-800',
+    other:            'bg-gray-100 text-gray-600',
+  }[t] ?? 'bg-gray-100 text-gray-600'
+}
+
 function timeAgo(iso: string) {
   const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
   if (secs < 60)  return `${secs}s ago`
   if (secs < 3600) return `${Math.floor(secs/60)}m ago`
-  return `${Math.floor(secs/3600)}h ago`
+  if (secs < 86400) return `${Math.floor(secs/3600)}h ago`
+  return `${Math.floor(secs/86400)}d ago`
 }
 
 // ── Task Card ─────────────────────────────────────────────────────────────────
@@ -104,6 +122,117 @@ function TaskCard({ task, onApprove, onReject }: {
   )
 }
 
+// ── History Card ──────────────────────────────────────────────────────────────
+
+function HistoryCard({ task }: { task: Task }) {
+  const [expanded, setExpanded] = useState(false)
+  const output = task.output
+
+  // Try to surface readable content from output
+  const bodyText = output
+    ? (output.body ?? output.content ?? output.caption ?? output.text ?? output.message) as string | undefined
+    : undefined
+
+  return (
+    <div className="rounded-xl border border-stone-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm text-hampton-navy">{task.assigned_to}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor(task.status)}`}>
+              {task.status.replace('_', ' ')}
+            </span>
+            <span className="text-xs text-stone-400">{timeAgo(task.updated_at)}</span>
+          </div>
+          {task.input?.task_type != null && (
+            <p className="mt-1 text-sm text-stone-500">
+              {String(task.input.task_type).replace(/_/g, ' ')}
+            </p>
+          )}
+          {bodyText && !expanded && (
+            <p className="mt-2 text-sm text-stone-700 line-clamp-3">{bodyText}</p>
+          )}
+        </div>
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="text-stone-400 hover:text-stone-600 text-xs shrink-0"
+        >
+          {expanded ? '▲ less' : '▼ more'}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="mt-3 space-y-2">
+          {bodyText && (
+            <div className="text-sm text-stone-800 bg-stone-50 rounded p-3 whitespace-pre-wrap">{bodyText}</div>
+          )}
+          <pre className="text-xs bg-stone-100 rounded p-3 overflow-auto max-h-48 text-stone-600">
+            {JSON.stringify(output, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Content Card ──────────────────────────────────────────────────────────────
+
+function ContentCard({ item }: { item: ContentItem }) {
+  const [expanded, setExpanded] = useState(false)
+  const preview = item.body?.slice(0, 160)
+  const hasMore = (item.body?.length ?? 0) > 160
+
+  return (
+    <div className="rounded-xl border border-stone-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${contentTypeBadge(item.content_type)}`}>
+              {item.content_type.replace(/_/g, ' ')}
+            </span>
+            {item.platform && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">
+                {item.platform}
+              </span>
+            )}
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              item.status === 'published' ? 'bg-green-100 text-green-800' :
+              item.status === 'approved'  ? 'bg-blue-100 text-blue-800' :
+                                            'bg-yellow-100 text-yellow-800'
+            }`}>
+              {item.status}
+            </span>
+            <span className="text-xs text-stone-400">{timeAgo(item.created_at)}</span>
+          </div>
+
+          {item.subject_line && (
+            <p className="mt-2 text-sm font-medium text-hampton-navy">
+              Subject: {item.subject_line}
+            </p>
+          )}
+
+          <p className="mt-2 text-sm text-stone-700 whitespace-pre-wrap">
+            {expanded ? item.body : preview}{hasMore && !expanded ? '…' : ''}
+          </p>
+
+          {item.hashtags && item.hashtags.length > 0 && (
+            <p className="mt-2 text-xs text-stone-400">{item.hashtags.join(' ')}</p>
+          )}
+        </div>
+
+        {hasMore && (
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="text-stone-400 hover:text-stone-600 text-xs shrink-0"
+          >
+            {expanded ? '▲ less' : '▼ more'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Chat Bubble ───────────────────────────────────────────────────────────────
 
 interface Message {
@@ -121,14 +250,24 @@ export default function App() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [tasks, setTasks] = useState<Task[]>([])
+  const [history, setHistory] = useState<Task[]>([])
+  const [contentItems, setContentItems] = useState<ContentItem[]>([])
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
-  const [tab, setTab] = useState<'chat' | 'tasks'>('chat')
+  const [tab, setTab] = useState<'chat' | 'tasks' | 'history' | 'content'>('chat')
   const bottomRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   const loadTasks = useCallback(async () => {
     try { setTasks(await getTasks()) } catch { /* ignore */ }
+  }, [])
+
+  const loadHistory = useCallback(async () => {
+    try { setHistory(await getHistory()) } catch { /* ignore */ }
+  }, [])
+
+  const loadContent = useCallback(async () => {
+    try { setContentItems(await getContentLibrary()) } catch { /* ignore */ }
   }, [])
 
   // Initial load
@@ -148,6 +287,11 @@ export default function App() {
     const ws = connectWebSocket((data: unknown) => {
       const d = data as { type?: string; message?: string }
       if (d?.type === 'task_update' || d?.type === 'task_created') loadTasks()
+      if (d?.type === 'task_complete') {
+        loadTasks()
+        loadHistory()
+        loadContent()
+      }
       if (d?.type === 'escalation' && typeof d.message === 'string') {
         setMessages(m => [...m, { role: 'hampton', text: `🚨 ${d.message as string}`, ts: new Date() }])
       }
@@ -156,12 +300,18 @@ export default function App() {
     ws.onclose = () => setWsStatus('disconnected')
     wsRef.current = ws
     return () => ws.close()
-  }, [loadTasks])
+  }, [loadTasks, loadHistory, loadContent])
 
   // Scroll chat to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  function handleTabChange(t: typeof tab) {
+    setTab(t)
+    if (t === 'history') loadHistory()
+    if (t === 'content') loadContent()
+  }
 
   async function handleSend() {
     const msg = input.trim()
@@ -206,6 +356,11 @@ export default function App() {
     !t.rejected_at
   )
 
+  const tabLabel = (t: typeof tab) => {
+    if (t === 'tasks' && pendingApproval.length > 0) return `Tasks (${pendingApproval.length})`
+    return t.charAt(0).toUpperCase() + t.slice(1)
+  }
+
   return (
     <div className="min-h-screen font-sans bg-hampton-cream flex flex-col">
 
@@ -230,21 +385,19 @@ export default function App() {
       {pendingApproval.length > 0 && (
         <div className="bg-orange-500 text-white text-center text-sm py-2 px-4 font-medium">
           {pendingApproval.length} task{pendingApproval.length > 1 ? 's' : ''} waiting for your approval
-          <button onClick={() => setTab('tasks')} className="ml-2 underline">Review →</button>
+          <button onClick={() => handleTabChange('tasks')} className="ml-2 underline">Review →</button>
         </div>
       )}
 
       {/* Tabs */}
       <div className="flex border-b border-stone-200 bg-white">
-        {(['chat', 'tasks'] as const).map(t => (
+        {(['chat', 'tasks', 'history', 'content'] as const).map(t => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => handleTabChange(t)}
             className={`flex-1 py-3 text-sm font-medium capitalize transition ${tab === t ? 'border-b-2 border-hampton-navy text-hampton-navy' : 'text-stone-400 hover:text-stone-600'}`}
           >
-            {t === 'tasks' && pendingApproval.length > 0
-              ? `Tasks (${pendingApproval.length})`
-              : t.charAt(0).toUpperCase() + t.slice(1)}
+            {tabLabel(t)}
           </button>
         ))}
       </div>
@@ -317,6 +470,32 @@ export default function App() {
           ) : (
             tasks.map(t => (
               <TaskCard key={t.id} task={t} onApprove={handleApprove} onReject={handleReject} />
+            ))
+          )}
+        </div>
+      )}
+
+      {/* History */}
+      {tab === 'history' && (
+        <div className="flex-1 overflow-y-auto max-w-2xl w-full mx-auto px-4 py-4 space-y-3">
+          {history.length === 0 ? (
+            <div className="text-center text-stone-400 py-16">No completed tasks yet</div>
+          ) : (
+            history.map(t => (
+              <HistoryCard key={t.id} task={t} />
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Content */}
+      {tab === 'content' && (
+        <div className="flex-1 overflow-y-auto max-w-2xl w-full mx-auto px-4 py-4 space-y-3">
+          {contentItems.length === 0 ? (
+            <div className="text-center text-stone-400 py-16">No content generated yet</div>
+          ) : (
+            contentItems.map(item => (
+              <ContentCard key={item.id} item={item} />
             ))
           )}
         </div>

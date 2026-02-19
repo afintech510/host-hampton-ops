@@ -137,6 +137,33 @@ export class TaskQueue {
   }
 
   /**
+   * Get completed/failed/rejected/cancelled tasks — for history view
+   */
+  async getCompleted(limit = 50): Promise<TaskRecord[]> {
+    const { data } = await this.supabase
+      .from('agent_tasks')
+      .select('*')
+      .in('status', ['completed', 'failed', 'cancelled', 'rejected'])
+      .order('updated_at', { ascending: false })
+      .limit(limit)
+
+    return (data ?? []) as TaskRecord[]
+  }
+
+  /**
+   * Get content library items — for content browser view
+   */
+  async getContentLibrary(limit = 50): Promise<Record<string, unknown>[]> {
+    const { data } = await this.supabase
+      .from('content_library')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    return data ?? []
+  }
+
+  /**
    * Cancel a task
    */
   async cancel(taskId: string): Promise<void> {

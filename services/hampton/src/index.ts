@@ -317,6 +317,24 @@ app.post('/chat', async (req: Request, res: Response, next: NextFunction) => {
   }
 })
 
+app.get('/tasks/history', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tasks = await taskQueue.getCompleted()
+    res.json({ tasks })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.get('/content-library', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const items = await taskQueue.getContentLibrary()
+    res.json({ items })
+  } catch (err) {
+    next(err)
+  }
+})
+
 app.get('/tasks', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const tasks = await taskQueue.getActive()

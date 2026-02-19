@@ -15,6 +15,19 @@ export interface Task {
   updated_at: string
 }
 
+export interface ContentItem {
+  id: string
+  title: string
+  content_type: string
+  platform?: string
+  status: string
+  body: string
+  subject_line?: string
+  hashtags?: string[]
+  created_by?: string
+  created_at: string
+}
+
 export interface ChatResponse {
   message: string
   tasks?: Task[]
@@ -53,6 +66,20 @@ export async function approveTask(id: string): Promise<void> {
 export async function rejectTask(id: string): Promise<void> {
   const res = await fetch(`${BASE}/tasks/${id}/reject`, { method: 'POST' })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
+}
+
+export async function getHistory(): Promise<Task[]> {
+  const res = await fetch(`${BASE}/tasks/history`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json()
+  return data.tasks ?? []
+}
+
+export async function getContentLibrary(): Promise<ContentItem[]> {
+  const res = await fetch(`${BASE}/content-library`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json()
+  return data.items ?? []
 }
 
 export async function getStatus(): Promise<SystemStatus> {
