@@ -113,7 +113,10 @@ services:
 
   # 🖥️ DASHBOARD (served behind /app on VPS)
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: https://api.hosthampton.com
     container_name: hampton_frontend
     restart: unless-stopped
     networks:

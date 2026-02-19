@@ -241,10 +241,13 @@ async function saveImageAsset(input: ImageTaskInput, imageUrl: string): Promise<
     typeof input.task_type === 'string' ? input.task_type : null
   ].filter((x): x is string => !!x)
 
+  const filename = imageUrl.split('/').pop()?.split('?')[0] ?? `image_${Date.now()}.png`
+
   const { error } = await supabase
     .from('image_assets')
     .insert({
       r2_url: imageUrl,
+      filename,
       service: (input.service as string) ?? null,
       platform: (input.platform as string) ?? null,
       campaign_id: (input.campaign_id as string) ?? null,
