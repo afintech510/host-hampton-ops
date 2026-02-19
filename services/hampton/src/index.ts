@@ -244,7 +244,7 @@ async function generateOwnerResponse(
 
   const response = await claude.messages.create({
     model: 'claude-opus-4-6',
-    max_tokens: 400,
+    max_tokens: 420,
     system: HAMPTON_PERSONA,
     messages: [
       {
@@ -260,7 +260,13 @@ ${gateResults.join('\n') || '(no tasks)'}
 
 ${memoryContext}
 
-Write a concise owner-facing status message confirming what's happening. Follow the response format guidelines.`
+Format your reply as follows, with emoji + line breaks:
+- Start with a single sentence summary prefixed by "✅".
+- Add a "📝 Tasks" section with bullets describing the outstanding tasks and their approval status.
+- Add a "🚧 Next Actions" section with numbered steps for the owner.
+- Wrap any quoted JSON in triple backticks so it stays readable.
+
+Use short paragraphs so the dashboard chat shows line breaks clearly.`
       }
     ]
   })
