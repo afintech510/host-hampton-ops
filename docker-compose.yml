@@ -1,4 +1,3 @@
-version: '3.9'
 
 services:
 
@@ -94,12 +93,18 @@ services:
     container_name: hampton_image
     restart: unless-stopped
     environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - REPLICATE_API_KEY=${REPLICATE_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - CLOUDFLARE_R2_ACCOUNT_ID=${CF_R2_ACCOUNT_ID}
       - CLOUDFLARE_R2_ACCESS_KEY=${CF_R2_ACCESS_KEY}
       - CLOUDFLARE_R2_SECRET_KEY=${CF_R2_SECRET_KEY}
       - CF_R2_BUCKET=${CF_R2_BUCKET}
       - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+      - hampton
     volumes:
       - uploads:/app/uploads
     networks:
@@ -136,6 +141,9 @@ services:
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - MAILCHIMP_API_KEY=${MAILCHIMP_API_KEY}
       - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+      - hampton
     networks:
       - hampton_net
 
@@ -154,6 +162,9 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+      - hampton
     networks:
       - hampton_net
 

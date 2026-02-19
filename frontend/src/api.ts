@@ -3,11 +3,14 @@ const BASE = import.meta.env.VITE_API_URL ?? 'http://5.161.88.134'
 export interface Task {
   id: string
   assigned_to: string
-  status: 'pending' | 'in_progress' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled'
+  status: 'pending' | 'in_progress' | 'approved' | 'rejected' | 'completed' | 'failed' | 'cancelled'
   approval_tier: 'AUTO_EXECUTE' | 'DRAFT_AND_SHOW' | 'ALWAYS_ASK'
   priority: string
   input: Record<string, unknown>
   output?: Record<string, unknown>
+  approved_at?: string | null
+  rejected_at?: string | null
+  rejection_reason?: string | null
   created_at: string
   updated_at: string
 }

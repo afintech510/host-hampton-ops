@@ -37,7 +37,7 @@ export class ApprovalGate {
         }
 
       case 'DRAFT_AND_SHOW':
-        await this.holdForApproval(manifest, 'awaiting_approval')
+        await this.holdForApproval(manifest, 'pending')
         this.scheduleAutoExecute(manifest)
         return {
           action: 'pending_approval',
@@ -45,7 +45,7 @@ export class ApprovalGate {
         }
 
       case 'ALWAYS_ASK':
-        await this.holdForApproval(manifest, 'awaiting_approval')
+        await this.holdForApproval(manifest, 'pending')
         return {
           action: 'held_for_owner',
           message: `⚠️ Task ${manifest.task_id} requires your explicit approval before proceeding. Reply "approve ${manifest.task_id}" or "reject ${manifest.task_id}".`

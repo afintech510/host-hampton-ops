@@ -98,7 +98,7 @@ export class TaskQueue {
     let query = this.supabase
       .from('agent_tasks')
       .select('*')
-      .in('status', ['pending', 'awaiting_approval'])
+      .in('status', ['pending'])
       .order('created_at', { ascending: true })
 
     if (agent) query = query.eq('assigned_to', agent)
@@ -129,7 +129,7 @@ export class TaskQueue {
     const { data } = await this.supabase
       .from('agent_tasks')
       .select('*')
-      .in('status', ['pending', 'in_progress', 'awaiting_approval'])
+      .in('status', ['pending', 'in_progress'])
       .order('created_at', { ascending: false })
       .limit(50)
 

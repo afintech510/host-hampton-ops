@@ -10,7 +10,8 @@ function statusColor(s: Task['status']) {
   return {
     pending:           'bg-yellow-100 text-yellow-800',
     in_progress:       'bg-blue-100 text-blue-800',
-    awaiting_approval: 'bg-orange-100 text-orange-800',
+    approved:          'bg-green-100 text-green-800',
+    rejected:          'bg-red-100 text-red-800',
     completed:         'bg-green-100 text-green-800',
     failed:            'bg-red-100 text-red-800',
     cancelled:         'bg-gray-100 text-gray-600',
@@ -40,7 +41,11 @@ function TaskCard({ task, onApprove, onReject }: {
   onReject: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const needsAction = task.status === 'awaiting_approval'
+  const needsAction =
+    task.status === 'pending' &&
+    task.approval_tier !== 'AUTO_EXECUTE' &&
+    !task.approved_at &&
+    !task.rejected_at
 
   return (
     <div className={`rounded-xl border p-4 transition-all ${needsAction ? 'border-orange-300 bg-orange-50 shadow-md' : 'border-stone-200 bg-white'}`}>
@@ -49,7 +54,7 @@ function TaskCard({ task, onApprove, onReject }: {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold text-sm text-hampton-navy">{task.assigned_to}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor(task.status)}`}>
-              {task.status.replace('_', ' ')}
+              {needsAction ? 'needs approval' : task.status.replace('_', ' ')}
             </span>
             <span className={`text-xs px-2 py-0.5 rounded border font-medium ${tierBadge(task.approval_tier)}`}>
               {task.approval_tier}
@@ -186,7 +191,12 @@ export default function App() {
     loadTasks()
   }
 
-  const pendingApproval = tasks.filter(t => t.status === 'awaiting_approval')
+  const pendingApproval = tasks.filter(t =>
+    t.status === 'pending' &&
+    t.approval_tier !== 'AUTO_EXECUTE' &&
+    !t.approved_at &&
+    !t.rejected_at
+  )
 
   return (
     <div className="min-h-screen font-sans bg-hampton-cream flex flex-col">

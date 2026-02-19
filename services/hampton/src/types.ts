@@ -41,7 +41,6 @@ export type IntentCategory =
 export type TaskStatus =
   | 'pending'
   | 'in_progress'
-  | 'awaiting_approval'
   | 'approved'
   | 'rejected'
   | 'completed'
