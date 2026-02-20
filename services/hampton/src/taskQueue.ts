@@ -140,12 +140,26 @@ export class TaskQueue {
    * Get completed/failed/rejected/cancelled tasks — for history view
    */
   async getCompleted(limit = 50): Promise<TaskRecord[]> {
-    const { data } = await this.supabase
+    // Note: 'rejected' requires migration_002 to exist in Supabase enum.
+    // Query without it first; if migration has run, add it back.
+    const { data, error } = await this.supabase
       .from('agent_tasks')
       .select('*')
-      .in('status', ['completed', 'failed', 'cancelled', 'rejected'])
+      .in('status', ['completed', 'failed', 'cancelled', 'approved', 'rejected'])
       .order('updated_at', { ascending: false })
       .limit(limit)
+
+    if (error) {
+      // Fallback: query only enum values we know exist (pre-migration)
+      console.warn('[TaskQueue] getCompleted full query failed, using fallback:', error.message)
+      const { data: fallback } = await this.supabase
+        .from('agent_tasks')
+        .select('*')
+        .in('status', ['completed', 'failed', 'cancelled'])
+        .order('updated_at', { ascending: false })
+        .limit(limit)
+      return (fallback ?? []) as TaskRecord[]
+    }
 
     return (data ?? []) as TaskRecord[]
   }

@@ -58,21 +58,27 @@ export class ApprovalGate {
    */
   async approve(rowId: string): Promise<void> {
     // rowId is the DB primary key (id column) passed from the frontend
-    const { data } = await this.supabase
+    const { data, error: fetchError } = await this.supabase
       .from('agent_tasks')
       .select('*')
       .eq('id', rowId)
       .single()
 
-    if (!data) throw new Error(`Task ${rowId} not found`)
+    if (fetchError || !data) throw new Error(`Task ${rowId} not found: ${fetchError?.message ?? 'no data'}`)
 
     // Cancel any pending auto-execute timer using the task_id
     this.cancelAutoExecuteTimer(data.task_id)
 
-    await this.supabase
+    // Set approved_at; status goes to in_progress immediately via dispatch below
+    const { error: updateError } = await this.supabase
       .from('agent_tasks')
-      .update({ status: 'approved', approved_at: new Date().toISOString() })
+      .update({ status: 'approved' as TaskStatus, approved_at: new Date().toISOString() })
       .eq('id', rowId)
+
+    if (updateError) {
+      console.error(`[ApprovalGate] approve DB update failed for ${rowId}:`, updateError.message)
+      // Still dispatch even if status update failed — agent work should proceed
+    }
 
     const manifest = data as unknown as TaskManifest
     await this.onAutoExecute(manifest)
@@ -83,15 +89,17 @@ export class ApprovalGate {
    */
   async reject(rowId: string, reason?: string): Promise<void> {
     // rowId is the DB primary key (id column) passed from the frontend
-    const { data } = await this.supabase
+    const { data, error: fetchError } = await this.supabase
       .from('agent_tasks')
       .select('task_id')
       .eq('id', rowId)
       .single()
 
+    if (fetchError) throw new Error(`Task ${rowId} not found: ${fetchError.message}`)
+
     if (data?.task_id) this.cancelAutoExecuteTimer(data.task_id)
 
-    await this.supabase
+    const { error: updateError } = await this.supabase
       .from('agent_tasks')
       .update({
         status: 'rejected' as TaskStatus,
@@ -99,6 +107,10 @@ export class ApprovalGate {
         rejection_reason: reason ?? 'Rejected by owner'
       })
       .eq('id', rowId)
+
+    if (updateError) {
+      throw new Error(`Failed to reject task ${rowId}: ${updateError.message}`)
+    }
   }
 
   /**
@@ -120,10 +132,12 @@ export class ApprovalGate {
       this.pendingApprovals.delete(manifest.task_id)
       console.log(`[ApprovalGate] 4-hour timeout reached — auto-executing ${manifest.task_id}`)
 
-      await this.supabase
+      const { error } = await this.supabase
         .from('agent_tasks')
-        .update({ status: 'approved', approved_at: new Date().toISOString() })
+        .update({ status: 'approved' as TaskStatus, approved_at: new Date().toISOString() })
         .eq('task_id', manifest.task_id)
+
+      if (error) console.error(`[ApprovalGate] auto-execute status update failed:`, error.message)
 
       await this.onAutoExecute(manifest)
     }, DRAFT_AND_SHOW_TIMEOUT_MS)

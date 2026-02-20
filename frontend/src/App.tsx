@@ -332,13 +332,22 @@ export default function App() {
   }
 
   async function handleApprove(id: string) {
-    await approveTask(id)
-    loadTasks()
+    try {
+      await approveTask(id)
+      loadTasks()
+    } catch (e) {
+      setMessages(m => [...m, { role: 'hampton', text: `⚠️ Approve failed: ${e instanceof Error ? e.message : String(e)}`, ts: new Date() }])
+    }
   }
 
   async function handleReject(id: string) {
-    await rejectTask(id)
-    loadTasks()
+    try {
+      await rejectTask(id)
+      loadTasks()
+      loadHistory()
+    } catch (e) {
+      setMessages(m => [...m, { role: 'hampton', text: `⚠️ Reject failed: ${e instanceof Error ? e.message : String(e)}`, ts: new Date() }])
+    }
   }
 
   const quickPrompts = [

@@ -134,12 +134,16 @@ async function saveToContentLibrary(
 
   const title = (output.headline ?? (input.task_type as string) ?? dbContentType).slice(0, 200)
 
+  // Lowercase platform to match social_platform enum (instagram, facebook, etc.)
+  const rawPlatform = input.platform as string | undefined
+  const platform = rawPlatform ? rawPlatform.toLowerCase() : null
+
   const { error } = await supabase
     .from('content_library')
     .insert({
       title,
       content_type: dbContentType,
-      platform: (input.platform as string) ?? null,
+      platform,
       campaign_id: (input.campaign_id as string) ?? null,
       subject_line: output.headline ?? null,
       body: output.body,
