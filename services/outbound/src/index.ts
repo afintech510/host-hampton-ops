@@ -11,6 +11,7 @@ import 'dotenv/config'
 import Redis from 'ioredis'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { Resend } from 'resend'
 import { OutboundTaskOutput, TaskManifest } from './types.js'
 
 const required = ['ANTHROPIC_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'REDIS_URL']
@@ -25,6 +26,15 @@ const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SE
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const subscriber = new Redis(process.env.REDIS_URL!)
 const publisher = new Redis(process.env.REDIS_URL!)
+
+// Resend email client — optional, only active when RESEND_API_KEY is set
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'Host Hampton <onboarding@resend.dev>'
+if (resend) {
+  console.log('[OUTBOUND] Resend email sending enabled')
+} else {
+  console.log('[OUTBOUND] Resend not configured — drafts only (set RESEND_API_KEY to enable sending)')
+}
 
 subscriber.on('error', (err) => console.error('[OUTBOUND] Redis subscriber error:', err))
 publisher.on('error', (err) => console.error('[OUTBOUND] Redis publisher error:', err))
@@ -81,6 +91,16 @@ async function loadMemory(input: Record<string, unknown>): Promise<string> {
   }))
 
   return lines.join('\n')
+}
+
+async function loadBookingLinks(): Promise<Record<string, string> | null> {
+  const { data } = await supabase
+    .from('agent_memory')
+    .select('value')
+    .eq('namespace', 'services')
+    .eq('key', 'booking_links')
+    .single()
+  return data?.value as Record<string, string> | null
 }
 
 async function saveToContentLibrary(input: Record<string, unknown>, output: OutboundTaskOutput): Promise<void> {
@@ -208,6 +228,42 @@ Generate outbound message output as valid JSON.`
 
     if (channel === 'sms' && !output.sms_text) {
       output.sms_text = output.body
+    }
+
+    // Load booking links from agent_memory and inject into CTA if not already present
+    const bookingLinks = await loadBookingLinks()
+    if (bookingLinks && output.body && !output.body.includes('hosthampton.com')) {
+      const ctaLine = bookingLinks.kids_party
+        ? `\n\n👉 Book your date: ${bookingLinks.kids_party}`
+        : `\n\n👉 Visit us: https://hosthampton.com`
+      output.body += ctaLine
+    }
+
+    // Send via Resend if send_immediately flag is set
+    if (channel === 'email' && input.send_immediately === true && resend) {
+      const toAddresses = typeof input.send_to_email === 'string'
+        ? [input.send_to_email]
+        : (Array.isArray(input.send_to_email) ? input.send_to_email as string[] : ['allie@hosthampton.com'])
+
+      const htmlBody = output.body
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>')
+
+      const { error: sendError } = await resend.emails.send({
+        from: FROM_EMAIL,
+        to: toAddresses,
+        subject: output.subject ?? 'Message from Host Hampton',
+        html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto">${htmlBody}</div>`,
+      })
+
+      if (sendError) {
+        console.warn(`[OUTBOUND] Resend failed (non-fatal): ${sendError.message}`)
+        output.send_error = sendError.message
+      } else {
+        output.sent = true
+        output.sent_to = toAddresses
+        console.log(`[OUTBOUND] Email sent via Resend to ${toAddresses.join(', ')}`)
+      }
     }
 
     await saveToContentLibrary(input, output)

@@ -19,4 +19,7 @@ export interface OutboundTaskOutput {
   call_to_action?: string
   notes?: string
   error?: string
+  sent?: boolean
+  sent_to?: string[]
+  send_error?: string
 }

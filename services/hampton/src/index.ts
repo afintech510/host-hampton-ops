@@ -406,12 +406,9 @@ cron.schedule('0 6 * * *', async () => {
   try {
     const phase = await memory.getPhaseStatus()
     if (phase.active_agents.includes('INTEL')) {
-      await taskQueue.create({
-        assigned_to: 'INTEL',
-        priority: 'async',
-        input: { task_type: 'overnight_analytics_pull', instructions: 'Pull overnight analytics across all active channels. Flag anomalies. Queue for morning briefing.' },
-        approval_tier: 'AUTO_EXECUTE'
-      })
+      const cronInput = { task_type: 'overnight_analytics_pull', instructions: 'Pull overnight analytics across all active channels. Flag anomalies. Queue for morning briefing.' }
+      const task_id = await taskQueue.create({ assigned_to: 'INTEL', priority: 'async', input: cronInput, approval_tier: 'AUTO_EXECUTE' })
+      await gate.process({ task_id, assigned_to: 'INTEL', priority: 'async', input: cronInput, approval_tier: 'AUTO_EXECUTE' })
     }
   } catch (err) {
     console.error('[CRON] Analytics cron failed:', err)
@@ -422,12 +419,9 @@ cron.schedule('0 6 * * *', async () => {
 cron.schedule('0 7 * * *', async () => {
   console.log('[CRON] Social comment scan...')
   try {
-    await taskQueue.create({
-      assigned_to: 'SOC',
-      priority: 'high',
-      input: { task_type: 'comment_scan', instructions: 'Scan for new comments and reviews needing response. Auto-draft replies for obvious FAQ comments via COPY. Flag sensitive ones.' },
-      approval_tier: 'AUTO_EXECUTE'
-    })
+    const cronInput = { task_type: 'comment_scan', instructions: 'Scan for new comments and reviews needing response. Auto-draft replies for obvious FAQ comments via COPY. Flag sensitive ones.' }
+    const task_id = await taskQueue.create({ assigned_to: 'SOC', priority: 'high', input: cronInput, approval_tier: 'AUTO_EXECUTE' })
+    await gate.process({ task_id, assigned_to: 'SOC', priority: 'high', input: cronInput, approval_tier: 'AUTO_EXECUTE' })
   } catch (err) {
     console.error('[CRON] Comment scan cron failed:', err)
   }
@@ -436,13 +430,31 @@ cron.schedule('0 7 * * *', async () => {
 // Monday 09:00 AM — Week ahead report
 cron.schedule('0 9 * * 1', async () => {
   console.log('[CRON] Week ahead report...')
-  broadcast({ type: 'weekly_report_queued', report: 'week_ahead' })
+  try {
+    const phase = await memory.getPhaseStatus()
+    if (phase.active_agents.includes('INTEL')) {
+      const cronInput = { task_type: 'weekly_report', report_type: 'week_ahead', instructions: 'Generate the week-ahead briefing: upcoming bookings, content to publish, revenue opportunities. Deliver as a concise summary.' }
+      const task_id = await taskQueue.create({ assigned_to: 'INTEL', priority: 'high', input: cronInput, approval_tier: 'AUTO_EXECUTE' })
+      await gate.process({ task_id, assigned_to: 'INTEL', priority: 'high', input: cronInput, approval_tier: 'AUTO_EXECUTE' })
+    }
+  } catch (err) {
+    console.error('[CRON] Week ahead report failed:', err)
+  }
 }, { timezone: 'America/New_York' })
 
 // Friday 16:00 PM — Week in review
 cron.schedule('0 16 * * 5', async () => {
   console.log('[CRON] Week in review report...')
-  broadcast({ type: 'weekly_report_queued', report: 'week_in_review' })
+  try {
+    const phase = await memory.getPhaseStatus()
+    if (phase.active_agents.includes('INTEL')) {
+      const cronInput = { task_type: 'weekly_report', report_type: 'week_in_review', instructions: 'Generate the week-in-review: tasks completed, content published, what worked, what to improve next week.' }
+      const task_id = await taskQueue.create({ assigned_to: 'INTEL', priority: 'high', input: cronInput, approval_tier: 'AUTO_EXECUTE' })
+      await gate.process({ task_id, assigned_to: 'INTEL', priority: 'high', input: cronInput, approval_tier: 'AUTO_EXECUTE' })
+    }
+  } catch (err) {
+    console.error('[CRON] Week in review report failed:', err)
+  }
 }, { timezone: 'America/New_York' })
 
 // ─── Start server ────────────────────────────────────────────────
