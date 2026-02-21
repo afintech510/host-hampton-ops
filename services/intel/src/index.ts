@@ -43,27 +43,49 @@ const COMPLETE_CHANNEL = 'hampton:task_complete'
 
 // ─── GA4 helpers ────────────────────────────────────────────────
 
-const ga4Available =
-  !!process.env.GA4_PROPERTY_ID &&
+// Supports two auth modes:
+//   1. Service Account (preferred): GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_PRIVATE_KEY
+//   2. OAuth2 refresh token (legacy): GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN
+const hasServiceAccount = !!process.env.GA4_PROPERTY_ID &&
+  !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+  !!process.env.GOOGLE_PRIVATE_KEY
+
+const hasOAuth = !!process.env.GA4_PROPERTY_ID &&
   !!process.env.GOOGLE_CLIENT_ID &&
   !!process.env.GOOGLE_CLIENT_SECRET &&
   !!process.env.GOOGLE_REFRESH_TOKEN
 
-if (ga4Available) {
-  console.log('[INTEL] GA4 credentials detected — live analytics enabled')
+const ga4Available = hasServiceAccount || hasOAuth
+
+if (hasServiceAccount) {
+  console.log('[INTEL] GA4 service account configured — live analytics enabled')
+} else if (hasOAuth) {
+  console.log('[INTEL] GA4 OAuth2 credentials configured — live analytics enabled')
 } else {
-  console.log('[INTEL] GA4 credentials not configured — running on internal metrics only')
+  console.log('[INTEL] GA4 not configured — running on internal metrics only')
+}
+
+function buildGA4Auth() {
+  if (hasServiceAccount) {
+    return new google.auth.JWT({
+      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      key: process.env.GOOGLE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+      scopes: ['https://www.googleapis.com/auth/analytics.readonly']
+    })
+  }
+  const auth = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET
+  )
+  auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN })
+  return auth
 }
 
 async function fetchGA4Metrics(days = 7): Promise<GA4Metrics | null> {
   if (!ga4Available) return null
 
   try {
-    const auth = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
-    )
-    auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN })
+    const auth = buildGA4Auth()
 
     const analyticsdata = google.analyticsdata({ version: 'v1beta', auth })
     const propertyId = process.env.GA4_PROPERTY_ID!
