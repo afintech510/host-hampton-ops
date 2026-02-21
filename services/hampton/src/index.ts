@@ -335,6 +335,20 @@ app.get('/content-library', async (_req: Request, res: Response, next: NextFunct
   }
 })
 
+app.get('/report', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { data } = await supabase
+      .from('agent_memory')
+      .select('value, updated_at')
+      .eq('namespace', 'analytics')
+      .eq('key', 'last_report')
+      .single()
+    res.json({ report: data?.value ?? null, updated_at: (data as { updated_at?: string } | null)?.updated_at ?? null })
+  } catch (err) {
+    next(err)
+  }
+})
+
 app.get('/tasks', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const tasks = await taskQueue.getActive()

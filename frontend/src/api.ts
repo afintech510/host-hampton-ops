@@ -41,6 +41,29 @@ export interface SystemStatus {
   timestamp: string
 }
 
+export interface IntelReport {
+  report_type: string
+  generated_at: string
+  ga4_available: boolean
+  summary: string
+  insights: string[]
+  recommended_actions: string[]
+  internal_metrics: {
+    tasks_completed_7d: number
+    tasks_by_agent: Record<string, number>
+    content_items_7d: number
+    content_by_type: Record<string, number>
+    top_content_type: string | null
+  }
+  ga4_metrics: {
+    sessions_7d: number
+    users_7d: number
+    page_views_7d: number
+    top_pages: Array<{ page: string; views: number }>
+    traffic_source: Record<string, number>
+  } | null
+}
+
 export async function sendCommand(message: string): Promise<ChatResponse> {
   const res = await fetch(`${BASE}/chat`, {
     method: 'POST',
@@ -84,6 +107,12 @@ export async function getContentLibrary(): Promise<ContentItem[]> {
 
 export async function getStatus(): Promise<SystemStatus> {
   const res = await fetch(`${BASE}/status`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function getReport(): Promise<{ report: IntelReport | null; updated_at: string | null }> {
+  const res = await fetch(`${BASE}/report`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }

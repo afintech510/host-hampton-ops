@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   sendCommand, getTasks, approveTask, rejectTask, getStatus,
-  getHistory, getContentLibrary,
-  connectWebSocket, Task, ContentItem, ChatResponse, SystemStatus
+  getHistory, getContentLibrary, getReport,
+  connectWebSocket, Task, ContentItem, ChatResponse, SystemStatus, IntelReport
 } from './api'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -233,6 +233,163 @@ function ContentCard({ item }: { item: ContentItem }) {
   )
 }
 
+// ── Report View ───────────────────────────────────────────────────────────────
+
+function ReportView({ report, updatedAt, onRefresh, refreshing }: {
+  report: IntelReport | null
+  updatedAt: string | null
+  onRefresh: () => void
+  refreshing: boolean
+}) {
+  if (!report) {
+    return (
+      <div className="text-center py-16 space-y-4">
+        <p className="text-stone-400 text-sm">No analytics report yet.</p>
+        <p className="text-stone-400 text-xs">Reports generate daily at 6am or on demand.</p>
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          className="mt-2 bg-hampton-navy text-white text-sm px-5 py-2.5 rounded-xl hover:bg-blue-900 transition disabled:opacity-40"
+        >
+          {refreshing ? 'Running…' : 'Run Report Now'}
+        </button>
+      </div>
+    )
+  }
+
+  const m = report.internal_metrics
+  const g = report.ga4_metrics
+  const reportLabel = report.report_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-stone-400 uppercase tracking-wide font-medium">{reportLabel}</p>
+          {updatedAt && (
+            <p className="text-xs text-stone-400">{timeAgo(updatedAt)}</p>
+          )}
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          className="text-xs bg-hampton-navy text-white px-4 py-2 rounded-lg hover:bg-blue-900 transition disabled:opacity-40"
+        >
+          {refreshing ? 'Running…' : 'Refresh'}
+        </button>
+      </div>
+
+      {/* Summary */}
+      <div className="bg-white rounded-xl border border-stone-200 p-4">
+        <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Summary</p>
+        <p className="text-sm text-hampton-navy leading-relaxed">{report.summary}</p>
+      </div>
+
+      {/* Internal Metrics */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white rounded-xl border border-stone-200 p-4">
+          <p className="text-xs text-stone-400 uppercase tracking-wide mb-1">Tasks (7d)</p>
+          <p className="text-2xl font-bold text-hampton-navy">{m.tasks_completed_7d}</p>
+          {Object.entries(m.tasks_by_agent).length > 0 && (
+            <div className="mt-2 space-y-0.5">
+              {Object.entries(m.tasks_by_agent).map(([agent, count]) => (
+                <p key={agent} className="text-xs text-stone-500">{agent}: {count}</p>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="bg-white rounded-xl border border-stone-200 p-4">
+          <p className="text-xs text-stone-400 uppercase tracking-wide mb-1">Content (7d)</p>
+          <p className="text-2xl font-bold text-hampton-navy">{m.content_items_7d}</p>
+          {m.top_content_type && (
+            <p className="text-xs text-stone-500 mt-2">Top: {m.top_content_type.replace(/_/g, ' ')}</p>
+          )}
+        </div>
+
+        {/* GA4 Metrics */}
+        {g ? (
+          <>
+            <div className="bg-white rounded-xl border border-stone-200 p-4">
+              <p className="text-xs text-stone-400 uppercase tracking-wide mb-1">Sessions (7d)</p>
+              <p className="text-2xl font-bold text-hampton-navy">{g.sessions_7d.toLocaleString()}</p>
+              <p className="text-xs text-stone-500 mt-1">{g.users_7d.toLocaleString()} users</p>
+            </div>
+            <div className="bg-white rounded-xl border border-stone-200 p-4">
+              <p className="text-xs text-stone-400 uppercase tracking-wide mb-1">Page Views (7d)</p>
+              <p className="text-2xl font-bold text-hampton-navy">{g.page_views_7d.toLocaleString()}</p>
+            </div>
+          </>
+        ) : (
+          <div className="col-span-2 bg-stone-50 rounded-xl border border-stone-200 p-4 text-center">
+            <p className="text-xs text-stone-400">GA4 not connected — website traffic unavailable</p>
+          </div>
+        )}
+      </div>
+
+      {/* Top Pages */}
+      {g && g.top_pages.length > 0 && (
+        <div className="bg-white rounded-xl border border-stone-200 p-4">
+          <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-3">Top Pages</p>
+          <div className="space-y-2">
+            {g.top_pages.map(({ page, views }) => (
+              <div key={page} className="flex items-center justify-between text-sm">
+                <span className="text-stone-600 truncate max-w-[75%]">{page}</span>
+                <span className="text-stone-400 text-xs">{views.toLocaleString()} views</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Traffic Sources */}
+      {g && Object.keys(g.traffic_source).length > 0 && (
+        <div className="bg-white rounded-xl border border-stone-200 p-4">
+          <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-3">Traffic Sources</p>
+          <div className="space-y-2">
+            {Object.entries(g.traffic_source).sort((a, b) => b[1] - a[1]).map(([source, sessions]) => (
+              <div key={source} className="flex items-center justify-between text-sm">
+                <span className="text-stone-600">{source}</span>
+                <span className="text-stone-400 text-xs">{sessions} sessions</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Insights */}
+      {report.insights.length > 0 && (
+        <div className="bg-white rounded-xl border border-stone-200 p-4">
+          <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-3">Insights</p>
+          <ul className="space-y-2">
+            {report.insights.map((insight, i) => (
+              <li key={i} className="flex gap-2 text-sm text-stone-700">
+                <span className="text-hampton-navy mt-0.5 shrink-0">→</span>
+                <span>{insight}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Recommended Actions */}
+      {report.recommended_actions.length > 0 && (
+        <div className="bg-hampton-navy rounded-xl p-4">
+          <p className="text-xs font-semibold text-blue-200 uppercase tracking-wide mb-3">Recommended Actions</p>
+          <ul className="space-y-2">
+            {report.recommended_actions.map((action, i) => (
+              <li key={i} className="flex gap-2 text-sm text-white">
+                <span className="text-blue-300 mt-0.5 shrink-0">{i + 1}.</span>
+                <span>{action}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Chat Bubble ───────────────────────────────────────────────────────────────
 
 interface Message {
@@ -252,9 +409,12 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [history, setHistory] = useState<Task[]>([])
   const [contentItems, setContentItems] = useState<ContentItem[]>([])
+  const [report, setReport] = useState<IntelReport | null>(null)
+  const [reportUpdatedAt, setReportUpdatedAt] = useState<string | null>(null)
+  const [reportRefreshing, setReportRefreshing] = useState(false)
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
-  const [tab, setTab] = useState<'chat' | 'tasks' | 'history' | 'content'>('chat')
+  const [tab, setTab] = useState<'chat' | 'tasks' | 'history' | 'content' | 'reports'>('chat')
   const bottomRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
@@ -269,6 +429,28 @@ export default function App() {
   const loadContent = useCallback(async () => {
     try { setContentItems(await getContentLibrary()) } catch { /* ignore */ }
   }, [])
+
+  const loadReport = useCallback(async () => {
+    try {
+      const { report: r, updated_at } = await getReport()
+      setReport(r)
+      setReportUpdatedAt(updated_at)
+    } catch { /* ignore */ }
+  }, [])
+
+  const runReportNow = useCallback(async () => {
+    setReportRefreshing(true)
+    try {
+      await sendCommand('Run an analytics report for the last 7 days')
+      // Poll for the result — INTEL takes ~15s
+      setTimeout(async () => {
+        await loadReport()
+        setReportRefreshing(false)
+      }, 18000)
+    } catch {
+      setReportRefreshing(false)
+    }
+  }, [loadReport])
 
   // Initial load
   useEffect(() => {
@@ -311,6 +493,7 @@ export default function App() {
     setTab(t)
     if (t === 'history') loadHistory()
     if (t === 'content') loadContent()
+    if (t === 'reports') loadReport()
   }
 
   async function handleSend() {
@@ -354,6 +537,7 @@ export default function App() {
     { label: '📣 Social Post', text: 'Write an Instagram caption for our Glow Party this weekend in Speonk. Keep it warm, local, and include a CTA.' },
     { label: '✉️ Email Draft', text: 'Draft an email subject + body for a Swiftie Party promo for Hamptons families. Keep it non-pushy and scannable.' },
     { label: '📱 SMS Draft', text: 'Write a short SMS for leads who inquired but did not book in the last 14 days. Friendly, one question at the end.' },
+    { label: '📊 Analytics', text: 'Run an analytics report for the last 7 days and give me insights on what to focus on.' },
     { label: '🧩 Build Segment', text: 'Create a CRM segment for families with kids ages 6–10 on the East End who have not booked in 6 months. Recommend channels.' },
     { label: '🖼️ Image Prompt', text: 'Generate an image for a Princess Party promo: bright, celebratory, no text overlay. Square format for Instagram.' },
   ]
@@ -400,11 +584,11 @@ export default function App() {
 
       {/* Tabs */}
       <div className="flex border-b border-stone-200 bg-white">
-        {(['chat', 'tasks', 'history', 'content'] as const).map(t => (
+        {(['chat', 'tasks', 'history', 'content', 'reports'] as const).map(t => (
           <button
             key={t}
             onClick={() => handleTabChange(t)}
-            className={`flex-1 py-3 text-sm font-medium capitalize transition ${tab === t ? 'border-b-2 border-hampton-navy text-hampton-navy' : 'text-stone-400 hover:text-stone-600'}`}
+            className={`flex-1 py-3 text-xs font-medium capitalize transition ${tab === t ? 'border-b-2 border-hampton-navy text-hampton-navy' : 'text-stone-400 hover:text-stone-600'}`}
           >
             {tabLabel(t)}
           </button>
@@ -507,6 +691,18 @@ export default function App() {
               <ContentCard key={item.id} item={item} />
             ))
           )}
+        </div>
+      )}
+
+      {/* Reports */}
+      {tab === 'reports' && (
+        <div className="flex-1 overflow-y-auto max-w-2xl w-full mx-auto px-4 py-4">
+          <ReportView
+            report={report}
+            updatedAt={reportUpdatedAt}
+            onRefresh={runReportNow}
+            refreshing={reportRefreshing}
+          />
         </div>
       )}
     </div>
