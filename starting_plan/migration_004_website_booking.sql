@@ -3,8 +3,13 @@
 -- Run in Supabase SQL Editor
 -- ══════════════════════════════════════════════════════════════
 
+-- Drop existing tables if they were partially created
+DROP TABLE IF EXISTS bookings CASCADE;
+DROP TABLE IF EXISTS website_content CASCADE;
+DROP SEQUENCE IF EXISTS booking_seq;
+
 -- ── bookings table ──────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS bookings (
+CREATE TABLE bookings (
   id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_ref               TEXT UNIQUE NOT NULL,
     -- Human-readable ref: HH-2026-0042
@@ -88,7 +93,7 @@ CREATE TRIGGER bookings_updated_at
 -- ── website_content table ───────────────────────────────────────
 -- Agents write content here; Next.js site fetches and renders it.
 
-CREATE TABLE IF NOT EXISTS website_content (
+CREATE TABLE website_content (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   slug             TEXT UNIQUE NOT NULL,
     -- Full path slug, e.g. 'blog/first-birthday-party-hamptons'
