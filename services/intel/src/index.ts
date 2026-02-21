@@ -347,7 +347,7 @@ Generate the analytics report as valid JSON.`
 
     const response = await claude.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1200,
+      max_tokens: 2000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }]
     })
