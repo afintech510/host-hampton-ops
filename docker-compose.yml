@@ -15,6 +15,7 @@ services:
     depends_on:
       - hampton
       - frontend
+      - website
     networks:
       - hampton_net
 
@@ -119,6 +120,23 @@ services:
         VITE_API_URL: https://api.hosthampton.com
     container_name: hampton_frontend
     restart: unless-stopped
+    networks:
+      - hampton_net
+
+  # ─── WEBSITE (Next.js) ────────────────────────────────────────
+  website:
+    build: ./services/website
+    container_name: hampton_website
+    restart: unless-stopped
+    environment:
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
+      - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-}
     networks:
       - hampton_net
 

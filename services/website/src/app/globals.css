@@ -32,4 +32,10 @@
   .card {
     @apply bg-white rounded-2xl shadow-sm border border-hampton-pink/20 overflow-hidden hover:shadow-md transition-shadow duration-200;
   }
+  .form-label {
+    @apply block text-hampton-navy text-sm font-medium mb-1.5;
+  }
+  .form-input {
+    @apply w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm text-hampton-navy bg-hampton-ivory/50 focus:outline-none focus:ring-2 focus:ring-hampton-blue/40 focus:border-hampton-blue transition-all;
+  }
 }
