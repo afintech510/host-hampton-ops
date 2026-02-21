@@ -56,8 +56,9 @@ export async function POST(req: NextRequest) {
         notes: notes || '',
         partyTags: JSON.stringify(partyTags || {}),
       },
-      success_url: `${req.nextUrl.origin}/book/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.nextUrl.origin}/book?cancelled=true`,
+      // Use forwarded host from nginx (req.nextUrl.origin is the internal Docker hostname)
+      success_url: `https://${req.headers.get('x-forwarded-host') || req.headers.get('host')}/book/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://${req.headers.get('x-forwarded-host') || req.headers.get('host')}/book?cancelled=true`,
     })
 
     return NextResponse.json({ url: session.url })
