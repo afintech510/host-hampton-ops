@@ -4,15 +4,15 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        'hampton-navy':  '#1a2744',
-        'hampton-blue':  '#A1B5C8',
-        'hampton-pink':  '#E8C7CB',
-        'hampton-ivory': '#F6F1EB',
-        'hampton-mauve': '#C9A9A6',
+        'hampton-navy':  '#2F343B', // dark grey
+        'hampton-blue':  '#8FA8BF', // dusty blue
+        'hampton-pink':  '#C7A36B', // muted gold accent
+        'hampton-ivory': '#F7F2E8', // cream base
+        'hampton-mauve': '#AEB6C2', // soft silver
       },
       fontFamily: {
-        serif: ['Libre Baskerville', 'Georgia', 'serif'],
-        sans:  ['Poppins', 'system-ui', 'sans-serif'],
+        serif: ['Playfair Display', 'Georgia', 'serif'],
+        sans:  ['Montserrat', 'system-ui', 'sans-serif'],
       },
       animation: {
         'fade-in-up': 'fadeInUp 0.6s ease-out',

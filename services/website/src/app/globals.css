@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Poppins:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -14,28 +14,31 @@
   h1, h2, h3 {
     @apply font-serif;
   }
+  p {
+    @apply leading-relaxed;
+  }
 }
 
 @layer components {
   .btn-primary {
-    @apply bg-hampton-navy text-hampton-ivory px-6 py-3 rounded-full font-semibold text-sm tracking-wide hover:bg-opacity-90 transition-all duration-200 shadow-md hover:shadow-lg;
+    @apply bg-hampton-navy text-hampton-ivory px-6 py-3 rounded-xl font-semibold text-sm tracking-wider uppercase hover:bg-black transition-all duration-200 shadow-sm hover:shadow-md;
   }
   .btn-secondary {
-    @apply border-2 border-hampton-navy text-hampton-navy px-6 py-3 rounded-full font-semibold text-sm tracking-wide hover:bg-hampton-navy hover:text-hampton-ivory transition-all duration-200;
+    @apply border-2 border-hampton-navy text-hampton-navy px-6 py-3 rounded-xl font-semibold text-sm tracking-wider uppercase hover:bg-hampton-navy hover:text-hampton-ivory transition-all duration-200;
   }
   .section-heading {
-    @apply font-serif text-3xl md:text-4xl text-hampton-navy mb-4;
+    @apply font-serif text-3xl md:text-4xl text-hampton-navy mb-4 tracking-tight;
   }
   .section-subheading {
-    @apply text-hampton-mauve text-lg font-medium mb-2 tracking-wide uppercase text-sm;
+    @apply text-hampton-mauve text-lg font-semibold mb-2 tracking-widest uppercase text-sm;
   }
   .card {
-    @apply bg-white rounded-2xl shadow-sm border border-hampton-pink/20 overflow-hidden hover:shadow-md transition-shadow duration-200;
+    @apply bg-white rounded-2xl shadow-sm border-2 border-hampton-mauve/25 overflow-hidden hover:shadow-md transition-shadow duration-200;
   }
   .form-label {
-    @apply block text-hampton-navy text-sm font-medium mb-1.5;
+    @apply block text-hampton-navy text-xs font-semibold mb-1.5 uppercase tracking-wider;
   }
   .form-input {
-    @apply w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm text-hampton-navy bg-hampton-ivory/50 focus:outline-none focus:ring-2 focus:ring-hampton-blue/40 focus:border-hampton-blue transition-all;
+    @apply w-full border-2 border-hampton-mauve/35 rounded-xl px-4 py-2.5 text-sm text-hampton-navy bg-white focus:outline-none focus:ring-2 focus:ring-hampton-blue/35 focus:border-hampton-blue transition-all;
   }
 }
