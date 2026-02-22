@@ -11,6 +11,15 @@ export const metadata: Metadata = {
   description:
     'Host Hampton is a boutique celebration studio in Speonk, NY offering themed birthday parties, permanent jewelry, room rentals, and workshops. Reserve your date with a $250 deposit.',
   keywords: ['birthday party venue', 'kids party Hamptons', 'permanent jewelry Long Island', 'party room rental Speonk'],
+  icons: {
+    icon: [
+      { url: '/images/H_icon_hh_64.png', sizes: '64x64', type: 'image/png' },
+      { url: '/images/H_icon_hh_96.png', sizes: '96x96', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/images/H_icon_hh_240.png', sizes: '240x240', type: 'image/png' },
+    ],
+  },
   openGraph: {
     siteName: 'Host Hampton',
     locale: 'en_US',
