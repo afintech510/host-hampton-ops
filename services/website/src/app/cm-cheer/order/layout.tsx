@@ -1,0 +1,17 @@
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'CM Cheer Fundraiser — Team Gear Order Form',
+  description:
+    'Official Center Moriches Cheerleading fundraiser order form. Trucker hats, canvas totes, pouches, and team patches.',
+}
+
+export default function OrderLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      {/* Hide the Host Hampton nav on this standalone order page */}
+      <style dangerouslySetInnerHTML={{ __html: 'body > header.sticky { display: none !important; }' }} />
+      {children}
+    </>
+  )
+}

@@ -30,4 +30,5 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/settings.local.json
+.mcp.json
 *.swp
