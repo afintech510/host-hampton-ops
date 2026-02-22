@@ -139,6 +139,7 @@ services:
       - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-}
       - RESEND_API_KEY=${RESEND_API_KEY}
       - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     networks:
       - hampton_net
 
