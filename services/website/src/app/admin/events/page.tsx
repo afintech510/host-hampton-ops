@@ -3,13 +3,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Users, Mail, Archive, Edit3, Printer, Download, RefreshCw, ChevronDown, ChevronUp, Loader2, LogIn, X, Send, ArrowLeft } from 'lucide-react'
 
+/* ─── Interfaces ─────────────────────────────────────── */
+
 interface Event {
   id: string; slug: string; title: string; category: string; price_cents: number
-  event_date: string | null; event_time: string | null; max_tickets: number
-  available_tickets: number; is_active: boolean; is_featured: boolean
-  has_variants: boolean; variants: any[]; has_sessions: boolean
+  event_date: string | null; event_time: string | null; event_end_time: string | null
+  max_tickets: number; available_tickets: number; is_active: boolean; is_featured: boolean
+  has_variants: boolean; variants: Variant[]; has_sessions: boolean
   description: string | null; short_description: string | null
   image_url: string | null; location: string; confirmed_tickets: number
+  sibling_price_cents: number | null
+  allow_multi_session: boolean; bundle_pricing: BundleTier[]
 }
 
 interface Ticket {
@@ -19,15 +23,48 @@ interface Ticket {
   stripe_payment_intent_id: string | null
 }
 
+interface Variant { label: string; priceCents: number }
+
+interface EventSession {
+  id?: string
+  session_date: string
+  session_time: string
+  session_end_time?: string
+  label?: string
+  price_cents?: number | null
+  max_tickets: number
+  available_tickets?: number
+  is_active: boolean
+}
+
+interface BundleTier {
+  minSessions: number
+  pricePerSessionCents: number
+}
+
+interface EventFormData {
+  title: string; description: string; shortDescription: string; category: string
+  priceDollars: string; eventDate: string; eventTime: string; eventEndTime: string
+  maxTickets: string; imageUrl: string; isFeatured: boolean; location: string
+  hasVariants: boolean; variants: Variant[]
+  hasSessions: boolean; sessions: EventSession[]
+  allowMultiSession: boolean; bundlePricing: BundleTier[]
+}
+
+/* ─── Helpers ────────────────────────────────────────── */
+
 function formatPrice(cents: number) { return cents === 0 ? 'Free' : `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}` }
 function formatDate(d: string) { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }
+
+const DEFAULT_LOCATION = 'Host Hampton, 295 Montauk Hwy Suite 7, Speonk NY'
+
+/* ─── Page (Login Gate) ──────────────────────────────── */
 
 export default function AdminEventsPage() {
   const [password, setPassword] = useState('')
   const [token, setToken] = useState<string | null>(null)
   const [loginError, setLoginError] = useState('')
 
-  // Load saved token
   useEffect(() => {
     const saved = localStorage.getItem('hh_admin_token')
     if (saved) setToken(saved)
@@ -49,12 +86,8 @@ export default function AdminEventsPage() {
             <h1 className="font-serif text-xl text-hampton-navy">Admin Access</h1>
           </div>
           <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            placeholder="Enter admin password"
-            className="form-input mb-4"
-            autoFocus
+            type="password" value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="Enter admin password" className="form-input mb-4" autoFocus
           />
           {loginError && <p className="text-red-600 text-sm mb-3">{loginError}</p>}
           <button type="submit" className="btn-primary w-full py-3">Sign In</button>
@@ -66,6 +99,8 @@ export default function AdminEventsPage() {
   return <AdminDashboard token={token} onLogout={() => { localStorage.removeItem('hh_admin_token'); setToken(null) }} />
 }
 
+/* ─── Dashboard ──────────────────────────────────────── */
+
 function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
@@ -73,6 +108,8 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
   const [showCreate, setShowCreate] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null)
+  const [editingEvent, setEditingEvent] = useState<(Event & { sessions?: EventSession[] }) | null>(null)
+  const [loadingEdit, setLoadingEdit] = useState<string | null>(null)
 
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 
@@ -95,6 +132,17 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
     fetchEvents()
   }
 
+  async function startEdit(eventId: string) {
+    setLoadingEdit(eventId)
+    const res = await fetch(`/api/admin/events/${eventId}`, { headers })
+    if (res.ok) {
+      const data = await res.json()
+      setEditingEvent({ ...data.event, sessions: data.sessions || [] })
+      setShowCreate(false)
+    }
+    setLoadingEdit(null)
+  }
+
   return (
     <div className="min-h-screen bg-hampton-ivory">
       {/* Header */}
@@ -115,7 +163,7 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
         {/* Actions bar */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-3">
-            <button onClick={() => setShowCreate(!showCreate)}
+            <button onClick={() => { setShowCreate(!showCreate); setEditingEvent(null) }}
               className="btn-primary px-4 py-2 flex items-center gap-2 text-sm">
               <Plus className="w-4 h-4" /> New Event
             </button>
@@ -128,7 +176,20 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
         </div>
 
         {/* Create form */}
-        {showCreate && <CreateEventForm headers={headers} onCreated={() => { setShowCreate(false); fetchEvents() }} onCancel={() => setShowCreate(false)} />}
+        {showCreate && !editingEvent && (
+          <EventForm headers={headers} onSaved={() => { setShowCreate(false); fetchEvents() }} onCancel={() => setShowCreate(false)} />
+        )}
+
+        {/* Edit form */}
+        {editingEvent && (
+          <EventForm
+            headers={headers}
+            onSaved={() => { setEditingEvent(null); fetchEvents() }}
+            onCancel={() => setEditingEvent(null)}
+            existingEvent={editingEvent}
+            existingSessions={editingEvent.sessions}
+          />
+        )}
 
         {error && <p className="text-red-600 bg-red-50 p-3 rounded-lg mb-4 text-sm">{error}</p>}
 
@@ -143,10 +204,12 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
                 {/* Event row */}
                 <div className="flex items-center gap-4 p-4 cursor-pointer" onClick={() => setExpandedEvent(expandedEvent === event.id ? null : event.id)}>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <h3 className="font-semibold text-hampton-navy text-sm truncate">{event.title}</h3>
                       <span className="text-xs bg-hampton-navy/10 text-hampton-navy px-2 py-0.5 rounded-full capitalize">{event.category}</span>
                       {event.is_featured && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Featured</span>}
+                      {event.has_variants && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">Options</span>}
+                      {event.has_sessions && <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{event.allow_multi_session ? 'Series' : 'Multi-date'}</span>}
                       {!event.is_active && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Archived</span>}
                     </div>
                     <div className="flex items-center gap-4 text-xs text-hampton-mauve">
@@ -155,8 +218,13 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
                       <span>{event.max_tickets - event.available_tickets}/{event.max_tickets} sold</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={e => { e.stopPropagation(); archiveEvent(event.id) }} className="p-2 text-hampton-mauve hover:text-red-600 transition-colors" title="Archive">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={e => { e.stopPropagation(); startEdit(event.id) }}
+                      className="p-2 text-hampton-mauve hover:text-hampton-navy transition-colors" title="Edit">
+                      {loadingEdit === event.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Edit3 className="w-4 h-4" />}
+                    </button>
+                    <button onClick={e => { e.stopPropagation(); archiveEvent(event.id) }}
+                      className="p-2 text-hampton-mauve hover:text-red-600 transition-colors" title="Archive">
                       <Archive className="w-4 h-4" />
                     </button>
                     {expandedEvent === event.id ? <ChevronUp className="w-4 h-4 text-hampton-mauve" /> : <ChevronDown className="w-4 h-4 text-hampton-mauve" />}
@@ -176,11 +244,50 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
   )
 }
 
-function CreateEventForm({ headers, onCreated, onCancel }: { headers: Record<string, string>; onCreated: () => void; onCancel: () => void }) {
-  const [form, setForm] = useState({
-    title: '', description: '', shortDescription: '', category: 'workshop',
-    priceDollars: '', eventDate: '', eventTime: '', maxTickets: '30',
-    imageUrl: '', isFeatured: false,
+/* ─── Event Form (Create / Edit) ─────────────────────── */
+
+function EventForm({
+  headers, onSaved, onCancel, existingEvent, existingSessions,
+}: {
+  headers: Record<string, string>
+  onSaved: () => void
+  onCancel: () => void
+  existingEvent?: Event & { sessions?: EventSession[] }
+  existingSessions?: EventSession[]
+}) {
+  const isEdit = !!existingEvent
+
+  const [form, setForm] = useState<EventFormData>(() => {
+    if (existingEvent) {
+      return {
+        title: existingEvent.title,
+        description: existingEvent.description || '',
+        shortDescription: existingEvent.short_description || '',
+        category: existingEvent.category,
+        priceDollars: existingEvent.price_cents > 0 ? (existingEvent.price_cents / 100).toString() : '',
+        eventDate: existingEvent.event_date || '',
+        eventTime: existingEvent.event_time || '',
+        eventEndTime: existingEvent.event_end_time || '',
+        maxTickets: existingEvent.max_tickets.toString(),
+        imageUrl: existingEvent.image_url || '',
+        isFeatured: existingEvent.is_featured,
+        location: existingEvent.location || DEFAULT_LOCATION,
+        hasVariants: existingEvent.has_variants,
+        variants: existingEvent.variants || [],
+        hasSessions: existingEvent.has_sessions,
+        sessions: existingSessions || [],
+        allowMultiSession: existingEvent.allow_multi_session || false,
+        bundlePricing: existingEvent.bundle_pricing || [],
+      }
+    }
+    return {
+      title: '', description: '', shortDescription: '', category: 'workshop',
+      priceDollars: '', eventDate: '', eventTime: '', eventEndTime: '',
+      maxTickets: '30', imageUrl: '', isFeatured: false, location: DEFAULT_LOCATION,
+      hasVariants: false, variants: [],
+      hasSessions: false, sessions: [],
+      allowMultiSession: false, bundlePricing: [],
+    }
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -192,39 +299,56 @@ function CreateEventForm({ headers, onCreated, onCancel }: { headers: Record<str
     if (!form.title) { setError('Title is required'); return }
     setSaving(true); setError('')
 
-    const res = await fetch('/api/admin/events', {
-      method: 'POST', headers,
-      body: JSON.stringify({
-        title: form.title,
-        description: form.description,
-        shortDescription: form.shortDescription,
-        category: form.category,
-        priceCents: Math.round(parseFloat(form.priceDollars || '0') * 100),
-        eventDate: form.eventDate || null,
-        eventTime: form.eventTime || null,
-        maxTickets: parseInt(form.maxTickets) || 30,
-        imageUrl: form.imageUrl || null,
-        isFeatured: form.isFeatured,
-      }),
-    })
+    const payload: Record<string, any> = {
+      title: form.title,
+      description: form.description || null,
+      shortDescription: form.shortDescription || null,
+      category: form.category,
+      priceCents: Math.round(parseFloat(form.priceDollars || '0') * 100),
+      eventDate: form.eventDate || null,
+      eventTime: form.eventTime || null,
+      eventEndTime: form.eventEndTime || null,
+      maxTickets: parseInt(form.maxTickets) || 30,
+      imageUrl: form.imageUrl || null,
+      isFeatured: form.isFeatured,
+      location: form.location || DEFAULT_LOCATION,
+      hasVariants: form.hasVariants,
+      variants: form.hasVariants ? form.variants : [],
+      hasSessions: form.hasSessions,
+      sessions: form.hasSessions ? form.sessions.map(s => ({
+        ...s,
+        session_date: s.session_date,
+        session_time: s.session_time,
+        session_end_time: s.session_end_time || null,
+        label: s.label || null,
+        max_tickets: s.max_tickets || 30,
+      })) : [],
+      allowMultiSession: form.allowMultiSession,
+      bundlePricing: form.allowMultiSession ? form.bundlePricing : [],
+    }
 
+    const url = isEdit ? `/api/admin/events/${existingEvent!.id}` : '/api/admin/events'
+    const method = isEdit ? 'PUT' : 'POST'
+
+    const res = await fetch(url, { method, headers, body: JSON.stringify(payload) })
     if (!res.ok) {
       const data = await res.json()
-      setError(data.error || 'Failed to create event')
+      setError(data.error || `Failed to ${isEdit ? 'update' : 'create'} event`)
       setSaving(false)
       return
     }
 
-    onCreated()
+    onSaved()
   }
 
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-hampton-pink/20 p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="font-serif text-lg text-hampton-navy">New Event</h2>
+        <h2 className="font-serif text-lg text-hampton-navy">{isEdit ? 'Edit Event' : 'New Event'}</h2>
         <button type="button" onClick={onCancel} className="text-hampton-mauve hover:text-hampton-navy"><X className="w-5 h-5" /></button>
       </div>
 
+      {/* Basic fields */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <div>
           <label className="form-label">Title *</label>
@@ -235,6 +359,7 @@ function CreateEventForm({ headers, onCreated, onCancel }: { headers: Record<str
           <select value={form.category} onChange={e => set('category', e.target.value)} className="form-input">
             <option value="workshop">Workshop</option>
             <option value="class">Class</option>
+            <option value="camp">Camp / Series</option>
             <option value="reading">Reading</option>
             <option value="market">Market</option>
             <option value="drop-off">Drop-off</option>
@@ -242,20 +367,32 @@ function CreateEventForm({ headers, onCreated, onCancel }: { headers: Record<str
           </select>
         </div>
         <div>
-          <label className="form-label">Price ($)</label>
+          <label className="form-label">Base Price ($)</label>
           <input type="number" step="0.01" min="0" value={form.priceDollars} onChange={e => set('priceDollars', e.target.value)} className="form-input" placeholder="0 = Free" />
         </div>
         <div>
-          <label className="form-label">Max Tickets</label>
+          <label className="form-label">Max Tickets {form.hasSessions && <span className="text-xs text-hampton-mauve font-normal">(per event total)</span>}</label>
           <input type="number" min="1" value={form.maxTickets} onChange={e => set('maxTickets', e.target.value)} className="form-input" />
         </div>
         <div>
-          <label className="form-label">Event Date</label>
-          <input type="date" value={form.eventDate} onChange={e => set('eventDate', e.target.value)} className="form-input" />
+          <label className="form-label">
+            Event Date
+            {form.hasSessions && <span className="text-xs text-hampton-mauve font-normal ml-1">(dates set per session)</span>}
+          </label>
+          <input type="date" value={form.eventDate} onChange={e => set('eventDate', e.target.value)}
+            className={`form-input ${form.hasSessions ? 'opacity-50' : ''}`} disabled={form.hasSessions} />
         </div>
         <div>
           <label className="form-label">Event Time</label>
           <input type="text" value={form.eventTime} onChange={e => set('eventTime', e.target.value)} className="form-input" placeholder="e.g. 6:00 PM" />
+        </div>
+        <div>
+          <label className="form-label">End Time</label>
+          <input type="text" value={form.eventEndTime} onChange={e => set('eventEndTime', e.target.value)} className="form-input" placeholder="e.g. 8:00 PM" />
+        </div>
+        <div>
+          <label className="form-label">Location</label>
+          <input value={form.location} onChange={e => set('location', e.target.value)} className="form-input" />
         </div>
       </div>
 
@@ -271,9 +408,43 @@ function CreateEventForm({ headers, onCreated, onCancel }: { headers: Record<str
         <label className="form-label">Image URL</label>
         <input value={form.imageUrl} onChange={e => set('imageUrl', e.target.value)} className="form-input" placeholder="https://..." />
       </div>
+
       <div className="flex items-center gap-2 mb-5">
         <input type="checkbox" checked={form.isFeatured} onChange={e => set('isFeatured', e.target.checked)} className="accent-hampton-navy" id="featured" />
         <label htmlFor="featured" className="text-sm text-hampton-mauve cursor-pointer">Featured event</label>
+      </div>
+
+      {/* ── Variants toggle ── */}
+      <div className="border-t border-hampton-pink/10 pt-4 mb-4">
+        <div className="flex items-center gap-2 mb-3">
+          <input type="checkbox" checked={form.hasVariants} onChange={e => set('hasVariants', e.target.checked)} className="accent-hampton-navy" id="hasVariants" />
+          <label htmlFor="hasVariants" className="text-sm font-medium text-hampton-navy cursor-pointer">This event has pricing options (variants)</label>
+        </div>
+        {form.hasVariants && (
+          <VariantsEditor variants={form.variants} onChange={v => set('variants', v)} />
+        )}
+      </div>
+
+      {/* ── Sessions toggle ── */}
+      <div className="border-t border-hampton-pink/10 pt-4 mb-4">
+        <div className="flex items-center gap-2 mb-3">
+          <input type="checkbox" checked={form.hasSessions} onChange={e => set('hasSessions', e.target.checked)} className="accent-hampton-navy" id="hasSessions" />
+          <label htmlFor="hasSessions" className="text-sm font-medium text-hampton-navy cursor-pointer">This event has multiple dates/sessions</label>
+        </div>
+        {form.hasSessions && (
+          <>
+            <SessionsEditor sessions={form.sessions} onChange={s => set('sessions', s)} allowMultiSession={form.allowMultiSession} />
+
+            {/* Multi-session (series) toggle */}
+            <div className="flex items-center gap-2 mb-3 mt-3">
+              <input type="checkbox" checked={form.allowMultiSession} onChange={e => set('allowMultiSession', e.target.checked)} className="accent-hampton-navy" id="allowMulti" />
+              <label htmlFor="allowMulti" className="text-sm text-hampton-mauve cursor-pointer">Allow customers to pick multiple sessions (series pricing)</label>
+            </div>
+            {form.allowMultiSession && (
+              <BundlePricingEditor tiers={form.bundlePricing} onChange={t => set('bundlePricing', t)} />
+            )}
+          </>
+        )}
       </div>
 
       {error && <p className="text-red-600 text-sm mb-3 bg-red-50 p-2 rounded">{error}</p>}
@@ -281,13 +452,150 @@ function CreateEventForm({ headers, onCreated, onCancel }: { headers: Record<str
       <div className="flex gap-3">
         <button type="submit" disabled={saving} className="btn-primary px-6 py-2 flex items-center gap-2 text-sm">
           {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-          {saving ? 'Creating...' : 'Create Event'}
+          {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Event'}
         </button>
         <button type="button" onClick={onCancel} className="btn-secondary px-6 py-2 text-sm">Cancel</button>
       </div>
     </form>
   )
 }
+
+/* ─── Variants Editor ────────────────────────────────── */
+
+function VariantsEditor({ variants, onChange }: { variants: Variant[]; onChange: (v: Variant[]) => void }) {
+  function addVariant() { onChange([...variants, { label: '', priceCents: 0 }]) }
+  function removeVariant(i: number) { onChange(variants.filter((_, idx) => idx !== i)) }
+  function updateVariant(i: number, field: 'label' | 'priceCents', value: string) {
+    const updated = [...variants]
+    if (field === 'priceCents') {
+      updated[i] = { ...updated[i], priceCents: Math.round(parseFloat(value || '0') * 100) }
+    } else {
+      updated[i] = { ...updated[i], label: value }
+    }
+    onChange(updated)
+  }
+
+  return (
+    <div className="bg-hampton-ivory/50 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-medium text-hampton-navy">Options / Variants</span>
+        <button type="button" onClick={addVariant} className="text-xs text-hampton-navy hover:underline flex items-center gap-1">
+          <Plus className="w-3 h-3" /> Add Option
+        </button>
+      </div>
+      {variants.map((v, i) => (
+        <div key={i} className="flex items-center gap-2 mb-2">
+          <input value={v.label} onChange={e => updateVariant(i, 'label', e.target.value)}
+            className="form-input flex-1 text-sm" placeholder="e.g. Baseball Hat" />
+          <div className="relative w-24">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-hampton-mauve text-sm">$</span>
+            <input type="number" step="0.01" min="0"
+              value={v.priceCents > 0 ? (v.priceCents / 100).toString() : ''}
+              onChange={e => updateVariant(i, 'priceCents', e.target.value)}
+              className="form-input pl-6 text-sm" placeholder="0" />
+          </div>
+          <button type="button" onClick={() => removeVariant(i)} className="text-red-400 hover:text-red-600 p-1"><X className="w-4 h-4" /></button>
+        </div>
+      ))}
+      {variants.length === 0 && <p className="text-xs text-hampton-mauve">No options yet. Add one above.</p>}
+    </div>
+  )
+}
+
+/* ─── Sessions Editor ────────────────────────────────── */
+
+function SessionsEditor({
+  sessions, onChange, allowMultiSession,
+}: {
+  sessions: EventSession[]; onChange: (s: EventSession[]) => void; allowMultiSession: boolean
+}) {
+  function addSession() {
+    onChange([...sessions, { session_date: '', session_time: '', label: '', max_tickets: 30, is_active: true }])
+  }
+  function removeSession(i: number) { onChange(sessions.filter((_, idx) => idx !== i)) }
+  function updateSession(i: number, field: string, value: any) {
+    const updated = [...sessions]
+    updated[i] = { ...updated[i], [field]: value }
+    onChange(updated)
+  }
+
+  return (
+    <div className="bg-hampton-ivory/50 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-medium text-hampton-navy">Sessions / Dates</span>
+        <button type="button" onClick={addSession} className="text-xs text-hampton-navy hover:underline flex items-center gap-1">
+          <Plus className="w-3 h-3" /> Add Session
+        </button>
+      </div>
+      {sessions.map((s, i) => (
+        <div key={i} className="flex flex-wrap items-center gap-2 mb-2">
+          <input type="date" value={s.session_date} onChange={e => updateSession(i, 'session_date', e.target.value)}
+            className="form-input text-sm w-36" required />
+          <input type="text" value={s.session_time} onChange={e => updateSession(i, 'session_time', e.target.value)}
+            className="form-input text-sm w-24" placeholder="Time" />
+          {allowMultiSession && (
+            <input type="text" value={s.label || ''} onChange={e => updateSession(i, 'label', e.target.value)}
+              className="form-input text-sm w-32" placeholder="Subject/Theme" />
+          )}
+          <input type="number" min="1" value={s.max_tickets}
+            onChange={e => updateSession(i, 'max_tickets', parseInt(e.target.value) || 30)}
+            className="form-input text-sm w-16" title="Max tickets" placeholder="Cap" />
+          <button type="button" onClick={() => removeSession(i)} className="text-red-400 hover:text-red-600 p-1"><X className="w-4 h-4" /></button>
+        </div>
+      ))}
+      {sessions.length === 0 && <p className="text-xs text-hampton-mauve">No sessions yet. Add one above.</p>}
+    </div>
+  )
+}
+
+/* ─── Bundle Pricing Editor ──────────────────────────── */
+
+function BundlePricingEditor({ tiers, onChange }: { tiers: BundleTier[]; onChange: (t: BundleTier[]) => void }) {
+  function addTier() { onChange([...tiers, { minSessions: 1, pricePerSessionCents: 0 }]) }
+  function removeTier(i: number) { onChange(tiers.filter((_, idx) => idx !== i)) }
+  function updateTier(i: number, field: keyof BundleTier, value: string) {
+    const updated = [...tiers]
+    if (field === 'pricePerSessionCents') {
+      updated[i] = { ...updated[i], pricePerSessionCents: Math.round(parseFloat(value || '0') * 100) }
+    } else {
+      updated[i] = { ...updated[i], minSessions: parseInt(value) || 1 }
+    }
+    onChange(updated)
+  }
+
+  return (
+    <div className="bg-hampton-ivory/50 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium text-hampton-navy">Bundle Pricing Tiers</span>
+        <button type="button" onClick={addTier} className="text-xs text-hampton-navy hover:underline flex items-center gap-1">
+          <Plus className="w-3 h-3" /> Add Tier
+        </button>
+      </div>
+      <p className="text-xs text-hampton-mauve mb-3">Customer gets the best rate for the number of sessions they pick.</p>
+      {tiers.map((t, i) => (
+        <div key={i} className="flex items-center gap-2 mb-2">
+          <span className="text-xs text-hampton-mauve whitespace-nowrap">Min</span>
+          <input type="number" min="1" value={t.minSessions}
+            onChange={e => updateTier(i, 'minSessions', e.target.value)}
+            className="form-input w-14 text-sm" />
+          <span className="text-xs text-hampton-mauve whitespace-nowrap">sessions @</span>
+          <div className="relative w-24">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-hampton-mauve text-sm">$</span>
+            <input type="number" step="0.01" min="0"
+              value={t.pricePerSessionCents > 0 ? (t.pricePerSessionCents / 100).toString() : ''}
+              onChange={e => updateTier(i, 'pricePerSessionCents', e.target.value)}
+              className="form-input pl-6 text-sm" placeholder="0" />
+          </div>
+          <span className="text-xs text-hampton-mauve">/ea</span>
+          <button type="button" onClick={() => removeTier(i)} className="text-red-400 hover:text-red-600 p-1"><X className="w-4 h-4" /></button>
+        </div>
+      ))}
+      {tiers.length === 0 && <p className="text-xs text-hampton-mauve">No tiers yet. Add one above.</p>}
+    </div>
+  )
+}
+
+/* ─── Event Detail Panel (Attendees + Email) ─────────── */
 
 function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers: Record<string, string>; onRefresh: () => void }) {
   const [tab, setTab] = useState<'attendees' | 'email'>('attendees')
@@ -300,9 +608,7 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
   const [sendingEmail, setSendingEmail] = useState(false)
   const [emailResult, setEmailResult] = useState('')
 
-  useEffect(() => {
-    fetchTickets()
-  }, [event.id])
+  useEffect(() => { fetchTickets() }, [event.id])
 
   async function fetchTickets() {
     setLoadingTickets(true)
@@ -319,10 +625,7 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
       method: 'POST', headers,
       body: JSON.stringify({ reason: refundReason }),
     })
-    if (res.ok) {
-      fetchTickets()
-      onRefresh()
-    }
+    if (res.ok) { fetchTickets(); onRefresh() }
     setRefunding(null)
     setRefundReason('')
   }
@@ -385,7 +688,6 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
 
       {tab === 'attendees' && (
         <>
-          {/* Action buttons */}
           <div className="flex gap-2 mb-4">
             <button onClick={printAttendees} className="text-xs text-hampton-mauve hover:text-hampton-navy flex items-center gap-1 transition-colors">
               <Printer className="w-3.5 h-3.5" /> Print List
@@ -424,11 +726,8 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
                       <td className="py-2 pr-3">{formatPrice(t.total_cents)}</td>
                       <td className="py-2">
                         {t.stripe_payment_intent_id ? (
-                          <button
-                            onClick={() => processRefund(t.id)}
-                            disabled={refunding === t.id}
-                            className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
-                          >
+                          <button onClick={() => processRefund(t.id)} disabled={refunding === t.id}
+                            className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50">
                             {refunding === t.id ? 'Refunding...' : 'Refund'}
                           </button>
                         ) : (

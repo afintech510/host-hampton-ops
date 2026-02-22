@@ -110,6 +110,103 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
+    // ── Multi-session event ticket purchase ──────────────────
+    if (m.type === 'event_ticket_multi') {
+      const sessionIds = JSON.parse(m.sessionIds || '[]') as string[]
+      const qty = parseInt(m.quantity || '1', 10)
+      const unitPriceCents = parseInt(m.unitPriceCents || '0', 10)
+      const groupRef = `GRP-${Date.now()}`
+
+      const { data: evt } = await supabase
+        .from('events')
+        .select('title, event_time, location')
+        .eq('id', m.eventId)
+        .single()
+
+      const { data: sessionsData } = await supabase
+        .from('event_sessions')
+        .select('id, session_date, session_time, label')
+        .in('id', sessionIds)
+        .order('session_date', { ascending: true })
+
+      const ticketRefs: string[] = []
+      for (const sess of (sessionsData || [])) {
+        const ticketRef = `HH-EVT-${Date.now().toString().slice(-4)}-${sess.id.slice(0, 4)}`
+        ticketRefs.push(ticketRef)
+
+        const { error: ticketErr } = await supabase.from('event_tickets').insert({
+          ticket_ref: ticketRef,
+          event_id: m.eventId,
+          session_id: sess.id,
+          group_ref: groupRef,
+          customer_name: m.customerName,
+          customer_email: m.customerEmail,
+          customer_phone: m.customerPhone || null,
+          quantity: qty,
+          variant_label: m.variantLabel || null,
+          unit_price_cents: unitPriceCents,
+          total_cents: unitPriceCents * qty,
+          stripe_payment_intent_id: session.payment_intent as string,
+          stripe_session_id: session.id,
+          status: 'confirmed',
+        })
+
+        if (ticketErr) {
+          console.error('Multi-session ticket insert error:', ticketErr)
+        } else {
+          await supabase.rpc('decrement_session_tickets', { sid: sess.id, qty })
+        }
+      }
+
+      console.log('Multi-session tickets created:', groupRef, ticketRefs.length, 'sessions for', m.customerEmail)
+
+      // Send emails
+      if (process.env.RESEND_API_KEY && evt) {
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        const totalCents = session.amount_total || 0
+        const totalFormatted = `$${(totalCents / 100).toFixed(2)}`
+
+        const sessionDates = (sessionsData || []).map(s => {
+          const d = new Date(s.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+          return `${d} at ${s.session_time}${s.label ? ` — ${s.label}` : ''}`
+        }).join(', ')
+
+        await Promise.allSettled([
+          resend.emails.send({
+            from, to: m.customerEmail,
+            subject: `You're in! ${evt.title} at Host Hampton`,
+            html: ticketConfirmationHtml({
+              customerName: m.customerName, eventTitle: evt.title,
+              eventDate: `${sessionIds.length} sessions`,
+              eventTime: sessionDates,
+              location: evt.location, quantity: qty,
+              variantLabel: m.variantLabel || undefined,
+              totalFormatted, ticketRef: groupRef, isFree: false,
+            }),
+          }),
+          resend.emails.send({
+            from, to: 'hosthampton295@gmail.com',
+            subject: `New ticket: ${m.customerName} — ${evt.title} (${sessionIds.length} sessions, ${groupRef})`,
+            html: ticketPurchaseNotifyHtml({
+              ticketRef: groupRef, customerName: m.customerName,
+              customerEmail: m.customerEmail,
+              customerPhone: m.customerPhone || undefined,
+              eventTitle: evt.title,
+              eventDate: `${sessionIds.length} sessions`,
+              eventTime: sessionDates, quantity: qty,
+              variantLabel: m.variantLabel || undefined,
+              totalFormatted, isFree: false,
+              stripePI: session.payment_intent as string,
+            }),
+          }),
+        ])
+        console.log('Multi-session confirmation sent to', m.customerEmail)
+      }
+
+      return NextResponse.json({ received: true })
+    }
+
     // ── Party booking deposit (existing flow) ──────────────────
     const partyDate = m.partyDate
     const optionsLockedBy = partyDate

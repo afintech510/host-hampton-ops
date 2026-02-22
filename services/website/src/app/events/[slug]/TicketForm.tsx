@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { Minus, Plus, Loader2 } from 'lucide-react'
 
 interface Variant { label: string; priceCents: number }
-interface Session { id: string; session_date: string; session_time: string; available_tickets: number; price_cents?: number }
+interface BundleTier { minSessions: number; pricePerSessionCents: number }
+interface Session { id: string; session_date: string; session_time: string; label?: string; available_tickets: number; price_cents?: number }
 interface EventProps {
   id: string
   slug: string
@@ -15,6 +16,8 @@ interface EventProps {
   has_sessions: boolean
   available_tickets: number
   max_tickets: number
+  allow_multi_session?: boolean
+  bundle_pricing?: BundleTier[]
 }
 
 function formatPrice(cents: number): string {
@@ -30,11 +33,19 @@ function formatSessionDate(dateStr: string): string {
   })
 }
 
+function getBundlePrice(sessionCount: number, tiers: BundleTier[]): number | null {
+  if (!tiers || tiers.length === 0) return null
+  const sorted = [...tiers].sort((a, b) => b.minSessions - a.minSessions)
+  const tier = sorted.find(t => sessionCount >= t.minSessions)
+  return tier ? tier.pricePerSessionCents : null
+}
+
 export default function TicketForm({ event, sessions }: { event: EventProps; sessions: Session[] }) {
   const [selectedVariant, setSelectedVariant] = useState<Variant | null>(
     event.has_variants && event.variants.length > 0 ? event.variants[0] : null
   )
   const [selectedSession, setSelectedSession] = useState<Session | null>(null)
+  const [selectedSessions, setSelectedSessions] = useState<Session[]>([])
   const [quantity, setQuantity] = useState(1)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -42,21 +53,48 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const unitPrice = selectedVariant
-    ? selectedVariant.priceCents
-    : selectedSession?.price_cents ?? event.price_cents
-  const total = unitPrice * quantity
+  const isMultiSession = event.allow_multi_session && event.has_sessions
+
+  // Price calculation
+  let unitPrice: number
+  let total: number
+
+  if (isMultiSession && selectedSessions.length > 0) {
+    unitPrice = getBundlePrice(selectedSessions.length, event.bundle_pricing || []) ?? event.price_cents
+    total = unitPrice * selectedSessions.length * quantity
+  } else if (selectedVariant) {
+    unitPrice = selectedVariant.priceCents
+    total = unitPrice * quantity
+  } else if (selectedSession?.price_cents != null) {
+    unitPrice = selectedSession.price_cents
+    total = unitPrice * quantity
+  } else {
+    unitPrice = event.price_cents
+    total = unitPrice * quantity
+  }
+
   const isFree = unitPrice === 0
 
-  const maxAvail = selectedSession
-    ? selectedSession.available_tickets
-    : event.available_tickets
+  const maxAvail = isMultiSession
+    ? Math.min(...(selectedSessions.length > 0 ? selectedSessions.map(s => s.available_tickets) : [event.available_tickets]))
+    : selectedSession
+      ? selectedSession.available_tickets
+      : event.available_tickets
   const soldOut = maxAvail <= 0
+
+  function toggleSession(session: Session) {
+    setSelectedSessions(prev =>
+      prev.some(s => s.id === session.id)
+        ? prev.filter(s => s.id !== session.id)
+        : [...prev, session]
+    )
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name || !email) { setError('Name and email are required.'); return }
-    if (event.has_sessions && !selectedSession) { setError('Please select a date.'); return }
+    if (event.has_sessions && !isMultiSession && !selectedSession) { setError('Please select a date.'); return }
+    if (isMultiSession && selectedSessions.length === 0) { setError('Please select at least one session.'); return }
 
     setLoading(true)
     setError('')
@@ -68,6 +106,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
         body: JSON.stringify({
           eventId: event.id,
           sessionId: selectedSession?.id || null,
+          sessionIds: isMultiSession ? selectedSessions.map(s => s.id) : null,
           quantity,
           variantLabel: selectedVariant?.label || null,
           customerName: name,
@@ -79,13 +118,16 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Checkout failed')
 
-      // Redirect to Stripe or success page
       window.location.href = data.url
     } catch (err: any) {
       setError(err.message || 'Something went wrong. Please try again.')
       setLoading(false)
     }
   }
+
+  // Bundle pricing info for display
+  const bundleTiers = event.bundle_pricing || []
+  const showBundleInfo = isMultiSession && bundleTiers.length > 0
 
   return (
     <form onSubmit={handleSubmit}>
@@ -111,8 +153,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
               >
                 <div className="flex items-center gap-3">
                   <input
-                    type="radio"
-                    name="variant"
+                    type="radio" name="variant"
                     checked={selectedVariant?.label === v.label}
                     onChange={() => setSelectedVariant(v)}
                     className="accent-hampton-navy"
@@ -126,8 +167,8 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
         </div>
       )}
 
-      {/* Session selection */}
-      {event.has_sessions && sessions.length > 0 && (
+      {/* Single session selection (dropdown) */}
+      {event.has_sessions && sessions.length > 0 && !isMultiSession && (
         <div className="mb-4">
           <label className="form-label">Select a Date</label>
           <select
@@ -144,10 +185,69 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
             {sessions.map(s => (
               <option key={s.id} value={s.id} disabled={s.available_tickets <= 0}>
                 {formatSessionDate(s.session_date)} at {s.session_time}
+                {s.label ? ` — ${s.label}` : ''}
                 {s.available_tickets <= 0 ? ' — Sold Out' : ` — ${s.available_tickets} spots`}
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {/* Multi-session selection (checkboxes) */}
+      {isMultiSession && sessions.length > 0 && (
+        <div className="mb-4">
+          <label className="form-label">Select Your Sessions</label>
+
+          {/* Bundle pricing info */}
+          {showBundleInfo && (
+            <div className="mb-3 p-3 bg-hampton-ivory rounded-lg">
+              <p className="text-xs font-medium text-hampton-navy mb-1">Pricing tiers:</p>
+              {[...bundleTiers].sort((a, b) => a.minSessions - b.minSessions).map((t, i) => (
+                <p key={i} className="text-xs text-hampton-mauve">
+                  {t.minSessions === sessions.length ? 'All' : `${t.minSessions}+`} session{t.minSessions !== 1 ? 's' : ''}: <span className="font-semibold text-hampton-navy">{formatPrice(t.pricePerSessionCents)}</span>/session
+                </p>
+              ))}
+            </div>
+          )}
+
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {sessions.map(s => {
+              const isSelected = selectedSessions.some(ss => ss.id === s.id)
+              const isSoldOut = s.available_tickets <= 0
+              return (
+                <label key={s.id}
+                  className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                    isSelected ? 'border-hampton-navy bg-hampton-navy/5' : 'border-hampton-pink/20 hover:border-hampton-blue/40'
+                  } ${isSoldOut ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <input type="checkbox" checked={isSelected}
+                      onChange={() => toggleSession(s)}
+                      className="accent-hampton-navy" disabled={isSoldOut} />
+                    <div>
+                      <span className="text-sm text-hampton-navy">{formatSessionDate(s.session_date)} at {s.session_time}</span>
+                      {s.label && <span className="text-xs text-hampton-mauve ml-2">— {s.label}</span>}
+                    </div>
+                  </div>
+                  <span className="text-xs text-hampton-mauve">
+                    {isSoldOut ? 'Sold Out' : `${s.available_tickets} spots`}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+
+          {/* Selected count + price */}
+          {selectedSessions.length > 0 && (
+            <div className="mt-3 p-3 bg-hampton-navy/5 rounded-lg">
+              <p className="text-sm text-hampton-navy font-medium">
+                {selectedSessions.length} session{selectedSessions.length !== 1 ? 's' : ''} selected
+                {!isFree && (
+                  <span className="text-hampton-mauve font-normal"> — {formatPrice(unitPrice)} per session</span>
+                )}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

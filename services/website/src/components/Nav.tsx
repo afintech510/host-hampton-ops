@@ -19,20 +19,18 @@ export default function Nav() {
 
   return (
     <header className="sticky top-0 z-50 bg-hampton-ivory/95 backdrop-blur border-b border-hampton-pink/30 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-20">
 
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-3 shrink-0">
+        <Link href="/" className="flex items-center shrink-0">
           <Image
-            src="/images/host-hampton-logo.png"
+            src="/images/host-hampton-logo_300.png"
             alt="Host Hampton"
-            width={40}
-            height={40}
+            width={140}
+            height={48}
             className="object-contain"
+            priority
           />
-          <span className="font-serif text-hampton-navy text-lg font-bold hidden sm:block">
-            Host Hampton
-          </span>
         </Link>
 
         {/* Desktop nav */}

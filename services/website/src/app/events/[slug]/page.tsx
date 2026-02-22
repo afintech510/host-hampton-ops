@@ -132,6 +132,8 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                   has_sessions: event.has_sessions,
                   available_tickets: event.available_tickets,
                   max_tickets: event.max_tickets,
+                  allow_multi_session: event.allow_multi_session || false,
+                  bundle_pricing: event.bundle_pricing || [],
                 }}
                 sessions={sessions}
               />

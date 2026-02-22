@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(req: NextRequest) {
   const supabase = getSupabase()
   const body = await req.json()
-  const { eventId, sessionId, quantity, variantLabel, customerName, customerEmail, customerPhone } = body
+  const { eventId, sessionId, sessionIds, quantity, variantLabel, customerName, customerEmail, customerPhone } = body
 
   if (!eventId || !customerName || !customerEmail || !quantity) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -26,6 +26,141 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Event not found' }, { status: 404 })
   }
 
+  // ── Multi-session checkout (series events) ──────────────
+  if (sessionIds && Array.isArray(sessionIds) && sessionIds.length > 0) {
+    const { data: sessionsData } = await supabase
+      .from('event_sessions')
+      .select('*')
+      .in('id', sessionIds)
+      .eq('is_active', true)
+
+    if (!sessionsData || sessionsData.length !== sessionIds.length) {
+      return NextResponse.json({ error: 'One or more sessions not found' }, { status: 404 })
+    }
+
+    // Check availability for each session
+    for (const sess of sessionsData) {
+      if (sess.available_tickets < quantity) {
+        return NextResponse.json({
+          error: `Not enough tickets for session on ${sess.session_date}`,
+        }, { status: 400 })
+      }
+    }
+
+    // Calculate bundle pricing
+    let multiUnitPrice = event.price_cents
+    if (event.allow_multi_session && event.bundle_pricing?.length > 0) {
+      const sorted = [...event.bundle_pricing].sort((a: any, b: any) => b.minSessions - a.minSessions)
+      const tier = sorted.find((t: any) => sessionIds.length >= t.minSessions)
+      if (tier) multiUnitPrice = tier.pricePerSessionCents
+    }
+
+    const multiTotalCents = multiUnitPrice * sessionIds.length * quantity
+    const multiIsFree = multiUnitPrice === 0
+
+    if (multiIsFree) {
+      // Free multi-session: create tickets directly
+      const groupRef = `GRP-${Date.now()}`
+      const ticketRefs: string[] = []
+
+      for (const sess of sessionsData) {
+        const { data: seqData } = await supabase.rpc('nextval_event_ticket_seq')
+        const seqNum = seqData ?? Date.now().toString().slice(-4)
+        const ticketRef = `HH-EVT-${String(seqNum).padStart(4, '0')}`
+        ticketRefs.push(ticketRef)
+
+        await supabase.from('event_tickets').insert({
+          ticket_ref: ticketRef,
+          event_id: eventId,
+          session_id: sess.id,
+          group_ref: groupRef,
+          customer_name: customerName,
+          customer_email: customerEmail,
+          customer_phone: customerPhone || null,
+          quantity,
+          variant_label: variantLabel || null,
+          unit_price_cents: 0,
+          total_cents: 0,
+          status: 'confirmed',
+        })
+        await supabase.rpc('decrement_session_tickets', { sid: sess.id, qty: quantity })
+      }
+
+      // Send confirmation emails
+      if (process.env.RESEND_API_KEY) {
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        const sessionDates = sessionsData
+          .sort((a: any, b: any) => a.session_date.localeCompare(b.session_date))
+          .map((s: any) => {
+            const d = new Date(s.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+            return `${d} at ${s.session_time}${s.label ? ` — ${s.label}` : ''}`
+          }).join(', ')
+
+        await Promise.allSettled([
+          resend.emails.send({
+            from, to: customerEmail,
+            subject: `You're in! ${event.title} at Host Hampton`,
+            html: ticketConfirmationHtml({
+              customerName, eventTitle: event.title,
+              eventDate: `${sessionsData.length} sessions`,
+              eventTime: sessionDates,
+              location: event.location,
+              quantity, totalFormatted: 'Free',
+              ticketRef: groupRef, isFree: true,
+            }),
+          }),
+          resend.emails.send({
+            from, to: 'hosthampton295@gmail.com',
+            subject: `New RSVP: ${customerName} — ${event.title} (${sessionsData.length} sessions)`,
+            html: ticketPurchaseNotifyHtml({
+              ticketRef: groupRef, customerName, customerEmail, customerPhone,
+              eventTitle: event.title,
+              eventDate: `${sessionsData.length} sessions`,
+              eventTime: sessionDates,
+              quantity, totalFormatted: 'Free', isFree: true,
+            }),
+          }),
+        ])
+      }
+
+      return NextResponse.json({ url: `/events/success?ref=${groupRef}` })
+    }
+
+    // Paid multi-session: create Stripe checkout
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'staging.hosthampton.com'
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer_email: customerEmail,
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: { name: `${event.title} (${sessionIds.length} sessions)` },
+          unit_amount: multiTotalCents,
+        },
+        quantity: 1,
+      }],
+      metadata: {
+        type: 'event_ticket_multi',
+        eventId,
+        sessionIds: JSON.stringify(sessionIds),
+        quantity: String(quantity),
+        unitPriceCents: String(multiUnitPrice),
+        variantLabel: variantLabel || '',
+        customerName,
+        customerEmail,
+        customerPhone: customerPhone || '',
+      },
+      success_url: `https://${host}/events/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://${host}/events/${event.slug}?cancelled=true`,
+    })
+
+    return NextResponse.json({ url: session.url })
+  }
+
+  // ── Single-session / non-session checkout ──────────────
   // Determine unit price
   let unitPriceCents = event.price_cents
   if (variantLabel && event.has_variants && event.variants) {

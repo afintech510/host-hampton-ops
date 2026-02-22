@@ -50,6 +50,9 @@ export async function POST(req: NextRequest) {
       sibling_price_cents: body.siblingPriceCents || null,
       has_variants: body.hasVariants || false,
       variants: body.variants || [],
+      has_sessions: body.hasSessions || false,
+      allow_multi_session: body.allowMultiSession || false,
+      bundle_pricing: body.bundlePricing || [],
       event_date: body.eventDate || null,
       event_time: body.eventTime || null,
       event_end_time: body.eventEndTime || null,
@@ -101,6 +104,23 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       console.error('Google Calendar sync error:', err)
     }
+  }
+
+  // Create sessions if provided
+  if (body.hasSessions && body.sessions?.length > 0) {
+    const sessionRows = body.sessions.map((s: any) => ({
+      event_id: event.id,
+      session_date: s.session_date,
+      session_time: s.session_time,
+      session_end_time: s.session_end_time || null,
+      label: s.label || null,
+      price_cents: s.price_cents != null ? s.price_cents : null,
+      max_tickets: s.max_tickets || 30,
+      available_tickets: s.max_tickets || 30,
+      is_active: true,
+    }))
+    const { error: sessErr } = await supabase.from('event_sessions').insert(sessionRows)
+    if (sessErr) console.error('Session insert error:', sessErr)
   }
 
   return NextResponse.json({ event })
