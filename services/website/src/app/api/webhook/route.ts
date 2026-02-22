@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTemplates'
 
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
@@ -28,6 +29,88 @@ export async function POST(req: NextRequest) {
     const session = event.data.object as Stripe.Checkout.Session
     const m = session.metadata || {}
 
+    // ── Event ticket purchase ──────────────────────────────────
+    if (m.type === 'event_ticket') {
+      const qty = parseInt(m.quantity || '1', 10)
+      const ticketRef = `HH-EVT-${Date.now().toString().slice(-4)}`
+
+      // Fetch event for details
+      const { data: evt } = await supabase
+        .from('events')
+        .select('title, event_date, event_time, location')
+        .eq('id', m.eventId)
+        .single()
+
+      // Determine unit price from session amount
+      const totalCents = session.amount_total || 0
+      const unitPriceCents = Math.round(totalCents / qty)
+
+      const { error: ticketErr } = await supabase.from('event_tickets').insert({
+        ticket_ref: ticketRef,
+        event_id: m.eventId,
+        session_id: m.sessionId || null,
+        customer_name: m.customerName,
+        customer_email: m.customerEmail,
+        customer_phone: m.customerPhone || null,
+        quantity: qty,
+        variant_label: m.variantLabel || null,
+        unit_price_cents: unitPriceCents,
+        total_cents: totalCents,
+        stripe_payment_intent_id: session.payment_intent as string,
+        stripe_session_id: session.id,
+        status: 'confirmed',
+      })
+
+      if (ticketErr) {
+        console.error('Event ticket insert error:', ticketErr)
+      } else {
+        // Decrement available tickets
+        if (m.sessionId) {
+          await supabase.rpc('decrement_session_tickets', { sid: m.sessionId, qty })
+        } else {
+          await supabase.rpc('decrement_event_tickets', { eid: m.eventId, qty })
+        }
+        console.log('Ticket created:', ticketRef, 'for', m.customerEmail)
+      }
+
+      // Send emails
+      if (process.env.RESEND_API_KEY && evt) {
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        const dateDisplay = evt.event_date
+          ? new Date(evt.event_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+          : 'TBD'
+        const totalFormatted = `$${(totalCents / 100).toFixed(2)}`
+
+        await Promise.allSettled([
+          resend.emails.send({
+            from, to: m.customerEmail,
+            subject: `You're in! ${evt.title} at Host Hampton 🎉`,
+            html: ticketConfirmationHtml({
+              customerName: m.customerName, eventTitle: evt.title, eventDate: dateDisplay,
+              eventTime: evt.event_time || '', location: evt.location, quantity: qty,
+              variantLabel: m.variantLabel || undefined, totalFormatted, ticketRef, isFree: false,
+            }),
+          }),
+          resend.emails.send({
+            from, to: 'hosthampton295@gmail.com',
+            subject: `New ticket: ${m.customerName} — ${evt.title} (${ticketRef})`,
+            html: ticketPurchaseNotifyHtml({
+              ticketRef, customerName: m.customerName, customerEmail: m.customerEmail,
+              customerPhone: m.customerPhone || undefined, eventTitle: evt.title,
+              eventDate: dateDisplay, eventTime: evt.event_time || '', quantity: qty,
+              variantLabel: m.variantLabel || undefined, totalFormatted, isFree: false,
+              stripePI: session.payment_intent as string,
+            }),
+          }),
+        ])
+        console.log('Ticket confirmation sent to', m.customerEmail)
+      }
+
+      return NextResponse.json({ received: true })
+    }
+
+    // ── Party booking deposit (existing flow) ──────────────────
     const partyDate = m.partyDate
     const optionsLockedBy = partyDate
       ? new Date(new Date(partyDate).getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
