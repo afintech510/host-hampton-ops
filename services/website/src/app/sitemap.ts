@@ -12,7 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/permanent-jewelry`, priority: 0.8, changeFrequency: 'monthly' as const },
     { url: `${base}/first-birthday-parties`, priority: 0.9, changeFrequency: 'monthly' as const },
     { url: `${base}/communion-party`, priority: 0.8, changeFrequency: 'monthly' as const },
-    { url: `${base}/fundraiser`, priority: 0.7, changeFrequency: 'monthly' as const },
+    { url: `${base}/fundraiser`, priority: 0.9, changeFrequency: 'weekly' as const },
     { url: `${base}/cm-cheer`, priority: 0.7, changeFrequency: 'monthly' as const },
     { url: `${base}/events`, priority: 0.7, changeFrequency: 'weekly' as const },
     { url: `${base}/contact-us`, priority: 0.7, changeFrequency: 'yearly' as const },
