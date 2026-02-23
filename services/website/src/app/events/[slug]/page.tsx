@@ -61,7 +61,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
       : 'Date coming soon'
 
   return (
-    <div className="bg-hampton-ivory min-h-screen">
+    <div className="min-h-screen">
       {/* Back link */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6">
         <Link href="/events" className="inline-flex items-center gap-1 text-hampton-navy hover:text-hampton-navy text-sm transition-colors">

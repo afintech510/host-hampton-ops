@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function EventSuccessPage() {
   return (
-    <div className="bg-hampton-ivory min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-screen flex items-center justify-center px-4">
       <div className="max-w-md w-full text-center py-16">
         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
           <CheckCircle className="w-10 h-10 text-green-600" />

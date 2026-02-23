@@ -37,7 +37,7 @@ const addons = [
 
 export default function PartyAddOns() {
   return (
-    <div className="bg-hampton-ivory">
+    <div>
       <section className="py-16 text-center px-4">
         <h1 className="font-serif text-4xl text-hampton-navy mb-4">Party Add-Ons</h1>
         <p className="text-hampton-navy text-lg max-w-xl mx-auto">

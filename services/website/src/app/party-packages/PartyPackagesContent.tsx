@@ -184,7 +184,7 @@ export default function PartyPackagesContent() {
   }
 
   return (
-    <div className="bg-hampton-ivory">
+    <div>
       {/* ── Hero ── */}
       <section className="py-20 text-center px-4">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/40 mb-6 text-hampton-pink text-sm font-bold tracking-widest uppercase border border-white/60 shadow-sm">

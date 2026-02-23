@@ -22,7 +22,7 @@ const pricing = [
 
 export default function PartyRoomRental() {
   return (
-    <div className="bg-hampton-ivory">
+    <div>
       <section className="py-16 text-center px-4">
         <h1 className="font-serif text-4xl md:text-5xl text-hampton-navy mb-4">Party Room Rental</h1>
         <p className="text-hampton-navy text-lg max-w-xl mx-auto">

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function ContactUs() {
   return (
-    <div className="bg-hampton-ivory">
+    <div>
       <section className="py-16 text-center px-4">
         <h1 className="font-serif text-4xl text-hampton-navy mb-3">Let's Plan Your Perfect Party</h1>
         <p className="text-hampton-navy text-base max-w-md mx-auto">

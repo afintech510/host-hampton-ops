@@ -74,7 +74,7 @@ function BookingForm() {
   const showChildFields = bookingType?.tags?.some(t => ['kids-party', 'childrens'].includes(t)) ?? true
 
   return (
-    <div className="min-h-screen bg-hampton-ivory">
+    <div className="min-h-screen">
       <section className="py-14 text-center px-4">
         <Lock size={28} className="text-hampton-pink mx-auto mb-3" />
         <h1 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-3">Reserve Your Date</h1>
@@ -232,7 +232,7 @@ function BookingForm() {
 
 export default function BookPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-hampton-ivory flex items-center justify-center"><p className="text-hampton-navy">Loading...</p></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-hampton-navy">Loading...</p></div>}>
       <BookingForm />
     </Suspense>
   )

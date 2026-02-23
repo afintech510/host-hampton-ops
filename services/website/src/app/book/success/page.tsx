@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: 'Booking Confirmed! | Host Hampton' }
 
 export default function BookSuccess() {
   return (
-    <div className="min-h-screen bg-hampton-ivory flex items-center justify-center px-4 py-20">
+    <div className="min-h-screen flex items-center justify-center px-4 py-20">
       <div className="max-w-lg w-full text-center">
         <CheckCircle size={64} className="text-green-500 mx-auto mb-6" />
         <h1 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-4">

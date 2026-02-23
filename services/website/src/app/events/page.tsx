@@ -26,7 +26,7 @@ export default async function EventsPage() {
   const categories = Array.from(new Set(allEvents.map(e => e.category)))
 
   return (
-    <div className="bg-hampton-ivory">
+    <div>
       <section className="py-16 text-center px-4">
         <h1 className="font-serif text-4xl text-hampton-navy mb-4">Events & Workshops</h1>
         <p className="text-hampton-navy text-lg max-w-xl mx-auto">
