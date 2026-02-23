@@ -225,64 +225,71 @@ export default function PartyPackagesContent() {
           {selectedTheme ? 'Click the theme again to deselect, or choose a different one.' : 'Tap a theme to see details and start your booking.'}
         </p>
 
-        <div className={`grid gap-6 transition-all duration-500 ${
+        <div className={`grid gap-6 transition-all duration-700 ease-in-out ${
           selectedTheme ? 'sm:grid-cols-1 max-w-3xl mx-auto' : 'sm:grid-cols-2 lg:grid-cols-3'
         }`}>
           {themes.map(t => {
             const isSelected = selectedTheme === t.name
             const isHidden = selectedTheme && !isSelected
 
-            if (isHidden) return null
-
             return (
               <div
                 key={t.name}
-                onClick={() => handleThemeSelect(t.name)}
-                className={`rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 ${
+                onClick={() => !isHidden && handleThemeSelect(t.name)}
+                style={{
+                  gridTemplateRows: isHidden ? '0fr' : '1fr',
+                  display: 'grid',
+                }}
+                className={`transition-all ease-in-out ${
+                  isHidden
+                    ? 'duration-500 opacity-0 scale-95 max-h-0 overflow-hidden pointer-events-none -my-3'
+                    : 'duration-700 opacity-100 scale-100 max-h-[800px]'
+                }`}
+              >
+                <div className={`min-h-0 rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 ${
                   isSelected
                     ? 'ring-2 ring-hampton-pink shadow-md bg-white'
                     : t.popular
-                      ? 'ring-2 ring-hampton-pink bg-white'
-                      : 'bg-white border border-hampton-pink/20 shadow-sm'
-                }`}
-              >
-                {t.popular && !isSelected && (
-                  <div className="bg-gradient-to-r from-hampton-pink to-hampton-pink/80 text-white text-xs font-bold text-center py-1.5 tracking-wide uppercase">
-                    Most Popular
-                  </div>
-                )}
-
-                <div className={`relative overflow-hidden ${isSelected ? 'aspect-[21/9]' : 'aspect-video'}`}>
-                  <Image src={t.img} alt={t.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
-                  {isSelected && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleThemeSelect(t.name) }}
-                      className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center hover:bg-white transition-colors shadow-md z-10"
-                    >
-                      <X size={16} className="text-hampton-navy" />
-                    </button>
+                      ? 'ring-2 ring-hampton-pink bg-white hover:shadow-lg hover:-translate-y-1'
+                      : 'bg-white border border-hampton-pink/20 shadow-sm hover:shadow-lg hover:-translate-y-1'
+                }`}>
+                  {t.popular && !isSelected && (
+                    <div className="bg-gradient-to-r from-hampton-pink to-hampton-pink/80 text-white text-xs font-bold text-center py-1.5 tracking-wide uppercase">
+                      Most Popular
+                    </div>
                   )}
-                </div>
 
-                <div className="p-5 relative z-10">
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-semibold text-hampton-navy text-lg">{t.name}</h3>
-                    <span className="text-hampton-navy font-bold text-lg">from ${t.price.toLocaleString()}</span>
+                  <div className={`relative overflow-hidden transition-all duration-700 ease-in-out ${isSelected ? 'aspect-[21/9]' : 'aspect-video'}`}>
+                    <Image src={t.img} alt={t.name} fill className="object-cover transition-transform duration-500 hover:scale-105" />
+                    {isSelected && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleThemeSelect(t.name) }}
+                        className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center hover:bg-white transition-colors shadow-md z-10"
+                      >
+                        <X size={16} className="text-hampton-navy" />
+                      </button>
+                    )}
                   </div>
 
-                  {isSelected ? (
-                    <div className="space-y-3">
-                      <p className="text-hampton-navy/80 text-sm leading-relaxed">{t.extendedDesc}</p>
-                      <div className="flex items-center gap-2 text-hampton-pink text-sm font-semibold pt-1">
+                  <div className="p-5">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-semibold text-hampton-navy text-lg">{t.name}</h3>
+                      <span className="text-hampton-navy font-bold text-lg">from ${t.price.toLocaleString()}</span>
+                    </div>
+
+                    <p className={`text-sm leading-relaxed transition-all duration-500 ${isSelected ? 'text-hampton-navy/80' : 'text-hampton-navy/70'}`}>
+                      {isSelected ? t.extendedDesc : t.desc}
+                    </p>
+
+                    {isSelected && (
+                      <div className="flex items-center gap-2 text-hampton-pink text-sm font-semibold pt-3 animate-[fadeIn_0.5s_ease-in]">
                         <div className="w-5 h-5 rounded-full bg-hampton-pink flex items-center justify-center">
                           <Check size={12} strokeWidth={3} className="text-white" />
                         </div>
                         <span>Theme selected — fill out the form below to check availability</span>
                       </div>
-                    </div>
-                  ) : (
-                    <p className="text-hampton-navy/70 text-sm leading-relaxed">{t.desc}</p>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             )
