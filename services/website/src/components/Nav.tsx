@@ -9,7 +9,7 @@ import { Menu, X, Phone, MessageCircle } from 'lucide-react'
 const navLinks = [
   { href: '/party-packages',    label: 'Party Packages' },
   { href: '/party-room-rental', label: 'Room Rental' },
-  { href: '/permanent-jewelry', label: 'Jewelry' },
+  { href: '/mobile-party',      label: 'Mobile Party' },
   { href: '/events',            label: 'Events' },
 ]
 
