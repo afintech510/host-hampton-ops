@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
 import {
   PartyPopper, Gem, DoorOpen, Baby, Church, Heart, Zap, Calendar,
-  BookOpen, Phone, FileText, Shield, RotateCcw, MapPin,
+  BookOpen, Phone, FileText, Shield, RotateCcw, MapPin, Truck, HardHat,
 } from 'lucide-react'
 
 export const metadata: Metadata = {
@@ -34,6 +34,8 @@ const sections: { title: string; links: LinkItem[] }[] = [
       { href: '/party-add-ons', label: 'Party Add-Ons', description: 'Extra touches to enhance any party', icon: <Heart className={iconClass} /> },
       { href: '/permanent-jewelry', label: 'Permanent Jewelry', description: 'Custom-welded bracelets, anklets, and necklaces', icon: <Gem className={iconClass} /> },
       { href: '/fundraiser', label: 'Fundraisers', description: 'Host a fundraiser event at our venue', icon: <Heart className={iconClass} /> },
+      { href: '/mobile-party', label: 'Mobile Party', description: 'We bring the party to your location', icon: <Truck className={iconClass} /> },
+      { href: '/trucker-hat-bar', label: 'Trucker Hat Bar', description: 'Atelier Brim — curated hat bar for corporate events', icon: <HardHat className={iconClass} /> },
     ],
   },
   {
