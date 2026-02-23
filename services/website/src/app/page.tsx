@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Star, CheckCircle, Clock, Users, Sparkles, Heart, Shield } from 'lucide-react'
+import DynamicTypingSection from '@/components/DynamicTypingSection'
 
 export const metadata: Metadata = {
   title: 'Host Hampton | Birthday Party Venue in the Hamptons, NY',
@@ -90,6 +91,9 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      {/* ── DYNAMIC TYPING ─────────────────────────────────── */}
+      <DynamicTypingSection />
 
       {/* ── THEMES ───────────────────────────────────────────── */}
       <section className="py-20 max-w-7xl mx-auto px-4 sm:px-6">
