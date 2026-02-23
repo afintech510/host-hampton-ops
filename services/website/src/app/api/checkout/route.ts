@@ -87,6 +87,15 @@ export async function POST(req: NextRequest) {
 
     // Paid bookings — create Stripe session
     const depositLabel = `$${(depositCents / 100).toFixed(0)}`
+
+    // Build rich description for Stripe checkout
+    const descParts = []
+    if (childName) descParts.push(`Celebrating: ${childName}${childAge ? ` (age ${childAge})` : ''}`)
+    descParts.push(`Date: ${partyDate} at ${partyTime}`)
+    if (packageName) descParts.push(`Theme: ${packageName}`)
+    if (guestCount) descParts.push(`Guests: ${guestCount}`)
+    descParts.push(`${depositLabel} deposit — applied toward your party balance.`)
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
@@ -95,8 +104,10 @@ export async function POST(req: NextRequest) {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: `Host Hampton — ${packageName || eventType || 'Booking'} Deposit`,
-              description: `Date: ${partyDate} at ${partyTime}. ${depositLabel} deposit locks your date — applied toward total balance.`,
+              name: childName
+                ? `${childName}'s ${packageName || 'Birthday'} Party — Deposit`
+                : `Host Hampton — ${packageName || eventType || 'Booking'} Deposit`,
+              description: descParts.join(' | '),
             },
             unit_amount: depositCents,
           },
@@ -104,6 +115,11 @@ export async function POST(req: NextRequest) {
         },
       ],
       customer_email: contactEmail,
+      custom_text: {
+        submit: {
+          message: 'Your deposit is fully applied toward your party balance. All details (theme, date, guest count) can be modified up to 1 week before your event.',
+        },
+      },
       metadata: {
         packageName: packageName || '',
         partyDate,
@@ -123,7 +139,7 @@ export async function POST(req: NextRequest) {
       },
       // Use forwarded host from nginx (req.nextUrl.origin is the internal Docker hostname)
       success_url: `https://${host}/book/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `https://${host}/book?cancelled=true`,
+      cancel_url: `https://${host}/party-packages?cancelled=true`,
     })
 
     return NextResponse.json({ url: session.url })

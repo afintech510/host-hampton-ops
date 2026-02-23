@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import Image from 'next/image'
-import { Check, ChevronDown, X, Loader2 } from 'lucide-react'
+import { Check, ChevronDown, X, Loader2, Star, Calendar, Clock, Users, Sparkles } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
+import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 
 const included = [
   '2 hours of exclusive private studio time',
@@ -101,6 +102,30 @@ const eventTypes = [
 
 const timeOptions = ['Morning', 'Afternoon', 'Evening']
 
+function formatTime(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+}
+
+function formatDate(dateStr: string): string {
+  const [y, mo, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, mo - 1, d)
+  return date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
 export default function PartyPackagesContent() {
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
   const [formData, setFormData] = useState({
@@ -108,6 +133,7 @@ export default function PartyPackagesContent() {
     fullName: '',
     email: '',
     phone: '',
+    childName: '',
     childAge: '',
     guestCount: '',
     partyTheme: '',
@@ -119,9 +145,13 @@ export default function PartyPackagesContent() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+  const [calendarSelection, setCalendarSelection] = useState<CalendarSelection | null>(null)
+  const [reserving, setReserving] = useState(false)
   const themeSectionRef = useRef<HTMLDivElement>(null)
-  const formRef = useRef<HTMLDivElement>(null)
   const calendarRef = useRef<HTMLDivElement>(null)
+  const summaryRef = useRef<HTMLDivElement>(null)
+
+  const selectedThemeData = themes.find(t => t.name === (formData.partyTheme || selectedTheme))
 
   function handleThemeSelect(name: string) {
     if (selectedTheme === name) {
@@ -130,7 +160,6 @@ export default function PartyPackagesContent() {
     } else {
       setSelectedTheme(name)
       setFormData(prev => ({ ...prev, partyTheme: name }))
-      // Smooth scroll: snap selected theme to top of viewport, then scroll form into view
       setTimeout(() => {
         themeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 50)
@@ -176,12 +205,68 @@ export default function PartyPackagesContent() {
       setSubmitted(true)
       setTimeout(() => {
         calendarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 400)
+      }, 300)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setSubmitting(false)
     }
   }
+
+  const handleCalendarSelect = useCallback((selection: CalendarSelection) => {
+    setCalendarSelection(selection)
+    if (selection.timeSlot) {
+      setTimeout(() => {
+        summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 200)
+    }
+  }, [])
+
+  async function handleReserveNow() {
+    if (!calendarSelection?.date || !calendarSelection?.timeSlot) return
+    setReserving(true)
+
+    try {
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          packageName: formData.partyTheme || selectedTheme || 'Kids Birthday Party',
+          partyDate: calendarSelection.date,
+          partyTime: calendarSelection.timeSlot.start,
+          eventType: formData.eventType || 'Kids Birthday Party',
+          contactName: formData.fullName,
+          contactEmail: formData.email,
+          contactPhone: formData.phone,
+          childName: formData.childName,
+          childAge: formData.childAge,
+          guestCount: formData.guestCount,
+          notes: formData.notes,
+          bookingTypeSlug: 'kids-party',
+          partyTags: {
+            theme: formData.partyTheme || selectedTheme,
+            price: selectedThemeData?.price,
+          },
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Checkout failed')
+
+      // Redirect to Stripe
+      window.location.href = data.url
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Checkout failed')
+      setReserving(false)
+    }
+  }
+
+  const partyTitle = formData.childName
+    ? `${formData.childName}'s ${formData.childAge ? ordinal(parseInt(formData.childAge)) + ' ' : ''}Birthday`
+    : formData.childAge
+      ? `${ordinal(parseInt(formData.childAge))} Birthday Party`
+      : 'Birthday Party'
+
+  const guestCount = parseInt(formData.guestCount) || 10
 
   return (
     <div>
@@ -198,7 +283,7 @@ export default function PartyPackagesContent() {
         </p>
       </section>
 
-      {/* ── What's Included — Glass Card + Glowing Checks ── */}
+      {/* ── What's Included ── */}
       <section className="py-16 max-w-4xl mx-auto px-4 sm:px-6 -mt-6">
         <div className="text-center mb-10">
           <h2 className="section-heading">Every Party Includes</h2>
@@ -218,7 +303,7 @@ export default function PartyPackagesContent() {
         </div>
       </section>
 
-      {/* ── Theme Packages — Single Selectable ── */}
+      {/* ── Theme Packages ── */}
       <section ref={themeSectionRef} className="py-16 max-w-7xl mx-auto px-4 sm:px-6 scroll-mt-4">
         <h2 className="section-heading text-center mb-2">Select Your Theme</h2>
         <p className="text-center text-hampton-navy/70 mb-10">
@@ -297,169 +382,297 @@ export default function PartyPackagesContent() {
         </div>
       </section>
 
-      {/* ── Lead Capture Form — Glass Style ── */}
-      <div ref={formRef}>
-        <section className="py-16 max-w-2xl mx-auto px-4 sm:px-6">
-          <h2 className="section-heading text-center mb-2">Tell Us About Your Party</h2>
-          <p className="text-center text-hampton-navy/70 mb-8">
-            Fill out the details below and we&apos;ll check availability for you.
-          </p>
+      {/* ── Lead Capture Form ── */}
+      <section className="py-16 max-w-2xl mx-auto px-4 sm:px-6">
+        <h2 className="section-heading text-center mb-2">Tell Us About Your Party</h2>
+        <p className="text-center text-hampton-navy/70 mb-8">
+          Fill out the details below and we&apos;ll check availability for you.
+        </p>
 
-          <form onSubmit={handleSubmit} className="bg-white rounded-3xl border border-hampton-pink/20 shadow-sm p-8 space-y-5">
-            {/* Event Type — Pill Dropdown */}
+        <form onSubmit={handleSubmit} className="bg-white rounded-3xl border border-hampton-pink/20 shadow-sm p-8 space-y-5">
+          {/* Event Type */}
+          <div>
+            <label className="form-label text-hampton-navy text-sm font-semibold mb-2 block">Select Event</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setEventDropdownOpen(!eventDropdownOpen)}
+                className="w-full flex items-center justify-between gap-2 px-5 py-3 rounded-full border-2 border-hampton-pink/30 bg-white/80 text-hampton-navy font-semibold text-sm hover:border-hampton-pink transition-colors"
+              >
+                <span>{formData.eventType}</span>
+                <ChevronDown size={16} className={`transition-transform ${eventDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {eventDropdownOpen && (
+                <div className="absolute z-20 top-full mt-2 w-full bg-white rounded-2xl border border-hampton-pink/20 shadow-lg overflow-hidden">
+                  {eventTypes.map(type => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => { update('eventType', type); setEventDropdownOpen(false) }}
+                      className={`w-full text-left px-5 py-3 text-sm hover:bg-hampton-pink/10 transition-colors ${
+                        formData.eventType === type ? 'bg-hampton-pink/20 font-semibold text-hampton-navy' : 'text-hampton-navy'
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Name & Email */}
+          <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="form-label text-hampton-navy text-sm font-semibold mb-2 block">Select Event</label>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setEventDropdownOpen(!eventDropdownOpen)}
-                  className="w-full flex items-center justify-between gap-2 px-5 py-3 rounded-full border-2 border-hampton-pink/30 bg-white/80 text-hampton-navy font-semibold text-sm hover:border-hampton-pink transition-colors"
-                >
-                  <span>{formData.eventType}</span>
-                  <ChevronDown size={16} className={`transition-transform ${eventDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {eventDropdownOpen && (
-                  <div className="absolute z-20 top-full mt-2 w-full bg-white rounded-2xl border border-hampton-pink/20 shadow-lg overflow-hidden">
-                    {eventTypes.map(type => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => { update('eventType', type); setEventDropdownOpen(false) }}
-                        className={`w-full text-left px-5 py-3 text-sm hover:bg-hampton-pink/10 transition-colors ${
-                          formData.eventType === type ? 'bg-hampton-pink/20 font-semibold text-hampton-navy' : 'text-hampton-navy'
-                        }`}
-                      >
-                        {type}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <label className="form-label">Full Name *</label>
+              <input type="text" required placeholder="Jane Smith" value={formData.fullName}
+                onChange={e => update('fullName', e.target.value)} className="form-input" />
             </div>
-
-            {/* Name & Email */}
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="form-label">Full Name *</label>
-                <input type="text" required placeholder="Jane Smith" value={formData.fullName}
-                  onChange={e => update('fullName', e.target.value)} className="form-input" />
-              </div>
-              <div>
-                <label className="form-label">Email *</label>
-                <input type="email" required placeholder="jane@email.com" value={formData.email}
-                  onChange={e => update('email', e.target.value)} className="form-input" />
-              </div>
-            </div>
-
-            {/* Phone */}
             <div>
-              <label className="form-label">Phone *</label>
-              <input type="tel" required placeholder="(631) 555-1234" value={formData.phone}
-                onChange={e => update('phone', e.target.value)} className="form-input" />
+              <label className="form-label">Email *</label>
+              <input type="email" required placeholder="jane@email.com" value={formData.email}
+                onChange={e => update('email', e.target.value)} className="form-input" />
             </div>
+          </div>
 
-            {/* Child Age & Guest Count */}
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="form-label">Child&apos;s Age</label>
-                <input type="number" min="1" max="18" placeholder="7" value={formData.childAge}
-                  onChange={e => update('childAge', e.target.value)} className="form-input" />
-              </div>
-              <div>
-                <label className="form-label">Guest Count</label>
-                <input type="number" min="1" max="50" placeholder="10" value={formData.guestCount}
-                  onChange={e => update('guestCount', e.target.value)} className="form-input" />
-              </div>
+          {/* Phone */}
+          <div>
+            <label className="form-label">Phone *</label>
+            <input type="tel" required placeholder="(631) 555-1234" value={formData.phone}
+              onChange={e => update('phone', e.target.value)} className="form-input" />
+          </div>
+
+          {/* Child Name & Age */}
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="form-label">Child&apos;s Name</label>
+              <input type="text" placeholder="Emma" value={formData.childName}
+                onChange={e => update('childName', e.target.value)} className="form-input" />
             </div>
+            <div>
+              <label className="form-label">Child&apos;s Age</label>
+              <input type="number" min="1" max="18" placeholder="7" value={formData.childAge}
+                onChange={e => update('childAge', e.target.value)} className="form-input" />
+            </div>
+          </div>
 
-            {/* Party Theme */}
+          {/* Guest Count & Theme */}
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="form-label">Guest Count</label>
+              <input type="number" min="1" max="50" placeholder="10" value={formData.guestCount}
+                onChange={e => update('guestCount', e.target.value)} className="form-input" />
+            </div>
             <div>
               <label className="form-label">Party Theme</label>
               <input type="text" placeholder="e.g. Glow Party, Slime Party..." value={formData.partyTheme}
                 onChange={e => update('partyTheme', e.target.value)} className="form-input" />
             </div>
+          </div>
 
-            {/* Preferred Date & Time of Day */}
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="form-label">Preferred Date</label>
-                <input type="date" value={formData.preferredDate}
-                  onChange={e => update('preferredDate', e.target.value)} className="form-input" />
-              </div>
-              <div>
-                <label className="form-label">Time of Day</label>
-                <div className="flex gap-2">
-                  {timeOptions.map(t => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => toggleTimeOfDay(t)}
-                      className={`flex-1 py-2.5 rounded-full text-sm font-semibold border-2 transition-all ${
-                        formData.timeOfDay.includes(t)
-                          ? 'border-hampton-pink bg-hampton-pink/20 text-hampton-navy'
-                          : 'border-hampton-mauve/30 text-hampton-navy hover:border-hampton-pink/40'
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Notes */}
+          {/* Preferred Date & Time of Day */}
+          <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="form-label">Special Requests or Notes</label>
-              <textarea rows={3} placeholder="Dietary needs, theme preferences, special requests..."
-                value={formData.notes} onChange={e => update('notes', e.target.value)}
-                className="form-input resize-none" />
+              <label className="form-label">Preferred Date</label>
+              <input type="date" value={formData.preferredDate}
+                onChange={e => update('preferredDate', e.target.value)} className="form-input" />
             </div>
-
-            {/* Error */}
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
-                {error}
+            <div>
+              <label className="form-label">Time of Day</label>
+              <div className="flex gap-2">
+                {timeOptions.map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => toggleTimeOfDay(t)}
+                    className={`flex-1 py-2.5 rounded-full text-sm font-semibold border-2 transition-all ${
+                      formData.timeOfDay.includes(t)
+                        ? 'border-hampton-pink bg-hampton-pink/20 text-hampton-navy'
+                        : 'border-hampton-mauve/30 text-hampton-navy hover:border-hampton-pink/40'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
               </div>
-            )}
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={submitting || submitted}
-              className="w-full bg-hampton-navy text-hampton-ivory font-semibold py-4 px-8 rounded-full hover:bg-opacity-90 hover:shadow-[0_8px_25px_rgba(47,52,59,0.3)] transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-base"
-            >
-              {submitting ? (
-                <><Loader2 size={18} className="animate-spin" /> Checking...</>
-              ) : submitted ? (
-                <><Check size={18} /> Info Saved — Pick Your Date Below</>
-              ) : (
-                'Check Availability'
-              )}
-            </button>
-          </form>
-        </section>
-      </div>
-
-      {/* ── Calendar — appears after form submit ── */}
-      {submitted && (
-        <div ref={calendarRef}>
-          <section className="py-8 pb-20 max-w-2xl mx-auto px-4 sm:px-6">
-            <div className="text-center mb-6">
-              <h2 className="section-heading mb-2">Pick Your Date & Time</h2>
-              <p className="text-hampton-navy/70 text-sm">
-                Select an available date and time below. We&apos;ll confirm within 24 hours.
-              </p>
             </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="form-label">Special Requests or Notes</label>
+            <textarea rows={3} placeholder="Dietary needs, theme preferences, special requests..."
+              value={formData.notes} onChange={e => update('notes', e.target.value)}
+              className="form-input resize-none" />
+          </div>
+
+          {error && !calendarSelection && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={submitting || submitted}
+            className="w-full bg-hampton-navy text-hampton-ivory font-semibold py-4 px-8 rounded-full hover:bg-opacity-90 hover:shadow-[0_8px_25px_rgba(47,52,59,0.3)] transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-base"
+          >
+            {submitting ? (
+              <><Loader2 size={18} className="animate-spin" /> Submitting...</>
+            ) : submitted ? (
+              <><Check size={18} /> Info Saved — Pick Your Date Below</>
+            ) : (
+              'Check Availability'
+            )}
+          </button>
+        </form>
+      </section>
+
+      {/* ── Calendar — smooth fade-in after form submit ── */}
+      <div
+        ref={calendarRef}
+        className={`transition-all duration-700 ease-out ${
+          submitted
+            ? 'opacity-100 translate-y-0 max-h-[2000px]'
+            : 'opacity-0 translate-y-8 max-h-0 overflow-hidden'
+        }`}
+      >
+        <section className="py-8 max-w-2xl mx-auto px-4 sm:px-6">
+          <div className="text-center mb-6">
+            <h2 className="section-heading mb-2">Pick Your Date & Time</h2>
+            <p className="text-hampton-navy/70 text-sm">
+              Select an available date and time slot below.
+            </p>
+          </div>
+          {submitted && (
             <UniversalCalendar
               mode="booking"
               lockedBookingType="kids-party"
               expandable={false}
               initialExpanded={true}
+              showSummary={false}
               defaultDate={formData.preferredDate || undefined}
+              onSelect={handleCalendarSelect}
             />
+          )}
+        </section>
+      </div>
+
+      {/* ── Party Summary — appears after time slot selection ── */}
+      <div
+        ref={summaryRef}
+        className={`transition-all duration-500 ease-out ${
+          calendarSelection?.timeSlot
+            ? 'opacity-100 translate-y-0 max-h-[1000px]'
+            : 'opacity-0 translate-y-4 max-h-0 overflow-hidden pointer-events-none'
+        }`}
+      >
+        {calendarSelection?.timeSlot && (
+          <section className="pb-20 max-w-2xl mx-auto px-4 sm:px-6">
+            <div className="bg-white rounded-3xl border-2 border-hampton-pink/30 shadow-lg overflow-hidden">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-hampton-pink to-hampton-mauve px-6 py-5">
+                <div className="flex items-center gap-3">
+                  <Sparkles size={20} className="text-white" />
+                  <h3 className="font-serif text-xl text-white">{partyTitle}</h3>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-5">
+                {/* Details grid */}
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 bg-hampton-pink/15 rounded-full flex items-center justify-center shrink-0">
+                      <Star size={14} className="text-hampton-pink" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-hampton-navy/50 font-medium uppercase tracking-wide">Theme</p>
+                      <p className="text-sm font-semibold text-hampton-navy">{formData.partyTheme || selectedTheme || 'TBD'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 bg-hampton-pink/15 rounded-full flex items-center justify-center shrink-0">
+                      <Calendar size={14} className="text-hampton-pink" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-hampton-navy/50 font-medium uppercase tracking-wide">Date</p>
+                      <p className="text-sm font-semibold text-hampton-navy">{formatDate(calendarSelection.date)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 bg-hampton-pink/15 rounded-full flex items-center justify-center shrink-0">
+                      <Clock size={14} className="text-hampton-pink" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-hampton-navy/50 font-medium uppercase tracking-wide">Time</p>
+                      <p className="text-sm font-semibold text-hampton-navy">
+                        {formatTime(calendarSelection.timeSlot.start)} – {formatTime(calendarSelection.timeSlot.end)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 bg-hampton-pink/15 rounded-full flex items-center justify-center shrink-0">
+                      <Users size={14} className="text-hampton-pink" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-hampton-navy/50 font-medium uppercase tracking-wide">Guests</p>
+                      <p className="text-sm font-semibold text-hampton-navy">{guestCount} guests + Birthday Star</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pricing breakdown */}
+                <div className="border-t border-hampton-pink/15 pt-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-hampton-navy">Estimated Party Cost</span>
+                    <span className="text-xl font-bold text-hampton-navy">
+                      {selectedThemeData ? `from $${selectedThemeData.price.toLocaleString()}` : 'TBD'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-hampton-navy/60">
+                    10 guests + Birthday Star is included. Additional guests are $35 each.
+                  </p>
+                </div>
+
+                {/* Deposit info */}
+                <div className="bg-hampton-pink/10 rounded-xl px-5 py-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-semibold text-hampton-navy">Deposit to Reserve</span>
+                    <span className="text-lg font-bold text-hampton-navy">$250</span>
+                  </div>
+                  <p className="text-xs text-hampton-navy/60 leading-relaxed">
+                    Your $250 deposit is fully applied toward your party balance. All party details — theme, date, guest count — can be modified up to 1 week before your event.
+                  </p>
+                </div>
+
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                    {error}
+                  </div>
+                )}
+
+                {/* Reserve button */}
+                <button
+                  onClick={handleReserveNow}
+                  disabled={reserving}
+                  className="w-full bg-hampton-navy text-white font-bold py-4 px-8 rounded-full text-base hover:bg-opacity-90 hover:shadow-[0_8px_25px_rgba(47,52,59,0.3)] transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {reserving ? (
+                    <><Loader2 size={18} className="animate-spin" /> Redirecting to Checkout...</>
+                  ) : (
+                    'Reserve Now — $250 Deposit'
+                  )}
+                </button>
+
+                <p className="text-center text-xs text-hampton-navy/40">
+                  Secure checkout via Stripe. Your deposit is fully refundable.
+                </p>
+              </div>
+            </div>
           </section>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ── CTA ── */}
       <section className="bg-hampton-pink/20 py-14 text-center px-4">

@@ -33,6 +33,8 @@ export async function GET() {
     { url: `${base}/terms-of-service`, lastmod: now, changefreq: 'yearly', priority: 0.2 },
     { url: `${base}/return-policy`, lastmod: now, changefreq: 'yearly', priority: 0.2 },
     { url: `${base}/sitemap`, lastmod: now, changefreq: 'monthly', priority: 0.3 },
+    { url: `${base}/mobile-party`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
+    { url: `${base}/trucker-hat-bar`, lastmod: now, changefreq: 'monthly', priority: 0.7 },
   ]
 
   // Dynamic event pages
