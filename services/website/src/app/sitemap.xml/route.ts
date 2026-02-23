@@ -32,6 +32,7 @@ export async function GET() {
     { url: `${base}/privacy-policy`, lastmod: now, changefreq: 'yearly', priority: 0.2 },
     { url: `${base}/terms-of-service`, lastmod: now, changefreq: 'yearly', priority: 0.2 },
     { url: `${base}/return-policy`, lastmod: now, changefreq: 'yearly', priority: 0.2 },
+    { url: `${base}/sitemap`, lastmod: now, changefreq: 'monthly', priority: 0.3 },
   ]
 
   // Dynamic event pages
