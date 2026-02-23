@@ -22,7 +22,7 @@ export default function CommunionParty() {
         </p>
         <Link href="/book?event_type=communion"
               className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 shadow-lg">
-          Reserve Your Date — $250 Deposit
+          Reserve Your Date
         </Link>
       </section>
 
@@ -78,16 +78,16 @@ export default function CommunionParty() {
         </div>
       </section>
 
-      <section className="bg-hampton-navy py-14 text-center px-4">
-        <h2 className="font-serif text-3xl text-white mb-4">Ready to Celebrate This Milestone?</h2>
-        <p className="text-hampton-mauve text-base max-w-md mx-auto mb-7">
+      <section className="bg-gradient-to-r from-hampton-pink to-hampton-pink/30 py-14 text-center px-4">
+        <h2 className="font-serif text-3xl text-hampton-navy mb-4">Ready to Celebrate This Milestone?</h2>
+        <p className="text-hampton-navy/70 text-base max-w-md mx-auto mb-7">
           Reserve your date with a $250 deposit. We'll be in touch within 24 hours to start planning every beautiful detail.
         </p>
         <Link href="/book?event_type=communion"
-              className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full hover:bg-opacity-90 transition-all shadow-lg">
+              className="bg-hampton-navy text-white font-bold px-8 py-4 rounded-full hover:bg-opacity-90 transition-all shadow-lg">
           Reserve Your Communion Party
         </Link>
-        <p className="text-hampton-mauve text-xs mt-3">Questions? Call (631) 998-9325</p>
+        <p className="text-hampton-navy/70 text-xs mt-3">Questions? Call (631) 998-9325</p>
       </section>
     </>
   )

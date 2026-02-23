@@ -58,7 +58,7 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
               <Link href="/book"
                     className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg hover:shadow-xl">
-                Reserve Your Date — $250 Deposit
+                Reserve Your Date
               </Link>
               <Link href="/party-packages"
                     className="border-2 border-hampton-navy/40 text-hampton-navy font-semibold px-8 py-4 rounded-full text-base hover:border-hampton-pink transition-all">
@@ -125,18 +125,18 @@ export default function Home() {
       </section>
 
       {/* ── HOW IT WORKS ─────────────────────────────────────── */}
-      <section className="bg-hampton-navy py-20">
+      <section className="bg-gradient-to-r from-hampton-pink to-hampton-pink/30 py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-12">
-            <p className="text-hampton-pink text-sm font-semibold tracking-widest uppercase mb-2">Simple & Stress-Free</p>
-            <h2 className="font-serif text-3xl md:text-4xl text-white mb-4">How It Works</h2>
+            <p className="text-hampton-navy text-sm font-semibold tracking-widest uppercase mb-2">Simple & Stress-Free</p>
+            <h2 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-4">How It Works</h2>
           </div>
           <div className="grid md:grid-cols-3 gap-8">
             {steps.map(s => (
               <div key={s.n} className="text-center">
-                <div className="text-5xl font-serif text-hampton-pink/30 mb-3">{s.n}</div>
-                <h3 className="font-semibold text-white text-lg mb-2">{s.title}</h3>
-                <p className="text-hampton-mauve text-sm leading-relaxed">{s.desc}</p>
+                <div className="text-5xl font-serif text-hampton-navy/20 mb-3">{s.n}</div>
+                <h3 className="font-semibold text-hampton-navy text-lg mb-2">{s.title}</h3>
+                <p className="text-hampton-navy/70 text-sm leading-relaxed">{s.desc}</p>
               </div>
             ))}
           </div>
@@ -145,7 +145,7 @@ export default function Home() {
                   className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg">
               Reserve Your Date
             </Link>
-            <p className="text-hampton-mauve text-xs mt-3">Change your theme, date, or details any time. $250 is fully applied to your balance.</p>
+            <p className="text-hampton-navy/70 text-xs mt-3">Change your theme, date, or details any time. $250 is fully applied to your balance.</p>
           </div>
         </div>
       </section>

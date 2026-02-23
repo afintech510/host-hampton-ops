@@ -59,7 +59,7 @@ export default function FirstBirthdayParties() {
         </p>
         <Link href="/book?package=Toddler+Party&event_type=first-birthday"
               className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg">
-          Reserve Your Date — $250 Deposit
+          Reserve Your Date
         </Link>
         <p className="text-hampton-navy text-xs mt-3">Change details anytime up to 1 week before the party</p>
       </section>
@@ -131,9 +131,9 @@ export default function FirstBirthdayParties() {
       </section>
 
       {/* FAQ */}
-      <section className="bg-hampton-navy py-16">
+      <section className="bg-gradient-to-r from-hampton-pink to-hampton-pink/30 py-16">
         <div className="max-w-3xl mx-auto px-4 sm:px-6">
-          <h2 className="font-serif text-3xl text-white text-center mb-8">First Birthday FAQ</h2>
+          <h2 className="font-serif text-3xl text-hampton-navy text-center mb-8">First Birthday FAQ</h2>
           <div className="space-y-4">
             {[
               { q: 'How old does my child need to be?', a: 'We love first birthdays for babies as young as 6 months old. Our toddler setup is designed for babies and toddlers up to age 4.' },
@@ -142,9 +142,9 @@ export default function FirstBirthdayParties() {
               { q: 'How far in advance should I book?', a: 'Weekend dates fill up fast — especially spring and summer. We recommend booking 6–8 weeks in advance. Your $250 deposit locks the date.' },
               { q: 'Can I change the date after booking?', a: 'Yes! Life with a baby is unpredictable. You can change your date up to 1 week before the party, subject to availability.' },
             ].map(f => (
-              <div key={f.q} className="bg-white/10 rounded-xl p-5">
-                <h3 className="text-hampton-pink font-semibold text-base mb-1">{f.q}</h3>
-                <p className="text-hampton-mauve text-sm leading-relaxed">{f.a}</p>
+              <div key={f.q} className="bg-white/60 rounded-xl p-5">
+                <h3 className="text-hampton-navy font-semibold text-base mb-1">{f.q}</h3>
+                <p className="text-hampton-navy/70 text-sm leading-relaxed">{f.a}</p>
               </div>
             ))}
           </div>

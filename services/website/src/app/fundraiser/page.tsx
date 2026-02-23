@@ -249,14 +249,14 @@ export default function Fundraiser() {
       </section>
 
       {/* 5. Request a Mockup CTA */}
-      <section className="bg-hampton-navy py-14 text-center px-4">
-        <h2 className="font-serif text-3xl text-white mb-3">Request a Mockup</h2>
-        <p className="text-hampton-mauve text-base max-w-lg mx-auto mb-6">
+      <section className="bg-gradient-to-r from-hampton-pink to-hampton-pink/30 py-14 text-center px-4">
+        <h2 className="font-serif text-3xl text-hampton-navy mb-3">Request a Mockup</h2>
+        <p className="text-hampton-navy/70 text-base max-w-lg mx-auto mb-6">
           Get your free design in 24 hours.
         </p>
         <a
           href="#inquiry-form"
-          className="inline-block bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg"
+          className="inline-block bg-hampton-navy text-white font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg"
         >
           Request a Mockup
         </a>
@@ -408,22 +408,22 @@ export default function Fundraiser() {
       </section>
 
       {/* 11. FAQ */}
-      <section className="bg-hampton-navy py-16">
+      <section className="bg-gradient-to-r from-hampton-pink to-hampton-pink/30 py-16">
         <div className="max-w-3xl mx-auto px-4 sm:px-6">
-          <h2 className="font-serif text-3xl text-white text-center mb-8">
+          <h2 className="font-serif text-3xl text-hampton-navy text-center mb-8">
             Fundraiser FAQ
           </h2>
           <div className="space-y-4">
             {faqItems.map(f => (
-              <div key={f.q} className="bg-white/10 rounded-xl p-5">
-                <h3 className="text-hampton-pink font-semibold text-base mb-1">{f.q}</h3>
-                <p className="text-hampton-mauve text-sm leading-relaxed">{f.a}</p>
+              <div key={f.q} className="bg-white/60 rounded-xl p-5">
+                <h3 className="text-hampton-navy font-semibold text-base mb-1">{f.q}</h3>
+                <p className="text-hampton-navy/70 text-sm leading-relaxed">{f.a}</p>
               </div>
             ))}
           </div>
-          <p className="text-center mt-8 text-hampton-mauve text-sm">
+          <p className="text-center mt-8 text-hampton-navy/70 text-sm">
             More questions?{' '}
-            <Link href="/contact-us" className="text-hampton-pink underline hover:text-white transition-colors">
+            <Link href="/contact-us" className="text-hampton-navy font-semibold underline hover:text-hampton-navy/70 transition-colors">
               Contact us directly
             </Link>
           </p>
