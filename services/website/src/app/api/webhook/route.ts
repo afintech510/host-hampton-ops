@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { getSupabase } from '@/lib/supabase'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
-  const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!)
+  const supabase = getSupabase()
 
   const body = await req.text()
   const sig = req.headers.get('stripe-signature')

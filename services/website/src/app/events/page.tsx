@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
 import { Calendar, Clock } from 'lucide-react'
+import { getSupabase } from '@/lib/supabase'
 import EventFilters from './EventFilters'
 
 export const metadata: Metadata = {
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic'
 
 export default async function EventsPage() {
-  const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!)
+  const supabase = getSupabase()
 
   const { data: events } = await supabase
     .from('events')

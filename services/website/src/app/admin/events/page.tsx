@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Users, Mail, Archive, Edit3, Printer, Download, RefreshCw, ChevronDown, ChevronUp, Loader2, LogIn, X, Send, ArrowLeft, Upload, Star, Image as ImageIcon } from 'lucide-react'
+import { useRef } from 'react'
+import { Plus, Users, Mail, Archive, Edit3, Printer, Download, RefreshCw, ChevronDown, ChevronUp, Loader2, LogIn, X, Send, ArrowLeft, Upload, Star, Image as ImageIcon, Bold, Italic, Underline, Link2, Type, List } from 'lucide-react'
 
 /* ─── Interfaces ─────────────────────────────────────── */
 
@@ -721,10 +722,6 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
   const [loadingTickets, setLoadingTickets] = useState(true)
   const [refunding, setRefunding] = useState<string | null>(null)
   const [refundReason, setRefundReason] = useState('')
-  const [emailSubject, setEmailSubject] = useState('')
-  const [emailBody, setEmailBody] = useState('')
-  const [sendingEmail, setSendingEmail] = useState(false)
-  const [emailResult, setEmailResult] = useState('')
 
   useEffect(() => { fetchTickets() }, [event.id])
 
@@ -746,24 +743,6 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
     if (res.ok) { fetchTickets(); onRefresh() }
     setRefunding(null)
     setRefundReason('')
-  }
-
-  async function sendEmail(e: React.FormEvent) {
-    e.preventDefault()
-    if (!emailSubject || !emailBody) return
-    setSendingEmail(true); setEmailResult('')
-    const res = await fetch(`/api/admin/events/${event.id}/email`, {
-      method: 'POST', headers,
-      body: JSON.stringify({ subject: emailSubject, htmlBody: `<p>${emailBody.replace(/\n/g, '</p><p>')}</p>` }),
-    })
-    const data = await res.json()
-    if (res.ok) {
-      setEmailResult(`Sent to ${data.sent} attendee${data.sent !== 1 ? 's' : ''}${data.failed ? ` (${data.failed} failed)` : ''}`)
-      setEmailSubject(''); setEmailBody('')
-    } else {
-      setEmailResult(data.error || 'Failed to send')
-    }
-    setSendingEmail(false)
   }
 
   function printAttendees() {
@@ -873,25 +852,193 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
       )}
 
       {tab === 'email' && (
-        <form onSubmit={sendEmail}>
-          <p className="text-xs text-hampton-mauve mb-3">
-            Send an email to all {confirmed.length} confirmed attendee{confirmed.length !== 1 ? 's' : ''} for this event.
-          </p>
-          <div className="mb-3">
-            <label className="form-label">Subject</label>
-            <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)} className="form-input" placeholder="Event reminder..." required />
-          </div>
-          <div className="mb-4">
-            <label className="form-label">Message</label>
-            <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)} className="form-input" rows={4} placeholder="Hi everyone,&#10;&#10;Just a reminder about..." required />
-          </div>
-          {emailResult && <p className={`text-sm mb-3 p-2 rounded ${emailResult.includes('Failed') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}`}>{emailResult}</p>}
-          <button type="submit" disabled={sendingEmail || confirmed.length === 0} className="btn-primary px-5 py-2 text-sm flex items-center gap-2 disabled:opacity-50">
-            {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            {sendingEmail ? 'Sending...' : `Send to ${confirmed.length} attendee${confirmed.length !== 1 ? 's' : ''}`}
-          </button>
-        </form>
+        <EmailComposer
+          event={event}
+          confirmed={confirmed}
+          headers={headers}
+        />
       )}
     </div>
+  )
+}
+
+/* ─── Email Composer (Rich Text) ─────────────────────── */
+
+function EmailComposer({
+  event, confirmed, headers,
+}: {
+  event: Event; confirmed: Ticket[]; headers: Record<string, string>
+}) {
+  const editorRef = useRef<HTMLDivElement>(null)
+  const [subject, setSubject] = useState('')
+  const [sending, setSending] = useState(false)
+  const [result, setResult] = useState('')
+  const [showImageInput, setShowImageInput] = useState(false)
+  const [imageUrl, setImageUrl] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const token = headers.Authorization.replace('Bearer ', '')
+
+  function exec(cmd: string, value?: string) {
+    document.execCommand(cmd, false, value)
+    editorRef.current?.focus()
+  }
+
+  function loadTemplate() {
+    const dateStr = event.event_date
+      ? new Date(event.event_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+      : 'Date TBD'
+    const timeStr = event.event_time || 'Time TBD'
+
+    if (editorRef.current) {
+      editorRef.current.innerHTML = `
+        <p>Hi there,</p>
+        <p>This is a friendly reminder about <strong>${event.title}</strong> at Host Hampton!</p>
+        <p><strong>Date:</strong> ${dateStr}<br/>
+        <strong>Time:</strong> ${timeStr}<br/>
+        <strong>Location:</strong> Host Hampton, 295 Montauk Hwy Suite 7, Speonk NY 11972</p>
+        <p>We're looking forward to seeing you! If you have any questions or need to make changes to your reservation, please don't hesitate to reach out.</p>
+        <p>Warm regards,<br/>
+        <strong>The Host Hampton Team</strong><br/>
+        <span style="color:#666;font-size:13px;">(631) 998-9325 · hosthampton295@gmail.com<br/>
+        www.hosthampton.com</span></p>
+      `.trim()
+    }
+    if (!subject) setSubject(`Reminder: ${event.title}`)
+  }
+
+  function insertLink() {
+    const url = prompt('Enter URL:')
+    if (url) exec('createLink', url)
+  }
+
+  function insertImage(src: string) {
+    if (editorRef.current) {
+      editorRef.current.focus()
+      exec('insertHTML', `<img src="${src}" alt="Event image" style="max-width:100%;border-radius:8px;margin:8px 0;" />`)
+    }
+    setShowImageInput(false)
+    setImageUrl('')
+  }
+
+  async function handleImageUpload(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setUploading(true)
+    const formData = new FormData()
+    formData.append('file', files[0])
+    try {
+      const res = await fetch('/api/admin/events/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+      if (res.ok) {
+        const data = await res.json()
+        insertImage(data.url)
+      }
+    } catch (err) {
+      console.error('Image upload failed:', err)
+    }
+    setUploading(false)
+  }
+
+  async function handleSend(e: React.FormEvent) {
+    e.preventDefault()
+    const htmlBody = editorRef.current?.innerHTML || ''
+    if (!subject || !htmlBody.trim() || htmlBody.trim() === '<br>') return
+    setSending(true); setResult('')
+
+    const res = await fetch(`/api/admin/events/${event.id}/email`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ subject, htmlBody }),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      setResult(`Sent to ${data.sent} attendee${data.sent !== 1 ? 's' : ''}${data.failed ? ` (${data.failed} failed)` : ''}`)
+      setSubject('')
+      if (editorRef.current) editorRef.current.innerHTML = ''
+    } else {
+      setResult(data.error || 'Failed to send')
+    }
+    setSending(false)
+  }
+
+  return (
+    <form onSubmit={handleSend}>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-hampton-mauve">
+          Send to {confirmed.length} confirmed attendee{confirmed.length !== 1 ? 's' : ''}.
+        </p>
+        <button type="button" onClick={loadTemplate}
+          className="text-xs text-hampton-navy hover:underline flex items-center gap-1">
+          <Mail className="w-3 h-3" /> Load Reminder Template
+        </button>
+      </div>
+
+      <div className="mb-3">
+        <label className="form-label">Subject</label>
+        <input value={subject} onChange={e => setSubject(e.target.value)} className="form-input" placeholder="Event reminder..." required />
+      </div>
+
+      <div className="mb-4">
+        <label className="form-label">Message</label>
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-0.5 border border-b-0 border-hampton-pink/20 rounded-t-lg bg-hampton-ivory/50 px-2 py-1.5">
+          <button type="button" onClick={() => exec('bold')} className="p-1.5 rounded hover:bg-hampton-navy/10 transition-colors" title="Bold">
+            <Bold className="w-3.5 h-3.5 text-hampton-navy" />
+          </button>
+          <button type="button" onClick={() => exec('italic')} className="p-1.5 rounded hover:bg-hampton-navy/10 transition-colors" title="Italic">
+            <Italic className="w-3.5 h-3.5 text-hampton-navy" />
+          </button>
+          <button type="button" onClick={() => exec('underline')} className="p-1.5 rounded hover:bg-hampton-navy/10 transition-colors" title="Underline">
+            <Underline className="w-3.5 h-3.5 text-hampton-navy" />
+          </button>
+          <div className="w-px h-4 bg-hampton-pink/30 mx-1" />
+          <button type="button" onClick={() => exec('formatBlock', 'h3')} className="p-1.5 rounded hover:bg-hampton-navy/10 transition-colors" title="Heading">
+            <Type className="w-3.5 h-3.5 text-hampton-navy" />
+          </button>
+          <button type="button" onClick={() => exec('insertUnorderedList')} className="p-1.5 rounded hover:bg-hampton-navy/10 transition-colors" title="Bullet List">
+            <List className="w-3.5 h-3.5 text-hampton-navy" />
+          </button>
+          <button type="button" onClick={insertLink} className="p-1.5 rounded hover:bg-hampton-navy/10 transition-colors" title="Insert Link">
+            <Link2 className="w-3.5 h-3.5 text-hampton-navy" />
+          </button>
+          <div className="w-px h-4 bg-hampton-pink/30 mx-1" />
+          <button type="button" onClick={() => setShowImageInput(!showImageInput)} className="p-1.5 rounded hover:bg-hampton-navy/10 transition-colors" title="Insert Image">
+            <ImageIcon className="w-3.5 h-3.5 text-hampton-navy" />
+          </button>
+        </div>
+
+        {/* Image insert row */}
+        {showImageInput && (
+          <div className="flex items-center gap-2 border border-b-0 border-hampton-pink/20 bg-hampton-ivory/30 px-3 py-2">
+            <label className={`text-xs text-hampton-navy cursor-pointer hover:underline flex items-center gap-1 ${uploading ? 'opacity-50' : ''}`}>
+              <Upload className="w-3 h-3" />
+              {uploading ? 'Uploading...' : 'Upload'}
+              <input type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(e.target.files)} disabled={uploading} />
+            </label>
+            <span className="text-xs text-hampton-mauve">or</span>
+            <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} className="form-input flex-1 text-xs py-1" placeholder="Paste image URL..."
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (imageUrl.trim()) insertImage(imageUrl.trim()) } }} />
+            <button type="button" onClick={() => { if (imageUrl.trim()) insertImage(imageUrl.trim()) }} className="text-xs text-hampton-navy hover:underline">Insert</button>
+          </div>
+        )}
+
+        {/* Editable area */}
+        <div
+          ref={editorRef}
+          contentEditable
+          className="form-input rounded-t-none min-h-[160px] prose prose-sm max-w-none focus:outline-none"
+          style={{ whiteSpace: 'pre-wrap' }}
+          data-placeholder="Start typing your message..."
+          suppressContentEditableWarning
+        />
+      </div>
+
+      {result && <p className={`text-sm mb-3 p-2 rounded ${result.includes('Failed') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}`}>{result}</p>}
+      <button type="submit" disabled={sending || confirmed.length === 0} className="btn-primary px-5 py-2 text-sm flex items-center gap-2 disabled:opacity-50">
+        {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+        {sending ? 'Sending...' : `Send to ${confirmed.length} attendee${confirmed.length !== 1 ? 's' : ''}`}
+      </button>
+    </form>
   )
 }

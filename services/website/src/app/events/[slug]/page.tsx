@@ -1,13 +1,13 @@
-import { createClient } from '@supabase/supabase-js'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Calendar, Clock, MapPin, ArrowLeft } from 'lucide-react'
+import { getSupabase } from '@/lib/supabase'
 import TicketForm from './TicketForm'
 
 export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: { slug: string } }) {
-  const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!)
+  const supabase = getSupabase()
   const { data: event } = await supabase
     .from('events')
     .select('title, short_description')
@@ -31,7 +31,7 @@ function formatDate(dateStr: string): string {
 }
 
 export default async function EventDetailPage({ params }: { params: { slug: string } }) {
-  const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!)
+  const supabase = getSupabase()
 
   const { data: event } = await supabase
     .from('events')
