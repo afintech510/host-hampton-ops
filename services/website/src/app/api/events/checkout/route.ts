@@ -6,6 +6,9 @@ import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTem
 
 export const dynamic = 'force-dynamic'
 
+const TAX_RATE = 0.0875
+const CC_RATE = 0.03
+
 export async function POST(req: NextRequest) {
   const supabase = getSupabase()
   const body = await req.json()
@@ -131,17 +134,49 @@ export async function POST(req: NextRequest) {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
     const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'staging.hosthampton.com'
 
+    const multiTaxCents = Math.round(multiTotalCents * TAX_RATE)
+    const multiCcFeeCents = Math.round((multiTotalCents + multiTaxCents) * CC_RATE)
+
+    // Build session dates description
+    const multiSessionDates = sessionsData
+      .sort((a: any, b: any) => a.session_date.localeCompare(b.session_date))
+      .map((s: any) => {
+        const d = new Date(s.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+        return `${d} at ${s.session_time}`
+      }).join(', ')
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       customer_email: customerEmail,
-      line_items: [{
-        price_data: {
-          currency: 'usd',
-          product_data: { name: `${event.title} (${sessionIds.length} sessions)` },
-          unit_amount: multiTotalCents,
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `${event.title} (${sessionIds.length} sessions)`,
+              description: `${multiSessionDates} | ${event.location || 'Host Hampton'}`,
+            },
+            unit_amount: multiTotalCents,
+          },
+          quantity: 1,
         },
-        quantity: 1,
-      }],
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: { name: 'Sales Tax (8.75%)' },
+            unit_amount: multiTaxCents,
+          },
+          quantity: 1,
+        },
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: { name: 'Processing Fee (3%)' },
+            unit_amount: multiCcFeeCents,
+          },
+          quantity: 1,
+        },
+      ],
       metadata: {
         type: 'event_ticket_multi',
         eventId,
@@ -152,6 +187,9 @@ export async function POST(req: NextRequest) {
         customerName,
         customerEmail,
         customerPhone: customerPhone || '',
+        eventTitle: event.title,
+        eventDates: multiSessionDates,
+        eventLocation: event.location || 'Host Hampton',
       },
       success_url: `https://${host}/events/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `https://${host}/events/${event.slug}?cancelled=true`,
@@ -265,17 +303,51 @@ export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'staging.hosthampton.com'
 
+  // Tax + CC fee
+  const taxCents = Math.round(totalCents * TAX_RATE)
+  const ccFeeCents = Math.round((totalCents + taxCents) * CC_RATE)
+
+  // Event date/time for Stripe description
+  const eventDateDisplay = sessionRow?.session_date
+    ? new Date(sessionRow.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    : event.event_date
+      ? new Date(event.event_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+      : 'Date TBD'
+  const eventTimeDisplay = sessionRow?.session_time || event.event_time || ''
+  const eventLocation = event.location || 'Host Hampton'
+
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     customer_email: customerEmail,
-    line_items: [{
-      price_data: {
-        currency: 'usd',
-        product_data: { name: `${event.title}${variantLabel ? ` (${variantLabel})` : ''}` },
-        unit_amount: unitPriceCents,
+    line_items: [
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: `${event.title}${variantLabel ? ` (${variantLabel})` : ''}`,
+            description: `${eventDateDisplay}${eventTimeDisplay ? ` at ${eventTimeDisplay}` : ''} | ${eventLocation}`,
+          },
+          unit_amount: unitPriceCents,
+        },
+        quantity,
       },
-      quantity,
-    }],
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: { name: 'Sales Tax (8.75%)' },
+          unit_amount: taxCents,
+        },
+        quantity: 1,
+      },
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: { name: 'Processing Fee (3%)' },
+          unit_amount: ccFeeCents,
+        },
+        quantity: 1,
+      },
+    ],
     metadata: {
       type: 'event_ticket',
       eventId,
@@ -285,6 +357,10 @@ export async function POST(req: NextRequest) {
       customerName,
       customerEmail,
       customerPhone: customerPhone || '',
+      eventTitle: event.title,
+      eventDate: eventDateDisplay,
+      eventTime: eventTimeDisplay,
+      eventLocation,
     },
     success_url: `https://${host}/events/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `https://${host}/events/${event.slug}?cancelled=true`,

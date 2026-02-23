@@ -24,12 +24,24 @@ export default function Nav() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => { document.body.style.overflow = '' }
+  }, [open])
+
   return (
     <header
       className={`fixed top-0 w-full z-50 transition-all duration-300 ${
-        scrolled
-          ? 'bg-white/60 backdrop-blur-xl border-b border-white/30 shadow-sm py-2'
-          : 'bg-transparent py-4'
+        open
+          ? 'bg-white py-2'
+          : scrolled
+            ? 'bg-white/60 backdrop-blur-xl border-b border-white/30 shadow-sm py-2'
+            : 'bg-transparent py-4'
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between">
@@ -108,7 +120,7 @@ export default function Nav() {
 
       {/* Mobile full-screen menu */}
       <div
-        className={`fixed inset-0 z-40 bg-white/95 backdrop-blur-xl transition-all duration-300 ease-in-out md:hidden flex flex-col justify-center items-center ${
+        className={`fixed inset-0 z-[60] bg-white backdrop-blur-xl transition-all duration-300 ease-in-out md:hidden flex flex-col justify-center items-center ${
           open ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >

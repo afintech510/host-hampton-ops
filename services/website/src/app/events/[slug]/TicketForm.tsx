@@ -75,6 +75,13 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
 
   const isFree = unitPrice === 0
 
+  // Tax + CC fee (only for paid events)
+  const TAX_RATE = 0.0875
+  const CC_RATE = 0.03
+  const taxCents = isFree ? 0 : Math.round(total * TAX_RATE)
+  const ccFeeCents = isFree ? 0 : Math.round((total + taxCents) * CC_RATE)
+  const grandTotal = total + taxCents + ccFeeCents
+
   const maxAvail = isMultiSession
     ? Math.min(...(selectedSessions.length > 0 ? selectedSessions.map(s => s.available_tickets) : [event.available_tickets]))
     : selectedSession
@@ -292,11 +299,25 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
         </>
       )}
 
-      {/* Total */}
+      {/* Total with tax + CC fee breakdown */}
       {!soldOut && !isFree && (
-        <div className="flex items-center justify-between py-3 px-4 bg-hampton-ivory rounded-xl mb-5">
-          <span className="text-sm text-hampton-navy">Total</span>
-          <span className="text-xl font-bold text-hampton-navy">{formatPrice(total)}</span>
+        <div className="py-3 px-4 bg-hampton-ivory rounded-xl mb-5 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-hampton-navy">Subtotal</span>
+            <span className="text-sm text-hampton-navy">{formatPrice(total)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-hampton-mauve">Sales Tax (8.75%)</span>
+            <span className="text-xs text-hampton-mauve">{formatPrice(taxCents)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-hampton-mauve">Processing Fee (3%)</span>
+            <span className="text-xs text-hampton-mauve">{formatPrice(ccFeeCents)}</span>
+          </div>
+          <div className="flex items-center justify-between pt-1.5 border-t border-hampton-navy/10">
+            <span className="text-sm font-semibold text-hampton-navy">Total</span>
+            <span className="text-xl font-bold text-hampton-navy">{formatPrice(grandTotal)}</span>
+          </div>
         </div>
       )}
 
@@ -316,7 +337,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
             ? 'Processing...'
             : isFree
               ? 'RSVP — Free'
-              : `Get Tickets — ${formatPrice(total)}`}
+              : `Get Tickets — ${formatPrice(grandTotal)}`}
       </button>
     </form>
   )
