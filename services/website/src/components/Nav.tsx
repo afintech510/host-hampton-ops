@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Menu, X, Phone } from 'lucide-react'
+import { Menu, X, Phone, MessageCircle } from 'lucide-react'
 
 const navLinks = [
   { href: '/party-packages',    label: 'Party Packages' },
@@ -15,6 +16,7 @@ const navLinks = [
 export default function Nav() {
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const pathname = usePathname()
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
@@ -46,26 +48,46 @@ export default function Nav() {
 
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-6">
-          {navLinks.map(l => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className="text-sm font-bold tracking-wide text-hampton-navy hover:text-hampton-navy/70 transition-colors"
-            >
-              {l.label}
-            </Link>
-          ))}
+          {navLinks.map(l => {
+            const isActive = pathname === l.href || pathname.startsWith(l.href + '/')
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                className="relative text-sm font-bold tracking-wide text-hampton-navy hover:text-hampton-navy/70 transition-colors group py-1"
+              >
+                {l.label}
+                {isActive && (
+                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
+                    <span className="h-[2px] w-6 rounded-full bg-gradient-to-r from-transparent via-[#c4975a] to-transparent" />
+                    <span className="nav-twinkle text-[8px] text-[#c4975a]">✦</span>
+                    <span className="h-[2px] w-6 rounded-full bg-gradient-to-r from-transparent via-[#c4975a] to-transparent" />
+                  </span>
+                )}
+              </Link>
+            )
+          })}
         </nav>
 
         {/* CTA */}
         <div className="hidden md:flex items-center gap-4">
-          <a
-            href="tel:6319989325"
-            className="flex items-center gap-1.5 text-sm font-bold text-hampton-navy/70 hover:text-hampton-navy transition-colors"
-          >
-            <Phone size={14} />
-            <span>(631) 998-9325</span>
-          </a>
+          <div className="flex items-center gap-1.5 text-sm font-bold text-hampton-navy/70">
+            <a
+              href="tel:6319989325"
+              className="flex items-center gap-1 hover:text-hampton-navy transition-colors"
+            >
+              <Phone size={14} />
+              <span>Call</span>
+            </a>
+            <span className="text-hampton-navy/30">|</span>
+            <a
+              href="sms:6319989325"
+              className="flex items-center gap-1 hover:text-hampton-navy transition-colors"
+            >
+              <MessageCircle size={14} />
+              <span>Text</span>
+            </a>
+          </div>
           <Link
             href="/book"
             className="bg-hampton-navy text-white px-6 py-2.5 rounded-full text-sm font-bold tracking-wide hover:bg-hampton-navy/90 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.1)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.15)] hover:-translate-y-0.5"
@@ -99,22 +121,39 @@ export default function Nav() {
         </button>
 
         <div className="flex flex-col items-center space-y-8 text-center px-4 w-full max-w-sm">
-          {navLinks.map(l => (
-            <Link
-              key={l.href}
-              href={l.href}
-              onClick={() => setOpen(false)}
-              className="text-2xl font-serif text-hampton-navy hover:text-hampton-navy/70 transition-colors w-full pb-4 border-b border-hampton-mauve/30"
-            >
-              {l.label}
-            </Link>
-          ))}
+          {navLinks.map(l => {
+            const isActive = pathname === l.href || pathname.startsWith(l.href + '/')
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={() => setOpen(false)}
+                className="relative text-2xl font-serif text-hampton-navy hover:text-hampton-navy/70 transition-colors w-full pb-4 border-b border-hampton-mauve/30"
+              >
+                {l.label}
+                {isActive && (
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
+                    <span className="h-[2px] w-8 rounded-full bg-gradient-to-r from-transparent via-[#c4975a] to-transparent" />
+                    <span className="nav-twinkle text-[10px] text-[#c4975a]">✦</span>
+                    <span className="h-[2px] w-8 rounded-full bg-gradient-to-r from-transparent via-[#c4975a] to-transparent" />
+                  </span>
+                )}
+              </Link>
+            )
+          })}
 
           <div className="pt-8 flex flex-col items-center gap-6 w-full">
-            <a href="tel:6319989325" className="flex items-center gap-2 text-xl text-hampton-navy/70">
-              <Phone size={20} />
-              (631) 998-9325
-            </a>
+            <div className="flex items-center gap-3 text-xl text-hampton-navy/70">
+              <a href="tel:6319989325" className="flex items-center gap-1.5 hover:text-hampton-navy transition-colors">
+                <Phone size={20} />
+                Call
+              </a>
+              <span className="text-hampton-navy/30">|</span>
+              <a href="sms:6319989325" className="flex items-center gap-1.5 hover:text-hampton-navy transition-colors">
+                <MessageCircle size={20} />
+                Text
+              </a>
+            </div>
             <Link
               href="/book"
               onClick={() => setOpen(false)}
