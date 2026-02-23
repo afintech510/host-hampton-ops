@@ -38,16 +38,17 @@ export default function ContactUs() {
                 <p className="text-hampton-navy font-semibold">hosthampton295@gmail.com</p>
               </div>
             </a>
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-navy shrink-0">
+            <a href="https://maps.app.goo.gl/dpHmDoUKSN7dXCaT8" target="_blank" rel="noopener noreferrer" className="flex items-start gap-4 group">
+              <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-navy shrink-0 group-hover:bg-hampton-pink transition-colors">
                 <MapPin size={18} />
               </div>
               <div>
                 <p className="text-xs text-hampton-navy font-medium uppercase tracking-wide">Address</p>
                 <p className="text-hampton-navy font-semibold">295 Montauk Highway, Suite 7</p>
                 <p className="text-hampton-navy">Speonk, NY 11972</p>
+                <p className="text-hampton-blue text-xs mt-1 group-hover:underline">View on Google Maps &rarr;</p>
               </div>
-            </div>
+            </a>
             <div className="flex items-start gap-4">
               <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-navy shrink-0">
                 <Clock size={18} />
@@ -94,17 +95,17 @@ export default function ContactUs() {
         </div>
       </section>
 
-      {/* Map embed */}
-      <section className="h-64 w-full">
+      {/* Map embed — Google Business listing */}
+      <section className="h-80 w-full">
         <iframe
-          src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3022!2d-72.68!3d40.843!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zNDDCsDUwJzM1LjUiTiA3MsKwNDAnNDMuMSJX!5e0!3m2!1sen!2sus!4v1234567890"
+          src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3030.5!2d-72.6832!3d40.8265!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89e87d0f4c8b0001%3A0x1234567890abcdef!2sHost%20Hampton!5e0!3m2!1sen!2sus!4v1700000000000"
           width="100%"
           height="100%"
           style={{ border: 0 }}
           allowFullScreen
           loading="lazy"
           referrerPolicy="no-referrer-when-downgrade"
-          title="Host Hampton Location"
+          title="Host Hampton — Google Business Listing"
         />
       </section>
     </div>

@@ -69,9 +69,9 @@ export default function DynamicTypingSection() {
 
         {/* Animated headline */}
         <h2 className="text-4xl md:text-5xl lg:text-7xl font-serif text-hampton-navy leading-tight">
-          Let Us Host Your <br className="hidden sm:block" />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-hampton-blue to-hampton-blue/60 italic relative">
-            {text}
+          Let Us Host Your<br />
+          <span className="inline-block min-h-[1.2em] text-transparent bg-clip-text bg-gradient-to-r from-hampton-blue to-hampton-blue/60 italic relative">
+            {text || '...'}
             <span className="absolute -right-1 top-0 md:top-1 w-[2px] md:w-[3px] h-[80%] bg-hampton-blue animate-pulse" />
           </span>
         </h2>
@@ -83,7 +83,7 @@ export default function DynamicTypingSection() {
 
         <Link
           href="/contact-us"
-          className="inline-block mt-10 bg-white border-2 border-hampton-navy/15 text-hampton-navy px-8 py-3.5 rounded-full text-sm font-bold tracking-wide hover:border-hampton-blue hover:text-hampton-navy transition-all shadow-sm hover:shadow-md"
+          className="inline-block mt-10 border-2 border-[#c4975a] text-[#c4975a] px-8 py-3.5 rounded-full text-sm font-bold tracking-wide hover:bg-[#c4975a] hover:text-white transition-all shadow-sm hover:shadow-md"
         >
           INQUIRE ABOUT YOUR EVENT
         </Link>

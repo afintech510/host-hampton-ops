@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import { Phone, Mail, MapPin, Instagram, Facebook } from 'lucide-react'
+import { Phone, Mail, MapPin, Instagram, Facebook, MessageCircle } from 'lucide-react'
 
 export default function Footer() {
   return (
@@ -59,6 +59,7 @@ export default function Footer() {
               { href: '/privacy-policy',    label: 'Privacy Policy' },
               { href: '/terms-of-service',  label: 'Terms of Service' },
               { href: '/return-policy',     label: 'Return Policy' },
+              { href: '/sitemap',           label: 'Sitemap' },
             ].map(l => (
               <li key={l.href}>
                 <Link href={l.href} className="hover:text-hampton-navy transition-colors">{l.label}</Link>
@@ -71,14 +72,22 @@ export default function Footer() {
         <div>
           <h4 className="font-semibold text-sm tracking-widest uppercase text-hampton-navy mb-4">Find Us</h4>
           <ul className="space-y-3 text-sm text-hampton-navy/70">
-            <li className="flex gap-2">
-              <MapPin size={16} className="shrink-0 mt-0.5 text-hampton-navy" />
-              <span>295 Montauk Hwy, Suite 7<br />Speonk, NY 11972</span>
+            <li>
+              <a href="https://maps.app.goo.gl/dpHmDoUKSN7dXCaT8" target="_blank" rel="noopener noreferrer" className="flex gap-2 hover:text-hampton-navy transition-colors">
+                <MapPin size={16} className="shrink-0 mt-0.5 text-hampton-navy" />
+                <span>295 Montauk Hwy, Suite 7<br />Speonk, NY 11972</span>
+              </a>
             </li>
             <li>
               <a href="tel:6319989325" className="flex gap-2 hover:text-hampton-navy transition-colors">
                 <Phone size={16} className="shrink-0 text-hampton-navy" />
                 (631) 998-9325
+              </a>
+            </li>
+            <li>
+              <a href="sms:6319989325" className="flex gap-2 hover:text-hampton-navy transition-colors">
+                <MessageCircle size={16} className="shrink-0 text-hampton-navy" />
+                Text Us
               </a>
             </li>
             <li>
