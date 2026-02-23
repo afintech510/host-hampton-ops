@@ -75,15 +75,23 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
           {/* Left: details */}
           <div className="lg:col-span-3">
             {/* Image */}
-            {event.image_url ? (
-              <div className="rounded-2xl overflow-hidden mb-6">
-                <img src={event.image_url} alt={event.title} className="w-full h-72 object-cover" />
-              </div>
-            ) : (
-              <div className="rounded-2xl overflow-hidden mb-6 h-48 bg-gradient-to-br from-hampton-blue/30 to-hampton-pink/30 flex items-center justify-center">
-                <Calendar className="w-16 h-16 text-hampton-navy/20" />
-              </div>
-            )}
+            {(() => {
+              const images = event.images || []
+              const primaryImg = images.find((i: any) => i.is_primary) || images[0]
+              const imgUrl = primaryImg?.url || event.image_url
+              if (imgUrl) {
+                return (
+                  <div className="rounded-2xl overflow-hidden mb-6 bg-white">
+                    <img src={imgUrl} alt={event.title} className="w-full object-contain" />
+                  </div>
+                )
+              }
+              return (
+                <div className="rounded-2xl overflow-hidden mb-6 h-48 bg-gradient-to-br from-hampton-blue/30 to-hampton-pink/30 flex items-center justify-center">
+                  <Calendar className="w-16 h-16 text-hampton-navy/20" />
+                </div>
+              )
+            })()}
 
             {/* Category badge */}
             <span className="inline-block bg-hampton-navy/10 text-hampton-navy px-3 py-1 rounded-full text-xs font-medium capitalize mb-3">

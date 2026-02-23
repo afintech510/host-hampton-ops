@@ -25,6 +25,13 @@ function availabilityBadge(available: number, max: number) {
   return { text: `${available} spots`, color: 'bg-green-100 text-green-700' }
 }
 
+function getEventImage(event: EventRow): string | null {
+  const primary = event.images?.find(i => i.is_primary)
+  if (primary) return primary.url
+  if (event.images?.length > 0) return event.images[0].url
+  return event.image_url
+}
+
 function EventCard({ event }: { event: EventRow }) {
   const priceDisplay = event.has_variants
     ? `From ${formatPrice(Math.min(...event.variants.map(v => v.priceCents)))}`
@@ -38,18 +45,19 @@ function EventCard({ event }: { event: EventRow }) {
       : 'Date TBD'
 
   const soldOut = event.available_tickets <= 0
+  const imageUrl = getEventImage(event)
 
   return (
     <Link
       href={`/events/${event.slug}`}
       className="group bg-white rounded-2xl border border-hampton-pink/20 overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col"
     >
-      <div className="h-48 relative overflow-hidden">
-        {event.image_url ? (
-          <img src={event.image_url} alt={event.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+      <div className="relative overflow-hidden">
+        {imageUrl ? (
+          <img src={imageUrl} alt={event.title}
+            className="w-full aspect-[4/3] object-contain bg-white group-hover:scale-105 transition-transform duration-500" />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-hampton-blue/30 to-hampton-pink/30 flex items-center justify-center">
+          <div className="w-full aspect-[4/3] bg-gradient-to-br from-hampton-blue/30 to-hampton-pink/30 flex items-center justify-center">
             <Calendar className="w-12 h-12 text-hampton-navy/20" />
           </div>
         )}

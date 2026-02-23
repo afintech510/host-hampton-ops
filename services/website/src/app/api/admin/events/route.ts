@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
       is_active: body.isActive !== false,
       is_featured: body.isFeatured || false,
       image_url: body.imageUrl || null,
+      images: body.images || [],
     })
     .select()
     .single()

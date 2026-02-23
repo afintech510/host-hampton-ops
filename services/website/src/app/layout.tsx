@@ -13,11 +13,13 @@ export const metadata: Metadata = {
   keywords: ['birthday party venue', 'kids party Hamptons', 'permanent jewelry Long Island', 'party room rental Speonk'],
   icons: {
     icon: [
-      { url: '/images/H_icon_hh_64.png', sizes: '64x64', type: 'image/png' },
-      { url: '/images/H_icon_hh_96.png', sizes: '96x96', type: 'image/png' },
+      { url: '/images/H_icon_hh_64.png',  sizes: '64x64',   type: 'image/png' },
+      { url: '/images/H_icon_hh_96.png',  sizes: '96x96',   type: 'image/png' },
+      { url: '/images/H_icon_hh_128.png', sizes: '128x128', type: 'image/png' },
     ],
     apple: [
-      { url: '/images/H_icon_hh_240.png', sizes: '240x240', type: 'image/png' },
+      { url: '/images/H_icon_hh_255.png', sizes: '255x255', type: 'image/png' },
+      { url: '/images/H_icon_hh_375.png', sizes: '375x375', type: 'image/png' },
     ],
   },
   openGraph: {

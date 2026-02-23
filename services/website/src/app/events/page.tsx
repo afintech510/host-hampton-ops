@@ -66,4 +66,5 @@ export interface EventRow {
   has_sessions: boolean
   is_featured: boolean
   image_url: string | null
+  images: { url: string; name: string; is_primary: boolean }[]
 }

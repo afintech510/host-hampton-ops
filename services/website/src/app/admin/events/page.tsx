@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Users, Mail, Archive, Edit3, Printer, Download, RefreshCw, ChevronDown, ChevronUp, Loader2, LogIn, X, Send, ArrowLeft } from 'lucide-react'
+import { Plus, Users, Mail, Archive, Edit3, Printer, Download, RefreshCw, ChevronDown, ChevronUp, Loader2, LogIn, X, Send, ArrowLeft, Upload, Star, Image as ImageIcon } from 'lucide-react'
 
 /* ─── Interfaces ─────────────────────────────────────── */
 
@@ -11,9 +11,15 @@ interface Event {
   max_tickets: number; available_tickets: number; is_active: boolean; is_featured: boolean
   has_variants: boolean; variants: Variant[]; has_sessions: boolean
   description: string | null; short_description: string | null
-  image_url: string | null; location: string; confirmed_tickets: number
+  image_url: string | null; images: EventImage[]; location: string; confirmed_tickets: number
   sibling_price_cents: number | null
   allow_multi_session: boolean; bundle_pricing: BundleTier[]
+}
+
+interface EventImage {
+  url: string
+  name: string
+  is_primary: boolean
 }
 
 interface Ticket {
@@ -45,7 +51,7 @@ interface BundleTier {
 interface EventFormData {
   title: string; description: string; shortDescription: string; category: string
   priceDollars: string; eventDate: string; eventTime: string; eventEndTime: string
-  maxTickets: string; imageUrl: string; isFeatured: boolean; location: string
+  maxTickets: string; images: EventImage[]; isFeatured: boolean; location: string
   hasVariants: boolean; variants: Variant[]
   hasSessions: boolean; sessions: EventSession[]
   allowMultiSession: boolean; bundlePricing: BundleTier[]
@@ -269,7 +275,7 @@ function EventForm({
         eventTime: existingEvent.event_time || '',
         eventEndTime: existingEvent.event_end_time || '',
         maxTickets: existingEvent.max_tickets.toString(),
-        imageUrl: existingEvent.image_url || '',
+        images: existingEvent.images || [],
         isFeatured: existingEvent.is_featured,
         location: existingEvent.location || DEFAULT_LOCATION,
         hasVariants: existingEvent.has_variants,
@@ -283,7 +289,7 @@ function EventForm({
     return {
       title: '', description: '', shortDescription: '', category: 'workshop',
       priceDollars: '', eventDate: '', eventTime: '', eventEndTime: '',
-      maxTickets: '30', imageUrl: '', isFeatured: false, location: DEFAULT_LOCATION,
+      maxTickets: '30', images: [], isFeatured: false, location: DEFAULT_LOCATION,
       hasVariants: false, variants: [],
       hasSessions: false, sessions: [],
       allowMultiSession: false, bundlePricing: [],
@@ -309,7 +315,8 @@ function EventForm({
       eventTime: form.eventTime || null,
       eventEndTime: form.eventEndTime || null,
       maxTickets: parseInt(form.maxTickets) || 30,
-      imageUrl: form.imageUrl || null,
+      imageUrl: form.images.find(i => i.is_primary)?.url || form.images[0]?.url || null,
+      images: form.images,
       isFeatured: form.isFeatured,
       location: form.location || DEFAULT_LOCATION,
       hasVariants: form.hasVariants,
@@ -405,8 +412,12 @@ function EventForm({
         <textarea value={form.description} onChange={e => set('description', e.target.value)} className="form-input" rows={3} />
       </div>
       <div className="mb-4">
-        <label className="form-label">Image URL</label>
-        <input value={form.imageUrl} onChange={e => set('imageUrl', e.target.value)} className="form-input" placeholder="https://..." />
+        <label className="form-label">Images</label>
+        <ImageUploader
+          images={form.images}
+          onChange={imgs => set('images', imgs)}
+          token={headers.Authorization.replace('Bearer ', '')}
+        />
       </div>
 
       <div className="flex items-center gap-2 mb-5">
@@ -591,6 +602,113 @@ function BundlePricingEditor({ tiers, onChange }: { tiers: BundleTier[]; onChang
         </div>
       ))}
       {tiers.length === 0 && <p className="text-xs text-hampton-mauve">No tiers yet. Add one above.</p>}
+    </div>
+  )
+}
+
+/* ─── Image Uploader ────────────────────────────────── */
+
+function ImageUploader({
+  images, onChange, token,
+}: {
+  images: EventImage[]; onChange: (imgs: EventImage[]) => void; token: string
+}) {
+  const [uploading, setUploading] = useState(false)
+  const [urlInput, setUrlInput] = useState('')
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setUploading(true)
+
+    const newImages = [...images]
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const formData = new FormData()
+      formData.append('file', file)
+
+      try {
+        const res = await fetch('/api/admin/events/upload', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        })
+        if (res.ok) {
+          const data = await res.json()
+          newImages.push({
+            url: data.url,
+            name: data.name || file.name,
+            is_primary: newImages.length === 0,
+          })
+        }
+      } catch (err) {
+        console.error('Upload failed:', err)
+      }
+    }
+
+    onChange(newImages)
+    setUploading(false)
+  }
+
+  function addUrl() {
+    if (!urlInput.trim()) return
+    const newImages = [...images, { url: urlInput.trim(), name: 'external', is_primary: images.length === 0 }]
+    onChange(newImages)
+    setUrlInput('')
+  }
+
+  function setPrimary(index: number) {
+    onChange(images.map((img, i) => ({ ...img, is_primary: i === index })))
+  }
+
+  function removeImage(index: number) {
+    const updated = images.filter((_, i) => i !== index)
+    if (updated.length > 0 && !updated.some(img => img.is_primary)) {
+      updated[0].is_primary = true
+    }
+    onChange(updated)
+  }
+
+  return (
+    <div>
+      {/* Thumbnails */}
+      {images.length > 0 && (
+        <div className="flex flex-wrap gap-3 mb-3">
+          {images.map((img, i) => (
+            <div key={i} className={`relative group rounded-lg overflow-hidden border-2 ${img.is_primary ? 'border-hampton-navy' : 'border-transparent'}`}>
+              <img src={img.url} alt={img.name} className="w-24 h-24 object-cover" />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
+                <button type="button" onClick={() => setPrimary(i)} title="Set as primary"
+                  className={`p-1 rounded-full ${img.is_primary ? 'bg-amber-400 text-white' : 'bg-white/80 text-hampton-navy hover:bg-amber-400 hover:text-white'}`}>
+                  <Star className="w-3.5 h-3.5" />
+                </button>
+                <button type="button" onClick={() => removeImage(i)} title="Remove"
+                  className="p-1 rounded-full bg-white/80 text-red-600 hover:bg-red-500 hover:text-white">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {img.is_primary && (
+                <span className="absolute top-1 left-1 bg-amber-400 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">PRIMARY</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Upload area */}
+      <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-hampton-pink/30 rounded-lg p-4 cursor-pointer hover:border-hampton-navy/30 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+        {uploading ? (
+          <><Loader2 className="w-4 h-4 animate-spin text-hampton-navy" /><span className="text-sm text-hampton-mauve">Uploading...</span></>
+        ) : (
+          <><Upload className="w-4 h-4 text-hampton-navy" /><span className="text-sm text-hampton-mauve">Click to upload images</span></>
+        )}
+        <input type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} disabled={uploading} />
+      </label>
+
+      {/* URL fallback */}
+      <div className="flex gap-2 mt-2">
+        <input value={urlInput} onChange={e => setUrlInput(e.target.value)} className="form-input flex-1 text-sm" placeholder="Or paste image URL..." onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addUrl() } }} />
+        <button type="button" onClick={addUrl} className="text-xs text-hampton-navy hover:underline whitespace-nowrap">Add URL</button>
+      </div>
     </div>
   )
 }

@@ -218,3 +218,316 @@ GA4 analytics live on VPS. INTEL agent generating reports with real website data
 - 2d132fb: feat: add migration_004 — bookings + website_content tables
 - 37e26a7: fix: migration_004 — drop existing tables before recreate
 - 1eadde0: feat: scaffold Next.js website with 20 pages — full content + SEO
+
+---
+
+## Session 5 — 2026-02-21
+
+### What Was Accomplished
+
+- **Stripe $250 deposit checkout wired**: Full checkout flow — Stripe Checkout Session API with metadata (partyDate, contactName, packageName, etc.), webhook handler inserts into `bookings` table, success page.
+- **Google Calendar integration**: OAuth refresh token live, availability API returns real blocked dates from calendar. Book page date picker grays out unavailable dates.
+- **Stripe webhook fixed**: Webhook URL was pointing to `https://www.hosthampton.com/api/webhook/stripe` (Squarespace, wrong path). Updated to `https://staging.hosthampton.com/api/webhook` via Stripe API. Confirmed emails now fire on checkout.
+- **Booking confirmation emails**: Resend sends rich branded HTML emails on `checkout.session.completed` — customer confirmation (deposit receipt, booking summary, next steps, gratuity tip) + owner notification (full booking details, Stripe PI).
+- **sharp installed**: Added `sharp` to website package.json for Next.js standalone image optimization.
+- **Website deployed to VPS**: Docker container on port 3002, nginx reverse proxy for staging.hosthampton.com. All returning 200.
+- **Event ticketing system built**: Complete system for event ticket purchases:
+  - migration_005_events.sql: events, event_sessions, event_tickets tables + RPC functions + 7 seed events from live Squarespace site
+  - Public pages: /events (card grid with category filters), /events/[slug] (detail + TicketForm), /events/success
+  - API routes: GET events, GET events/[slug], POST events/checkout, webhook handler for event_ticket metadata
+  - Free event RSVP flow (bypasses Stripe entirely)
+  - Variant pricing (JSONB array) and multi-session support (event_sessions table)
+- **Admin event management dashboard**: Full admin at /admin/events with password gate (ADMIN_PASSWORD env var):
+  - Event CRUD: create, update, archive (soft delete), Google Calendar sync on create
+  - Attendee management: ticket list, print button, CSV download
+  - Refund processing: per-ticket Stripe refund + ticket status update + available_tickets increment
+  - Bulk email: compose + send to all confirmed attendees (deduplicated)
+- **Board-3 theme refinements**: Updated brand tokens and typography.
+- **ADMIN_PASSWORD env var**: Added to docker-compose.yml and VPS .env.
+
+### Decisions Made
+
+- **Variant pricing via JSONB**: Events with multiple options (e.g., Embroidery Workshop: Baseball Hat $45, Tote Bag $55) store variants as `[{label, priceCents}]` array in events table.
+- **Multi-session via separate table**: Recurring events (e.g., Soft Play weekly) use `event_sessions` table with per-session dates, times, optional price overrides, and independent ticket counts.
+- **Free RSVP bypasses Stripe**: $0 events insert ticket directly, decrement availability via RPC, send emails — no Stripe redirect.
+- **Simple admin auth**: Bearer token matching ADMIN_PASSWORD env var. Intentionally lightweight to avoid over-engineering.
+- **force-dynamic on all API routes**: Required for Next.js standalone build — prevents prerendering routes that need runtime env vars.
+- **x-forwarded-host for URLs in Docker**: `req.nextUrl.origin` returns Docker internal hostname; use `x-forwarded-host || host` header instead.
+
+### Known Issues / Blockers
+
+- **migration_005 NOT YET RUN**: events, event_sessions, event_tickets tables don't exist yet. User must paste migration_005_events.sql into Supabase SQL Editor.
+- **DNS cutover deferred**: User said "leave staging for now" — www.hosthampton.com still on Squarespace.
+- **Stripe webhook URL needs update after DNS cutover**: Currently staging.hosthampton.com/api/webhook → will need to be updated to www.hosthampton.com/api/webhook.
+
+### Current Project State
+
+Full website live at staging.hosthampton.com with Stripe checkout, Google Calendar availability, branded confirmation emails, and event ticketing system (pending migration_005). Admin dashboard at /admin/events. All containers healthy on VPS.
+
+### Updated Priority TODO (in order)
+
+1. **Run migration_005_events.sql in Supabase SQL Editor**
+2. **Test event ticketing end-to-end** (browse → purchase → webhook → email → admin view)
+3. **DNS cutover** www.hosthampton.com → VPS
+4. **Update Stripe webhook URL** to www after DNS cutover
+5. **Agent content pipeline** (COPY → website_content → ISR)
+6. **SEO optimization pass**
+
+### Files Changed This Session
+
+- `services/website/src/app/api/webhook/route.ts` — Added event_ticket metadata branch, upgraded booking email HTML
+- `services/website/src/app/api/events/route.ts` — New: public event listing
+- `services/website/src/app/api/events/[slug]/route.ts` — New: event detail by slug
+- `services/website/src/app/api/events/checkout/route.ts` — New: checkout (free + paid)
+- `services/website/src/app/api/admin/events/route.ts` — New: admin list + create
+- `services/website/src/app/api/admin/events/[id]/route.ts` — New: admin get/update/delete
+- `services/website/src/app/api/admin/events/[id]/tickets/route.ts` — New: ticket list
+- `services/website/src/app/api/admin/events/[id]/tickets/[ticketId]/refund/route.ts` — New: refund
+- `services/website/src/app/api/admin/events/[id]/email/route.ts` — New: bulk email
+- `services/website/src/app/events/page.tsx` — Rewritten: server component + EventFilters
+- `services/website/src/app/events/EventFilters.tsx` — New: client component with category tabs + cards
+- `services/website/src/app/events/[slug]/page.tsx` — New: event detail page
+- `services/website/src/app/events/[slug]/TicketForm.tsx` — New: ticket purchase form
+- `services/website/src/app/events/success/page.tsx` — New: ticket confirmation page
+- `services/website/src/app/admin/events/page.tsx` — New: full admin dashboard (~400 lines)
+- `services/website/src/lib/supabase.ts` — New: shared Supabase client factory
+- `services/website/src/lib/adminAuth.ts` — New: admin auth helper
+- `services/website/src/lib/emailTemplates.ts` — New: 3 branded HTML email templates
+- `starting_plan/migration_005_events.sql` — New: events + sessions + tickets + RPC + seed data
+- `docker-compose.yml` — Added ADMIN_PASSWORD env var to website service
+- `services/website/package.json` — Added sharp dependency
+
+### Commits This Session
+
+- 1d8282b: feat: wire Stripe $250 deposit checkout + availability API + VPS deploy config
+- 95c53d7: chore: add website public images
+- 25df74a: fix: use x-forwarded-host for Stripe success/cancel URLs
+- 2b3a594: feat: send Resend confirmation emails on booking deposit
+- 5c44d7f: feat: upgrade booking confirmation email + add sharp for image optimization
+- 8f8bc39: feat: add event ticketing system with admin management dashboard
+- bc90291: chore: add ADMIN_PASSWORD env var to website container
+- 816e2c0: style(website): refine board-3 theme tokens and typography
+
+---
+
+## Session 6 — 2026-02-22
+
+### What Was Accomplished
+
+- **Jest test infrastructure built**: Installed Jest 30 + ts-jest + @types/jest + @testing-library/react + @testing-library/jest-dom. Created jest.config.ts with @/ path alias mapping.
+- **72 unit tests written across 7 test suites**, all passing:
+  - `emailTemplates.test.ts` (22 tests): All 3 email templates — brand styling, free/paid variants, refund reasons, first-name extraction
+  - `adminAuth.test.ts` (6 tests): Bearer token validation, missing/wrong/non-Bearer auth
+  - `events.test.ts` (8 tests): Public GET /api/events + GET /api/events/[slug], category filtering, session fetching
+  - `checkout.test.ts` (8 tests): Free RSVP flow, Stripe checkout, variant pricing, availability checks
+  - `webhook.test.ts` (5 tests): Stripe webhook — ticket creation, session ticket decrement, booking deposits
+  - `adminEvents.test.ts` (15 tests): Admin CRUD, tickets list, bulk email, auth gates on all 7 endpoints
+  - `refund.test.ts` (7 tests): Stripe refund, partial refund, session ticket increment, error handling
+- **Mock infrastructure**: Shared fixtures (sample events, tickets, sessions), Supabase chain builder, delegating mock pattern for stable module references.
+- **TESTING.md training doc**: Comprehensive guide covering test structure, mocking patterns, how to add tests, CI integration, and specific test commands. Agent-agnostic — any AI agent or human can follow it.
+
+### Decisions Made
+
+- **Delegating mock pattern over jest.fn() direct**: Using `const mockGetSupabase = jest.fn()` with `getSupabase: (...args) => mockGetSupabase(...args)` in `jest.mock()` factory. This survives `jest.clearAllMocks()` without breaking references — unlike `jest.resetModules()` which invalidates module-level mock imports.
+- **No jest.resetModules()**: Discovered it breaks all mock references when combined with top-level module imports. Fixed all 7 test files to use `jest.clearAllMocks()` + reconfigure return values in `beforeEach`.
+- **All mocked, no env vars needed**: Tests mock Supabase, Stripe, Resend, and NextResponse entirely. Can run in CI without any secrets.
+
+### Known Issues / Blockers
+
+- **migration_005 still NOT RUN**: events/tickets tables don't exist in Supabase yet. Events pages return empty on staging.
+- **DNS cutover still deferred**: www.hosthampton.com still on Squarespace.
+
+### Current Project State
+
+Full test suite passing (72 tests, 7 suites) covering the entire event ticketing system. Website live at staging.hosthampton.com. Event ticketing deployed but waiting on migration_005 to populate the database. TESTING.md provides everything needed for another agent or CI to run and extend tests.
+
+### Updated Priority TODO (in order)
+
+1. **Run migration_005_events.sql in Supabase SQL Editor** — unblocks all event features
+2. **Test events end-to-end on staging** (browse → buy → webhook → email → admin)
+3. **DNS cutover** www.hosthampton.com → VPS
+4. **Update Stripe webhook URL** to www after cutover
+5. **SEO optimization pass** (meta tags, Open Graph, structured data for events)
+6. **Agent content pipeline** (COPY → website_content → ISR)
+
+### Files Changed This Session
+
+- `services/website/jest.config.ts` — New: Jest config with ts-jest + @/ alias
+- `services/website/package.json` — Added test/test:watch scripts, jest/ts-jest/@types/jest/@testing-library devDeps
+- `services/website/TESTING.md` — New: comprehensive test training doc for agents/CI
+- `services/website/src/__tests__/mocks/fixtures.ts` — New: sample events, tickets, sessions, checkout bodies
+- `services/website/src/__tests__/mocks/supabase.ts` — New: mock Supabase chain builder
+- `services/website/src/__tests__/mocks/nextRequest.ts` — New: mock NextRequest factory
+- `services/website/src/__tests__/lib/emailTemplates.test.ts` — New: 22 tests
+- `services/website/src/__tests__/lib/adminAuth.test.ts` — New: 6 tests
+- `services/website/src/__tests__/api/events.test.ts` — New: 8 tests
+- `services/website/src/__tests__/api/checkout.test.ts` — New: 8 tests
+- `services/website/src/__tests__/api/webhook.test.ts` — New: 5 tests
+- `services/website/src/__tests__/api/adminEvents.test.ts` — New: 15 tests
+- `services/website/src/__tests__/api/refund.test.ts` — New: 7 tests
+
+---
+
+## Session 7 — 2026-02-22
+
+### What Was Accomplished
+
+- **Supabase MCP connection attempted**: Configured `.mcp.json` with personal access token. MCP tools never appeared in tool list. Workaround: Supabase Management API via curl (`POST https://api.supabase.com/v1/projects/ychnlroczjhwimouecxz/database/query`) works perfectly for running SQL.
+- **migration_006 run via Supabase API**: Series events migration executed successfully.
+- **CM Cheer fundraiser order page**: Full-fidelity port of Squarespace HTML order form to `/cm-cheer/order`. Layout hides Host Hampton nav via CSS injection. Form submits to Google Apps Script. Committed as b40d5d2.
+- **Favicon added**: `H_icon_hh_*.png` files (64x64, 96x96, 240x240) added to public/images. Layout.tsx updated with icons metadata. Committed as f9479d2.
+- **Glow Party landing page built**: Dark neon aesthetic page at `/glow-party` with animated hero (GlowHero.tsx), What's Included, Glow Packages (5 tiers $750-$1950), How It Works, Add-Ons, FAQ, Final CTA. Committed as 68a11d6.
+- **Universal Calendar Module — full implementation**:
+  - **booking_types table**: Migration 007 created + run via Supabase API. 18 booking types seeded (kids party, room rental, perm jewelry, retail, spray tan, photo shoot, etc.) with per-type slot config, deposits, allowed days, and tags.
+  - **Google Calendar helper lib** (`src/lib/googleCalendar.ts`): Extracted and expanded — token refresh, fetch events, parse time blocks, create events (write-back), time utilities.
+  - **Availability API upgraded**: Now returns time-slot-level granularity per booking type. Backward compatible without `bookingType` param.
+  - **Booking-types API** (`/api/booking-types`): New endpoint with optional tag filtering via Supabase `.overlaps()`.
+  - **UniversalCalendar component suite** (9 files): CalendarGrid (month grid with availability dots + sync indicator), TimeSlotPanel (time slot selector), EventTypeSelector (grouped pill bar: Parties/By Appointment/Events & Rentals), SummaryFooter (CTA with dynamic deposit), CalendarShell (expandable/collapsible wrapper), index.tsx (main composing component), types.ts, useBookingTypes.ts, useCalendarAvailability.ts.
+  - **Book page rewritten**: HTML date/time inputs replaced with interactive UniversalCalendar. Contact form appears after date+time selection. Dynamic deposit amount in submit button.
+  - **Variable deposits in checkout**: Checkout API now looks up `booking_types` for deposit_cents. Free bookings ($0 deposit) skip Stripe entirely — insert booking directly + redirect to success.
+  - **Google Calendar write-back in webhook**: After booking insert, creates GCal event with `[BOOKING] Name - Type` summary, duration from booking type, full contact details in description.
+  - **Dynamic deposit in confirmation emails**: Both customer and owner emails now show actual deposit amount instead of hardcoded $250.
+  - **Calendar embedded on 4 service pages**: party-packages, permanent-jewelry, party-room-rental, glow-party — all with expandable calendar widget locked to the relevant booking type.
+  - **93 tests passing**, clean production build (31 pages).
+  - Deployed to VPS — commit 9ceb897.
+
+### Decisions Made
+
+- **Slot generation is computed, not stored**: Business hours config + duration → generate slots → subtract Google Calendar blocks. Avoids maintaining slot rows in DB. Works even without GCal configured.
+- **Supabase Management API over MCP**: MCP server configured but never connected in tool list. Curl with PAT works reliably for running SQL. Kept `.mcp.json` in `.gitignore`.
+- **showSummary prop for embedded calendar**: Book page uses `showSummary={false}` since the form has its own submit button. Service pages use default `showSummary={true}` for standalone booking CTA.
+- **Free booking path in checkout API**: `requires_deposit=false` or `deposit_cents=0` → insert directly to `bookings` with status='confirmed', skip Stripe entirely.
+- **Nav hiding via CSS injection**: CM Cheer order page layout uses `body > header.sticky { display: none !important; }` to hide Host Hampton nav on standalone page — cleaner than modifying root layout.
+
+### Known Issues / Blockers
+
+- **migration_005 still NOT RUN**: events, event_sessions, event_tickets tables don't exist in Supabase yet. Event pages return empty data on staging.
+- **DNS cutover still deferred**: www.hosthampton.com still on Squarespace.
+- **Supabase MCP not connecting**: `.mcp.json` configured correctly but tools don't appear. Using Management API curl as workaround.
+
+### Current Project State
+
+Universal calendar module fully deployed at staging.hosthampton.com. 18 booking types configured with variable deposits and per-type time slot generation synced to Google Calendar. Book page replaced with interactive calendar. Free booking path (skip Stripe) works for $0-deposit appointment types. Calendar widgets embedded on all major service pages. 93 tests passing.
+
+### Updated Priority TODO (in order)
+
+1. **Run migration_005** in Supabase — unblocks event ticketing on staging
+2. **DNS cutover** www.hosthampton.com → VPS
+3. **Update Stripe webhook URL** to www after DNS cutover
+4. **SEO optimization pass** (meta tags, Open Graph, structured data)
+5. **Agent content pipeline** (COPY → website_content → ISR)
+6. **Test calendar end-to-end on staging** (select type → pick date/time → checkout → GCal event created)
+
+### Files Changed This Session
+
+**New (17):**
+- `.mcp.json` (gitignored) — Supabase MCP config with PAT
+- `starting_plan/migration_007_booking_types.sql` — booking_types table + 18 seed types
+- `services/website/src/lib/googleCalendar.ts` — Shared Google Calendar helpers
+- `services/website/src/app/api/booking-types/route.ts` — Booking types API
+- `services/website/src/components/UniversalCalendar/types.ts`
+- `services/website/src/components/UniversalCalendar/useBookingTypes.ts`
+- `services/website/src/components/UniversalCalendar/useCalendarAvailability.ts`
+- `services/website/src/components/UniversalCalendar/CalendarGrid.tsx`
+- `services/website/src/components/UniversalCalendar/TimeSlotPanel.tsx`
+- `services/website/src/components/UniversalCalendar/EventTypeSelector.tsx`
+- `services/website/src/components/UniversalCalendar/SummaryFooter.tsx`
+- `services/website/src/components/UniversalCalendar/CalendarShell.tsx`
+- `services/website/src/components/UniversalCalendar/index.tsx`
+- `services/website/src/app/glow-party/GlowHero.tsx` — Animated neon hero component
+- `services/website/src/app/glow-party/page.tsx` — Kids Glow Party landing page
+- `services/website/src/app/cm-cheer/order/layout.tsx` — Nav-hidden layout
+- `services/website/src/app/cm-cheer/order/page.tsx` — Fundraiser order form
+
+**Modified (9):**
+- `.gitignore` — Added `.mcp.json`
+- `services/website/src/app/layout.tsx` — Added favicon metadata
+- `services/website/src/app/api/availability/route.ts` — Time-slot granularity
+- `services/website/src/app/api/checkout/route.ts` — Variable deposits + free booking
+- `services/website/src/app/api/webhook/route.ts` — GCal write-back + dynamic deposit emails
+- `services/website/src/app/book/page.tsx` — Calendar replaces date/time inputs
+- `services/website/src/app/party-packages/page.tsx` — Expandable calendar widget
+- `services/website/src/app/permanent-jewelry/page.tsx` — Expandable calendar widget
+- `services/website/src/app/party-room-rental/page.tsx` — Expandable calendar widget
+
+### Commits This Session
+
+- 9c5fa30: feat: add fundraiser lead-capture landing page
+- f87e180: feat: admin event editing, variants/sessions UI, series events + bigger logo
+- b40d5d2: feat: add CM Cheer fundraiser order page at /cm-cheer/order
+- f9479d2: feat: add H favicon for browser tabs and Apple Touch Icon
+- 68a11d6: feat: add Kids Glow Party landing page at /glow-party
+- 9ceb897: feat: universal calendar module with real-time availability, variable deposits, and GCal write-back
+
+---
+
+## Session 8 — 2026-02-23
+
+### What Was Accomplished
+
+- **Site-wide visual redesign deployed (6 deploys)**: Comprehensive visual refinement across all pages, aligned to the dusty blue / bronze / ivory mood board.
+- **Party packages animation removal**: Stripped all heavy-loading effects from /party-packages — sparkle particles, floating blobs, shimmer CSS, glass cards, glow effects. Page loads instantly now.
+- **Smooth theme tile transitions**: Replaced hard `return null` with CSS-driven collapse/expand (opacity, scale, max-h, grid-template-rows transitions). Added `hover:shadow-lg hover:-translate-y-1` lift on hover. Added `fadeIn` keyframe.
+- **Fixed glass nav with dusty blue gradient**: Nav.tsx rewritten — starts transparent, gains frosted glass (`bg-white/60 backdrop-blur-xl`) on scroll. Mobile menu changed from dropdown to full-screen centered overlay. Body gradient from #BCCDEB → #dae6f0 → #F7F2E8 in globals.css.
+- **Body gradient visible on all pages**: Removed `bg-hampton-mauve` from 10 hero sections and `bg-hampton-ivory` from 10+ page wrapper divs that were blocking the body gradient.
+- **Reverse gradient at page bottom**: Added 160px gradient transition div (`from-transparent to-[#BCCDEB]`) in layout before footer. Footer restyled from dark navy to dusty blue (`bg-[#BCCDEB]`) with navy text.
+- **Dark navy sections → bronze/cream gradient**: All `bg-hampton-navy` content sections (5 across 4 files) changed to `bg-gradient-to-r from-hampton-pink to-hampton-pink/30` with text colors flipped to dark-on-light.
+
+### Decisions Made
+
+- **CSS transitions over conditional rendering**: Theme tile collapse uses opacity/scale/max-h transitions instead of `return null` — much smoother UX.
+- **Fixed nav with scroll-triggered glass**: Transparent on load, frosted glass after 20px scroll. `pt-20` offset on main content.
+- **Body gradient with no-repeat**: `linear-gradient(...) no-repeat` + `background-color: #F7F2E8` so gradient only covers top 600px, solid ivory below.
+- **Dusty blue footer**: Mirrors the top gradient by transitioning back to #BCCDEB at the bottom. Navy text for contrast on light background.
+- **Bronze-to-cream for accent sections**: `from-hampton-pink to-hampton-pink/30` replaces the dark navy (#2F343B) sections — warmer, on-brand.
+
+### Known Issues / Blockers
+
+- **migration_005 still NOT RUN**: events/tickets tables don't exist in Supabase yet.
+- **DNS cutover still deferred**: www.hosthampton.com still on Squarespace.
+
+### Current Project State
+
+Full visual redesign deployed at staging.hosthampton.com. Dusty blue gradient flows from nav through hero on every page, with reverse gradient at footer. Glass nav, smooth tile transitions, bronze accent sections. 93 tests still passing. All containers healthy on VPS.
+
+### Updated Priority TODO (in order)
+
+1. **Run migration_005** in Supabase — unblocks event ticketing
+2. **DNS cutover** www.hosthampton.com → VPS
+3. **Update Stripe webhook URL** to www after DNS cutover
+4. **SEO optimization pass**
+5. **Agent content pipeline** (COPY → website_content → ISR)
+
+### Files Changed This Session
+
+**Major rewrites:**
+- `services/website/src/components/Nav.tsx` — Fixed transparent/glass nav with scroll listener
+- `services/website/src/components/Footer.tsx` — Dark navy → dusty blue with navy text
+- `services/website/src/app/party-packages/PartyPackagesContent.tsx` — Removed all animations, added smooth tile transitions
+
+**Modified:**
+- `services/website/src/app/layout.tsx` — Added `pt-20`, gradient transition div before footer
+- `services/website/src/app/globals.css` — Body gradient, fadeIn keyframe
+- `services/website/src/app/page.tsx` — Removed hero bg + wrapper bg + dark section → bronze
+- `services/website/src/app/book/page.tsx` — Removed hero bg + wrapper bg
+- `services/website/src/app/party-room-rental/page.tsx` — Removed hero bg + wrapper bg
+- `services/website/src/app/permanent-jewelry/page.tsx` — Removed hero bg + wrapper bg
+- `services/website/src/app/first-birthday-parties/page.tsx` — Removed hero bg + wrapper bg + dark section → bronze
+- `services/website/src/app/communion-party/page.tsx` — Removed hero bg + wrapper bg + dark section → bronze
+- `services/website/src/app/fundraiser/page.tsx` — Removed hero bg + wrapper bg + 2 dark sections → bronze
+- `services/website/src/app/contact-us/page.tsx` — Removed hero bg + wrapper bg
+- `services/website/src/app/party-add-ons/page.tsx` — Removed hero bg + wrapper bg
+- `services/website/src/app/events/page.tsx` — Removed hero bg + wrapper bg
+- `services/website/src/app/events/[slug]/page.tsx` — Removed wrapper bg
+- `services/website/src/app/book/success/page.tsx` — Removed wrapper bg
+- `services/website/src/app/events/success/page.tsx` — Removed wrapper bg
+
+### Commits This Session
+
+- 297336b: feat: redesign party packages page, site-wide color refinements, phone required
+- 8bd529a: fix: remove heavy animations from party-packages, add smooth theme scroll
+- b811ab9: feat: smooth theme tile transitions with hover lift on /party-packages
+- ec5a2de: feat: fixed glass nav with dusty blue gradient flowing into hero sections
+- 3a39ff9: fix: remove bg-hampton-ivory from page wrappers so body gradient shows
+- b6f914a: feat: reverse gradient at bottom of page + dusty blue footer
+- 348b17d: feat: replace dark navy sections with bronze-to-cream gradient

@@ -46,6 +46,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (body[f] !== undefined) update[f] = body[f]
   }
 
+  if (body.images !== undefined) update.images = body.images
   if (body.priceCents !== undefined) update.price_cents = body.priceCents
   if (body.siblingPriceCents !== undefined) update.sibling_price_cents = body.siblingPriceCents
   if (body.hasVariants !== undefined) update.has_variants = body.hasVariants
