@@ -27,9 +27,9 @@ export default async function EventsPage() {
 
   return (
     <div className="bg-hampton-ivory">
-      <section className="bg-hampton-navy py-16 text-center px-4">
-        <h1 className="font-serif text-4xl text-white mb-4">Events & Workshops</h1>
-        <p className="text-hampton-blue/80 text-lg max-w-xl mx-auto">
+      <section className="bg-hampton-mauve py-16 text-center px-4">
+        <h1 className="font-serif text-4xl text-hampton-navy mb-4">Events & Workshops</h1>
+        <p className="text-hampton-navy text-lg max-w-xl mx-auto">
           Workshops, classes, and community gatherings at Host Hampton. Find your next experience below.
         </p>
       </section>
@@ -40,7 +40,7 @@ export default async function EventsPage() {
 
       <section className="bg-hampton-pink/10 py-14 text-center px-4">
         <h2 className="section-heading mb-3">Want to Host a Workshop?</h2>
-        <p className="text-hampton-mauve mb-7 max-w-md mx-auto">
+        <p className="text-hampton-navy mb-7 max-w-md mx-auto">
           We partner with local instructors, brands, and organizations. Get in touch to discuss hosting your workshop at Host Hampton.
         </p>
         <Link href="/contact-us" className="btn-primary px-8 py-4">Contact Us</Link>

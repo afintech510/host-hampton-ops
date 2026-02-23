@@ -212,6 +212,46 @@ export function fundraiserInquiryNotifyHtml(d: FundraiserInquiryNotifyData): str
 </body></html>`
 }
 
+interface LeadNotifyData {
+  fullName: string
+  email: string
+  phone?: string
+  eventType: string
+  childAge?: string
+  guestCount?: string
+  partyTheme?: string
+  preferredDate?: string
+  timeOfDay?: string
+  notes?: string
+}
+
+export function leadNotifyHtml(d: LeadNotifyData): string {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f0ece7;">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#F6F1EB;">
+  <div style="background:linear-gradient(135deg,#1a2744 0%,#2a3f6f 100%);padding:28px 32px;text-align:center;">
+    <p style="color:#A1B5C8;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin:0 0 6px;">Host Hampton — New Lead</p>
+    <h1 style="color:#F6F1EB;font-size:22px;margin:0;font-weight:normal;">New ${d.eventType} Inquiry</h1>
+  </div>
+  <div style="padding:24px 28px;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:140px;">Name</td><td style="padding:10px 12px;">${d.fullName}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="mailto:${d.email}">${d.email}</a></td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Phone</td><td style="padding:10px 12px;">${d.phone || '—'}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Event Type</td><td style="padding:10px 12px;">${d.eventType}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Child's Age</td><td style="padding:10px 12px;">${d.childAge || '—'}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Guest Count</td><td style="padding:10px 12px;">${d.guestCount || '—'}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Party Theme</td><td style="padding:10px 12px;">${d.partyTheme || '—'}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Preferred Date</td><td style="padding:10px 12px;">${d.preferredDate || '—'}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Time of Day</td><td style="padding:10px 12px;">${d.timeOfDay || '—'}</td></tr>
+      ${d.notes ? `<tr><td style="padding:10px 12px;font-weight:bold;">Notes</td><td style="padding:10px 12px;">${d.notes}</td></tr>` : ''}
+    </table>
+  </div>
+</div>
+</body></html>`
+}
+
 export function ticketRefundHtml(d: { customerName: string; eventTitle: string; ticketRef: string; refundAmount: string; reason?: string }): string {
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>

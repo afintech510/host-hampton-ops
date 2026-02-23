@@ -64,7 +64,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
     <div className="bg-hampton-ivory min-h-screen">
       {/* Back link */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6">
-        <Link href="/events" className="inline-flex items-center gap-1 text-hampton-mauve hover:text-hampton-navy text-sm transition-colors">
+        <Link href="/events" className="inline-flex items-center gap-1 text-hampton-navy hover:text-hampton-navy text-sm transition-colors">
           <ArrowLeft className="w-4 h-4" />
           Back to Events
         </Link>
@@ -93,7 +93,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
             <h1 className="font-serif text-3xl text-hampton-navy mb-4">{event.title}</h1>
 
             {/* Meta */}
-            <div className="flex flex-wrap gap-4 text-sm text-hampton-mauve mb-6">
+            <div className="flex flex-wrap gap-4 text-sm text-hampton-navy mb-6">
               <span className="flex items-center gap-1.5">
                 <Calendar className="w-4 h-4" />
                 {dateDisplay}
@@ -111,7 +111,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
             </div>
 
             {/* Description */}
-            <div className="prose prose-sm max-w-none text-hampton-mauve/90 leading-relaxed">
+            <div className="prose prose-sm max-w-none text-hampton-navy/90 leading-relaxed">
               {event.description?.split('\n').map((p: string, i: number) => (
                 <p key={i}>{p}</p>
               ))}

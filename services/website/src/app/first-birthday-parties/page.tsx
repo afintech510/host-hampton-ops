@@ -47,28 +47,28 @@ export default function FirstBirthdayParties() {
       />
 
       {/* Hero */}
-      <section className="bg-gradient-to-br from-hampton-navy to-[#2d3f6b] py-20 text-center px-4">
+      <section className="bg-hampton-mauve py-20 text-center px-4">
         <p className="text-hampton-pink text-sm font-semibold tracking-widest uppercase mb-4">
           Speonk, NY — The Hamptons
         </p>
-        <h1 className="font-serif text-4xl md:text-5xl text-white mb-5 max-w-3xl mx-auto leading-tight">
+        <h1 className="font-serif text-4xl md:text-5xl text-hampton-navy mb-5 max-w-3xl mx-auto leading-tight">
           First Birthday Parties Worth Remembering — On Long Island
         </h1>
-        <p className="text-hampton-blue/80 text-lg max-w-xl mx-auto mb-8">
+        <p className="text-hampton-navy text-lg max-w-xl mx-auto mb-8">
           Baby only turns one once. Make it magical. Host Hampton's private studio handles every detail so you can actually enjoy the moment.
         </p>
         <Link href="/book?package=Toddler+Party&event_type=first-birthday"
               className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg">
           Reserve Your Date — $250 Deposit
         </Link>
-        <p className="text-hampton-blue/50 text-xs mt-3">Change details anytime up to 1 week before the party</p>
+        <p className="text-hampton-navy text-xs mt-3">Change details anytime up to 1 week before the party</p>
       </section>
 
       {/* Why perfect for first birthdays */}
       <section className="py-16 max-w-5xl mx-auto px-4 sm:px-6">
         <div className="text-center mb-10">
           <h2 className="section-heading">Why Host Hampton for Baby's First Birthday?</h2>
-          <p className="text-hampton-mauve text-base max-w-xl mx-auto">
+          <p className="text-hampton-navy text-base max-w-xl mx-auto">
             We know first birthdays are as much for the parents as they are for the birthday baby. Here's why Long Island families choose us.
           </p>
         </div>
@@ -81,7 +81,7 @@ export default function FirstBirthdayParties() {
             <div key={f.title} className="bg-white border border-hampton-pink/20 rounded-2xl p-6 text-center">
               <div className="text-4xl mb-3">{f.icon}</div>
               <h3 className="font-semibold text-hampton-navy text-base mb-2">{f.title}</h3>
-              <p className="text-hampton-mauve text-sm leading-relaxed">{f.desc}</p>
+              <p className="text-hampton-navy text-sm leading-relaxed">{f.desc}</p>
             </div>
           ))}
         </div>
@@ -91,18 +91,18 @@ export default function FirstBirthdayParties() {
       <section className="bg-hampton-pink/10 py-16">
         <div className="max-w-4xl mx-auto px-4 sm:px-6">
           <h2 className="section-heading text-center mb-2">Everything Included</h2>
-          <p className="text-center text-hampton-mauve mb-8">First birthday packages start at $850 for up to 10 guests.</p>
+          <p className="text-center text-hampton-navy mb-8">First birthday packages start at $850 for up to 10 guests.</p>
           <div className="bg-white rounded-2xl border border-hampton-pink/20 p-8 grid sm:grid-cols-2 gap-3">
             {included.map(item => (
               <div key={item} className="flex items-start gap-2">
-                <Check size={16} className="text-hampton-mauve shrink-0 mt-0.5" />
+                <Check size={16} className="text-hampton-navy shrink-0 mt-0.5" />
                 <span className="text-hampton-navy text-sm">{item}</span>
               </div>
             ))}
           </div>
           <div className="text-center mt-8">
             <Link href="/party-add-ons"
-                  className="text-hampton-mauve underline text-sm hover:text-hampton-navy transition-colors">
+                  className="text-hampton-navy underline text-sm hover:text-hampton-navy transition-colors">
               View full add-ons menu (character visits, photographers, cake smash setups +)
             </Link>
           </div>
@@ -112,7 +112,7 @@ export default function FirstBirthdayParties() {
       {/* Pricing */}
       <section className="py-16 max-w-4xl mx-auto px-4 sm:px-6 text-center">
         <h2 className="section-heading mb-2">Simple, Transparent Pricing</h2>
-        <p className="text-hampton-mauve mb-8">No hidden fees. Everything listed is included.</p>
+        <p className="text-hampton-navy mb-8">No hidden fees. Everything listed is included.</p>
         <div className="grid sm:grid-cols-3 gap-4">
           {[
             { name: 'Mini First Birthday', guests: 'Up to 8 guests',  price: 650 },
@@ -121,9 +121,9 @@ export default function FirstBirthdayParties() {
           ].map(p => (
             <div key={p.name}
                  className={`rounded-2xl p-6 border-2 ${p.popular ? 'border-hampton-pink bg-hampton-pink/10' : 'bg-white border-hampton-pink/20'}`}>
-              {p.popular && <p className="text-hampton-mauve text-xs font-bold mb-2 uppercase tracking-wide">Most Popular</p>}
+              {p.popular && <p className="text-hampton-navy text-xs font-bold mb-2 uppercase tracking-wide">Most Popular</p>}
               <h3 className="font-serif text-hampton-navy text-base font-bold mb-1">{p.name}</h3>
-              <p className="text-hampton-mauve text-xs mb-4">{p.guests} • 2 hours</p>
+              <p className="text-hampton-navy text-xs mb-4">{p.guests} • 2 hours</p>
               <p className="text-3xl font-bold text-hampton-navy">${p.price.toLocaleString()}</p>
             </div>
           ))}
@@ -144,7 +144,7 @@ export default function FirstBirthdayParties() {
             ].map(f => (
               <div key={f.q} className="bg-white/10 rounded-xl p-5">
                 <h3 className="text-hampton-pink font-semibold text-base mb-1">{f.q}</h3>
-                <p className="text-hampton-blue/80 text-sm leading-relaxed">{f.a}</p>
+                <p className="text-hampton-mauve text-sm leading-relaxed">{f.a}</p>
               </div>
             ))}
           </div>

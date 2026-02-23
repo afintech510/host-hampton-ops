@@ -65,11 +65,11 @@ function EventCard({ event }: { event: EventRow }) {
         <h2 className="font-serif text-lg text-hampton-navy font-semibold mb-2 group-hover:text-hampton-blue transition-colors">
           {event.title}
         </h2>
-        <p className="text-hampton-mauve text-sm leading-relaxed mb-4 line-clamp-2 flex-1">
+        <p className="text-hampton-navy text-sm leading-relaxed mb-4 line-clamp-2 flex-1">
           {event.short_description || event.description}
         </p>
 
-        <div className="flex items-center gap-3 text-xs text-hampton-mauve/80 mb-4">
+        <div className="flex items-center gap-3 text-xs text-hampton-navy/80 mb-4">
           <span className="flex items-center gap-1">
             <Calendar className="w-3.5 h-3.5" />
             {dateDisplay}
@@ -109,7 +109,7 @@ export default function EventFilters({ events, categories }: { events: EventRow[
           className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
             active === 'all'
               ? 'bg-hampton-navy text-white'
-              : 'bg-white text-hampton-mauve border border-hampton-pink/20 hover:bg-hampton-pink/10'
+              : 'bg-white text-hampton-navy border border-hampton-pink/20 hover:bg-hampton-pink/10'
           }`}
         >
           All Events
@@ -121,7 +121,7 @@ export default function EventFilters({ events, categories }: { events: EventRow[
             className={`px-4 py-2 rounded-full text-sm font-medium capitalize transition-colors ${
               active === cat
                 ? 'bg-hampton-navy text-white'
-                : 'bg-white text-hampton-mauve border border-hampton-pink/20 hover:bg-hampton-pink/10'
+                : 'bg-white text-hampton-navy border border-hampton-pink/20 hover:bg-hampton-pink/10'
             }`}
           >
             {cat}
@@ -131,7 +131,7 @@ export default function EventFilters({ events, categories }: { events: EventRow[
 
       {/* Event grid */}
       {filtered.length === 0 ? (
-        <p className="text-center text-hampton-mauve py-12">No events in this category right now. Check back soon!</p>
+        <p className="text-center text-hampton-navy py-12">No events in this category right now. Check back soon!</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.map(event => (

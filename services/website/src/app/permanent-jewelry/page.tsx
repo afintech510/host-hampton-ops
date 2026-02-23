@@ -18,16 +18,16 @@ const types = [
 export default function PermanentJewelry() {
   return (
     <div className="bg-hampton-ivory">
-      <section className="bg-gradient-to-br from-hampton-navy to-[#2d3f6b] py-20 text-center px-4">
-        <h1 className="font-serif text-4xl md:text-5xl text-white mb-4">Permanent Jewelry</h1>
-        <p className="text-hampton-blue/80 text-lg max-w-xl mx-auto mb-8">
+      <section className="bg-hampton-mauve py-20 text-center px-4">
+        <h1 className="font-serif text-4xl md:text-5xl text-hampton-navy mb-4">Permanent Jewelry</h1>
+        <p className="text-hampton-navy text-lg max-w-xl mx-auto mb-8">
           Custom-welded jewelry that stays with you forever. No clasp. No fuss. Just beautiful.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link href="/book?event_type=jewelry" className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full hover:bg-opacity-90 shadow-lg">
             Book a Jewelry Session
           </Link>
-          <Link href="/contact-us" className="border-2 border-hampton-blue/50 text-hampton-ivory font-semibold px-8 py-4 rounded-full hover:border-hampton-pink transition-all">
+          <Link href="/contact-us" className="border-2 border-hampton-navy/40 text-hampton-navy font-semibold px-8 py-4 rounded-full hover:border-hampton-pink transition-all">
             Add to Your Party
           </Link>
         </div>
@@ -45,7 +45,7 @@ export default function PermanentJewelry() {
               </div>
               <div className="p-5">
                 <h3 className="font-semibold text-hampton-navy text-base mb-1">{t.name}</h3>
-                <p className="text-hampton-mauve text-sm mb-2">{t.price}</p>
+                <p className="text-hampton-navy text-sm mb-2">{t.price}</p>
                 <p className="text-hampton-navy/60 text-xs leading-relaxed">{t.desc}</p>
               </div>
             </div>
@@ -65,7 +65,7 @@ export default function PermanentJewelry() {
 
       <section className="bg-hampton-pink/10 py-14 text-center px-4">
         <h2 className="section-heading mb-3">Perfect for Groups</h2>
-        <p className="text-hampton-mauve max-w-lg mx-auto mb-7 text-base">
+        <p className="text-hampton-navy max-w-lg mx-auto mb-7 text-base">
           Mommy & Me bracelets ($100), bachelorette groups, birthday parties — permanent jewelry is the most memorable party favor you'll ever give.
         </p>
         <Link href="/party-add-ons" className="btn-secondary mr-4">Add to a Party Package</Link>

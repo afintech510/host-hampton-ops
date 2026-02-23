@@ -15,7 +15,7 @@ export default function EventSuccessPage() {
         </div>
 
         <h1 className="font-serif text-3xl text-hampton-navy mb-3">You're In! 🎉</h1>
-        <p className="text-hampton-mauve text-lg mb-8">
+        <p className="text-hampton-navy text-lg mb-8">
           Your tickets are confirmed. Check your email for all the details.
         </p>
 
@@ -26,19 +26,19 @@ export default function EventSuccessPage() {
               <div className="w-8 h-8 rounded-full bg-hampton-blue/10 flex items-center justify-center shrink-0 mt-0.5">
                 <span className="text-sm font-bold text-hampton-navy">1</span>
               </div>
-              <p className="text-sm text-hampton-mauve">Check your inbox for a confirmation email with your ticket reference.</p>
+              <p className="text-sm text-hampton-navy">Check your inbox for a confirmation email with your ticket reference.</p>
             </div>
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full bg-hampton-blue/10 flex items-center justify-center shrink-0 mt-0.5">
                 <span className="text-sm font-bold text-hampton-navy">2</span>
               </div>
-              <p className="text-sm text-hampton-mauve">Arrive at Host Hampton a few minutes early. We're at 295 Montauk Hwy, Suite 7, Speonk.</p>
+              <p className="text-sm text-hampton-navy">Arrive at Host Hampton a few minutes early. We're at 295 Montauk Hwy, Suite 7, Speonk.</p>
             </div>
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full bg-hampton-blue/10 flex items-center justify-center shrink-0 mt-0.5">
                 <span className="text-sm font-bold text-hampton-navy">3</span>
               </div>
-              <p className="text-sm text-hampton-mauve">We'll have everything ready for you — just show up and enjoy!</p>
+              <p className="text-sm text-hampton-navy">We'll have everything ready for you — just show up and enjoy!</p>
             </div>
           </div>
         </div>

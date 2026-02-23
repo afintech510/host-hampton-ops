@@ -134,7 +134,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
       <h3 className="font-serif text-xl text-hampton-navy mb-1">
         {isFree ? 'RSVP' : 'Get Tickets'}
       </h3>
-      <p className="text-hampton-mauve text-sm mb-5">
+      <p className="text-hampton-navy text-sm mb-5">
         {soldOut ? 'This event is sold out.' : isFree ? 'Free — reserve your spot.' : `${formatPrice(unitPrice)} per ticket`}
       </p>
 
@@ -203,7 +203,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
             <div className="mb-3 p-3 bg-hampton-ivory rounded-lg">
               <p className="text-xs font-medium text-hampton-navy mb-1">Pricing tiers:</p>
               {[...bundleTiers].sort((a, b) => a.minSessions - b.minSessions).map((t, i) => (
-                <p key={i} className="text-xs text-hampton-mauve">
+                <p key={i} className="text-xs text-hampton-navy">
                   {t.minSessions === sessions.length ? 'All' : `${t.minSessions}+`} session{t.minSessions !== 1 ? 's' : ''}: <span className="font-semibold text-hampton-navy">{formatPrice(t.pricePerSessionCents)}</span>/session
                 </p>
               ))}
@@ -226,10 +226,10 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
                       className="accent-hampton-navy" disabled={isSoldOut} />
                     <div>
                       <span className="text-sm text-hampton-navy">{formatSessionDate(s.session_date)} at {s.session_time}</span>
-                      {s.label && <span className="text-xs text-hampton-mauve ml-2">— {s.label}</span>}
+                      {s.label && <span className="text-xs text-hampton-navy ml-2">— {s.label}</span>}
                     </div>
                   </div>
-                  <span className="text-xs text-hampton-mauve">
+                  <span className="text-xs text-hampton-navy">
                     {isSoldOut ? 'Sold Out' : `${s.available_tickets} spots`}
                   </span>
                 </label>
@@ -243,7 +243,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
               <p className="text-sm text-hampton-navy font-medium">
                 {selectedSessions.length} session{selectedSessions.length !== 1 ? 's' : ''} selected
                 {!isFree && (
-                  <span className="text-hampton-mauve font-normal"> — {formatPrice(unitPrice)} per session</span>
+                  <span className="text-hampton-navy font-normal"> — {formatPrice(unitPrice)} per session</span>
                 )}
               </p>
             </div>
@@ -269,7 +269,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
             >
               <Plus className="w-4 h-4" />
             </button>
-            <span className="text-xs text-hampton-mauve">{maxAvail} available</span>
+            <span className="text-xs text-hampton-navy">{maxAvail} available</span>
           </div>
         </div>
       )}
@@ -286,8 +286,8 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="form-input" placeholder="you@email.com" />
           </div>
           <div className="mb-5">
-            <label className="form-label">Phone</label>
-            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="form-input" placeholder="(optional)" />
+            <label className="form-label">Phone *</label>
+            <input type="tel" required value={phone} onChange={e => setPhone(e.target.value)} className="form-input" placeholder="(631) 555-1234" />
           </div>
         </>
       )}
@@ -295,7 +295,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
       {/* Total */}
       {!soldOut && !isFree && (
         <div className="flex items-center justify-between py-3 px-4 bg-hampton-ivory rounded-xl mb-5">
-          <span className="text-sm text-hampton-mauve">Total</span>
+          <span className="text-sm text-hampton-navy">Total</span>
           <span className="text-xl font-bold text-hampton-navy">{formatPrice(total)}</span>
         </div>
       )}

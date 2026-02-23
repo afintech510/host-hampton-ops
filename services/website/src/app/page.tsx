@@ -43,18 +43,16 @@ export default function Home() {
   return (
     <>
       {/* ── HERO ─────────────────────────────────────────────── */}
-      <section className="relative bg-gradient-to-br from-hampton-navy via-[#2d3f6b] to-hampton-navy overflow-hidden">
-        <div className="absolute inset-0 opacity-10"
-             style={{ backgroundImage: 'radial-gradient(circle at 70% 40%, #E8C7CB 0%, transparent 60%), radial-gradient(circle at 20% 80%, #A1B5C8 0%, transparent 50%)' }} />
+      <section className="relative bg-hampton-mauve overflow-hidden">
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-20 md:py-28 flex flex-col md:flex-row items-center gap-12">
           <div className="flex-1 text-center md:text-left">
             <p className="text-hampton-pink text-sm font-semibold tracking-widest uppercase mb-4">
               Speonk, NY • The Hamptons
             </p>
-            <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl text-white leading-tight mb-6">
+            <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl text-hampton-navy leading-tight mb-6">
               Create Magical Memories for Your Child's Special Day
             </h1>
-            <p className="text-hampton-blue/90 text-lg md:text-xl leading-relaxed mb-8 max-w-lg">
+            <p className="text-hampton-navy text-lg md:text-xl leading-relaxed mb-8 max-w-lg">
               Full-service themed birthday parties for ages 3–12. Private studio. Zero stress. Just pure celebration.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
@@ -63,7 +61,7 @@ export default function Home() {
                 Reserve Your Date — $250 Deposit
               </Link>
               <Link href="/party-packages"
-                    className="border-2 border-hampton-blue/50 text-hampton-ivory font-semibold px-8 py-4 rounded-full text-base hover:border-hampton-pink transition-all">
+                    className="border-2 border-hampton-navy/40 text-hampton-navy font-semibold px-8 py-4 rounded-full text-base hover:border-hampton-pink transition-all">
                 See Party Packages
               </Link>
             </div>
@@ -71,7 +69,7 @@ export default function Home() {
               <div className="flex">
                 {[...Array(5)].map((_, i) => <Star key={i} size={16} className="text-yellow-400 fill-yellow-400" />)}
               </div>
-              <span className="text-hampton-blue/70 text-sm">Loved by 200+ Long Island families</span>
+              <span className="text-hampton-navy text-sm">Loved by 200+ Long Island families</span>
             </div>
           </div>
           <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
@@ -98,7 +96,7 @@ export default function Home() {
         <div className="text-center mb-12">
           <p className="section-subheading">Choose Your Celebration</p>
           <h2 className="section-heading">10+ Themed Party Experiences</h2>
-          <p className="text-hampton-mauve text-base max-w-xl mx-auto">
+          <p className="text-hampton-navy text-base max-w-xl mx-auto">
             Each party includes 2 hours in our private studio, activities, decor, pizza, cupcakes, and memories that last forever.
           </p>
         </div>
@@ -115,8 +113,8 @@ export default function Home() {
                 )}
               </div>
               <div className="p-4">
-                <h3 className="font-semibold text-hampton-navy text-sm mb-1">{t.name}</h3>
-                <p className="text-hampton-mauve text-xs">Starting at ${t.price.toLocaleString()}</p>
+                <h3 className="font-semibold text-hampton-navy text-sm tracking-wide mb-1">{t.name}</h3>
+                <p className="text-hampton-navy text-xs">Starting at ${t.price.toLocaleString()}</p>
               </div>
             </Link>
           ))}
@@ -138,7 +136,7 @@ export default function Home() {
               <div key={s.n} className="text-center">
                 <div className="text-5xl font-serif text-hampton-pink/30 mb-3">{s.n}</div>
                 <h3 className="font-semibold text-white text-lg mb-2">{s.title}</h3>
-                <p className="text-hampton-blue/70 text-sm leading-relaxed">{s.desc}</p>
+                <p className="text-hampton-mauve text-sm leading-relaxed">{s.desc}</p>
               </div>
             ))}
           </div>
@@ -147,7 +145,7 @@ export default function Home() {
                   className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg">
               Reserve Your Date — $250 Deposit
             </Link>
-            <p className="text-hampton-blue/50 text-xs mt-3">Change your theme, date, or details any time. $250 is fully applied to your balance.</p>
+            <p className="text-hampton-mauve text-xs mt-3">Change your theme, date, or details any time. $250 is fully applied to your balance.</p>
           </div>
         </div>
       </section>
@@ -161,11 +159,11 @@ export default function Home() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {whyUs.map(w => (
             <div key={w.title} className="bg-white border border-hampton-pink/20 rounded-2xl p-6 text-center hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-hampton-pink/20 rounded-full flex items-center justify-center mx-auto mb-4 text-hampton-mauve">
+              <div className="w-12 h-12 bg-hampton-pink/20 rounded-full flex items-center justify-center mx-auto mb-4 text-hampton-navy">
                 {w.icon}
               </div>
               <h3 className="font-semibold text-hampton-navy text-base mb-2">{w.title}</h3>
-              <p className="text-hampton-mauve text-sm leading-relaxed">{w.desc}</p>
+              <p className="text-hampton-navy text-sm leading-relaxed">{w.desc}</p>
             </div>
           ))}
         </div>
@@ -187,7 +185,7 @@ export default function Home() {
                 <p className="text-hampton-navy text-sm leading-relaxed mb-4 italic">"{r.text}"</p>
                 <div>
                   <p className="font-semibold text-hampton-navy text-sm">{r.name}</p>
-                  <p className="text-hampton-mauve text-xs">{r.theme}</p>
+                  <p className="text-hampton-navy text-xs">{r.theme}</p>
                 </div>
               </div>
             ))}
@@ -213,7 +211,7 @@ export default function Home() {
               </div>
               <div className="p-5">
                 <h3 className="font-semibold text-hampton-navy text-base mb-1">{s.title}</h3>
-                <p className="text-hampton-mauve text-sm leading-relaxed">{s.desc}</p>
+                <p className="text-hampton-navy text-sm leading-relaxed">{s.desc}</p>
               </div>
             </Link>
           ))}
@@ -227,7 +225,7 @@ export default function Home() {
             Ready to Start Planning?
           </h2>
           <p className="text-hampton-navy/70 text-base mb-8">
-            Lock in your date with a $250 deposit. Choose your theme, decide the details later — no pressure, no stress.
+            Pick a date. Select your theme, decide the details later — no pressure, no stress.
           </p>
           <Link href="/book"
                 className="bg-hampton-navy text-hampton-ivory font-bold px-10 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-xl">

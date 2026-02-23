@@ -117,14 +117,14 @@ export default function Fundraiser() {
       />
 
       {/* 1. Hero */}
-      <section className="bg-gradient-to-br from-hampton-navy to-[#2d3f6b] py-20 text-center px-4">
-        <h1 className="font-serif text-4xl md:text-5xl text-white mb-5 max-w-3xl mx-auto leading-tight">
+      <section className="bg-hampton-mauve py-20 text-center px-4">
+        <h1 className="font-serif text-4xl md:text-5xl text-hampton-navy mb-5 max-w-3xl mx-auto leading-tight">
           Trucker Hat + Canvas Gear Fundraiser
         </h1>
-        <p className="text-hampton-blue/80 text-xl max-w-2xl mx-auto mb-3">
+        <p className="text-hampton-navy text-xl max-w-2xl mx-auto mb-3">
           A fun, easy way to raise money for your school, team, or class.
         </p>
-        <p className="text-hampton-mauve text-base max-w-xl mx-auto mb-8">
+        <p className="text-hampton-navy text-base max-w-xl mx-auto mb-8">
           Custom branded items your fans actually want to represent your organization.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
@@ -138,7 +138,7 @@ export default function Fundraiser() {
             href="https://www.hosthampton.com/li-high"
             target="_blank"
             rel="noopener noreferrer"
-            className="border-2 border-white/30 text-white font-bold px-8 py-4 rounded-full text-base hover:bg-white/10 transition-all"
+            className="border-2 border-hampton-navy/40 text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-hampton-navy/10 transition-all"
           >
             See Sample Ordering Page
           </a>
@@ -156,7 +156,7 @@ export default function Fundraiser() {
             <h3 className="font-semibold text-hampton-navy text-lg mb-3 uppercase tracking-wider">
               Design
             </h3>
-            <ul className="text-hampton-mauve text-sm leading-relaxed space-y-2 text-left max-w-xs mx-auto">
+            <ul className="text-hampton-navy text-sm leading-relaxed space-y-2 text-left max-w-xs mx-auto">
               <li>Send us your logo image!</li>
               <li>Get custom mockups for hats, totes, & pouches.</li>
               <li><strong className="text-hampton-navy">Free design assistance</strong> to make your logo pop.</li>
@@ -167,7 +167,7 @@ export default function Fundraiser() {
             <h3 className="font-semibold text-hampton-navy text-lg mb-3 uppercase tracking-wider">
               Sell
             </h3>
-            <ul className="text-hampton-mauve text-sm leading-relaxed space-y-2 text-left max-w-xs mx-auto">
+            <ul className="text-hampton-navy text-sm leading-relaxed space-y-2 text-left max-w-xs mx-auto">
               <li>Share digital flyer & ordering link with your community.</li>
               <li>Printable order forms for manual orders + physical samples.</li>
               <li>Supporters pay you <strong className="text-hampton-navy">directly</strong> (Venmo, PayPal, Zelle, Cash).</li>
@@ -178,7 +178,7 @@ export default function Fundraiser() {
             <h3 className="font-semibold text-hampton-navy text-lg mb-3 uppercase tracking-wider">
               Deliver
             </h3>
-            <ul className="text-hampton-mauve text-sm leading-relaxed space-y-2 text-left max-w-xs mx-auto">
+            <ul className="text-hampton-navy text-sm leading-relaxed space-y-2 text-left max-w-xs mx-auto">
               <li>Production + delivery in just 2–3 weeks.</li>
               <li>Simple bulk distribution to your school or team.</li>
               <li><strong className="text-hampton-navy">Your organization keeps 100% of the profit!</strong></li>
@@ -251,7 +251,7 @@ export default function Fundraiser() {
       {/* 5. Request a Mockup CTA */}
       <section className="bg-hampton-navy py-14 text-center px-4">
         <h2 className="font-serif text-3xl text-white mb-3">Request a Mockup</h2>
-        <p className="text-hampton-blue/80 text-base max-w-lg mx-auto mb-6">
+        <p className="text-hampton-mauve text-base max-w-lg mx-auto mb-6">
           Get your free design in 24 hours.
         </p>
         <a
@@ -275,7 +275,7 @@ export default function Fundraiser() {
                 <span className="text-hampton-navy/30 text-sm font-medium">Product Photo</span>
               </div>
               <h3 className="font-serif text-hampton-navy text-lg font-bold mb-2">Custom Trucker Hats</h3>
-              <p className="text-hampton-mauve text-sm leading-relaxed">
+              <p className="text-hampton-navy text-sm leading-relaxed">
                 A classic fan favorite. Available in 20+ color combos with premium patch application. Standard and Premium styles.
               </p>
             </div>
@@ -284,7 +284,7 @@ export default function Fundraiser() {
                 <span className="text-hampton-navy/30 text-sm font-medium">Product Photo</span>
               </div>
               <h3 className="font-serif text-hampton-navy text-lg font-bold mb-2">Trendy Canvas Totes</h3>
-              <p className="text-hampton-mauve text-sm leading-relaxed">
+              <p className="text-hampton-navy text-sm leading-relaxed">
                 High-utility tote bags perfect for school or sports. High-quality cotton canvas with contrast webbing handles.
               </p>
             </div>
@@ -293,7 +293,7 @@ export default function Fundraiser() {
                 <span className="text-hampton-navy/30 text-sm font-medium">Product Photo</span>
               </div>
               <h3 className="font-serif text-hampton-navy text-lg font-bold mb-2">Canvas Zipper Pouches</h3>
-              <p className="text-hampton-mauve text-sm leading-relaxed">
+              <p className="text-hampton-navy text-sm leading-relaxed">
                 Perfect for school supplies, makeup, or organizing gear. A trendy, accessible option for everyone!
               </p>
             </div>
@@ -325,27 +325,27 @@ export default function Fundraiser() {
           <div className="bg-white border border-hampton-pink/20 rounded-2xl p-6">
             <h4 className="font-semibold text-hampton-navy text-base mb-4 text-center">Hats (~$5–$15 Profit)</h4>
             <ul className="space-y-2 text-sm">
-              <li className="flex justify-between"><span className="text-hampton-mauve">25 Sold</span><span className="text-green-600 font-semibold">$125 – $375</span></li>
-              <li className="flex justify-between"><span className="text-hampton-mauve">50 Sold</span><span className="text-green-600 font-semibold">$250 – $750</span></li>
-              <li className="flex justify-between"><span className="text-hampton-mauve">100 Sold</span><span className="text-green-600 font-semibold">$500 – $1,500</span></li>
+              <li className="flex justify-between"><span className="text-hampton-navy">25 Sold</span><span className="text-green-600 font-semibold">$125 – $375</span></li>
+              <li className="flex justify-between"><span className="text-hampton-navy">50 Sold</span><span className="text-green-600 font-semibold">$250 – $750</span></li>
+              <li className="flex justify-between"><span className="text-hampton-navy">100 Sold</span><span className="text-green-600 font-semibold">$500 – $1,500</span></li>
             </ul>
           </div>
           {/* Totes */}
           <div className="bg-white border border-hampton-pink/20 rounded-2xl p-6">
             <h4 className="font-semibold text-hampton-navy text-base mb-4 text-center">Totes ($10 Profit)</h4>
             <ul className="space-y-2 text-sm">
-              <li className="flex justify-between"><span className="text-hampton-mauve">25 Sold</span><span className="text-green-600 font-semibold">$250</span></li>
-              <li className="flex justify-between"><span className="text-hampton-mauve">50 Sold</span><span className="text-green-600 font-semibold">$500</span></li>
-              <li className="flex justify-between"><span className="text-hampton-mauve">100 Sold</span><span className="text-green-600 font-semibold">$1,000</span></li>
+              <li className="flex justify-between"><span className="text-hampton-navy">25 Sold</span><span className="text-green-600 font-semibold">$250</span></li>
+              <li className="flex justify-between"><span className="text-hampton-navy">50 Sold</span><span className="text-green-600 font-semibold">$500</span></li>
+              <li className="flex justify-between"><span className="text-hampton-navy">100 Sold</span><span className="text-green-600 font-semibold">$1,000</span></li>
             </ul>
           </div>
           {/* Pouches */}
           <div className="bg-white border border-hampton-pink/20 rounded-2xl p-6">
             <h4 className="font-semibold text-hampton-navy text-base mb-4 text-center">Pouches ($5 Profit)</h4>
             <ul className="space-y-2 text-sm">
-              <li className="flex justify-between"><span className="text-hampton-mauve">25 Sold</span><span className="text-green-600 font-semibold">$125</span></li>
-              <li className="flex justify-between"><span className="text-hampton-mauve">50 Sold</span><span className="text-green-600 font-semibold">$250</span></li>
-              <li className="flex justify-between"><span className="text-hampton-mauve">100 Sold</span><span className="text-green-600 font-semibold">$500</span></li>
+              <li className="flex justify-between"><span className="text-hampton-navy">25 Sold</span><span className="text-green-600 font-semibold">$125</span></li>
+              <li className="flex justify-between"><span className="text-hampton-navy">50 Sold</span><span className="text-green-600 font-semibold">$250</span></li>
+              <li className="flex justify-between"><span className="text-hampton-navy">100 Sold</span><span className="text-green-600 font-semibold">$500</span></li>
             </ul>
           </div>
         </div>
@@ -392,12 +392,12 @@ export default function Fundraiser() {
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
             <h2 className="section-heading">Request a Mockup</h2>
-            <p className="text-hampton-mauve text-base max-w-lg mx-auto">
+            <p className="text-hampton-navy text-base max-w-lg mx-auto">
               Get your free design in 24 hours. Tell us about your organization and we'll send a custom mockup — no cost, no commitment.
             </p>
           </div>
           <FundraiserForm />
-          <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-6 text-xs text-hampton-mauve">
+          <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-6 text-xs text-hampton-navy">
             <span>No cost, no obligation</span>
             <span>·</span>
             <span>Free design in 24 hours</span>
@@ -417,11 +417,11 @@ export default function Fundraiser() {
             {faqItems.map(f => (
               <div key={f.q} className="bg-white/10 rounded-xl p-5">
                 <h3 className="text-hampton-pink font-semibold text-base mb-1">{f.q}</h3>
-                <p className="text-hampton-blue/80 text-sm leading-relaxed">{f.a}</p>
+                <p className="text-hampton-mauve text-sm leading-relaxed">{f.a}</p>
               </div>
             ))}
           </div>
-          <p className="text-center mt-8 text-hampton-blue/50 text-sm">
+          <p className="text-center mt-8 text-hampton-mauve text-sm">
             More questions?{' '}
             <Link href="/contact-us" className="text-hampton-pink underline hover:text-white transition-colors">
               Contact us directly

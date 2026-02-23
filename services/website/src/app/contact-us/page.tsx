@@ -9,9 +9,9 @@ export const metadata: Metadata = {
 export default function ContactUs() {
   return (
     <div className="bg-hampton-ivory">
-      <section className="bg-hampton-navy py-16 text-center px-4">
-        <h1 className="font-serif text-4xl text-white mb-3">Let's Plan Your Perfect Party</h1>
-        <p className="text-hampton-blue/80 text-base max-w-md mx-auto">
+      <section className="bg-hampton-mauve py-16 text-center px-4">
+        <h1 className="font-serif text-4xl text-hampton-navy mb-3">Let's Plan Your Perfect Party</h1>
+        <p className="text-hampton-navy text-base max-w-md mx-auto">
           Whether you have questions or you're ready to book, we'd love to hear from you. Expect a response within 24 hours.
         </p>
       </section>
@@ -21,39 +21,39 @@ export default function ContactUs() {
           <h2 className="font-serif text-2xl text-hampton-navy mb-6">Get In Touch</h2>
           <div className="space-y-5">
             <a href="tel:6319989325" className="flex items-center gap-4 group">
-              <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-mauve group-hover:bg-hampton-pink transition-colors">
+              <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-navy group-hover:bg-hampton-pink transition-colors">
                 <Phone size={18} />
               </div>
               <div>
-                <p className="text-xs text-hampton-mauve font-medium uppercase tracking-wide">Phone / Text</p>
+                <p className="text-xs text-hampton-navy font-medium uppercase tracking-wide">Phone / Text</p>
                 <p className="text-hampton-navy font-semibold">(631) 998-9325</p>
               </div>
             </a>
             <a href="mailto:hosthampton295@gmail.com" className="flex items-center gap-4 group">
-              <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-mauve group-hover:bg-hampton-pink transition-colors">
+              <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-navy group-hover:bg-hampton-pink transition-colors">
                 <Mail size={18} />
               </div>
               <div>
-                <p className="text-xs text-hampton-mauve font-medium uppercase tracking-wide">Email</p>
+                <p className="text-xs text-hampton-navy font-medium uppercase tracking-wide">Email</p>
                 <p className="text-hampton-navy font-semibold">hosthampton295@gmail.com</p>
               </div>
             </a>
             <div className="flex items-start gap-4">
-              <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-mauve shrink-0">
+              <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-navy shrink-0">
                 <MapPin size={18} />
               </div>
               <div>
-                <p className="text-xs text-hampton-mauve font-medium uppercase tracking-wide">Address</p>
+                <p className="text-xs text-hampton-navy font-medium uppercase tracking-wide">Address</p>
                 <p className="text-hampton-navy font-semibold">295 Montauk Highway, Suite 7</p>
                 <p className="text-hampton-navy">Speonk, NY 11972</p>
               </div>
             </div>
             <div className="flex items-start gap-4">
-              <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-mauve shrink-0">
+              <div className="w-10 h-10 bg-hampton-pink/20 rounded-full flex items-center justify-center text-hampton-navy shrink-0">
                 <Clock size={18} />
               </div>
               <div>
-                <p className="text-xs text-hampton-mauve font-medium uppercase tracking-wide">Hours</p>
+                <p className="text-xs text-hampton-navy font-medium uppercase tracking-wide">Hours</p>
                 <p className="text-hampton-navy text-sm">Mon–Fri: 12:00 PM – 7:00 PM</p>
                 <p className="text-hampton-navy text-sm">Sat–Sun: 10:00 AM – 8:00 PM</p>
               </div>
@@ -75,17 +75,17 @@ export default function ContactUs() {
           <h2 className="font-serif text-2xl text-hampton-navy mb-5">Send a Message</h2>
           <form className="space-y-4" action="mailto:hosthampton295@gmail.com" method="get">
             <div>
-              <label className="block text-xs font-medium text-hampton-mauve uppercase tracking-wide mb-1">Your Name</label>
+              <label className="block text-xs font-medium text-hampton-navy uppercase tracking-wide mb-1">Your Name</label>
               <input type="text" name="name" required placeholder="Jane Smith"
                      className="w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-pink/40" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-hampton-mauve uppercase tracking-wide mb-1">Email</label>
+              <label className="block text-xs font-medium text-hampton-navy uppercase tracking-wide mb-1">Email</label>
               <input type="email" name="email" required placeholder="you@email.com"
                      className="w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-pink/40" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-hampton-mauve uppercase tracking-wide mb-1">Message</label>
+              <label className="block text-xs font-medium text-hampton-navy uppercase tracking-wide mb-1">Message</label>
               <textarea name="body" rows={4} placeholder="Tell us about your event..."
                         className="w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-pink/40 resize-none" />
             </div>

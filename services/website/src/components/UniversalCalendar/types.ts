@@ -45,6 +45,7 @@ export interface UniversalCalendarProps {
   mode?: 'booking' | 'events' | 'browse'
   defaultBookingType?: string
   lockedBookingType?: string
+  defaultDate?: string // YYYY-MM-DD — pre-selects this date and navigates to its month
   tagFilter?: string[]
   expandable?: boolean
   initialExpanded?: boolean

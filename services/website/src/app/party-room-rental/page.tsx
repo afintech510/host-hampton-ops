@@ -23,9 +23,9 @@ const pricing = [
 export default function PartyRoomRental() {
   return (
     <div className="bg-hampton-ivory">
-      <section className="bg-hampton-navy py-16 text-center px-4">
-        <h1 className="font-serif text-4xl md:text-5xl text-white mb-4">Party Room Rental</h1>
-        <p className="text-hampton-blue/80 text-lg max-w-xl mx-auto">
+      <section className="bg-hampton-mauve py-16 text-center px-4">
+        <h1 className="font-serif text-4xl md:text-5xl text-hampton-navy mb-4">Party Room Rental</h1>
+        <p className="text-hampton-navy text-lg max-w-xl mx-auto">
           Our beautiful, private studio is yours to use however you like. You bring the ideas — we provide the perfect space.
         </p>
       </section>
@@ -33,7 +33,7 @@ export default function PartyRoomRental() {
       <section className="py-16 max-w-5xl mx-auto px-4 sm:px-6">
         <div className="text-center mb-10">
           <h2 className="section-heading">Your Space. Your Vision.</h2>
-          <p className="text-hampton-mauve max-w-xl mx-auto">Perfect for any occasion that deserves a beautiful, private setting.</p>
+          <p className="text-hampton-navy max-w-xl mx-auto">Perfect for any occasion that deserves a beautiful, private setting.</p>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {useCases.map(u => (
@@ -47,16 +47,16 @@ export default function PartyRoomRental() {
       <section className="bg-hampton-pink/10 py-16">
         <div className="max-w-4xl mx-auto px-4 sm:px-6">
           <h2 className="section-heading text-center mb-2">Rental Rates</h2>
-          <p className="text-center text-hampton-mauve mb-8">All rentals include the space only. Tables, chairs, and basic lighting included.</p>
+          <p className="text-center text-hampton-navy mb-8">All rentals include the space only. Tables, chairs, and basic lighting included.</p>
           <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
             {pricing.map(p => (
               <div key={p.name}
                    className={`rounded-2xl p-5 text-center ${p.popular ? 'bg-hampton-pink/20 border-2 border-hampton-pink' : 'bg-white border border-hampton-pink/20'}`}>
-                {p.popular && <p className="text-hampton-mauve text-xs font-bold mb-1 uppercase tracking-wide">Most Booked</p>}
+                {p.popular && <p className="text-hampton-navy text-xs font-bold mb-1 uppercase tracking-wide">Most Booked</p>}
                 <h3 className="font-serif text-hampton-navy text-base font-bold mb-1">{p.name}</h3>
-                <p className="text-hampton-mauve text-xs mb-3">{p.sub}</p>
+                <p className="text-hampton-navy text-xs mb-3">{p.sub}</p>
                 <p className="text-2xl font-bold text-hampton-navy">${p.price}</p>
-                <p className="text-hampton-mauve text-xs mt-1">{p.hours} {p.hours === 1 ? 'hour' : 'hours'}</p>
+                <p className="text-hampton-navy text-xs mt-1">{p.hours} {p.hours === 1 ? 'hour' : 'hours'}</p>
               </div>
             ))}
           </div>
@@ -68,9 +68,9 @@ export default function PartyRoomRental() {
                 'Security deposit: $500 (refundable after event)',
                 'Cleaning fee waived if space left in original condition',
                 'You may bring your own decorations, catering, and vendors',
-                'Tables and chairs for up to 30 guests included',
+                'Tables and chairs for up to 60 guests included',
               ].map(i => (
-                <li key={i} className="flex items-start gap-2 text-sm text-hampton-mauve">
+                <li key={i} className="flex items-start gap-2 text-sm text-hampton-navy">
                   <Check size={14} className="shrink-0 mt-0.5" />
                   <span>{i}</span>
                 </li>
@@ -91,8 +91,8 @@ export default function PartyRoomRental() {
       </section>
 
       <section className="py-14 text-center px-4">
-        <h2 className="section-heading mb-3">Book the Space</h2>
-        <p className="text-hampton-mauve mb-7 max-w-md mx-auto">
+        <h2 className="section-heading mb-3">Book the Studio</h2>
+        <p className="text-hampton-navy mb-7 max-w-md mx-auto">
           Reserve with a $250 deposit. Perfect for any event where you want a gorgeous, private setting.
         </p>
         <Link href="/book?event_type=room-rental" className="btn-primary px-10 py-4 text-base">

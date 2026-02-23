@@ -38,9 +38,9 @@ const addons = [
 export default function PartyAddOns() {
   return (
     <div className="bg-hampton-ivory">
-      <section className="bg-hampton-navy py-16 text-center px-4">
-        <h1 className="font-serif text-4xl text-white mb-4">Party Add-Ons</h1>
-        <p className="text-hampton-blue/80 text-lg max-w-xl mx-auto">
+      <section className="bg-hampton-mauve py-16 text-center px-4">
+        <h1 className="font-serif text-4xl text-hampton-navy mb-4">Party Add-Ons</h1>
+        <p className="text-hampton-navy text-lg max-w-xl mx-auto">
           Every party is magical. These extras make it unforgettable.
         </p>
       </section>
@@ -54,8 +54,8 @@ export default function PartyAddOns() {
                 {cat.items.map(item => (
                   <div key={item.name} className="bg-white border border-hampton-pink/20 rounded-xl p-4 flex justify-between items-start gap-4">
                     <div>
-                      <h3 className="font-semibold text-hampton-navy text-sm mb-0.5">{item.name}</h3>
-                      <p className="text-hampton-mauve text-xs leading-relaxed">{item.desc}</p>
+                      <h3 className="font-semibold text-hampton-navy text-sm tracking-wide mb-0.5">{item.name}</h3>
+                      <p className="text-hampton-navy text-xs leading-relaxed">{item.desc}</p>
                     </div>
                     <span className="text-hampton-navy font-bold text-base shrink-0">${item.price}</span>
                   </div>
@@ -68,7 +68,7 @@ export default function PartyAddOns() {
 
       <section className="bg-hampton-pink/10 py-14 text-center px-4">
         <h2 className="section-heading mb-3">Add These to Your Package</h2>
-        <p className="text-hampton-mauve mb-7">Add-ons are selected during the planning process — after you reserve your date.</p>
+        <p className="text-hampton-navy mb-7">Add-ons are selected during the planning process — after you reserve your date.</p>
         <Link href="/book" className="btn-primary px-10 py-4 text-base">Reserve Your Date First — $250</Link>
       </section>
     </div>

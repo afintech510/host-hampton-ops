@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
       bookingTypeSlug,
     } = body
 
-    if (!partyDate || !partyTime || !contactName || !contactEmail) {
+    if (!partyDate || !partyTime || !contactName || !contactEmail || !contactPhone) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 

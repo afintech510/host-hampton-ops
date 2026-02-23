@@ -14,6 +14,7 @@ export default function UniversalCalendar({
   mode = 'booking',
   defaultBookingType,
   lockedBookingType,
+  defaultDate,
   tagFilter,
   expandable = false,
   initialExpanded = true,
@@ -21,8 +22,14 @@ export default function UniversalCalendar({
   onSelect,
   onBook,
 }: UniversalCalendarProps) {
-  const [viewDate, setViewDate] = useState(() => new Date())
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [viewDate, setViewDate] = useState(() => {
+    if (defaultDate) {
+      const [y, m] = defaultDate.split('-').map(Number)
+      return new Date(y, m - 1, 1)
+    }
+    return new Date()
+  })
+  const [selectedDate, setSelectedDate] = useState<string | null>(defaultDate || null)
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
   const [activeType, setActiveType] = useState(lockedBookingType || defaultBookingType || '')
 

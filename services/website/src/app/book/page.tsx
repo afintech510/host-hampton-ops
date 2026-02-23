@@ -75,10 +75,10 @@ function BookingForm() {
 
   return (
     <div className="min-h-screen bg-hampton-ivory">
-      <section className="bg-hampton-navy py-14 text-center px-4">
+      <section className="bg-hampton-mauve py-14 text-center px-4">
         <Lock size={28} className="text-hampton-pink mx-auto mb-3" />
-        <h1 className="font-serif text-3xl md:text-4xl text-white mb-3">Reserve Your Date</h1>
-        <p className="text-hampton-blue/80 text-base max-w-md mx-auto">
+        <h1 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-3">Reserve Your Date</h1>
+        <p className="text-hampton-navy text-base max-w-md mx-auto">
           {hasDeposit
             ? `Pay the $${depositDollars} deposit to lock in your date. All details can be changed up to 1 week before.`
             : 'Select your preferred date and time to book your appointment.'}
@@ -126,7 +126,7 @@ function BookingForm() {
             {packageName && (
               <div className="bg-hampton-pink/20 rounded-xl px-5 py-3 text-center">
                 <p className="text-hampton-navy text-sm font-semibold">
-                  Selected Package: <span className="text-hampton-mauve">{packageName}</span>
+                  Selected Package: <span className="text-hampton-navy">{packageName}</span>
                 </p>
               </div>
             )}
@@ -135,14 +135,14 @@ function BookingForm() {
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
                 <label className="form-label flex items-center gap-2">
-                  <User size={14} className="text-hampton-mauve" /> Your Name *
+                  <User size={14} className="text-hampton-navy" /> Your Name *
                 </label>
                 <input type="text" required placeholder="Jane Smith" value={form.contactName}
                        onChange={e => update('contactName', e.target.value)} className="form-input" />
               </div>
               <div>
                 <label className="form-label flex items-center gap-2">
-                  <Mail size={14} className="text-hampton-mauve" /> Email *
+                  <Mail size={14} className="text-hampton-navy" /> Email *
                 </label>
                 <input type="email" required placeholder="jane@email.com" value={form.contactEmail}
                        onChange={e => update('contactEmail', e.target.value)} className="form-input" />
@@ -151,9 +151,9 @@ function BookingForm() {
 
             <div>
               <label className="form-label flex items-center gap-2">
-                <Phone size={14} className="text-hampton-mauve" /> Phone
+                <Phone size={14} className="text-hampton-navy" /> Phone *
               </label>
-              <input type="tel" placeholder="(631) 555-1234" value={form.contactPhone}
+              <input type="tel" required placeholder="(631) 555-1234" value={form.contactPhone}
                      onChange={e => update('contactPhone', e.target.value)} className="form-input" />
             </div>
 
@@ -162,21 +162,21 @@ function BookingForm() {
               <div className="grid sm:grid-cols-3 gap-4">
                 <div>
                   <label className="form-label flex items-center gap-2">
-                    <Baby size={14} className="text-hampton-mauve" /> Child&apos;s Name
+                    <Baby size={14} className="text-hampton-navy" /> Child&apos;s Name
                   </label>
                   <input type="text" placeholder="Emma" value={form.childName}
                          onChange={e => update('childName', e.target.value)} className="form-input" />
                 </div>
                 <div>
                   <label className="form-label flex items-center gap-2">
-                    <Baby size={14} className="text-hampton-mauve" /> Child&apos;s Age
+                    <Baby size={14} className="text-hampton-navy" /> Child&apos;s Age
                   </label>
                   <input type="number" min="1" max="18" placeholder="7" value={form.childAge}
                          onChange={e => update('childAge', e.target.value)} className="form-input" />
                 </div>
                 <div>
                   <label className="form-label flex items-center gap-2">
-                    <Users size={14} className="text-hampton-mauve" /> Guest Count
+                    <Users size={14} className="text-hampton-navy" /> Guest Count
                   </label>
                   <input type="number" min="1" max="50" placeholder="10" value={form.guestCount}
                          onChange={e => update('guestCount', e.target.value)} className="form-input" />
@@ -218,7 +218,7 @@ function BookingForm() {
             </button>
 
             {hasDeposit && (
-              <p className="text-center text-hampton-mauve text-xs">
+              <p className="text-center text-hampton-navy text-xs">
                 Secure payment via Stripe. Your ${depositDollars} deposit is applied toward your total balance.
                 <br />You can change all details up to 1 week before your event.
               </p>
@@ -232,7 +232,7 @@ function BookingForm() {
 
 export default function BookPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-hampton-ivory flex items-center justify-center"><p className="text-hampton-mauve">Loading...</p></div>}>
+    <Suspense fallback={<div className="min-h-screen bg-hampton-ivory flex items-center justify-center"><p className="text-hampton-navy">Loading...</p></div>}>
       <BookingForm />
     </Suspense>
   )
