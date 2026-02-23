@@ -71,6 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen flex flex-col">
         <Nav />
         <main className="flex-1 pt-20">{children}</main>
+        <div className="h-40 bg-gradient-to-b from-transparent to-[#BCCDEB]" aria-hidden="true" />
         <Footer />
       </body>
     </html>
