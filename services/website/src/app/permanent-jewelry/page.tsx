@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
+import UniversalCalendar from '@/components/UniversalCalendar'
 
 export const metadata: Metadata = {
   title: 'Permanent Jewelry | Host Hampton, Speonk NY',
@@ -50,6 +51,16 @@ export default function PermanentJewelry() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Check Availability */}
+      <section className="py-14 max-w-2xl mx-auto px-4 sm:px-6">
+        <UniversalCalendar
+          mode="booking"
+          lockedBookingType="perm-jewelry"
+          expandable={true}
+          initialExpanded={false}
+        />
       </section>
 
       <section className="bg-hampton-pink/10 py-14 text-center px-4">

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Check } from 'lucide-react'
+import UniversalCalendar from '@/components/UniversalCalendar'
 
 export const metadata: Metadata = {
   title: 'Party Room Rental | Host Hampton, Speonk NY',
@@ -77,6 +78,16 @@ export default function PartyRoomRental() {
             </ul>
           </div>
         </div>
+      </section>
+
+      {/* Check Availability */}
+      <section className="py-14 max-w-2xl mx-auto px-4 sm:px-6">
+        <UniversalCalendar
+          mode="booking"
+          lockedBookingType="room-rental"
+          expandable={true}
+          initialExpanded={false}
+        />
       </section>
 
       <section className="py-14 text-center px-4">

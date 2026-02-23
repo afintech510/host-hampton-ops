@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTemplates'
+import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
@@ -232,7 +233,7 @@ export async function POST(req: NextRequest) {
       contact_name: m.contactName,
       contact_email: m.contactEmail,
       contact_phone: m.contactPhone || null,
-      deposit_amount: 250,
+      deposit_amount: m.depositCents ? parseInt(m.depositCents, 10) / 100 : 250,
       stripe_payment_intent_id: session.payment_intent as string,
       stripe_session_id: session.id,
       party_tags: partyTags,
@@ -245,6 +246,22 @@ export async function POST(req: NextRequest) {
       console.error('Supabase insert error:', dbError)
     } else {
       console.log('Booking created:', bookingRef, 'for', m.contactEmail, 'on', partyDate)
+
+      // Write back to Google Calendar
+      if (partyDate && m.partyTime) {
+        const duration = parseInt(m.slotDurationMin || '120', 10)
+        const endTime = addMinutes(m.partyTime, duration)
+        const calEventId = await createCalendarEvent({
+          summary: `[BOOKING] ${m.contactName} - ${m.eventType || 'Party'}`,
+          startDate: partyDate,
+          startTime: m.partyTime,
+          endTime,
+          description: `Ref: ${bookingRef}\nContact: ${m.contactName} (${m.contactEmail})\nType: ${m.eventType || 'Party'}${m.packageName ? `\nPackage: ${m.packageName}` : ''}${m.guestCount ? `\nGuests: ~${m.guestCount}` : ''}${m.notes ? `\nNotes: ${m.notes}` : ''}`,
+        })
+        if (calEventId) {
+          console.log('Google Calendar event created:', calEventId)
+        }
+      }
     }
 
     // Send confirmation emails via Resend
@@ -262,6 +279,9 @@ export async function POST(req: NextRequest) {
         ? new Date(new Date(partyDate + 'T12:00:00').getTime() - 48 * 60 * 60 * 1000)
             .toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
         : 'day of your event'
+
+      const depositAmount = m.depositCents ? parseInt(m.depositCents, 10) / 100 : 250
+      const depositFormatted = `$${depositAmount.toFixed(2)}`
 
       const packageLine = m.packageName
         ? `<tr><td style="padding:8px 0;color:#555;"><strong>Package</strong></td><td style="padding:8px 0;color:#555;">${m.packageName}</td></tr>`
@@ -292,7 +312,7 @@ export async function POST(req: NextRequest) {
   <!-- Body -->
   <div style="padding:36px 40px;">
     <p style="font-size:16px;color:#1a2744;margin:0 0 20px;">Hi ${firstName},</p>
-    <p style="color:#555;line-height:1.7;margin:0 0 28px;">Your <strong>$250 deposit</strong> has been successfully received. We can't wait to celebrate with you at Host Hampton!</p>
+    <p style="color:#555;line-height:1.7;margin:0 0 28px;">Your <strong>${depositFormatted} deposit</strong> has been successfully received. We can't wait to celebrate with you at Host Hampton!</p>
 
     <!-- Booking details card -->
     <div style="background:linear-gradient(135deg,#A1B5C8 0%,#E8C7CB 100%);padding:3px;border-radius:12px;margin-bottom:24px;">
@@ -313,7 +333,7 @@ export async function POST(req: NextRequest) {
     <div style="background:#e6f0e8;border-radius:10px;padding:20px;margin-bottom:24px;border:1px solid #b8d4bc;">
       <h3 style="font-size:14px;color:#1a5c2a;margin:0 0 12px;">💰 Payment Summary</h3>
       <div style="display:flex;justify-content:space-between;margin:6px 0;font-size:14px;color:#555;">
-        <span>Deposit paid today</span><span style="font-weight:bold;color:#059669;">$250.00 ✓</span>
+        <span>Deposit paid today</span><span style="font-weight:bold;color:#059669;">${depositFormatted} ✓</span>
       </div>
       <div style="border-top:1px solid #b8d4bc;margin:10px 0;padding-top:10px;font-size:13px;color:#666;">
         <strong>Balance due:</strong> Remaining balance is collected at your event.<br>
@@ -377,7 +397,7 @@ export async function POST(req: NextRequest) {
       <tr><td style="padding:10px 12px;font-weight:bold;">Child</td><td style="padding:10px 12px;">${m.childName ? `${m.childName}${m.childAge ? `, age ${m.childAge}` : ''}` : '—'}</td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Guests</td><td style="padding:10px 12px;">${m.guestCount || '—'}</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;">Notes</td><td style="padding:10px 12px;">${m.notes || '—'}</td></tr>
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Deposit</td><td style="padding:10px 12px;color:#059669;font-weight:bold;">$250.00 ✓</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Deposit</td><td style="padding:10px 12px;color:#059669;font-weight:bold;">${depositFormatted} ✓</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;">Stripe PI</td><td style="padding:10px 12px;font-size:12px;color:#888;">${session.payment_intent}</td></tr>
     </table>
   </div>

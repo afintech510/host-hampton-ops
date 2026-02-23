@@ -1,82 +1,120 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getSupabase } from '@/lib/supabase'
+import {
+  getCalendarEvents,
+  parseCalendarBlocks,
+  addMinutes,
+  rangesOverlap,
+  DEFAULT_HOURS,
+} from '@/lib/googleCalendar'
 
-interface BusySlot {
-  start: string
-  end: string
+export interface TimeSlot {
+  start: string // HH:mm
+  end: string   // HH:mm
+  status: 'open' | 'blocked'
 }
 
 export async function GET(req: NextRequest) {
-  const month = req.nextUrl.searchParams.get('month') // YYYY-MM format
+  const month = req.nextUrl.searchParams.get('month')
   if (!month || !/^\d{4}-\d{2}$/.test(month)) {
     return NextResponse.json({ error: 'month param required (YYYY-MM)' }, { status: 400 })
   }
 
-  const calendarId = process.env.GOOGLE_CALENDAR_ID
-  const clientId = process.env.GOOGLE_CLIENT_ID
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+  const bookingTypeSlug = req.nextUrl.searchParams.get('bookingType')
 
-  // If Calendar isn't configured, return all dates as available
-  if (!calendarId || !clientId || !clientSecret || !refreshToken) {
-    return NextResponse.json({ blockedDates: [], configured: false })
+  // Fetch Google Calendar events with full time ranges
+  const calEvents = await getCalendarEvents(month)
+  const calBlocks = parseCalendarBlocks(calEvents)
+  const configured = calEvents.length > 0 || !!process.env.GOOGLE_CALENDAR_ID
+
+  // Blocked dates (backward compatible)
+  const blockedDatesSet = new Set<string>()
+  for (const ev of calEvents) {
+    const start = ev.start?.date || ev.start?.dateTime?.split('T')[0]
+    if (start) blockedDatesSet.add(start)
   }
 
-  try {
-    // Get fresh access token
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }),
-    })
-    const tokenData = await tokenRes.json()
-    if (!tokenData.access_token) {
-      console.error('Google token refresh failed:', tokenData)
-      return NextResponse.json({ blockedDates: [], configured: false })
-    }
-
-    // Query calendar for busy times in the requested month
-    const timeMin = `${month}-01T00:00:00Z`
-    const lastDay = new Date(parseInt(month.split('-')[0]), parseInt(month.split('-')[1]), 0).getDate()
-    const timeMax = `${month}-${String(lastDay).padStart(2, '0')}T23:59:59Z`
-
-    const calRes = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
-      new URLSearchParams({
-        timeMin,
-        timeMax,
-        singleEvents: 'true',
-        orderBy: 'startTime',
-        fields: 'items(start,end,summary)',
-      }),
-      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
-    )
-
-    if (!calRes.ok) {
-      console.error('Google Calendar API error:', calRes.status, await calRes.text())
-      return NextResponse.json({ blockedDates: [], configured: false })
-    }
-
-    const calData = await calRes.json()
-    const events = calData.items || []
-
-    // Extract dates that have events (blocked)
-    const blockedSet = new Set<string>()
-    for (const event of events) {
-      const start = event.start?.date || event.start?.dateTime?.split('T')[0]
-      if (start) blockedSet.add(start)
-    }
-
+  // Without booking type → legacy day-level response
+  if (!bookingTypeSlug) {
     return NextResponse.json({
-      blockedDates: Array.from(blockedSet).sort(),
-      configured: true,
+      blockedDates: Array.from(blockedDatesSet).sort(),
+      configured,
     })
-  } catch (err) {
-    console.error('Availability check error:', err)
-    return NextResponse.json({ blockedDates: [], configured: false })
   }
+
+  // Look up booking type config from DB
+  const supabase = getSupabase()
+  const { data: bt } = await supabase
+    .from('booking_types')
+    .select('*')
+    .eq('slug', bookingTypeSlug)
+    .eq('is_active', true)
+    .single()
+
+  if (!bt) {
+    return NextResponse.json({ error: 'Unknown booking type' }, { status: 404 })
+  }
+
+  // Generate time slots for each day in the month
+  const [year, mon] = month.split('-').map(Number)
+  const daysInMonth = new Date(year, mon, 0).getDate()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const slots: Record<string, TimeSlot[]> = {}
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(year, mon - 1, day)
+    const dateStr = `${month}-${String(day).padStart(2, '0')}`
+    const dow = date.getDay()
+
+    // Skip if day-of-week not allowed
+    if (!bt.allowed_days.includes(dow)) continue
+
+    // Skip past dates + advance requirement
+    const minDate = new Date(today)
+    minDate.setDate(minDate.getDate() + bt.min_advance_days)
+    if (date < minDate) continue
+
+    // Business hours for this day
+    const openTime = bt.open_time || DEFAULT_HOURS[dow].open
+    const closeTime = bt.close_time || DEFAULT_HOURS[dow].close
+
+    // Generate slots at configured intervals
+    const daySlots: TimeSlot[] = []
+    let cursor = openTime
+
+    while (true) {
+      const slotEnd = addMinutes(cursor, bt.slot_duration_min)
+      if (slotEnd > closeTime) break
+
+      // Check overlap with Google Calendar blocks
+      const dayBlocks = calBlocks.get(dateStr) || []
+      const isBlocked = dayBlocks.some(block =>
+        block.allDay || rangesOverlap({ start: cursor, end: slotEnd }, block)
+      )
+
+      daySlots.push({ start: cursor, end: slotEnd, status: isBlocked ? 'blocked' : 'open' })
+      cursor = addMinutes(cursor, bt.slot_duration_min + bt.buffer_min)
+    }
+
+    if (daySlots.length > 0) {
+      slots[dateStr] = daySlots
+    }
+  }
+
+  return NextResponse.json({
+    blockedDates: Array.from(blockedDatesSet).sort(),
+    configured,
+    slots,
+    bookingType: {
+      slug: bt.slug,
+      label: bt.label,
+      slotDurationMin: bt.slot_duration_min,
+      allowedDays: bt.allowed_days,
+      depositCents: bt.deposit_cents,
+      requiresDeposit: bt.requires_deposit,
+      tags: bt.tags,
+    },
+  })
 }

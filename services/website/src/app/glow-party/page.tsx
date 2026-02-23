@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Check, Zap, Music, Star, Camera, Smile, ChevronDown } from 'lucide-react'
 import GlowHero from './GlowHero'
+import UniversalCalendar from '@/components/UniversalCalendar'
 
 export const metadata: Metadata = {
   title: 'Kids Glow Party | Host Hampton — Neon Birthday Party Speonk NY',
@@ -240,6 +241,18 @@ export default function GlowPartyPage() {
               </details>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ── Check Availability ── */}
+      <section className="py-20 px-4 border-t border-white/10">
+        <div className="max-w-2xl mx-auto">
+          <UniversalCalendar
+            mode="booking"
+            lockedBookingType="kids-party"
+            expandable={true}
+            initialExpanded={false}
+          />
         </div>
       </section>
 
