@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import Image from 'next/image'
-import { Check, ChevronDown, X, Loader2, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, X, Loader2 } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
 
 const included = [
@@ -101,17 +101,6 @@ const eventTypes = [
 
 const timeOptions = ['Morning', 'Afternoon', 'Evening']
 
-/* Sparkle particle data — generated once, stable across renders */
-const sparkles = Array.from({ length: 40 }, (_, i) => ({
-  id: i,
-  top: `${(i * 17 + 7) % 100}%`,
-  left: `${(i * 23 + 13) % 100}%`,
-  size: (i % 3) + 1.5,
-  delay: `${(i * 0.13) % 5}s`,
-  duration: `${(i % 3) + 2.5}s`,
-  isGold: i % 5 === 0,
-}))
-
 export default function PartyPackagesContent() {
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
   const [formData, setFormData] = useState({
@@ -130,11 +119,9 @@ export default function PartyPackagesContent() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
-  const [mounted, setMounted] = useState(false)
+  const themeSectionRef = useRef<HTMLDivElement>(null)
   const formRef = useRef<HTMLDivElement>(null)
   const calendarRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => { setMounted(true) }, [])
 
   function handleThemeSelect(name: string) {
     if (selectedTheme === name) {
@@ -143,9 +130,10 @@ export default function PartyPackagesContent() {
     } else {
       setSelectedTheme(name)
       setFormData(prev => ({ ...prev, partyTheme: name }))
+      // Smooth scroll: snap selected theme to top of viewport, then scroll form into view
       setTimeout(() => {
-        formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 300)
+        themeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 50)
     }
   }
 
@@ -196,105 +184,11 @@ export default function PartyPackagesContent() {
   }
 
   return (
-    <div className="bg-hampton-ivory relative overflow-hidden selection:bg-hampton-mauve selection:text-hampton-navy">
-      {/* ── Inline Styles for Animations ── */}
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes glisten {
-          0%, 100% { opacity: 0; transform: scale(0.5); }
-          50% { opacity: 0.7; transform: scale(1.4); }
-        }
-        .sparkle-particle {
-          position: absolute;
-          border-radius: 50%;
-          animation: glisten infinite ease-in-out;
-          pointer-events: none;
-        }
-        .sparkle-silver {
-          background: #AEB6C2;
-          box-shadow: 0 0 8px 2px rgba(174,182,194,0.5), 0 0 16px 4px rgba(255,255,255,0.6);
-        }
-        .sparkle-gold {
-          background: #C7A36B;
-          box-shadow: 0 0 8px 2px rgba(199,163,107,0.5), 0 0 16px 4px rgba(255,255,255,0.6);
-        }
-        @keyframes gentle-float {
-          0% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(20px, -30px) scale(1.05); }
-          66% { transform: translate(-15px, 15px) scale(0.95); }
-          100% { transform: translate(0, 0) scale(1); }
-        }
-        .animate-float-1 { animation: gentle-float 18s infinite ease-in-out; }
-        .animate-float-2 { animation: gentle-float 22s infinite ease-in-out reverse; }
-        .glass-card {
-          background: rgba(255, 255, 255, 0.65);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-          border: 1px solid rgba(255, 255, 255, 0.8);
-          box-shadow: 0 10px 40px rgba(0,0,0,0.04);
-        }
-        .hover-float {
-          transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-        .hover-float:hover {
-          transform: translateY(-6px);
-          box-shadow: 0 16px 40px rgba(174,182,194,0.35);
-        }
-        @keyframes shimmer-sweep {
-          0% { transform: translateX(-150%) skewX(-15deg); }
-          50% { transform: translateX(150%) skewX(-15deg); }
-          100% { transform: translateX(150%) skewX(-15deg); }
-        }
-        .shimmer-on-hover {
-          position: relative;
-          overflow: hidden;
-        }
-        .shimmer-on-hover::before {
-          content: '';
-          position: absolute;
-          top: 0; left: 0; width: 50%; height: 100%;
-          background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.7) 50%, rgba(255,255,255,0) 100%);
-          transform: translateX(-150%) skewX(-15deg);
-          z-index: 1;
-          pointer-events: none;
-        }
-        .shimmer-on-hover:hover::before {
-          animation: shimmer-sweep 1.5s ease-in-out;
-        }
-        .glow-check {
-          box-shadow: 0 0 10px rgba(174,182,194,0.7), 0 0 20px rgba(174,182,194,0.3);
-        }
-      `}} />
-
-      {/* ── Background Sparkle Particles ── */}
-      {mounted && (
-        <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden" style={{ mixBlendMode: 'multiply' }}>
-          {sparkles.map(s => (
-            <div
-              key={s.id}
-              className={`sparkle-particle ${s.isGold ? 'sparkle-gold' : 'sparkle-silver'}`}
-              style={{
-                top: s.top,
-                left: s.left,
-                width: `${s.size}px`,
-                height: `${s.size}px`,
-                animationDelay: s.delay,
-                animationDuration: s.duration,
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* ── Floating Blobs (Aurora) ── */}
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[15%] left-[5%] w-[400px] h-[400px] rounded-full bg-hampton-mauve/30 blur-[100px] animate-float-1" />
-        <div className="absolute top-[40%] right-[0%] w-[350px] h-[350px] rounded-full bg-hampton-pink/20 blur-[100px] animate-float-2" />
-      </div>
-
-      {/* ── Hero — Gradient blending into background ── */}
-      <section className="relative z-10 bg-gradient-to-b from-hampton-mauve to-transparent py-20 text-center px-4">
+    <div className="bg-hampton-ivory">
+      {/* ── Hero ── */}
+      <section className="bg-gradient-to-b from-hampton-mauve to-transparent py-20 text-center px-4">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/40 mb-6 text-hampton-pink text-sm font-bold tracking-widest uppercase border border-white/60 shadow-sm">
-          <Sparkles size={14} /> Everything Included
+          Everything Included
         </div>
         <h1 className="font-serif text-4xl md:text-6xl text-hampton-navy mb-4">
           Party Packages & Pricing
@@ -305,16 +199,16 @@ export default function PartyPackagesContent() {
       </section>
 
       {/* ── What's Included — Glass Card + Glowing Checks ── */}
-      <section className="relative z-10 py-16 max-w-4xl mx-auto px-4 sm:px-6 -mt-6">
+      <section className="py-16 max-w-4xl mx-auto px-4 sm:px-6 -mt-6">
         <div className="text-center mb-10">
           <h2 className="section-heading">Every Party Includes</h2>
           <p className="text-hampton-navy/70">No hidden costs. No upcharges. Everything below is included.</p>
         </div>
-        <div className="glass-card rounded-3xl p-8 md:p-12 hover-float">
+        <div className="bg-white rounded-3xl p-8 md:p-12 border border-hampton-pink/20 shadow-sm">
           <div className="grid md:grid-cols-2 gap-y-4 gap-x-10">
             {included.map(item => (
-              <div key={item} className="flex items-center gap-3 bg-white/50 backdrop-blur-sm p-3 rounded-lg border border-white hover:border-hampton-mauve/50 transition-colors">
-                <div className="w-6 h-6 rounded-full bg-hampton-mauve flex items-center justify-center text-white shrink-0 glow-check">
+              <div key={item} className="flex items-center gap-3 p-3 rounded-lg border border-hampton-pink/10 hover:border-hampton-mauve/50 transition-colors">
+                <div className="w-6 h-6 rounded-full bg-hampton-mauve flex items-center justify-center text-white shrink-0">
                   <Check size={14} strokeWidth={3} />
                 </div>
                 <span className="text-hampton-navy text-sm font-medium">{item}</span>
@@ -324,8 +218,8 @@ export default function PartyPackagesContent() {
         </div>
       </section>
 
-      {/* ── Theme Packages — Single Selectable with Shimmer ── */}
-      <section className="relative z-10 py-16 max-w-7xl mx-auto px-4 sm:px-6">
+      {/* ── Theme Packages — Single Selectable ── */}
+      <section ref={themeSectionRef} className="py-16 max-w-7xl mx-auto px-4 sm:px-6 scroll-mt-4">
         <h2 className="section-heading text-center mb-2">Select Your Theme</h2>
         <p className="text-center text-hampton-navy/70 mb-10">
           {selectedTheme ? 'Click the theme again to deselect, or choose a different one.' : 'Tap a theme to see details and start your booking.'}
@@ -344,12 +238,12 @@ export default function PartyPackagesContent() {
               <div
                 key={t.name}
                 onClick={() => handleThemeSelect(t.name)}
-                className={`shimmer-on-hover rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 hover-float ${
+                className={`rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 ${
                   isSelected
-                    ? 'ring-2 ring-hampton-pink shadow-[0_10px_30px_rgba(199,163,107,0.2)] bg-white'
+                    ? 'ring-2 ring-hampton-pink shadow-md bg-white'
                     : t.popular
-                      ? 'ring-2 ring-hampton-pink bg-white/90 backdrop-blur-sm'
-                      : 'bg-white/90 backdrop-blur-sm border border-white shadow-sm'
+                      ? 'ring-2 ring-hampton-pink bg-white'
+                      : 'bg-white border border-hampton-pink/20 shadow-sm'
                 }`}
               >
                 {t.popular && !isSelected && (
@@ -380,7 +274,7 @@ export default function PartyPackagesContent() {
                     <div className="space-y-3">
                       <p className="text-hampton-navy/80 text-sm leading-relaxed">{t.extendedDesc}</p>
                       <div className="flex items-center gap-2 text-hampton-pink text-sm font-semibold pt-1">
-                        <div className="w-5 h-5 rounded-full bg-hampton-pink flex items-center justify-center glow-check" style={{ boxShadow: '0 0 10px rgba(199,163,107,0.7)' }}>
+                        <div className="w-5 h-5 rounded-full bg-hampton-pink flex items-center justify-center">
                           <Check size={12} strokeWidth={3} className="text-white" />
                         </div>
                         <span>Theme selected — fill out the form below to check availability</span>
@@ -397,14 +291,14 @@ export default function PartyPackagesContent() {
       </section>
 
       {/* ── Lead Capture Form — Glass Style ── */}
-      <div ref={formRef} className="relative z-10">
+      <div ref={formRef}>
         <section className="py-16 max-w-2xl mx-auto px-4 sm:px-6">
           <h2 className="section-heading text-center mb-2">Tell Us About Your Party</h2>
           <p className="text-center text-hampton-navy/70 mb-8">
             Fill out the details below and we&apos;ll check availability for you.
           </p>
 
-          <form onSubmit={handleSubmit} className="glass-card rounded-3xl p-8 space-y-5">
+          <form onSubmit={handleSubmit} className="bg-white rounded-3xl border border-hampton-pink/20 shadow-sm p-8 space-y-5">
             {/* Event Type — Pill Dropdown */}
             <div>
               <label className="form-label text-hampton-navy text-sm font-semibold mb-2 block">Select Event</label>
@@ -495,7 +389,7 @@ export default function PartyPackagesContent() {
                       onClick={() => toggleTimeOfDay(t)}
                       className={`flex-1 py-2.5 rounded-full text-sm font-semibold border-2 transition-all ${
                         formData.timeOfDay.includes(t)
-                          ? 'border-hampton-pink bg-hampton-pink/20 text-hampton-navy shadow-[0_0_12px_rgba(199,163,107,0.3)]'
+                          ? 'border-hampton-pink bg-hampton-pink/20 text-hampton-navy'
                           : 'border-hampton-mauve/30 text-hampton-navy hover:border-hampton-pink/40'
                       }`}
                     >
@@ -541,7 +435,7 @@ export default function PartyPackagesContent() {
 
       {/* ── Calendar — appears after form submit ── */}
       {submitted && (
-        <div ref={calendarRef} className="relative z-10">
+        <div ref={calendarRef}>
           <section className="py-8 pb-20 max-w-2xl mx-auto px-4 sm:px-6">
             <div className="text-center mb-6">
               <h2 className="section-heading mb-2">Pick Your Date & Time</h2>
@@ -561,7 +455,7 @@ export default function PartyPackagesContent() {
       )}
 
       {/* ── CTA ── */}
-      <section className="relative z-10 bg-hampton-pink/20 py-14 text-center px-4">
+      <section className="bg-hampton-pink/20 py-14 text-center px-4">
         <h2 className="section-heading mb-3">Questions?</h2>
         <p className="text-hampton-navy text-base mb-7 max-w-md mx-auto">
           Not sure which package is right? We&apos;re happy to help you plan the perfect celebration.
