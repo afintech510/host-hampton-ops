@@ -27,7 +27,7 @@ export default async function EventsPage() {
 
   return (
     <div className="bg-hampton-ivory">
-      <section className="bg-hampton-mauve py-16 text-center px-4">
+      <section className="py-16 text-center px-4">
         <h1 className="font-serif text-4xl text-hampton-navy mb-4">Events & Workshops</h1>
         <p className="text-hampton-navy text-lg max-w-xl mx-auto">
           Workshops, classes, and community gatherings at Host Hampton. Find your next experience below.

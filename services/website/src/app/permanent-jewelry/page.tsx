@@ -18,7 +18,7 @@ const types = [
 export default function PermanentJewelry() {
   return (
     <div className="bg-hampton-ivory">
-      <section className="bg-hampton-mauve py-20 text-center px-4">
+      <section className="py-20 text-center px-4">
         <h1 className="font-serif text-4xl md:text-5xl text-hampton-navy mb-4">Permanent Jewelry</h1>
         <p className="text-hampton-navy text-lg max-w-xl mx-auto mb-8">
           Custom-welded jewelry that stays with you forever. No clasp. No fuss. Just beautiful.

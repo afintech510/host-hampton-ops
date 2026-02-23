@@ -75,7 +75,7 @@ function BookingForm() {
 
   return (
     <div className="min-h-screen bg-hampton-ivory">
-      <section className="bg-hampton-mauve py-14 text-center px-4">
+      <section className="py-14 text-center px-4">
         <Lock size={28} className="text-hampton-pink mx-auto mb-3" />
         <h1 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-3">Reserve Your Date</h1>
         <p className="text-hampton-navy text-base max-w-md mx-auto">

@@ -117,7 +117,7 @@ export default function Fundraiser() {
       />
 
       {/* 1. Hero */}
-      <section className="bg-hampton-mauve py-20 text-center px-4">
+      <section className="py-20 text-center px-4">
         <h1 className="font-serif text-4xl md:text-5xl text-hampton-navy mb-5 max-w-3xl mx-auto leading-tight">
           Trucker Hat + Canvas Gear Fundraiser
         </h1>

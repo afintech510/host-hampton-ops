@@ -47,7 +47,7 @@ export default function FirstBirthdayParties() {
       />
 
       {/* Hero */}
-      <section className="bg-hampton-mauve py-20 text-center px-4">
+      <section className="py-20 text-center px-4">
         <p className="text-hampton-pink text-sm font-semibold tracking-widest uppercase mb-4">
           Speonk, NY — The Hamptons
         </p>

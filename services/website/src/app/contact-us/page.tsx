@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export default function ContactUs() {
   return (
     <div className="bg-hampton-ivory">
-      <section className="bg-hampton-mauve py-16 text-center px-4">
+      <section className="py-16 text-center px-4">
         <h1 className="font-serif text-4xl text-hampton-navy mb-3">Let's Plan Your Perfect Party</h1>
         <p className="text-hampton-navy text-base max-w-md mx-auto">
           Whether you have questions or you're ready to book, we'd love to hear from you. Expect a response within 24 hours.

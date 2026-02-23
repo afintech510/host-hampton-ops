@@ -43,7 +43,7 @@ export default function Home() {
   return (
     <>
       {/* ── HERO ─────────────────────────────────────────────── */}
-      <section className="relative bg-hampton-mauve overflow-hidden">
+      <section className="relative overflow-hidden">
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-20 md:py-28 flex flex-col md:flex-row items-center gap-12">
           <div className="flex-1 text-center md:text-left">
             <p className="text-hampton-pink text-sm font-semibold tracking-widest uppercase mb-4">
@@ -143,7 +143,7 @@ export default function Home() {
           <div className="text-center mt-12">
             <Link href="/book"
                   className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg">
-              Reserve Your Date — $250 Deposit
+              Reserve Your Date
             </Link>
             <p className="text-hampton-mauve text-xs mt-3">Change your theme, date, or details any time. $250 is fully applied to your balance.</p>
           </div>

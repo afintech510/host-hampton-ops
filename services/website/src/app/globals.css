@@ -9,7 +9,9 @@
     scroll-behavior: smooth;
   }
   body {
-    @apply bg-hampton-ivory text-hampton-navy font-sans;
+    @apply text-hampton-navy font-sans;
+    background: linear-gradient(to bottom, #BCCDEB 0%, #dae6f0 300px, #F7F2E8 600px) no-repeat;
+    background-color: #F7F2E8;
   }
   h1, h2, h3 {
     @apply font-serif;

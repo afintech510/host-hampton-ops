@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default function CommunionParty() {
   return (
     <>
-      <section className="bg-hampton-mauve py-20 text-center px-4">
+      <section className="py-20 text-center px-4">
         <p className="text-hampton-pink text-sm font-semibold tracking-widest uppercase mb-4">A Sacred Milestone</p>
         <h1 className="font-serif text-4xl md:text-5xl text-hampton-navy mb-5 max-w-3xl mx-auto leading-tight">
           First Communion Party Venue on Long Island
