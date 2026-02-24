@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Look up booking type for deposit configuration
-    let depositCents = 25000 // default $250
+    let depositCents = 9900 // default $99
     let requiresDeposit = true
     let slotDurationMin = 120
 

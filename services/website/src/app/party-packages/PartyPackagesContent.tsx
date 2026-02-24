@@ -305,9 +305,9 @@ export default function PartyPackagesContent() {
       </section>
 
       {/* ── Theme Packages ── */}
-      <section ref={themeSectionRef} className="py-16 max-w-7xl mx-auto px-4 sm:px-6 scroll-mt-4">
+      <section ref={themeSectionRef} className="py-8 max-w-7xl mx-auto px-4 sm:px-6 scroll-mt-24">
         <h2 className="section-heading text-center mb-2">Select Your Theme</h2>
-        <p className="text-center text-hampton-navy/70 mb-10">
+        <p className="text-center text-hampton-navy/70 mb-8">
           {selectedTheme ? 'Click the theme again to deselect, or choose a different one.' : 'Tap a theme to see details and start your booking.'}
         </p>
 
@@ -384,7 +384,7 @@ export default function PartyPackagesContent() {
       </section>
 
       {/* ── Lead Capture Form ── */}
-      <section className="py-16 max-w-2xl mx-auto px-4 sm:px-6">
+      <section className="py-8 max-w-2xl mx-auto px-4 sm:px-6 scroll-mt-24">
         <h2 className="section-heading text-center mb-2">Tell Us About Your Party</h2>
         <p className="text-center text-hampton-navy/70 mb-8">
           Fill out the details below and we&apos;ll check availability for you.
@@ -522,7 +522,7 @@ export default function PartyPackagesContent() {
             {submitting ? (
               <><Loader2 size={18} className="animate-spin" /> Submitting...</>
             ) : submitted ? (
-              <><Check size={18} /> Info Saved — Pick Your Date Below</>
+              <>Thank You, Select Time Below ↴</>
             ) : (
               'Check Availability'
             )}
@@ -640,10 +640,10 @@ export default function PartyPackagesContent() {
                 <div className="bg-hampton-pink/10 rounded-xl px-5 py-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-semibold text-hampton-navy">Deposit to Reserve</span>
-                    <span className="text-lg font-bold text-hampton-navy">$250</span>
+                    <span className="text-lg font-bold text-hampton-navy">$99</span>
                   </div>
                   <p className="text-xs text-hampton-navy/60 leading-relaxed">
-                    Your $250 deposit is fully applied toward your party balance. All party details — theme, date, guest count — can be modified up to 1 week before your event.
+                    Your $99 deposit is fully applied toward your party balance. All party details — theme, date, guest count — can be modified up to 1 week before your event.
                   </p>
                 </div>
 
@@ -670,7 +670,7 @@ export default function PartyPackagesContent() {
                   {reserving ? (
                     <><Loader2 size={18} className="animate-spin" /> Redirecting to Checkout...</>
                   ) : (
-                    'Reserve Now — $250 Deposit'
+                    'Reserve Now — $99 Deposit'
                   )}
                 </button>
 
