@@ -27,6 +27,7 @@ const sections: { title: string; links: LinkItem[] }[] = [
     title: 'Party Services',
     links: [
       { href: '/party-packages', label: 'Theme Party Packages', description: 'Glow, Swiftie, Spa, Slime, K-Pop, Barbie and more', icon: <PartyPopper className={iconClass} /> },
+      { href: '/party-menu', label: 'Full Pricing Menu', description: 'Complete pricing for all services and add-ons', icon: <FileText className={iconClass} /> },
       { href: '/glow-party', label: 'Kids Glow Party', description: 'Neon blacklight birthday party experience', icon: <Zap className={iconClass} /> },
       { href: '/first-birthday-parties', label: 'First Birthday Parties', description: 'Special milestone celebration packages', icon: <Baby className={iconClass} /> },
       { href: '/communion-party', label: 'Communion Party', description: 'First communion celebration packages', icon: <Church className={iconClass} /> },
