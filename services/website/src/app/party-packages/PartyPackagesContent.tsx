@@ -2,9 +2,10 @@
 
 import { useState, useRef, useCallback } from 'react'
 import Image from 'next/image'
-import { Check, ChevronDown, X, Loader2, Star, Calendar, Clock, Users, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, X, Loader2, Star, Calendar, Clock, Users, Sparkles, UtensilsCrossed, Palette, Gift, Music } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
+import type { PricingItem } from './page'
 
 const included = [
   '2 hours of exclusive private studio time',
@@ -126,7 +127,7 @@ function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
-export default function PartyPackagesContent() {
+export default function PartyPackagesContent({ pricingItems = [] }: { pricingItems?: PricingItem[] }) {
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     eventType: 'Kids Birthday Party',
@@ -683,6 +684,9 @@ export default function PartyPackagesContent() {
         )}
       </div>
 
+      {/* ── Pricing Menu ── */}
+      {pricingItems.length > 0 && <PricingMenu items={pricingItems} />}
+
       {/* ── CTA ── */}
       <section className="bg-hampton-pink/20 py-14 text-center px-4">
         <h2 className="section-heading mb-3">Questions?</h2>
@@ -694,5 +698,101 @@ export default function PartyPackagesContent() {
         </p>
       </section>
     </div>
+  )
+}
+
+/* ── Pricing Menu Component ── */
+
+const menuSections: {
+  title: string
+  icon: React.ReactNode
+  categories: string[]
+}[] = [
+  { title: 'Party Themes', icon: <Sparkles size={18} />, categories: ['party-theme'] },
+  { title: 'Food & Catering', icon: <UtensilsCrossed size={18} />, categories: ['food-add-on', 'beverage-add-on', 'dessert-add-on'] },
+  { title: 'Decor & Entertainment', icon: <Palette size={18} />, categories: ['decor-add-on', 'entertainment-add-on'] },
+  { title: 'Party Extras', icon: <Gift size={18} />, categories: ['party-add-on', 'service-add-on'] },
+  { title: 'Activities Included', icon: <Music size={18} />, categories: ['activity-premium', 'activity-standard'] },
+]
+
+function formatPriceCents(cents: number, label?: string | null): string {
+  if (label) return label
+  if (cents === 0) return 'Included'
+  const dollars = cents / 100
+  return dollars % 1 === 0 ? `$${dollars.toLocaleString()}` : `$${dollars.toFixed(2)}`
+}
+
+function PricingMenu({ items }: { items: PricingItem[] }) {
+  const byCategory = new Map<string, PricingItem[]>()
+  for (const item of items) {
+    const list = byCategory.get(item.category) || []
+    list.push(item)
+    byCategory.set(item.category, list)
+  }
+
+  return (
+    <section className="py-16 max-w-4xl mx-auto px-4 sm:px-6">
+      <div className="text-center mb-10">
+        <h2 className="section-heading">Our Menu</h2>
+        <p className="text-hampton-navy/70 text-sm">Full pricing for all party services and add-ons.</p>
+      </div>
+
+      <div className="bg-white rounded-3xl border border-hampton-pink/20 shadow-sm overflow-hidden divide-y divide-hampton-pink/10">
+        {menuSections.map(section => {
+          const sectionItems = section.categories.flatMap(cat => byCategory.get(cat) || [])
+          if (sectionItems.length === 0) return null
+          const isActivities = section.categories.includes('activity-premium')
+
+          return (
+            <div key={section.title} className="px-6 sm:px-8 py-6">
+              <div className="flex items-center gap-2.5 mb-4">
+                <span className="text-hampton-pink">{section.icon}</span>
+                <h3 className="font-serif text-lg text-hampton-navy">{section.title}</h3>
+              </div>
+
+              {isActivities ? (
+                <div className="flex flex-wrap gap-2">
+                  {sectionItems.map(item => (
+                    <span
+                      key={item.id}
+                      className="px-3 py-1.5 rounded-full bg-hampton-pink/10 text-xs font-medium text-hampton-navy"
+                    >
+                      {item.name}
+                      {item.price_cents > 0 && (
+                        <span className="ml-1 text-hampton-navy/60">+{formatPriceCents(item.price_cents, item.price_label)}</span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-0">
+                  {sectionItems.map((item, i) => (
+                    <div
+                      key={item.id}
+                      className={`flex items-baseline justify-between py-2 ${
+                        i < sectionItems.length - 1 ? 'border-b border-dashed border-hampton-pink/10' : ''
+                      } ${item.is_popular ? 'bg-hampton-pink/5 -mx-3 px-3 rounded-lg' : ''}`}
+                    >
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span className="text-sm text-hampton-navy font-medium truncate">{item.name}</span>
+                        {item.is_popular && (
+                          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-hampton-pink">Popular</span>
+                        )}
+                        {item.description && item.description !== 'Premium activity' && item.description !== 'Standard activity' && (
+                          <span className="hidden sm:inline text-xs text-hampton-navy/40 truncate">{item.description}</span>
+                        )}
+                      </div>
+                      <span className="text-sm font-bold text-hampton-navy ml-4 shrink-0 tabular-nums">
+                        {formatPriceCents(item.price_cents, item.price_label)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
