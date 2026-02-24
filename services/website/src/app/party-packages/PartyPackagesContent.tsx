@@ -202,6 +202,7 @@ export default function PartyPackagesContent() {
 
       if (!res.ok) throw new Error(data.error || 'Something went wrong \u2014 please try again')
 
+      setSubmitting(false)
       setSubmitted(true)
       setTimeout(() => {
         calendarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -216,7 +217,7 @@ export default function PartyPackagesContent() {
     setCalendarSelection(selection)
     if (selection.timeSlot) {
       setTimeout(() => {
-        summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       }, 200)
     }
   }, [])
@@ -532,7 +533,7 @@ export default function PartyPackagesContent() {
       {/* ── Calendar — smooth fade-in after form submit ── */}
       <div
         ref={calendarRef}
-        className={`transition-all duration-700 ease-out ${
+        className={`scroll-mt-24 transition-all duration-700 ease-out ${
           submitted
             ? 'opacity-100 translate-y-0 max-h-[2000px]'
             : 'opacity-0 translate-y-8 max-h-0 overflow-hidden'
@@ -562,9 +563,9 @@ export default function PartyPackagesContent() {
       {/* ── Party Summary — appears after time slot selection ── */}
       <div
         ref={summaryRef}
-        className={`transition-all duration-500 ease-out ${
+        className={`scroll-mt-24 transition-all duration-500 ease-out ${
           calendarSelection?.timeSlot
-            ? 'opacity-100 translate-y-0 max-h-[1000px]'
+            ? 'opacity-100 translate-y-0 max-h-[2000px]'
             : 'opacity-0 translate-y-4 max-h-0 overflow-hidden pointer-events-none'
         }`}
       >
@@ -643,6 +644,14 @@ export default function PartyPackagesContent() {
                   </div>
                   <p className="text-xs text-hampton-navy/60 leading-relaxed">
                     Your $250 deposit is fully applied toward your party balance. All party details — theme, date, guest count — can be modified up to 1 week before your event.
+                  </p>
+                </div>
+
+                {/* What's Next */}
+                <div className="border-t border-hampton-pink/15 pt-5">
+                  <h4 className="font-serif text-lg text-hampton-navy mb-2">What&apos;s Next?</h4>
+                  <p className="text-sm text-hampton-navy/70 leading-relaxed">
+                    Once you reserve your date, Allie will reach out within 24 hours to confirm all the details. Together we&apos;ll finalize your food, cupcake, and activity selections. We also offer a full menu of <a href="/party-add-ons" className="text-hampton-pink font-semibold hover:underline">party add-ons</a>, extra decor, and catering upgrades — so you can make your celebration as elaborate or as effortless as you&apos;d like.
                   </p>
                 </div>
 
