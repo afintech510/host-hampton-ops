@@ -28,7 +28,7 @@ export async function GET() {
     { url: `${base}/events`, lastmod: now, changefreq: 'weekly', priority: 0.8 },
     { url: `${base}/contact-us`, lastmod: now, changefreq: 'yearly', priority: 0.7 },
     { url: `${base}/cm-cheer`, lastmod: now, changefreq: 'monthly', priority: 0.6 },
-    { url: `${base}/party-contract`, lastmod: now, changefreq: 'yearly', priority: 0.3 },
+
     { url: `${base}/privacy-policy`, lastmod: now, changefreq: 'yearly', priority: 0.2 },
     { url: `${base}/terms-of-service`, lastmod: now, changefreq: 'yearly', priority: 0.2 },
     { url: `${base}/return-policy`, lastmod: now, changefreq: 'yearly', priority: 0.2 },

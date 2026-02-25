@@ -56,7 +56,7 @@ export default function Footer() {
             {[
               { href: '/book',              label: 'Reserve Your Date' },
               { href: '/contact-us',        label: 'Contact Us' },
-              { href: '/party-contract',    label: 'Party Contract' },
+
               { href: '/privacy-policy',    label: 'Privacy Policy' },
               { href: '/terms-of-service',  label: 'Terms of Service' },
               { href: '/return-policy',     label: 'Return Policy' },

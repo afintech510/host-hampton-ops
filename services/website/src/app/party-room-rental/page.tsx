@@ -66,7 +66,6 @@ export default function PartyRoomRental() {
               {[
                 'Additional hours available: $75/hr (weekday) or $100/hr (weekend)',
                 'Security deposit: $500 (refundable after event)',
-                'Cleaning fee waived if space left in original condition',
                 'You may bring your own decorations, catering, and vendors',
                 'Tables and chairs for up to 60 guests included',
               ].map(i => (

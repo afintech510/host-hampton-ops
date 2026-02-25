@@ -52,7 +52,7 @@ const sections: { title: string; links: LinkItem[] }[] = [
     title: 'Information',
     links: [
       { href: '/contact-us', label: 'Contact Us', description: 'Get in touch — we respond within 24 hours', icon: <Phone className={iconClass} /> },
-      { href: '/party-contract', label: 'Party Contract', description: 'Terms and policies for party bookings', icon: <FileText className={iconClass} /> },
+
     ],
   },
   {

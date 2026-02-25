@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react'
 import Image from 'next/image'
-import { Check, ChevronDown, X, Loader2, Star, Calendar, Clock, Users, Sparkles, UtensilsCrossed, Palette, Gift, Music } from 'lucide-react'
+import { Check, ChevronDown, X, Loader2, Star, Calendar, Clock, Users, Sparkles, UtensilsCrossed, Palette, Gift, Music, Bookmark } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import type { PricingItem } from './page'
@@ -148,6 +148,8 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
   const [error, setError] = useState('')
   const [calendarSelection, setCalendarSelection] = useState<CalendarSelection | null>(null)
   const [reserving, setReserving] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
   const themeSectionRef = useRef<HTMLDivElement>(null)
   const calendarRef = useRef<HTMLDivElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
@@ -260,6 +262,62 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
       setError(err instanceof Error ? err.message : 'Checkout failed')
       setReserving(false)
     }
+  }
+
+  async function handleSaveForLater() {
+    if (!formData.email) return
+    setSaving(true)
+    setSaveSuccess(false)
+
+    // Find matching pricing item ID for the theme
+    const themeName = formData.partyTheme || selectedTheme || null
+    const themeItem = themeName
+      ? pricingItems.find(i => i.category === 'party-theme' && i.name === themeName)
+      : null
+
+    const gc = parseInt(formData.guestCount) || 10
+    const summaryLines = [
+      themeName ? `Theme: ${themeName}${selectedThemeData ? ` ($${selectedThemeData.price.toLocaleString()})` : ''}` : null,
+      `Guests: ${gc}`,
+      formData.childName ? `Child: ${formData.childName}${formData.childAge ? `, age ${formData.childAge}` : ''}` : null,
+      formData.notes ? `Notes: ${formData.notes}` : null,
+    ].filter(Boolean).join('\n')
+
+    const quoteData = {
+      theme: themeItem?.id || null,
+      themeName,
+      guestCount: gc,
+      foodChoice: null,
+      cupcakeFlavor: null,
+      activities: [],
+      food: [],
+      desserts: [],
+      decor: [],
+      entertainment: [],
+      beverages: [],
+      extras: [],
+      contactName: formData.fullName,
+      contactEmail: formData.email,
+      contactPhone: formData.phone,
+    }
+
+    try {
+      await fetch('/api/quote/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.fullName,
+          email: formData.email,
+          phone: formData.phone,
+          quoteData,
+          summary: summaryLines,
+          partyDate: calendarSelection?.date || null,
+          partyTime: calendarSelection?.timeSlot?.start || null,
+        }),
+      })
+      setSaveSuccess(true)
+    } catch { /* silent */ }
+    setSaving(false)
   }
 
   const partyTitle = formData.childName
@@ -662,18 +720,37 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                   </div>
                 )}
 
-                {/* Reserve button */}
-                <button
-                  onClick={handleReserveNow}
-                  disabled={reserving}
-                  className="w-full bg-hampton-navy text-white font-bold py-4 px-8 rounded-full text-base hover:bg-opacity-90 hover:shadow-[0_8px_25px_rgba(47,52,59,0.3)] transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {reserving ? (
-                    <><Loader2 size={18} className="animate-spin" /> Redirecting to Checkout...</>
-                  ) : (
-                    'Reserve Now — $99 Deposit'
-                  )}
-                </button>
+                {saveSuccess && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 flex items-center gap-2">
+                    <Check size={16} /> Saved! Check your email for a link to pick up where you left off.
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <button
+                    onClick={handleSaveForLater}
+                    disabled={saving || !formData.email}
+                    className="w-full border-2 border-hampton-navy text-hampton-navy font-bold py-4 px-6 rounded-full text-base hover:bg-hampton-navy/5 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {saving ? (
+                      <><Loader2 size={18} className="animate-spin" /> Saving...</>
+                    ) : (
+                      <><Bookmark size={18} /> Save for Later</>
+                    )}
+                  </button>
+                  <button
+                    onClick={handleReserveNow}
+                    disabled={reserving}
+                    className="w-full bg-hampton-navy text-white font-bold py-4 px-6 rounded-full text-base hover:bg-opacity-90 hover:shadow-[0_8px_25px_rgba(47,52,59,0.3)] transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {reserving ? (
+                      <><Loader2 size={18} className="animate-spin" /> Redirecting...</>
+                    ) : (
+                      'Reserve Now — $99 Deposit'
+                    )}
+                  </button>
+                </div>
 
                 <p className="text-center text-xs text-hampton-navy/40">
                   Secure checkout via Stripe. Your deposit is fully refundable.
