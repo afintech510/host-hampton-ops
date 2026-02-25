@@ -37,6 +37,7 @@ export default function Footer() {
               { href: '/party-room-rental',  label: 'Room Rental' },
               { href: '/permanent-jewelry',  label: 'Permanent Jewelry' },
               { href: '/party-add-ons',      label: 'Add-Ons' },
+              { href: '/party-quote',       label: 'Build a Quote' },
               { href: '/events',             label: 'Events & Classes' },
               { href: '/first-birthday-parties', label: 'First Birthdays' },
               { href: '/fundraiser',         label: 'Fundraisers' },
