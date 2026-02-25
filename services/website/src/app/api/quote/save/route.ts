@@ -4,9 +4,29 @@ import { savedQuoteHtml } from '@/lib/emailTemplates'
 
 export const dynamic = 'force-dynamic'
 
+function formatDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr + 'T12:00:00')
+    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  } catch {
+    return dateStr
+  }
+}
+
+function formatTime(timeStr: string): string {
+  try {
+    const [h, m] = timeStr.split(':').map(Number)
+    const ampm = h >= 12 ? 'PM' : 'AM'
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+  } catch {
+    return timeStr
+  }
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { name, email, phone, quoteData, summary } = body
+  const { name, email, phone, quoteData, summary, partyDate, partyTime } = body
 
   if (!name || !email || !quoteData) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -17,6 +37,14 @@ export async function POST(req: NextRequest) {
   const protocol = host.includes('localhost') ? 'http' : 'https'
   const encoded = Buffer.from(JSON.stringify(quoteData)).toString('base64url')
   const quoteLink = `${protocol}://${host}/party-quote?q=${encoded}`
+
+  // Build the book link (with date/time context for the user)
+  const bookLink = `${protocol}://${host}/book?type=kids-party&from=quote`
+
+  // Format date/time for display
+  const dateDisplay = partyDate ? formatDate(partyDate) : undefined
+  const timeDisplay = partyTime ? formatTime(partyTime) : undefined
+  const slotDisplay = dateDisplay && timeDisplay ? `${dateDisplay} at ${timeDisplay}` : undefined
 
   // Save interaction to DB (non-fatal)
   try {
@@ -49,8 +77,8 @@ export async function POST(req: NextRequest) {
       await supabase.from('contact_interactions').insert({
         contact_id: contact.id,
         type: 'form_submission',
-        summary: `Saved party quote: ${summary || 'no summary'}`,
-        metadata: { page: 'party-quote', action: 'save_for_later', quoteData },
+        summary: `Saved party quote: ${summary || 'no summary'}${slotDisplay ? ` — ${slotDisplay}` : ''}`,
+        metadata: { page: 'party-quote', action: 'save_for_later', quoteData, partyDate, partyTime },
       })
     }
   } catch (err) {
@@ -62,19 +90,28 @@ export async function POST(req: NextRequest) {
     const resend = new Resend(process.env.RESEND_API_KEY)
     const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
 
+    const adminDateLine = slotDisplay ? `<p><strong>Selected slot:</strong> ${slotDisplay}</p>` : ''
+
     await Promise.allSettled([
       resend.emails.send({
         from,
         to: email,
         subject: 'Your Saved Party Quote — Host Hampton',
-        html: savedQuoteHtml({ customerName: name, quoteLink, summary: summary || '' }),
+        html: savedQuoteHtml({
+          customerName: name,
+          quoteLink,
+          summary: summary || '',
+          partyDate: dateDisplay,
+          partyTime: timeDisplay,
+          bookLink,
+        }),
       }),
       // Also notify owner
       resend.emails.send({
         from,
         to: 'hosthampton295@gmail.com',
-        subject: `Saved quote: ${name}`,
-        html: `<p><strong>${name}</strong> (${email}, ${phone || 'no phone'}) saved a party quote.</p><pre>${summary || 'No summary'}</pre><p><a href="${quoteLink}">View their quote</a></p>`,
+        subject: `Saved quote: ${name}${slotDisplay ? ` — ${slotDisplay}` : ''}`,
+        html: `<p><strong>${name}</strong> (${email}, ${phone || 'no phone'}) saved a party quote.</p>${adminDateLine}<pre>${summary || 'No summary'}</pre><p><a href="${quoteLink}">View their quote</a></p>`,
       }),
     ])
   }

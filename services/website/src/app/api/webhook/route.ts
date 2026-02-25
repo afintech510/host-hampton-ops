@@ -299,14 +299,14 @@ export async function POST(req: NextRequest) {
       const customerHtml = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f0ece7;">
-<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#F6F1EB;">
+<body style="margin:0;padding:0;background:#F6F1EB;">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
 
   <!-- Header -->
-  <div style="background:linear-gradient(135deg,#1a2744 0%,#2a3f6f 100%);padding:36px 40px;text-align:center;">
-    <p style="color:#A1B5C8;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
-    <h1 style="color:#F6F1EB;font-size:28px;margin:0 0 6px;font-weight:normal;">You're All Set! 🎉</h1>
-    <p style="color:#E8C7CB;font-size:15px;margin:0;">Your deposit is received &amp; date is locked in</p>
+  <div style="background:linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%);padding:36px 40px;text-align:center;">
+    <p style="color:#1a2744;opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:#1a2744;font-size:28px;margin:0 0 6px;font-weight:normal;">You're All Set! 🎉</h1>
+    <p style="color:#1a2744;opacity:0.7;font-size:15px;margin:0;">Your deposit is received &amp; date is locked in</p>
   </div>
 
   <!-- Body -->
@@ -360,16 +360,17 @@ export async function POST(req: NextRequest) {
     <!-- Contact -->
     <p style="font-size:14px;color:#555;line-height:1.8;margin:0;">
       Questions? We'd love to hear from you:<br>
-      <strong><a href="tel:6319989325" style="color:#1a2744;text-decoration:none;">📞 (631) 998-9325</a></strong><br>
+      <strong><a href="tel:6319989325" style="color:#1a2744;text-decoration:none;">📞 (631) 998-9325</a></strong> &nbsp;·&nbsp;
+      <strong><a href="sms:6319989325" style="color:#1a2744;text-decoration:none;">💬 Text Us</a></strong><br>
       <strong><a href="mailto:hosthampton295@gmail.com" style="color:#1a2744;text-decoration:none;">✉️ hosthampton295@gmail.com</a></strong><br>
       <span style="color:#888;font-size:12px;">Mon–Fri 12–7pm · Sat–Sun 10am–8pm</span>
     </p>
   </div>
 
   <!-- Footer -->
-  <div style="background:#1a2744;padding:20px 40px;text-align:center;">
-    <p style="color:#A1B5C8;font-size:12px;margin:0 0 4px;">295 Montauk Highway, Suite 7 · Speonk, NY 11972</p>
-    <p style="color:#6b7fa8;font-size:11px;margin:0;">Can't wait to make your celebration magical!</p>
+  <div style="background:#BCCDEB;padding:20px 40px;text-align:center;">
+    <p style="color:#1a2744;font-size:12px;margin:0 0 4px;">295 Montauk Highway, Suite 7 · Speonk, NY 11972</p>
+    <p style="color:#1a2744;opacity:0.5;font-size:11px;margin:0;">Can't wait to make your celebration magical!</p>
   </div>
 
 </div>
@@ -379,11 +380,11 @@ export async function POST(req: NextRequest) {
       const ownerHtml = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
-<body style="margin:0;padding:20px;background:#f5f5f5;font-family:sans-serif;">
+<body style="margin:0;padding:20px;background:#F6F1EB;font-family:sans-serif;">
 <div style="max-width:600px;margin:0 auto;background:white;border-radius:8px;overflow:hidden;">
-  <div style="background:#1a2744;padding:20px 28px;">
-    <h2 style="color:#F6F1EB;margin:0;font-size:18px;">💰 New Deposit Received</h2>
-    <p style="color:#A1B5C8;margin:4px 0 0;font-size:13px;">${bookingRef}</p>
+  <div style="background:linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%);padding:20px 28px;">
+    <h2 style="color:#1a2744;margin:0;font-size:18px;">💰 New Deposit Received</h2>
+    <p style="color:#1a2744;opacity:0.7;margin:4px 0 0;font-size:13px;">${bookingRef}</p>
   </div>
   <div style="padding:24px 28px;">
     <table style="width:100%;border-collapse:collapse;font-size:14px;">

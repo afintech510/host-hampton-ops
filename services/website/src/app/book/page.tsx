@@ -278,6 +278,8 @@ function BookingForm() {
                           phone: form.contactPhone,
                           quoteData,
                           summary: quoteData.summary || '',
+                          partyDate: selection?.date || null,
+                          partyTime: selection?.timeSlot?.start || null,
                         }),
                       })
                       setSaveSuccess(true)
