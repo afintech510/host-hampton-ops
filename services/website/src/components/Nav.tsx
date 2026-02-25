@@ -69,13 +69,7 @@ export default function Nav() {
                 className="relative text-sm font-bold tracking-wide text-hampton-navy hover:text-hampton-navy/70 transition-colors group py-1"
               >
                 {l.label}
-                {isActive && (
-                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
-                    <span className="h-[2px] w-6 rounded-full bg-gradient-to-r from-transparent via-[#c4975a] to-transparent" />
-                    <span className="nav-twinkle text-[8px] text-[#c4975a]">✦</span>
-                    <span className="h-[2px] w-6 rounded-full bg-gradient-to-r from-transparent via-[#c4975a] to-transparent" />
-                  </span>
-                )}
+                <span className={`absolute -bottom-1 left-1/2 -translate-x-1/2 h-[3px] rounded-full bg-hampton-mauve transition-all duration-300 ${isActive ? 'w-full opacity-100' : 'w-0 opacity-0 group-hover:w-full group-hover:opacity-40'}`} />
               </Link>
             )
           })}
@@ -144,11 +138,7 @@ export default function Nav() {
               >
                 {l.label}
                 {isActive && (
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
-                    <span className="h-[2px] w-8 rounded-full bg-gradient-to-r from-transparent via-[#c4975a] to-transparent" />
-                    <span className="nav-twinkle text-[10px] text-[#c4975a]">✦</span>
-                    <span className="h-[2px] w-8 rounded-full bg-gradient-to-r from-transparent via-[#c4975a] to-transparent" />
-                  </span>
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-[3px] w-12 rounded-full bg-hampton-mauve" />
                 )}
               </Link>
             )
