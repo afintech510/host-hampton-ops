@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, FormEvent } from 'react'
-import { Check, Sparkles, RotateCcw, Lock } from 'lucide-react'
+import { Check, Sparkles, RotateCcw, Lock, Minus, Plus, Users } from 'lucide-react'
 import Link from 'next/link'
 import type { PricingItem, QuoteBuilderProps } from './types'
 
@@ -324,8 +324,12 @@ function LeadGateForm({ onUnlock }: { onUnlock: () => void }) {
 export default function QuoteBuilder({
   themes, activities, food, desserts, decor, entertainment, beverages, extras,
 }: QuoteBuilderProps) {
+  const INCLUDED_GUESTS = 10
+  const EXTRA_GUEST_CENTS = 3500 // $35 per additional guest
+
   const [unlocked, setUnlocked] = useState(false)
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
+  const [guestCount, setGuestCount] = useState(INCLUDED_GUESTS)
   const [foodChoice, setFoodChoice] = useState<string | null>(null)
   const [cupcakeFlavor, setCupcakeFlavor] = useState<string | null>(null)
   const [selectedActivities, setSelectedActivities] = useState<Set<string>>(new Set())
@@ -354,10 +358,14 @@ export default function QuoteBuilder({
     return m
   }, [allItems])
 
+  /* extra guests */
+  const extraGuests = Math.max(0, guestCount - INCLUDED_GUESTS)
+
   /* running total */
   const total = useMemo(() => {
     let sum = 0
     if (selectedTheme) sum += itemMap.get(selectedTheme)?.price_cents ?? 0
+    sum += extraGuests * EXTRA_GUEST_CENTS
     const allSelected = [
       ...Array.from(selectedActivities), ...Array.from(selectedFood), ...Array.from(selectedDesserts),
       ...Array.from(selectedDecor), ...Array.from(selectedEntertainment), ...Array.from(selectedBeverages), ...Array.from(selectedExtras),
@@ -366,7 +374,7 @@ export default function QuoteBuilder({
       sum += itemMap.get(id)?.price_cents ?? 0
     }
     return sum
-  }, [selectedTheme, selectedActivities, selectedFood, selectedDesserts, selectedDecor, selectedEntertainment, selectedBeverages, selectedExtras, itemMap])
+  }, [selectedTheme, extraGuests, selectedActivities, selectedFood, selectedDesserts, selectedDecor, selectedEntertainment, selectedBeverages, selectedExtras, itemMap])
 
   const addOnCount =
     selectedActivities.size + selectedFood.size + selectedDesserts.size +
@@ -376,6 +384,7 @@ export default function QuoteBuilder({
 
   const handleReset = () => {
     setSelectedTheme(null)
+    setGuestCount(INCLUDED_GUESTS)
     setFoodChoice(null)
     setCupcakeFlavor(null)
     setSelectedActivities(new Set())
@@ -418,9 +427,60 @@ export default function QuoteBuilder({
           </div>
         </section>
 
-        {/* ── Step 2: Included Choices ── */}
+        {/* ── Step 2: Guest Count ── */}
         <section>
-          <SectionHeader step={2} title="Included With Your Party" subtitle="These are part of every theme package" />
+          <SectionHeader step={2} title="How Many Guests?" subtitle="Party includes 10 guests + the birthday child" />
+          <div className="bg-white rounded-2xl border-2 border-hampton-mauve/15 p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Users size={20} className="text-hampton-navy/60" />
+                <div>
+                  <p className="font-semibold text-hampton-navy text-sm">
+                    {guestCount} guest{guestCount !== 1 ? 's' : ''} + birthday child
+                  </p>
+                  {extraGuests > 0 && unlocked && (
+                    <p className="text-xs text-hampton-navy/50 mt-0.5">
+                      {extraGuests} additional @ $35 each = {fmt(extraGuests * EXTRA_GUEST_CENTS)}
+                    </p>
+                  )}
+                  {extraGuests > 0 && !unlocked && (
+                    <p className="text-xs text-hampton-navy/50 mt-0.5">
+                      {extraGuests} additional guest{extraGuests > 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setGuestCount(Math.max(1, guestCount - 1))}
+                  className="w-9 h-9 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue transition-colors disabled:opacity-30"
+                  disabled={guestCount <= 1}
+                >
+                  <Minus size={14} />
+                </button>
+                <span className="w-10 text-center font-bold text-hampton-navy text-lg">{guestCount}</span>
+                <button
+                  type="button"
+                  onClick={() => setGuestCount(Math.min(50, guestCount + 1))}
+                  className="w-9 h-9 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue transition-colors disabled:opacity-30"
+                  disabled={guestCount >= 50}
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
+            {guestCount <= INCLUDED_GUESTS && (
+              <p className="text-xs text-hampton-blue mt-3 font-medium">
+                Up to {INCLUDED_GUESTS} guests are included with every theme party.
+              </p>
+            )}
+          </div>
+        </section>
+
+        {/* ── Step 3: Included Choices ── */}
+        <section>
+          <SectionHeader step={3} title="Included With Your Party" subtitle="These are part of every theme package" />
           <div className="bg-white rounded-2xl border-2 border-hampton-mauve/15 p-5 sm:p-6 space-y-5">
             <QuickChoice
               label="Food Choice"
@@ -443,10 +503,10 @@ export default function QuoteBuilder({
           </div>
         </section>
 
-        {/* ── Step 3: Activities ── */}
+        {/* ── Step 4: Activities ── */}
         <section>
           <SectionHeader
-            step={3}
+            step={4}
             title="Choose Activities"
             subtitle="Most activities are included. Premium add-ons show their price."
           />
@@ -475,7 +535,7 @@ export default function QuoteBuilder({
         {/* ── Steps 4–9: Add-on Categories ── */}
         <AddOnSection
           title="Additional Food"
-          step={4}
+          step={5}
           items={food}
           selected={selectedFood}
           onToggle={id => toggle(selectedFood, setSelectedFood, id)}
@@ -483,7 +543,7 @@ export default function QuoteBuilder({
         />
         <AddOnSection
           title="Desserts"
-          step={5}
+          step={6}
           items={desserts}
           selected={selectedDesserts}
           onToggle={id => toggle(selectedDesserts, setSelectedDesserts, id)}
@@ -491,7 +551,7 @@ export default function QuoteBuilder({
         />
         <AddOnSection
           title="Decor"
-          step={6}
+          step={7}
           items={decor}
           selected={selectedDecor}
           onToggle={id => toggle(selectedDecor, setSelectedDecor, id)}
@@ -499,7 +559,7 @@ export default function QuoteBuilder({
         />
         <AddOnSection
           title="Entertainment"
-          step={7}
+          step={8}
           items={entertainment}
           selected={selectedEntertainment}
           onToggle={id => toggle(selectedEntertainment, setSelectedEntertainment, id)}
@@ -507,7 +567,7 @@ export default function QuoteBuilder({
         />
         <AddOnSection
           title="Beverages"
-          step={8}
+          step={9}
           items={beverages}
           selected={selectedBeverages}
           onToggle={id => toggle(selectedBeverages, setSelectedBeverages, id)}
@@ -515,7 +575,7 @@ export default function QuoteBuilder({
         />
         <AddOnSection
           title="Party Extras & Services"
-          step={9}
+          step={10}
           items={extras}
           selected={selectedExtras}
           onToggle={id => toggle(selectedExtras, setSelectedExtras, id)}
