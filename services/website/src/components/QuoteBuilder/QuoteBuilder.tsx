@@ -1,9 +1,14 @@
 'use client'
 
 import { useState, useMemo, useCallback, FormEvent } from 'react'
-import { Check, Sparkles, RotateCcw, Lock, Minus, Plus, Users } from 'lucide-react'
-import Link from 'next/link'
-import type { PricingItem, QuoteBuilderProps } from './types'
+import { Check, Sparkles, RotateCcw, Lock, Minus, Plus, Users, Bookmark, Calendar, Loader2 } from 'lucide-react'
+import type { PricingItem, QuoteBuilderProps, QuoteData } from './types'
+
+/* ── constants ───────────────────────────────────────── */
+
+const INCLUDED_GUESTS = 10
+const EXTRA_GUEST_CENTS = 3500
+const LS_KEY = 'hh_quote_data'
 
 /* ── helpers ─────────────────────────────────────────── */
 
@@ -14,16 +19,47 @@ function fmt(cents: number, label?: string | null): string {
   return d % 1 === 0 ? `$${d.toLocaleString()}` : `$${d.toFixed(2)}`
 }
 
-/** Show real price or a blurred placeholder */
 function Price({ cents, label, unlocked }: { cents: number; label?: string | null; unlocked: boolean }) {
-  if (unlocked) {
-    return <>{fmt(cents, label)}</>
-  }
-  // Show blurred dummy text so users know pricing exists
+  if (unlocked) return <>{fmt(cents, label)}</>
   return <span className="blur-[6px] select-none" aria-hidden>$XXX</span>
 }
 
-/* ── sub-components ──────────────────────────────────── */
+function parseQuoteParam(q: string | null | undefined): QuoteData | null {
+  if (!q) return null
+  try {
+    return JSON.parse(atob(q.replace(/-/g, '+').replace(/_/g, '/')))
+  } catch { return null }
+}
+
+function buildSummary(data: QuoteData, itemMap: Map<string, PricingItem>, total: number): string {
+  const lines: string[] = []
+  const theme = data.theme ? itemMap.get(data.theme) : null
+  if (theme) lines.push(`Theme: ${theme.name} (${fmt(theme.price_cents)})`)
+  const extra = Math.max(0, data.guestCount - INCLUDED_GUESTS)
+  lines.push(`Guests: ${data.guestCount}${extra > 0 ? ` (${extra} additional @ $35 each)` : ''}`)
+  if (data.foodChoice) lines.push(`Food: ${data.foodChoice === 'pizza' ? 'Pizza' : 'Bagels'}`)
+  if (data.cupcakeFlavor) lines.push(`Cupcakes: ${data.cupcakeFlavor === 'chocolate' ? 'Chocolate' : 'Vanilla'}`)
+
+  const section = (label: string, ids: string[]) => {
+    if (ids.length === 0) return
+    const names = ids.map(id => {
+      const item = itemMap.get(id)
+      return item ? (item.price_cents > 0 ? `${item.name} (${fmt(item.price_cents)})` : item.name) : ''
+    }).filter(Boolean)
+    lines.push(`${label}: ${names.join(', ')}`)
+  }
+  section('Activities', data.activities)
+  section('Additional Food', data.food)
+  section('Desserts', data.desserts)
+  section('Decor', data.decor)
+  section('Entertainment', data.entertainment)
+  section('Beverages', data.beverages)
+  section('Extras', data.extras)
+  if (total > 0) lines.push(`\nEstimated Total: ${fmt(total)}`)
+  return lines.join('\n')
+}
+
+/* ── sub-components (unchanged UI) ───────────────────── */
 
 function StepBadge({ n }: { n: number }) {
   return (
@@ -49,15 +85,12 @@ function ThemeCard({ item, selected, onClick, unlocked }: {
   item: PricingItem; selected: boolean; onClick: () => void; unlocked: boolean
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <button type="button" onClick={onClick}
       className={`relative text-left p-4 rounded-xl border-2 transition-all duration-200 ${
         selected
           ? 'border-hampton-navy bg-hampton-navy/5 shadow-md ring-1 ring-hampton-navy/10'
           : 'border-hampton-mauve/25 bg-white hover:border-hampton-blue hover:shadow-sm'
-      }`}
-    >
+      }`}>
       {item.is_popular && (
         <span className="absolute -top-2.5 right-3 bg-hampton-pink text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
           <Sparkles size={10} /> Popular
@@ -69,9 +102,7 @@ function ThemeCard({ item, selected, onClick, unlocked }: {
         </span>
       )}
       <p className="font-serif font-bold text-hampton-navy text-sm pr-6">{item.name}</p>
-      {item.description && (
-        <p className="text-hampton-navy/50 text-xs mt-1 line-clamp-2">{item.description}</p>
-      )}
+      {item.description && <p className="text-hampton-navy/50 text-xs mt-1 line-clamp-2">{item.description}</p>}
       <p className="font-bold text-hampton-navy mt-2">
         <Price cents={item.price_cents} label={item.price_label} unlocked={unlocked} />
       </p>
@@ -90,16 +121,12 @@ function QuickChoice({ label, options, value, onChange }: {
       <p className="form-label mb-2">{label}</p>
       <div className="flex gap-3">
         {options.map(opt => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
+          <button key={opt.value} type="button" onClick={() => onChange(opt.value)}
             className={`flex-1 py-3.5 px-4 rounded-xl border-2 font-semibold text-sm transition-all duration-200 ${
               value === opt.value
                 ? 'border-hampton-navy bg-hampton-navy text-white shadow-sm'
                 : 'border-hampton-mauve/30 bg-white text-hampton-navy hover:border-hampton-blue'
-            }`}
-          >
+            }`}>
             <span className="text-lg mr-1.5">{opt.emoji}</span>
             {opt.label}
           </button>
@@ -114,22 +141,13 @@ function ActivityChip({ item, selected, onClick, unlocked }: {
 }) {
   const hasPrice = item.price_cents > 0
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <button type="button" onClick={onClick}
       className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full border-2 text-xs font-semibold transition-all duration-200 ${
-        selected
-          ? 'border-hampton-navy bg-hampton-navy text-white'
-          : 'border-hampton-mauve/30 bg-white text-hampton-navy hover:border-hampton-blue'
-      }`}
-    >
+        selected ? 'border-hampton-navy bg-hampton-navy text-white' : 'border-hampton-mauve/30 bg-white text-hampton-navy hover:border-hampton-blue'
+      }`}>
       {selected && <Check size={12} className="shrink-0" />}
       {item.name}
-      {hasPrice && (
-        <span className="opacity-70 ml-0.5">
-          +<Price cents={item.price_cents} unlocked={unlocked} />
-        </span>
-      )}
+      {hasPrice && <span className="opacity-70 ml-0.5">+<Price cents={item.price_cents} unlocked={unlocked} /></span>}
     </button>
   )
 }
@@ -138,30 +156,21 @@ function AddOnCard({ item, selected, onClick, unlocked }: {
   item: PricingItem; selected: boolean; onClick: () => void; unlocked: boolean
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <button type="button" onClick={onClick}
       className={`text-left p-3.5 rounded-xl border-2 transition-all duration-200 flex items-center justify-between gap-3 ${
-        selected
-          ? 'border-hampton-navy bg-hampton-navy/5 shadow-sm'
-          : 'border-hampton-mauve/20 bg-white hover:border-hampton-blue'
-      }`}
-    >
+        selected ? 'border-hampton-navy bg-hampton-navy/5 shadow-sm' : 'border-hampton-mauve/20 bg-white hover:border-hampton-blue'
+      }`}>
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-hampton-navy text-sm">{item.name}</p>
-        {item.description && (
-          <p className="text-hampton-navy/50 text-xs mt-0.5 truncate">{item.description}</p>
-        )}
+        {item.description && <p className="text-hampton-navy/50 text-xs mt-0.5 truncate">{item.description}</p>}
       </div>
       <div className="flex items-center gap-2.5 shrink-0">
         <span className="text-hampton-navy font-bold text-sm whitespace-nowrap">
           <Price cents={item.price_cents} label={item.price_label} unlocked={unlocked} />
         </span>
-        <span
-          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${
-            selected ? 'border-hampton-navy bg-hampton-navy' : 'border-hampton-mauve/40'
-          }`}
-        >
+        <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${
+          selected ? 'border-hampton-navy bg-hampton-navy' : 'border-hampton-mauve/40'
+        }`}>
           {selected && <Check size={12} className="text-white" />}
         </span>
       </div>
@@ -170,12 +179,7 @@ function AddOnCard({ item, selected, onClick, unlocked }: {
 }
 
 function AddOnSection({ title, step, items, selected, onToggle, unlocked }: {
-  title: string
-  step: number
-  items: PricingItem[]
-  selected: Set<string>
-  onToggle: (id: string) => void
-  unlocked: boolean
+  title: string; step: number; items: PricingItem[]; selected: Set<string>; onToggle: (id: string) => void; unlocked: boolean
 }) {
   if (items.length === 0) return null
   return (
@@ -183,13 +187,7 @@ function AddOnSection({ title, step, items, selected, onToggle, unlocked }: {
       <SectionHeader step={step} title={title} />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {items.map(i => (
-          <AddOnCard
-            key={i.id}
-            item={i}
-            selected={selected.has(i.id)}
-            onClick={() => onToggle(i.id)}
-            unlocked={unlocked}
-          />
+          <AddOnCard key={i.id} item={i} selected={selected.has(i.id)} onClick={() => onToggle(i.id)} unlocked={unlocked} />
         ))}
       </div>
     </div>
@@ -198,7 +196,7 @@ function AddOnSection({ title, step, items, selected, onToggle, unlocked }: {
 
 /* ── lead gate form ──────────────────────────────────── */
 
-function LeadGateForm({ onUnlock }: { onUnlock: () => void }) {
+function LeadGateForm({ onUnlock }: { onUnlock: (c: { name: string; email: string; phone: string }) => void }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
@@ -217,19 +215,13 @@ function LeadGateForm({ onUnlock }: { onUnlock: () => void }) {
       const res = await fetch('/api/lead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fullName: name.trim(),
-          email: email.trim(),
-          phone: phone.trim(),
-          eventType: 'Quote Builder',
-          sourcePage: 'party-quote',
-        }),
+        body: JSON.stringify({ fullName: name.trim(), email: email.trim(), phone: phone.trim(), eventType: 'Quote Builder', sourcePage: 'party-quote' }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Something went wrong')
       }
-      onUnlock()
+      onUnlock({ name: name.trim(), email: email.trim(), phone: phone.trim() })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
@@ -249,68 +241,31 @@ function LeadGateForm({ onUnlock }: { onUnlock: () => void }) {
         <p className="text-hampton-navy/60 text-sm mb-6 ml-[42px]">
           Enter your info below to see all prices and build your custom quote.
         </p>
-
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="gate-name" className="form-label">Full Name *</label>
-              <input
-                id="gate-name"
-                type="text"
-                required
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="Jane Smith"
-                className="form-input"
-              />
+              <input id="gate-name" type="text" required value={name} onChange={e => setName(e.target.value)} placeholder="Jane Smith" className="form-input" />
             </div>
             <div>
               <label htmlFor="gate-phone" className="form-label">Phone *</label>
-              <input
-                id="gate-phone"
-                type="tel"
-                required
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                placeholder="(631) 555-1234"
-                className="form-input"
-              />
+              <input id="gate-phone" type="tel" required value={phone} onChange={e => setPhone(e.target.value)} placeholder="(631) 555-1234" className="form-input" />
             </div>
           </div>
           <div>
             <label htmlFor="gate-email" className="form-label">Email *</label>
-            <input
-              id="gate-email"
-              type="email"
-              required
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="jane@example.com"
-              className="form-input"
-            />
+            <input id="gate-email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" className="form-input" />
           </div>
           <label className="flex items-start gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={consent}
-              onChange={e => setConsent(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded border-hampton-mauve/40 text-hampton-navy focus:ring-hampton-blue"
-            />
+            <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-hampton-mauve/40 text-hampton-navy focus:ring-hampton-blue" />
             <span className="text-xs text-hampton-navy/60 leading-relaxed">
               I consent to being contacted by Host Hampton about party services and promotions.
               We respect your privacy and will never share your information.
             </span>
           </label>
-
-          {error && (
-            <p className="text-red-600 text-xs font-medium">{error}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={!valid || submitting}
-            className="btn-primary w-full py-3.5 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
+          {error && <p className="text-red-600 text-xs font-medium">{error}</p>}
+          <button type="submit" disabled={!valid || submitting} className="btn-primary w-full py-3.5 disabled:opacity-40 disabled:cursor-not-allowed">
             {submitting ? 'Unlocking...' : 'Unlock Pricing'}
           </button>
         </form>
@@ -322,23 +277,32 @@ function LeadGateForm({ onUnlock }: { onUnlock: () => void }) {
 /* ── main component ──────────────────────────────────── */
 
 export default function QuoteBuilder({
-  themes, activities, food, desserts, decor, entertainment, beverages, extras,
+  themes, activities, food, desserts, decor, entertainment, beverages, extras, savedQuote,
 }: QuoteBuilderProps) {
-  const INCLUDED_GUESTS = 10
-  const EXTRA_GUEST_CENTS = 3500 // $35 per additional guest
 
-  const [unlocked, setUnlocked] = useState(false)
-  const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
-  const [guestCount, setGuestCount] = useState(INCLUDED_GUESTS)
-  const [foodChoice, setFoodChoice] = useState<string | null>(null)
-  const [cupcakeFlavor, setCupcakeFlavor] = useState<string | null>(null)
-  const [selectedActivities, setSelectedActivities] = useState<Set<string>>(new Set())
-  const [selectedFood, setSelectedFood] = useState<Set<string>>(new Set())
-  const [selectedDesserts, setSelectedDesserts] = useState<Set<string>>(new Set())
-  const [selectedDecor, setSelectedDecor] = useState<Set<string>>(new Set())
-  const [selectedEntertainment, setSelectedEntertainment] = useState<Set<string>>(new Set())
-  const [selectedBeverages, setSelectedBeverages] = useState<Set<string>>(new Set())
-  const [selectedExtras, setSelectedExtras] = useState<Set<string>>(new Set())
+  /* restore from ?q= URL param */
+  const restored = useMemo(() => parseQuoteParam(savedQuote), [savedQuote])
+
+  const [unlocked, setUnlocked] = useState(!!restored)
+  const [contact, setContact] = useState({
+    name: restored?.contactName || '',
+    email: restored?.contactEmail || '',
+    phone: restored?.contactPhone || '',
+  })
+  const [selectedTheme, setSelectedTheme] = useState<string | null>(restored?.theme ?? null)
+  const [guestCount, setGuestCount] = useState(restored?.guestCount ?? INCLUDED_GUESTS)
+  const [foodChoice, setFoodChoice] = useState<string | null>(restored?.foodChoice ?? null)
+  const [cupcakeFlavor, setCupcakeFlavor] = useState<string | null>(restored?.cupcakeFlavor ?? null)
+  const [selectedActivities, setSelectedActivities] = useState<Set<string>>(new Set(restored?.activities))
+  const [selectedFood, setSelectedFood] = useState<Set<string>>(new Set(restored?.food))
+  const [selectedDesserts, setSelectedDesserts] = useState<Set<string>>(new Set(restored?.desserts))
+  const [selectedDecor, setSelectedDecor] = useState<Set<string>>(new Set(restored?.decor))
+  const [selectedEntertainment, setSelectedEntertainment] = useState<Set<string>>(new Set(restored?.entertainment))
+  const [selectedBeverages, setSelectedBeverages] = useState<Set<string>>(new Set(restored?.beverages))
+  const [selectedExtras, setSelectedExtras] = useState<Set<string>>(new Set(restored?.extras))
+
+  const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   const toggle = useCallback((set: Set<string>, setFn: (s: Set<string>) => void, id: string) => {
     const next = new Set(set)
@@ -347,7 +311,7 @@ export default function QuoteBuilder({
     setFn(next)
   }, [])
 
-  /* item lookup map */
+  /* item lookup */
   const allItems = useMemo(
     () => [...themes, ...activities, ...food, ...desserts, ...decor, ...entertainment, ...beverages, ...extras],
     [themes, activities, food, desserts, decor, entertainment, beverages, extras],
@@ -358,8 +322,8 @@ export default function QuoteBuilder({
     return m
   }, [allItems])
 
-  /* extra guests */
   const extraGuests = Math.max(0, guestCount - INCLUDED_GUESTS)
+  const themeItem = selectedTheme ? itemMap.get(selectedTheme) : null
 
   /* running total */
   const total = useMemo(() => {
@@ -370,9 +334,7 @@ export default function QuoteBuilder({
       ...Array.from(selectedActivities), ...Array.from(selectedFood), ...Array.from(selectedDesserts),
       ...Array.from(selectedDecor), ...Array.from(selectedEntertainment), ...Array.from(selectedBeverages), ...Array.from(selectedExtras),
     ]
-    for (const id of allSelected) {
-      sum += itemMap.get(id)?.price_cents ?? 0
-    }
+    for (const id of allSelected) sum += itemMap.get(id)?.price_cents ?? 0
     return sum
   }, [selectedTheme, extraGuests, selectedActivities, selectedFood, selectedDesserts, selectedDecor, selectedEntertainment, selectedBeverages, selectedExtras, itemMap])
 
@@ -380,7 +342,24 @@ export default function QuoteBuilder({
     selectedActivities.size + selectedFood.size + selectedDesserts.size +
     selectedDecor.size + selectedEntertainment.size + selectedBeverages.size + selectedExtras.size
 
-  const themeItem = selectedTheme ? itemMap.get(selectedTheme) : null
+  /* serialize current state */
+  const getQuoteData = useCallback((): QuoteData => ({
+    theme: selectedTheme,
+    themeName: themeItem?.name ?? null,
+    guestCount,
+    foodChoice,
+    cupcakeFlavor,
+    activities: Array.from(selectedActivities),
+    food: Array.from(selectedFood),
+    desserts: Array.from(selectedDesserts),
+    decor: Array.from(selectedDecor),
+    entertainment: Array.from(selectedEntertainment),
+    beverages: Array.from(selectedBeverages),
+    extras: Array.from(selectedExtras),
+    contactName: contact.name,
+    contactEmail: contact.email,
+    contactPhone: contact.phone,
+  }), [selectedTheme, themeItem, guestCount, foodChoice, cupcakeFlavor, selectedActivities, selectedFood, selectedDesserts, selectedDecor, selectedEntertainment, selectedBeverages, selectedExtras, contact])
 
   const handleReset = () => {
     setSelectedTheme(null)
@@ -394,40 +373,57 @@ export default function QuoteBuilder({
     setSelectedEntertainment(new Set())
     setSelectedBeverages(new Set())
     setSelectedExtras(new Set())
+    setSaveSuccess(false)
   }
 
-  /* build query string for booking page */
-  const bookingHref = useMemo(() => {
-    const params = new URLSearchParams({ event_type: 'kids-party' })
-    if (themeItem) params.set('theme', themeItem.name)
-    return `/book?${params.toString()}`
-  }, [themeItem])
+  /* ── Save for Later ── */
+  const handleSaveForLater = async () => {
+    if (!contact.email) return
+    setSaving(true)
+    setSaveSuccess(false)
+    const quoteData = getQuoteData()
+    const summary = buildSummary(quoteData, itemMap, total)
+    try {
+      await fetch('/api/quote/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: contact.name, email: contact.email, phone: contact.phone, quoteData, summary }),
+      })
+      setSaveSuccess(true)
+    } catch { /* silent */ }
+    setSaving(false)
+  }
+
+  /* ── Check Availability ── */
+  const handleCheckAvailability = () => {
+    const quoteData = getQuoteData()
+    const summary = buildSummary(quoteData, itemMap, total)
+    localStorage.setItem(LS_KEY, JSON.stringify({ ...quoteData, summary, totalCents: total }))
+    window.location.href = '/book?type=kids-party&from=quote'
+  }
 
   return (
     <div className="pb-36">
 
       {/* ── Lead Gate ── */}
-      {!unlocked && <LeadGateForm onUnlock={() => setUnlocked(true)} />}
+      {!unlocked && (
+        <LeadGateForm onUnlock={c => { setContact(c); setUnlocked(true) }} />
+      )}
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 space-y-10">
 
-        {/* ── Step 1: Select Theme ── */}
+        {/* Step 1: Theme */}
         <section>
           <SectionHeader step={1} title="Select Your Theme" subtitle="Choose a party theme to get started" />
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {themes.map(t => (
-              <ThemeCard
-                key={t.id}
-                item={t}
-                selected={selectedTheme === t.id}
-                onClick={() => setSelectedTheme(selectedTheme === t.id ? null : t.id)}
-                unlocked={unlocked}
-              />
+              <ThemeCard key={t.id} item={t} selected={selectedTheme === t.id}
+                onClick={() => setSelectedTheme(selectedTheme === t.id ? null : t.id)} unlocked={unlocked} />
             ))}
           </div>
         </section>
 
-        {/* ── Step 2: Guest Count ── */}
+        {/* Step 2: Guest Count */}
         <section>
           <SectionHeader step={2} title="How Many Guests?" subtitle="Party includes 10 guests + the birthday child" />
           <div className="bg-white rounded-2xl border-2 border-hampton-mauve/15 p-5 sm:p-6">
@@ -444,157 +440,76 @@ export default function QuoteBuilder({
                     </p>
                   )}
                   {extraGuests > 0 && !unlocked && (
-                    <p className="text-xs text-hampton-navy/50 mt-0.5">
-                      {extraGuests} additional guest{extraGuests > 1 ? 's' : ''}
-                    </p>
+                    <p className="text-xs text-hampton-navy/50 mt-0.5">{extraGuests} additional guest{extraGuests > 1 ? 's' : ''}</p>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setGuestCount(Math.max(1, guestCount - 1))}
-                  className="w-9 h-9 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue transition-colors disabled:opacity-30"
-                  disabled={guestCount <= 1}
-                >
+                <button type="button" onClick={() => setGuestCount(Math.max(1, guestCount - 1))}
+                  className="w-9 h-9 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue transition-colors disabled:opacity-30" disabled={guestCount <= 1}>
                   <Minus size={14} />
                 </button>
                 <span className="w-10 text-center font-bold text-hampton-navy text-lg">{guestCount}</span>
-                <button
-                  type="button"
-                  onClick={() => setGuestCount(Math.min(50, guestCount + 1))}
-                  className="w-9 h-9 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue transition-colors disabled:opacity-30"
-                  disabled={guestCount >= 50}
-                >
+                <button type="button" onClick={() => setGuestCount(Math.min(50, guestCount + 1))}
+                  className="w-9 h-9 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue transition-colors disabled:opacity-30" disabled={guestCount >= 50}>
                   <Plus size={14} />
                 </button>
               </div>
             </div>
             {guestCount <= INCLUDED_GUESTS && (
-              <p className="text-xs text-hampton-blue mt-3 font-medium">
-                Up to {INCLUDED_GUESTS} guests are included with every theme party.
-              </p>
+              <p className="text-xs text-hampton-blue mt-3 font-medium">Up to {INCLUDED_GUESTS} guests are included with every theme party.</p>
             )}
           </div>
         </section>
 
-        {/* ── Step 3: Included Choices ── */}
+        {/* Step 3: Included Choices */}
         <section>
           <SectionHeader step={3} title="Included With Your Party" subtitle="These are part of every theme package" />
           <div className="bg-white rounded-2xl border-2 border-hampton-mauve/15 p-5 sm:p-6 space-y-5">
-            <QuickChoice
-              label="Food Choice"
-              options={[
-                { value: 'pizza', label: 'Pizza', emoji: '\uD83C\uDF55' },
-                { value: 'bagels', label: 'Bagels', emoji: '\uD83E\uDD6F' },
-              ]}
-              value={foodChoice}
-              onChange={setFoodChoice}
-            />
-            <QuickChoice
-              label="Cupcake Flavor"
-              options={[
-                { value: 'chocolate', label: 'Chocolate', emoji: '\uD83C\uDF6B' },
-                { value: 'vanilla', label: 'Vanilla', emoji: '\uD83E\uDDC1' },
-              ]}
-              value={cupcakeFlavor}
-              onChange={setCupcakeFlavor}
-            />
+            <QuickChoice label="Food Choice"
+              options={[{ value: 'pizza', label: 'Pizza', emoji: '\uD83C\uDF55' }, { value: 'bagels', label: 'Bagels', emoji: '\uD83E\uDD6F' }]}
+              value={foodChoice} onChange={setFoodChoice} />
+            <QuickChoice label="Cupcake Flavor"
+              options={[{ value: 'chocolate', label: 'Chocolate', emoji: '\uD83C\uDF6B' }, { value: 'vanilla', label: 'Vanilla', emoji: '\uD83E\uDDC1' }]}
+              value={cupcakeFlavor} onChange={setCupcakeFlavor} />
           </div>
         </section>
 
-        {/* ── Step 4: Activities ── */}
+        {/* Step 4: Activities */}
         <section>
-          <SectionHeader
-            step={4}
-            title="Choose Activities"
-            subtitle="Most activities are included. Premium add-ons show their price."
-          />
+          <SectionHeader step={4} title="Choose Activities" subtitle="Most activities are included. Premium add-ons show their price." />
           <div className="flex flex-wrap gap-2">
             {activities.map(a => (
-              <ActivityChip
-                key={a.id}
-                item={a}
-                selected={selectedActivities.has(a.id)}
-                onClick={() => toggle(selectedActivities, setSelectedActivities, a.id)}
-                unlocked={unlocked}
-              />
+              <ActivityChip key={a.id} item={a} selected={selectedActivities.has(a.id)}
+                onClick={() => toggle(selectedActivities, setSelectedActivities, a.id)} unlocked={unlocked} />
             ))}
           </div>
         </section>
 
-        {/* ── Divider ── */}
+        {/* Divider */}
         <div className="flex items-center gap-4">
           <div className="flex-1 border-t border-hampton-mauve/20" />
-          <span className="text-hampton-mauve text-xs font-semibold tracking-widest uppercase">
-            Customize Your Party
-          </span>
+          <span className="text-hampton-mauve text-xs font-semibold tracking-widest uppercase">Customize Your Party</span>
           <div className="flex-1 border-t border-hampton-mauve/20" />
         </div>
 
-        {/* ── Steps 4–9: Add-on Categories ── */}
-        <AddOnSection
-          title="Additional Food"
-          step={5}
-          items={food}
-          selected={selectedFood}
-          onToggle={id => toggle(selectedFood, setSelectedFood, id)}
-          unlocked={unlocked}
-        />
-        <AddOnSection
-          title="Desserts"
-          step={6}
-          items={desserts}
-          selected={selectedDesserts}
-          onToggle={id => toggle(selectedDesserts, setSelectedDesserts, id)}
-          unlocked={unlocked}
-        />
-        <AddOnSection
-          title="Decor"
-          step={7}
-          items={decor}
-          selected={selectedDecor}
-          onToggle={id => toggle(selectedDecor, setSelectedDecor, id)}
-          unlocked={unlocked}
-        />
-        <AddOnSection
-          title="Entertainment"
-          step={8}
-          items={entertainment}
-          selected={selectedEntertainment}
-          onToggle={id => toggle(selectedEntertainment, setSelectedEntertainment, id)}
-          unlocked={unlocked}
-        />
-        <AddOnSection
-          title="Beverages"
-          step={9}
-          items={beverages}
-          selected={selectedBeverages}
-          onToggle={id => toggle(selectedBeverages, setSelectedBeverages, id)}
-          unlocked={unlocked}
-        />
-        <AddOnSection
-          title="Party Extras & Services"
-          step={10}
-          items={extras}
-          selected={selectedExtras}
-          onToggle={id => toggle(selectedExtras, setSelectedExtras, id)}
-          unlocked={unlocked}
-        />
+        {/* Steps 5–10: Add-on Categories */}
+        <AddOnSection title="Additional Food" step={5} items={food} selected={selectedFood} onToggle={id => toggle(selectedFood, setSelectedFood, id)} unlocked={unlocked} />
+        <AddOnSection title="Desserts" step={6} items={desserts} selected={selectedDesserts} onToggle={id => toggle(selectedDesserts, setSelectedDesserts, id)} unlocked={unlocked} />
+        <AddOnSection title="Decor" step={7} items={decor} selected={selectedDecor} onToggle={id => toggle(selectedDecor, setSelectedDecor, id)} unlocked={unlocked} />
+        <AddOnSection title="Entertainment" step={8} items={entertainment} selected={selectedEntertainment} onToggle={id => toggle(selectedEntertainment, setSelectedEntertainment, id)} unlocked={unlocked} />
+        <AddOnSection title="Beverages" step={9} items={beverages} selected={selectedBeverages} onToggle={id => toggle(selectedBeverages, setSelectedBeverages, id)} unlocked={unlocked} />
+        <AddOnSection title="Party Extras & Services" step={10} items={extras} selected={selectedExtras} onToggle={id => toggle(selectedExtras, setSelectedExtras, id)} unlocked={unlocked} />
       </div>
 
       {/* ── Sticky Summary Bar ── */}
       <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t-2 border-hampton-mauve/20 shadow-[0_-4px_24px_rgba(0,0,0,0.08)] z-50">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] text-hampton-navy/40 font-semibold uppercase tracking-widest">
-              Estimated Total
-            </p>
+            <p className="text-[10px] text-hampton-navy/40 font-semibold uppercase tracking-widest">Estimated Total</p>
             {unlocked ? (
               <>
-                <p className="text-2xl font-bold text-hampton-navy leading-tight">
-                  {total > 0 ? fmt(total) : '\u2014'}
-                </p>
+                <p className="text-2xl font-bold text-hampton-navy leading-tight">{total > 0 ? fmt(total) : '\u2014'}</p>
                 <p className="text-xs text-hampton-navy/50 truncate">
                   {themeItem
                     ? `${themeItem.name}${addOnCount > 0 ? ` + ${addOnCount} add-on${addOnCount > 1 ? 's' : ''}` : ''}`
@@ -602,28 +517,33 @@ export default function QuoteBuilder({
                 </p>
               </>
             ) : (
-              <p className="text-sm text-hampton-navy/50 leading-snug mt-0.5">
-                Enter your info above to see pricing
-              </p>
+              <p className="text-sm text-hampton-navy/50 leading-snug mt-0.5">Enter your info above to see pricing</p>
+            )}
+            {saveSuccess && (
+              <p className="text-xs text-green-600 font-semibold mt-0.5">Saved! Check your email.</p>
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {unlocked && (selectedTheme || addOnCount > 0) && (
-              <button
-                type="button"
-                onClick={handleReset}
-                className="p-2.5 rounded-xl border border-hampton-mauve/30 text-hampton-navy/50 hover:text-hampton-navy hover:border-hampton-navy/30 transition-colors"
-                title="Start over"
-              >
+              <button type="button" onClick={handleReset}
+                className="p-2.5 rounded-xl border border-hampton-mauve/30 text-hampton-navy/50 hover:text-hampton-navy hover:border-hampton-navy/30 transition-colors" title="Start over">
                 <RotateCcw size={16} />
               </button>
             )}
-            <Link
-              href={bookingHref}
-              className="btn-primary px-5 py-3 text-center whitespace-nowrap"
-            >
-              Reserve Your Date
-            </Link>
+            {unlocked && contact.email && (
+              <button type="button" onClick={handleSaveForLater} disabled={saving}
+                className="btn-secondary px-3 sm:px-4 py-3 text-center whitespace-nowrap flex items-center gap-1.5 disabled:opacity-50">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Bookmark size={14} />}
+                <span className="hidden sm:inline">Save for Later</span>
+                <span className="sm:hidden">Save</span>
+              </button>
+            )}
+            <button type="button" onClick={handleCheckAvailability}
+              className="btn-primary px-3 sm:px-5 py-3 text-center whitespace-nowrap flex items-center gap-1.5">
+              <Calendar size={14} />
+              <span className="hidden sm:inline">Check Availability</span>
+              <span className="sm:hidden">Book</span>
+            </button>
           </div>
         </div>
       </div>

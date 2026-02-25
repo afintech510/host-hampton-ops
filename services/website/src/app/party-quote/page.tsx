@@ -16,7 +16,11 @@ export const metadata: Metadata = {
   },
 }
 
-export default async function PartyQuotePage() {
+export default async function PartyQuotePage({
+  searchParams,
+}: {
+  searchParams: { q?: string }
+}) {
   const supabase = getSupabase()
   const { data } = await supabase
     .from('pricing_items')
@@ -60,6 +64,7 @@ export default async function PartyQuotePage() {
         entertainment={byCategory('entertainment-add-on')}
         beverages={byCategory('beverage-add-on')}
         extras={[...byCategory('party-add-on'), ...byCategory('service-add-on')]}
+        savedQuote={searchParams.q ?? null}
       />
     </div>
   )

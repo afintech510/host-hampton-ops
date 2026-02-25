@@ -9,6 +9,24 @@ export interface PricingItem {
   sort_order: number
 }
 
+export interface QuoteData {
+  theme: string | null
+  themeName: string | null
+  guestCount: number
+  foodChoice: string | null
+  cupcakeFlavor: string | null
+  activities: string[]
+  food: string[]
+  desserts: string[]
+  decor: string[]
+  entertainment: string[]
+  beverages: string[]
+  extras: string[]
+  contactName: string
+  contactEmail: string
+  contactPhone: string
+}
+
 export interface QuoteBuilderProps {
   themes: PricingItem[]
   activities: PricingItem[]
@@ -18,4 +36,5 @@ export interface QuoteBuilderProps {
   entertainment: PricingItem[]
   beverages: PricingItem[]
   extras: PricingItem[]
+  savedQuote?: string | null
 }

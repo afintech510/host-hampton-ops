@@ -252,6 +252,40 @@ export function leadNotifyHtml(d: LeadNotifyData): string {
 </body></html>`
 }
 
+export function savedQuoteHtml(d: { customerName: string; quoteLink: string; summary: string }): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f0ece7;">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#F6F1EB;">
+  <div style="background:linear-gradient(135deg,#1a2744 0%,#2a3f6f 100%);padding:36px 40px;text-align:center;">
+    <p style="color:#A1B5C8;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:#F6F1EB;font-size:28px;margin:0 0 6px;font-weight:normal;">Your Party Quote</h1>
+    <p style="color:#E8C7CB;font-size:15px;margin:0;">Saved and ready when you are</p>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:#1a2744;margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:#555;line-height:1.7;margin:0 0 24px;">Here's your saved party quote. Click below to pick up where you left off — adjust your selections, check availability, and reserve your date!</p>
+    <div style="background:#f0ece7;border-radius:10px;padding:20px;margin-bottom:24px;">
+      <h3 style="font-size:14px;color:#1a2744;margin:0 0 12px;">Your Selections</h3>
+      <p style="color:#555;font-size:13px;line-height:1.8;margin:0;white-space:pre-line;">${d.summary}</p>
+    </div>
+    <div style="text-align:center;margin-bottom:24px;">
+      <a href="${d.quoteLink}" style="display:inline-block;background:#1a2744;color:#F6F1EB;padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Continue Building Your Party</a>
+    </div>
+    <p style="font-size:14px;color:#555;line-height:1.8;margin:0;">
+      Questions? We're here to help!<br>
+      <strong><a href="tel:6319989325" style="color:#1a2744;text-decoration:none;">📞 (631) 998-9325</a></strong> &nbsp;·&nbsp;
+      <strong><a href="sms:6319989325" style="color:#1a2744;text-decoration:none;">💬 Text Us</a></strong>
+    </p>
+  </div>
+  <div style="background:#1a2744;padding:20px 40px;text-align:center;">
+    <p style="color:#A1B5C8;font-size:12px;margin:0;">295 Montauk Highway, Suite 7 · Speonk, NY 11972</p>
+  </div>
+</div>
+</body></html>`
+}
+
 export function ticketRefundHtml(d: { customerName: string; eventTitle: string; ticketRef: string; refundAmount: string; reason?: string }): string {
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>

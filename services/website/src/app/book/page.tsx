@@ -1,20 +1,46 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { Suspense, useState, useCallback } from 'react'
-import { Lock, User, Mail, Phone, Baby, Users, Loader2 } from 'lucide-react'
+import { Suspense, useState, useCallback, useEffect } from 'react'
+import { Lock, User, Mail, Phone, Baby, Users, Loader2, Bookmark } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
+
+const LS_KEY = 'hh_quote_data'
+
+interface StoredQuote {
+  theme: string | null
+  themeName: string | null
+  guestCount: number
+  foodChoice: string | null
+  cupcakeFlavor: string | null
+  activities: string[]
+  food: string[]
+  desserts: string[]
+  decor: string[]
+  entertainment: string[]
+  beverages: string[]
+  extras: string[]
+  contactName: string
+  contactEmail: string
+  contactPhone: string
+  summary?: string
+  totalCents?: number
+}
 
 function BookingForm() {
   const params = useSearchParams()
   const packageName = params.get('package') ?? ''
   const cancelled = params.get('cancelled')
   const defaultType = params.get('type') || ''
+  const fromQuote = params.get('from') === 'quote'
 
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
   const [error, setError] = useState('')
   const [selection, setSelection] = useState<CalendarSelection | null>(null)
+  const [quoteData, setQuoteData] = useState<StoredQuote | null>(null)
   const [form, setForm] = useState({
     contactName: '',
     contactEmail: '',
@@ -25,6 +51,26 @@ function BookingForm() {
     packageName,
     notes: '',
   })
+
+  // Read quote data from localStorage when coming from quote builder
+  useEffect(() => {
+    if (!fromQuote) return
+    try {
+      const raw = localStorage.getItem(LS_KEY)
+      if (!raw) return
+      const data: StoredQuote = JSON.parse(raw)
+      setQuoteData(data)
+      setForm(prev => ({
+        ...prev,
+        contactName: data.contactName || prev.contactName,
+        contactEmail: data.contactEmail || prev.contactEmail,
+        contactPhone: data.contactPhone || prev.contactPhone,
+        guestCount: data.guestCount ? String(data.guestCount) : prev.guestCount,
+        packageName: data.themeName || prev.packageName,
+        notes: data.summary || prev.notes,
+      }))
+    } catch { /* ignore parse errors */ }
+  }, [fromQuote])
 
   function update(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -122,14 +168,19 @@ function BookingForm() {
               </p>
             </div>
 
-            {/* Package display */}
-            {packageName && (
+            {/* Quote summary when coming from quote builder */}
+            {fromQuote && quoteData?.summary ? (
+              <div className="bg-hampton-pink/10 border border-hampton-pink/20 rounded-xl px-5 py-4">
+                <p className="text-hampton-navy text-xs font-semibold uppercase tracking-wider mb-2">Your Party Selections</p>
+                <pre className="text-hampton-navy/70 text-xs whitespace-pre-wrap font-sans leading-relaxed">{quoteData.summary}</pre>
+              </div>
+            ) : packageName ? (
               <div className="bg-hampton-pink/20 rounded-xl px-5 py-3 text-center">
                 <p className="text-hampton-navy text-sm font-semibold">
                   Selected Package: <span className="text-hampton-navy">{packageName}</span>
                 </p>
               </div>
-            )}
+            ) : null}
 
             {/* Contact Info */}
             <div className="grid sm:grid-cols-2 gap-4">
@@ -199,23 +250,68 @@ function BookingForm() {
               </div>
             )}
 
-            {/* Submit */}
-            <button type="submit" disabled={loading}
-                    className="w-full bg-hampton-navy text-hampton-ivory font-semibold py-4 px-8 rounded-full hover:bg-opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
-              {loading ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" />
-                  {hasDeposit ? 'Redirecting to Stripe...' : 'Booking...'}
-                </>
-              ) : hasDeposit ? (
-                <>
-                  <Lock size={16} />
-                  Pay ${depositDollars} Deposit — Lock My Date
-                </>
-              ) : (
-                'Book Appointment'
+            {/* Save success */}
+            {saveSuccess && (
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">
+                Quote saved! Check your email for a link to continue editing anytime.
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className={`flex gap-3 ${fromQuote && quoteData ? '' : 'flex-col'}`}>
+              {/* Save Party — only when coming from quote builder */}
+              {fromQuote && quoteData && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={async () => {
+                    if (!form.contactEmail) return
+                    setSaving(true)
+                    setSaveSuccess(false)
+                    try {
+                      await fetch('/api/quote/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          name: form.contactName,
+                          email: form.contactEmail,
+                          phone: form.contactPhone,
+                          quoteData,
+                          summary: quoteData.summary || '',
+                        }),
+                      })
+                      setSaveSuccess(true)
+                    } catch { /* silent */ }
+                    setSaving(false)
+                  }}
+                  className="flex-1 border-2 border-hampton-navy text-hampton-navy font-semibold py-4 px-6 rounded-full hover:bg-hampton-navy/5 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {saving ? (
+                    <><Loader2 size={16} className="animate-spin" /> Saving...</>
+                  ) : (
+                    <><Bookmark size={16} /> Save Party</>
+                  )}
+                </button>
               )}
-            </button>
+
+              {/* Pay Deposit / Book */}
+              <button type="submit" disabled={loading}
+                      className={`${fromQuote && quoteData ? 'flex-1' : 'w-full'} bg-hampton-navy text-hampton-ivory font-semibold py-4 px-8 rounded-full hover:bg-opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2`}>
+                {loading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    {hasDeposit ? 'Redirecting to Stripe...' : 'Booking...'}
+                  </>
+                ) : hasDeposit ? (
+                  <>
+                    <Lock size={16} />
+                    Pay ${depositDollars} Deposit
+                  </>
+                ) : (
+                  'Book Appointment'
+                )}
+              </button>
+            </div>
 
             {hasDeposit && (
               <p className="text-center text-hampton-navy text-xs">
