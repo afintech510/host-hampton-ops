@@ -2,7 +2,7 @@
 
 import { useSearchParams } from 'next/navigation'
 import { Suspense, useState, useCallback, useEffect } from 'react'
-import { Lock, User, Mail, Phone, Baby, Users, Loader2, Bookmark } from 'lucide-react'
+import { Lock, User, Mail, Phone, Baby, Users, Loader2, Bookmark, PartyPopper, Clock } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 
@@ -52,6 +52,8 @@ function BookingForm() {
     guestCount: '',
     packageName,
     notes: '',
+    eventType: '',
+    rentalDuration: '3',
   })
 
   // Read quote data from localStorage when coming from quote builder
@@ -103,6 +105,10 @@ function BookingForm() {
           bookingTypeSlug: selection.bookingType?.slug,
           partyTags: {
             theme: form.packageName || undefined,
+            ...(isRoomRental ? {
+              eventType: form.eventType,
+              rentalDuration: form.rentalDuration,
+            } : {}),
           },
         }),
       })
@@ -120,6 +126,7 @@ function BookingForm() {
   const hasDeposit = bookingType ? bookingType.requires_deposit && bookingType.deposit_cents > 0 : true
   const depositDollars = bookingType ? Math.round(bookingType.deposit_cents / 100) : 250
   const showChildFields = bookingType?.tags?.some(t => ['kids-party', 'childrens'].includes(t)) ?? true
+  const isRoomRental = bookingType?.slug === 'room-rental'
 
   return (
     <div className="min-h-screen">
@@ -239,10 +246,66 @@ function BookingForm() {
               </div>
             )}
 
+            {/* Room Rental fields */}
+            {isRoomRental && (
+              <div className="space-y-4 border-t border-hampton-pink/15 pt-5">
+                <p className="text-xs font-semibold text-hampton-navy/50 uppercase tracking-wider">Room Rental Details</p>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label flex items-center gap-2">
+                      <PartyPopper size={14} className="text-hampton-navy" /> What type of event? *
+                    </label>
+                    <input type="text" required placeholder="Birthday, baby shower, corporate..."
+                           value={form.eventType} onChange={e => update('eventType', e.target.value)}
+                           className="form-input" />
+                  </div>
+                  <div>
+                    <label className="form-label flex items-center gap-2">
+                      <Users size={14} className="text-hampton-navy" /> Expected Guest Count *
+                    </label>
+                    <input type="number" required min="1" max="70" placeholder="e.g. 30"
+                           value={form.guestCount} onChange={e => update('guestCount', e.target.value)}
+                           className="form-input" />
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label flex items-center gap-2">
+                    <Clock size={14} className="text-hampton-navy" /> Rental Duration (hours) *
+                  </label>
+                  <select required value={form.rentalDuration}
+                          onChange={e => update('rentalDuration', e.target.value)}
+                          className="form-input">
+                    <option value="3">3 hours</option>
+                    <option value="4">4 hours</option>
+                    <option value="5">5 hours</option>
+                    <option value="6">6 hours</option>
+                    <option value="7">7 hours</option>
+                    <option value="8">8 hours</option>
+                  </select>
+                  <p className="text-xs text-hampton-navy/50 mt-1.5">
+                    Include time for setup and cleanup in your rental duration.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Guest Count for non-room-rental, non-child bookings */}
+            {!showChildFields && !isRoomRental && (
+              <div>
+                <label className="form-label flex items-center gap-2">
+                  <Users size={14} className="text-hampton-navy" /> Guest Count
+                </label>
+                <input type="number" min="1" max="50" placeholder="10" value={form.guestCount}
+                       onChange={e => update('guestCount', e.target.value)} className="form-input" />
+              </div>
+            )}
+
             {/* Notes */}
             <div>
               <label className="form-label">Special Requests or Notes</label>
-              <textarea rows={3} placeholder="Dietary needs, theme preferences, special requests..."
+              <textarea rows={3} placeholder={isRoomRental
+                ? "Vendors you're bringing, decor plans, AV needs, any special requirements..."
+                : "Dietary needs, theme preferences, special requests..."}
                         value={form.notes} onChange={e => update('notes', e.target.value)}
                         className="form-input resize-none" />
             </div>
