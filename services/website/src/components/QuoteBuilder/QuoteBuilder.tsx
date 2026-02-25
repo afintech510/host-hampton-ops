@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
-import { Check, Sparkles, RotateCcw } from 'lucide-react'
+import { useState, useMemo, useCallback, FormEvent } from 'react'
+import { Check, Sparkles, RotateCcw, Lock } from 'lucide-react'
 import Link from 'next/link'
 import type { PricingItem, QuoteBuilderProps } from './types'
 
@@ -12,6 +12,15 @@ function fmt(cents: number, label?: string | null): string {
   if (cents === 0) return 'Included'
   const d = cents / 100
   return d % 1 === 0 ? `$${d.toLocaleString()}` : `$${d.toFixed(2)}`
+}
+
+/** Show real price or a blurred placeholder */
+function Price({ cents, label, unlocked }: { cents: number; label?: string | null; unlocked: boolean }) {
+  if (unlocked) {
+    return <>{fmt(cents, label)}</>
+  }
+  // Show blurred dummy text so users know pricing exists
+  return <span className="blur-[6px] select-none" aria-hidden>$XXX</span>
 }
 
 /* ── sub-components ──────────────────────────────────── */
@@ -36,7 +45,9 @@ function SectionHeader({ step, title, subtitle }: { step: number; title: string;
   )
 }
 
-function ThemeCard({ item, selected, onClick }: { item: PricingItem; selected: boolean; onClick: () => void }) {
+function ThemeCard({ item, selected, onClick, unlocked }: {
+  item: PricingItem; selected: boolean; onClick: () => void; unlocked: boolean
+}) {
   return (
     <button
       type="button"
@@ -61,7 +72,9 @@ function ThemeCard({ item, selected, onClick }: { item: PricingItem; selected: b
       {item.description && (
         <p className="text-hampton-navy/50 text-xs mt-1 line-clamp-2">{item.description}</p>
       )}
-      <p className="font-bold text-hampton-navy mt-2">{fmt(item.price_cents, item.price_label)}</p>
+      <p className="font-bold text-hampton-navy mt-2">
+        <Price cents={item.price_cents} label={item.price_label} unlocked={unlocked} />
+      </p>
     </button>
   )
 }
@@ -96,7 +109,9 @@ function QuickChoice({ label, options, value, onChange }: {
   )
 }
 
-function ActivityChip({ item, selected, onClick }: { item: PricingItem; selected: boolean; onClick: () => void }) {
+function ActivityChip({ item, selected, onClick, unlocked }: {
+  item: PricingItem; selected: boolean; onClick: () => void; unlocked: boolean
+}) {
   const hasPrice = item.price_cents > 0
   return (
     <button
@@ -110,12 +125,18 @@ function ActivityChip({ item, selected, onClick }: { item: PricingItem; selected
     >
       {selected && <Check size={12} className="shrink-0" />}
       {item.name}
-      {hasPrice && <span className="opacity-70 ml-0.5">+{fmt(item.price_cents)}</span>}
+      {hasPrice && (
+        <span className="opacity-70 ml-0.5">
+          +<Price cents={item.price_cents} unlocked={unlocked} />
+        </span>
+      )}
     </button>
   )
 }
 
-function AddOnCard({ item, selected, onClick }: { item: PricingItem; selected: boolean; onClick: () => void }) {
+function AddOnCard({ item, selected, onClick, unlocked }: {
+  item: PricingItem; selected: boolean; onClick: () => void; unlocked: boolean
+}) {
   return (
     <button
       type="button"
@@ -134,7 +155,7 @@ function AddOnCard({ item, selected, onClick }: { item: PricingItem; selected: b
       </div>
       <div className="flex items-center gap-2.5 shrink-0">
         <span className="text-hampton-navy font-bold text-sm whitespace-nowrap">
-          {fmt(item.price_cents, item.price_label)}
+          <Price cents={item.price_cents} label={item.price_label} unlocked={unlocked} />
         </span>
         <span
           className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${
@@ -148,12 +169,13 @@ function AddOnCard({ item, selected, onClick }: { item: PricingItem; selected: b
   )
 }
 
-function AddOnSection({ title, step, items, selected, onToggle }: {
+function AddOnSection({ title, step, items, selected, onToggle, unlocked }: {
   title: string
   step: number
   items: PricingItem[]
   selected: Set<string>
   onToggle: (id: string) => void
+  unlocked: boolean
 }) {
   if (items.length === 0) return null
   return (
@@ -166,8 +188,132 @@ function AddOnSection({ title, step, items, selected, onToggle }: {
             item={i}
             selected={selected.has(i.id)}
             onClick={() => onToggle(i.id)}
+            unlocked={unlocked}
           />
         ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── lead gate form ──────────────────────────────────── */
+
+function LeadGateForm({ onUnlock }: { onUnlock: () => void }) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [consent, setConsent] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const valid = name.trim().length > 0 && email.includes('@') && phone.trim().length >= 7 && consent
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!valid) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: name.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+          eventType: 'Quote Builder',
+          sourcePage: 'party-quote',
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Something went wrong')
+      }
+      onUnlock()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 mb-10">
+      <div className="bg-white rounded-2xl border-2 border-hampton-pink/30 shadow-lg p-6 sm:p-8">
+        <div className="flex items-center gap-2.5 mb-1">
+          <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-hampton-pink/15">
+            <Lock size={16} className="text-hampton-pink" />
+          </span>
+          <h3 className="font-serif text-xl font-bold text-hampton-navy">Unlock Pricing</h3>
+        </div>
+        <p className="text-hampton-navy/60 text-sm mb-6 ml-[42px]">
+          Enter your info below to see all prices and build your custom quote.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="gate-name" className="form-label">Full Name *</label>
+              <input
+                id="gate-name"
+                type="text"
+                required
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Jane Smith"
+                className="form-input"
+              />
+            </div>
+            <div>
+              <label htmlFor="gate-phone" className="form-label">Phone *</label>
+              <input
+                id="gate-phone"
+                type="tel"
+                required
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="(631) 555-1234"
+                className="form-input"
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="gate-email" className="form-label">Email *</label>
+            <input
+              id="gate-email"
+              type="email"
+              required
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="jane@example.com"
+              className="form-input"
+            />
+          </div>
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={e => setConsent(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-hampton-mauve/40 text-hampton-navy focus:ring-hampton-blue"
+            />
+            <span className="text-xs text-hampton-navy/60 leading-relaxed">
+              I consent to being contacted by Host Hampton about party services and promotions.
+              We respect your privacy and will never share your information.
+            </span>
+          </label>
+
+          {error && (
+            <p className="text-red-600 text-xs font-medium">{error}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={!valid || submitting}
+            className="btn-primary w-full py-3.5 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Unlocking...' : 'Unlock Pricing'}
+          </button>
+        </form>
       </div>
     </div>
   )
@@ -178,6 +324,7 @@ function AddOnSection({ title, step, items, selected, onToggle }: {
 export default function QuoteBuilder({
   themes, activities, food, desserts, decor, entertainment, beverages, extras,
 }: QuoteBuilderProps) {
+  const [unlocked, setUnlocked] = useState(false)
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
   const [foodChoice, setFoodChoice] = useState<string | null>(null)
   const [cupcakeFlavor, setCupcakeFlavor] = useState<string | null>(null)
@@ -249,6 +396,10 @@ export default function QuoteBuilder({
 
   return (
     <div className="pb-36">
+
+      {/* ── Lead Gate ── */}
+      {!unlocked && <LeadGateForm onUnlock={() => setUnlocked(true)} />}
+
       <div className="max-w-3xl mx-auto px-4 sm:px-6 space-y-10">
 
         {/* ── Step 1: Select Theme ── */}
@@ -261,6 +412,7 @@ export default function QuoteBuilder({
                 item={t}
                 selected={selectedTheme === t.id}
                 onClick={() => setSelectedTheme(selectedTheme === t.id ? null : t.id)}
+                unlocked={unlocked}
               />
             ))}
           </div>
@@ -305,6 +457,7 @@ export default function QuoteBuilder({
                 item={a}
                 selected={selectedActivities.has(a.id)}
                 onClick={() => toggle(selectedActivities, setSelectedActivities, a.id)}
+                unlocked={unlocked}
               />
             ))}
           </div>
@@ -326,6 +479,7 @@ export default function QuoteBuilder({
           items={food}
           selected={selectedFood}
           onToggle={id => toggle(selectedFood, setSelectedFood, id)}
+          unlocked={unlocked}
         />
         <AddOnSection
           title="Desserts"
@@ -333,6 +487,7 @@ export default function QuoteBuilder({
           items={desserts}
           selected={selectedDesserts}
           onToggle={id => toggle(selectedDesserts, setSelectedDesserts, id)}
+          unlocked={unlocked}
         />
         <AddOnSection
           title="Decor"
@@ -340,6 +495,7 @@ export default function QuoteBuilder({
           items={decor}
           selected={selectedDecor}
           onToggle={id => toggle(selectedDecor, setSelectedDecor, id)}
+          unlocked={unlocked}
         />
         <AddOnSection
           title="Entertainment"
@@ -347,6 +503,7 @@ export default function QuoteBuilder({
           items={entertainment}
           selected={selectedEntertainment}
           onToggle={id => toggle(selectedEntertainment, setSelectedEntertainment, id)}
+          unlocked={unlocked}
         />
         <AddOnSection
           title="Beverages"
@@ -354,6 +511,7 @@ export default function QuoteBuilder({
           items={beverages}
           selected={selectedBeverages}
           onToggle={id => toggle(selectedBeverages, setSelectedBeverages, id)}
+          unlocked={unlocked}
         />
         <AddOnSection
           title="Party Extras & Services"
@@ -361,6 +519,7 @@ export default function QuoteBuilder({
           items={extras}
           selected={selectedExtras}
           onToggle={id => toggle(selectedExtras, setSelectedExtras, id)}
+          unlocked={unlocked}
         />
       </div>
 
@@ -371,17 +530,25 @@ export default function QuoteBuilder({
             <p className="text-[10px] text-hampton-navy/40 font-semibold uppercase tracking-widest">
               Estimated Total
             </p>
-            <p className="text-2xl font-bold text-hampton-navy leading-tight">
-              {total > 0 ? fmt(total) : '\u2014'}
-            </p>
-            <p className="text-xs text-hampton-navy/50 truncate">
-              {themeItem
-                ? `${themeItem.name}${addOnCount > 0 ? ` + ${addOnCount} add-on${addOnCount > 1 ? 's' : ''}` : ''}`
-                : 'Select a theme to begin'}
-            </p>
+            {unlocked ? (
+              <>
+                <p className="text-2xl font-bold text-hampton-navy leading-tight">
+                  {total > 0 ? fmt(total) : '\u2014'}
+                </p>
+                <p className="text-xs text-hampton-navy/50 truncate">
+                  {themeItem
+                    ? `${themeItem.name}${addOnCount > 0 ? ` + ${addOnCount} add-on${addOnCount > 1 ? 's' : ''}` : ''}`
+                    : 'Select a theme to begin'}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-hampton-navy/50 leading-snug mt-0.5">
+                Enter your info above to see pricing
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {(selectedTheme || addOnCount > 0) && (
+            {unlocked && (selectedTheme || addOnCount > 0) && (
               <button
                 type="button"
                 onClick={handleReset}
