@@ -33,6 +33,8 @@ function BookingForm() {
   const packageName = params.get('package') ?? ''
   const cancelled = params.get('cancelled')
   const defaultType = params.get('type') || ''
+  const defaultDate = params.get('date') || undefined
+  const defaultTime = params.get('time') || undefined
   const fromQuote = params.get('from') === 'quote'
 
   const [loading, setLoading] = useState(false)
@@ -143,6 +145,8 @@ function BookingForm() {
           <UniversalCalendar
             mode="booking"
             defaultBookingType={defaultType || undefined}
+            defaultDate={defaultDate}
+            defaultTime={defaultTime}
             expandable={false}
             initialExpanded={true}
             showSummary={false}

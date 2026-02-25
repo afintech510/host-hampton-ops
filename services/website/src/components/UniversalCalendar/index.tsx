@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { UniversalCalendarProps, CalendarSelection, TimeSlot, BookingType } from './types'
 import { useBookingTypes } from './useBookingTypes'
 import { useCalendarAvailability } from './useCalendarAvailability'
@@ -15,6 +15,7 @@ export default function UniversalCalendar({
   defaultBookingType,
   lockedBookingType,
   defaultDate,
+  defaultTime,
   tagFilter,
   expandable = false,
   initialExpanded = true,
@@ -53,6 +54,22 @@ export default function UniversalCalendar({
     () => types.find(t => t.slug === resolvedType),
     [types, resolvedType]
   )
+
+  // Auto-select time slot when defaultTime is provided and slots have loaded
+  const defaultTimeApplied = useRef(false)
+  useEffect(() => {
+    if (defaultTimeApplied.current || !defaultTime || !selectedDate || loading) return
+    const dateSlots = slots[selectedDate]
+    if (!dateSlots) return
+    const match = dateSlots.find(s => s.start === defaultTime && s.status === 'open')
+    if (match) {
+      defaultTimeApplied.current = true
+      setSelectedSlot(match)
+      if (onSelect) {
+        onSelect({ date: selectedDate, timeSlot: match, bookingType: currentBookingType })
+      }
+    }
+  }, [defaultTime, selectedDate, slots, loading, onSelect, currentBookingType])
 
   const handleChangeMonth = useCallback((offset: number) => {
     setViewDate(prev => {
