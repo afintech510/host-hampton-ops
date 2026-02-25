@@ -19,7 +19,7 @@ export default function BookSuccess() {
           <h2 className="font-semibold text-hampton-navy text-base mb-3">What happens next:</h2>
           {[
             { icon: <Mail size={16} />, text: 'Check your email for a booking confirmation from us' },
-            { icon: <Calendar size={16} />, text: 'We\'ll send calendar invite with your party date & time' },
+            { icon: <Calendar size={16} />, text: 'You\'ll receive a personalized themed EVITE digital invitation' },
             { icon: <Phone size={16} />, text: 'We\'ll reach out to start planning all the fun details' },
           ].map((s, i) => (
             <div key={i} className="flex items-center gap-3 text-sm text-hampton-navy">

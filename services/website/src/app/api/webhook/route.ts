@@ -351,7 +351,7 @@ export async function POST(req: NextRequest) {
       <h3 style="font-size:14px;color:#1a2744;margin:0 0 14px;">What happens next</h3>
       <ol style="margin:0;padding-left:20px;color:#555;line-height:2;font-size:14px;">
         <li>We'll reach out <strong>within 24 hours</strong> to confirm your booking details</li>
-        <li>You'll receive a calendar invite for your party date</li>
+        <li>You'll receive a personalized themed EVITE digital invitation</li>
         <li>We'll work together to finalize themes, activities &amp; fun details</li>
         <li>Remaining balance is due <strong>${balanceDueDate}</strong></li>
       </ol>
