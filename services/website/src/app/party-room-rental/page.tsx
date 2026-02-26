@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Check, ChevronDown, Clock, Camera, Briefcase, Palette } from 'lucide-react'
 import DynamicTypingSection from '@/components/DynamicTypingSection'
-import UniversalCalendar from '@/components/UniversalCalendar'
 import { getSupabase } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
@@ -337,16 +336,6 @@ export default async function PartyRoomRental() {
         </div>
       </section>
 
-      {/* ── Check Availability ── */}
-      <section className="py-14 max-w-2xl mx-auto px-4 sm:px-6">
-        <UniversalCalendar
-          mode="booking"
-          lockedBookingType="room-rental"
-          expandable={true}
-          initialExpanded={false}
-        />
-      </section>
-
       {/* ── CTA ── */}
       <section className="py-14 text-center px-4">
         <h2 className="section-heading mb-3">Book the Studio</h2>
@@ -354,8 +343,8 @@ export default async function PartyRoomRental() {
           Reserve with a $99 deposit. Perfect for any event where you want a gorgeous, private
           setting.
         </p>
-        <Link href="/book?event_type=room-rental" className="btn-primary px-10 py-4 text-base">
-          Reserve the Space
+        <Link href="/book?type=room-rental" className="btn-primary px-10 py-4 text-base">
+          Check Availability
         </Link>
       </section>
     </div>

@@ -533,47 +533,63 @@ function BookingForm() {
             )}
 
             {/* Action buttons */}
-            <div className={`flex gap-3 ${fromQuote && quoteData ? '' : 'flex-col'}`}>
-              {/* Save Party — only when coming from quote builder */}
-              {fromQuote && quoteData && (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={async () => {
-                    if (!form.contactEmail) return
-                    setSaving(true)
-                    setSaveSuccess(false)
-                    try {
-                      await fetch('/api/quote/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          name: form.contactName,
-                          email: form.contactEmail,
-                          phone: form.contactPhone,
-                          quoteData,
-                          summary: quoteData.summary || '',
-                          partyDate: selection?.date || null,
-                          partyTime: selection?.timeSlot?.start || null,
-                        }),
-                      })
-                      setSaveSuccess(true)
-                    } catch { /* silent */ }
-                    setSaving(false)
-                  }}
-                  className="flex-1 border-2 border-hampton-navy text-hampton-navy font-semibold py-4 px-6 rounded-full hover:bg-hampton-navy/5 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {saving ? (
-                    <><Loader2 size={16} className="animate-spin" /> Saving...</>
-                  ) : (
-                    <><Bookmark size={16} /> Save Party</>
-                  )}
-                </button>
-              )}
+            <div className="flex gap-3">
+              {/* Save Quote */}
+              <button
+                type="button"
+                disabled={saving || !form.contactEmail || !form.contactName}
+                onClick={async () => {
+                  if (!form.contactEmail || !form.contactName) return
+                  setSaving(true)
+                  setSaveSuccess(false)
+                  try {
+                    // Build summary from quote data or selection
+                    const summary = quoteData?.summary || [
+                      bookingType?.label || 'Booking',
+                      selection?.date ? new Date(selection.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : '',
+                      form.guestCount ? `${form.guestCount} guests` : '',
+                      form.notes ? `Notes: ${form.notes}` : '',
+                    ].filter(Boolean).join(' \u2022 ')
+
+                    await fetch('/api/quote/save', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        name: form.contactName,
+                        email: form.contactEmail,
+                        phone: form.contactPhone,
+                        quoteData: quoteData || {
+                          bookingType: bookingType?.slug || defaultType,
+                          bookingLabel: bookingType?.label || '',
+                          guestCount: form.guestCount ? Number(form.guestCount) : null,
+                          eventType: form.eventType || null,
+                          rentalDuration: form.rentalDuration || null,
+                          notes: form.notes || null,
+                          contactName: form.contactName,
+                          contactEmail: form.contactEmail,
+                          contactPhone: form.contactPhone,
+                        },
+                        summary,
+                        partyDate: selection?.date || null,
+                        partyTime: selection?.timeSlot?.start || null,
+                      }),
+                    })
+                    setSaveSuccess(true)
+                  } catch { /* silent */ }
+                  setSaving(false)
+                }}
+                className="flex-1 border-2 border-hampton-navy text-hampton-navy font-semibold py-4 px-6 rounded-full hover:bg-hampton-navy/5 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {saving ? (
+                  <><Loader2 size={16} className="animate-spin" /> Saving...</>
+                ) : (
+                  <><Bookmark size={16} /> Save Quote</>
+                )}
+              </button>
 
               {/* Pay Deposit / Book */}
               <button type="submit" disabled={loading}
-                      className={`${fromQuote && quoteData ? 'flex-1' : 'w-full'} bg-hampton-navy text-hampton-ivory font-semibold py-4 px-8 rounded-full hover:bg-opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2`}>
+                      className="flex-1 bg-hampton-navy text-hampton-ivory font-semibold py-4 px-8 rounded-full hover:bg-opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
                 {loading ? (
                   <>
                     <Loader2 size={18} className="animate-spin" />
