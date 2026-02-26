@@ -15,7 +15,11 @@ export const metadata: Metadata = {
 
 export const dynamic = 'force-dynamic'
 
-export default async function KidsPartyMenuPage() {
+export default async function KidsPartyMenuPage({
+  searchParams,
+}: {
+  searchParams: { q?: string }
+}) {
   let items: PricingItem[] = []
   try {
     const supabase = getSupabase()
@@ -43,6 +47,7 @@ export default async function KidsPartyMenuPage() {
       decor={byCategory('decor-add-on')}
       entertainment={byCategory('entertainment-add-on')}
       partyAddOns={byCategory('party-add-on')}
+      savedQuote={searchParams.q ?? null}
     />
   )
 }

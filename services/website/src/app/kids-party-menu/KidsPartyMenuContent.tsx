@@ -141,6 +141,31 @@ function AddOnGrid({ items, selected, onToggle }: {
 
 /* ── main component ────────────────────────────────── */
 
+interface QuoteData {
+  theme: string | null
+  themeName: string | null
+  guestCount: number
+  foodChoice: string | null
+  cupcakeFlavor: string | null
+  activities: string[]
+  food: string[]
+  desserts: string[]
+  decor: string[]
+  entertainment: string[]
+  beverages: string[]
+  extras: string[]
+  contactName: string
+  contactEmail: string
+  contactPhone: string
+}
+
+function parseQuoteParam(q: string | null | undefined): QuoteData | null {
+  if (!q) return null
+  try {
+    return JSON.parse(atob(q.replace(/-/g, '+').replace(/_/g, '/')))
+  } catch { return null }
+}
+
 interface Props {
   themes: PricingItem[]
   premiumActivities: PricingItem[]
@@ -151,26 +176,30 @@ interface Props {
   decor: PricingItem[]
   entertainment: PricingItem[]
   partyAddOns: PricingItem[]
+  savedQuote?: string | null
 }
 
 export default function KidsPartyMenuContent({
   themes, premiumActivities, standardActivities,
-  food, desserts, beverages, decor, entertainment, partyAddOns,
+  food, desserts, beverages, decor, entertainment, partyAddOns, savedQuote,
 }: Props) {
+  /* ── restore from ?q= URL param ── */
+  const restored = useMemo(() => parseQuoteParam(savedQuote), [savedQuote])
+
   /* ── selection state ── */
-  const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
-  const [guestCount, setGuestCount] = useState(INCLUDED_GUESTS)
-  const [selectedActivities, setSelectedActivities] = useState<Set<string>>(new Set())
-  const [selectedFood, setSelectedFood] = useState<Set<string>>(new Set())
-  const [selectedDesserts, setSelectedDesserts] = useState<Set<string>>(new Set())
-  const [selectedBeverages, setSelectedBeverages] = useState<Set<string>>(new Set())
-  const [selectedDecor, setSelectedDecor] = useState<Set<string>>(new Set())
-  const [selectedEntertainment, setSelectedEntertainment] = useState<Set<string>>(new Set())
-  const [selectedPartyAddOns, setSelectedPartyAddOns] = useState<Set<string>>(new Set())
+  const [selectedTheme, setSelectedTheme] = useState<string | null>(restored?.theme ?? null)
+  const [guestCount, setGuestCount] = useState(restored?.guestCount ?? INCLUDED_GUESTS)
+  const [selectedActivities, setSelectedActivities] = useState<Set<string>>(new Set(restored?.activities))
+  const [selectedFood, setSelectedFood] = useState<Set<string>>(new Set(restored?.food))
+  const [selectedDesserts, setSelectedDesserts] = useState<Set<string>>(new Set(restored?.desserts))
+  const [selectedBeverages, setSelectedBeverages] = useState<Set<string>>(new Set(restored?.beverages))
+  const [selectedDecor, setSelectedDecor] = useState<Set<string>>(new Set(restored?.decor))
+  const [selectedEntertainment, setSelectedEntertainment] = useState<Set<string>>(new Set(restored?.entertainment))
+  const [selectedPartyAddOns, setSelectedPartyAddOns] = useState<Set<string>>(new Set(restored?.extras))
 
   /* ── form state ── */
   const [contact, setContact] = useState({
-    fullName: '', email: '', phone: '',
+    fullName: restored?.contactName || '', email: restored?.contactEmail || '', phone: restored?.contactPhone || '',
     preferredDate: '', guestCountField: '', partyName: '',
   })
   const [submitting, setSubmitting] = useState(false)
@@ -302,6 +331,7 @@ export default function KidsPartyMenuContent({
           summary: buildSummary(),
           partyDate: contact.preferredDate || null,
           partyTime: null,
+          sourcePage: 'kids-party-menu',
         }),
       })
       setSaveSuccess(true)
@@ -339,9 +369,12 @@ export default function KidsPartyMenuContent({
         throw new Error(data.error || 'Something went wrong')
       }
       // store quote data for booking page
-      localStorage.setItem(LS_KEY, JSON.stringify({ ...getQuoteData(), summary: buildSummary(), totalCents: total }))
+      const quotePayload = { ...getQuoteData(), summary: buildSummary(), totalCents: total }
+      localStorage.setItem(LS_KEY, JSON.stringify(quotePayload))
       setSubmitted(true)
-      window.location.href = '/book?type=kids-party&from=quote'
+      const bookParams = new URLSearchParams({ type: 'kids-party', from: 'quote' })
+      if (contact.preferredDate) bookParams.set('date', contact.preferredDate)
+      window.location.href = `/book?${bookParams.toString()}`
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setSubmitting(false)
@@ -552,17 +585,32 @@ export default function KidsPartyMenuContent({
             {/* Summary preview */}
             {(selectedTheme || addOnCount > 0) && (
               <div className="bg-hampton-ivory/50 rounded-xl p-4 border border-hampton-pink/10">
-                <p className="text-xs font-semibold text-hampton-navy/40 uppercase tracking-wider mb-2">Your Selections</p>
-                <div className="flex items-baseline justify-between">
-                  <p className="text-sm text-hampton-navy font-medium">
-                    {themeItem ? themeItem.name : 'No theme selected'}
-                    {addOnCount > 0 && <span className="text-hampton-navy/50"> + {addOnCount} add-on{addOnCount > 1 ? 's' : ''}</span>}
-                  </p>
+                <div className="flex items-baseline justify-between mb-3">
+                  <p className="text-xs font-semibold text-hampton-navy/40 uppercase tracking-wider">Your Selections</p>
                   <p className="text-lg font-bold text-hampton-navy">{total > 0 ? fmt(total) : '\u2014'}</p>
                 </div>
-                {extraGuests > 0 && (
-                  <p className="text-xs text-hampton-navy/50 mt-1">{extraGuests} extra guests included in total</p>
-                )}
+                <div className="space-y-1.5 text-sm text-hampton-navy">
+                  {themeItem && (
+                    <p><span className="font-semibold">Theme:</span> {themeItem.name} <span className="text-hampton-navy/50">({fmt(themeItem.price_cents)})</span></p>
+                  )}
+                  {extraGuests > 0 && (
+                    <p><span className="font-semibold">Guests:</span> {guestCount} <span className="text-hampton-navy/50">({extraGuests} additional @ $35 each)</span></p>
+                  )}
+                  {[
+                    { label: 'Activities', ids: selectedActivities },
+                    { label: 'Food', ids: selectedFood },
+                    { label: 'Desserts', ids: selectedDesserts },
+                    { label: 'Beverages', ids: selectedBeverages },
+                    { label: 'Decor', ids: selectedDecor },
+                    { label: 'Entertainment', ids: selectedEntertainment },
+                    { label: 'Extras', ids: selectedPartyAddOns },
+                  ].filter(s => s.ids.size > 0).map(s => (
+                    <p key={s.label}>
+                      <span className="font-semibold">{s.label}:</span>{' '}
+                      {Array.from(s.ids).map(id => itemMap.get(id)?.name).filter(Boolean).join(', ')}
+                    </p>
+                  ))}
+                </div>
               </div>
             )}
 

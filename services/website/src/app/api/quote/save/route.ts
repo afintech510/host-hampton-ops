@@ -26,7 +26,7 @@ function formatTime(timeStr: string): string {
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { name, email, phone, quoteData, summary, partyDate, partyTime } = body
+  const { name, email, phone, quoteData, summary, partyDate, partyTime, sourcePage } = body
 
   if (!name || !email || !quoteData) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -36,7 +36,8 @@ export async function POST(req: NextRequest) {
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'staging.hosthampton.com'
   const protocol = host.includes('localhost') ? 'http' : 'https'
   const encoded = Buffer.from(JSON.stringify(quoteData)).toString('base64url')
-  const quoteLink = `${protocol}://${host}/party-quote?q=${encoded}`
+  const quotePath = sourcePage === 'kids-party-menu' ? '/kids-party-menu' : '/party-quote'
+  const quoteLink = `${protocol}://${host}${quotePath}?q=${encoded}`
 
   // Build the book link (with date/time for auto-selection + encoded quote data including summary)
   const bookEncoded = Buffer.from(JSON.stringify({ ...quoteData, summary })).toString('base64url')
