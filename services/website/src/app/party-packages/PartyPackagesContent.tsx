@@ -32,7 +32,7 @@ const themes = [
   {
     name: 'Slime Party',
     price: 900,
-    imgs: ['/images/theme-slime.png'],
+    imgs: ['/images/theme-slime.png', '/images/slime-party-1.jpg', '/images/slime-party-2.jpg', '/images/slime-party-3.jpg', '/images/slime-party-4.jpg'],
     desc: 'Custom slime-making station with personalized containers and messy fun.',
     extendedDesc: 'Each guest creates their own custom slime with a variety of colors, glitters, scents, and mix-ins. Everyone takes home their creation in a personalized container. We handle ALL the mess \u2014 you just enjoy the fun. Includes fluffy slime, butter slime, and glitter slime stations.',
   },
