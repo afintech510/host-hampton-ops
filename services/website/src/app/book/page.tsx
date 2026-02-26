@@ -36,6 +36,7 @@ function BookingForm() {
   const defaultDate = params.get('date') || undefined
   const defaultTime = params.get('time') || undefined
   const fromQuote = params.get('from') === 'quote'
+  const encodedQuote = params.get('q') || ''
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -56,13 +57,24 @@ function BookingForm() {
     rentalDuration: '3',
   })
 
-  // Read quote data from localStorage when coming from quote builder
+  // Read quote data from URL param (email links) or localStorage (in-app navigation)
   useEffect(() => {
     if (!fromQuote) return
     try {
-      const raw = localStorage.getItem(LS_KEY)
-      if (!raw) return
-      const data: StoredQuote = JSON.parse(raw)
+      let data: StoredQuote | null = null
+      // Try URL-encoded quote first (from email links)
+      if (encodedQuote) {
+        // base64url → standard base64 → decode
+        const b64 = encodedQuote.replace(/-/g, '+').replace(/_/g, '/')
+        const json = decodeURIComponent(escape(atob(b64)))
+        data = JSON.parse(json)
+      }
+      // Fall back to localStorage (from in-app quote builder)
+      if (!data) {
+        const raw = localStorage.getItem(LS_KEY)
+        if (raw) data = JSON.parse(raw)
+      }
+      if (!data) return
       setQuoteData(data)
       setForm(prev => ({
         ...prev,
@@ -74,7 +86,7 @@ function BookingForm() {
         notes: data.summary || prev.notes,
       }))
     } catch { /* ignore parse errors */ }
-  }, [fromQuote])
+  }, [fromQuote, encodedQuote])
 
   function update(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))

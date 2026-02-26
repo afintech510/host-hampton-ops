@@ -38,8 +38,8 @@ export async function POST(req: NextRequest) {
   const encoded = Buffer.from(JSON.stringify(quoteData)).toString('base64url')
   const quoteLink = `${protocol}://${host}/party-quote?q=${encoded}`
 
-  // Build the book link (with date/time for auto-selection)
-  const bookParams = new URLSearchParams({ type: 'kids-party', from: 'quote' })
+  // Build the book link (with date/time for auto-selection + encoded quote data)
+  const bookParams = new URLSearchParams({ type: 'kids-party', from: 'quote', q: encoded })
   if (partyDate) bookParams.set('date', partyDate)
   if (partyTime) bookParams.set('time', partyTime)
   const bookLink = `${protocol}://${host}/book?${bookParams.toString()}`
