@@ -312,8 +312,9 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
           phone: formData.phone,
           quoteData,
           summary: summaryLines,
-          partyDate: calendarSelection?.date || null,
+          partyDate: calendarSelection?.date || formData.preferredDate || null,
           partyTime: calendarSelection?.timeSlot?.start || null,
+          sourcePage: 'party-packages',
         }),
       })
       setSaveSuccess(true)
@@ -765,7 +766,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                     {reserving ? (
                       <><Loader2 size={18} className="animate-spin" /> Redirecting...</>
                     ) : (
-                      'Reserve Now — $99 Deposit'
+                      'Secure Reservation — $99 Deposit'
                     )}
                   </button>
                 </div>
@@ -782,6 +783,9 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
       {/* ── Pricing Menu ── */}
       {pricingItems.length > 0 && <PricingMenu items={pricingItems} />}
 
+      {/* ── Customer Reviews ── */}
+      <CustomerReviews />
+
       {/* ── CTA ── */}
       <section className="bg-hampton-pink/20 py-14 text-center px-4">
         <h2 className="section-heading mb-3">Questions?</h2>
@@ -796,18 +800,19 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
   )
 }
 
-/* ── Pricing Menu Component ── */
+/* ── Pricing Menu Component (CategoryModule style) ── */
 
 const menuSections: {
   title: string
-  icon: React.ReactNode
+  subtitle: string
+  headerBg: string
   categories: string[]
 }[] = [
-  { title: 'Party Themes', icon: <Sparkles size={18} />, categories: ['party-theme'] },
-  { title: 'Food & Catering', icon: <UtensilsCrossed size={18} />, categories: ['food-add-on', 'beverage-add-on', 'dessert-add-on'] },
-  { title: 'Decor & Entertainment', icon: <Palette size={18} />, categories: ['decor-add-on', 'entertainment-add-on'] },
-  { title: 'Party Extras', icon: <Gift size={18} />, categories: ['party-add-on', 'service-add-on'] },
-  { title: 'Activities Included', icon: <Music size={18} />, categories: ['activity-premium', 'activity-standard'] },
+  { title: 'Party Themes', subtitle: 'Choose your experience', headerBg: 'bg-gradient-to-r from-hampton-pink to-hampton-pink/80', categories: ['party-theme'] },
+  { title: 'Food & Catering', subtitle: 'Included & upgrades', headerBg: 'bg-gradient-to-r from-hampton-navy to-hampton-navy/90', categories: ['food-add-on', 'beverage-add-on', 'dessert-add-on'] },
+  { title: 'Decor & Entertainment', subtitle: 'Make it unforgettable', headerBg: 'bg-gradient-to-r from-hampton-mauve to-hampton-mauve/80', categories: ['decor-add-on', 'entertainment-add-on'] },
+  { title: 'Party Extras', subtitle: 'The finishing touches', headerBg: 'bg-gradient-to-r from-hampton-blue to-hampton-blue/80', categories: ['party-add-on', 'service-add-on'] },
+  { title: 'Activities', subtitle: 'Included & premium', headerBg: 'bg-gradient-to-r from-hampton-pink to-hampton-mauve', categories: ['activity-premium', 'activity-standard'] },
 ]
 
 function formatPriceCents(cents: number, label?: string | null): string {
@@ -828,65 +833,122 @@ function PricingMenu({ items }: { items: PricingItem[] }) {
   return (
     <section className="py-16 max-w-4xl mx-auto px-4 sm:px-6">
       <div className="text-center mb-10">
-        <h2 className="section-heading">Our Menu</h2>
+        <h2 className="section-heading">Kids Party Menu</h2>
         <p className="text-hampton-navy/70 text-sm">Full pricing for all party services and add-ons.</p>
       </div>
 
-      <div className="bg-white rounded-3xl border border-hampton-pink/20 shadow-sm overflow-hidden divide-y divide-hampton-pink/10">
+      <div className="space-y-8">
         {menuSections.map(section => {
           const sectionItems = section.categories.flatMap(cat => byCategory.get(cat) || [])
           if (sectionItems.length === 0) return null
           const isActivities = section.categories.includes('activity-premium')
 
           return (
-            <div key={section.title} className="px-6 sm:px-8 py-6">
-              <div className="flex items-center gap-2.5 mb-4">
-                <span className="text-hampton-pink">{section.icon}</span>
-                <h3 className="font-serif text-lg text-hampton-navy">{section.title}</h3>
+            <div key={section.title} className="bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
+              <div className={`${section.headerBg} px-8 py-5 text-center`}>
+                <h3 className="font-serif text-2xl font-black text-white tracking-tight">{section.title}</h3>
+                <p className="text-white/60 text-xs font-semibold tracking-[0.2em] uppercase mt-1">{section.subtitle}</p>
               </div>
-
-              {isActivities ? (
-                <div className="flex flex-wrap gap-2">
-                  {sectionItems.map(item => (
-                    <span
-                      key={item.id}
-                      className="px-3 py-1.5 rounded-full bg-hampton-pink/10 text-xs font-medium text-hampton-navy"
-                    >
-                      {item.name}
-                      {item.price_cents > 0 && (
-                        <span className="ml-1 text-hampton-navy/60">+{formatPriceCents(item.price_cents, item.price_label)}</span>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-0">
-                  {sectionItems.map((item, i) => (
-                    <div
-                      key={item.id}
-                      className={`flex items-baseline justify-between py-2 ${
-                        i < sectionItems.length - 1 ? 'border-b border-dashed border-hampton-pink/10' : ''
-                      } ${item.is_popular ? 'bg-hampton-pink/5 -mx-3 px-3 rounded-lg' : ''}`}
-                    >
-                      <div className="flex items-baseline gap-2 min-w-0">
-                        <span className="text-sm text-hampton-navy font-medium truncate">{item.name}</span>
-                        {item.is_popular && (
-                          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-hampton-pink">Popular</span>
+              <div className="p-6 sm:p-8">
+                {isActivities ? (
+                  <div className="flex flex-wrap gap-2">
+                    {sectionItems.map(item => (
+                      <span
+                        key={item.id}
+                        className="px-3 py-1.5 rounded-full bg-hampton-pink/10 text-xs font-medium text-hampton-navy"
+                      >
+                        {item.name}
+                        {item.price_cents > 0 && (
+                          <span className="ml-1 text-hampton-navy/60">+{formatPriceCents(item.price_cents, item.price_label)}</span>
                         )}
-                        {item.description && item.description !== 'Premium activity' && item.description !== 'Standard activity' && (
-                          <span className="hidden sm:inline text-xs text-hampton-navy/40 truncate">{item.description}</span>
-                        )}
-                      </div>
-                      <span className="text-sm font-bold text-hampton-navy ml-4 shrink-0 tabular-nums">
-                        {formatPriceCents(item.price_cents, item.price_label)}
                       </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {sectionItems.map(item => (
+                      <div
+                        key={item.id}
+                        className="flex items-start justify-between gap-3 p-4 rounded-xl border border-hampton-mauve/15 bg-hampton-ivory/30"
+                      >
+                        <div>
+                          <p className="font-semibold text-hampton-navy text-sm">{item.name}</p>
+                          {item.description && item.description !== 'Premium activity' && item.description !== 'Standard activity' && (
+                            <p className="text-hampton-navy/50 text-xs mt-0.5">{item.description}</p>
+                          )}
+                          {item.is_popular && (
+                            <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider text-hampton-pink">Popular</span>
+                          )}
+                        </div>
+                        <span className="shrink-0 font-bold text-hampton-navy text-sm">
+                          {formatPriceCents(item.price_cents, item.price_label)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )
         })}
+      </div>
+    </section>
+  )
+}
+
+/* ── Customer Reviews ── */
+
+const reviews = [
+  {
+    name: 'Jessica M.',
+    event: 'Glow Party',
+    text: 'My daughter had the BEST birthday ever! The glow party was incredible \u2014 the kids are still talking about it. Allie handled everything so I could actually enjoy the party. Worth every penny.',
+    stars: 5,
+  },
+  {
+    name: 'Sarah K.',
+    event: 'Slime Party',
+    text: 'We booked the slime party for my son\u2019s 8th birthday and it was amazing. The kids had so much fun making their own slime. Best part? We didn\u2019t have to clean up any of the mess!',
+    stars: 5,
+  },
+  {
+    name: 'Maria L.',
+    event: 'Spa Party',
+    text: 'The spa party was perfect for my tween. Every girl felt so special with the robes, manicures, and face masks. The studio was beautifully decorated. Highly recommend!',
+    stars: 5,
+  },
+  {
+    name: 'Ashley R.',
+    event: 'Swiftie Party',
+    text: 'A+ experience from start to finish. The Swiftie theme was spot-on \u2014 friendship bracelets, karaoke, and the cutest decorations. My daughter said it was the best day of her life!',
+    stars: 5,
+  },
+]
+
+function CustomerReviews() {
+  return (
+    <section className="py-16 max-w-4xl mx-auto px-4 sm:px-6">
+      <div className="text-center mb-10">
+        <h2 className="section-heading">What Parents Are Saying</h2>
+        <p className="text-hampton-navy/70 text-sm">Real reviews from real Host Hampton families.</p>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-5">
+        {reviews.map(review => (
+          <div key={review.name} className="bg-white rounded-2xl border border-hampton-pink/20 shadow-sm p-6">
+            <div className="flex items-center gap-1 mb-3">
+              {Array.from({ length: review.stars }).map((_, i) => (
+                <Star key={i} size={14} className="text-amber-400 fill-amber-400" />
+              ))}
+            </div>
+            <p className="text-sm text-hampton-navy/80 leading-relaxed mb-4 italic">
+              &ldquo;{review.text}&rdquo;
+            </p>
+            <div>
+              <p className="text-sm font-semibold text-hampton-navy">{review.name}</p>
+              <p className="text-xs text-hampton-navy/50">{review.event}</p>
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   )
