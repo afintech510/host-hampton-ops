@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Sparkles } from 'lucide-react'
 import Link from 'next/link'
 
-const services = [
+const DEFAULT_SERVICES = [
   "Child's Birthday Party",
   "Private Workshop",
   "Yoga Class",
@@ -21,7 +21,21 @@ const services = [
   "Christmas Party",
 ]
 
-export default function DynamicTypingSection() {
+interface DynamicTypingSectionProps {
+  services?: string[]
+  tagline?: string
+  subtitle?: string
+  ctaText?: string
+  ctaHref?: string
+}
+
+export default function DynamicTypingSection({
+  services = DEFAULT_SERVICES,
+  tagline = 'More Than Just Birthdays',
+  subtitle = "Our private Hamptons studio is the perfect blank canvas. Whether you\u2019re celebrating a milestone or gathering your community, we handle the details so you can enjoy the moment.",
+  ctaText = 'INQUIRE ABOUT YOUR EVENT',
+  ctaHref = '/contact-us',
+}: DynamicTypingSectionProps) {
   const [text, setText] = useState('')
   const [isDeleting, setIsDeleting] = useState(false)
   const [loopNum, setLoopNum] = useState(0)
@@ -52,7 +66,7 @@ export default function DynamicTypingSection() {
     }
 
     return () => clearTimeout(timer)
-  }, [text, isDeleting, loopNum])
+  }, [text, isDeleting, loopNum, services])
 
   return (
     <section className="py-20 md:py-24 relative overflow-hidden flex justify-center items-center">
@@ -63,7 +77,7 @@ export default function DynamicTypingSection() {
         {/* Decorative header */}
         <div className="flex items-center justify-center gap-2 mb-6 text-hampton-blue font-bold tracking-widest text-sm uppercase">
           <Sparkles size={16} />
-          <span>More Than Just Birthdays</span>
+          <span>{tagline}</span>
           <Sparkles size={16} />
         </div>
 
@@ -76,17 +90,20 @@ export default function DynamicTypingSection() {
           </span>
         </h2>
 
-        <p className="mt-8 text-lg text-hampton-navy/70 max-w-2xl mx-auto">
-          Our private Hamptons studio is the perfect blank canvas. Whether you&apos;re celebrating
-          a milestone or gathering your community, we handle the details so you can enjoy the moment.
-        </p>
+        {subtitle && (
+          <p className="mt-8 text-lg text-hampton-navy/70 max-w-2xl mx-auto">
+            {subtitle}
+          </p>
+        )}
 
-        <Link
-          href="/contact-us"
-          className="inline-block mt-10 border-2 border-[#c4975a] text-[#c4975a] px-8 py-3.5 rounded-full text-sm font-bold tracking-wide hover:bg-[#c4975a] hover:text-white transition-all shadow-sm hover:shadow-md"
-        >
-          INQUIRE ABOUT YOUR EVENT
-        </Link>
+        {ctaText && ctaHref && (
+          <Link
+            href={ctaHref}
+            className="inline-block mt-10 border-2 border-[#c4975a] text-[#c4975a] px-8 py-3.5 rounded-full text-sm font-bold tracking-wide hover:bg-[#c4975a] hover:text-white transition-all shadow-sm hover:shadow-md"
+          >
+            {ctaText}
+          </Link>
+        )}
       </div>
     </section>
   )
