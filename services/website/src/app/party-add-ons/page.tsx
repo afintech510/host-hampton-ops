@@ -44,6 +44,7 @@ export default async function PartyAddOns() {
       .select('name, description, category, price_cents, price_label, sort_order')
       .eq('is_active', true)
       .in('category', categoryConfig.map(c => c.category))
+      .or('event_types.cs.{kids-party},event_types.is.null')
       .order('sort_order', { ascending: true })
     items = data || []
   } catch {

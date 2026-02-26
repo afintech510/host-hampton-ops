@@ -28,6 +28,7 @@ export default async function PartyPackages() {
       .from('pricing_items')
       .select('id, name, description, category, price_cents, price_label, is_popular, sort_order')
       .eq('is_active', true)
+      .or('event_types.cs.{kids-party},event_types.is.null')
       .order('sort_order', { ascending: true })
     pricingItems = data || []
   } catch {

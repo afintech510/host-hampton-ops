@@ -33,34 +33,40 @@ export default async function PartyMenuPage() {
     const supabase = getSupabase()
     const { data } = await supabase
       .from('pricing_items')
-      .select('id, name, description, category, price_cents, price_label, is_popular, sort_order')
+      .select('id, name, description, category, price_cents, price_label, is_popular, sort_order, event_types')
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
-    items = data || []
+    items = (data || []) as (PricingItem & { event_types: string[] | null })[]
   } catch {
     // renders empty
   }
 
-  const byCategory = new Map<string, PricingItem[]>()
-  for (const item of items) {
-    const list = byCategory.get(item.category) || []
-    list.push(item)
-    byCategory.set(item.category, list)
-  }
+  // Helper: filter items by category + event type scope
+  const isForEventType = (item: { event_types: string[] | null }, type: string) =>
+    item.event_types === null || item.event_types.includes(type)
 
-  const themes = byCategory.get('party-theme') || []
-  const roomRentals = byCategory.get('room-rental') || []
-  const studioRentals = byCategory.get('studio-rental') || []
-  const food = byCategory.get('food-add-on') || []
-  const desserts = byCategory.get('dessert-add-on') || []
-  const beverages = byCategory.get('beverage-add-on') || []
-  const decor = byCategory.get('decor-add-on') || []
-  const entertainment = byCategory.get('entertainment-add-on') || []
-  const partyAddOns = byCategory.get('party-add-on') || []
-  const serviceAddOns = byCategory.get('service-add-on') || []
-  const premiumActivities = byCategory.get('activity-premium') || []
-  const standardActivities = byCategory.get('activity-standard') || []
-  const deposits = byCategory.get('deposit') || []
+  const typed = items as (PricingItem & { event_types: string[] | null })[]
+  const byCat = (cat: string, eventType?: string) =>
+    typed.filter(i => i.category === cat && (!eventType || isForEventType(i, eventType)))
+
+  // Kids party sections — exclude room-rental-only items
+  const themes = byCat('party-theme', 'kids-party')
+  const premiumActivities = byCat('activity-premium', 'kids-party')
+  const standardActivities = byCat('activity-standard', 'kids-party')
+  const partyAddOns = byCat('party-add-on', 'kids-party')
+
+  // Room rental sections — room-rental-specific items
+  const roomRentals = byCat('room-rental')
+  const studioRentals = byCat('studio-rental')
+  const deposits = byCat('deposit')
+  const serviceAddOns = byCat('service-add-on', 'room-rental')
+
+  // Universal sections — exclude room-rental-only items so they don't mix
+  const food = byCat('food-add-on')
+  const desserts = byCat('dessert-add-on')
+  const beverages = byCat('beverage-add-on')
+  const decor = typed.filter(i => i.category === 'decor-add-on' && isForEventType(i, 'kids-party'))
+  const entertainment = byCat('entertainment-add-on')
 
   return (
     <div className="pb-0">
