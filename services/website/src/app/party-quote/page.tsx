@@ -24,7 +24,7 @@ export default async function PartyQuotePage({
   const supabase = getSupabase()
   const { data } = await supabase
     .from('pricing_items')
-    .select('id, name, description, category, price_cents, price_label, is_popular, sort_order, event_types')
+    .select('id, name, description, category, price_cents, price_label, is_popular, sort_order, event_types, emoji')
     .eq('is_active', true)
     .or('event_types.cs.{kids-party},event_types.is.null')
     .order('sort_order')

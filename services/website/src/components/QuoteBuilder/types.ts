@@ -7,6 +7,7 @@ export interface PricingItem {
   price_label: string | null
   is_popular: boolean
   sort_order: number
+  emoji: string | null
 }
 
 export interface QuoteData {

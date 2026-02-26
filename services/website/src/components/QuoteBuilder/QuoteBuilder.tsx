@@ -142,12 +142,19 @@ function ActivityChip({ item, selected, onClick, unlocked }: {
   const hasPrice = item.price_cents > 0
   return (
     <button type="button" onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full border-2 text-xs font-semibold transition-all duration-200 ${
-        selected ? 'border-hampton-navy bg-hampton-navy text-white' : 'border-hampton-mauve/30 bg-white text-hampton-navy hover:border-hampton-blue'
+      className={`relative flex flex-col items-center justify-center text-center gap-1 p-3 rounded-xl border-2 transition-all duration-200 ${
+        selected ? 'border-hampton-navy bg-hampton-navy/5 shadow-sm' : 'border-hampton-mauve/25 bg-white hover:border-hampton-blue'
       }`}>
-      {selected && <Check size={12} className="shrink-0" />}
-      {item.name}
-      {hasPrice && <span className="opacity-70 ml-0.5">+<Price cents={item.price_cents} unlocked={unlocked} /></span>}
+      {item.emoji && <span className="text-xl leading-none">{item.emoji}</span>}
+      <span className={`text-xs font-semibold leading-tight ${selected ? 'text-hampton-navy' : 'text-hampton-navy'}`}>
+        {item.name}
+      </span>
+      {hasPrice && <span className="text-[10px] font-bold text-hampton-pink">+<Price cents={item.price_cents} unlocked={unlocked} /></span>}
+      {selected && (
+        <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-hampton-navy rounded-full flex items-center justify-center">
+          <Check size={10} className="text-white" />
+        </span>
+      )}
     </button>
   )
 }
@@ -478,7 +485,7 @@ export default function QuoteBuilder({
         {/* Step 4: Activities */}
         <section>
           <SectionHeader step={4} title="Choose Activities" subtitle="Most activities are included. Premium add-ons show their price." />
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {activities.map(a => (
               <ActivityChip key={a.id} item={a} selected={selectedActivities.has(a.id)}
                 onClick={() => toggle(selectedActivities, setSelectedActivities, a.id)} unlocked={unlocked} />
