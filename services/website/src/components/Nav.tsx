@@ -98,7 +98,7 @@ export default function Nav() {
             href="/book"
             className="bg-hampton-navy text-white px-6 py-2.5 rounded-full text-sm font-bold tracking-wide hover:bg-hampton-navy/90 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.1)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.15)] hover:-translate-y-0.5"
           >
-            Reserve Your Date
+            Book Now
           </Link>
         </div>
 
@@ -161,7 +161,7 @@ export default function Nav() {
               onClick={() => setOpen(false)}
               className="w-full bg-hampton-navy text-white px-8 py-4 rounded-full text-lg font-bold tracking-wide shadow-lg text-center"
             >
-              Reserve Your Date
+              Book Now
             </Link>
           </div>
         </div>

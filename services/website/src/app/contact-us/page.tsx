@@ -133,7 +133,7 @@ export default function ContactUs() {
       <section className="relative">
         <div className="h-80 w-full">
           <iframe
-            src="https://maps.google.com/maps?q=295+Montauk+Highway,+Suite+7,+Speonk,+NY+11972&t=&z=14&ie=UTF8&iwloc=&output=embed"
+            src="https://www.google.com/maps/embed?pb=!1m14!1m8!1m3!1d1515!2d-72.704402!3d40.8187948!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89e8f7a98a3779bf%3A0x3e5a903d930c3d7c!2sHost%20Hampton!5e0!3m2!1sen!2sus"
             width="100%"
             height="100%"
             style={{ border: 0 }}
@@ -145,7 +145,7 @@ export default function ContactUs() {
         </div>
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
           <a
-            href="https://www.google.com/maps/dir/?api=1&destination=295+Montauk+Highway,+Suite+7,+Speonk,+NY+11972"
+            href="https://www.google.com/maps/dir/?api=1&destination=Host+Hampton&destination_place_id=0x89e8f7a98a3779bf:0x3e5a903d930c3d7c"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 bg-hampton-navy text-white px-6 py-3 rounded-full text-sm font-semibold shadow-lg hover:bg-hampton-navy/90 transition-colors"

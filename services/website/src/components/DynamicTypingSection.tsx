@@ -85,7 +85,7 @@ export default function DynamicTypingSection({
         <h2 className="text-4xl md:text-5xl lg:text-7xl font-serif text-hampton-navy leading-tight">
           Let Us Host Your<br />
           <span className="inline-block min-h-[1.2em] text-transparent bg-clip-text bg-gradient-to-r from-hampton-blue to-hampton-blue/60 italic relative">
-            {text || '...'}
+            {text || ' '}
             <span className="absolute -right-1 top-0 md:top-1 w-[2px] md:w-[3px] h-[80%] bg-hampton-blue animate-pulse" />
           </span>
         </h2>
