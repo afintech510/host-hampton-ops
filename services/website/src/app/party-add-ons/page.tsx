@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
@@ -36,6 +37,7 @@ interface PricingRow {
 }
 
 export default async function PartyAddOns() {
+  redirect('/kids-party-menu')
   let items: PricingRow[] = []
   try {
     const supabase = getSupabase()
