@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react'
 import Image from 'next/image'
 import { Check, ChevronDown, X, Loader2, Star, Calendar, Clock, Users, Sparkles, UtensilsCrossed, Palette, Gift, Music, Bookmark } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
+import ImageSlider from '@/components/ImageSlider'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import type { PricingItem } from './page'
 
@@ -23,7 +24,7 @@ const themes = [
   {
     name: 'Glow Party',
     price: 950,
-    img: '/images/theme-glow.png',
+    imgs: ['/images/theme-glow.png'],
     desc: 'Black lights, UV face paint, neon accessories, glow bracelets, and a dance party.',
     extendedDesc: 'Transform our studio into a neon wonderland! Every guest gets glow bracelets, neon necklaces, and UV face paint from our professional station. The entire studio is lit with black lights and neon LED strips. We crank up the DJ playlist, and kids dance the night away in a truly electric atmosphere. The perfect party for ages 6\u201314.',
     popular: true,
@@ -31,63 +32,63 @@ const themes = [
   {
     name: 'Slime Party',
     price: 900,
-    img: '/images/theme-slime.png',
+    imgs: ['/images/theme-slime.png'],
     desc: 'Custom slime-making station with personalized containers and messy fun.',
     extendedDesc: 'Each guest creates their own custom slime with a variety of colors, glitters, scents, and mix-ins. Everyone takes home their creation in a personalized container. We handle ALL the mess \u2014 you just enjoy the fun. Includes fluffy slime, butter slime, and glitter slime stations.',
   },
   {
     name: 'K-Pop Demon Hunter',
     price: 900,
-    img: '/images/theme-kpop.png',
+    imgs: ['/images/theme-kpop.png'],
     desc: 'K-pop karaoke, dance lesson, neon decor, and hair tinsel.',
     extendedDesc: 'For the K-pop obsessed! Features a guided K-pop dance lesson, karaoke station with all the hits, neon-themed decor, hair tinsel for every guest, and a photo booth with K-pop-inspired props. Perfect for tweens and teens who live for the aesthetic.',
   },
   {
     name: 'Trucker Hat Bar',
     price: 900,
-    img: '/images/theme-sweets.png',
+    imgs: ['/images/theme-sweets.png'],
     desc: 'Iron-on patches, photo booth, and totally custom trucker hats as favors.',
     extendedDesc: 'The trendiest party on Long Island! Each guest designs their own custom trucker hat with iron-on patches, rhinestones, and embellishments. Includes a photo booth with fun props, and every guest walks away with their one-of-a-kind creation. A huge hit with ages 8+.',
   },
   {
     name: 'Spa Party',
     price: 850,
-    img: '/images/theme-spa.png',
+    imgs: ['/images/theme-spa.png'],
     desc: 'Mini manicures, hair styling, face masks, robes, and full glam experience.',
     extendedDesc: 'The ultimate pampering experience. Guests arrive to plush robes and slippers, enjoy mini manicures with kid-safe polish, hair styling or braiding, cucumber face masks, and a relaxation station. Every detail is designed to make them feel like royalty.',
   },
   {
     name: 'Swiftie Party',
     price: 850,
-    img: '/images/theme-swiftie.png',
+    imgs: ['/images/theme-swiftie.png'],
     desc: 'Karaoke, friendship bracelets, hair tinsel, glitter, and all the feels.',
     extendedDesc: 'For every era! Features Taylor Swift karaoke, a friendship bracelet-making station, hair tinsel and glitter stations, era-themed decorations, and trivia games. We play all the hits and create the ultimate Swiftie experience. Eras tour vibes, right in Speonk.',
   },
   {
     name: 'Barbie Party',
     price: 850,
-    img: '/images/theme-barbie.png',
+    imgs: ['/images/theme-barbie.png'],
     desc: 'Life-size Barbie box photo op, fashion show, and glam styling.',
     extendedDesc: 'Step into Barbie\'s world! Includes a life-size Barbie box photo op, a fashion show runway, glam hair and makeup station, pink-themed decorations from floor to ceiling, and Barbie-inspired activities. Every guest gets the full Barbie treatment.',
   },
   {
     name: 'Unicorn Party',
     price: 850,
-    img: '/images/theme-glow.png',
+    imgs: ['/images/theme-glow.png'],
     desc: 'Headbands, glitter crafts, rainbow decor, and magical unicorn activities.',
     extendedDesc: 'Pure magic! Rainbow and pastel decorations transform the studio into a unicorn dreamland. Activities include unicorn headband decorating, glitter crafts, a magical obstacle course, and enchanted photo opportunities. Perfect for ages 3\u20138.',
   },
   {
     name: 'Toddler Party',
     price: 850,
-    img: '/images/theme-toddler.png',
+    imgs: ['/images/theme-toddler.png'],
     desc: 'Soft play, ball pit, sensory activities, and themed decor for ages 2\u20134.',
     extendedDesc: 'Designed specifically for little ones! Features a soft play area, ball pit, age-appropriate sensory stations, bubble machine, and gentle music. The space is fully baby-proofed and safe. Parents can relax while the little ones explore and play. Ideal for ages 1\u20134.',
   },
   {
     name: 'Sweets & Treats',
     price: 800,
-    img: '/images/theme-sweets.png',
+    imgs: ['/images/theme-sweets.png'],
     desc: 'Cookie and cupcake decorating, candy wall, dessert stations, and sweet fun.',
     extendedDesc: 'A sugar lover\'s dream! Guests decorate cookies and cupcakes with professional-grade supplies, enjoy a candy wall with every sweet imaginable, and visit dessert stations throughout the studio. Includes all decorating supplies, aprons, and take-home boxes for creations.',
   },
@@ -367,79 +368,96 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
       <section ref={themeSectionRef} className="py-8 max-w-7xl mx-auto px-4 sm:px-6 scroll-mt-24">
         <h2 className="section-heading text-center mb-2">Select Your Theme</h2>
         <p className="text-center text-hampton-navy/70 mb-8">
-          {selectedTheme ? 'Click the theme again to deselect, or choose a different one.' : 'Tap a theme to see details and start your booking.'}
+          {selectedTheme ? 'Click the theme again to deselect, or choose a different one below.' : 'Tap a theme to see details and start your booking.'}
         </p>
 
-        <div className={`grid gap-6 transition-all duration-700 ease-in-out ${
-          selectedTheme ? 'sm:grid-cols-1 max-w-3xl mx-auto' : 'sm:grid-cols-2 lg:grid-cols-3'
-        }`}>
-          {themes.map(t => {
-            const isSelected = selectedTheme === t.name
-            const isHidden = selectedTheme && !isSelected
-
-            return (
-              <div
-                key={t.name}
-                onClick={() => !isHidden && handleThemeSelect(t.name)}
-                style={{
-                  gridTemplateRows: isHidden ? '0fr' : '1fr',
-                  display: 'grid',
-                }}
-                className={`transition-all ease-in-out ${
-                  isHidden
-                    ? 'duration-500 opacity-0 scale-95 max-h-0 overflow-hidden pointer-events-none -my-3'
-                    : 'duration-700 opacity-100 scale-100 max-h-[800px]'
-                }`}
-              >
-                <div className={`min-h-0 rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 ${
-                  isSelected
-                    ? 'ring-2 ring-hampton-pink shadow-md bg-white'
-                    : t.popular
-                      ? 'ring-2 ring-hampton-pink bg-white hover:shadow-lg hover:-translate-y-1'
-                      : 'bg-white border border-hampton-pink/20 shadow-sm hover:shadow-lg hover:-translate-y-1'
-                }`}>
-                  {t.popular && !isSelected && (
-                    <div className="bg-gradient-to-r from-hampton-pink to-hampton-pink/80 text-white text-xs font-bold text-center py-1.5 tracking-wide uppercase">
-                      Most Popular
-                    </div>
-                  )}
-
-                  <div className={`relative overflow-hidden transition-all duration-700 ease-in-out ${isSelected ? 'aspect-[21/9]' : 'aspect-video'}`}>
-                    <Image src={t.img} alt={t.name} fill className="object-cover transition-transform duration-500 hover:scale-105" />
-                    {isSelected && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleThemeSelect(t.name) }}
-                        className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center hover:bg-white transition-colors shadow-md z-10"
-                      >
-                        <X size={16} className="text-hampton-navy" />
-                      </button>
-                    )}
+        {selectedTheme && selectedThemeData ? (
+          <div className="animate-[fadeIn_0.3s_ease-out]">
+            {/* Hero Card */}
+            <div className="max-w-3xl mx-auto">
+              <div className="rounded-2xl overflow-hidden ring-2 ring-hampton-pink shadow-md bg-white">
+                <div className="relative">
+                  <ImageSlider
+                    images={selectedThemeData.imgs}
+                    alt={selectedThemeData.name}
+                    aspectRatio="aspect-[3/2]"
+                  />
+                  <button
+                    onClick={() => handleThemeSelect(selectedTheme)}
+                    className="absolute top-3 right-3 w-9 h-9 bg-white/90 rounded-full flex items-center justify-center hover:bg-white transition-colors shadow-md z-20"
+                  >
+                    <X size={18} className="text-hampton-navy" />
+                  </button>
+                </div>
+                <div className="p-6">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-semibold text-hampton-navy text-xl">{selectedThemeData.name}</h3>
+                    <span className="text-hampton-navy font-bold text-xl">from ${selectedThemeData.price.toLocaleString()}</span>
                   </div>
-
-                  <div className="p-5">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-semibold text-hampton-navy text-lg">{t.name}</h3>
-                      <span className="text-hampton-navy font-bold text-lg">from ${t.price.toLocaleString()}</span>
+                  <p className="text-sm leading-relaxed text-hampton-navy/80">
+                    {selectedThemeData.extendedDesc}
+                  </p>
+                  <div className="flex items-center gap-2 text-hampton-pink text-sm font-semibold pt-4 animate-[fadeIn_0.5s_ease-in]">
+                    <div className="w-5 h-5 rounded-full bg-hampton-pink flex items-center justify-center">
+                      <Check size={12} strokeWidth={3} className="text-white" />
                     </div>
-
-                    <p className={`text-sm leading-relaxed transition-all duration-500 ${isSelected ? 'text-hampton-navy/80' : 'text-hampton-navy/70'}`}>
-                      {isSelected ? t.extendedDesc : t.desc}
-                    </p>
-
-                    {isSelected && (
-                      <div className="flex items-center gap-2 text-hampton-pink text-sm font-semibold pt-3 animate-[fadeIn_0.5s_ease-in]">
-                        <div className="w-5 h-5 rounded-full bg-hampton-pink flex items-center justify-center">
-                          <Check size={12} strokeWidth={3} className="text-white" />
-                        </div>
-                        <span>Theme selected — fill out the form below to check availability</span>
-                      </div>
-                    )}
+                    <span>Theme selected — fill out the form below to check availability</span>
                   </div>
                 </div>
               </div>
-            )
-          })}
-        </div>
+            </div>
+
+            {/* Thumbnail Strip */}
+            <div className="max-w-3xl mx-auto mt-6">
+              <p className="text-sm text-hampton-navy/60 mb-3 font-medium">Or choose a different theme:</p>
+              <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
+                {themes.filter(t => t.name !== selectedTheme).map(t => (
+                  <button
+                    key={t.name}
+                    onClick={() => handleThemeSelect(t.name)}
+                    className="shrink-0 w-[100px] snap-start group text-left"
+                  >
+                    <div className="relative aspect-square rounded-xl overflow-hidden border-2 border-transparent group-hover:border-hampton-pink transition-colors">
+                      <Image src={t.imgs[0]} alt={t.name} fill className="object-cover" />
+                    </div>
+                    <p className="text-xs text-hampton-navy mt-1.5 font-medium text-center truncate">{t.name}</p>
+                    <p className="text-[10px] text-hampton-navy/50 text-center">${t.price.toLocaleString()}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {themes.map(t => (
+              <div
+                key={t.name}
+                onClick={() => handleThemeSelect(t.name)}
+                className={`rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 ${
+                  t.popular
+                    ? 'ring-2 ring-hampton-pink bg-white hover:shadow-lg hover:-translate-y-1'
+                    : 'bg-white border border-hampton-pink/20 shadow-sm hover:shadow-lg hover:-translate-y-1'
+                }`}
+              >
+                {t.popular && (
+                  <div className="bg-gradient-to-r from-hampton-pink to-hampton-pink/80 text-white text-xs font-bold text-center py-1.5 tracking-wide uppercase">
+                    Most Popular
+                  </div>
+                )}
+                <div className="relative aspect-video overflow-hidden">
+                  <Image src={t.imgs[0]} alt={t.name} fill className="object-cover transition-transform duration-500 hover:scale-105" />
+                </div>
+                <div className="p-5">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-semibold text-hampton-navy text-lg">{t.name}</h3>
+                    <span className="text-hampton-navy font-bold text-lg">from ${t.price.toLocaleString()}</span>
+                  </div>
+                  <p className="text-sm leading-relaxed text-hampton-navy/70">{t.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* ── Lead Capture Form ── */}
