@@ -1,5 +1,40 @@
 import { getSupabase } from '@/lib/supabase'
 
+// Valid service_type enum values in the database
+const SERVICE_TYPE_MAP: Record<string, string> = {
+  'kids-party': 'kids_party',
+  'kids_party': 'kids_party',
+  'room-rental': 'room_rental',
+  'room_rental': 'room_rental',
+  'permanent-jewelry': 'permanent_jewelry',
+  'permanent_jewelry': 'permanent_jewelry',
+  'host-your-client': 'host_your_client',
+  'host_your_client': 'host_your_client',
+  'trucker-hat-bar': 'trucker_hat_bar',
+  'trucker_hat_bar': 'trucker_hat_bar',
+  'workshop': 'workshop',
+  'fundraiser': 'fundraiser',
+  'craft-event': 'craft_event',
+  'craft_event': 'craft_event',
+  'photography-studio': 'photography_studio',
+  'photography_studio': 'photography_studio',
+  'pop-up-vendor': 'pop_up_vendor',
+  'pop_up_vendor': 'pop_up_vendor',
+  'seasonal-retail': 'seasonal_retail',
+  'seasonal_retail': 'seasonal_retail',
+  'event': 'other',
+  'general': 'other',
+  'mobile': 'other',
+  'retail': 'seasonal_retail',
+  'party-room': 'room_rental',
+  'other': 'other',
+}
+
+function normalizeServiceInterests(raw: string[]): string[] {
+  const mapped = raw.map(s => SERVICE_TYPE_MAP[s] || 'other')
+  return Array.from(new Set(mapped))
+}
+
 interface UpsertContactParams {
   name: string
   email: string
@@ -23,7 +58,7 @@ export async function upsertContact({
     const supabase = getSupabase()
     const nameParts = name.trim().split(/\s+/)
 
-    await supabase.from('contacts').upsert(
+    const { error: upsertErr } = await supabase.from('contacts').upsert(
       {
         email,
         first_name: nameParts[0],
@@ -32,10 +67,15 @@ export async function upsertContact({
         status: 'lead',
         source: 'direct',
         source_detail: sourceDetail,
-        service_interests: serviceInterests,
+        service_interests: normalizeServiceInterests(serviceInterests),
       },
       { onConflict: 'email' },
     )
+
+    if (upsertErr) {
+      console.error('upsertContact upsert error:', upsertErr)
+      return null
+    }
 
     const { data: contact } = await supabase
       .from('contacts')

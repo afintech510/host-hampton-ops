@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { upsertContact } from '@/lib/contacts'
 import { Resend } from 'resend'
 import {
   fundraiserInquiryAutoReplyHtml,
@@ -38,48 +39,30 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Split name into first/last for contacts table
-  const nameParts = contactName.trim().split(/\s+/)
-  const firstName = nameParts[0]
-  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null
+  // Upsert contact
+  const contactId = await upsertContact({
+    name: contactName,
+    email,
+    phone,
+    sourceDetail: 'Fundraiser landing page',
+    serviceInterests: ['fundraiser'],
+  })
 
-  // Upsert contact (service key bypasses RLS)
-  const { error: contactErr } = await supabase
-    .from('contacts')
-    .upsert(
-      {
-        email,
-        first_name: firstName,
-        last_name: lastName,
-        phone: phone || null,
-        status: 'lead',
-        source: 'direct',
-        source_detail: 'Fundraiser landing page',
-        service_interests: ['fundraiser'],
+  // Set business fields separately (upsertContact doesn't handle these)
+  if (contactId) {
+    await supabase
+      .from('contacts')
+      .update({
         is_business: true,
         business_name: organizationName,
         business_type: organizationType || null,
-      },
-      { onConflict: 'email' }
-    )
+      })
+      .eq('id', contactId)
 
-  if (contactErr) {
-    console.error('Contact upsert error:', contactErr)
-    // Non-fatal — continue to send emails
-  }
-
-  // Fetch contact id for interaction record (contact_id is NOT NULL)
-  const { data: contact } = await supabase
-    .from('contacts')
-    .select('id')
-    .eq('email', email)
-    .single()
-
-  if (contact?.id) {
     const { error: interactionErr } = await supabase
       .from('contact_interactions')
       .insert({
-        contact_id: contact.id,
+        contact_id: contactId,
         type: 'form_submission',
         summary: `Fundraiser inquiry from ${organizationName}`,
         metadata: {

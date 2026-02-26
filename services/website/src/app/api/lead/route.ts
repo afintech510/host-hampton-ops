@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { leadNotifyHtml, leadConfirmHtml } from '@/lib/emailTemplates'
+import { upsertContact } from '@/lib/contacts'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,64 +51,37 @@ export async function POST(req: NextRequest) {
   else serviceInterests.push('general')
 
   // Save to Supabase (non-fatal if DB unavailable)
-  try {
-    const { getSupabase } = await import('@/lib/supabase')
-    const supabase = getSupabase()
+  const contactId = await upsertContact({
+    name: fullName,
+    email,
+    phone,
+    sourceDetail: `Lead form — ${sourcePage || 'party-packages'}`,
+    serviceInterests,
+  })
 
-    // Upsert contact
-    const { error: contactErr } = await supabase
-      .from('contacts')
-      .upsert(
-        {
-          email,
-          first_name: firstName,
-          last_name: lastName,
-          phone: phone || null,
-          status: 'lead',
-          source: 'direct',
-          source_detail: `Lead form — ${sourcePage || 'party-packages'}`,
-          service_interests: serviceInterests,
+  if (contactId) {
+    try {
+      const { getSupabase } = await import('@/lib/supabase')
+      const supabase = getSupabase()
+      await supabase.from('contact_interactions').insert({
+        contact_id: contactId,
+        type: 'form_submission',
+        summary: `Lead inquiry: ${eventType} — ${partyTheme || 'no theme'}`,
+        metadata: {
+          page: sourcePage || 'party-packages',
+          eventType,
+          fullName,
+          childAge: childAge || null,
+          guestCount: guestCount || null,
+          partyTheme: partyTheme || null,
+          preferredDate: preferredDate || null,
+          timeOfDay: timeOfDay || null,
+          notes: notes || null,
         },
-        { onConflict: 'email' }
-      )
-
-    if (contactErr) {
-      console.error('Contact upsert error:', contactErr)
+      })
+    } catch (dbErr) {
+      console.error('Interaction insert error (non-fatal):', dbErr)
     }
-
-    // Fetch contact id for interaction record
-    const { data: contact } = await supabase
-      .from('contacts')
-      .select('id')
-      .eq('email', email)
-      .single()
-
-    if (contact?.id) {
-      const { error: interactionErr } = await supabase
-        .from('contact_interactions')
-        .insert({
-          contact_id: contact.id,
-          type: 'form_submission',
-          summary: `Lead inquiry: ${eventType} — ${partyTheme || 'no theme'}`,
-          metadata: {
-            page: sourcePage || 'party-packages',
-            eventType,
-            fullName,
-            childAge: childAge || null,
-            guestCount: guestCount || null,
-            partyTheme: partyTheme || null,
-            preferredDate: preferredDate || null,
-            timeOfDay: timeOfDay || null,
-            notes: notes || null,
-          },
-        })
-
-      if (interactionErr) {
-        console.error('Interaction insert error:', interactionErr)
-      }
-    }
-  } catch (dbErr) {
-    console.error('Database save error (non-fatal):', dbErr)
   }
 
   // Send emails via Resend

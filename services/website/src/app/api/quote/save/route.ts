@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { savedQuoteHtml } from '@/lib/emailTemplates'
+import { upsertContact } from '@/lib/contacts'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,42 +53,27 @@ export async function POST(req: NextRequest) {
   const slotDisplay = dateDisplay && timeDisplay ? `${dateDisplay} at ${timeDisplay}` : undefined
 
   // Save interaction to DB (non-fatal)
-  try {
-    const { getSupabase } = await import('@/lib/supabase')
-    const supabase = getSupabase()
+  const contactId = await upsertContact({
+    name,
+    email,
+    phone,
+    sourceDetail: 'Quote Builder — Save for Later',
+    serviceInterests: ['kids-party'],
+  })
 
-    // Upsert contact
-    const nameParts = name.trim().split(/\s+/)
-    await supabase.from('contacts').upsert(
-      {
-        email,
-        first_name: nameParts[0],
-        last_name: nameParts.length > 1 ? nameParts.slice(1).join(' ') : null,
-        phone: phone || null,
-        status: 'lead',
-        source: 'direct',
-        source_detail: 'Quote Builder — Save for Later',
-        service_interests: ['kids-party'],
-      },
-      { onConflict: 'email' },
-    )
-
-    const { data: contact } = await supabase
-      .from('contacts')
-      .select('id')
-      .eq('email', email)
-      .single()
-
-    if (contact?.id) {
+  if (contactId) {
+    try {
+      const { getSupabase } = await import('@/lib/supabase')
+      const supabase = getSupabase()
       await supabase.from('contact_interactions').insert({
-        contact_id: contact.id,
+        contact_id: contactId,
         type: 'form_submission',
         summary: `Saved party quote: ${summary || 'no summary'}${slotDisplay ? ` — ${slotDisplay}` : ''}`,
         metadata: { page: 'party-quote', action: 'save_for_later', quoteData, partyDate, partyTime },
       })
+    } catch (err) {
+      console.error('Interaction insert error (non-fatal):', err)
     }
-  } catch (err) {
-    console.error('DB save error (non-fatal):', err)
   }
 
   // Send email with saved quote link
