@@ -5,6 +5,8 @@ import DynamicTypingSection from '@/components/DynamicTypingSection'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import { getSupabase } from '@/lib/supabase'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: 'Party Room Rental | Host Hampton, Speonk NY',
   description:
