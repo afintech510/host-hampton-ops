@@ -8,6 +8,7 @@ interface Props {
   selectedSlot: TimeSlot | null
   onSelectSlot: (slot: TimeSlot) => void
   durationMin: number
+  heading?: string
 }
 
 function formatTime(hhmm: string): string {
@@ -42,11 +43,15 @@ export default function TimeSlotPanel({
   selectedSlot,
   onSelectSlot,
   durationMin,
+  heading,
 }: Props) {
   const openSlots = slots.filter(s => s.status === 'open')
 
   return (
     <div>
+      {heading && (
+        <h3 className="font-serif text-base font-bold text-hampton-navy mb-2">{heading}</h3>
+      )}
       <div className="flex items-center justify-between mb-3">
         <h4 className="font-serif text-sm text-hampton-navy">
           {formatDateLabel(dateStr)}

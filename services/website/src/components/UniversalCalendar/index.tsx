@@ -20,6 +20,9 @@ export default function UniversalCalendar({
   expandable = false,
   initialExpanded = true,
   showSummary = true,
+  selectorVariant,
+  timeSlotHeading,
+  showTimePlaceholder = false,
   onSelect,
   onBook,
 }: UniversalCalendarProps) {
@@ -147,6 +150,7 @@ export default function UniversalCalendar({
             types={types}
             selected={resolvedType}
             onSelect={handleTypeChange}
+            variant={selectorVariant}
           />
         )}
 
@@ -163,15 +167,20 @@ export default function UniversalCalendar({
         />
 
         {/* Time slot panel — shows when a date is selected */}
-        {selectedDate && slots[selectedDate] && currentBookingType && (
+        {selectedDate && slots[selectedDate] && currentBookingType ? (
           <TimeSlotPanel
             dateStr={selectedDate}
             slots={slots[selectedDate]}
             selectedSlot={selectedSlot}
             onSelectSlot={handleSelectSlot}
             durationMin={currentBookingType.slot_duration_min}
+            heading={timeSlotHeading}
           />
-        )}
+        ) : showTimePlaceholder && !selectedDate ? (
+          <p className="text-sm text-hampton-mauve italic py-4 text-center">
+            Select a date to see available times ⤴
+          </p>
+        ) : null}
 
         {/* Summary footer with CTA */}
         {showSummary && <SummaryFooter selection={selection} onBook={handleBook} />}

@@ -52,6 +52,9 @@ export interface UniversalCalendarProps {
   initialExpanded?: boolean
   compact?: boolean
   showSummary?: boolean
+  selectorVariant?: 'pills' | 'tiles'
+  timeSlotHeading?: string
+  showTimePlaceholder?: boolean
   onSelect?: (selection: CalendarSelection) => void
   onBook?: (selection: CalendarSelection) => void
 }
