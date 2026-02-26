@@ -75,6 +75,7 @@ interface MenuItem {
   description: string | null
   price_cents: number
   price_label: string | null
+  price_type: string
   category: string
 }
 
@@ -92,7 +93,7 @@ export default async function PartyRoomRental() {
     const supabase = getSupabase()
     const { data } = await supabase
       .from('pricing_items')
-      .select('id, name, description, category, price_cents, price_label')
+      .select('id, name, description, category, price_cents, price_label, price_type')
       .eq('is_active', true)
       .or('event_types.cs.{room-rental},event_types.is.null')
       .in('category', ['service-add-on', 'decor-add-on'])

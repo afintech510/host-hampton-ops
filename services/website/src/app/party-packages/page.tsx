@@ -16,6 +16,7 @@ export interface PricingItem {
   category: string
   price_cents: number
   price_label: string | null
+  price_type: 'flat' | 'per_person' | 'per_hour'
   is_popular: boolean
   sort_order: number
 }
@@ -26,7 +27,7 @@ export default async function PartyPackages() {
     const supabase = getSupabase()
     const { data } = await supabase
       .from('pricing_items')
-      .select('id, name, description, category, price_cents, price_label, is_popular, sort_order')
+      .select('id, name, description, category, price_cents, price_label, price_type, is_popular, sort_order')
       .eq('is_active', true)
       .or('event_types.cs.{kids-party},event_types.is.null')
       .order('sort_order', { ascending: true })

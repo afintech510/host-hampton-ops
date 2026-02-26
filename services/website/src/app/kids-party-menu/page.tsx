@@ -25,7 +25,7 @@ export default async function KidsPartyMenuPage({
     const supabase = getSupabase()
     const { data } = await supabase
       .from('pricing_items')
-      .select('id, name, description, category, price_cents, price_label, is_popular, sort_order, emoji')
+      .select('id, name, description, category, price_cents, price_label, price_type, is_popular, sort_order, emoji')
       .eq('is_active', true)
       .or('event_types.cs.{kids-party},event_types.is.null')
       .order('sort_order', { ascending: true })

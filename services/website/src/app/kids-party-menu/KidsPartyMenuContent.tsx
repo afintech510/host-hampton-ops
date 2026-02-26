@@ -241,9 +241,13 @@ export default function KidsPartyMenuContent({
       ...Array.from(selectedBeverages), ...Array.from(selectedDecor), ...Array.from(selectedEntertainment),
       ...Array.from(selectedPartyAddOns),
     ]
-    for (const id of allSelected) sum += itemMap.get(id)?.price_cents ?? 0
+    for (const id of allSelected) {
+      const item = itemMap.get(id)
+      if (!item) continue
+      sum += item.price_type === 'per_person' ? item.price_cents * guestCount : item.price_cents
+    }
     return sum
-  }, [selectedTheme, extraGuests, selectedActivities, selectedFood, selectedDesserts, selectedBeverages, selectedDecor, selectedEntertainment, selectedPartyAddOns, itemMap])
+  }, [selectedTheme, extraGuests, guestCount, selectedActivities, selectedFood, selectedDesserts, selectedBeverages, selectedDecor, selectedEntertainment, selectedPartyAddOns, itemMap])
 
   const addOnCount =
     selectedActivities.size + selectedFood.size + selectedDesserts.size +
@@ -274,7 +278,14 @@ export default function KidsPartyMenuContent({
       if (ids.size === 0) return
       const names = Array.from(ids).map(id => {
         const item = itemMap.get(id)
-        return item ? (item.price_cents > 0 ? `${item.name} (${fmt(item.price_cents)})` : item.name) : ''
+        if (!item) return ''
+        if (item.price_cents === 0) return item.name
+        if (item.price_type === 'per_person') {
+          const perUnit = fmt(item.price_cents)
+          const lineTotal = fmt(item.price_cents * guestCount)
+          return `${item.name} (${perUnit} x ${guestCount} = ${lineTotal})`
+        }
+        return `${item.name} (${fmt(item.price_cents)})`
       }).filter(Boolean)
       lines.push(`${label}: ${names.join(', ')}`)
     }

@@ -5,6 +5,7 @@ export interface PricingItem {
   category: string
   price_cents: number
   price_label: string | null
+  price_type: 'flat' | 'per_person' | 'per_hour'
   is_popular: boolean
   sort_order: number
   emoji: string | null

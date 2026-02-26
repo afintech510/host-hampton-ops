@@ -16,6 +16,7 @@ interface PricingItem {
   category: string
   price_cents: number
   price_label: string | null
+  price_type: 'flat' | 'per_person' | 'per_hour'
   is_popular: boolean
   sort_order: number
 }
@@ -33,7 +34,7 @@ export default async function PartyMenuPage() {
     const supabase = getSupabase()
     const { data } = await supabase
       .from('pricing_items')
-      .select('id, name, description, category, price_cents, price_label, is_popular, sort_order, event_types')
+      .select('id, name, description, category, price_cents, price_label, price_type, is_popular, sort_order, event_types')
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
     items = (data || []) as (PricingItem & { event_types: string[] | null })[]
