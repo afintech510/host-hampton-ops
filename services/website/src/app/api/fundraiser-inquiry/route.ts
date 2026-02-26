@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
       }),
       resend.emails.send({
         from,
-        to: 'hosthampton295@gmail.com',
+        to: 'alark51@gmail.com',
         subject: `New fundraiser lead: ${organizationName} — ${contactName}`,
         html: fundraiserInquiryNotifyHtml({
           contactName,

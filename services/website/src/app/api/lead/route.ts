@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
     await Promise.allSettled([
       resend.emails.send({
         from,
-        to: 'hosthampton295@gmail.com',
+        to: 'alark51@gmail.com',
         subject: `New lead: ${eventType} — ${fullName}`,
         html: leadNotifyHtml({
           fullName,
