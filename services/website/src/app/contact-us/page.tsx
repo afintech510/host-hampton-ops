@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Phone, Mail, MapPin, Clock, Instagram, Facebook, Navigation } from 'lucide-react'
+import ContactForm from '@/components/ContactForm'
 
 export const metadata: Metadata = {
   title: 'Contact Us | Host Hampton',
@@ -81,27 +82,7 @@ export default function ContactUs() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-hampton-pink/20 p-6 shadow-sm">
-          <h2 className="font-serif text-2xl text-hampton-navy mb-5">Send a Message</h2>
-          <form className="space-y-4" action="mailto:hosthampton295@gmail.com" method="get">
-            <div>
-              <label className="block text-xs font-medium text-hampton-navy uppercase tracking-wide mb-1">Your Name</label>
-              <input type="text" name="name" required placeholder="Jane Smith"
-                     className="w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-pink/40" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-hampton-navy uppercase tracking-wide mb-1">Email</label>
-              <input type="email" name="email" required placeholder="you@email.com"
-                     className="w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-pink/40" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-hampton-navy uppercase tracking-wide mb-1">Message</label>
-              <textarea name="body" rows={4} placeholder="Tell us about your event..."
-                        className="w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-pink/40 resize-none" />
-            </div>
-            <button type="submit" className="btn-primary w-full text-center">Send Message</button>
-          </form>
-        </div>
+        <ContactForm />
       </section>
 
       {/* ── Serving These Areas ── */}

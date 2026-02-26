@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
+import { upsertContact } from '@/lib/contacts'
 
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
@@ -82,6 +83,16 @@ export async function POST(req: NextRequest) {
       }
 
       console.log('Free booking created:', bookingRef, 'for', contactEmail, 'on', partyDate)
+
+      // Upsert contact (non-fatal)
+      await upsertContact({
+        name: contactName,
+        email: contactEmail,
+        phone: contactPhone,
+        sourceDetail: `Booking — ${eventType || 'other'}`,
+        serviceInterests: [bookingTypeSlug || 'general'],
+      })
+
       return NextResponse.json({ url: `https://${host}/book/success?ref=${bookingRef}` })
     }
 

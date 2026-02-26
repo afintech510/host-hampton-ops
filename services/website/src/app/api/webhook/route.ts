@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
+import { upsertContact } from '@/lib/contacts'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 
@@ -72,6 +73,15 @@ export async function POST(req: NextRequest) {
           await supabase.rpc('decrement_event_tickets', { eid: m.eventId, qty })
         }
         console.log('Ticket created:', ticketRef, 'for', m.customerEmail)
+
+        // Upsert contact (non-fatal)
+        await upsertContact({
+          name: m.customerName,
+          email: m.customerEmail,
+          phone: m.customerPhone,
+          sourceDetail: `Event ticket — ${evt?.title || 'event'}`,
+          serviceInterests: ['event'],
+        })
       }
 
       // Send emails
@@ -161,6 +171,15 @@ export async function POST(req: NextRequest) {
 
       console.log('Multi-session tickets created:', groupRef, ticketRefs.length, 'sessions for', m.customerEmail)
 
+      // Upsert contact (non-fatal)
+      await upsertContact({
+        name: m.customerName,
+        email: m.customerEmail,
+        phone: m.customerPhone,
+        sourceDetail: `Event ticket — ${evt?.title || 'event'} (series)`,
+        serviceInterests: ['event'],
+      })
+
       // Send emails
       if (process.env.RESEND_API_KEY && evt) {
         const resend = new Resend(process.env.RESEND_API_KEY)
@@ -247,6 +266,15 @@ export async function POST(req: NextRequest) {
     } else {
       console.log('Booking created:', bookingRef, 'for', m.contactEmail, 'on', partyDate)
 
+      // Upsert contact (non-fatal)
+      await upsertContact({
+        name: m.contactName,
+        email: m.contactEmail,
+        phone: m.contactPhone,
+        sourceDetail: `Booking deposit — ${m.eventType || 'party'}`,
+        serviceInterests: [m.bookingTypeSlug || m.eventType || 'general'],
+      })
+
       // Write back to Google Calendar
       if (partyDate && m.partyTime) {
         const duration = parseInt(m.slotDurationMin || '120', 10)
@@ -282,6 +310,11 @@ export async function POST(req: NextRequest) {
 
       const depositAmount = m.depositCents ? parseInt(m.depositCents, 10) / 100 : 250
       const depositFormatted = `$${depositAmount.toFixed(2)}`
+      const isRoomRental = (m.eventType || '').includes('room-rental')
+
+      // Format event type slug to display name
+      const eventTypeDisplay = (m.eventType || 'Party')
+        .split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 
       const packageLine = m.packageName
         ? `<tr><td style="padding:8px 0;color:#555;"><strong>Package</strong></td><td style="padding:8px 0;color:#555;">${m.packageName}</td></tr>`
@@ -290,7 +323,7 @@ export async function POST(req: NextRequest) {
         ? `<tr><td style="padding:8px 0;color:#555;"><strong>Guest of honor</strong></td><td style="padding:8px 0;color:#555;">${m.childName}${m.childAge ? `, turning ${m.childAge}` : ''}</td></tr>`
         : ''
       const guestLine = m.guestCount
-        ? `<tr><td style="padding:8px 0;color:#555;"><strong>Guest count</strong></td><td style="padding:8px 0;color:#555;">~${m.guestCount} children</td></tr>`
+        ? `<tr><td style="padding:8px 0;color:#555;"><strong>Guest count</strong></td><td style="padding:8px 0;color:#555;">~${m.guestCount}${isRoomRental ? ' guests' : ' children'}</td></tr>`
         : ''
       const notesLine = m.notes
         ? `<div style="background:#fffbeb;padding:12px 16px;border-left:4px solid #f59e0b;border-radius:4px;margin-top:16px;color:#666;font-size:14px;"><strong>Your notes:</strong> ${m.notes}</div>`
@@ -322,7 +355,7 @@ export async function POST(req: NextRequest) {
           <tr><td style="padding:8px 0;color:#555;width:140px;"><strong>Booking ref</strong></td><td style="padding:8px 0;color:#1a2744;font-weight:bold;">${bookingRef}</td></tr>
           <tr><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;"><strong>Date</strong></td><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;">${dateFormatted}</td></tr>
           <tr><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;"><strong>Time</strong></td><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;">${m.partyTime || 'TBD'}</td></tr>
-          <tr><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;"><strong>Event type</strong></td><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;">${m.eventType || 'Party'}</td></tr>
+          <tr><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;"><strong>Event type</strong></td><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;">${eventTypeDisplay}</td></tr>
           ${packageLine}${childLine}${guestLine}
         </table>
         ${notesLine}
@@ -341,20 +374,25 @@ export async function POST(req: NextRequest) {
       </div>
     </div>
 
-    <!-- Gratuity tip -->
+    ${isRoomRental ? '' : `<!-- Gratuity tip -->
     <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin-bottom:24px;">
       <p style="margin:0;font-size:13px;color:#92400e;"><strong>🎁 Party helper tip:</strong> A 10–15% gratuity for your party helpers is greatly appreciated and goes directly to our team!</p>
-    </div>
+    </div>`}
 
     <!-- What's next -->
     <div style="background:#f0ece7;border-radius:10px;padding:20px;margin-bottom:24px;">
       <h3 style="font-size:14px;color:#1a2744;margin:0 0 14px;">What happens next</h3>
-      <ol style="margin:0;padding-left:20px;color:#555;line-height:2;font-size:14px;">
+      ${isRoomRental ? `<ol style="margin:0;padding-left:20px;color:#555;line-height:2;font-size:14px;">
+        <li>We'll reach out <strong>within 24 hours</strong> to confirm your rental details</li>
+        <li>We'll go over any setup needs, vendor access, or special requirements</li>
+        <li>A $500 refundable security deposit is collected separately before your event</li>
+        <li>Remaining balance is due <strong>${balanceDueDate}</strong></li>
+      </ol>` : `<ol style="margin:0;padding-left:20px;color:#555;line-height:2;font-size:14px;">
         <li>We'll reach out <strong>within 24 hours</strong> to confirm your booking details</li>
         <li>You'll receive a personalized themed EVITE digital invitation</li>
         <li>We'll work together to finalize themes, activities &amp; fun details</li>
         <li>Remaining balance is due <strong>${balanceDueDate}</strong></li>
-      </ol>
+      </ol>`}
     </div>
 
     <!-- Contact -->

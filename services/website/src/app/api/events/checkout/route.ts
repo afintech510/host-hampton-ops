@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
+import { upsertContact } from '@/lib/contacts'
 import { Resend } from 'resend'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTemplates'
 
@@ -88,6 +89,15 @@ export async function POST(req: NextRequest) {
         })
         await supabase.rpc('decrement_session_tickets', { sid: sess.id, qty: quantity })
       }
+
+      // Upsert contact (non-fatal)
+      await upsertContact({
+        name: customerName,
+        email: customerEmail,
+        phone: customerPhone,
+        sourceDetail: `Event RSVP — ${event.title} (series)`,
+        serviceInterests: ['event'],
+      })
 
       // Send confirmation emails
       if (process.env.RESEND_API_KEY) {
@@ -261,6 +271,15 @@ export async function POST(req: NextRequest) {
     } else {
       await supabase.rpc('decrement_event_tickets', { eid: eventId, qty: quantity })
     }
+
+    // Upsert contact (non-fatal)
+    await upsertContact({
+      name: customerName,
+      email: customerEmail,
+      phone: customerPhone,
+      sourceDetail: `Event RSVP — ${event.title}`,
+      serviceInterests: ['event'],
+    })
 
     // Send emails
     const dateDisplay = sessionRow?.session_date
