@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -35,6 +35,23 @@ export default function ImageSlider({
     [images.length],
   )
 
+  // Touch swipe
+  const touchX = useRef<number | null>(null)
+
+  function onTouchStart(e: React.TouchEvent) {
+    touchX.current = e.touches[0].clientX
+    setPaused(true)
+  }
+
+  function onTouchEnd(e: React.TouchEvent) {
+    if (touchX.current === null) return
+    const delta = e.changedTouches[0].clientX - touchX.current
+    if (Math.abs(delta) > 40) {
+      delta < 0 ? next() : prev()
+    }
+    touchX.current = null
+  }
+
   // Auto-play
   useEffect(() => {
     if (!multi || paused) return
@@ -49,6 +66,8 @@ export default function ImageSlider({
       className={`relative overflow-hidden ${aspectRatio} ${className}`}
       onMouseEnter={() => multi && setPaused(true)}
       onMouseLeave={() => multi && setPaused(false)}
+      onTouchStart={multi ? onTouchStart : undefined}
+      onTouchEnd={multi ? onTouchEnd : undefined}
     >
       {images.map((src, i) => (
         <Image
