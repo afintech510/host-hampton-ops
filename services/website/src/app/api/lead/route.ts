@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
-import { leadNotifyHtml } from '@/lib/emailTemplates'
+import { leadNotifyHtml, leadConfirmHtml } from '@/lib/emailTemplates'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,9 +39,10 @@ export async function POST(req: NextRequest) {
   const firstName = nameParts[0]
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null
 
-  // Build service interests from event type
+  // Build service interests from event type / source page
   const serviceInterests: string[] = []
-  if (eventType === 'Kids Birthday Party') serviceInterests.push('kids-party')
+  if (sourcePage === 'party-room-rental') serviceInterests.push('room-rental')
+  else if (eventType === 'Kids Birthday Party') serviceInterests.push('kids-party')
   else if (eventType === 'Studio Rental') serviceInterests.push('party-room')
   else if (eventType === 'Mobile Services') serviceInterests.push('mobile')
   else if (eventType === 'Permanent Jewelry') serviceInterests.push('permanent-jewelry')
@@ -109,13 +110,31 @@ export async function POST(req: NextRequest) {
     console.error('Database save error (non-fatal):', dbErr)
   }
 
-  // Send admin notification email via Resend
+  // Send emails via Resend
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY)
     const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
 
-    await Promise.allSettled([
-      resend.emails.send({
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'staging.hosthampton.com'
+    const protocol = host.includes('localhost') ? 'http' : 'https'
+
+    // Build book link for customer confirmation
+    const bookParams = new URLSearchParams({ type: 'room-rental' })
+    if (preferredDate) bookParams.set('date', preferredDate)
+    const bookLink = `${protocol}://${host}/book?${bookParams.toString()}`
+
+    // Format date for display
+    let dateDisplay: string | undefined
+    if (preferredDate) {
+      try {
+        const d = new Date(preferredDate + 'T12:00:00')
+        dateDisplay = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+      } catch { dateDisplay = preferredDate }
+    }
+
+    const emails: Parameters<typeof resend.emails.send>[0][] = [
+      // Admin notification
+      {
         from,
         to: 'alark51@gmail.com',
         subject: `New lead: ${eventType} — ${fullName}`,
@@ -131,8 +150,26 @@ export async function POST(req: NextRequest) {
           timeOfDay,
           notes,
         }),
-      }),
-    ])
+      },
+    ]
+
+    // Customer confirmation (for room-rental and other leads with email)
+    if (sourcePage === 'party-room-rental') {
+      emails.push({
+        from,
+        to: email,
+        subject: 'Your Room Rental Inquiry — Host Hampton',
+        html: leadConfirmHtml({
+          customerName: fullName,
+          eventType,
+          preferredDate: dateDisplay,
+          guestCount,
+          bookLink,
+        }),
+      })
+    }
+
+    await Promise.allSettled(emails.map(e => resend.emails.send(e)))
   } else {
     console.warn('RESEND_API_KEY not set — skipping lead notification email')
   }

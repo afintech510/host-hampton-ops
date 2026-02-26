@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Check, ChevronDown, Clock, Camera, Briefcase, Palette } from 'lucide-react'
 import DynamicTypingSection from '@/components/DynamicTypingSection'
+import RoomRentalLeadForm from '@/components/RoomRentalLeadForm'
 import { getSupabase } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
@@ -182,6 +183,9 @@ export default async function PartyRoomRental() {
           </div>
         </div>
       </section>
+
+      {/* ── Lead Capture Form ── */}
+      <RoomRentalLeadForm />
 
       {/* ── Hourly Studio Rental ── */}
       <section className="py-16 px-4 sm:px-6">

@@ -336,6 +336,53 @@ export function savedQuoteHtml(d: {
 </body></html>`
 }
 
+/* ── Lead Confirmation (customer) ────────────────────────────── */
+
+export function leadConfirmHtml(d: {
+  customerName: string
+  eventType: string
+  preferredDate?: string
+  guestCount?: string
+  bookLink: string
+}): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  const dateRow = d.preferredDate
+    ? `<tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:140px;">Preferred Date</td><td style="padding:10px 12px;">${d.preferredDate}</td></tr>`
+    : ''
+  const guestRow = d.guestCount
+    ? `<tr><td style="padding:10px 12px;font-weight:bold;width:140px;">Guest Count</td><td style="padding:10px 12px;">~${d.guestCount}</td></tr>`
+    : ''
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton &middot; Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0 0 6px;font-weight:normal;">We Got Your Inquiry!</h1>
+    <p style="color:${BRAND.navy};opacity:0.7;font-size:15px;margin:0;">We&rsquo;ll be in touch within 24 hours</p>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Thank you for your interest in hosting your event at Host Hampton! Here&rsquo;s a summary of your inquiry:</p>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px;">
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:140px;">Event</td><td style="padding:10px 12px;">${d.eventType}</td></tr>
+      ${dateRow}
+      ${guestRow}
+    </table>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Ready to secure your date? Reserve with just a $99 deposit:</p>
+    <div style="text-align:center;margin-bottom:24px;">
+      <a href="${d.bookLink}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Check Availability &amp; Reserve</a>
+    </div>
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? We&rsquo;re here to help!<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline('Your space. Your vision. We make it happen.')}
+</div>
+</body></html>`
+}
+
 /* ── Ticket Refund (customer) ─────────────────────────────────── */
 
 export function ticketRefundHtml(d: { customerName: string; eventTitle: string; ticketRef: string; refundAmount: string; reason?: string }): string {
