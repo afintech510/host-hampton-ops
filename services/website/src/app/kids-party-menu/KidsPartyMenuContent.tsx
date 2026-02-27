@@ -395,13 +395,13 @@ export default function KidsPartyMenuContent({
     sum += extraGuests * EXTRA_GUEST_CENTS
 
     // Activities — no qty
-    for (const id of selectedActivities) {
+    for (const id of Array.from(selectedActivities)) {
       const item = itemMap.get(id)
       if (!item) continue
       sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount : item.price_cents
     }
     // Food — qty-aware
-    for (const id of selectedFood) {
+    for (const id of Array.from(selectedFood)) {
       const item = itemMap.get(id)
       if (!item) continue
       const qty = foodQty.get(id) ?? 1
@@ -410,13 +410,17 @@ export default function KidsPartyMenuContent({
         : item.price_cents * qty
     }
     // Desserts, Beverages, Entertainment, Party add-ons — no qty
-    for (const id of [...selectedDesserts, ...selectedBeverages, ...selectedEntertainment, ...selectedPartyAddOns]) {
+    const flatNoQty = [
+      ...Array.from(selectedDesserts), ...Array.from(selectedBeverages),
+      ...Array.from(selectedEntertainment), ...Array.from(selectedPartyAddOns),
+    ]
+    for (const id of flatNoQty) {
       const item = itemMap.get(id)
       if (!item) continue
       sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount : item.price_cents
     }
     // Decor — qty-aware for balloon items
-    for (const id of selectedDecor) {
+    for (const id of Array.from(selectedDecor)) {
       const item = itemMap.get(id)
       if (!item) continue
       const qty = decorQty.get(id) ?? 1
