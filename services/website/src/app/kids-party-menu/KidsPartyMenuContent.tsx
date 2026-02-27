@@ -302,6 +302,7 @@ export default function KidsPartyMenuContent({
   const [selectedPartyAddOns, setSelectedPartyAddOns] = useState<Set<string>>(new Set(restored?.extras))
 
   /* ── DIY rental state ── */
+  const [isDIYOpen, setIsDIYOpen] = useState(false)
   const [rentalDate, setRentalDate] = useState('')
 
   /* ── form state ── */
@@ -678,10 +679,37 @@ export default function KidsPartyMenuContent({
 
           {/* ── DIY Party — Rent the Studio ── */}
           <div className="mt-8 pt-7 border-t-2 border-dashed border-hampton-mauve/25">
-            <div className="flex items-center gap-2.5 mb-1">
-              <Building2 size={18} className="text-hampton-navy/60 shrink-0" />
-              <h3 className="font-serif text-lg font-bold text-hampton-navy">DIY Party — Rent the Studio</h3>
-            </div>
+            {/* Toggle header */}
+            <button
+              type="button"
+              onClick={() => setIsDIYOpen(o => !o)}
+              className={`w-full flex items-center justify-between gap-4 px-5 py-4 rounded-2xl border-2 transition-all duration-200 ${
+                isDIYOpen
+                  ? 'border-hampton-navy bg-hampton-navy text-white'
+                  : 'border-hampton-mauve/30 bg-hampton-blue/5 hover:border-hampton-navy/40'
+              }`}
+            >
+              <div className="flex items-center gap-3 text-left">
+                <Building2 size={18} className={isDIYOpen ? 'text-hampton-pink' : 'text-hampton-navy/60'} />
+                <div>
+                  <p className={`font-bold text-sm ${isDIYOpen ? 'text-white' : 'text-hampton-navy'}`}>
+                    DIY Party — Rent the Studio
+                  </p>
+                  <p className={`text-xs mt-0.5 ${isDIYOpen ? 'text-white/70' : 'text-hampton-navy/50'}`}>
+                    Bring your own decorations &bull; 3 hr minimum
+                  </p>
+                </div>
+              </div>
+              <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                isDIYOpen ? 'border-white bg-hampton-pink' : 'border-hampton-mauve/40'
+              }`}>
+                {isDIYOpen && <Check size={14} className="text-white" />}
+              </span>
+            </button>
+
+            {/* Collapsible content */}
+            {isDIYOpen && (
+            <div className="mt-4">
             <p className="text-xs text-hampton-navy/50 mb-5 leading-relaxed">
               Bring your own vision. <strong className="text-hampton-navy/70">3-hour minimum.</strong> Setup and cleanup time must be included within your rental window — plan accordingly.
             </p>
@@ -752,6 +780,8 @@ export default function KidsPartyMenuContent({
                 View full rental details &amp; availability →
               </a>
             </div>
+            </div>
+          )}
           </div>
         </CategoryModule>
 

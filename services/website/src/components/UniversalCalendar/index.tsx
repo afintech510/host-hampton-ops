@@ -25,6 +25,7 @@ export default function UniversalCalendar({
   showTimePlaceholder = false,
   onSelect,
   onBook,
+  onTypeChange,
 }: UniversalCalendarProps) {
   const [viewDate, setViewDate] = useState(() => {
     if (defaultDate) {
@@ -103,7 +104,8 @@ export default function UniversalCalendar({
     setActiveType(slug)
     setSelectedDate(null)
     setSelectedSlot(null)
-  }, [])
+    if (onTypeChange) onTypeChange(slug)
+  }, [onTypeChange])
 
   const handleBook = useCallback(() => {
     if (!selectedDate || !selectedSlot || !currentBookingType) return

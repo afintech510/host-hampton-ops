@@ -199,6 +199,7 @@ function BookingForm() {
   const fromQuote = params.get('from') === 'quote'
   const encodedQuote = params.get('q') || ''
 
+  const [activeBookingSlug, setActiveBookingSlug] = useState(defaultType || '')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -249,8 +250,10 @@ function BookingForm() {
   }, [fromQuote, encodedQuote])
 
   // Fetch themes when kids-party is selected and no quote loaded
-  const isKidsParty = selection?.bookingType?.tags?.some(t => ['kids-party', 'childrens'].includes(t))
-    ?? (defaultType === 'kids-party')
+  const KIDS_TAGS = ['kids-party', 'childrens']
+  const isKidsParty =
+    !!selection?.bookingType?.tags?.some(t => KIDS_TAGS.includes(t)) ||
+    KIDS_TAGS.includes(activeBookingSlug)
   useEffect(() => {
     if (!isKidsParty || quoteData) return
     fetch('/api/pricing?category=party-theme&event_type=kids-party')
@@ -319,8 +322,10 @@ function BookingForm() {
   const bookingType = selection?.bookingType
   const hasDeposit = bookingType ? bookingType.requires_deposit && bookingType.deposit_cents > 0 : true
   const depositDollars = bookingType ? Math.round(bookingType.deposit_cents / 100) : 99
-  const showChildFields = bookingType?.tags?.some(t => ['kids-party', 'childrens'].includes(t)) ?? true
-  const isRoomRental = bookingType?.slug === 'room-rental'
+  const isRoomRental = bookingType?.slug === 'room-rental' || activeBookingSlug === 'room-rental'
+  const showChildFields = bookingType?.tags?.some(t => ['kids-party', 'childrens'].includes(t))
+    ?? ['kids-party', 'childrens'].includes(activeBookingSlug)
+  const showContactForm = !!selection?.timeSlot || isKidsParty || isRoomRental
 
   return (
     <div className="min-h-screen">
@@ -354,6 +359,7 @@ function BookingForm() {
             timeSlotHeading="Select Party Start Time"
             showTimePlaceholder={true}
             onSelect={handleCalendarSelect}
+            onTypeChange={setActiveBookingSlug}
           />
         </div>
 
@@ -383,23 +389,31 @@ function BookingForm() {
           </div>
         )}
 
-        {/* Contact form — appears when date & time selected */}
-        {selection?.timeSlot && (
+        {/* Contact form — appears immediately for kids-party / room-rental; otherwise after timeslot selected */}
+        {showContactForm && (
           <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-hampton-pink/20 shadow-sm p-8 space-y-6">
-            {/* Selected slot display */}
-            <div className="bg-hampton-pink/10 rounded-xl px-5 py-3 text-center">
-              <p className="text-hampton-navy text-sm font-semibold">
-                {bookingType?.label || 'Booking'} &middot;{' '}
-                {new Date(selection.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                {' at '}
-                {(() => {
-                  const [h, m] = selection.timeSlot!.start.split(':').map(Number)
-                  const ampm = h >= 12 ? 'PM' : 'AM'
-                  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
-                  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
-                })()}
-              </p>
-            </div>
+            {/* Selected slot display — only once date & time chosen */}
+            {selection?.timeSlot ? (
+              <div className="bg-hampton-pink/10 rounded-xl px-5 py-3 text-center">
+                <p className="text-hampton-navy text-sm font-semibold">
+                  {bookingType?.label || 'Booking'} &middot;{' '}
+                  {new Date(selection.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {' at '}
+                  {(() => {
+                    const [h, m] = selection.timeSlot!.start.split(':').map(Number)
+                    const ampm = h >= 12 ? 'PM' : 'AM'
+                    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+                    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+                  })()}
+                </p>
+              </div>
+            ) : (
+              <div className="bg-hampton-blue/10 rounded-xl px-5 py-3 text-center">
+                <p className="text-hampton-navy/70 text-sm">
+                  Select a date &amp; time above to complete your booking
+                </p>
+              </div>
+            )}
 
             {/* Contact Info */}
             <div className="grid sm:grid-cols-2 gap-4">

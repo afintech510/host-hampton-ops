@@ -57,4 +57,5 @@ export interface UniversalCalendarProps {
   showTimePlaceholder?: boolean
   onSelect?: (selection: CalendarSelection) => void
   onBook?: (selection: CalendarSelection) => void
+  onTypeChange?: (slug: string) => void
 }
