@@ -128,19 +128,19 @@ export default async function Home() {
 
       {/* ── DESIGN YOUR PARTY CTA ─────────────────────────── */}
       <section className="py-16 px-4">
-        <div className="max-w-4xl mx-auto bg-hampton-navy rounded-3xl px-8 py-12 text-center shadow-xl">
-          <p className="text-hampton-pink text-sm font-semibold tracking-widest uppercase mb-3">Build It Your Way</p>
-          <h2 className="font-serif text-3xl md:text-4xl text-white mb-4">Design Your Perfect Party</h2>
-          <p className="text-hampton-blue/80 text-base max-w-xl mx-auto mb-8 leading-relaxed">
+        <div className="max-w-4xl mx-auto bg-gradient-to-br from-[#BCCDEB] to-[#dae6f0] rounded-3xl px-8 py-12 text-center shadow-xl border border-[#A1B5C8]/40">
+          <p className="text-hampton-navy text-sm font-semibold tracking-widest uppercase mb-3">Build It Your Way</p>
+          <h2 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-4">Design Your Perfect Party</h2>
+          <p className="text-hampton-navy/70 text-base max-w-xl mx-auto mb-8 leading-relaxed">
             Browse our full menu, pick your theme, choose add-ons, and see your real-time price — all before you commit to anything.
           </p>
           <Link
             href="/kids-party-menu"
-            className="inline-block bg-hampton-pink text-hampton-navy font-bold px-10 py-4 rounded-full text-base hover:bg-hampton-pink/90 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+            className="inline-block bg-hampton-navy text-hampton-ivory font-bold px-10 py-4 rounded-full text-base hover:bg-hampton-navy/90 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
           >
             Design Your Party
           </Link>
-          <p className="text-hampton-blue/40 text-xs mt-4">Reserve with just $99 · Change details anytime</p>
+          <p className="text-hampton-navy/40 text-xs mt-4">Reserve with just $99 · Change details anytime</p>
         </div>
       </section>
 
