@@ -66,7 +66,7 @@ export default function TimeSlotPanel({
           No available times on this date
         </p>
       ) : (
-        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+        <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto scrollbar-hide">
           {openSlots.map(slot => {
             const isSelected =
               selectedSlot?.start === slot.start && selectedSlot?.end === slot.end
@@ -75,7 +75,7 @@ export default function TimeSlotPanel({
                 key={slot.start}
                 onClick={() => onSelectSlot(slot)}
                 className={`
-                  px-3 py-2.5 rounded-xl text-sm font-semibold transition-all border
+                  px-2 py-1.5 rounded-lg text-xs font-semibold transition-all border
                   ${isSelected
                     ? 'bg-hampton-navy text-white border-hampton-navy shadow-md scale-[1.02]'
                     : 'bg-white border-hampton-mauve/15 text-hampton-navy hover:border-hampton-blue hover:scale-[1.02] active:scale-95'

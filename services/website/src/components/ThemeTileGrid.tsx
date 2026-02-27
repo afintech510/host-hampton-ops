@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { X, Check, Star } from 'lucide-react'
+import ImageSlider from '@/components/ImageSlider'
 
 interface ThemePrice {
   name: string
@@ -34,7 +35,7 @@ const themes = [
   {
     name: 'Glow Party',
     price: 950,
-    img: '/images/theme-glow.png',
+    imgs: ['/images/theme-glow.png'],
     tag: 'Most Popular',
     desc: 'Black lights, UV face paint, neon accessories, glow bracelets, and a dance party.',
     extendedDesc: 'Transform our studio into a neon wonderland! Every guest gets glow bracelets, neon necklaces, and UV face paint from our professional station. The entire studio is lit with black lights and neon LED strips. We crank up the DJ playlist, and kids dance the night away in a truly electric atmosphere. The perfect party for ages 6–14.',
@@ -42,7 +43,7 @@ const themes = [
   {
     name: 'Swiftie Party',
     price: 850,
-    img: '/images/theme-swiftie.png',
+    imgs: ['/images/theme-swiftie.png'],
     tag: null,
     desc: 'Eras Tour-inspired decor, friendship bracelets, and all the Taylor Swift anthems.',
     extendedDesc: 'Welcome to the Eras Tour — right in our studio! Guests make their own friendship bracelets, sing along to curated Taylor Swift playlists, and pose in front of our Swiftie photo backdrop. The space is decked out in all of Taylor\'s signature colors and aesthetic. Perfect for the Swifties ages 6–14.',
@@ -50,7 +51,7 @@ const themes = [
   {
     name: 'Spa Party',
     price: 850,
-    img: '/images/theme-spa.png',
+    imgs: ['/images/theme-spa.png'],
     tag: null,
     desc: 'Mini manicures, face masks, robes, cucumbers, and full spa-day vibes.',
     extendedDesc: 'Roll out the red carpet — our studio becomes a luxury spa! Every guest gets a robe, cucumber eye pads, a DIY face mask, and a mini manicure. We pipe in relaxing music and set up the full spa aesthetic. Totally kid-safe products, totally unforgettable. Ideal for ages 6–12.',
@@ -58,7 +59,7 @@ const themes = [
   {
     name: 'Slime Party',
     price: 900,
-    img: '/images/theme-slime.png',
+    imgs: ['/images/theme-slime.png', '/images/slime-party-1.jpg', '/images/slime-party-2.jpg', '/images/slime-party-3.jpg', '/images/slime-party-4.jpg'],
     tag: null,
     desc: 'Custom slime-making station with personalized containers and messy fun.',
     extendedDesc: 'Get ready for the ultimate slime lab! Each guest creates their own custom slime — choosing colors, glitter, and add-ins at our slime-making station. They take home their creation in personalized containers. The studio is transformed with slime-themed decor and activities. Perfect for ages 5–12.',
@@ -66,7 +67,7 @@ const themes = [
   {
     name: 'K-Pop Party',
     price: 900,
-    img: '/images/theme-kpop.png',
+    imgs: ['/images/theme-kpop.png'],
     tag: null,
     desc: 'K-pop dance lessons, fan merch station, and all the group vibes.',
     extendedDesc: 'Your favorite K-pop stars come to life! Guests learn choreography to popular K-pop songs, make their own fan merchandise, and strike poses at our photo wall. The studio is lit with stage lighting and filled with K-pop energy. Awesome for fans ages 7–14.',
@@ -74,7 +75,7 @@ const themes = [
   {
     name: 'Barbie Party',
     price: 850,
-    img: '/images/theme-barbie.png',
+    imgs: ['/images/theme-barbie.png'],
     tag: null,
     desc: 'Pink everything, fashion design station, and Barbie World brought to life.',
     extendedDesc: 'Welcome to Barbie World! The studio is fully pink and glamorous. Guests design their own Barbie outfits at our fashion station, walk the runway, and strike their best Barbie poses at the photo wall. We\'ve got all the iconic accessories and Barbie-worthy activities. For ages 4–12.',
@@ -82,7 +83,7 @@ const themes = [
   {
     name: 'Sweets & Treats',
     price: 800,
-    img: '/images/theme-sweets.png',
+    imgs: ['/images/theme-sweets.png'],
     tag: 'Best Value',
     desc: 'Candy decor, dessert decorating station, and sugary sweet celebrations.',
     extendedDesc: 'A party as sweet as the birthday star! Guests decorate their own treats at our dessert station, surrounded by candy-themed decor, lollipop centerpieces, and a pastel dreamland setup. Perfect for ages 3–10 who love all things sweet.',
@@ -90,7 +91,7 @@ const themes = [
   {
     name: 'Toddler Party',
     price: 850,
-    img: '/images/theme-toddler.png',
+    imgs: ['/images/theme-toddler.png'],
     tag: 'Ages 2–4',
     desc: 'Safe, sensory-friendly activities perfectly designed for little ones.',
     extendedDesc: 'The sweetest little celebration! Designed specifically for toddlers ages 2–4, this party features age-appropriate sensory activities, soft play elements, and a magical setup that\'s perfect for the birthday star and their little friends. Safe, fun, and oh-so-adorable.',
@@ -116,7 +117,7 @@ export default function ThemeTileGrid({ themePrices = [] }: { themePrices?: Them
           >
             <div className="relative aspect-[4/3] overflow-hidden">
               <Image
-                src={t.img}
+                src={t.imgs[0]}
                 alt={t.name}
                 fill
                 className="object-cover group-hover:scale-105 transition-transform duration-300"
@@ -163,12 +164,20 @@ export default function ThemeTileGrid({ themePrices = [] }: { themePrices?: Them
           </div>
 
           <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-hampton-pink/20">
-            {/* Left: description */}
-            <div className="p-6">
-              <p className="text-hampton-navy/60 text-xs font-semibold tracking-widest uppercase mb-3">About This Party</p>
-              <p className="text-hampton-navy leading-relaxed text-sm mb-4">{selected.extendedDesc}</p>
-              <p className="font-bold text-hampton-navy text-lg">Starting at ${lookupPrice(selected.name, themePrices, selected.price).toLocaleString()}</p>
-              <p className="text-hampton-navy/50 text-xs mt-1">10 guests included · $35/additional guest</p>
+            {/* Left: photo gallery + description */}
+            <div>
+              <ImageSlider
+                images={selected.imgs}
+                alt={selected.name}
+                aspectRatio="aspect-[16/9]"
+                autoPlayMs={3500}
+              />
+              <div className="p-6">
+                <p className="text-hampton-navy/60 text-xs font-semibold tracking-widest uppercase mb-3">About This Party</p>
+                <p className="text-hampton-navy leading-relaxed text-sm mb-4">{selected.extendedDesc}</p>
+                <p className="font-bold text-hampton-navy text-lg">Starting at ${lookupPrice(selected.name, themePrices, selected.price).toLocaleString()}</p>
+                <p className="text-hampton-navy/50 text-xs mt-1">10 guests included · $35/additional guest</p>
+              </div>
             </div>
 
             {/* Right: included items */}

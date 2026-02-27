@@ -128,7 +128,7 @@ export default async function Home() {
 
       {/* ── DESIGN YOUR PARTY CTA ─────────────────────────── */}
       <section className="py-16 px-4">
-        <div className="max-w-4xl mx-auto bg-gradient-to-br from-[#BCCDEB] to-[#dae6f0] rounded-3xl px-8 py-12 text-center shadow-xl border border-[#A1B5C8]/40">
+        <div className="max-w-4xl mx-auto bg-gradient-to-b from-[#BCCDEB]/40 to-[#F7F2E8]/10 rounded-3xl px-8 py-12 text-center border border-[#A1B5C8]/30">
           <p className="text-hampton-navy text-sm font-semibold tracking-widest uppercase mb-3">Build It Your Way</p>
           <h2 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-4">Design Your Perfect Party</h2>
           <p className="text-hampton-navy/70 text-base max-w-xl mx-auto mb-8 leading-relaxed">
