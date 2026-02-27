@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import Nav from '@/components/Nav'
 import Footer from '@/components/Footer'
+import CrispChat from '@/components/CrispChat'
 
 export const metadata: Metadata = {
   title: {
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
     template: '%s | Host Hampton',
   },
   description:
-    'Host Hampton is a boutique celebration studio in Speonk, NY offering themed birthday parties, permanent jewelry, room rentals, and workshops. Reserve your date with a $250 deposit.',
+    'Host Hampton is a boutique celebration studio in Speonk, NY offering themed birthday parties, permanent jewelry, room rentals, and workshops. Reserve your date with a $99 deposit.',
   keywords: ['birthday party venue', 'kids party Hamptons', 'permanent jewelry Long Island', 'party room rental Speonk'],
   icons: {
     icon: [
@@ -75,6 +76,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="flex-1 pt-20">{children}</main>
         <div className="h-40 bg-gradient-to-b from-transparent to-[#BCCDEB]" aria-hidden="true" />
         <Footer />
+        <CrispChat />
       </body>
     </html>
   )

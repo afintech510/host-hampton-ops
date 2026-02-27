@@ -124,7 +124,7 @@ const faqs = [
   },
   {
     q: 'How far in advance should I book?',
-    a: 'We recommend booking 2–4 weeks in advance, especially for weekends. A $250 deposit secures your date, and you can finalize details later.',
+    a: 'We recommend booking 2–4 weeks in advance, especially for weekends. A $99 deposit secures your date, and you can finalize details later.',
   },
 ]
 

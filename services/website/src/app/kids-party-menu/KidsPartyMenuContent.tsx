@@ -1,13 +1,15 @@
 'use client'
 
 import { useState, useMemo, useCallback, useRef } from 'react'
-import { Check, Minus, Plus, Users, RotateCcw, Bookmark, Calendar, Loader2, Sparkles } from 'lucide-react'
+import { Check, Minus, Plus, Users, RotateCcw, Bookmark, Calendar, Loader2, Sparkles, Zap } from 'lucide-react'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 
 /* ── constants ─────────────────────────────────────── */
 
 const INCLUDED_GUESTS = 10
 const EXTRA_GUEST_CENTS = 3500
+const MINI_PARTY_DISCOUNT_CENTS = 20000 // $200 off
+const MINI_PARTY_MAX_GUESTS = 7         // + birthday child
 const LS_KEY = 'hh_quote_data'
 
 /* ── helpers ───────────────────────────────────────── */
@@ -188,6 +190,7 @@ export default function KidsPartyMenuContent({
 
   /* ── selection state ── */
   const [selectedTheme, setSelectedTheme] = useState<string | null>(restored?.theme ?? null)
+  const [isMiniParty, setIsMiniParty] = useState(false)
   const [guestCount, setGuestCount] = useState(restored?.guestCount ?? INCLUDED_GUESTS)
   const [selectedActivities, setSelectedActivities] = useState<Set<string>>(new Set(restored?.activities))
   const [selectedFood, setSelectedFood] = useState<Set<string>>(new Set(restored?.food))
@@ -229,12 +232,15 @@ export default function KidsPartyMenuContent({
   }, [allItems])
 
   /* ── running total ── */
-  const extraGuests = Math.max(0, guestCount - INCLUDED_GUESTS)
+  // Mini Party caps guests at 7 (+ birthday child)
+  const effectiveGuestCount = isMiniParty ? Math.min(guestCount, MINI_PARTY_MAX_GUESTS) : guestCount
+  const extraGuests = Math.max(0, effectiveGuestCount - INCLUDED_GUESTS)
   const themeItem = selectedTheme ? itemMap.get(selectedTheme) : null
 
   const total = useMemo(() => {
     let sum = 0
     if (selectedTheme) sum += itemMap.get(selectedTheme)?.price_cents ?? 0
+    if (isMiniParty && selectedTheme) sum -= MINI_PARTY_DISCOUNT_CENTS
     sum += extraGuests * EXTRA_GUEST_CENTS
     const allSelected = [
       ...Array.from(selectedActivities), ...Array.from(selectedFood), ...Array.from(selectedDesserts),
@@ -244,10 +250,10 @@ export default function KidsPartyMenuContent({
     for (const id of allSelected) {
       const item = itemMap.get(id)
       if (!item) continue
-      sum += item.price_type === 'per_person' ? item.price_cents * guestCount : item.price_cents
+      sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount : item.price_cents
     }
-    return sum
-  }, [selectedTheme, extraGuests, guestCount, selectedActivities, selectedFood, selectedDesserts, selectedBeverages, selectedDecor, selectedEntertainment, selectedPartyAddOns, itemMap])
+    return Math.max(0, sum)
+  }, [selectedTheme, isMiniParty, extraGuests, effectiveGuestCount, guestCount, selectedActivities, selectedFood, selectedDesserts, selectedBeverages, selectedDecor, selectedEntertainment, selectedPartyAddOns, itemMap])
 
   const addOnCount =
     selectedActivities.size + selectedFood.size + selectedDesserts.size +
@@ -272,7 +278,8 @@ export default function KidsPartyMenuContent({
   function buildSummary(): string {
     const lines: string[] = []
     if (themeItem) lines.push(`Theme: ${themeItem.name} (${fmt(themeItem.price_cents)})`)
-    lines.push(`Guests: ${guestCount}${extraGuests > 0 ? ` (${extraGuests} additional @ $35 each)` : ''}`)
+    if (isMiniParty) lines.push(`Mini Party: −$200 · 1.5 hours · max ${MINI_PARTY_MAX_GUESTS} guests`)
+    lines.push(`Guests: ${effectiveGuestCount}${extraGuests > 0 ? ` (${extraGuests} additional @ $35 each)` : ''}`)
 
     const section = (label: string, ids: Set<string>) => {
       if (ids.size === 0) return
@@ -424,7 +431,7 @@ export default function KidsPartyMenuContent({
             <h3 className="font-serif font-bold text-lg text-hampton-navy mb-1">All-Inclusive Celebration</h3>
             <p className="text-xs text-hampton-navy/70 leading-relaxed font-medium">
               Every package includes 2 hours of private studio time, a dedicated party host, full themed decorations,
-              activities &amp; entertainment, pizza or bagels, cupcakes &amp; birthday cake, treat cart, digital EVITE, and complete cleanup.
+              activities &amp; entertainment, pizza or bagels, cupcakes for all guests, treat cart, digital EVITE, and complete cleanup.
               10 guests + Birthday Star included. Additional guests $35 each.
             </p>
           </div>
@@ -434,6 +441,51 @@ export default function KidsPartyMenuContent({
                 onClick={() => setSelectedTheme(selectedTheme === t.id ? null : t.id)} />
             ))}
           </div>
+          {/* ── Mini Party Toggle ── */}
+          {selectedTheme && (
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMiniParty(!isMiniParty)
+                  if (!isMiniParty && guestCount > MINI_PARTY_MAX_GUESTS) {
+                    setGuestCount(MINI_PARTY_MAX_GUESTS)
+                  }
+                }}
+                className={`w-full flex items-center justify-between gap-4 px-5 py-4 rounded-2xl border-2 transition-all duration-200 ${
+                  isMiniParty
+                    ? 'border-hampton-navy bg-hampton-navy text-white'
+                    : 'border-hampton-mauve/30 bg-hampton-blue/5 hover:border-hampton-navy/40'
+                }`}
+              >
+                <div className="flex items-center gap-3 text-left">
+                  <Zap size={18} className={isMiniParty ? 'text-hampton-pink' : 'text-hampton-navy/60'} />
+                  <div>
+                    <p className={`font-bold text-sm ${isMiniParty ? 'text-white' : 'text-hampton-navy'}`}>
+                      Make it a Mini Party
+                      <span className={`ml-2 text-xs font-black ${isMiniParty ? 'text-hampton-pink' : 'text-hampton-pink'}`}>
+                        −$200
+                      </span>
+                    </p>
+                    <p className={`text-xs mt-0.5 ${isMiniParty ? 'text-white/70' : 'text-hampton-navy/50'}`}>
+                      Max 7 guests + birthday child &bull; 1.5 hour experience
+                    </p>
+                  </div>
+                </div>
+                <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                  isMiniParty ? 'border-white bg-hampton-pink' : 'border-hampton-mauve/40'
+                }`}>
+                  {isMiniParty && <Check size={14} className="text-white" />}
+                </span>
+              </button>
+              {isMiniParty && (
+                <p className="text-xs text-hampton-navy/50 mt-2 text-center">
+                  Perfect for intimate celebrations — birthday child + up to 7 guests.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="mt-6 text-center">
             <p className="text-[11px] font-bold text-hampton-pink bg-hampton-pink/10 inline-block px-4 py-1.5 rounded-full border border-hampton-pink/20">
               $99 Deposit to Reserve &bull; Fully Applied Toward Balance
@@ -448,7 +500,8 @@ export default function KidsPartyMenuContent({
               <Users size={20} className="text-hampton-navy/60" />
               <div>
                 <p className="font-semibold text-hampton-navy text-sm">
-                  {guestCount} guest{guestCount !== 1 ? 's' : ''} + birthday child
+                  {effectiveGuestCount} guest{effectiveGuestCount !== 1 ? 's' : ''} + birthday child
+                  {isMiniParty && <span className="ml-2 text-xs text-hampton-pink font-bold">(Mini Party max 7)</span>}
                 </p>
                 {extraGuests > 0 && (
                   <p className="text-xs text-hampton-navy/50 mt-0.5">
@@ -462,15 +515,20 @@ export default function KidsPartyMenuContent({
                 className="w-9 h-9 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue transition-colors disabled:opacity-30" disabled={guestCount <= 1}>
                 <Minus size={14} />
               </button>
-              <span className="w-10 text-center font-bold text-hampton-navy text-lg">{guestCount}</span>
-              <button type="button" onClick={() => setGuestCount(Math.min(50, guestCount + 1))}
-                className="w-9 h-9 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue transition-colors disabled:opacity-30" disabled={guestCount >= 50}>
+              <span className="w-10 text-center font-bold text-hampton-navy text-lg">{effectiveGuestCount}</span>
+              <button type="button" onClick={() => setGuestCount(Math.min(isMiniParty ? MINI_PARTY_MAX_GUESTS : 50, guestCount + 1))}
+                className="w-9 h-9 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue transition-colors disabled:opacity-30" disabled={effectiveGuestCount >= (isMiniParty ? MINI_PARTY_MAX_GUESTS : 50)}>
                 <Plus size={14} />
               </button>
             </div>
           </div>
-          {guestCount <= INCLUDED_GUESTS && (
-            <p className="text-xs text-hampton-blue mt-3 font-medium">Up to {INCLUDED_GUESTS} guests are included with every theme party.</p>
+          {effectiveGuestCount <= INCLUDED_GUESTS && (
+            <p className="text-xs text-hampton-blue mt-3 font-medium">
+              {isMiniParty
+                ? `Mini Party: up to ${MINI_PARTY_MAX_GUESTS} guests + birthday child · 1.5 hours · $200 off.`
+                : `Up to ${INCLUDED_GUESTS} guests are included with every theme party.`
+              }
+            </p>
           )}
         </div>
 

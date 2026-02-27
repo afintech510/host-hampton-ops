@@ -19,6 +19,28 @@ const DEFAULT_SERVICES = [
   "Glam Day",
   "Spray Tanning Session",
   "Christmas Party",
+
+  // NEW ADDITIONS
+  "Permanent Jewelry Party",
+  "Trucker Hat Bar Pop-Up",
+  "Branding Photo Session",
+  "Content Creation Day",
+  "Lash Tech Pop-Up",
+  "Botox & Beauty Event",
+  "Moms Networking Mixer",
+  "Pop-Up Boutique",
+  "Vendor Market",
+  "Dance Rehearsal",
+  "Mommy & Me Class",
+  "Toddler Playdate",
+  "Teen Glow Dance Party",
+  "Balloon Styling Workshop",
+  "Charcuterie Class",
+  "Girls Night Out",
+  "Entrepreneur Mastermind",
+  "Private Shopping Event",
+  "Launch Party",
+  "Client Appreciation Event"
 ]
 
 interface DynamicTypingSectionProps {

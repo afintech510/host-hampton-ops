@@ -318,7 +318,7 @@ function BookingForm() {
 
   const bookingType = selection?.bookingType
   const hasDeposit = bookingType ? bookingType.requires_deposit && bookingType.deposit_cents > 0 : true
-  const depositDollars = bookingType ? Math.round(bookingType.deposit_cents / 100) : 250
+  const depositDollars = bookingType ? Math.round(bookingType.deposit_cents / 100) : 99
   const showChildFields = bookingType?.tags?.some(t => ['kids-party', 'childrens'].includes(t)) ?? true
   const isRoomRental = bookingType?.slug === 'room-rental'
 

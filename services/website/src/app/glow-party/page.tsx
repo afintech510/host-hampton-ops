@@ -29,7 +29,7 @@ const whatsIncluded = [
   { icon: Star,   text: 'Glow bracelets, neon necklaces & glow accessories for every guest' },
   { icon: Camera, text: 'Neon balloon arch & glowing photo backdrop — perfect for pics' },
   { icon: Check,  text: 'Professional party host on-site for the full 2 hours' },
-  { icon: Check,  text: 'Pizza or bagels + cupcakes & birthday cake for all guests' },
+  { icon: Check,  text: 'Pizza or bagels + cupcakes for all guests' },
   { icon: Check,  text: 'Digital EVITE invitation + full setup & cleanup — zero stress' },
 ]
 
@@ -63,7 +63,7 @@ const faqs = [
   },
   {
     q: 'How do I book? What is the deposit?',
-    a: 'Click "Book the Glow" and fill out the reservation form. A $250 non-refundable deposit holds your date. The remaining balance is due 7 days before the party.',
+    a: 'Click "Book the Glow" and fill out the reservation form. A $99 non-refundable deposit holds your date. The remaining balance is due 7 days before the party.',
   },
   {
     q: 'Where are you located?',
@@ -178,7 +178,7 @@ export default function GlowPartyPage() {
           </h2>
           <div className="grid md:grid-cols-3 gap-8 text-center">
             {[
-              { step: '01', title: 'Book Online', desc: 'Reserve with a $250 deposit. Pick your date, package size, and any add-ons.', color: 'text-pink-400' },
+              { step: '01', title: 'Book Online', desc: 'Reserve with a $99 deposit. Pick your date, package size, and any add-ons.', color: 'text-pink-400' },
               { step: '02', title: 'We Set Up Everything', desc: 'Arrive to a fully transformed neon glow studio. UV lights, decor, food — all done.', color: 'text-purple-400' },
               { step: '03', title: 'Glow & Go', desc: 'Your host runs the show. You enjoy the party. We clean up. You walk out stress-free.', color: 'text-green-400' },
             ].map(({ step, title, desc, color }) => (
@@ -270,7 +270,7 @@ export default function GlowPartyPage() {
             </span>
           </h2>
           <p className="text-gray-400 mb-10 text-lg">
-            Dates fill up fast — especially weekends. Secure your spot with a $250 deposit.
+            Dates fill up fast — especially weekends. Secure your spot with a $99 deposit.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link

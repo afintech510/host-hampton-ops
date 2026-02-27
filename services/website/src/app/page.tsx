@@ -3,11 +3,13 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Star, CheckCircle, Clock, Users, Sparkles, Heart, Shield } from 'lucide-react'
 import DynamicTypingSection from '@/components/DynamicTypingSection'
+import ThemeTileGrid from '@/components/ThemeTileGrid'
+import { getSupabase } from '@/lib/supabase'
 
 export const metadata: Metadata = {
   title: 'Host Hampton | Birthday Party Venue in the Hamptons, NY',
   description:
-    'Magical themed birthday parties, permanent jewelry, and room rentals in Speonk, NY. Stress-free celebrations for ages 3–12. Reserve your date with a $250 deposit.',
+    'Magical themed birthday parties, permanent jewelry, and room rentals in Speonk, NY. Stress-free celebrations for ages 3–12. Reserve your date with a $99 deposit.',
 }
 
 const themes = [
@@ -25,12 +27,12 @@ const whyUs = [
   { icon: <Sparkles size={22} />, title: 'Fully Themed Experiences', desc: 'Every detail handled — decor, activities, entertainment, food. You just show up.' },
   { icon: <Shield size={22} />,   title: 'Private Studio',            desc: 'Your party, your space. Never share the studio with another event.' },
   { icon: <Clock size={22} />,    title: '2-Hour Celebration',        desc: 'Full setup before you arrive, complete cleanup after. Zero stress for parents.' },
-  { icon: <Heart size={22} />,    title: 'Flexible to the End',       desc: 'Lock your date with $250. Finalize every detail up to 1 week before the party.' },
+  { icon: <Heart size={22} />,    title: 'Flexible to the End',       desc: 'Lock your date with just $99. Finalize every detail up to 1 week before the party.' },
 ]
 
 const steps = [
   { n: '01', title: 'Pick Your Theme',    desc: 'Browse 10+ themed party packages with everything included.' },
-  { n: '02', title: 'Reserve Your Date', desc: 'Pay the $250 deposit to lock in your date. No stress — details can change.' },
+  { n: '02', title: 'Reserve Your Date', desc: 'Pay a $99 deposit to lock in your date. No stress — details can change.' },
   { n: '03', title: 'Celebrate!',         desc: 'Arrive, enjoy, make memories. We handle everything before and after.' },
 ]
 
@@ -40,7 +42,21 @@ const reviews = [
   { name: 'Amanda R.',  theme: 'Spa Party',     stars: 5, text: "The girls were in heaven! Mini manicures, face masks, robes — pure magic. The owners clearly put so much love into making it special. We'll be back!" },
 ]
 
-export default function Home() {
+export const dynamic = 'force-dynamic'
+
+export default async function Home() {
+  let themePrices: Array<{ name: string; price_cents: number }> = []
+  try {
+    const supabase = getSupabase()
+    const { data } = await supabase
+      .from('pricing_items')
+      .select('name, price_cents')
+      .eq('category', 'party-theme')
+      .eq('is_active', true)
+    themePrices = data || []
+  } catch {
+    // fall back to hardcoded prices in ThemeTileGrid
+  }
   return (
     <>
       {/* ── HERO ─────────────────────────────────────────────── */}
@@ -86,7 +102,7 @@ export default function Home() {
       {/* ── TRUST BAR ────────────────────────────────────────── */}
       <section className="bg-hampton-pink/20 border-y border-hampton-pink/30 py-4">
         <div className="max-w-7xl mx-auto px-4 flex flex-wrap justify-center gap-6 md:gap-12 text-sm text-hampton-navy font-medium">
-          {['✨ 10+ Themed Party Packages', '🎉 Private Studio, No Shared Spaces', '⏱ 2-Hour Full-Service Experience', '💳 $250 Locks Your Date', '🔄 Change Details Anytime'].map(t => (
+          {['✨ 10+ Themed Party Packages', '🎉 Private Studio, No Shared Spaces', '⏱ 2-Hour Full-Service Experience', '💳 $99 Locks Your Date', '🔄 Change Details Anytime'].map(t => (
             <span key={t}>{t}</span>
           ))}
         </div>
@@ -101,30 +117,30 @@ export default function Home() {
           <p className="section-subheading">Choose Your Celebration</p>
           <h2 className="section-heading">10+ Themed Party Experiences</h2>
           <p className="text-hampton-navy text-base max-w-xl mx-auto">
-            Each party includes 2 hours in our private studio, activities, decor, pizza, cupcakes, and memories that last forever.
+            Tap any theme to see what&apos;s included. Each party is 2 private hours — decor, activities, pizza, cupcakes, and memories that last forever.
           </p>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {themes.map(t => (
-            <Link href={`/book?package=${encodeURIComponent(t.name)}`} key={t.name}
-                  className="card group cursor-pointer">
-              <div className="relative aspect-[4/3] overflow-hidden">
-                <Image src={t.img} alt={t.name} fill className="object-cover group-hover:scale-105 transition-transform duration-300" />
-                {t.tag && (
-                  <span className="absolute top-2 left-2 bg-hampton-pink text-hampton-navy text-xs font-bold px-2 py-0.5 rounded-full">
-                    {t.tag}
-                  </span>
-                )}
-              </div>
-              <div className="p-4">
-                <h3 className="font-semibold text-hampton-navy text-sm tracking-wide mb-1">{t.name}</h3>
-                <p className="text-hampton-navy text-xs">Starting at ${t.price.toLocaleString()}</p>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <ThemeTileGrid themePrices={themePrices} />
         <div className="text-center mt-8">
           <Link href="/party-packages" className="btn-secondary">View All Packages & Pricing</Link>
+        </div>
+      </section>
+
+      {/* ── DESIGN YOUR PARTY CTA ─────────────────────────── */}
+      <section className="py-16 px-4">
+        <div className="max-w-4xl mx-auto bg-hampton-navy rounded-3xl px-8 py-12 text-center shadow-xl">
+          <p className="text-hampton-pink text-sm font-semibold tracking-widest uppercase mb-3">Build It Your Way</p>
+          <h2 className="font-serif text-3xl md:text-4xl text-white mb-4">Design Your Perfect Party</h2>
+          <p className="text-hampton-blue/80 text-base max-w-xl mx-auto mb-8 leading-relaxed">
+            Browse our full menu, pick your theme, choose add-ons, and see your real-time price — all before you commit to anything.
+          </p>
+          <Link
+            href="/kids-party-menu"
+            className="inline-block bg-hampton-pink text-hampton-navy font-bold px-10 py-4 rounded-full text-base hover:bg-hampton-pink/90 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+          >
+            Design Your Party
+          </Link>
+          <p className="text-hampton-blue/40 text-xs mt-4">Reserve with just $99 · Change details anytime</p>
         </div>
       </section>
 
@@ -149,7 +165,7 @@ export default function Home() {
                   className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg">
               Reserve Your Date
             </Link>
-            <p className="text-hampton-navy/70 text-xs mt-3">Change your theme, date, or details any time. $250 is fully applied to your balance.</p>
+            <p className="text-hampton-navy/70 text-xs mt-3">Change your theme, date, or details any time. Your $99 deposit is fully applied to your balance.</p>
           </div>
         </div>
       </section>
@@ -203,11 +219,12 @@ export default function Home() {
           <p className="section-subheading">More at Host Hampton</p>
           <h2 className="section-heading">Not Just Parties</h2>
         </div>
-        <div className="grid sm:grid-cols-3 gap-6">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
-            { href: '/party-room-rental',  title: 'Room Rental',         desc: 'DIY your event in our beautiful private studio. Starting at $450 for 3 hours.',       img: '/images/theme-sweets.png' },
-            { href: '/permanent-jewelry',  title: 'Permanent Jewelry',   desc: 'Custom-welded bracelets, anklets, and necklaces. Perfect for moms & daughter pairs.',  img: '/images/jewelry-gold.png' },
-            { href: '/events',             title: 'Events & Classes',    desc: 'Moms in the Morning, Girls Night Out, craft workshops, and more.',                      img: '/images/theme-spa.png' },
+            { href: '/party-room-rental',    title: 'Room Rental',           desc: 'DIY your event in our beautiful private studio. Starting at $450 for 3 hours.',                    img: '/images/theme-sweets.png' },
+            { href: '/permanent-jewelry',    title: 'Permanent Jewelry',     desc: 'Custom-welded bracelets, anklets, and necklaces. Perfect for moms & daughter pairs.',              img: '/images/jewelry-gold.png' },
+            { href: '/events',               title: 'Events & Classes',      desc: 'Moms in the Morning, Girls Night Out, craft workshops, and more.',                                 img: '/images/theme-spa.png' },
+            { href: '/custom-accessories',   title: 'Custom Accessories',    desc: 'Personalized canvas bags & trucker hats — perfect party favors or on-site at your event.',        img: '/images/jewelry-weld.png' },
           ].map(s => (
             <Link href={s.href} key={s.href} className="card group">
               <div className="relative aspect-video overflow-hidden">

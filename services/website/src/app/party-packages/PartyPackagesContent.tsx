@@ -1,12 +1,24 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import Image from 'next/image'
-import { Check, ChevronDown, X, Loader2, Star, Calendar, Clock, Users, Sparkles, UtensilsCrossed, Palette, Gift, Music, Bookmark } from 'lucide-react'
+import { Check, ChevronDown, X, Loader2, Star, Calendar, Clock, Users, Sparkles, UtensilsCrossed, Palette, Gift, Music, Bookmark, Zap } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import ImageSlider from '@/components/ImageSlider'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import type { PricingItem } from './page'
+
+const MINI_PARTY_DISCOUNT = 200
+const MINI_PARTY_MAX_GUESTS = 7
+
+/** Match a display theme name to a pricing_items row by normalised first word. */
+function lookupThemePrice(displayName: string, items: PricingItem[]): number | null {
+  if (!items.length) return null
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim()
+  const key = norm(displayName).split(' ')[0]
+  const match = items.find(i => i.category === 'party-theme' && norm(i.name).startsWith(key))
+  return match ? match.price_cents / 100 : null
+}
 
 const included = [
   '2 hours of exclusive private studio time',
@@ -14,7 +26,7 @@ const included = [
   'Full themed decorations (setup included)',
   'Theme-matched activities & entertainment',
   'Pizza or bagels for all guests',
-  'Cupcakes & birthday cake',
+  'Cupcakes for all guests',
   'Treat cart',
   'Digital EVITE invitation',
   'Full cleanup — you walk out the door stress-free',
@@ -151,24 +163,36 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
   const [reserving, setReserving] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [isMiniParty, setIsMiniParty] = useState(false)
   const themeSectionRef = useRef<HTMLDivElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
   const calendarRef = useRef<HTMLDivElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
 
   const selectedThemeData = themes.find(t => t.name === (formData.partyTheme || selectedTheme))
+  const selectedThemePrice = selectedThemeData
+    ? (lookupThemePrice(selectedThemeData.name, pricingItems) ?? selectedThemeData.price)
+    : null
 
   function handleThemeSelect(name: string) {
     if (selectedTheme === name) {
       setSelectedTheme(null)
       setFormData(prev => ({ ...prev, partyTheme: '' }))
+      setIsMiniParty(false)
     } else {
       setSelectedTheme(name)
       setFormData(prev => ({ ...prev, partyTheme: name }))
-      setTimeout(() => {
-        themeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 50)
     }
   }
+
+  // Scroll the card image to the top of the viewport when a theme is selected
+  useEffect(() => {
+    if (!selectedTheme) return
+    const t = setTimeout(() => {
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+    return () => clearTimeout(t)
+  }, [selectedTheme])
 
   function update(field: string, value: string) {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -244,12 +268,13 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
           contactPhone: formData.phone,
           childName: formData.childName,
           childAge: formData.childAge,
-          guestCount: formData.guestCount,
-          notes: formData.notes,
+          guestCount: isMiniParty ? String(Math.min(parseInt(formData.guestCount) || 10, MINI_PARTY_MAX_GUESTS)) : formData.guestCount,
+          notes: isMiniParty ? `Mini Party (−$200, max 7 guests, 1.5hr)${formData.notes ? '. ' + formData.notes : ''}` : formData.notes,
           bookingTypeSlug: 'kids-party',
           partyTags: {
             theme: formData.partyTheme || selectedTheme,
-            price: selectedThemeData?.price,
+            price: selectedThemePrice != null ? selectedThemePrice - (isMiniParty ? MINI_PARTY_DISCOUNT : 0) : undefined,
+            miniParty: isMiniParty || undefined,
           },
         }),
       })
@@ -276,11 +301,12 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
       ? pricingItems.find(i => i.category === 'party-theme' && i.name === themeName)
       : null
 
-    const gc = parseInt(formData.guestCount) || 10
+    const gc = isMiniParty ? Math.min(parseInt(formData.guestCount) || 10, MINI_PARTY_MAX_GUESTS) : parseInt(formData.guestCount) || 10
     const summaryLines = [
-      themeName ? `Theme: ${themeName}${selectedThemeData ? ` ($${selectedThemeData.price.toLocaleString()})` : ''}` : null,
-      `Guests: ${gc}`,
+      themeName ? `Theme: ${themeName}${selectedThemePrice != null ? ` ($${(selectedThemePrice - (isMiniParty ? MINI_PARTY_DISCOUNT : 0)).toLocaleString()})` : ''}` : null,
+      `Guests: ${gc}${isMiniParty ? ' (Mini Party)' : ''}`,
       formData.childName ? `Child: ${formData.childName}${formData.childAge ? `, age ${formData.childAge}` : ''}` : null,
+      isMiniParty ? 'Mini Party: −$200 discount applied, max 7 guests, 1.5hr duration' : null,
       formData.notes ? `Notes: ${formData.notes}` : null,
     ].filter(Boolean).join('\n')
 
@@ -329,6 +355,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
       : 'Birthday Party'
 
   const guestCount = parseInt(formData.guestCount) || 10
+  const effectiveGuestCount = isMiniParty ? Math.min(guestCount, MINI_PARTY_MAX_GUESTS) : guestCount
 
   return (
     <div>
@@ -373,7 +400,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
         </p>
 
         {selectedTheme && selectedThemeData ? (
-          <div className="animate-[fadeIn_0.3s_ease-out]">
+          <div ref={cardRef} className="animate-[fadeIn_0.3s_ease-out] scroll-mt-20">
             {/* Hero Card */}
             <div className="max-w-3xl mx-auto">
               <div className="rounded-2xl overflow-hidden ring-2 ring-hampton-pink shadow-md bg-white">
@@ -393,7 +420,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                 <div className="p-6">
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="font-semibold text-hampton-navy text-xl">{selectedThemeData.name}</h3>
-                    <span className="text-hampton-navy font-bold text-xl">from ${selectedThemeData.price.toLocaleString()}</span>
+                    <span className="text-hampton-navy font-bold text-xl">from ${(selectedThemePrice ?? selectedThemeData.price).toLocaleString()}</span>
                   </div>
                   <p className="text-sm leading-relaxed text-hampton-navy/80">
                     {selectedThemeData.extendedDesc}
@@ -403,6 +430,34 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                       <Check size={12} strokeWidth={3} className="text-white" />
                     </div>
                     <span>Theme selected — fill out the form below to check availability</span>
+                  </div>
+
+                  {/* Mini Party Toggle */}
+                  <div className="border-t border-hampton-pink/15 pt-4 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsMiniParty(!isMiniParty)}
+                      className={`w-full flex items-center justify-between gap-3 px-5 py-4 rounded-2xl border-2 transition-all ${
+                        isMiniParty
+                          ? 'border-hampton-navy bg-hampton-navy text-white'
+                          : 'border-hampton-pink/30 bg-hampton-pink/5 text-hampton-navy hover:border-hampton-pink/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Zap size={18} className={isMiniParty ? 'text-yellow-300' : 'text-hampton-pink'} />
+                        <div className="text-left">
+                          <p className="font-bold text-sm">Mini Party — $200 Off</p>
+                          <p className={`text-xs ${isMiniParty ? 'text-white/70' : 'text-hampton-navy/60'}`}>
+                            Max 7 guests + birthday child · 1.5 hr duration
+                          </p>
+                        </div>
+                      </div>
+                      <span className={`text-sm font-bold px-3 py-1 rounded-full ${
+                        isMiniParty ? 'bg-yellow-300 text-hampton-navy' : 'bg-hampton-pink/20 text-hampton-navy'
+                      }`}>
+                        {isMiniParty ? 'Active ✓' : '− $200'}
+                      </span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -422,7 +477,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                       <Image src={t.imgs[0]} alt={t.name} fill className="object-cover" />
                     </div>
                     <p className="text-xs text-hampton-navy mt-1.5 font-medium text-center truncate">{t.name}</p>
-                    <p className="text-[10px] text-hampton-navy/50 text-center">${t.price.toLocaleString()}</p>
+                    <p className="text-[10px] text-hampton-navy/50 text-center">${(lookupThemePrice(t.name, pricingItems) ?? t.price).toLocaleString()}</p>
                   </button>
                 ))}
               </div>
@@ -451,7 +506,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                 <div className="p-5">
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="font-semibold text-hampton-navy text-lg">{t.name}</h3>
-                    <span className="text-hampton-navy font-bold text-lg">from ${t.price.toLocaleString()}</span>
+                    <span className="text-hampton-navy font-bold text-lg">from ${(lookupThemePrice(t.name, pricingItems) ?? t.price).toLocaleString()}</span>
                   </div>
                   <p className="text-sm leading-relaxed text-hampton-navy/70">{t.desc}</p>
                 </div>
@@ -539,7 +594,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="form-label">Guest Count</label>
-              <input type="number" min="1" max="50" placeholder="10" value={formData.guestCount}
+              <input type="number" min="1" max={isMiniParty ? MINI_PARTY_MAX_GUESTS : 50} placeholder="10" value={formData.guestCount}
                 onChange={e => update('guestCount', e.target.value)} className="form-input" />
             </div>
             <div>
@@ -696,7 +751,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                     </div>
                     <div>
                       <p className="text-xs text-hampton-navy/50 font-medium uppercase tracking-wide">Guests</p>
-                      <p className="text-sm font-semibold text-hampton-navy">{guestCount} guests + Birthday Star</p>
+                      <p className="text-sm font-semibold text-hampton-navy">{effectiveGuestCount} guests + Birthday Star</p>
                     </div>
                   </div>
                 </div>
@@ -705,12 +760,27 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                 <div className="border-t border-hampton-pink/15 pt-5">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-hampton-navy">Estimated Party Cost</span>
-                    <span className="text-xl font-bold text-hampton-navy">
-                      {selectedThemeData ? `from $${selectedThemeData.price.toLocaleString()}` : 'TBD'}
-                    </span>
+                    <div className="text-right">
+                      {isMiniParty && selectedThemePrice != null && (
+                        <p className="text-xs line-through text-hampton-navy/40">${selectedThemePrice.toLocaleString()}</p>
+                      )}
+                      <span className="text-xl font-bold text-hampton-navy">
+                        {selectedThemePrice != null
+                          ? `from $${(selectedThemePrice - (isMiniParty ? MINI_PARTY_DISCOUNT : 0)).toLocaleString()}`
+                          : 'TBD'}
+                      </span>
+                    </div>
                   </div>
+                  {isMiniParty && (
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Zap size={12} className="text-hampton-pink" />
+                      <p className="text-xs text-hampton-pink font-semibold">Mini Party: −$200 applied</p>
+                    </div>
+                  )}
                   <p className="text-xs text-hampton-navy/60">
-                    10 guests + Birthday Star is included. Additional guests are $35 each.
+                    {isMiniParty
+                      ? `Up to ${MINI_PARTY_MAX_GUESTS} guests + Birthday Star · 1.5 hr duration`
+                      : '10 guests + Birthday Star is included. Additional guests are $35 each.'}
                   </p>
                 </div>
 
