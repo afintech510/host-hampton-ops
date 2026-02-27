@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { X, Check, Star } from 'lucide-react'
+import { X, Check, Star, Users, Clock } from 'lucide-react'
 import ImageSlider from '@/components/ImageSlider'
+
+const MINI_PARTY_DISCOUNT = 200
 
 interface ThemePrice {
   name: string
@@ -100,121 +102,165 @@ const themes = [
 
 export default function ThemeTileGrid({ themePrices = [] }: { themePrices?: ThemePrice[] }) {
   const [activeTheme, setActiveTheme] = useState<string | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const selected = themes.find(t => t.name === activeTheme)
+
+  // Scroll the expanded panel into view when a theme is selected
+  useEffect(() => {
+    if (!activeTheme) return
+    const t = setTimeout(() => {
+      panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+    return () => clearTimeout(t)
+  }, [activeTheme])
 
   return (
     <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {themes.map(t => (
-          <button
-            key={t.name}
-            type="button"
-            onClick={() => setActiveTheme(activeTheme === t.name ? null : t.name)}
-            className={`card group cursor-pointer text-left transition-all duration-200 ${
-              activeTheme === t.name ? 'ring-2 ring-hampton-navy shadow-lg' : 'hover:shadow-md'
-            }`}
-          >
-            <div className="relative aspect-[4/3] overflow-hidden">
-              <Image
-                src={t.imgs[0]}
-                alt={t.name}
-                fill
-                className="object-cover group-hover:scale-105 transition-transform duration-300"
-              />
-              {t.tag && (
-                <span className="absolute top-2 left-2 bg-hampton-pink text-hampton-navy text-xs font-bold px-2 py-0.5 rounded-full">
-                  {t.tag}
-                </span>
-              )}
-              {activeTheme === t.name && (
-                <div className="absolute inset-0 bg-hampton-navy/20 flex items-center justify-center">
-                  <span className="bg-hampton-navy text-white text-xs font-bold px-3 py-1 rounded-full">Selected</span>
-                </div>
-              )}
-            </div>
-            <div className="p-4">
-              <h3 className="font-semibold text-hampton-navy text-sm tracking-wide mb-1">{t.name}</h3>
-              <p className="text-hampton-navy text-xs">Starting at ${lookupPrice(t.name, themePrices, t.price).toLocaleString()}</p>
-            </div>
-          </button>
-        ))}
+        {themes.map(t => {
+          const regularPrice = lookupPrice(t.name, themePrices, t.price)
+          const miniPrice = regularPrice - MINI_PARTY_DISCOUNT
+          return (
+            <button
+              key={t.name}
+              type="button"
+              onClick={() => setActiveTheme(activeTheme === t.name ? null : t.name)}
+              className={`card group cursor-pointer text-left transition-all duration-200 ${
+                activeTheme === t.name ? 'ring-2 ring-hampton-navy shadow-lg' : 'hover:shadow-md'
+              }`}
+            >
+              <div className="relative aspect-[4/3] overflow-hidden">
+                <Image
+                  src={t.imgs[0]}
+                  alt={t.name}
+                  fill
+                  className="object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+                {t.tag && (
+                  <span className="absolute top-2 left-2 bg-hampton-pink text-hampton-navy text-xs font-bold px-2 py-0.5 rounded-full">
+                    {t.tag}
+                  </span>
+                )}
+                {activeTheme === t.name && (
+                  <div className="absolute inset-0 bg-hampton-navy/20 flex items-center justify-center">
+                    <span className="bg-hampton-navy text-white text-xs font-bold px-3 py-1 rounded-full">Selected</span>
+                  </div>
+                )}
+              </div>
+              <div className="p-4">
+                <h3 className="font-semibold text-hampton-navy text-sm tracking-wide mb-1">{t.name}</h3>
+                <p className="text-hampton-navy text-xs">Starting at ${miniPrice.toLocaleString()}</p>
+              </div>
+            </button>
+          )
+        })}
       </div>
 
       {/* ── Expanded Detail Panel ── */}
-      {selected && (
-        <div className="mt-6 bg-white border-2 border-hampton-navy rounded-3xl overflow-hidden shadow-xl animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="flex items-center justify-between px-6 py-4 bg-hampton-navy">
-            <div className="flex items-center gap-2">
-              {selected.tag && (
-                <span className="bg-hampton-pink text-hampton-navy text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                  <Star size={10} /> {selected.tag}
-                </span>
-              )}
-              <h3 className="font-serif text-xl font-bold text-white">{selected.name}</h3>
+      {selected && (() => {
+        const regularPrice = lookupPrice(selected.name, themePrices, selected.price)
+        const miniPrice = regularPrice - MINI_PARTY_DISCOUNT
+        return (
+          <div
+            ref={panelRef}
+            className="mt-6 bg-white border-2 border-hampton-navy rounded-3xl overflow-hidden shadow-xl animate-in fade-in slide-in-from-top-2 duration-300 scroll-mt-24"
+          >
+            <div className="flex items-center justify-between px-6 py-4 bg-hampton-navy">
+              <div className="flex items-center gap-2">
+                {selected.tag && (
+                  <span className="bg-hampton-pink text-hampton-navy text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <Star size={10} /> {selected.tag}
+                  </span>
+                )}
+                <h3 className="font-serif text-xl font-bold text-white">{selected.name}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTheme(null)}
+                className="text-white/60 hover:text-white transition-colors p-1"
+                aria-label="Close details"
+              >
+                <X size={20} />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setActiveTheme(null)}
-              className="text-white/60 hover:text-white transition-colors p-1"
-              aria-label="Close details"
-            >
-              <X size={20} />
-            </button>
-          </div>
 
-          <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-hampton-pink/20">
-            {/* Left: photo gallery + description */}
-            <div>
-              <ImageSlider
-                images={selected.imgs}
-                alt={selected.name}
-                aspectRatio="aspect-[16/9]"
-                autoPlayMs={3500}
-              />
+            <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-hampton-pink/20">
+              {/* Left: photo gallery + description + pricing tiers */}
+              <div>
+                <ImageSlider
+                  images={selected.imgs}
+                  alt={selected.name}
+                  aspectRatio="aspect-[16/9]"
+                  autoPlayMs={3500}
+                />
+                <div className="p-6">
+                  <p className="text-hampton-navy/60 text-xs font-semibold tracking-widest uppercase mb-3">About This Party</p>
+                  <p className="text-hampton-navy leading-relaxed text-sm mb-5">{selected.extendedDesc}</p>
+
+                  {/* Pricing tiers */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-hampton-pink/15 rounded-2xl p-4">
+                      <p className="text-hampton-navy text-xs font-bold uppercase tracking-wide mb-2">Mini Party</p>
+                      <div className="flex items-center gap-1 text-hampton-navy/70 text-xs mb-1">
+                        <Users size={11} /> <span>Up to 7 guests</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-hampton-navy/70 text-xs mb-3">
+                        <Clock size={11} /> <span>1.5 hrs</span>
+                      </div>
+                      <p className="font-bold text-hampton-navy text-base">${miniPrice.toLocaleString()}</p>
+                    </div>
+                    <div className="bg-hampton-navy/5 rounded-2xl p-4">
+                      <p className="text-hampton-navy text-xs font-bold uppercase tracking-wide mb-2">Classic Party</p>
+                      <div className="flex items-center gap-1 text-hampton-navy/70 text-xs mb-1">
+                        <Users size={11} /> <span>10 guests</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-hampton-navy/70 text-xs mb-3">
+                        <Clock size={11} /> <span>2 hrs</span>
+                      </div>
+                      <p className="font-bold text-hampton-navy text-base">${regularPrice.toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <p className="text-hampton-navy/40 text-xs mt-2">+$35 per additional guest</p>
+                </div>
+              </div>
+
+              {/* Right: included items */}
               <div className="p-6">
-                <p className="text-hampton-navy/60 text-xs font-semibold tracking-widest uppercase mb-3">About This Party</p>
-                <p className="text-hampton-navy leading-relaxed text-sm mb-4">{selected.extendedDesc}</p>
-                <p className="font-bold text-hampton-navy text-lg">Starting at ${lookupPrice(selected.name, themePrices, selected.price).toLocaleString()}</p>
-                <p className="text-hampton-navy/50 text-xs mt-1">10 guests included · $35/additional guest</p>
+                <p className="text-hampton-navy/60 text-xs font-semibold tracking-widest uppercase mb-3">Every Party Includes</p>
+                <ul className="space-y-2">
+                  {included.map(item => (
+                    <li key={item} className="flex items-start gap-2 text-sm text-hampton-navy">
+                      <Check size={14} className="text-hampton-pink shrink-0 mt-0.5" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
 
-            {/* Right: included items */}
-            <div className="p-6">
-              <p className="text-hampton-navy/60 text-xs font-semibold tracking-widest uppercase mb-3">Every Party Includes</p>
-              <ul className="space-y-2">
-                {included.map(item => (
-                  <li key={item} className="flex items-start gap-2 text-sm text-hampton-navy">
-                    <Check size={14} className="text-hampton-pink shrink-0 mt-0.5" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
+            <div className="px-6 py-4 bg-hampton-pink/10 border-t border-hampton-pink/20 flex flex-col sm:flex-row gap-3 items-center justify-between">
+              <p className="text-hampton-navy/70 text-xs text-center sm:text-left">
+                Lock your date with a <strong>$99 deposit</strong> — change theme or details any time.
+              </p>
+              <div className="flex gap-3 shrink-0">
+                <Link
+                  href="/kids-party-menu"
+                  className="border-2 border-hampton-navy text-hampton-navy font-semibold px-5 py-2 rounded-full text-sm hover:bg-hampton-navy hover:text-white transition-all"
+                >
+                  Customize & Price
+                </Link>
+                <Link
+                  href={`/book?package=${encodeURIComponent(selected.name)}`}
+                  className="bg-hampton-navy text-white font-bold px-6 py-2 rounded-full text-sm hover:bg-hampton-navy/90 transition-all shadow-sm"
+                >
+                  Reserve Date — $99
+                </Link>
+              </div>
             </div>
           </div>
-
-          <div className="px-6 py-4 bg-hampton-pink/10 border-t border-hampton-pink/20 flex flex-col sm:flex-row gap-3 items-center justify-between">
-            <p className="text-hampton-navy/70 text-xs text-center sm:text-left">
-              Reserve with a <strong>$99 deposit</strong> — change your theme or date any time.
-            </p>
-            <div className="flex gap-3 shrink-0">
-              <Link
-                href="/kids-party-menu"
-                className="border-2 border-hampton-navy text-hampton-navy font-semibold px-5 py-2 rounded-full text-sm hover:bg-hampton-navy hover:text-white transition-all"
-              >
-                Customize & Price
-              </Link>
-              <Link
-                href={`/book?package=${encodeURIComponent(selected.name)}`}
-                className="bg-hampton-navy text-white font-bold px-6 py-2 rounded-full text-sm hover:bg-hampton-navy/90 transition-all shadow-sm"
-              >
-                Book This Party
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
+        )
+      })()}
     </>
   )
 }
