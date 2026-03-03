@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { Check, ChevronDown, X, Loader2, Star, Calendar, Clock, Users, Sparkles, UtensilsCrossed, Palette, Gift, Music, Bookmark, Zap } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import ImageSlider from '@/components/ImageSlider'
@@ -864,7 +865,25 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
       {/* ── Customer Reviews ── */}
       <CustomerReviews />
 
-      {/* ── CTA ── */}
+      {/* ── Design Your Party CTA ── */}
+      <section className="py-16 px-4">
+        <div className="max-w-4xl mx-auto bg-gradient-to-b from-[#BCCDEB]/40 to-[#F7F2E8]/10 rounded-3xl px-8 py-12 text-center border border-[#A1B5C8]/30">
+          <p className="text-hampton-navy text-sm font-semibold tracking-widest uppercase mb-3">Build It Your Way</p>
+          <h2 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-4">Design Your Perfect Party</h2>
+          <p className="text-hampton-navy/70 text-base max-w-xl mx-auto mb-8 leading-relaxed">
+            Browse our full menu, pick your theme, choose add-ons, and see your real-time price — all before you commit to anything.
+          </p>
+          <Link
+            href="/kids-party-menu"
+            className="inline-block bg-hampton-navy text-hampton-ivory font-bold px-10 py-4 rounded-full text-base hover:bg-hampton-navy/90 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+          >
+            Design Your Party
+          </Link>
+          <p className="text-hampton-navy/40 text-xs mt-4">Reserve with just $99 · Change details anytime</p>
+        </div>
+      </section>
+
+      {/* ── Questions CTA ── */}
       <section className="bg-hampton-pink/20 py-14 text-center px-4">
         <h2 className="section-heading mb-3">Questions?</h2>
         <p className="text-hampton-navy text-base mb-7 max-w-md mx-auto">
