@@ -45,7 +45,7 @@ const pricing = [
 const faqs = [
   {
     q: "What\u2019s included with the room rental?",
-    a: 'Tables, chairs, basic lighting, a prep area, and restroom access are all included. The space is yours to decorate and set up however you like \u2014 you supply everything else.',
+    a: 'Tables, chairs, basic lighting, WiFi, Bluetooth sound system, a prep area, and restroom access are all included. The space is yours to decorate and set up however you like \u2014 you supply everything else.',
   },
   {
     q: 'Can I bring my own catering and vendors?',
@@ -111,7 +111,7 @@ export default async function PartyRoomRental() {
       {/* ── Hero: Dynamic Typing ── */}
       <DynamicTypingSection
         services={ROOM_SERVICES}
-        subtitle="Our private Hamptons studio is the perfect blank canvas. You bring the vision \u2014 we provide the space, tables, chairs, and everything you need to make it yours."
+        subtitle="Our private Hamptons studio is the perfect blank canvas. You bring the vision &#8212; we provide the space, tables, chairs, and everything you need to make it yours."
         ctaText=""
       />
 
@@ -174,6 +174,8 @@ export default async function PartyRoomRental() {
                 'Security deposit: $500 (refundable after event)',
                 'You may bring your own decorations, catering, and vendors',
                 'Tables and chairs for up to 60 guests included',
+                'WiFi included',
+                'Bluetooth sound system included',
               ].map(i => (
                 <li key={i} className="flex items-start gap-2 text-sm text-hampton-navy">
                   <Check size={14} className="shrink-0 mt-0.5" />

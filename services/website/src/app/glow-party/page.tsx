@@ -26,10 +26,11 @@ const whatsIncluded = [
   { icon: Zap,    text: 'UV black lights & neon LED strip lighting throughout the studio' },
   { icon: Music,  text: 'High-energy DJ playlist (Bluetooth speaker + curated glow setlist)' },
   { icon: Smile,  text: 'Neon UV face paint station — professional quality, kid-safe' },
+  { icon: Star,   text: 'Custom trucker hat included for every guest' },
   { icon: Star,   text: 'Glow bracelets, neon necklaces & glow accessories for every guest' },
   { icon: Camera, text: 'Neon balloon arch & glowing photo backdrop — perfect for pics' },
   { icon: Check,  text: 'Professional party host on-site for the full 2 hours' },
-  { icon: Check,  text: 'Pizza or bagels + cupcakes for all guests' },
+  { icon: Check,  text: 'Pizza or bagels + cupcakes + juice boxes & bottled water for all guests' },
   { icon: Check,  text: 'Digital EVITE invitation + full setup & cleanup — zero stress' },
 ]
 

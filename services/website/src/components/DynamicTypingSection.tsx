@@ -22,7 +22,7 @@ const DEFAULT_SERVICES = [
 
   // NEW ADDITIONS
   "Permanent Jewelry Party",
-  "Trucker Hat Bar Pop-Up",
+  "Trucker Hat Party Pop-Up",
   "Branding Photo Session",
   "Content Creation Day",
   "Lash Tech Pop-Up",
