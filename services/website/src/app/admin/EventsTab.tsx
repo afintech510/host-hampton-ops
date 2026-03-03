@@ -312,6 +312,7 @@ function EventForm({
             <option value="market">Market</option>
             <option value="drop-off">Drop-off</option>
             <option value="recurring">Recurring</option>
+            <option value="night-out">Night Out</option>
           </select>
         </div>
         <div>
