@@ -401,6 +401,22 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
         </div>
       </section>
 
+      {/* ── Design Your Party CTA (top) ── */}
+      <section className="pb-12 px-4">
+        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row items-center gap-5 bg-white rounded-2xl px-8 py-6 border border-hampton-pink/20 shadow-sm">
+          <div className="flex-1 text-center sm:text-left">
+            <h3 className="font-serif text-xl text-hampton-navy font-bold mb-1">Want to customize everything?</h3>
+            <p className="text-hampton-navy/60 text-sm">Browse our full menu, pick add-ons, and see your price in real time.</p>
+          </div>
+          <Link
+            href="/kids-party-menu"
+            className="shrink-0 bg-hampton-navy text-hampton-ivory font-bold px-8 py-3 rounded-full text-sm hover:bg-hampton-navy/90 transition-all shadow-sm hover:shadow-md"
+          >
+            Design Your Party
+          </Link>
+        </div>
+      </section>
+
       {/* ── Theme Packages ── */}
       <section ref={themeSectionRef} className="py-8 max-w-7xl mx-auto px-4 sm:px-6 scroll-mt-24">
         <h2 className="section-heading text-center mb-2">Select Your Theme</h2>
