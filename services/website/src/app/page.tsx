@@ -227,7 +227,7 @@ export default async function Home() {
             { href: '/custom-accessories',   title: 'Custom Accessories',    desc: 'Personalized canvas bags & trucker hats — perfect party favors or on-site at your event.',        img: '/images/gallery/product-pouches-1.webp' },
           ].map(s => (
             <Link href={s.href} key={s.href} className="card group">
-              <div className="relative aspect-video overflow-hidden">
+              <div className="relative aspect-[3/4] overflow-hidden">
                 <Image src={s.img} alt={s.title} fill className="object-cover group-hover:scale-105 transition-transform duration-300" />
               </div>
               <div className="p-5">

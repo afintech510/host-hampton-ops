@@ -200,7 +200,7 @@ export default function ThemeTileGrid({ themePrices = [] }: { themePrices?: Them
                 <ImageSlider
                   images={selected.imgs}
                   alt={selected.name}
-                  aspectRatio="aspect-[16/9]"
+                  aspectRatio="aspect-[3/4]"
                   autoPlayMs={3500}
                 />
                 <div className="p-6">

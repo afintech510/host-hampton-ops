@@ -126,7 +126,7 @@ export default async function PartyRoomRental() {
             { src: '/images/gallery/venue-craft-station.webp', alt: 'Craft activity station setup' },
             { src: '/images/gallery/activity-bracelet-making.webp', alt: 'Bracelet making activity at Host Hampton' },
           ].map((img, i) => (
-            <div key={i} className="relative aspect-[4/3] rounded-2xl overflow-hidden shadow-md">
+            <div key={i} className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-md">
               <Image src={img.src} alt={img.alt} fill className="object-cover" />
             </div>
           ))}
