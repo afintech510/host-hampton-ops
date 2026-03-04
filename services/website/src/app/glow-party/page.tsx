@@ -5,7 +5,7 @@ import GlowHero from './GlowHero'
 import UniversalCalendar from '@/components/UniversalCalendar'
 
 export const metadata: Metadata = {
-  title: 'Kids Glow Party | Host Hampton — Neon Birthday Party Speonk NY',
+  title: 'Kids Glow Party — Neon Birthday Party Speonk NY',
   description:
     'The ultimate neon glow party for kids in Speonk, NY. Black lights, UV face paint, neon decor, private studio, and professional host. Starting at $950. Book your glow birthday today!',
   keywords: [
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     'glow in the dark party venue',
   ],
   openGraph: {
-    title: 'Kids Glow Party | Host Hampton',
+    title: 'Kids Glow Party',
     description: 'Neon face paint · Private studio · DJ vibes · Black lights — the brightest birthday ever in Speonk, NY.',
   },
 }

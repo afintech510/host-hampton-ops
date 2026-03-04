@@ -7,7 +7,7 @@ import ThemeTileGrid from '@/components/ThemeTileGrid'
 import { getSupabase } from '@/lib/supabase'
 
 export const metadata: Metadata = {
-  title: 'Host Hampton | Birthday Party Venue in the Hamptons, NY',
+  title: 'Birthday Party Venue in the Hamptons, NY',
   description:
     'Magical themed birthday parties, permanent jewelry, and room rentals in Speonk, NY. Stress-free celebrations for ages 3–12. Reserve your date with a $99 deposit.',
 }

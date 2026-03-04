@@ -4,11 +4,11 @@ import KidsPartyMenuContent from './KidsPartyMenuContent'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 
 export const metadata: Metadata = {
-  title: "Kids Party Menu & Quote Builder | Host Hampton, Speonk NY",
+  title: "Kids Party Menu & Quote Builder — Speonk NY",
   description:
     'Browse our full kids party menu — themes, activities, food, desserts, decor, entertainment and more. Select items to build your custom quote instantly.',
   openGraph: {
-    title: "Kids Party Menu & Quote Builder | Host Hampton",
+    title: "Kids Party Menu & Quote Builder",
     description: 'Browse our full kids party menu. Select items, see your total in real time, and save your quote.',
   },
 }

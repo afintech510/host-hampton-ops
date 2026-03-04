@@ -8,7 +8,7 @@ import { getSupabase } from '@/lib/supabase'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Party Room Rental | Host Hampton, Speonk NY',
+  title: 'Party Room Rental — Speonk NY',
   description:
     'Rent our private party studio in Speonk, NY for birthdays, showers, photo shoots, workshops, and more. Starting at $450 for 3 hours. DIY your event your way.',
 }
@@ -113,6 +113,7 @@ export default async function PartyRoomRental() {
         services={ROOM_SERVICES}
         subtitle="Our private Hamptons studio is the perfect blank canvas. You bring the vision &#8212; we provide the space, tables, chairs, and everything you need to make it yours."
         ctaText=""
+        headingLevel="h1"
       />
 
       {/* ── Use Cases ── */}

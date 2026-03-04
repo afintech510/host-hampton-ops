@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Check } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'First Communion Party Venue | Host Hampton, Long Island',
+  title: 'First Communion Party Venue — Long Island',
   description:
     'Celebrate your child\'s First Communion at Host Hampton in Speonk, NY. Private party room, elegant decor, full catering, and customizable themes. Reserve with a $99 deposit. Serving all of Long Island and the Hamptons.',
   keywords: ['communion party venue Long Island', 'first communion party Hamptons', 'communion celebration venue NY', 'communion party room rental Speonk'],

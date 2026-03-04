@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
 
 export const metadata: Metadata = {
-  title: 'Party Menu & Pricing | Host Hampton',
+  title: 'Party Menu & Pricing',
   description: 'Full pricing menu for Host Hampton party packages, room rentals, food & catering, decor, entertainment, and add-ons. Book your celebration today.',
 }
 

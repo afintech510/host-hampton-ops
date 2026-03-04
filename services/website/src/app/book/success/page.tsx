@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { CheckCircle, Calendar, Mail, Phone } from 'lucide-react'
 
-export const metadata: Metadata = { title: 'Booking Confirmed! | Host Hampton' }
+export const metadata: Metadata = { title: 'Booking Confirmed!' }
 
 export default function BookSuccess() {
   return (

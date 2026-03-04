@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 
-export const metadata: Metadata = { title: 'Terms of Service | Host Hampton' }
+export const metadata: Metadata = { title: 'Terms of Service' }
 
 export default function TermsOfService() {
   return (

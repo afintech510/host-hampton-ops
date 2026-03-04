@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'Sitemap | Host Hampton',
+  title: 'Sitemap',
   description: 'Browse all pages on the Host Hampton website. Find party packages, events, booking, and more.',
 }
 

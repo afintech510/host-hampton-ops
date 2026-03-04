@@ -5,7 +5,7 @@ import { getSupabase } from '@/lib/supabase'
 import EventFilters from './EventFilters'
 
 export const metadata: Metadata = {
-  title: 'Events & Workshops | Host Hampton',
+  title: 'Events & Workshops',
   description: 'Workshops, classes, and community events at Host Hampton in Speonk, NY. Embroidery, sourdough, spirit readings, and more.',
 }
 

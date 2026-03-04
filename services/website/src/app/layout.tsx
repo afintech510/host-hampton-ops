@@ -12,6 +12,8 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://www.hosthampton.com'),
+  alternates: { canonical: './' },
   title: {
     default: 'Host Hampton | Birthday Party Venue in Speonk, NY',
     template: '%s | Host Hampton',
@@ -34,6 +36,7 @@ export const metadata: Metadata = {
     siteName: 'Host Hampton',
     locale: 'en_US',
     type: 'website',
+    images: [{ url: '/images/og-default.png', width: 1200, height: 630, alt: 'Host Hampton — Boutique Celebration Studio in Speonk, NY' }],
   },
 }
 

@@ -3,7 +3,7 @@ import Image from 'next/image'
 import InquiryForm from './InquiryForm'
 
 export const metadata: Metadata = {
-  title: 'Atelier Brim — Bespoke Hat Bar Activations | Host Hampton',
+  title: 'Atelier Brim — Bespoke Hat Bar Activations',
   description:
     'Curated trucker hat bar experiences for corporate events, brand activations, and private gatherings. Bespoke headwear styling for tastemakers in NYC, the Hamptons, and beyond.',
   keywords: [

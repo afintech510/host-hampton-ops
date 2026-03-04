@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { CheckCircle, Calendar, MapPin, ArrowRight } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'Tickets Confirmed | Host Hampton',
+  title: 'Tickets Confirmed',
 }
 
 export default function EventSuccessPage() {

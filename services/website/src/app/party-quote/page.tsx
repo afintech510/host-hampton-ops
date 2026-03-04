@@ -7,11 +7,11 @@ import type { PricingItem } from '@/components/QuoteBuilder'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: "Children's Party Quote Builder | Host Hampton, Speonk NY",
+  title: "Children's Party Quote Builder — Speonk NY",
   description:
     'Build your dream party quote instantly. Choose a theme, activities, food, desserts, decor, entertainment, and more. See your estimated total in real time.',
   openGraph: {
-    title: "Children's Party Quote Builder | Host Hampton",
+    title: "Children's Party Quote Builder",
     description: 'Build your dream party quote instantly. Choose a theme, add-ons, and see your total in real time.',
   },
 }

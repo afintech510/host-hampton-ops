@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 
-export const metadata: Metadata = { title: 'Return Policy | Host Hampton' }
+export const metadata: Metadata = { title: 'Return Policy' }
 
 export default function ReturnPolicy() {
   return (

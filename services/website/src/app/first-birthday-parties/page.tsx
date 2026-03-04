@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Check, Heart, Star } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'First Birthday Party Venue in the Hamptons | Host Hampton',
+  title: 'First Birthday Party Venue in the Hamptons',
   description:
     'Make baby\'s first birthday magical at Host Hampton in Speonk, NY. Private studio, full setup, themed decorations, and a stress-free celebration for toddlers on Long Island. Reserve with $99.',
   keywords: ['first birthday party Hamptons', 'first birthday party venue Long Island', 'first birthday party Speonk NY', 'toddler birthday party venue', '1st birthday party Long Island'],

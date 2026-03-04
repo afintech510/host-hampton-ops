@@ -4,7 +4,7 @@ import { Check } from 'lucide-react'
 import FundraiserForm from './FundraiserForm'
 
 export const metadata: Metadata = {
-  title: 'Trucker Hat & Canvas Gear Fundraiser | Host Hampton, Long Island',
+  title: 'Trucker Hat & Canvas Gear Fundraiser — Long Island',
   description:
     'A fun, easy way to raise money for your school, team, or class. Custom branded trucker hats, canvas totes & pouches. No upfront cost — keep 100% of the profit. Speonk, NY.',
   keywords: [
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     'custom merchandise fundraiser',
   ],
   openGraph: {
-    title: 'Trucker Hat + Canvas Gear Fundraiser | Host Hampton',
+    title: 'Trucker Hat + Canvas Gear Fundraiser',
     description:
       'Custom branded items your fans actually want to represent your organization. No upfront cost, no inventory, keep 100% of the profit.',
     url: 'https://www.hosthampton.com/fundraiser',

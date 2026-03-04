@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 
 export const metadata: Metadata = {
-  title: 'CM Cheer Events | Host Hampton',
+  title: 'CM Cheer Events',
   description: 'CM Cheer events at Host Hampton in Speonk, NY. Celebrations, team events, and more. Contact us for details.',
 }
 

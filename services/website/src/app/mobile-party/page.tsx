@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { Check, MapPin, PartyPopper, Sparkles, Users, Clock, Truck, Heart, ChevronDown } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'Mobile Party — We Bring the Party to You | Host Hampton',
+  title: 'Mobile Party — We Bring the Party to You',
   description:
     'Host Hampton brings themed birthday parties, activities, and entertainment directly to your home, backyard, or venue. Full-service mobile party packages starting at $650 in the Hamptons & Long Island.',
   keywords: [
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     'mobile kids party Hamptons',
   ],
   openGraph: {
-    title: 'Mobile Party — We Bring the Party to You | Host Hampton',
+    title: 'Mobile Party — We Bring the Party to You',
     description:
       'Themed birthday parties delivered to your door. Professional hosts, activities, decor & cleanup — all at your location.',
   },

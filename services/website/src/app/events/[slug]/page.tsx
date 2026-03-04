@@ -14,9 +14,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
     .eq('slug', params.slug)
     .single()
 
-  if (!event) return { title: 'Event Not Found | Host Hampton' }
+  if (!event) return { title: 'Event Not Found' }
   return {
-    title: `${event.title} | Host Hampton`,
+    title: event.title,
     description: event.short_description || `Join us for ${event.title} at Host Hampton in Speonk, NY.`,
   }
 }

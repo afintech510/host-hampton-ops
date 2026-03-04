@@ -4,7 +4,7 @@ import Link from 'next/link'
 import UniversalCalendar from '@/components/UniversalCalendar'
 
 export const metadata: Metadata = {
-  title: 'Permanent Jewelry | Host Hampton, Speonk NY',
+  title: 'Permanent Jewelry — Speonk NY',
   description: 'Custom-welded permanent bracelets, anklets, and necklaces at Host Hampton in Speonk, NY. Perfect for moms & daughters, bachelorettes, and birthday parties. Starting at $65.',
 }
 

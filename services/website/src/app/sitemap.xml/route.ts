@@ -22,7 +22,6 @@ export async function GET() {
     { url: `${base}/book`, lastmod: now, changefreq: 'weekly', priority: 0.9 },
     { url: `${base}/party-room-rental`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
     { url: `${base}/permanent-jewelry`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
-    { url: `${base}/party-add-ons`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
     { url: `${base}/communion-party`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
     { url: `${base}/fundraiser`, lastmod: now, changefreq: 'weekly', priority: 0.8 },
     { url: `${base}/events`, lastmod: now, changefreq: 'weekly', priority: 0.8 },
@@ -32,12 +31,9 @@ export async function GET() {
     { url: `${base}/privacy-policy`, lastmod: now, changefreq: 'yearly', priority: 0.2 },
     { url: `${base}/terms-of-service`, lastmod: now, changefreq: 'yearly', priority: 0.2 },
     { url: `${base}/return-policy`, lastmod: now, changefreq: 'yearly', priority: 0.2 },
-    { url: `${base}/sitemap`, lastmod: now, changefreq: 'monthly', priority: 0.3 },
     { url: `${base}/mobile-party`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
     { url: `${base}/custom-accessories`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
-    { url: `${base}/party-quote`, lastmod: now, changefreq: 'weekly', priority: 0.8 },
-    { url: `${base}/party-menu`, lastmod: now, changefreq: 'monthly', priority: 0.9 },
-    { url: `${base}/kids-party-menu`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
+    { url: `${base}/kids-party-menu`, lastmod: now, changefreq: 'monthly', priority: 0.9 },
     { url: `${base}/trucker-hat-bar`, lastmod: now, changefreq: 'monthly', priority: 0.7 },
   ]
 

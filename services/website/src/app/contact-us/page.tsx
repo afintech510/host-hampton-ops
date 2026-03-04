@@ -3,7 +3,7 @@ import { Phone, Mail, MapPin, Clock, Instagram, Facebook, Navigation } from 'luc
 import ContactForm from '@/components/ContactForm'
 
 export const metadata: Metadata = {
-  title: 'Contact Us | Host Hampton',
+  title: 'Contact Us',
   description: 'Get in touch with Host Hampton in Speonk, NY. Call, text, or email to plan your party. Located at 295 Montauk Hwy, Suite 7, Speonk, NY 11972.',
 }
 

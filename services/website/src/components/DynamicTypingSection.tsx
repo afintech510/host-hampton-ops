@@ -49,6 +49,7 @@ interface DynamicTypingSectionProps {
   subtitle?: string
   ctaText?: string
   ctaHref?: string
+  headingLevel?: 'h1' | 'h2'
 }
 
 export default function DynamicTypingSection({
@@ -57,7 +58,9 @@ export default function DynamicTypingSection({
   subtitle = "Our private Hamptons studio is the perfect blank canvas. Whether you\u2019re celebrating a milestone or gathering your community, we handle the details so you can enjoy the moment.",
   ctaText = 'INQUIRE ABOUT YOUR EVENT',
   ctaHref = '/contact-us',
+  headingLevel = 'h2',
 }: DynamicTypingSectionProps) {
+  const Heading = headingLevel
   const [text, setText] = useState('')
   const [isDeleting, setIsDeleting] = useState(false)
   const [loopNum, setLoopNum] = useState(0)
@@ -104,13 +107,13 @@ export default function DynamicTypingSection({
         </div>
 
         {/* Animated headline */}
-        <h2 className="text-4xl md:text-5xl lg:text-7xl font-serif text-hampton-navy leading-tight">
+        <Heading className="text-4xl md:text-5xl lg:text-7xl font-serif text-hampton-navy leading-tight">
           Let Us Host Your<br />
           <span className="inline-block min-h-[1.2em] text-transparent bg-clip-text bg-gradient-to-r from-hampton-blue to-hampton-blue/60 italic relative">
             {text || ' '}
             <span className="absolute -right-1 top-0 md:top-1 w-[2px] md:w-[3px] h-[80%] bg-hampton-blue animate-pulse" />
           </span>
-        </h2>
+        </Heading>
 
         {subtitle && (
           <p className="mt-8 text-lg text-hampton-navy/70 max-w-2xl mx-auto">
