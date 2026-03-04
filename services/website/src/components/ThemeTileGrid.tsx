@@ -38,7 +38,7 @@ const themes = [
   {
     name: 'Glow Party',
     price: 950,
-    imgs: ['/images/theme-glow.png', '/images/gallery/glow-accessories.webp'],
+    imgs: ['/images/theme-glow.webp', '/images/gallery/glow-accessories.webp'],
     tag: 'Most Popular',
     desc: 'Black lights, UV face paint, neon accessories, glow bracelets, custom trucker hat, and a dance party.',
     extendedDesc: 'Transform our studio into a neon wonderland! Every guest gets a custom trucker hat, glow bracelets, neon necklaces, and UV face paint from our professional station. The entire studio is lit with black lights and neon LED strips. We crank up the DJ playlist, and kids dance the night away in a truly electric atmosphere. The perfect party for ages 6–14.',
@@ -46,7 +46,7 @@ const themes = [
   {
     name: 'Swiftie Party',
     price: 850,
-    imgs: ['/images/theme-swiftie.png'],
+    imgs: ['/images/theme-swiftie.webp'],
     tag: null,
     desc: 'Eras Tour-inspired decor, friendship bracelets, decorate your own glasses, and all the Taylor Swift anthems.',
     extendedDesc: 'Welcome to the Eras Tour — right in our studio! Guests make their own friendship bracelets, decorate their own glasses, sing along to curated Taylor Swift playlists, and pose in front of our Swiftie photo backdrop. The space is decked out in all of Taylor\'s signature colors and aesthetic. Perfect for the Swifties ages 6–14.',
@@ -54,7 +54,7 @@ const themes = [
   {
     name: 'Spa Party',
     price: 850,
-    imgs: ['/images/theme-spa.png', '/images/gallery/spa-party-1.webp', '/images/gallery/spa-party-2.webp'],
+    imgs: ['/images/theme-spa.webp', '/images/gallery/spa-party-1.webp', '/images/gallery/spa-party-2.webp'],
     tag: null,
     desc: 'Mini manicures, mini facials, face masks, robes, cucumbers, and full spa-day vibes.',
     extendedDesc: 'Roll out the red carpet — our studio becomes a luxury spa! Every guest gets a robe, cucumber eye pads, mini facials, a DIY face mask, and a mini manicure. We pipe in relaxing music and set up the full spa aesthetic. Totally kid-safe products, totally unforgettable. Ideal for ages 6–12.',
@@ -62,7 +62,7 @@ const themes = [
   {
     name: 'Slime Party',
     price: 900,
-    imgs: ['/images/theme-slime.png', '/images/slime-party-1.jpg', '/images/slime-party-2.jpg', '/images/slime-party-3.jpg', '/images/slime-party-4.jpg'],
+    imgs: ['/images/theme-slime.webp', '/images/slime-party-1.jpg', '/images/slime-party-2.jpg', '/images/slime-party-3.jpg', '/images/slime-party-4.jpg'],
     tag: null,
     desc: 'Choose your slime theme! Custom slime-making station with personalized containers and messy fun.',
     extendedDesc: 'Get ready for the ultimate slime lab! Choose a slime theme and each guest creates their own custom slime — picking colors, glitter, and add-ins at our slime-making station. They take home their creation in personalized containers. The studio is transformed with slime-themed decor and activities. Perfect for ages 5–12.',
@@ -70,7 +70,7 @@ const themes = [
   {
     name: 'K-Pop Party',
     price: 900,
-    imgs: ['/images/theme-kpop.png', '/images/gallery/kpop-setup.webp'],
+    imgs: ['/images/theme-kpop.webp', '/images/gallery/kpop-setup.webp'],
     tag: null,
     desc: 'Hair glitter, decorate your own microphone or trucker hat, glitter tattoos, and all the K-pop vibes.',
     extendedDesc: 'Your favorite K-pop stars come to life! Guests get hair glitter, decorate their own microphone or trucker hat, enjoy glitter tattoos, and strike poses at our photo wall. The studio is lit with stage lighting and filled with K-pop energy. We can make it neon glow if preferred. Awesome for fans ages 7–14.',
@@ -78,7 +78,7 @@ const themes = [
   {
     name: 'Barbie Party',
     price: 850,
-    imgs: ['/images/theme-barbie.png', '/images/gallery/barbie-photo-booth.webp', '/images/gallery/barbie-setup.webp'],
+    imgs: ['/images/theme-barbie.webp', '/images/gallery/barbie-photo-booth.webp', '/images/gallery/barbie-setup.webp', '/images/gallery/card-barbie-collage.webp'],
     tag: null,
     desc: 'Pink everything, Barbie manicure, fashion design station, and Barbie World brought to life.',
     extendedDesc: 'Welcome to Barbie World! The studio is fully pink and glamorous. Guests enjoy a Barbie manicure, design their own Barbie outfits at our fashion station, walk the runway, and strike their best Barbie poses at the photo wall. We\'ve got all the iconic accessories and Barbie-worthy activities. For ages 4–12.',
@@ -86,7 +86,7 @@ const themes = [
   {
     name: 'Sweets & Treats',
     price: 800,
-    imgs: ['/images/theme-sweets.png', '/images/gallery/donut-decorating.webp'],
+    imgs: ['/images/theme-sweets.webp', '/images/gallery/donut-decorating.webp'],
     tag: 'Best Value',
     desc: 'Cookie, cupcake, and donut decorating — plus decorate your own apron to take home!',
     extendedDesc: 'A party as sweet as the birthday star! Guests decorate their own cookies, cupcakes, or donuts and get to decorate their own aprons to take home. The studio is transformed into a pastel dreamland with sweet-themed decor. Perfect for ages 3–10 who love all things sweet.',
@@ -94,7 +94,7 @@ const themes = [
   {
     name: 'Sleep Under Party',
     price: 900,
-    imgs: ['/images/theme-spa.png', '/images/gallery/spa-party-1.webp'],
+    imgs: ['/images/theme-sleepunder.webp', '/images/gallery/spa-party-1.webp'],
     tag: 'New',
     desc: 'Cozy styled tents, bedazzle a hairbrush, hairstyling, mini pink facials, and sleepover vibes.',
     extendedDesc: 'The ultimate sleepover experience — without the actual sleepover! Each guest gets their own cozy styled tent with air mattress setup. Activities include bedazzling their own hairbrush to take home, fun hairstyling sessions, and relaxing mini pink facials. All the sleepover magic, and you still pick them up at the end!',
@@ -102,7 +102,7 @@ const themes = [
   {
     name: 'Toddler Party',
     price: 850,
-    imgs: ['/images/theme-toddler.png', '/images/gallery/toddler-sensory.webp'],
+    imgs: ['/images/theme-toddler.webp', '/images/gallery/toddler-sensory.webp'],
     tag: 'Ages 2–4',
     desc: 'Safe, sensory-friendly activities perfectly designed for little ones.',
     extendedDesc: 'The sweetest little celebration! Designed specifically for toddlers ages 2–4, this party features age-appropriate sensory activities, soft play elements, and a magical setup that\'s perfect for the birthday star and their little friends. Safe, fun, and oh-so-adorable.',
@@ -139,7 +139,7 @@ export default function ThemeTileGrid({ themePrices = [] }: { themePrices?: Them
                 activeTheme === t.name ? 'ring-2 ring-hampton-navy shadow-lg' : 'hover:shadow-md'
               }`}
             >
-              <div className="relative aspect-[4/3] overflow-hidden">
+              <div className="relative aspect-[4/5] overflow-hidden">
                 <Image
                   src={t.imgs[0]}
                   alt={t.name}

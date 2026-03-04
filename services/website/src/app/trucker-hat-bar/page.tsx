@@ -137,7 +137,7 @@ export default function AtelierBrimPage() {
               style={{ border: `1px solid ${c.roseLight}` }}
             >
               <Image
-                src="/images/theme-sweets.png"
+                src="/images/gallery/card-trucker-hat-bar.webp"
                 alt="Atelier Brim — curated hat bar styling"
                 fill
                 className="object-cover"
@@ -190,7 +190,7 @@ export default function AtelierBrimPage() {
             style={{ border: `1px solid ${c.roseLight}` }}
           >
             <Image
-              src="/images/theme-spa.png"
+              src="/images/gallery/venue-party-setup-5.webp"
               alt="Curated hat bar experience"
               fill
               className="object-cover"
@@ -320,7 +320,7 @@ export default function AtelierBrimPage() {
             style={{ border: `1px solid ${c.roseLight}` }}
           >
             <Image
-              src="/images/theme-barbie.png"
+              src="/images/gallery/product-pouches-1.webp"
               alt="Hat bar display styling"
               fill
               className="object-cover"

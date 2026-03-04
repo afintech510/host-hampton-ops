@@ -166,7 +166,7 @@ export default function MobilePartyPage() {
             </div>
           </div>
           <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
-            {['/images/theme-glow.png', '/images/gallery/outdoor-party-setup.webp', '/images/gallery/spa-party-2.webp', '/images/theme-slime.png'].map((src, i) => (
+            {['/images/theme-glow.webp', '/images/gallery/outdoor-party-setup.webp', '/images/theme-spa.webp', '/images/theme-slime.webp'].map((src, i) => (
               <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 1 ? 'ring-2 ring-[#c4975a]' : ''}`}>
                 <Image src={src} alt="Mobile party theme" fill className="object-cover" />
                 {i === 1 && (

@@ -13,14 +13,14 @@ export const metadata: Metadata = {
 }
 
 const themes = [
-  { name: 'Glow Party',       price: 950, img: '/images/theme-glow.png',     tag: 'Most Popular' },
-  { name: 'Swiftie Party',    price: 850, img: '/images/theme-swiftie.png',  tag: null },
-  { name: 'Spa Party',        price: 850, img: '/images/theme-spa.png',      tag: null },
-  { name: 'Slime Party',      price: 900, img: '/images/theme-slime.png',    tag: null },
-  { name: 'K-Pop Party',      price: 900, img: '/images/theme-kpop.png',     tag: null },
-  { name: 'Barbie Party',     price: 850, img: '/images/theme-barbie.png',   tag: null },
-  { name: 'Sweets & Treats',  price: 800, img: '/images/theme-sweets.png',   tag: 'Best Value' },
-  { name: 'Toddler Party',    price: 850, img: '/images/theme-toddler.png',  tag: 'Ages 2–4' },
+  { name: 'Glow Party',       price: 950, img: '/images/theme-glow.webp',     tag: 'Most Popular' },
+  { name: 'Swiftie Party',    price: 850, img: '/images/theme-swiftie.webp',  tag: null },
+  { name: 'Spa Party',        price: 850, img: '/images/theme-spa.webp',      tag: null },
+  { name: 'Slime Party',      price: 900, img: '/images/theme-slime.webp',    tag: null },
+  { name: 'K-Pop Party',      price: 900, img: '/images/theme-kpop.webp',     tag: null },
+  { name: 'Barbie Party',     price: 850, img: '/images/theme-barbie.webp',   tag: null },
+  { name: 'Sweets & Treats',  price: 800, img: '/images/theme-sweets.webp',   tag: 'Best Value' },
+  { name: 'Toddler Party',    price: 850, img: '/images/theme-toddler.webp',  tag: 'Ages 2–4' },
 ]
 
 const whyUs = [
@@ -90,7 +90,7 @@ export default async function Home() {
             </div>
           </div>
           <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
-            {['/images/theme-glow.png', '/images/gallery/venue-party-setup-1.webp', '/images/gallery/spa-party-1.webp', '/images/gallery/barbie-photo-booth.webp'].map((src, i) => (
+            {['/images/theme-glow.webp', '/images/theme-barbie.webp', '/images/theme-spa.webp', '/images/theme-sweets.webp'].map((src, i) => (
               <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 0 ? 'ring-2 ring-hampton-pink' : ''}`}>
                 <Image src={src} alt="Party theme" fill className="object-cover" />
               </div>

@@ -113,7 +113,7 @@ export default function CustomAccessoriesPage() {
           <div className="bg-white rounded-3xl border border-hampton-pink/20 shadow-sm overflow-hidden">
             <div className="relative aspect-video">
               <Image
-                src="/images/theme-sweets.png"
+                src="/images/gallery/product-pouches-2.webp"
                 alt="Custom canvas party bags at Host Hampton"
                 fill
                 className="object-cover"
