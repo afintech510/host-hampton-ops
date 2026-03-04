@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Check, ChevronDown, Clock, Camera, Briefcase, Palette } from 'lucide-react'
 import DynamicTypingSection from '@/components/DynamicTypingSection'
 import RoomRentalLeadForm from '@/components/RoomRentalLeadForm'
@@ -115,6 +116,22 @@ export default async function PartyRoomRental() {
         ctaText=""
         headingLevel="h1"
       />
+
+      {/* ── Venue Gallery ── */}
+      <section className="pb-12 max-w-5xl mx-auto px-4 sm:px-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { src: '/images/gallery/venue-construction-party.webp', alt: 'Birthday party setup at Host Hampton' },
+            { src: '/images/gallery/venue-painting-workshop.webp', alt: 'Painting workshop in our private studio' },
+            { src: '/images/gallery/venue-craft-station.webp', alt: 'Craft activity station setup' },
+            { src: '/images/gallery/activity-bracelet-making.webp', alt: 'Bracelet making activity at Host Hampton' },
+          ].map((img, i) => (
+            <div key={i} className="relative aspect-[4/3] rounded-2xl overflow-hidden shadow-md">
+              <Image src={img.src} alt={img.alt} fill className="object-cover" />
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* ── Use Cases ── */}
       <section className="py-16 max-w-5xl mx-auto px-4 sm:px-6">

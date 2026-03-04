@@ -50,10 +50,10 @@ const useCases = [
 ]
 
 const gallery = [
+  { img: '/images/gallery/product-pouches-1.webp', caption: 'Custom Personalized Pouches' },
+  { img: '/images/gallery/product-pouches-2.webp', caption: 'Pastel Party Favor Bags' },
   { img: '/images/jewelry-weld.png', caption: 'Custom Hat Bar Activation' },
-  { img: '/images/jewelry-gold.png', caption: 'Personalized Party Favors' },
-  { img: '/images/theme-sweets.png', caption: 'Canvas Bags for Groups' },
-  { img: '/images/theme-barbie.png', caption: 'Theme-Matched Accessories' },
+  { img: '/images/jewelry-gold.png', caption: 'Permanent Jewelry & Accessories' },
 ]
 
 const reviews = [

@@ -90,7 +90,7 @@ export default async function Home() {
             </div>
           </div>
           <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
-            {['/images/theme-glow.png', '/images/theme-swiftie.png', '/images/theme-spa.png', '/images/theme-slime.png'].map((src, i) => (
+            {['/images/theme-glow.png', '/images/gallery/venue-party-setup-1.webp', '/images/gallery/spa-party-1.webp', '/images/gallery/barbie-photo-booth.webp'].map((src, i) => (
               <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 0 ? 'ring-2 ring-hampton-pink' : ''}`}>
                 <Image src={src} alt="Party theme" fill className="object-cover" />
               </div>
@@ -221,10 +221,10 @@ export default async function Home() {
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
-            { href: '/party-room-rental',    title: 'Room Rental',           desc: 'DIY your event in our beautiful private studio. Starting at $450 for 3 hours.',                    img: '/images/theme-sweets.png' },
+            { href: '/party-room-rental',    title: 'Room Rental',           desc: 'DIY your event in our beautiful private studio. Starting at $450 for 3 hours.',                    img: '/images/gallery/venue-party-setup-5.webp' },
             { href: '/permanent-jewelry',    title: 'Permanent Jewelry',     desc: 'Custom-welded bracelets, anklets, and necklaces. Perfect for moms & daughter pairs.',              img: '/images/jewelry-gold.png' },
-            { href: '/events',               title: 'Events & Classes',      desc: 'Moms in the Morning, Girls Night Out, craft workshops, and more.',                                 img: '/images/theme-spa.png' },
-            { href: '/custom-accessories',   title: 'Custom Accessories',    desc: 'Personalized canvas bags & trucker hats — perfect party favors or on-site at your event.',        img: '/images/jewelry-weld.png' },
+            { href: '/events',               title: 'Events & Classes',      desc: 'Moms in the Morning, Girls Night Out, craft workshops, and more.',                                 img: '/images/gallery/venue-painting-workshop.webp' },
+            { href: '/custom-accessories',   title: 'Custom Accessories',    desc: 'Personalized canvas bags & trucker hats — perfect party favors or on-site at your event.',        img: '/images/gallery/product-pouches-1.webp' },
           ].map(s => (
             <Link href={s.href} key={s.href} className="card group">
               <div className="relative aspect-video overflow-hidden">
