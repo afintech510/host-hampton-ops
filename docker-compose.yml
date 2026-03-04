@@ -125,7 +125,11 @@ services:
 
   # ─── WEBSITE (Next.js) ────────────────────────────────────────
   website:
-    build: ./services/website
+    build:
+      context: ./services/website
+      args:
+        NEXT_PUBLIC_GA_ID: ${NEXT_PUBLIC_GA_ID:-G-BX1DJ77T15}
+        NEXT_PUBLIC_GADS_ID: ${NEXT_PUBLIC_GADS_ID:-}
     container_name: hampton_website
     restart: unless-stopped
     environment:
