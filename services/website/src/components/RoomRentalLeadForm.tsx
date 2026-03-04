@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Send, CheckCircle } from 'lucide-react'
+import { trackLead } from '@/lib/gtag'
+import { captureUtm, getUtmParams } from '@/lib/utm'
 
 export default function RoomRentalLeadForm() {
   const [form, setForm] = useState({
@@ -15,6 +17,8 @@ export default function RoomRentalLeadForm() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => { captureUtm() }, [])
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }))
@@ -36,6 +40,7 @@ export default function RoomRentalLeadForm() {
           guestCount: form.guestCount || undefined,
           eventType: form.eventName || 'Room Rental',
           sourcePage: 'party-room-rental',
+          utm: getUtmParams(),
         }),
       })
 
@@ -45,6 +50,7 @@ export default function RoomRentalLeadForm() {
       }
 
       setSubmitted(true)
+      trackLead('room-rental', form.email)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {

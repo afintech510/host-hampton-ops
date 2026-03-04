@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
       notes,
       partyTags,
       bookingTypeSlug,
+      utm,
     } = body
 
     if (!partyDate || !partyTime || !contactName || !contactEmail || !contactPhone) {
@@ -147,6 +148,9 @@ export async function POST(req: NextRequest) {
         bookingTypeSlug: bookingTypeSlug || '',
         slotDurationMin: String(slotDurationMin),
         depositCents: String(depositCents),
+        utm_source: utm?.utm_source || '',
+        utm_medium: utm?.utm_medium || '',
+        utm_campaign: utm?.utm_campaign || '',
       },
       // Use forwarded host from nginx (req.nextUrl.origin is the internal Docker hostname)
       success_url: `https://${host}/book/success?session_id={CHECKOUT_SESSION_ID}`,

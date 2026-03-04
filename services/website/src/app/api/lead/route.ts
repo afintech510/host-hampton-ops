@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
     timeOfDay,
     notes,
     sourcePage,
+    utm,
   } = body
 
   // Validate required fields
@@ -77,6 +78,7 @@ export async function POST(req: NextRequest) {
           preferredDate: preferredDate || null,
           timeOfDay: timeOfDay || null,
           notes: notes || null,
+          utm: utm || null,
         },
       })
     } catch (dbErr) {
@@ -127,21 +129,28 @@ export async function POST(req: NextRequest) {
       },
     ]
 
-    // Customer confirmation (for room-rental and other leads with email)
-    if (sourcePage === 'party-room-rental') {
-      emails.push({
-        from,
-        to: email,
-        subject: 'Your Room Rental Inquiry — Host Hampton',
-        html: leadConfirmHtml({
-          customerName: fullName,
-          eventType,
-          preferredDate: dateDisplay,
-          guestCount,
-          bookLink,
-        }),
-      })
-    }
+    // Customer auto-response for all lead types
+    const isRoomRental = sourcePage === 'party-room-rental'
+    const subject = isRoomRental
+      ? 'Your Room Rental Inquiry — Host Hampton'
+      : `Your ${eventType || 'Party'} Inquiry — Host Hampton`
+
+    const confirmBookLink = isRoomRental
+      ? bookLink
+      : `${protocol}://${host}/party-packages`
+
+    emails.push({
+      from,
+      to: email,
+      subject,
+      html: leadConfirmHtml({
+        customerName: fullName,
+        eventType,
+        preferredDate: dateDisplay,
+        guestCount,
+        bookLink: confirmBookLink,
+      }),
+    })
 
     await Promise.allSettled(emails.map(e => resend.emails.send(e)))
   } else {

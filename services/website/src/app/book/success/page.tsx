@@ -1,12 +1,15 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { CheckCircle, Calendar, Mail, Phone } from 'lucide-react'
+import ConversionTracker from '@/components/ConversionTracker'
 
 export const metadata: Metadata = { title: 'Booking Confirmed!' }
 
 export default function BookSuccess() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-20">
+      <Suspense><ConversionTracker type="booking" /></Suspense>
       <div className="max-w-lg w-full text-center">
         <CheckCircle size={64} className="text-green-500 mx-auto mb-6" />
         <h1 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-4">

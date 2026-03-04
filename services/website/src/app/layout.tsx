@@ -3,6 +3,7 @@ import './globals.css'
 import Nav from '@/components/Nav'
 import Footer from '@/components/Footer'
 import CrispChat from '@/components/CrispChat'
+import GoogleAnalytics from '@/components/GoogleAnalytics'
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -86,6 +87,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="flex-1 pt-20">{children}</main>
         <div className="h-40 bg-gradient-to-b from-transparent to-[#BCCDEB]" aria-hidden="true" />
         <Footer />
+        <GoogleAnalytics />
         <CrispChat />
       </body>
     </html>

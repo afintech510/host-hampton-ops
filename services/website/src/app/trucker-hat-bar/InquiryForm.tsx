@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { trackContact } from '@/lib/gtag'
 
 const c = {
   oat:      '#F5F0EB',
@@ -65,6 +66,7 @@ export default function InquiryForm() {
         ].join('\n')
         window.location.href = `mailto:hosthampton295@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
         setSubmitted(true)
+        trackContact('inquiry_form')
       }}
     >
       <div className="grid md:grid-cols-2 gap-6">

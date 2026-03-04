@@ -8,6 +8,8 @@ import UniversalCalendar from '@/components/UniversalCalendar'
 import ImageSlider from '@/components/ImageSlider'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import type { PricingItem } from './page'
+import { trackLead, trackCheckoutStart } from '@/lib/gtag'
+import { captureUtm, getUtmParams } from '@/lib/utm'
 
 const MINI_PARTY_DISCOUNT = 200
 const MINI_PARTY_MAX_GUESTS = 7
@@ -194,6 +196,8 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
     }
   }
 
+  useEffect(() => { captureUtm() }, [])
+
   // Scroll the card image to the top of the viewport when a theme is selected
   useEffect(() => {
     if (!selectedTheme) return
@@ -230,6 +234,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
           ...formData,
           timeOfDay: formData.timeOfDay.join(', '),
           sourcePage: 'party-packages',
+          utm: getUtmParams(),
         }),
       })
 
@@ -241,6 +246,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
 
       setSubmitting(false)
       setSubmitted(true)
+      trackLead('party-packages', formData.email)
       setTimeout(() => {
         calendarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 300)
@@ -285,11 +291,15 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
             price: selectedThemePrice != null ? selectedThemePrice - (isMiniParty ? MINI_PARTY_DISCOUNT : 0) : undefined,
             miniParty: isMiniParty || undefined,
           },
+          utm: getUtmParams(),
         }),
       })
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Checkout failed')
+
+      // Fire checkout tracking before redirect
+      trackCheckoutStart(formData.partyTheme || selectedTheme || 'Kids Birthday Party', selectedThemePrice || 99)
 
       // Redirect to Stripe
       window.location.href = data.url
@@ -378,6 +388,9 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
         </h1>
         <p className="text-hampton-navy/80 text-lg max-w-xl mx-auto font-medium">
           Pick a theme that makes your child&apos;s heart sing, then tell us about your party.
+        </p>
+        <p className="text-hampton-navy/50 text-sm max-w-lg mx-auto mt-3">
+          Elevated Hamptons setting. Hands-on hosts who guide every activity. Fully customizable — scale up or down to fit your budget.
         </p>
       </section>
 
