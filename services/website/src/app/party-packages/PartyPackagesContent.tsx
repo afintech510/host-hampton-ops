@@ -387,10 +387,10 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
           Party Packages & Pricing
         </h1>
         <p className="text-hampton-navy/80 text-lg max-w-xl mx-auto font-medium">
-          Pick a theme that makes your child&apos;s heart sing, then tell us about your party.
+          An upscale Hamptons party — at prices you&apos;d pay anywhere else.
         </p>
         <p className="text-hampton-navy/50 text-sm max-w-lg mx-auto mt-3">
-          Elevated Hamptons setting. Hands-on hosts who guide every activity. Fully customizable — scale up or down to fit your budget.
+          Our hosts guide every child through every activity. Fully customizable — scale up or keep it simple, whatever fits your budget.
         </p>
       </section>
 

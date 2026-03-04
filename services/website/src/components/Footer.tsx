@@ -14,7 +14,7 @@ export default function Footer() {
             <span className="font-serif text-lg font-bold">Host Hampton</span>
           </div>
           <p className="text-sm text-hampton-navy/70 leading-relaxed">
-            A boutique celebration studio in Speonk, NY. Creating magical party experiences for children and memorable moments for families.
+            A private celebration studio in Speonk, NY. Upscale Hamptons parties with hands-on hosts — fully customizable to fit any budget.
           </p>
           <div className="flex gap-3 mt-5">
             <a href="https://instagram.com/hosthampton" target="_blank" rel="noopener noreferrer"

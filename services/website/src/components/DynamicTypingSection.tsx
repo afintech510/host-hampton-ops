@@ -55,7 +55,7 @@ interface DynamicTypingSectionProps {
 export default function DynamicTypingSection({
   services = DEFAULT_SERVICES,
   tagline = 'More Than Just Birthdays',
-  subtitle = "Our private Hamptons studio is the perfect blank canvas. Whether you\u2019re celebrating a milestone or gathering your community, we handle the details so you can enjoy the moment.",
+  subtitle = "Our private Hamptons studio adapts to whatever you need. We set it up, run it, and clean it up \u2014 you just enjoy.",
   ctaText = 'INQUIRE ABOUT YOUR EVENT',
   ctaHref = '/contact-us',
   headingLevel = 'h2',

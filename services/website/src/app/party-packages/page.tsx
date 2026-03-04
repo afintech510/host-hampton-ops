@@ -4,7 +4,7 @@ import PartyPackagesContent from './PartyPackagesContent'
 
 export const metadata: Metadata = {
   title: 'Party Packages & Pricing',
-  description: 'View all themed birthday party packages at Host Hampton. Glow, Swiftie, Spa, Slime, K-Pop, Barbie and more. Starting at $800. Book your party today!',
+  description: 'Upscale themed birthday parties in a private Hamptons studio. Glow, Swiftie, Spa, Slime, K-Pop, Barbie and more — fully customizable, starting at $800.',
 }
 
 export const dynamic = 'force-dynamic'

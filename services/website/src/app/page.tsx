@@ -9,7 +9,7 @@ import { getSupabase } from '@/lib/supabase'
 export const metadata: Metadata = {
   title: 'Birthday Party Venue in the Hamptons, NY',
   description:
-    'Magical themed birthday parties, permanent jewelry, and room rentals in Speonk, NY. Stress-free celebrations for ages 3–12. Reserve your date with a $99 deposit.',
+    'Upscale themed birthday parties in a private Hamptons studio — at prices you\u2019d pay anywhere. Hands-on hosts, fully customizable, stress-free. Reserve with a $99 deposit.',
 }
 
 const themes = [
@@ -24,10 +24,10 @@ const themes = [
 ]
 
 const whyUs = [
-  { icon: <Sparkles size={22} />, title: 'Fully Themed Experiences', desc: 'Every detail handled — decor, activities, entertainment, food. You just show up.' },
-  { icon: <Shield size={22} />,   title: 'Private Studio',            desc: 'Your party, your space. Never share the studio with another event.' },
-  { icon: <Clock size={22} />,    title: '2-Hour Celebration',        desc: 'Full setup before you arrive, complete cleanup after. Zero stress for parents.' },
-  { icon: <Heart size={22} />,    title: 'Flexible to the End',       desc: 'Lock your date with just $99. Finalize every detail up to 1 week before the party.' },
+  { icon: <Sparkles size={22} />, title: 'Hands-On Hosts', desc: 'We don\u2019t just set up and step back. Our hosts guide every child through every activity so parents can actually relax.' },
+  { icon: <Shield size={22} />,   title: 'Upscale & Private',         desc: 'A beautifully styled Hamptons studio — exclusively yours. No shared spaces, no outside noise.' },
+  { icon: <Clock size={22} />,    title: 'Fully Handled',             desc: 'We set up before you arrive and clean up after you leave. You show up, enjoy, and walk out.' },
+  { icon: <Heart size={22} />,    title: 'Your Party, Your Budget',   desc: 'Add extras or keep it simple. Scale up for a blowout, scale down for something intimate. $99 locks your date.' },
 ]
 
 const steps = [
@@ -67,10 +67,10 @@ export default async function Home() {
               Speonk, NY • The Hamptons
             </p>
             <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl text-hampton-navy leading-tight mb-6">
-              Create Magical Memories for Your Child's Special Day
+              The Upscale Party Experience — at Prices You&apos;d Pay Anywhere
             </h1>
             <p className="text-hampton-navy text-lg md:text-xl leading-relaxed mb-8 max-w-lg">
-              Full-service themed birthday parties for ages 3–12. Private studio. Zero stress. Just pure celebration.
+              A Hamptons-styled private studio where our hosts guide every child through every activity. Fully customizable — scale up, scale down, make it yours.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
               <Link href="/book"
@@ -102,7 +102,7 @@ export default async function Home() {
       {/* ── TRUST BAR ────────────────────────────────────────── */}
       <section className="bg-hampton-pink/20 border-y border-hampton-pink/30 py-4">
         <div className="max-w-7xl mx-auto px-4 flex flex-wrap justify-center gap-6 md:gap-12 text-sm text-hampton-navy font-medium">
-          {['✨ 10+ Themed Party Packages', '🎉 Private Studio, No Shared Spaces', '⏱ 2-Hour Full-Service Experience', '💳 $99 Locks Your Date', '🔄 Change Details Anytime'].map(t => (
+          {['✨ Hamptons Vibe, Honest Pricing', '🎉 Private Studio — All Yours', '⏱ 2 Hours, Fully Hosted', '💳 $99 Locks Your Date', '🔄 Customize Everything'].map(t => (
             <span key={t}>{t}</span>
           ))}
         </div>
@@ -117,7 +117,7 @@ export default async function Home() {
           <p className="section-subheading">Choose Your Celebration</p>
           <h2 className="section-heading">10+ Themed Party Experiences</h2>
           <p className="text-hampton-navy text-base max-w-xl mx-auto">
-            Tap any theme to see what&apos;s included. Each party is 2 private hours — decor, activities, pizza, cupcakes, and memories that last forever.
+            Every theme is 2 private hours — decor, hands-on activities, food, and a dedicated host who keeps the energy going from start to finish.
           </p>
         </div>
         <ThemeTileGrid themePrices={themePrices} />
@@ -132,7 +132,7 @@ export default async function Home() {
           <p className="text-hampton-navy text-sm font-semibold tracking-widest uppercase mb-3">Build It Your Way</p>
           <h2 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-4">Design Your Perfect Party</h2>
           <p className="text-hampton-navy/70 text-base max-w-xl mx-auto mb-8 leading-relaxed">
-            Browse our full menu, pick your theme, choose add-ons, and see your real-time price — all before you commit to anything.
+            Pick your theme, add extras or keep it simple, and see your price in real time. Customize everything to fit your vision and your budget.
           </p>
           <Link
             href="/kids-party-menu"
@@ -173,8 +173,8 @@ export default async function Home() {
       {/* ── WHY HOST HAMPTON ─────────────────────────────────── */}
       <section className="py-20 max-w-7xl mx-auto px-4 sm:px-6">
         <div className="text-center mb-12">
-          <p className="section-subheading">Why Families Love Us</p>
-          <h2 className="section-heading">One Space. Endless Celebrations.</h2>
+          <p className="section-subheading">Why Families Choose Us</p>
+          <h2 className="section-heading">Elevated Parties. Honest Prices.</h2>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {whyUs.map(w => (
@@ -243,10 +243,10 @@ export default async function Home() {
       <section className="bg-gradient-to-r from-hampton-pink to-hampton-mauve py-16">
         <div className="max-w-3xl mx-auto px-4 text-center">
           <h2 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-4">
-            Ready to Start Planning?
+            Your Kid Deserves the Good Party
           </h2>
           <p className="text-hampton-navy/70 text-base mb-8">
-            Pick a date. Select your theme, decide the details later — no pressure, no stress.
+            Lock in your date with $99. Pick your theme, tweak the details later — we make it easy.
           </p>
           <Link href="/book"
                 className="bg-hampton-navy text-hampton-ivory font-bold px-10 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-xl">
