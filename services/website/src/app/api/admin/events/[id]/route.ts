@@ -96,8 +96,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     // Upsert sessions
     for (const s of incomingSessions) {
       if (s.id && existingIds.includes(s.id)) {
-        // Update existing — preserve available_tickets
-        await supabase.from('event_sessions').update({
+        // Update existing — recalculate available_tickets if max changed
+        const sessionUpdate: Record<string, any> = {
           session_date: s.session_date,
           session_time: s.session_time,
           session_end_time: s.session_end_time || null,
@@ -105,7 +105,19 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           price_cents: s.price_cents != null ? s.price_cents : null,
           max_tickets: s.max_tickets || 30,
           is_active: true,
-        }).eq('id', s.id)
+        }
+        // Adjust available_tickets when max_tickets changes
+        const { data: cur } = await supabase
+          .from('event_sessions')
+          .select('max_tickets, available_tickets')
+          .eq('id', s.id)
+          .single()
+        if (cur) {
+          const newMax = s.max_tickets || 30
+          const sold = cur.max_tickets - cur.available_tickets
+          sessionUpdate.available_tickets = Math.max(0, newMax - sold)
+        }
+        await supabase.from('event_sessions').update(sessionUpdate).eq('id', s.id)
       } else {
         // Insert new session
         await supabase.from('event_sessions').insert({
