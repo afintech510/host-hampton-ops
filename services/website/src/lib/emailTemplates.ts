@@ -383,6 +383,126 @@ export function leadConfirmHtml(d: {
 </body></html>`
 }
 
+/* ── Booking Confirmation (customer) ──────────────────────────── */
+
+export interface BookingConfirmationData {
+  customerName: string
+  bookingRef: string
+  dateFormatted: string
+  partyTime: string
+  eventTypeDisplay: string
+  depositFormatted: string
+  packageName?: string
+  childName?: string
+  childAge?: string
+  guestCount?: string
+  notes?: string
+  isRoomRental: boolean
+  balanceDueDate: string
+}
+
+export function bookingConfirmationHtml(d: BookingConfirmationData): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  const packageLine = d.packageName
+    ? `<tr><td style="padding:8px 0;color:${BRAND.gray};"><strong>Package</strong></td><td style="padding:8px 0;color:${BRAND.gray};">${d.packageName}</td></tr>`
+    : ''
+  const childLine = d.childName
+    ? `<tr><td style="padding:8px 0;color:${BRAND.gray};"><strong>Guest of honor</strong></td><td style="padding:8px 0;color:${BRAND.gray};">${d.childName}${d.childAge ? `, turning ${d.childAge}` : ''}</td></tr>`
+    : ''
+  const guestLine = d.guestCount
+    ? `<tr><td style="padding:8px 0;color:${BRAND.gray};"><strong>Guest count</strong></td><td style="padding:8px 0;color:${BRAND.gray};">~${d.guestCount}${d.isRoomRental ? ' guests' : ' children'}</td></tr>`
+    : ''
+  const notesLine = d.notes
+    ? `<div style="background:#fffbeb;padding:12px 16px;border-left:4px solid #f59e0b;border-radius:4px;margin-top:16px;color:#666;font-size:14px;"><strong>Your notes:</strong> ${d.notes}</div>`
+    : ''
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0 0 6px;font-weight:normal;">You're All Set! 🎉</h1>
+    <p style="color:${BRAND.navy};opacity:0.7;font-size:15px;margin:0;">Your deposit is received &amp; date is locked in</p>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 28px;">Your <strong>${d.depositFormatted} deposit</strong> has been successfully received. We can't wait to celebrate with you at Host Hampton!</p>
+    <div style="background:${BRAND.cardBorder};padding:3px;border-radius:12px;margin-bottom:24px;">
+      <div style="background:white;border-radius:10px;padding:24px;">
+        <h2 style="font-size:16px;color:${BRAND.navy};margin:0 0 16px;font-weight:bold;">🎈 Booking Summary</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+          <tr><td style="padding:8px 0;color:${BRAND.gray};width:140px;"><strong>Booking ref</strong></td><td style="padding:8px 0;color:${BRAND.navy};font-weight:bold;">${d.bookingRef}</td></tr>
+          <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Date</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${d.dateFormatted}</td></tr>
+          <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Time</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${d.partyTime || 'TBD'}</td></tr>
+          <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Event type</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${d.eventTypeDisplay}</td></tr>
+          ${packageLine}${childLine}${guestLine}
+        </table>
+        ${notesLine}
+      </div>
+    </div>
+    <div style="background:#e6f0e8;border-radius:10px;padding:20px;margin-bottom:24px;border:1px solid #b8d4bc;">
+      <h3 style="font-size:14px;color:#1a5c2a;margin:0 0 12px;">💰 Payment Summary</h3>
+      <div style="display:flex;justify-content:space-between;margin:6px 0;font-size:14px;color:${BRAND.gray};">
+        <span>Deposit paid today</span><span style="font-weight:bold;color:#059669;">${d.depositFormatted} ✓</span>
+      </div>
+      <div style="border-top:1px solid #b8d4bc;margin:10px 0;padding-top:10px;font-size:13px;color:#666;">
+        <strong>Balance due:</strong> Remaining balance is collected at your event.<br>
+        We'll send you a full quote within 24 hours.
+      </div>
+    </div>
+    ${d.isRoomRental ? '' : `<div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin-bottom:24px;">
+      <p style="margin:0;font-size:13px;color:#92400e;"><strong>🎁 Party helper tip:</strong> A 10–15% gratuity for your party helpers is greatly appreciated and goes directly to our team!</p>
+    </div>`}
+    <div style="background:#f0ece7;border-radius:10px;padding:20px;margin-bottom:24px;">
+      <h3 style="font-size:14px;color:${BRAND.navy};margin:0 0 14px;">What happens next</h3>
+      ${d.isRoomRental ? `<ol style="margin:0;padding-left:20px;color:${BRAND.gray};line-height:2;font-size:14px;">
+        <li>We'll reach out <strong>within 24 hours</strong> to confirm your rental details</li>
+        <li>We'll go over any setup needs, vendor access, or special requirements</li>
+        <li>A $500 refundable security deposit is collected separately before your event</li>
+        <li>Remaining balance is due <strong>${d.balanceDueDate}</strong></li>
+      </ol>` : `<ol style="margin:0;padding-left:20px;color:${BRAND.gray};line-height:2;font-size:14px;">
+        <li>We'll reach out <strong>within 24 hours</strong> to confirm your booking details</li>
+        <li>You'll receive a personalized themed EVITE digital invitation</li>
+        <li>We'll work together to finalize themes, activities &amp; fun details</li>
+        <li>Remaining balance is due <strong>${d.balanceDueDate}</strong></li>
+      </ol>`}
+    </div>
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? We'd love to hear from you:<br>${contactBlock}<br>
+      <span style="color:#888;font-size:12px;">Mon–Fri 12–7pm · Sat–Sun 10am–8pm</span>
+    </p>
+  </div>
+  ${footerTagline("Can't wait to make your celebration magical!")}
+</div>
+</body></html>`
+}
+
+/* ── Booking Refund (customer) ───────────────────────────────── */
+
+export function bookingRefundHtml(d: { customerName: string; eventType: string; bookingRef: string; refundAmount: string; reason?: string }): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Deposit Refund Processed</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Your deposit refund of <strong>${d.refundAmount}</strong> for your <strong>${d.eventType}</strong> booking (${d.bookingRef}) has been processed. It will appear on your statement within 5–10 business days.</p>
+    ${d.reason ? `<p style="color:#888;font-size:13px;margin:0 0 24px;"><em>Reason: ${d.reason}</em></p>` : ''}
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Contact us anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footer}
+</div>
+</body></html>`
+}
+
 /* ── Ticket Refund (customer) ─────────────────────────────────── */
 
 export function ticketRefundHtml(d: { customerName: string; eventTitle: string; ticketRef: string; refundAmount: string; reason?: string }): string {

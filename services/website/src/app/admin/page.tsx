@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { LogIn, ArrowLeft, RefreshCw, Calendar, Ticket } from 'lucide-react'
+import { LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
+import OrdersTab from './OrdersTab'
 
 /* ─── Page (Login Gate) ──────────────────────────────── */
 
@@ -54,7 +55,7 @@ export default function AdminPage() {
 /* ─── Dashboard (Tabs) ───────────────────────────────── */
 
 function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
-  const [activeTab, setActiveTab] = useState<'events' | 'calendar'>('events')
+  const [activeTab, setActiveTab] = useState<'events' | 'calendar' | 'orders'>('events')
   const [refreshKey, setRefreshKey] = useState(0)
 
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
@@ -93,6 +94,17 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
               <Calendar className="w-3.5 h-3.5" />
               Calendar
             </button>
+            <button
+              onClick={() => setActiveTab('orders')}
+              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                activeTab === 'orders'
+                  ? 'bg-white/20 text-white'
+                  : 'text-hampton-blue hover:text-white'
+              }`}
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              Orders
+            </button>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -115,6 +127,9 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
       )}
       {activeTab === 'calendar' && (
         <CalendarConfigTab key={`calendar-${refreshKey}`} headers={headers} onLogout={onLogout} />
+      )}
+      {activeTab === 'orders' && (
+        <OrdersTab key={`orders-${refreshKey}`} headers={headers} onLogout={onLogout} />
       )}
     </div>
   )

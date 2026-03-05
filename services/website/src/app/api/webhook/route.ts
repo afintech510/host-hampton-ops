@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
-import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTemplates'
+import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 
 export async function POST(req: NextRequest) {
@@ -316,104 +316,21 @@ export async function POST(req: NextRequest) {
       const eventTypeDisplay = (m.eventType || 'Party')
         .split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 
-      const packageLine = m.packageName
-        ? `<tr><td style="padding:8px 0;color:#555;"><strong>Package</strong></td><td style="padding:8px 0;color:#555;">${m.packageName}</td></tr>`
-        : ''
-      const childLine = m.childName
-        ? `<tr><td style="padding:8px 0;color:#555;"><strong>Guest of honor</strong></td><td style="padding:8px 0;color:#555;">${m.childName}${m.childAge ? `, turning ${m.childAge}` : ''}</td></tr>`
-        : ''
-      const guestLine = m.guestCount
-        ? `<tr><td style="padding:8px 0;color:#555;"><strong>Guest count</strong></td><td style="padding:8px 0;color:#555;">~${m.guestCount}${isRoomRental ? ' guests' : ' children'}</td></tr>`
-        : ''
-      const notesLine = m.notes
-        ? `<div style="background:#fffbeb;padding:12px 16px;border-left:4px solid #f59e0b;border-radius:4px;margin-top:16px;color:#666;font-size:14px;"><strong>Your notes:</strong> ${m.notes}</div>`
-        : ''
-
-      const customerHtml = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#F6F1EB;">
-<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
-
-  <!-- Header -->
-  <div style="background:linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%);padding:36px 40px;text-align:center;">
-    <p style="color:#1a2744;opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
-    <h1 style="color:#1a2744;font-size:28px;margin:0 0 6px;font-weight:normal;">You're All Set! 🎉</h1>
-    <p style="color:#1a2744;opacity:0.7;font-size:15px;margin:0;">Your deposit is received &amp; date is locked in</p>
-  </div>
-
-  <!-- Body -->
-  <div style="padding:36px 40px;">
-    <p style="font-size:16px;color:#1a2744;margin:0 0 20px;">Hi ${firstName},</p>
-    <p style="color:#555;line-height:1.7;margin:0 0 28px;">Your <strong>${depositFormatted} deposit</strong> has been successfully received. We can't wait to celebrate with you at Host Hampton!</p>
-
-    <!-- Booking details card -->
-    <div style="background:linear-gradient(135deg,#A1B5C8 0%,#E8C7CB 100%);padding:3px;border-radius:12px;margin-bottom:24px;">
-      <div style="background:white;border-radius:10px;padding:24px;">
-        <h2 style="font-size:16px;color:#1a2744;margin:0 0 16px;font-weight:bold;">🎈 Booking Summary</h2>
-        <table style="width:100%;border-collapse:collapse;font-size:14px;">
-          <tr><td style="padding:8px 0;color:#555;width:140px;"><strong>Booking ref</strong></td><td style="padding:8px 0;color:#1a2744;font-weight:bold;">${bookingRef}</td></tr>
-          <tr><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;"><strong>Date</strong></td><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;">${dateFormatted}</td></tr>
-          <tr><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;"><strong>Time</strong></td><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;">${m.partyTime || 'TBD'}</td></tr>
-          <tr><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;"><strong>Event type</strong></td><td style="padding:8px 0;color:#555;border-top:1px solid #f0ece7;">${eventTypeDisplay}</td></tr>
-          ${packageLine}${childLine}${guestLine}
-        </table>
-        ${notesLine}
-      </div>
-    </div>
-
-    <!-- Payment summary -->
-    <div style="background:#e6f0e8;border-radius:10px;padding:20px;margin-bottom:24px;border:1px solid #b8d4bc;">
-      <h3 style="font-size:14px;color:#1a5c2a;margin:0 0 12px;">💰 Payment Summary</h3>
-      <div style="display:flex;justify-content:space-between;margin:6px 0;font-size:14px;color:#555;">
-        <span>Deposit paid today</span><span style="font-weight:bold;color:#059669;">${depositFormatted} ✓</span>
-      </div>
-      <div style="border-top:1px solid #b8d4bc;margin:10px 0;padding-top:10px;font-size:13px;color:#666;">
-        <strong>Balance due:</strong> Remaining balance is collected at your event.<br>
-        We'll send you a full quote within 24 hours.
-      </div>
-    </div>
-
-    ${isRoomRental ? '' : `<!-- Gratuity tip -->
-    <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin-bottom:24px;">
-      <p style="margin:0;font-size:13px;color:#92400e;"><strong>🎁 Party helper tip:</strong> A 10–15% gratuity for your party helpers is greatly appreciated and goes directly to our team!</p>
-    </div>`}
-
-    <!-- What's next -->
-    <div style="background:#f0ece7;border-radius:10px;padding:20px;margin-bottom:24px;">
-      <h3 style="font-size:14px;color:#1a2744;margin:0 0 14px;">What happens next</h3>
-      ${isRoomRental ? `<ol style="margin:0;padding-left:20px;color:#555;line-height:2;font-size:14px;">
-        <li>We'll reach out <strong>within 24 hours</strong> to confirm your rental details</li>
-        <li>We'll go over any setup needs, vendor access, or special requirements</li>
-        <li>A $500 refundable security deposit is collected separately before your event</li>
-        <li>Remaining balance is due <strong>${balanceDueDate}</strong></li>
-      </ol>` : `<ol style="margin:0;padding-left:20px;color:#555;line-height:2;font-size:14px;">
-        <li>We'll reach out <strong>within 24 hours</strong> to confirm your booking details</li>
-        <li>You'll receive a personalized themed EVITE digital invitation</li>
-        <li>We'll work together to finalize themes, activities &amp; fun details</li>
-        <li>Remaining balance is due <strong>${balanceDueDate}</strong></li>
-      </ol>`}
-    </div>
-
-    <!-- Contact -->
-    <p style="font-size:14px;color:#555;line-height:1.8;margin:0;">
-      Questions? We'd love to hear from you:<br>
-      <strong><a href="tel:6319989325" style="color:#1a2744;text-decoration:none;">📞 (631) 998-9325</a></strong> &nbsp;·&nbsp;
-      <strong><a href="sms:6319989325" style="color:#1a2744;text-decoration:none;">💬 Text Us</a></strong><br>
-      <strong><a href="mailto:hosthampton295@gmail.com" style="color:#1a2744;text-decoration:none;">✉️ hosthampton295@gmail.com</a></strong><br>
-      <span style="color:#888;font-size:12px;">Mon–Fri 12–7pm · Sat–Sun 10am–8pm</span>
-    </p>
-  </div>
-
-  <!-- Footer -->
-  <div style="background:#BCCDEB;padding:20px 40px;text-align:center;">
-    <p style="color:#1a2744;font-size:12px;margin:0 0 4px;">295 Montauk Highway, Suite 7 · Speonk, NY 11972</p>
-    <p style="color:#1a2744;opacity:0.5;font-size:11px;margin:0;">Can't wait to make your celebration magical!</p>
-  </div>
-
-</div>
-</body>
-</html>`
+      const customerHtml = bookingConfirmationHtml({
+        customerName: m.contactName,
+        bookingRef,
+        dateFormatted,
+        partyTime: m.partyTime || 'TBD',
+        eventTypeDisplay,
+        depositFormatted,
+        packageName: m.packageName,
+        childName: m.childName,
+        childAge: m.childAge,
+        guestCount: m.guestCount,
+        notes: m.notes,
+        isRoomRental,
+        balanceDueDate,
+      })
 
       const ownerHtml = `<!DOCTYPE html>
 <html>
