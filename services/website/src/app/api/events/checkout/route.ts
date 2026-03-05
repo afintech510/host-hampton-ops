@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
             }),
           }),
           resend.emails.send({
-            from, to: 'alark51@gmail.com',
+            from, to: 'hosthampton295@gmail.com',
             subject: `New RSVP: ${customerName} — ${event.title} (${sessionsData.length} sessions)`,
             html: ticketPurchaseNotifyHtml({
               ticketRef: groupRef, customerName, customerEmail, customerPhone,
@@ -302,7 +302,7 @@ export async function POST(req: NextRequest) {
           }),
         }),
         resend.emails.send({
-          from, to: 'alark51@gmail.com',
+          from, to: 'hosthampton295@gmail.com',
           subject: `New RSVP: ${customerName} — ${event.title} (${ticketRef})`,
           html: ticketPurchaseNotifyHtml({
             ticketRef, customerName, customerEmail, customerPhone,

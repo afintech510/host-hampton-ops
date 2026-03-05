@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       // Admin notification
       resend.emails.send({
         from,
-        to: 'alark51@gmail.com',
+        to: 'hosthampton295@gmail.com',
         subject: `Contact form: ${name}`,
         replyTo: email,
         html: `<p><strong>${name}</strong> (${email}) sent a message via the Contact Us page:</p><blockquote style="border-left:3px solid #E8C7CB;padding:12px 16px;margin:16px 0;color:#555;">${message.replace(/\n/g, '<br>')}</blockquote><p><a href="mailto:${email}">Reply to ${name}</a></p>`,

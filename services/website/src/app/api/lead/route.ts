@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
       // Admin notification
       {
         from,
-        to: 'alark51@gmail.com',
+        to: 'hosthampton295@gmail.com',
         subject: `New lead: ${eventType} — ${fullName}`,
         html: leadNotifyHtml({
           fullName,

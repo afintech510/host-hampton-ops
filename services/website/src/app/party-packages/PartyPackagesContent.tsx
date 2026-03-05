@@ -62,7 +62,7 @@ const themes = [
   {
     name: 'Trucker Hat Party',
     price: 900,
-    imgs: ['/images/theme-sweets.webp'],
+    imgs: ['/images/gallery/card-trucker-hat-bar.webp'],
     desc: 'Iron-on patches, photo booth, and totally custom trucker hats as favors.',
     extendedDesc: 'The trendiest party on Long Island! Each guest designs their own custom trucker hat with iron-on patches, rhinestones, and embellishments. Includes a photo booth with fun props, and every guest walks away with their one-of-a-kind creation. A huge hit with ages 8+.',
   },

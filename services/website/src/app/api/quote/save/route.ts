@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       // Also notify owner
       resend.emails.send({
         from,
-        to: 'alark51@gmail.com',
+        to: 'hosthampton295@gmail.com',
         subject: `Saved quote: ${name}${slotDisplay ? ` — ${slotDisplay}` : ''}`,
         html: `<p><strong>${name}</strong> (${email}, ${phone || 'no phone'}) saved a party quote.</p>${adminDateLine}<pre>${summary || 'No summary'}</pre><p><a href="${quoteLink}">View their quote</a></p>`,
       }),
