@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
 
     // Paid multi-session: create Stripe checkout
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'staging.hosthampton.com'
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
 
     const multiTaxCents = Math.round(multiTotalCents * TAX_RATE)
     const multiCcFeeCents = Math.round((multiTotalCents + multiTaxCents) * CC_RATE)
@@ -320,7 +320,7 @@ export async function POST(req: NextRequest) {
 
   // PAID events: create Stripe checkout session
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'staging.hosthampton.com'
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
 
   // Tax + CC fee
   const taxCents = Math.round(totalCents * TAX_RATE)

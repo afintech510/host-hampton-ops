@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Build the quote link with encoded data
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'staging.hosthampton.com'
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
   const protocol = host.includes('localhost') ? 'http' : 'https'
   const encoded = Buffer.from(JSON.stringify(quoteData)).toString('base64url')
   const quotePath = sourcePage === 'kids-party-menu' ? '/kids-party-menu' : '/party-quote'
