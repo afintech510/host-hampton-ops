@@ -556,13 +556,17 @@ function ImageUploader({
   images: EventImage[]; onChange: (imgs: EventImage[]) => void; token: string
 }) {
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
   const [urlInput, setUrlInput] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
     setUploading(true)
+    setUploadError('')
 
     const newImages = [...images]
+    const errors: string[] = []
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       const formData = new FormData()
@@ -581,14 +585,21 @@ function ImageUploader({
             name: data.name || file.name,
             is_primary: newImages.length === 0,
           })
+        } else {
+          const data = await res.json().catch(() => ({ error: `Upload failed (${res.status})` }))
+          errors.push(data.error || `Upload failed for ${file.name}`)
         }
       } catch (err) {
+        errors.push(`Network error uploading ${file.name}`)
         console.error('Upload failed:', err)
       }
     }
 
+    if (errors.length > 0) setUploadError(errors.join('. '))
     onChange(newImages)
     setUploading(false)
+    // Reset file input so the same file can be re-selected on mobile
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   function addUrl() {
@@ -641,10 +652,14 @@ function ImageUploader({
         {uploading ? (
           <><Loader2 className="w-4 h-4 animate-spin text-hampton-navy" /><span className="text-sm text-hampton-mauve">Uploading...</span></>
         ) : (
-          <><Upload className="w-4 h-4 text-hampton-navy" /><span className="text-sm text-hampton-mauve">Click to upload images</span></>
+          <><Upload className="w-4 h-4 text-hampton-navy" /><span className="text-sm text-hampton-mauve">Tap to upload photos</span></>
         )}
-        <input type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} disabled={uploading} />
+        <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} disabled={uploading} />
       </label>
+
+      {uploadError && (
+        <p className="text-red-600 text-xs mt-1">{uploadError}</p>
+      )}
 
       {/* URL fallback */}
       <div className="flex gap-2 mt-2">
