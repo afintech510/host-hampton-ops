@@ -2,8 +2,9 @@ export default function HappyHomeLayout({ children }: { children: React.ReactNod
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: `
-        body > header.sticky, body > header, nav.sticky, header[class*="sticky"],
-        body > footer, footer[class*="bg-"] { display: none !important; }
+        body { background: #f8f9fa !important; }
+        header.fixed, header[class*="fixed"] { display: none !important; }
+        footer, div[aria-hidden="true"].h-40, div.h-40[aria-hidden] { display: none !important; }
         main { padding-top: 0 !important; }
       `}} />
       {children}
