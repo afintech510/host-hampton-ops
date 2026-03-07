@@ -338,7 +338,9 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
             className="accent-hampton-navy mt-1 shrink-0"
           />
           <span className="text-[11px] text-hampton-navy/50 leading-relaxed">
-            I agree to receive event updates, promotions, and marketing communications from Host Hampton via email and text message. Message &amp; data rates may apply. Reply STOP to unsubscribe.
+            I agree to receive event updates and promotions from Host Hampton via email and text message. Msg frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. View our{' '}
+            <a href="/privacy-policy" className="underline" target="_blank">Privacy Policy</a> &amp;{' '}
+            <a href="/terms-of-service" className="underline" target="_blank">Terms</a>.
           </span>
         </label>
       )}
