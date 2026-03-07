@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
+import { enqueueBookingReminders } from '@/lib/reminders'
 
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
       partyTags,
       bookingTypeSlug,
       utm,
+      marketingConsent,
     } = body
 
     if (!partyDate || !partyTime || !contactName || !contactEmail || !contactPhone) {
@@ -92,7 +94,17 @@ export async function POST(req: NextRequest) {
         phone: contactPhone,
         sourceDetail: `Booking — ${eventType || 'other'}`,
         serviceInterests: [bookingTypeSlug || 'general'],
+        marketingConsent: !!marketingConsent,
       })
+
+      // Enqueue booking reminders (non-fatal)
+      if (partyDate) {
+        await enqueueBookingReminders({
+          contactEmail,
+          bookingRef,
+          partyDate,
+        }).catch(err => console.error('Booking reminder enqueue error:', err))
+      }
 
       return NextResponse.json({ url: `https://${host}/book/success?ref=${bookingRef}` })
     }
@@ -148,6 +160,7 @@ export async function POST(req: NextRequest) {
         bookingTypeSlug: bookingTypeSlug || '',
         slotDurationMin: String(slotDurationMin),
         depositCents: String(depositCents),
+        marketingConsent: marketingConsent ? 'true' : 'false',
         utm_source: utm?.utm_source || '',
         utm_medium: utm?.utm_medium || '',
         utm_campaign: utm?.utm_campaign || '',

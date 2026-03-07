@@ -4,6 +4,7 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { Resend } from 'resend'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTemplates'
+import { enqueueEventReminders } from '@/lib/reminders'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,7 @@ const CC_RATE = 0.03
 export async function POST(req: NextRequest) {
   const supabase = getSupabase()
   const body = await req.json()
-  const { eventId, sessionId, sessionIds, quantity, variantLabel, customerName, customerEmail, customerPhone } = body
+  const { eventId, sessionId, sessionIds, quantity, variantLabel, customerName, customerEmail, customerPhone, marketingConsent } = body
 
   if (!eventId || !customerName || !customerEmail || !customerPhone || !quantity) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -97,7 +98,19 @@ export async function POST(req: NextRequest) {
         phone: customerPhone,
         sourceDetail: `Event RSVP — ${event.title} (series)`,
         serviceInterests: ['event'],
+        marketingConsent: !!marketingConsent,
       })
+
+      // Enqueue reminders for each session (non-fatal)
+      for (const sess of sessionsData) {
+        if (sess.session_date) {
+          await enqueueEventReminders({
+            contactEmail: customerEmail,
+            eventId,
+            eventDate: sess.session_date,
+          }).catch(err => console.error('Reminder enqueue error:', err))
+        }
+      }
 
       // Send confirmation emails
       if (process.env.RESEND_API_KEY) {
@@ -200,6 +213,7 @@ export async function POST(req: NextRequest) {
         eventTitle: event.title,
         eventDates: multiSessionDates,
         eventLocation: event.location || 'Host Hampton',
+        marketingConsent: marketingConsent ? 'true' : 'false',
       },
       success_url: `https://${host}/events/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `https://${host}/events/${event.slug}?cancelled=true`,
@@ -279,7 +293,18 @@ export async function POST(req: NextRequest) {
       phone: customerPhone,
       sourceDetail: `Event RSVP — ${event.title}`,
       serviceInterests: ['event'],
+      marketingConsent: !!marketingConsent,
     })
+
+    // Enqueue reminders (non-fatal)
+    const reminderDate = sessionRow?.session_date || event.event_date
+    if (reminderDate) {
+      await enqueueEventReminders({
+        contactEmail: customerEmail,
+        eventId,
+        eventDate: reminderDate,
+      }).catch(err => console.error('Reminder enqueue error:', err))
+    }
 
     // Send emails
     const dateDisplay = sessionRow?.session_date
@@ -380,6 +405,7 @@ export async function POST(req: NextRequest) {
       eventDate: eventDateDisplay,
       eventTime: eventTimeDisplay,
       eventLocation,
+      marketingConsent: marketingConsent ? 'true' : 'false',
     },
     success_url: `https://${host}/events/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `https://${host}/events/${event.slug}?cancelled=true`,

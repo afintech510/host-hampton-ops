@@ -5,6 +5,7 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
+import { enqueueEventReminders, enqueueBookingReminders } from '@/lib/reminders'
 
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
@@ -81,7 +82,17 @@ export async function POST(req: NextRequest) {
           phone: m.customerPhone,
           sourceDetail: `Event ticket — ${evt?.title || 'event'}`,
           serviceInterests: ['event'],
+          marketingConsent: m.marketingConsent === 'true',
         })
+
+        // Enqueue reminders (non-fatal)
+        if (evt?.event_date) {
+          await enqueueEventReminders({
+            contactEmail: m.customerEmail,
+            eventId: m.eventId,
+            eventDate: evt.event_date,
+          }).catch(err => console.error('Reminder enqueue error:', err))
+        }
       }
 
       // Send emails
@@ -178,7 +189,19 @@ export async function POST(req: NextRequest) {
         phone: m.customerPhone,
         sourceDetail: `Event ticket — ${evt?.title || 'event'} (series)`,
         serviceInterests: ['event'],
+        marketingConsent: m.marketingConsent === 'true',
       })
+
+      // Enqueue reminders for each session date (non-fatal)
+      for (const sess of (sessionsData || [])) {
+        if (sess.session_date) {
+          await enqueueEventReminders({
+            contactEmail: m.customerEmail,
+            eventId: m.eventId,
+            eventDate: sess.session_date,
+          }).catch(err => console.error('Reminder enqueue error:', err))
+        }
+      }
 
       // Send emails
       if (process.env.RESEND_API_KEY && evt) {
@@ -318,7 +341,26 @@ export async function POST(req: NextRequest) {
         phone: m.customerPhone,
         sourceDetail: `Cart checkout — ${eventTitles.join(', ')}`,
         serviceInterests: ['event'],
+        marketingConsent: m.marketingConsent === 'true',
       })
+
+      // Enqueue reminders per event (non-fatal)
+      for (const ci of cartItems) {
+        // Fetch event_date for each cart item
+        const { data: ciEvt } = await supabase
+          .from('events')
+          .select('event_date')
+          .eq('id', ci.eventId)
+          .single()
+
+        if (ciEvt?.event_date) {
+          await enqueueEventReminders({
+            contactEmail: m.customerEmail,
+            eventId: ci.eventId,
+            eventDate: ciEvt.event_date,
+          }).catch(err => console.error('Cart reminder enqueue error:', err))
+        }
+      }
 
       // Send confirmation emails
       if (process.env.RESEND_API_KEY) {
@@ -417,7 +459,17 @@ export async function POST(req: NextRequest) {
         phone: m.contactPhone,
         sourceDetail: `Booking deposit — ${m.eventType || 'party'}`,
         serviceInterests: [m.bookingTypeSlug || m.eventType || 'general'],
+        marketingConsent: m.marketingConsent === 'true',
       })
+
+      // Enqueue booking reminders (non-fatal)
+      if (partyDate) {
+        await enqueueBookingReminders({
+          contactEmail: m.contactEmail,
+          bookingRef,
+          partyDate,
+        }).catch(err => console.error('Booking reminder enqueue error:', err))
+      }
 
       // Write back to Google Calendar
       if (partyDate && m.partyTime) {

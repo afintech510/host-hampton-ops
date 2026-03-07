@@ -41,6 +41,7 @@ interface UpsertContactParams {
   phone?: string | null
   sourceDetail: string
   serviceInterests: string[]
+  marketingConsent?: boolean
 }
 
 /**
@@ -53,22 +54,35 @@ export async function upsertContact({
   phone,
   sourceDetail,
   serviceInterests,
+  marketingConsent,
 }: UpsertContactParams): Promise<string | null> {
   try {
     const supabase = getSupabase()
     const nameParts = name.trim().split(/\s+/)
 
+    const record: Record<string, unknown> = {
+      email,
+      first_name: nameParts[0],
+      last_name: nameParts.length > 1 ? nameParts.slice(1).join(' ') : null,
+      phone: phone || null,
+      status: 'lead',
+      source: 'direct',
+      source_detail: sourceDetail,
+      service_interests: normalizeServiceInterests(serviceInterests),
+    }
+
+    // Only set opt-in fields when consent is explicitly provided (true)
+    // Never flip opt-in to false via this function — that's handled by unsubscribe flows
+    if (marketingConsent) {
+      const now = new Date().toISOString()
+      record.email_opt_in = true
+      record.sms_opt_in = true
+      record.email_opt_in_at = now
+      record.sms_opt_in_at = now
+    }
+
     const { error: upsertErr } = await supabase.from('contacts').upsert(
-      {
-        email,
-        first_name: nameParts[0],
-        last_name: nameParts.length > 1 ? nameParts.slice(1).join(' ') : null,
-        phone: phone || null,
-        status: 'lead',
-        source: 'direct',
-        source_detail: sourceDetail,
-        service_interests: normalizeServiceInterests(serviceInterests),
-      },
+      record,
       { onConflict: 'email' },
     )
 

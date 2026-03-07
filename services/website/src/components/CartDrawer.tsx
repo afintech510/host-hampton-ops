@@ -16,6 +16,7 @@ export default function CartDrawer() {
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [marketingConsent, setMarketingConsent] = useState(false)
   const drawerRef = useRef<HTMLDivElement>(null)
 
   // Load saved customer info
@@ -79,6 +80,7 @@ export default function CartDrawer() {
           customerName: name,
           customerEmail: email,
           customerPhone: phone,
+          marketingConsent,
         }),
       })
 
@@ -231,6 +233,19 @@ export default function CartDrawer() {
                 placeholder="Phone *" className="form-input text-sm py-2"
               />
             </div>
+
+            {/* Marketing Consent */}
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={marketingConsent}
+                onChange={e => setMarketingConsent(e.target.checked)}
+                className="accent-hampton-navy mt-0.5 shrink-0"
+              />
+              <span className="text-[10px] text-hampton-navy/50 leading-relaxed">
+                I agree to receive event updates and promotions from Host Hampton via email and text. Reply STOP to unsubscribe.
+              </span>
+            </label>
 
             {/* Totals */}
             {!isFreeCart && (

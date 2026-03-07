@@ -208,6 +208,7 @@ function BookingForm() {
   const [quoteData, setQuoteData] = useState<StoredQuote | null>(null)
   const [themes, setThemes] = useState<ThemeItem[]>([])
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null)
+  const [marketingConsent, setMarketingConsent] = useState(false)
   const [form, setForm] = useState({
     contactName: '',
     contactEmail: '',
@@ -296,6 +297,7 @@ function BookingForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
+          marketingConsent,
           partyDate: selection.date,
           partyTime: selection.timeSlot.start,
           eventType: selection.bookingType?.slug || 'other',
@@ -531,6 +533,19 @@ function BookingForm() {
                         value={form.notes} onChange={e => update('notes', e.target.value)}
                         className="form-input resize-none" />
             </div>
+
+            {/* Marketing Consent */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={marketingConsent}
+                onChange={e => setMarketingConsent(e.target.checked)}
+                className="accent-hampton-navy mt-1 shrink-0"
+              />
+              <span className="text-xs text-hampton-navy/60 leading-relaxed">
+                I agree to receive event updates, promotions, and marketing communications from Host Hampton via email and text message. Message &amp; data rates may apply. Reply STOP to unsubscribe.
+              </span>
+            </label>
 
             {/* Error */}
             {error && (

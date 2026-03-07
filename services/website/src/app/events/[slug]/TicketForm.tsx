@@ -57,6 +57,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [marketingConsent, setMarketingConsent] = useState(false)
 
   const isMultiSession = event.allow_multi_session && event.has_sessions
 
@@ -124,6 +125,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
           customerName: name,
           customerEmail: email,
           customerPhone: phone || null,
+          marketingConsent,
         }),
       })
 
@@ -324,6 +326,21 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
             <span className="text-xl font-bold text-hampton-navy">{formatPrice(grandTotal)}</span>
           </div>
         </div>
+      )}
+
+      {/* Marketing Consent */}
+      {!soldOut && (
+        <label className="flex items-start gap-3 cursor-pointer mb-4">
+          <input
+            type="checkbox"
+            checked={marketingConsent}
+            onChange={e => setMarketingConsent(e.target.checked)}
+            className="accent-hampton-navy mt-1 shrink-0"
+          />
+          <span className="text-[11px] text-hampton-navy/50 leading-relaxed">
+            I agree to receive event updates, promotions, and marketing communications from Host Hampton via email and text message. Message &amp; data rates may apply. Reply STOP to unsubscribe.
+          </span>
+        </label>
       )}
 
       {error && (

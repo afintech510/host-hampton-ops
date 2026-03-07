@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     customerName: string
     customerEmail: string
     customerPhone: string
+    marketingConsent?: boolean
   }
 
   if (!items?.length || !customerName || !customerEmail || !customerPhone) {
@@ -289,6 +290,7 @@ export async function POST(req: NextRequest) {
       customerName,
       customerEmail,
       customerPhone,
+      marketingConsent: body.marketingConsent ? 'true' : 'false',
     },
     success_url: `https://${host}/events/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `https://${host}/events?cancelled=true`,
