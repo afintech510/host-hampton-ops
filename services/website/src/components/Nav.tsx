@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Menu, X, Phone, MessageCircle } from 'lucide-react'
+import CartButton from '@/components/CartButton'
 
 const navLinks = [
   { href: '/party-packages',    label: 'Party Packages' },
@@ -77,6 +78,7 @@ export default function Nav() {
 
         {/* CTA */}
         <div className="hidden md:flex items-center gap-4">
+          <CartButton />
           <div className="flex items-center gap-1.5 text-sm font-bold text-hampton-navy/70">
             <a
               href="tel:6319989325"
@@ -102,14 +104,17 @@ export default function Nav() {
           </Link>
         </div>
 
-        {/* Mobile hamburger */}
-        <button
-          className="md:hidden text-hampton-navy p-2"
-          onClick={() => setOpen(!open)}
-          aria-label="Toggle menu"
-        >
-          {open ? <X size={22} /> : <Menu size={22} />}
-        </button>
+        {/* Mobile: cart + hamburger */}
+        <div className="md:hidden flex items-center gap-2">
+          <CartButton />
+          <button
+            className="text-hampton-navy p-2"
+            onClick={() => setOpen(!open)}
+            aria-label="Toggle menu"
+          >
+            {open ? <X size={22} /> : <Menu size={22} />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile full-screen menu */}

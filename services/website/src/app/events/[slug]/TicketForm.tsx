@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Minus, Plus, Loader2 } from 'lucide-react'
+import { Minus, Plus, Loader2, ShoppingCart } from 'lucide-react'
+import { useCart } from '@/context/CartContext'
 
 interface Variant { label: string; priceCents: number }
 interface BundleTier { minSessions: number; pricePerSessionCents: number }
@@ -18,6 +19,9 @@ interface EventProps {
   max_tickets: number
   allow_multi_session?: boolean
   bundle_pricing?: BundleTier[]
+  imageUrl?: string | null
+  event_date?: string | null
+  event_time?: string | null
 }
 
 function formatPrice(cents: number): string {
@@ -41,6 +45,7 @@ function getBundlePrice(sessionCount: number, tiers: BundleTier[]): number | nul
 }
 
 export default function TicketForm({ event, sessions }: { event: EventProps; sessions: Session[] }) {
+  const { addItem } = useCart()
   const [selectedVariant, setSelectedVariant] = useState<Variant | null>(
     event.has_variants && event.variants.length > 0 ? event.variants[0] : null
   )
@@ -339,6 +344,58 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
               ? 'RSVP — Free'
               : `Get Tickets — ${formatPrice(grandTotal)}`}
       </button>
+
+      {/* Add to Cart — only for paid, non-sold-out events */}
+      {!soldOut && !isFree && (
+        <button
+          type="button"
+          onClick={() => {
+            if (event.has_sessions && !isMultiSession && !selectedSession) {
+              setError('Please select a date first.')
+              return
+            }
+            if (isMultiSession && selectedSessions.length === 0) {
+              setError('Please select at least one session.')
+              return
+            }
+
+            // Build date/time display for the cart
+            let dateDisplay = ''
+            let timeDisplay = ''
+            if (isMultiSession && selectedSessions.length > 0) {
+              dateDisplay = `${selectedSessions.length} session${selectedSessions.length > 1 ? 's' : ''}`
+              timeDisplay = selectedSessions.map(s =>
+                `${formatSessionDate(s.session_date)} ${s.session_time}`
+              ).join(', ')
+            } else if (selectedSession) {
+              dateDisplay = formatSessionDate(selectedSession.session_date)
+              timeDisplay = selectedSession.session_time
+            } else if (event.event_date) {
+              dateDisplay = formatSessionDate(event.event_date)
+              timeDisplay = event.event_time || ''
+            }
+
+            addItem({
+              eventId: event.id,
+              eventTitle: event.title,
+              eventSlug: event.slug,
+              sessionId: selectedSession?.id || null,
+              sessionIds: isMultiSession ? selectedSessions.map(s => s.id) : null,
+              quantity,
+              variantLabel: selectedVariant?.label || null,
+              unitPriceCents: unitPrice,
+              imageUrl: event.imageUrl || null,
+              dateDisplay,
+              timeDisplay,
+            })
+            setError('')
+          }}
+          className="w-full mt-2 py-3 border-2 border-hampton-navy text-hampton-navy font-semibold rounded-full text-sm flex items-center justify-center gap-2 hover:bg-hampton-navy hover:text-white transition-all"
+        >
+          <ShoppingCart className="w-4 h-4" />
+          Add to Cart
+        </button>
+      )}
     </form>
   )
 }

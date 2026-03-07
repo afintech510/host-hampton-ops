@@ -4,6 +4,8 @@ import Nav from '@/components/Nav'
 import Footer from '@/components/Footer'
 import CrispChat from '@/components/CrispChat'
 import GoogleAnalytics from '@/components/GoogleAnalytics'
+import { CartProvider } from '@/context/CartContext'
+import CartDrawer from '@/components/CartDrawer'
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -83,10 +85,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-screen flex flex-col">
-        <Nav />
-        <main className="flex-1 pt-20">{children}</main>
-        <div className="h-40 bg-gradient-to-b from-transparent to-[#BCCDEB]" aria-hidden="true" />
-        <Footer />
+        <CartProvider>
+          <Nav />
+          <main className="flex-1 pt-20">{children}</main>
+          <div className="h-40 bg-gradient-to-b from-transparent to-[#BCCDEB]" aria-hidden="true" />
+          <Footer />
+          <CartDrawer />
+        </CartProvider>
         <GoogleAnalytics />
         <CrispChat />
       </body>

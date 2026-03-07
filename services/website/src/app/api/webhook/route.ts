@@ -227,6 +227,150 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
+    // ── Cart checkout (multiple events in one purchase) ────────
+    if (m.type === 'cart_checkout') {
+      const cartItems = JSON.parse(m.cartItems || '[]') as {
+        eventId: string
+        sessionId?: string
+        sessionIds?: string[]
+        quantity: number
+        variantLabel?: string
+        unitPriceCents: number
+        eventTitle: string
+      }[]
+      const cartRef = `CART-${Date.now()}`
+      const ticketRefs: string[] = []
+      const eventTitles: string[] = []
+
+      for (const ci of cartItems) {
+        const qty = ci.quantity
+
+        if (ci.sessionIds?.length) {
+          // Multi-session item
+          for (const sid of ci.sessionIds) {
+            const ticketRef = `HH-EVT-${Date.now().toString().slice(-4)}-${sid.slice(0, 4)}`
+            ticketRefs.push(ticketRef)
+
+            const { error: ticketErr } = await supabase.from('event_tickets').insert({
+              ticket_ref: ticketRef,
+              event_id: ci.eventId,
+              session_id: sid,
+              group_ref: cartRef,
+              customer_name: m.customerName,
+              customer_email: m.customerEmail,
+              customer_phone: m.customerPhone || null,
+              quantity: qty,
+              variant_label: ci.variantLabel || null,
+              unit_price_cents: ci.unitPriceCents,
+              total_cents: ci.unitPriceCents * qty,
+              stripe_payment_intent_id: session.payment_intent as string,
+              stripe_session_id: session.id,
+              status: 'confirmed',
+            })
+
+            if (ticketErr) {
+              console.error('Cart ticket insert error:', ticketErr)
+            } else {
+              await supabase.rpc('decrement_session_tickets', { sid, qty })
+            }
+          }
+        } else {
+          // Single session or no session
+          const ticketRef = `HH-EVT-${Date.now().toString().slice(-4)}-${ci.eventId.slice(0, 4)}`
+          ticketRefs.push(ticketRef)
+
+          const { error: ticketErr } = await supabase.from('event_tickets').insert({
+            ticket_ref: ticketRef,
+            event_id: ci.eventId,
+            session_id: ci.sessionId || null,
+            group_ref: cartRef,
+            customer_name: m.customerName,
+            customer_email: m.customerEmail,
+            customer_phone: m.customerPhone || null,
+            quantity: qty,
+            variant_label: ci.variantLabel || null,
+            unit_price_cents: ci.unitPriceCents,
+            total_cents: ci.unitPriceCents * qty,
+            stripe_payment_intent_id: session.payment_intent as string,
+            stripe_session_id: session.id,
+            status: 'confirmed',
+          })
+
+          if (ticketErr) {
+            console.error('Cart ticket insert error:', ticketErr)
+          } else {
+            if (ci.sessionId) {
+              await supabase.rpc('decrement_session_tickets', { sid: ci.sessionId, qty })
+            } else {
+              await supabase.rpc('decrement_event_tickets', { eid: ci.eventId, qty })
+            }
+          }
+        }
+        if (!eventTitles.includes(ci.eventTitle)) eventTitles.push(ci.eventTitle)
+      }
+
+      console.log('Cart checkout processed:', cartRef, ticketRefs.length, 'tickets for', m.customerEmail)
+
+      // Upsert contact
+      await upsertContact({
+        name: m.customerName,
+        email: m.customerEmail,
+        phone: m.customerPhone,
+        sourceDetail: `Cart checkout — ${eventTitles.join(', ')}`,
+        serviceInterests: ['event'],
+      })
+
+      // Send confirmation emails
+      if (process.env.RESEND_API_KEY) {
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        const totalCents = session.amount_total || 0
+        const totalFormatted = `$${(totalCents / 100).toFixed(2)}`
+
+        const itemsSummary = cartItems.map(ci =>
+          `${ci.eventTitle}${ci.sessionIds?.length ? ` (${ci.sessionIds.length} sessions)` : ''} x${ci.quantity}`
+        ).join(', ')
+
+        await Promise.allSettled([
+          resend.emails.send({
+            from, to: m.customerEmail,
+            subject: `You're in! ${eventTitles.length} event${eventTitles.length > 1 ? 's' : ''} at Host Hampton`,
+            html: ticketConfirmationHtml({
+              customerName: m.customerName,
+              eventTitle: eventTitles.join(' + '),
+              eventDate: `${ticketRefs.length} ticket${ticketRefs.length > 1 ? 's' : ''}`,
+              eventTime: itemsSummary,
+              location: 'Host Hampton',
+              quantity: ticketRefs.length,
+              totalFormatted,
+              ticketRef: cartRef,
+              isFree: false,
+            }),
+          }),
+          resend.emails.send({
+            from, to: 'hosthampton295@gmail.com',
+            subject: `New cart order: ${m.customerName} — ${eventTitles.join(', ')} (${cartRef})`,
+            html: ticketPurchaseNotifyHtml({
+              ticketRef: cartRef,
+              customerName: m.customerName,
+              customerEmail: m.customerEmail,
+              customerPhone: m.customerPhone || undefined,
+              eventTitle: eventTitles.join(' + '),
+              eventDate: `${ticketRefs.length} ticket${ticketRefs.length > 1 ? 's' : ''}`,
+              eventTime: itemsSummary,
+              quantity: ticketRefs.length,
+              totalFormatted,
+              isFree: false,
+              stripePI: session.payment_intent as string,
+            }),
+          }),
+        ])
+        console.log('Cart confirmation sent to', m.customerEmail)
+      }
+
+      return NextResponse.json({ received: true })
+    }
+
     // ── Party booking deposit (existing flow) ──────────────────
     const partyDate = m.partyDate
     const optionsLockedBy = partyDate

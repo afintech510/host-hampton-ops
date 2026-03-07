@@ -142,6 +142,9 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                   max_tickets: event.max_tickets,
                   allow_multi_session: event.allow_multi_session || false,
                   bundle_pricing: event.bundle_pricing || [],
+                  imageUrl: (() => { const imgs = event.images || []; const p = imgs.find((i: any) => i.is_primary) || imgs[0]; return p?.url || event.image_url || null })(),
+                  event_date: event.event_date,
+                  event_time: event.event_time,
                 }}
                 sessions={sessions}
               />
