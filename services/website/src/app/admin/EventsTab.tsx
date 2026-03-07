@@ -150,29 +150,29 @@ export default function EventsTab({ headers, onLogout }: { headers: Record<strin
           {filteredEvents.map(event => (
             <div key={event.id} className={`bg-white rounded-xl border ${event.is_active ? 'border-hampton-pink/20' : 'border-gray-200 opacity-60'}`}>
               {/* Event row */}
-              <div className="flex items-center gap-4 p-4 cursor-pointer" onClick={() => setExpandedEvent(expandedEvent === event.id ? null : event.id)}>
+              <div className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 cursor-pointer" onClick={() => setExpandedEvent(expandedEvent === event.id ? null : event.id)}>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
                     <h3 className="font-semibold text-hampton-navy text-sm truncate">{event.title}</h3>
-                    <span className="text-xs bg-hampton-navy/10 text-hampton-navy px-2 py-0.5 rounded-full capitalize">{event.category}</span>
-                    {event.is_featured && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Featured</span>}
-                    {event.has_variants && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">Options</span>}
-                    {event.has_sessions && <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{event.allow_multi_session ? 'Series' : 'Multi-date'}</span>}
-                    {!event.is_active && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Archived</span>}
+                    <span className="text-[10px] sm:text-xs bg-hampton-navy/10 text-hampton-navy px-1.5 sm:px-2 py-0.5 rounded-full capitalize">{event.category}</span>
+                    {event.is_featured && <span className="text-[10px] sm:text-xs bg-amber-100 text-amber-700 px-1.5 sm:px-2 py-0.5 rounded-full">Featured</span>}
+                    {event.has_variants && <span className="text-[10px] sm:text-xs bg-blue-50 text-blue-600 px-1.5 sm:px-2 py-0.5 rounded-full hidden sm:inline">Options</span>}
+                    {event.has_sessions && <span className="text-[10px] sm:text-xs bg-purple-50 text-purple-600 px-1.5 sm:px-2 py-0.5 rounded-full hidden sm:inline">{event.allow_multi_session ? 'Series' : 'Multi-date'}</span>}
+                    {!event.is_active && <span className="text-[10px] sm:text-xs bg-gray-100 text-gray-500 px-1.5 sm:px-2 py-0.5 rounded-full">Archived</span>}
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-hampton-mauve">
+                  <div className="flex items-center gap-2 sm:gap-4 text-xs text-hampton-mauve">
                     <span>{event.event_date ? formatDate(event.event_date) : event.has_sessions ? 'Multiple dates' : 'Date TBD'}</span>
                     <span>{formatPrice(event.price_cents)}</span>
                     <span>{event.max_tickets - event.available_tickets}/{event.max_tickets} sold</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
                   <button onClick={e => { e.stopPropagation(); startEdit(event.id) }}
-                    className="p-2 text-hampton-mauve hover:text-hampton-navy transition-colors" title="Edit">
+                    className="p-1.5 sm:p-2 text-hampton-mauve hover:text-hampton-navy transition-colors" title="Edit">
                     {loadingEdit === event.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Edit3 className="w-4 h-4" />}
                   </button>
                   <button onClick={e => { e.stopPropagation(); archiveEvent(event.id) }}
-                    className="p-2 text-hampton-mauve hover:text-red-600 transition-colors" title="Archive">
+                    className="p-1.5 sm:p-2 text-hampton-mauve hover:text-red-600 transition-colors" title="Archive">
                     <Archive className="w-4 h-4" />
                   </button>
                   {expandedEvent === event.id ? <ChevronUp className="w-4 h-4 text-hampton-mauve" /> : <ChevronDown className="w-4 h-4 text-hampton-mauve" />}
@@ -755,7 +755,9 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
           ) : confirmed.length === 0 ? (
             <p className="text-sm text-hampton-mauve py-4 text-center">No tickets sold yet.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            {/* Desktop table */}
+            <div className="overflow-x-auto hidden sm:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-hampton-mauve border-b border-hampton-pink/10">
@@ -792,6 +794,33 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
                 </tbody>
               </table>
             </div>
+            {/* Mobile cards */}
+            <div className="sm:hidden space-y-2">
+              {confirmed.map(t => (
+                <div key={t.id} className="bg-white border border-hampton-pink/10 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-sm text-hampton-navy">{t.customer_name}</span>
+                    <span className="text-sm font-semibold">{formatPrice(t.total_cents)}</span>
+                  </div>
+                  <div className="text-xs text-hampton-mauve space-y-0.5">
+                    <p>{t.customer_email}</p>
+                    {t.customer_phone && <p>{t.customer_phone}</p>}
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="font-mono text-gray-400">{t.ticket_ref} · Qty {t.quantity}</span>
+                      {t.stripe_payment_intent_id ? (
+                        <button onClick={() => processRefund(t.id)} disabled={refunding === t.id}
+                          className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50">
+                          {refunding === t.id ? 'Refunding...' : 'Refund'}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-green-600">Free</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            </>
           )}
 
           {refunded.length > 0 && (

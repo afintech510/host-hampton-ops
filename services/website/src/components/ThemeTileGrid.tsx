@@ -8,17 +8,14 @@ import ImageSlider from '@/components/ImageSlider'
 
 const MINI_PARTY_DISCOUNT = 200
 
-interface ThemePrice {
+export interface ThemeData {
   name: string
+  slug: string
   price_cents: number
-}
-
-function lookupPrice(displayName: string, prices: ThemePrice[], fallback: number): number {
-  if (!prices.length) return fallback
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim()
-  const key = norm(displayName).split(' ')[0]
-  const match = prices.find(p => norm(p.name).startsWith(key))
-  return match ? match.price_cents / 100 : fallback
+  tag: string | null
+  description: string
+  extended_description: string
+  images: string[]
 }
 
 const included = [
@@ -34,82 +31,66 @@ const included = [
   'Full cleanup — you walk out the door stress-free',
 ]
 
-const themes = [
+/* Hardcoded fallback — used only if no DB themes are passed */
+const fallbackThemes: ThemeData[] = [
   {
-    name: 'Glow Party',
-    price: 950,
-    imgs: ['/images/theme-glow.webp', '/images/gallery/glow-accessories.webp'],
-    tag: 'Most Popular',
-    desc: 'Black lights, UV face paint, neon accessories, glow bracelets, custom trucker hat, and a dance party.',
-    extendedDesc: 'Transform our studio into a neon wonderland! Every guest gets a custom trucker hat, glow bracelets, neon necklaces, and UV face paint from our professional station. The entire studio is lit with black lights and neon LED strips. We crank up the DJ playlist, and kids dance the night away in a truly electric atmosphere. The perfect party for ages 6–14.',
+    name: 'Glow Party', slug: 'glow-party', price_cents: 95000, tag: 'Most Popular',
+    description: 'Black lights, UV face paint, neon accessories, glow bracelets, custom trucker hat, and a dance party.',
+    extended_description: 'Transform our studio into a neon wonderland! Every guest gets a custom trucker hat, glow bracelets, neon necklaces, and UV face paint from our professional station. The entire studio is lit with black lights and neon LED strips. We crank up the DJ playlist, and kids dance the night away in a truly electric atmosphere. The perfect party for ages 6–14.',
+    images: ['/images/theme-glow.webp', '/images/gallery/glow-accessories.webp'],
   },
   {
-    name: 'Swiftie Party',
-    price: 850,
-    imgs: ['/images/theme-swiftie.webp'],
-    tag: null,
-    desc: 'Eras Tour-inspired decor, friendship bracelets, decorate your own glasses, and all the Taylor Swift anthems.',
-    extendedDesc: 'Welcome to the Eras Tour — right in our studio! Guests make their own friendship bracelets, decorate their own glasses, sing along to curated Taylor Swift playlists, and pose in front of our Swiftie photo backdrop. The space is decked out in all of Taylor\'s signature colors and aesthetic. Perfect for the Swifties ages 6–14.',
+    name: 'Swiftie Party', slug: 'swiftie-party', price_cents: 85000, tag: null,
+    description: 'Eras Tour-inspired decor, friendship bracelets, decorate your own glasses, and all the Taylor Swift anthems.',
+    extended_description: 'Welcome to the Eras Tour — right in our studio! Guests make their own friendship bracelets, decorate their own glasses, sing along to curated Taylor Swift playlists, and pose in front of our Swiftie photo backdrop. The space is decked out in all of Taylor\'s signature colors and aesthetic. Perfect for the Swifties ages 6–14.',
+    images: ['/images/theme-swiftie.webp'],
   },
   {
-    name: 'Spa Party',
-    price: 850,
-    imgs: ['/images/theme-spa.webp', '/images/gallery/spa-party-1.webp', '/images/gallery/spa-party-2.webp'],
-    tag: null,
-    desc: 'Mini manicures, mini facials, face masks, robes, cucumbers, and full spa-day vibes.',
-    extendedDesc: 'Roll out the red carpet — our studio becomes a luxury spa! Every guest gets a robe, cucumber eye pads, mini facials, a DIY face mask, and a mini manicure. We pipe in relaxing music and set up the full spa aesthetic. Totally kid-safe products, totally unforgettable. Ideal for ages 6–12.',
+    name: 'Spa Party', slug: 'spa-party', price_cents: 85000, tag: null,
+    description: 'Mini manicures, mini facials, face masks, robes, cucumbers, and full spa-day vibes.',
+    extended_description: 'Roll out the red carpet — our studio becomes a luxury spa! Every guest gets a robe, cucumber eye pads, mini facials, a DIY face mask, and a mini manicure. We pipe in relaxing music and set up the full spa aesthetic. Totally kid-safe products, totally unforgettable. Ideal for ages 6–12.',
+    images: ['/images/theme-spa.webp', '/images/gallery/spa-party-1.webp', '/images/gallery/spa-party-2.webp'],
   },
   {
-    name: 'Slime Party',
-    price: 900,
-    imgs: ['/images/theme-slime.webp', '/images/slime-party-1.jpg', '/images/slime-party-2.jpg', '/images/slime-party-3.jpg', '/images/slime-party-4.jpg'],
-    tag: null,
-    desc: 'Choose your slime theme! Custom slime-making station with personalized containers and messy fun.',
-    extendedDesc: 'Get ready for the ultimate slime lab! Choose a slime theme and each guest creates their own custom slime — picking colors, glitter, and add-ins at our slime-making station. They take home their creation in personalized containers. The studio is transformed with slime-themed decor and activities. Perfect for ages 5–12.',
+    name: 'Slime Party', slug: 'slime-party', price_cents: 90000, tag: null,
+    description: 'Choose your slime theme! Custom slime-making station with personalized containers and messy fun.',
+    extended_description: 'Get ready for the ultimate slime lab! Choose a slime theme and each guest creates their own custom slime — picking colors, glitter, and add-ins at our slime-making station. They take home their creation in personalized containers. The studio is transformed with slime-themed decor and activities. Perfect for ages 5–12.',
+    images: ['/images/theme-slime.webp', '/images/slime-party-1.jpg', '/images/slime-party-2.jpg', '/images/slime-party-3.jpg', '/images/slime-party-4.jpg'],
   },
   {
-    name: 'K-Pop Party',
-    price: 900,
-    imgs: ['/images/theme-kpop.webp', '/images/gallery/kpop-setup.webp'],
-    tag: null,
-    desc: 'Hair glitter, decorate your own microphone or trucker hat, glitter tattoos, and all the K-pop vibes.',
-    extendedDesc: 'Your favorite K-pop stars come to life! Guests get hair glitter, decorate their own microphone or trucker hat, enjoy glitter tattoos, and strike poses at our photo wall. The studio is lit with stage lighting and filled with K-pop energy. We can make it neon glow if preferred. Awesome for fans ages 7–14.',
+    name: 'K-Pop Party', slug: 'kpop-party', price_cents: 90000, tag: null,
+    description: 'Hair glitter, decorate your own microphone or trucker hat, glitter tattoos, and all the K-pop vibes.',
+    extended_description: 'Your favorite K-pop stars come to life! Guests get hair glitter, decorate their own microphone or trucker hat, enjoy glitter tattoos, and strike poses at our photo wall. The studio is lit with stage lighting and filled with K-pop energy. We can make it neon glow if preferred. Awesome for fans ages 7–14.',
+    images: ['/images/theme-kpop.webp', '/images/gallery/kpop-setup.webp'],
   },
   {
-    name: 'Barbie Party',
-    price: 850,
-    imgs: ['/images/theme-barbie.webp', '/images/gallery/barbie-photo-booth.webp', '/images/gallery/barbie-setup.webp', '/images/gallery/card-barbie-collage.webp'],
-    tag: null,
-    desc: 'Pink everything, Barbie manicure, fashion design station, and Barbie World brought to life.',
-    extendedDesc: 'Welcome to Barbie World! The studio is fully pink and glamorous. Guests enjoy a Barbie manicure, design their own Barbie outfits at our fashion station, walk the runway, and strike their best Barbie poses at the photo wall. We\'ve got all the iconic accessories and Barbie-worthy activities. For ages 4–12.',
+    name: 'Barbie Party', slug: 'barbie-party', price_cents: 85000, tag: null,
+    description: 'Pink everything, Barbie manicure, fashion design station, and Barbie World brought to life.',
+    extended_description: 'Welcome to Barbie World! The studio is fully pink and glamorous. Guests enjoy a Barbie manicure, design their own Barbie outfits at our fashion station, walk the runway, and strike their best Barbie poses at the photo wall. We\'ve got all the iconic accessories and Barbie-worthy activities. For ages 4–12.',
+    images: ['/images/theme-barbie.webp', '/images/gallery/barbie-photo-booth.webp', '/images/gallery/barbie-setup.webp', '/images/gallery/card-barbie-collage.webp'],
   },
   {
-    name: 'Sweets & Treats',
-    price: 800,
-    imgs: ['/images/theme-sweets.webp', '/images/gallery/donut-decorating.webp'],
-    tag: 'Best Value',
-    desc: 'Cookie, cupcake, and donut decorating — plus decorate your own apron to take home!',
-    extendedDesc: 'A party as sweet as the birthday star! Guests decorate their own cookies, cupcakes, or donuts and get to decorate their own aprons to take home. The studio is transformed into a pastel dreamland with sweet-themed decor. Perfect for ages 3–10 who love all things sweet.',
+    name: 'Sweets & Treats', slug: 'sweets-treats', price_cents: 80000, tag: 'Best Value',
+    description: 'Cookie, cupcake, and donut decorating — plus decorate your own apron to take home!',
+    extended_description: 'A party as sweet as the birthday star! Guests decorate their own cookies, cupcakes, or donuts and get to decorate their own aprons to take home. The studio is transformed into a pastel dreamland with sweet-themed decor. Perfect for ages 3–10 who love all things sweet.',
+    images: ['/images/theme-sweets.webp', '/images/gallery/donut-decorating.webp'],
   },
   {
-    name: 'Sleep Under Party',
-    price: 900,
-    imgs: ['/images/theme-sleepunder.webp', '/images/gallery/spa-party-1.webp'],
-    tag: 'New',
-    desc: 'Cozy styled tents, bedazzle a hairbrush, hairstyling, mini pink facials, and sleepover vibes.',
-    extendedDesc: 'The ultimate sleepover experience — without the actual sleepover! Each guest gets their own cozy styled tent with air mattress setup. Activities include bedazzling their own hairbrush to take home, fun hairstyling sessions, and relaxing mini pink facials. All the sleepover magic, and you still pick them up at the end!',
+    name: 'Sleep Under Party', slug: 'sleep-under-party', price_cents: 90000, tag: 'New',
+    description: 'Cozy styled tents, bedazzle a hairbrush, hairstyling, mini pink facials, and sleepover vibes.',
+    extended_description: 'The ultimate sleepover experience — without the actual sleepover! Each guest gets their own cozy styled tent with air mattress setup. Activities include bedazzling their own hairbrush to take home, fun hairstyling sessions, and relaxing mini pink facials. All the sleepover magic, and you still pick them up at the end!',
+    images: ['/images/theme-sleepunder.webp', '/images/gallery/spa-party-1.webp'],
   },
   {
-    name: 'Toddler Party',
-    price: 850,
-    imgs: ['/images/theme-toddler.webp', '/images/gallery/toddler-sensory.webp'],
-    tag: 'Ages 2–4',
-    desc: 'Safe, sensory-friendly activities perfectly designed for little ones.',
-    extendedDesc: 'The sweetest little celebration! Designed specifically for toddlers ages 2–4, this party features age-appropriate sensory activities, soft play elements, and a magical setup that\'s perfect for the birthday star and their little friends. Safe, fun, and oh-so-adorable.',
+    name: 'Toddler Party', slug: 'toddler-party', price_cents: 85000, tag: 'Ages 2–4',
+    description: 'Safe, sensory-friendly activities perfectly designed for little ones.',
+    extended_description: 'The sweetest little celebration! Designed specifically for toddlers ages 2–4, this party features age-appropriate sensory activities, soft play elements, and a magical setup that\'s perfect for the birthday star and their little friends. Safe, fun, and oh-so-adorable.',
+    images: ['/images/theme-toddler.webp', '/images/gallery/toddler-sensory.webp'],
   },
 ]
 
-export default function ThemeTileGrid({ themePrices = [] }: { themePrices?: ThemePrice[] }) {
+export default function ThemeTileGrid({ themes: dbThemes }: { themes?: ThemeData[] }) {
+  const themes = dbThemes && dbThemes.length > 0 ? dbThemes : fallbackThemes
   const [activeTheme, setActiveTheme] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -128,7 +109,7 @@ export default function ThemeTileGrid({ themePrices = [] }: { themePrices?: Them
     <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {themes.map(t => {
-          const regularPrice = lookupPrice(t.name, themePrices, t.price)
+          const regularPrice = t.price_cents / 100
           const miniPrice = regularPrice - MINI_PARTY_DISCOUNT
           return (
             <button
@@ -141,7 +122,7 @@ export default function ThemeTileGrid({ themePrices = [] }: { themePrices?: Them
             >
               <div className="relative aspect-[4/5] overflow-hidden">
                 <Image
-                  src={t.imgs[0]}
+                  src={t.images[0]}
                   alt={t.name}
                   fill
                   className="object-cover group-hover:scale-105 transition-transform duration-300"
@@ -168,7 +149,7 @@ export default function ThemeTileGrid({ themePrices = [] }: { themePrices?: Them
 
       {/* ── Expanded Detail Panel ── */}
       {selected && (() => {
-        const regularPrice = lookupPrice(selected.name, themePrices, selected.price)
+        const regularPrice = selected.price_cents / 100
         const miniPrice = regularPrice - MINI_PARTY_DISCOUNT
         return (
           <div
@@ -198,14 +179,14 @@ export default function ThemeTileGrid({ themePrices = [] }: { themePrices?: Them
               {/* Left: photo gallery + description + pricing tiers */}
               <div>
                 <ImageSlider
-                  images={selected.imgs}
+                  images={selected.images}
                   alt={selected.name}
                   aspectRatio="aspect-[3/4]"
                   autoPlayMs={3500}
                 />
                 <div className="p-6">
                   <p className="text-hampton-navy/60 text-xs font-semibold tracking-widest uppercase mb-3">About This Party</p>
-                  <p className="text-hampton-navy leading-relaxed text-sm mb-5">{selected.extendedDesc}</p>
+                  <p className="text-hampton-navy leading-relaxed text-sm mb-5">{selected.extended_description}</p>
 
                   {/* Pricing tiers */}
                   <div className="grid grid-cols-2 gap-3">

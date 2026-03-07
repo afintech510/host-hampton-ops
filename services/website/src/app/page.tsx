@@ -3,7 +3,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Star, CheckCircle, Clock, Users, Sparkles, Heart, Shield } from 'lucide-react'
 import DynamicTypingSection from '@/components/DynamicTypingSection'
-import ThemeTileGrid from '@/components/ThemeTileGrid'
+import ThemeTileGrid, { ThemeData } from '@/components/ThemeTileGrid'
 import { getSupabase } from '@/lib/supabase'
 
 export const metadata: Metadata = {
@@ -45,17 +45,17 @@ const reviews = [
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  let themePrices: Array<{ name: string; price_cents: number }> = []
+  let themes: ThemeData[] = []
   try {
     const supabase = getSupabase()
     const { data } = await supabase
-      .from('pricing_items')
-      .select('name, price_cents')
-      .eq('category', 'party-theme')
+      .from('party_themes')
+      .select('name, slug, price_cents, tag, description, extended_description, images')
       .eq('is_active', true)
-    themePrices = data || []
+      .order('sort_order')
+    themes = (data || []) as ThemeData[]
   } catch {
-    // fall back to hardcoded prices in ThemeTileGrid
+    // fall back to hardcoded themes in ThemeTileGrid
   }
   return (
     <>
@@ -120,7 +120,7 @@ export default async function Home() {
             Every theme is 2 private hours — decor, hands-on activities, food, and a dedicated host who keeps the energy going from start to finish.
           </p>
         </div>
-        <ThemeTileGrid themePrices={themePrices} />
+        <ThemeTileGrid themes={themes} />
         <div className="text-center mt-8">
           <Link href="/party-packages" className="btn-secondary">View All Packages & Pricing</Link>
         </div>

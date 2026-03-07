@@ -103,54 +103,56 @@ export default function OrdersTab({ headers, onLogout }: { headers: Record<strin
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
       {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white rounded-xl border border-hampton-pink/20 p-4 text-center">
-          <p className="text-2xl font-bold text-hampton-navy">{orders.length}</p>
-          <p className="text-xs text-gray-500">Total Orders</p>
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
+          <p className="text-lg sm:text-2xl font-bold text-hampton-navy">{orders.length}</p>
+          <p className="text-[10px] sm:text-xs text-gray-500">Total Orders</p>
         </div>
-        <div className="bg-white rounded-xl border border-hampton-pink/20 p-4 text-center">
-          <p className="text-2xl font-bold text-emerald-600">{formatPrice(totalRevenue)}</p>
-          <p className="text-xs text-gray-500">Active Revenue</p>
+        <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
+          <p className="text-lg sm:text-2xl font-bold text-emerald-600">{formatPrice(totalRevenue)}</p>
+          <p className="text-[10px] sm:text-xs text-gray-500">Active Revenue</p>
         </div>
-        <div className="bg-white rounded-xl border border-hampton-pink/20 p-4 text-center">
-          <p className="text-2xl font-bold text-hampton-navy">{bookingCount}B / {ticketCount}T</p>
-          <p className="text-xs text-gray-500">Bookings / Tickets</p>
+        <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
+          <p className="text-lg sm:text-2xl font-bold text-hampton-navy">{bookingCount}B / {ticketCount}T</p>
+          <p className="text-[10px] sm:text-xs text-gray-500">Bookings / Tickets</p>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Type pills */}
-        <div className="flex items-center bg-white rounded-lg border border-hampton-pink/20 overflow-hidden text-sm">
-          {(['', 'booking', 'ticket'] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={`px-3 py-1.5 font-medium transition-colors ${
-                typeFilter === t ? 'bg-hampton-navy text-white' : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {t === '' ? 'All' : t === 'booking' ? 'Bookings' : 'Tickets'}
-            </button>
-          ))}
+      <div className="space-y-2 sm:space-y-0 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+        <div className="flex items-center gap-2">
+          {/* Type pills */}
+          <div className="flex items-center bg-white rounded-lg border border-hampton-pink/20 overflow-hidden text-sm">
+            {(['', 'booking', 'ticket'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className={`px-3 py-1.5 font-medium transition-colors ${
+                  typeFilter === t ? 'bg-hampton-navy text-white' : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {t === '' ? 'All' : t === 'booking' ? 'Bookings' : 'Tickets'}
+              </button>
+            ))}
+          </div>
+
+          {/* Status dropdown */}
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="text-sm border border-hampton-pink/20 rounded-lg px-3 py-1.5 bg-white"
+          >
+            <option value="">All Statuses</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="deposit_paid">Deposit Paid</option>
+            <option value="pending">Pending</option>
+            <option value="refunded">Refunded</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
         </div>
 
-        {/* Status dropdown */}
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
-          className="text-sm border border-hampton-pink/20 rounded-lg px-3 py-1.5 bg-white"
-        >
-          <option value="">All Statuses</option>
-          <option value="confirmed">Confirmed</option>
-          <option value="deposit_paid">Deposit Paid</option>
-          <option value="pending">Pending</option>
-          <option value="refunded">Refunded</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-
-        {/* Search */}
-        <div className="relative flex-1 min-w-[200px]">
+        {/* Search — full width on mobile */}
+        <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
@@ -184,22 +186,47 @@ export default function OrdersTab({ headers, onLogout }: { headers: Record<strin
               {/* Row */}
               <button
                 onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                className="w-full px-3 sm:px-4 py-3 text-left hover:bg-gray-50 transition-colors"
               >
-                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${typeBadge(order.order_type)}`}>
-                  {order.order_type === 'booking' ? 'BKG' : 'TKT'}
-                </span>
-                <span className="font-mono text-xs text-gray-400 w-28 shrink-0">{order.order_ref}</span>
-                <span className="font-medium text-sm text-hampton-navy truncate flex-1">{order.customer_name}</span>
-                <span className="text-xs text-gray-500 truncate max-w-[140px] hidden sm:block">{order.event_title}</span>
-                <span className="text-xs text-gray-400 w-20 text-right hidden md:block">
-                  {order.event_date ? formatDate(order.event_date) : '—'}
-                </span>
-                <span className="font-semibold text-sm w-16 text-right">{formatPrice(order.amount_cents)}</span>
-                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${statusColor(order.status)}`}>
-                  {order.status.replace('_', ' ')}
-                </span>
-                {expandedOrder === order.id ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                {/* Desktop row */}
+                <div className="hidden sm:flex items-center gap-3">
+                  <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${typeBadge(order.order_type)}`}>
+                    {order.order_type === 'booking' ? 'BKG' : 'TKT'}
+                  </span>
+                  <span className="font-mono text-xs text-gray-400 w-28 shrink-0">{order.order_ref}</span>
+                  <span className="font-medium text-sm text-hampton-navy truncate flex-1">{order.customer_name}</span>
+                  <span className="text-xs text-gray-500 truncate max-w-[140px]">{order.event_title}</span>
+                  <span className="text-xs text-gray-400 w-20 text-right hidden md:block">
+                    {order.event_date ? formatDate(order.event_date) : '—'}
+                  </span>
+                  <span className="font-semibold text-sm w-16 text-right">{formatPrice(order.amount_cents)}</span>
+                  <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${statusColor(order.status)}`}>
+                    {order.status.replace('_', ' ')}
+                  </span>
+                  {expandedOrder === order.id ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                </div>
+                {/* Mobile stacked row */}
+                <div className="sm:hidden">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${typeBadge(order.order_type)}`}>
+                        {order.order_type === 'booking' ? 'BKG' : 'TKT'}
+                      </span>
+                      <span className="font-medium text-sm text-hampton-navy truncate">{order.customer_name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="font-semibold text-sm">{formatPrice(order.amount_cents)}</span>
+                      {expandedOrder === order.id ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                    <span className="font-mono">{order.order_ref}</span>
+                    <span className="truncate">{order.event_title}</span>
+                    <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ml-auto ${statusColor(order.status)}`}>
+                      {order.status.replace('_', ' ')}
+                    </span>
+                  </div>
+                </div>
               </button>
 
               {/* Expanded detail */}
