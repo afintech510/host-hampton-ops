@@ -17,6 +17,7 @@ export default function RoomRentalLeadForm() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+  const [consent, setConsent] = useState(false)
 
   useEffect(() => { captureUtm() }, [])
 
@@ -40,6 +41,7 @@ export default function RoomRentalLeadForm() {
           guestCount: form.guestCount || undefined,
           eventType: form.eventName || 'Room Rental',
           sourcePage: 'party-room-rental',
+          marketingConsent: consent,
           utm: getUtmParams(),
         }),
       })
@@ -181,6 +183,22 @@ export default function RoomRentalLeadForm() {
               />
             </div>
           </div>
+
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={e => setConsent(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-hampton-mauve/40 text-hampton-navy focus:ring-hampton-blue"
+            />
+            <span className="text-xs text-hampton-navy/60 leading-relaxed">
+              I agree to receive event updates and promotions from Host Hampton via email and text message.
+              Msg frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help.
+              View our{' '}
+              <a href="/privacy-policy" className="underline">Privacy Policy</a> &amp;{' '}
+              <a href="/terms-of-service" className="underline">Terms</a>.
+            </span>
+          </label>
 
           {error && (
             <p className="text-red-600 text-sm text-center">{error}</p>

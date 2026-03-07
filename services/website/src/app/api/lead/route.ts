@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
     notes,
     sourcePage,
     utm,
+    marketingConsent,
   } = body
 
   // Validate required fields
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
     phone,
     sourceDetail: `Lead form — ${sourcePage || 'party-packages'}`,
     serviceInterests,
+    marketingConsent: !!marketingConsent,
   })
 
   if (contactId) {

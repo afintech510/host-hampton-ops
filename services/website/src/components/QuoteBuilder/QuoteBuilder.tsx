@@ -229,7 +229,7 @@ function LeadGateForm({ onUnlock }: { onUnlock: (c: { name: string; email: strin
       const res = await fetch('/api/lead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName: name.trim(), email: email.trim(), phone: phone.trim(), eventType: 'Quote Builder', sourcePage: 'party-quote' }),
+        body: JSON.stringify({ fullName: name.trim(), email: email.trim(), phone: phone.trim(), eventType: 'Quote Builder', sourcePage: 'party-quote', marketingConsent: consent }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -274,8 +274,11 @@ function LeadGateForm({ onUnlock }: { onUnlock: (c: { name: string; email: strin
             <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}
               className="mt-0.5 w-4 h-4 rounded border-hampton-mauve/40 text-hampton-navy focus:ring-hampton-blue" />
             <span className="text-xs text-hampton-navy/60 leading-relaxed">
-              I consent to being contacted by Host Hampton about party services and promotions.
-              We respect your privacy and will never share your information.
+              I agree to receive event updates and promotions from Host Hampton via email and text message.
+              Msg frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help.
+              View our{' '}
+              <a href="/privacy-policy" className="underline">Privacy Policy</a> &amp;{' '}
+              <a href="/terms-of-service" className="underline">Terms</a>.
             </span>
           </label>
           {error && <p className="text-red-600 text-xs font-medium">{error}</p>}

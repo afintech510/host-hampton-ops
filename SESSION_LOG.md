@@ -531,3 +531,225 @@ Full visual redesign deployed at staging.hosthampton.com. Dusty blue gradient fl
 - 3a39ff9: fix: remove bg-hampton-ivory from page wrappers so body gradient shows
 - b6f914a: feat: reverse gradient at bottom of page + dusty blue footer
 - 348b17d: feat: replace dark navy sections with bronze-to-cream gradient
+
+---
+
+## Session 9 — 2026-02-24
+
+### What Was Accomplished
+
+- **Party-packages UX fixes (4 items)**:
+  - Shrunk vertical gaps between "Select Your Theme" / theme card / "Tell Us About Your Party" sections (`py-16` → `py-8`)
+  - Fixed scroll position when advancing — added `scroll-mt-24` so section headings are visible below the fixed nav
+  - Changed deposit from $250 to $99 across UI (3 places in PartyPackagesContent), API default (checkout route 25000→9900), and database (`booking_types.kids-party` deposit_cents updated)
+  - Fixed "Check Availability" button stuck on "Submitting..." — now shows "Thank You, Select Time Below ↴" after submission
+- **`pricing_items` database table created**: Migration run via Supabase MCP. 87 rows across 13 categories (party-theme, room-rental, studio-rental, food-add-on, dessert-add-on, beverage-add-on, decor-add-on, entertainment-add-on, party-add-on, service-add-on, deposit, activity-premium, activity-standard). Indexed on category and is_active.
+- **Public pricing API**: New `GET /api/pricing` endpoint with optional `?category=` filter, Cache-Control headers.
+- **Visual pricing menu on `/party-packages`**: New `PricingMenu` component added below booking flow and above Questions CTA. 5 sections: Party Themes, Food & Catering, Decor & Entertainment, Party Extras, Activities Included. Activities shown as pill tags.
+- **`/party-add-ons` rewritten**: Page now fetches from `pricing_items` table instead of hardcoded arrays. CTA updated from $250 to $99.
+- **New `/party-menu` page built**: Full standalone pricing menu page (448 lines) with card-based IG slide design. 6 sections: Themed Party Packages (navy header, Popular badge), Room Rental (Weekend/Weekday columns + Professional Use dark card), Food & Beverage, Decor & Entertainment, Service Add-Ons, Activities (pill tags). Added to sitemap.
+- **All 3 features deployed to VPS** (3 separate deploys).
+
+### Decisions Made
+
+- **$99 deposit instead of $250**: User's business decision — applies to kids-party booking type. Other booking types (room-rental, private-catered, etc.) retain their own deposit amounts.
+- **Server-side pricing fetch**: Pricing data fetched in server component (`page.tsx`) and passed as props to client component, rather than client-side API call — better for SEO.
+- **pricing_items as source of truth**: CSV data seeded into DB. Pages now read from DB instead of hardcoded values. Category slugs derived from CSV "Type" column.
+- **Card-based design for /party-menu**: Matched user's IG slide reference code — bold serif headings, dark navy accent cards, Weekend/Weekday split columns for room rental.
+
+### Known Issues / Blockers
+
+- **migration_005 still NOT RUN**: events/tickets tables don't exist in Supabase yet.
+- **DNS cutover still deferred**: www.hosthampton.com still on Squarespace.
+- **Hardcoded prices on some pages**: While `/party-packages`, `/party-add-ons`, and `/party-menu` now read from DB, other pages (home, first-birthday, communion, room-rental, permanent-jewelry, glow-party) still have hardcoded prices that could be migrated to use `pricing_items`.
+
+### Current Project State
+
+Pricing database table live with 87 items. Three pages now render pricing from DB: `/party-packages` (visual menu section), `/party-add-ons` (full rewrite), `/party-menu` (new page). Party booking flow improved with tighter layout, correct scroll positions, $99 deposit, and proper button feedback. All deployed to staging.hosthampton.com.
+
+### Updated Priority TODO (in order)
+
+1. **Run migration_005** in Supabase — unblocks event ticketing on staging
+2. **DNS cutover** www.hosthampton.com → VPS
+3. **Update Stripe webhook URL** to www after DNS cutover
+4. **Migrate remaining hardcoded prices** to use `pricing_items` table (home, room-rental, glow-party, etc.)
+5. **SEO optimization pass** (meta tags, Open Graph, structured data)
+6. **Agent content pipeline** (COPY → website_content → ISR)
+
+### Files Changed This Session
+
+**New:**
+- `services/website/src/app/api/pricing/route.ts` — Public pricing API
+- `services/website/src/app/party-menu/page.tsx` — Full pricing menu page (448 lines)
+
+**Modified:**
+- `services/website/src/app/party-packages/PartyPackagesContent.tsx` — Shrunk gaps, scroll-mt-24, $250→$99 (×3), button text, PricingMenu component
+- `services/website/src/app/party-packages/page.tsx` — Async server component fetching pricing, PricingItem export
+- `services/website/src/app/api/checkout/route.ts` — Default deposit 25000→9900
+- `services/website/src/app/party-add-ons/page.tsx` — Rewritten to fetch from DB, CTA $250→$99
+- `services/website/src/app/sitemap/page.tsx` — Added /party-menu link
+
+**Database:**
+- `pricing_items` table created (migration via Supabase MCP) — 87 rows, 13 categories
+- `booking_types.kids-party` deposit_cents updated 25000→9900
+
+### Commits This Session
+
+- 6234896: fix: shrink party-packages gaps, $99 deposit, scroll positions, submitted text
+- 9fc8bd8: feat: pricing_items table + visual menu on party-packages + DB-driven add-ons
+- 65a1eb5: feat: /party-menu page — full pricing menu from DB with card-based design
+
+---
+
+## Session 10 — 2026-02-27
+
+### What Was Accomplished
+
+- **Local dev environment set up**: Created `services/website/.env.local` with all VPS env vars. Next.js dev server running at `http://localhost:3002` for instant preview without deploying per change.
+- **Homepage "Design Your Party" CTA gradient**: Changed solid `bg-hampton-navy` to faded dusty blue gradient (`bg-gradient-to-b from-[#BCCDEB]/40 to-[#F7F2E8]/10`). All text and button colors updated to navy variants to match light background.
+- **ThemeTileGrid — image slider + mini party pricing**: Added `ImageSlider` component inside expanded theme panels (16/9 aspect, 3.5s autoplay). Slime Party has 5 images; all others 1. Tile preview shows "Starting at $X" with $200 mini party discount applied. Expanded panel shows two-tier pricing card: Mini Party (blush bg, up to 7 guests, 1.5 hrs) and Classic Party (navy/5 bg, 10 guests, 2 hrs). CTAs changed to "Customize & Price" → `/kids-party-menu` and "Reserve Date — $99" → `/book?package=...`.
+- **ThemeTileGrid — scroll to panel**: On theme tile click, page smoothly scrolls to top edge of the expanded detail panel (`useRef` + `useEffect` 80ms timeout + `scrollIntoView({ behavior: 'smooth', block: 'start' })` + `scroll-mt-24`).
+- **/book timeslot scrollbar fix**: Removed visible scrollbars from time slot grid using `scrollbar-hide` class (already in globals.css). Slot buttons made smaller: `py-1.5`, `text-xs`, `rounded-lg`.
+- **/kids-party-menu — food and balloon qty adjusters**: Added qty +/− controls to all food items and balloon garland/tower decor items. New `SelectableAddOnCardWithQty` component shows qty row (Minus/Plus buttons, quantity count) when item is selected. New `AddOnGridWithQty` wrapper. `foodQty` and `decorQty` Maps track per-item quantities alongside the existing `selectedFood`/`selectedDecor` Sets. Total price calculation updated to multiply qty for food and balloon items. Fixed TypeScript `for...of Set` error by switching to `Array.from()` throughout.
+- **/kids-party-menu — DIY Party Rental section**: New "DIY Party — Rent the Studio" section at bottom of Theme Party Packages module. Collapsed by default (toggle button opens it). Shows: date picker (preferred date), weekday rate card ($450/3hr) and weekend rate card ($575/3hr) with +$50/+$100 additional hour rates. Highlighted card based on selected date's day of week. Note: setup/cleanup included in rental time.
+- **/book page — show form on type select**: `onTypeChange` prop added to `UniversalCalendarProps` and wired through `UniversalCalendar/index.tsx`. Book page tracks `activeBookingSlug` state. `showContactForm` computed as true if: timeslot selected, OR kids party type active, OR room rental type active. Form gate changed from `{selection?.timeSlot && (` to `{showContactForm && (`. Inside form, slot display shows either confirmed slot or a "Select a date & time above ⤴" nudge in blush bg when no slot yet selected.
+
+### Decisions Made
+
+- **`onTypeChange` callback in UniversalCalendar**: Rather than polling parent state, the calendar fires a callback immediately when a booking type tile is clicked — before any date is selected. This allows `book/page.tsx` to reveal the contact form early.
+- **`Array.from()` for Set iteration**: tsconfig target doesn't include `downlevelIteration`. All `for...of Set` changed to `Array.from(set)` and spread in array literals to `[...Array.from(set)]`. Avoids tsconfig changes.
+- **Weekday detection via date parts**: `new Date(y, m-1, d).getDay()` instead of `new Date(dateStr).getDay()` — avoids UTC timezone offset issues where dateStr parsed as midnight UTC could shift to prior day in local time.
+- **$200 flat Mini Party discount on tile display**: All theme tile previews show `Starting at $miniPrice` = regular − $200. Clean and consistent, no DB lookup needed just for the tile.
+
+### Known Issues / Blockers
+
+- **migration_005 still NOT RUN**: events/tickets tables don't exist in Supabase yet. Event pages return empty data on staging.
+- **DNS cutover still deferred**: www.hosthampton.com still on Squarespace.
+- **Footer.tsx has unstaged changes** from an earlier session — not part of this session's work, not committed.
+
+### Current Project State
+
+Homepage theme tiles now show mini party pricing and open a rich expanded panel with image gallery, two-tier pricing, and prominent CTAs. Kids-party-menu has qty controls for food/balloon items and a collapsible DIY Party Rental section. The /book page reveals the contact form immediately when a party type is selected, without requiring a timeslot first. All changes committed and deployed to staging.hosthampton.com.
+
+### Updated Priority TODO (in order)
+
+1. **Run migration_005** in Supabase — unblocks event ticketing on staging
+2. **DNS cutover** www.hosthampton.com → VPS
+3. **Update Stripe webhook URL** to www after DNS cutover
+4. **Migrate remaining hardcoded prices** to `pricing_items` table (home, room-rental, glow-party)
+5. **SEO optimization pass** (meta tags, Open Graph, structured data)
+6. **Agent content pipeline** (COPY → website_content → ISR)
+
+### Files Changed This Session
+
+- `services/website/.env.local` — New (gitignored): all VPS env vars for local dev at localhost:3002
+- `services/website/src/app/page.tsx` — Design Your Party CTA: gradient bg + navy text/button colors
+- `services/website/src/components/ThemeTileGrid.tsx` — ImageSlider in panel, mini pricing on tiles, two-tier pricing card, scroll-to-panel, updated CTAs; `imgs[]` array replacing `img` string on theme data
+- `services/website/src/components/UniversalCalendar/TimeSlotPanel.tsx` — `scrollbar-hide` + smaller slot buttons
+- `services/website/src/components/UniversalCalendar/types.ts` — Added `onTypeChange` prop to `UniversalCalendarProps`
+- `services/website/src/components/UniversalCalendar/index.tsx` — Added `onTypeChange` handler + wired in `handleTypeChange`
+- `services/website/src/app/book/page.tsx` — `activeBookingSlug` state, `showContactForm` computed, form gate updated, soft slot nudge, `onTypeChange={setActiveBookingSlug}`
+- `services/website/src/app/kids-party-menu/KidsPartyMenuContent.tsx` — `SelectableAddOnCardWithQty`, `AddOnGridWithQty`, `foodQty`/`decorQty` Maps, qty toggle helpers, `isWeekday()`, DIY rental section, DIY toggle, `BALLOON_QTY_ITEMS` Set, Array.from() fix
+
+### Commits This Session
+
+- 3b6a7f0: feat: image slider on theme tiles, faded CTA gradient, timeslot scrollbar fix
+- 73363fd: feat: mini party pricing on homepage tiles, two-tier card, scroll-to-panel, updated CTAs
+- 8b70e91: feat: DIY party rental section + food & balloon qty adjusters on kids-party-menu
+- cde456b: fix: use Array.from() for Set iteration to satisfy tsconfig target
+- 000c814: feat: show contact form on type select, DIY toggle on kids-party-menu
+
+---
+
+## Session 11 — 2026-03-07
+
+### What Was Accomplished
+
+- **Communications infrastructure (7 workstreams)**: Built and wired the full email/SMS communications stack:
+  - **Brevo integration** (`lib/brevo.ts`): REST API wrapper (no SDK) for bulk email campaigns — `sendCampaign()`, `syncContactToBrevo()`
+  - **Twilio integration** (`lib/twilio.ts`): REST API wrapper for SMS/MMS — `sendSms()` with opt-in check, contact lookup, interaction logging
+  - **SMS templates** (`lib/sms-templates.ts`): Template functions for event reminders, booking reminders, booking confirmations
+  - **Email templates** (`lib/email-templates/`): `reminders.ts` (event/booking reminder HTML), `event-newsletter.ts` (auto-draft newsletter), `marketing-emails.ts` (campaign templates)
+  - **Reminder engine** (`lib/reminders.ts`): `enqueueEventReminders()` and `enqueueBookingReminders()` — inserts `scheduled_reminders` rows (1-day-before + day-of for events, 2-day-before for bookings)
+  - **Cron routes**: `send-reminders` (processes pending reminders via email/SMS), `send-campaigns` (sends scheduled Brevo campaigns), `draft-newsletter` (auto-generates newsletter from upcoming events)
+  - **Webhook routes**: `webhooks/brevo` (handles bounces, unsubscribes, spam complaints), `webhooks/twilio` (handles STOP/HELP/inbound SMS, opt-out tracking)
+
+- **Reminder auto-enqueue on all checkout paths**: Wired `enqueueEventReminders` and `enqueueBookingReminders` into:
+  - `/api/webhook` (Stripe webhook): event_ticket, event_ticket_multi, cart_checkout, booking handlers
+  - `/api/events/checkout` (free event tickets): single and multi-session
+  - `/api/checkout` (free bookings)
+
+- **Docker Compose updated**: Added CRON_SECRET, BREVO_API_KEY, BREVO_DEFAULT_LIST_ID, BREVO_SENDER_EMAIL, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER to website service environment
+
+- **CRON_SECRET generated on VPS**: `openssl rand -hex 32`, added to `.env`, cron endpoints verified (200 for valid secret, 401 for invalid)
+
+- **Twilio 10DLC / TCPA / CTIA compliance overhaul**:
+  - **Privacy Policy** (`privacy-policy/page.tsx`): Complete rewrite with Section 3 (SMS/Text Messaging Program) covering message types, frequency (up to 8/month), opt-in mechanism, opt-out via STOP, HELP instructions, data rates, **bolded no-sharing clause**, Twilio disclosed, supported carriers, T-Mobile disclaimer
+  - **Terms of Service** (`terms-of-service/page.tsx`): Section 6 (Text Messaging Terms & Conditions) with consent, 6 message categories, frequency, STOP/HELP, carrier disclaimer; Section 7 (Email Communications)
+  - **Consent checkbox standardization**: Updated `CartDrawer.tsx`, `TicketForm.tsx`, `book/page.tsx` — all now include frequency disclosure, "Msg & data rates may apply", STOP/HELP instructions, links to Privacy Policy & Terms
+
+- **Bug fixes**:
+  - `send-campaigns`: `String(result.id)` → `String(result)` (sendCampaign returns number, not object)
+  - `webhooks/brevo`: Soft bounce counted ALL bounces globally instead of per-contact — added `.eq('contact_id', contact.id)` filter
+  - `webhooks/twilio`: Removed `.catch(() => {})` on Supabase inserts (PostgrestFilterBuilder isn't a raw Promise)
+  - `reminders.ts`: Refactored to use `eventId`/`bookingRef` (available at checkout) instead of DB UUIDs (not returned from inserts)
+
+- **TypeScript verified**: `npx tsc --noEmit` passes with 0 errors on all non-test files
+
+### Decisions Made
+
+- **REST-only for Brevo and Twilio**: No SDKs — keeps Docker image small and avoids dependency issues. Direct `fetch()` to API endpoints.
+- **Reminders reference eventId/bookingRef, not DB UUIDs**: Webhook handlers have access to event IDs and booking refs but not the auto-generated UUID primary keys from inserts. Cron route looks up events/bookings by these references.
+- **Single consent checkbox for email + SMS**: One checkbox covers both channels (unchecked by default per CAN-SPAM). Simplifies UX while staying compliant.
+- **Frequency disclosure in consent text**: "Up to 8 msgs/month" directly in checkbox label, plus STOP/HELP and links — meets CTIA requirements for 10DLC approval.
+
+### Known Issues / Blockers
+
+- **Brevo API key not yet configured**: User needs to sign up at brevo.com, get API key, add to VPS `.env` as `BREVO_API_KEY=...`, create contact list, add `BREVO_DEFAULT_LIST_ID=...`, and configure DKIM/SPF DNS records
+- **Brevo webhook URL**: Needs to be set in Brevo dashboard → `https://www.hosthampton.com/api/webhooks/brevo`
+- **Twilio webhook URL**: In Twilio console, set SMS webhook to `https://www.hosthampton.com/api/webhooks/twilio`
+- **External cron service needed**: Set up cron-job.org (or similar) to hit the 3 cron URLs every 15 minutes with the CRON_SECRET:
+  - `GET /api/cron/send-reminders?secret=...`
+  - `GET /api/cron/send-campaigns?secret=...`
+  - `GET /api/cron/draft-newsletter?secret=...`
+- **DNS cutover still pending**: www.hosthampton.com still on Squarespace
+- **migration_005 still NOT RUN**: events/tickets tables don't exist in Supabase yet
+
+### Current Project State
+
+Full communications infrastructure is built: Brevo for bulk email campaigns, Twilio for SMS, Resend for transactional emails, cron-driven reminder/campaign engine, and webhook handlers for delivery tracking and opt-out management. Privacy Policy and Terms of Service are updated for Twilio 10DLC/TCPA/CTIA compliance. All code compiles cleanly. Brevo API key and external cron service are the remaining configuration steps before the email/SMS pipeline is fully operational.
+
+### Updated Priority TODO (in order)
+
+1. **Configure Brevo**: Sign up, get API key, create list, add DNS records, set webhook URL
+2. **Configure Twilio webhook**: Point SMS webhook to `/api/webhooks/twilio`
+3. **Set up external cron**: cron-job.org hitting 3 endpoints every 15 min
+4. **Run migration_005** in Supabase — unblocks event ticketing
+5. **DNS cutover** www.hosthampton.com → VPS
+6. **Update Stripe webhook URL** to www after DNS cutover
+7. **SEO optimization pass** (meta tags, Open Graph, structured data)
+8. **Agent content pipeline** (COPY → website_content → ISR)
+
+### Files Changed This Session
+
+- `services/website/src/lib/brevo.ts` — New: Brevo REST API wrapper (sendCampaign, syncContactToBrevo)
+- `services/website/src/lib/twilio.ts` — New: Twilio REST API wrapper (sendSms with opt-in check)
+- `services/website/src/lib/sms-templates.ts` — New: SMS template functions
+- `services/website/src/lib/reminders.ts` — New: enqueueEventReminders, enqueueBookingReminders
+- `services/website/src/lib/email-templates/reminders.ts` — New: reminder email HTML templates
+- `services/website/src/lib/email-templates/event-newsletter.ts` — New: auto-draft newsletter template
+- `services/website/src/lib/email-templates/marketing-emails.ts` — New: marketing email templates
+- `services/website/src/app/api/cron/send-reminders/route.ts` — New: cron route for processing pending reminders
+- `services/website/src/app/api/cron/send-campaigns/route.ts` — New: cron route for sending scheduled Brevo campaigns
+- `services/website/src/app/api/cron/draft-newsletter/route.ts` — New: cron route for auto-drafting newsletters
+- `services/website/src/app/api/webhooks/brevo/route.ts` — New: Brevo webhook handler (bounces, unsubscribes)
+- `services/website/src/app/api/webhooks/twilio/route.ts` — Modified: STOP/HELP/inbound SMS handling
+- `services/website/src/app/api/webhook/route.ts` — Modified: added reminder enqueue to all 4 checkout handlers
+- `services/website/src/app/api/events/checkout/route.ts` — Modified: added reminder enqueue for free event tickets
+- `services/website/src/app/api/checkout/route.ts` — Modified: added reminder enqueue for free bookings
+- `services/website/src/app/privacy-policy/page.tsx` — Rewritten: TCPA/CTIA-compliant SMS section, all providers disclosed
+- `services/website/src/app/terms-of-service/page.tsx` — Rewritten: SMS Terms & Conditions section added
+- `services/website/src/components/CartDrawer.tsx` — Modified: standardized consent checkbox with CTIA-compliant text
+- `services/website/src/app/events/[slug]/TicketForm.tsx` — Modified: standardized consent checkbox
+- `services/website/src/app/book/page.tsx` — Modified: standardized consent checkbox
+- `docker-compose.yml` — Modified: added Twilio/Brevo/Cron env vars to website service

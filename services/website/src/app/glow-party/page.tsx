@@ -91,7 +91,7 @@ export default function GlowPartyPage() {
           </span>
         </h2>
         <p className="text-gray-400 text-center mb-12 max-w-lg mx-auto">
-          Every glow party includes the full experience — zero hidden costs, zero stress.
+          Every glow party includes the full experience — zero hidden costs, zero stress. Our hosts guide each child through every station while you sit back. Scale from an intimate 8-kid glow to a 20-guest blowout.
         </p>
 
         <div className="grid sm:grid-cols-2 gap-4">

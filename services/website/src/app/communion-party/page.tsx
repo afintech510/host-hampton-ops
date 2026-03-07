@@ -18,7 +18,7 @@ export default function CommunionParty() {
           First Communion Party Venue on Long Island
         </h1>
         <p className="text-hampton-navy text-lg max-w-xl mx-auto mb-8">
-          Host Hampton's private studio is the perfect setting for an elegant, memorable First Communion celebration. We handle every detail so your family can focus on what matters.
+          An elegant, private Hamptons studio for this meaningful milestone — at a price that respects your budget. We handle every detail, from setup to cleanup, so your family can focus on what matters. Customize the decor, catering, and size to match your vision.
         </p>
         <Link href="/book?event_type=communion"
               className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 shadow-lg">

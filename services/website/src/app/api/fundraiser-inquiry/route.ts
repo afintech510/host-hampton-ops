@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
     organizationType,
     estimatedQuantity,
     message,
+    marketingConsent,
   } = body
 
   // Validate required fields
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
     phone,
     sourceDetail: 'Fundraiser landing page',
     serviceInterests: ['fundraiser'],
+    marketingConsent: !!marketingConsent,
   })
 
   // Set business fields separately (upsertContact doesn't handle these)

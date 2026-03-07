@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
         await supabase.from('contact_interactions').insert({
           contact_id: contact.id,
-          interaction_type: 'sms_unsubscribed',
+          type: 'sms_unsubscribed',
           metadata: { phone: from, message_sid: messageSid },
         })
 
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     if (contact) {
       await supabase.from('contact_interactions').insert({
         contact_id: contact.id,
-        interaction_type: 'sms_received',
+        type: 'sms_received',
         metadata: { phone: from, body: formData.get('Body'), message_sid: messageSid },
       })
     }

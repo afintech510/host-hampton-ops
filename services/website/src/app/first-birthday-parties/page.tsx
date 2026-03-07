@@ -55,7 +55,7 @@ export default function FirstBirthdayParties() {
           First Birthday Parties Worth Remembering — On Long Island
         </h1>
         <p className="text-hampton-navy text-lg max-w-xl mx-auto mb-8">
-          Baby only turns one once. Make it magical. Host Hampton's private studio handles every detail so you can actually enjoy the moment.
+          Baby only turns one once. Make it magical in a beautiful Hamptons studio — at a price that makes sense. We handle every detail and guide the little ones through each activity so you can actually enjoy the moment. Customize as much or as little as you like.
         </p>
         <Link href="/book?package=Toddler+Party&event_type=first-birthday"
               className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg">

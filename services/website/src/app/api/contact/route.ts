@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { name, email, message, utm } = body
+  const { name, email, phone, message, utm, marketingConsent } = body
 
   if (!name || !email || !message) {
     return NextResponse.json({ error: 'Name, email, and message are required' }, { status: 400 })
@@ -22,8 +22,10 @@ export async function POST(req: NextRequest) {
   const contactId = await upsertContact({
     name,
     email,
+    phone: phone || null,
     sourceDetail: 'Contact Us page',
     serviceInterests: ['general'],
+    marketingConsent: !!marketingConsent,
   })
 
   // Log interaction

@@ -143,8 +143,7 @@ export default function MobilePartyPage() {
               <span className="italic text-hampton-blue">to You</span>
             </h1>
             <p className="text-hampton-navy/80 text-lg md:text-xl leading-relaxed mb-8 max-w-lg">
-              Our party helpers, activities, and themed decor — delivered to your home, backyard, or any venue.
-              You provide the space. We provide the magic.
+              The same polished Host Hampton experience — delivered to your home, backyard, or any venue. Our hosts run every activity and keep the kids engaged while you enjoy the party. Start with just an activity pack or go full-service. You set the budget.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
               <Link

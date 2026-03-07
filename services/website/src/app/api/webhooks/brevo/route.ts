@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
           .from('contact_interactions')
           .select('*', { count: 'exact', head: true })
           .eq('contact_id', contact.id)
-          .eq('interaction_type', 'email_bounced')
+          .eq('type', 'email_bounced')
 
         if (count && count >= 3) {
           await supabase
@@ -114,7 +114,7 @@ async function logInteraction(supabase: any, email: string, type: string, metada
 
   await supabase.from('contact_interactions').insert({
     contact_id: contact.id,
-    interaction_type: type,
+    type,
     metadata,
   }).catch((err: any) => console.error('brevo:log error:', err))
 }

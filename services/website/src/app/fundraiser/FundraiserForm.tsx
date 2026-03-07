@@ -32,6 +32,7 @@ export default function FundraiserForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  const [consent, setConsent] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -60,6 +61,7 @@ export default function FundraiserForm() {
           organizationType: organizationType || null,
           estimatedQuantity: estimatedQuantity || null,
           message: message || null,
+          marketingConsent: consent,
         }),
       })
 
@@ -180,6 +182,22 @@ export default function FundraiserForm() {
           rows={3}
         />
       </div>
+
+      <label className="flex items-start gap-2.5 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={consent}
+          onChange={e => setConsent(e.target.checked)}
+          className="mt-0.5 w-4 h-4 rounded border-hampton-mauve/40 text-hampton-navy focus:ring-hampton-blue"
+        />
+        <span className="text-xs text-hampton-navy/60 leading-relaxed">
+          I agree to receive event updates and promotions from Host Hampton via email and text message.
+          Msg frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help.
+          View our{' '}
+          <a href="/privacy-policy" className="underline">Privacy Policy</a> &amp;{' '}
+          <a href="/terms-of-service" className="underline">Terms</a>.
+        </span>
+      </label>
 
       {error && (
         <p className="text-red-600 text-sm mb-4 bg-red-50 p-3 rounded-lg">{error}</p>
