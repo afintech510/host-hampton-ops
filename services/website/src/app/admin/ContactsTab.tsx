@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronUp, Loader2, Search, Mail, Phone, X, Clock, AlertCircle } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Search, Mail, Phone, X, Clock, AlertCircle, Download } from 'lucide-react'
 
 /* ─── Interfaces ─────────────────────────────────────── */
 
@@ -96,6 +96,7 @@ export default function ContactsTab({ headers, onLogout }: { headers: Record<str
   const [search, setSearch] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
+  const [exporting, setExporting] = useState(false)
   const LIMIT = 50
 
   const fetchContacts = useCallback(async () => {
@@ -120,6 +121,23 @@ export default function ContactsTab({ headers, onLogout }: { headers: Record<str
   useEffect(() => { fetchContacts() }, [fetchContacts])
   useEffect(() => { setOffset(0) }, [statusFilter, optInFilter, search])
 
+  async function exportCSV(format: string) {
+    setExporting(true)
+    try {
+      const res = await fetch(`/api/admin/contacts/export?format=${format}`, { headers })
+      if (res.status === 401) { onLogout(); return }
+      if (!res.ok) { setError('Export failed'); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || `contacts-${format}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch { setError('Export failed') }
+    finally { setExporting(false) }
+  }
+
   const emailCount = contacts.filter(c => c.email_opt_in).length
   const smsCount = contacts.filter(c => c.sms_opt_in).length
 
@@ -139,6 +157,26 @@ export default function ContactsTab({ headers, onLogout }: { headers: Record<str
           <p className="text-lg sm:text-2xl font-bold text-blue-600">{smsCount}</p>
           <p className="text-[10px] sm:text-xs text-gray-500">SMS Opted In</p>
         </div>
+      </div>
+
+      {/* Export buttons */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => exportCSV('google-ads')}
+          disabled={exporting}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-hampton-navy/20 bg-white text-hampton-navy hover:bg-hampton-navy hover:text-white transition-colors disabled:opacity-50"
+        >
+          <Download className="w-3.5 h-3.5" />
+          {exporting ? 'Exporting...' : 'Export for Google Ads'}
+        </button>
+        <button
+          onClick={() => exportCSV('meta')}
+          disabled={exporting}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-hampton-navy/20 bg-white text-hampton-navy hover:bg-hampton-navy hover:text-white transition-colors disabled:opacity-50"
+        >
+          <Download className="w-3.5 h-3.5" />
+          {exporting ? 'Exporting...' : 'Export for Meta'}
+        </button>
       </div>
 
       {/* Filters */}
