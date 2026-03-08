@@ -90,10 +90,11 @@ function eventCard(event: NewsletterEvent): string {
 export interface EventNewsletterParams {
   events: NewsletterEvent[]
   preheader?: string
+  intro?: string  // AI-generated intro paragraph (falls back to static copy)
 }
 
 export function eventNewsletterHtml(params: EventNewsletterParams): string {
-  const { events, preheader } = params
+  const { events, preheader, intro } = params
 
   // Pair events into rows for the two-column desktop grid.
   // Each row is a table with two 50%-wide cells. On mobile, Outlook-safe
@@ -117,7 +118,7 @@ export function eventNewsletterHtml(params: EventNewsletterParams): string {
   ${newsletterHeader(preheader)}
   <div style="padding:36px 32px 24px;">
     <p style="color:${BRAND.gray};font-size:15px;line-height:1.7;margin:0 0 28px;text-align:center;">
-      Reserve your spot for upcoming workshops, parties &amp; pop-ups at Host Hampton&rsquo;s boutique celebration studio in Speonk, NY.
+      ${intro ?? 'Reserve your spot for upcoming workshops, parties &amp; pop-ups at Host Hampton&rsquo;s boutique celebration studio in Speonk, NY.'}
     </p>
     ${noEventsBlock}${cards}
     <div style="text-align:center;padding:16px 0 8px;">

@@ -9,6 +9,75 @@ function isCronAuthorized(req: NextRequest): boolean {
   return secret === process.env.CRON_SECRET
 }
 
+const COPY_SYSTEM_PROMPT = `You are COPY, the content writing agent for Host Hampton — a boutique celebration studio in Speonk, NY run by Allie Larkin.
+
+BRAND VOICE:
+- Warm, fun, community-first. Never corporate or pushy.
+- Use "we" — not "I". Speak directly to the reader as "you".
+- Conversational but polished. Celebrate the moment. Make it feel real.
+- NEVER say: "amazing", "incredible", "game-changer", "perfect", "seamless", "effortless"
+- DO say: "beautiful", "real", "genuine", "we love", "your crew", "the good stuff"
+
+Respond ONLY with valid JSON — no markdown, no extra text.`
+
+interface CopyResult {
+  subject: string
+  intro: string
+}
+
+async function generateCopy(
+  events: { title: string; date: string; price: string }[]
+): Promise<CopyResult | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    console.warn('cron:newsletter — ANTHROPIC_API_KEY not set, skipping AI copy')
+    return null
+  }
+
+  const eventList = events.map(e => `- ${e.title} (${e.date}, ${e.price})`).join('\n')
+
+  const userPrompt = `Write newsletter copy for these upcoming Host Hampton events:
+${eventList}
+
+Respond with JSON:
+{
+  "subject": "email subject line, max 55 chars, no emojis, warm & specific",
+  "intro": "2-3 sentence intro paragraph (plain text, no HTML). Warm, conversational. Mention 1-2 events by name. End with a light CTA to grab a spot."
+}`
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        system: COPY_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    })
+
+    if (!res.ok) {
+      console.error('cron:newsletter claude error:', res.status, await res.text())
+      return null
+    }
+
+    const data = await res.json() as { content: { type: string; text: string }[] }
+    const text = data.content[0]?.type === 'text' ? data.content[0].text : ''
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return null
+
+    return JSON.parse(jsonMatch[0]) as CopyResult
+  } catch (err) {
+    console.error('cron:newsletter claude exception:', err)
+    return null
+  }
+}
+
 export async function GET(req: NextRequest) {
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -17,7 +86,6 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabase()
   const today = new Date().toISOString().split('T')[0]
 
-  // Get events in the next 21 days
   const futureDate = new Date()
   futureDate.setDate(futureDate.getDate() + 21)
   const endDate = futureDate.toISOString().split('T')[0]
@@ -64,8 +132,14 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  const html = eventNewsletterHtml({ events: templateEvents })
-  const subject = `What's Coming Up at Host Hampton | ${templateEvents[0].date}`
+  // Generate AI copy via COPY agent (Claude Haiku — fast + cheap)
+  const copy = await generateCopy(templateEvents.map(e => ({ title: e.title, date: e.date, price: e.price })))
+
+  const subject = copy?.subject ?? `What's Coming Up at Host Hampton | ${templateEvents[0].date}`
+  const html = eventNewsletterHtml({
+    events: templateEvents,
+    intro: copy?.intro,
+  })
 
   // Save as draft campaign
   const { data: campaign, error: insertErr } = await supabase
@@ -85,10 +159,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to save draft' }, { status: 500 })
   }
 
-  console.log('Newsletter draft created:', campaign?.id, 'with', templateEvents.length, 'events')
+  console.log('Newsletter draft created:', campaign?.id, '| AI copy:', !!copy, '| events:', templateEvents.length)
   return NextResponse.json({
     drafted: true,
     campaignId: campaign?.id,
     eventsCount: templateEvents.length,
+    aiCopy: !!copy,
   })
 }
