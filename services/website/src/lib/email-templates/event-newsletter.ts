@@ -54,7 +54,7 @@ interface NewsletterEvent {
 
 function eventCard(event: NewsletterEvent): string {
   const imageBlock = event.imageUrl
-    ? `<img src="${event.imageUrl}" alt="${event.title}" width="100%" style="display:block;width:100%;height:200px;object-fit:cover;border-radius:10px 10px 0 0;">`
+    ? `<img src="${event.imageUrl}" alt="${event.title}" width="100%" style="display:block;width:100%;height:auto;border-radius:10px 10px 0 0;">`
     : `<div style="background:${BRAND.headerBg};height:140px;border-radius:10px 10px 0 0;display:flex;align-items:center;justify-content:center;">
         <p style="color:${BRAND.navy};font-size:13px;letter-spacing:1px;text-transform:uppercase;margin:0;opacity:0.6;">Host Hampton</p>
       </div>`
