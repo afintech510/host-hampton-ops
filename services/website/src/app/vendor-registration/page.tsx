@@ -180,6 +180,9 @@ export default function VendorRegistrationPage() {
           </a>
         </p>
       </div>  {/* end form section */}
+
+      {/* ── Bottom gradient fade → footer (mirrors root layout pattern) ── */}
+      <div style={{ height: 160, background: 'linear-gradient(to bottom, #F7F2E8, #BCCDEB)' }} aria-hidden="true" />
     </main>
   )
 }
