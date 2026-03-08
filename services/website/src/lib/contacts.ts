@@ -28,6 +28,8 @@ const SERVICE_TYPE_MAP: Record<string, string> = {
   'retail': 'seasonal_retail',
   'party-room': 'room_rental',
   'other': 'other',
+  'canvas-bags': 'seasonal_retail',
+  'canvas_bags': 'seasonal_retail',
 }
 
 function normalizeServiceInterests(raw: string[]): string[] {
