@@ -4,6 +4,7 @@ import { getSupabase } from '@/lib/supabase'
 import {
   PartyPopper, Gem, DoorOpen, Baby, Church, Heart, Zap, Calendar,
   BookOpen, Phone, FileText, Shield, RotateCcw, MapPin, Truck, HardHat, Calculator,
+  ShoppingBag, Palette, ClipboardList,
 } from 'lucide-react'
 
 export const metadata: Metadata = {
@@ -38,6 +39,9 @@ const sections: { title: string; links: LinkItem[] }[] = [
       { href: '/fundraiser', label: 'Fundraisers', description: 'Host a fundraiser event at our venue', icon: <Heart className={iconClass} /> },
       { href: '/mobile-party', label: 'Mobile Party', description: 'We bring the party to your location', icon: <Truck className={iconClass} /> },
       { href: '/trucker-hat-bar', label: 'Trucker Hat Bar', description: 'Atelier Brim — curated hat bar for corporate events', icon: <HardHat className={iconClass} /> },
+      { href: '/custom-accessories', label: 'Custom Accessories', description: 'Personalized canvas bags and trucker hats for parties and groups', icon: <Palette className={iconClass} /> },
+      { href: '/canvas-bags', label: 'Canvas Bags — Iron-On Patches', description: 'Classic tote bags and makeup bags customized with iron-on patch designs', icon: <ShoppingBag className={iconClass} /> },
+      { href: '/kids-party-menu', label: 'Kids Party Menu & Quote Builder', description: 'Full menu of themes, activities, food, and decor — build your custom quote', icon: <ClipboardList className={iconClass} /> },
     ],
   },
   {
