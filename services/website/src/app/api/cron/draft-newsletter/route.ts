@@ -87,12 +87,13 @@ export async function GET(req: NextRequest) {
   const today = new Date().toISOString().split('T')[0]
 
   // Archive past events (set is_active=false where event_date < today)
-  const { count: archivedCount } = await supabase
+  const { data: archivedRows } = await supabase
     .from('events')
     .update({ is_active: false })
     .eq('is_active', true)
     .lt('event_date', today)
-    .select('id', { count: 'exact', head: true })
+    .select('id')
+  const archivedCount = archivedRows?.length ?? 0
 
   if (archivedCount) {
     console.log(`cron:newsletter archived ${archivedCount} past event(s)`)
