@@ -86,6 +86,18 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabase()
   const today = new Date().toISOString().split('T')[0]
 
+  // Archive past events (set is_active=false where event_date < today)
+  const { count: archivedCount } = await supabase
+    .from('events')
+    .update({ is_active: false })
+    .eq('is_active', true)
+    .lt('event_date', today)
+    .select('id', { count: 'exact', head: true })
+
+  if (archivedCount) {
+    console.log(`cron:newsletter archived ${archivedCount} past event(s)`)
+  }
+
   const futureDate = new Date()
   futureDate.setDate(futureDate.getDate() + 21)
   const endDate = futureDate.toISOString().split('T')[0]
@@ -105,7 +117,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!events?.length) {
-    return NextResponse.json({ message: 'No upcoming events to feature', drafted: false })
+    return NextResponse.json({ message: 'No upcoming events to feature', drafted: false, archived: archivedCount || 0 })
   }
 
   // Format events for the template
@@ -165,5 +177,6 @@ export async function GET(req: NextRequest) {
     campaignId: campaign?.id,
     eventsCount: templateEvents.length,
     aiCopy: !!copy,
+    archived: archivedCount || 0,
   })
 }
