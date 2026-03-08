@@ -413,6 +413,116 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
+    // ── Vendor event registration ──────────────────────────────
+    if (m.type === 'vendor_registration') {
+      const vendorRef = `HH-VND-${Date.now().toString().slice(-4)}`
+      const today = new Date().toISOString().split('T')[0]
+
+      const { error: dbError } = await supabase.from('bookings').insert({
+        booking_ref: vendorRef,
+        status: 'confirmed',
+        event_type: 'vendor_registration',
+        party_date: today,
+        party_time: 'TBD',
+        package_type: 'Spring Market Vendor',
+        contact_name: m.contactName,
+        contact_email: m.contactEmail,
+        contact_phone: m.contactPhone || null,
+        deposit_amount: 4635,
+        stripe_payment_intent_id: session.payment_intent as string,
+        stripe_session_id: session.id,
+        party_tags: {},
+        notes: JSON.stringify({ businessName: m.businessName, igHandle: m.igHandle }),
+      })
+
+      if (dbError) {
+        console.error('Vendor registration insert error:', dbError)
+      } else {
+        console.log('Vendor registration created:', vendorRef, m.businessName, m.contactEmail)
+      }
+
+      // Upsert contact
+      await upsertContact({
+        name: m.contactName,
+        email: m.contactEmail,
+        phone: m.contactPhone,
+        sourceDetail: `Vendor registration — Spring Market (${m.businessName})`,
+        serviceInterests: ['general'],
+        marketingConsent: true,
+      })
+
+      // Confirmation emails
+      if (process.env.RESEND_API_KEY) {
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+
+        const customerHtml = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#F6F1EB;font-family:sans-serif;">
+<div style="max-width:560px;margin:0 auto;background:white;">
+  <div style="background:linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%);padding:36px 40px;text-align:center;">
+    <p style="color:#1a2744;opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 10px;">Host Hampton &middot; Speonk, NY</p>
+    <h1 style="color:#1a2744;font-size:26px;margin:0;font-weight:normal;font-family:Georgia,serif;">You&rsquo;re registered!</h1>
+  </div>
+  <div style="padding:32px 40px;">
+    <p style="color:#555;font-size:15px;line-height:1.7;margin:0 0 24px;">
+      Hi ${m.contactName?.split(' ')[0] || 'there'}! We&rsquo;ve got your spot at the Host Hampton Spring Market. We&rsquo;ll be in touch with event details soon.
+    </p>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:28px;">
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;color:#1a2744;width:140px;">Business</td><td style="padding:10px 12px;color:#555;">${m.businessName}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Instagram</td><td style="padding:10px 12px;color:#555;">${m.igHandle}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Registration</td><td style="padding:10px 12px;color:#059669;font-weight:bold;">$46.35 paid ✓</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Ref #</td><td style="padding:10px 12px;color:#888;font-size:12px;">${vendorRef}</td></tr>
+    </table>
+    <p style="color:#888;font-size:13px;line-height:1.6;margin:0;">Questions? Text or call <strong style="color:#1a2744;">(631) 998-9325</strong> or DM <strong style="color:#1a2744;">@hosthampton</strong> on Instagram.</p>
+  </div>
+  <div style="background:#BCCDEB;padding:20px 40px;text-align:center;">
+    <p style="color:#1a2744;font-size:12px;margin:0;">Host Hampton &middot; 295 Montauk Highway, Suite 7, Speonk, NY 11972</p>
+  </div>
+</div>
+</body></html>`
+
+        const ownerHtml = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:20px;background:#F6F1EB;font-family:sans-serif;">
+<div style="max-width:560px;margin:0 auto;background:white;border-radius:8px;overflow:hidden;">
+  <div style="background:linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%);padding:20px 28px;">
+    <h2 style="color:#1a2744;margin:0;font-size:18px;">New Vendor Registration</h2>
+    <p style="color:#1a2744;opacity:0.7;margin:4px 0 0;font-size:13px;">${vendorRef}</p>
+  </div>
+  <div style="padding:24px 28px;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:130px;">Name</td><td style="padding:10px 12px;">${m.contactName}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Business</td><td style="padding:10px 12px;">${m.businessName}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Instagram</td><td style="padding:10px 12px;">${m.igHandle}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="mailto:${m.contactEmail}">${m.contactEmail}</a></td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Phone</td><td style="padding:10px 12px;">${m.contactPhone || '—'}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Paid</td><td style="padding:10px 12px;color:#059669;font-weight:bold;">$46.35 ✓</td></tr>
+    </table>
+  </div>
+</div>
+</body></html>`
+
+        await Promise.allSettled([
+          resend.emails.send({
+            from,
+            to: m.contactEmail,
+            subject: `You're registered! Host Hampton Spring Market`,
+            html: customerHtml,
+          }),
+          resend.emails.send({
+            from,
+            to: 'hosthampton295@gmail.com',
+            subject: `New vendor: ${m.businessName} (${m.contactName}) — ${vendorRef}`,
+            html: ownerHtml,
+          }),
+        ])
+        console.log('Vendor confirmation sent to', m.contactEmail)
+      }
+
+      return NextResponse.json({ received: true })
+    }
+
     // ── Party booking deposit (existing flow) ──────────────────
     const partyDate = m.partyDate
     const optionsLockedBy = partyDate
