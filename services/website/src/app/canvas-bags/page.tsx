@@ -149,10 +149,13 @@ export default function CanvasBagsPage() {
   }
 
   return (
-    <div className="font-sans text-hampton-navy">
+    <div className="font-sans text-hampton-navy -mt-20">
 
       {/* ── Hero ──────────────────────────────────────────────────────────────── */}
-      <section className="py-24 md:py-32 bg-hampton-ivory text-center px-4">
+      <section
+        className="text-center px-4"
+        style={{ background: 'linear-gradient(to bottom, #BCCDEB 0%, #dae6f0 220px, #F7F2E8 420px)', paddingTop: 'calc(5rem + 6rem)', paddingBottom: '6rem' }}
+      >
         <p className="section-subheading">Custom Merchandise · Iron-On Patches · CB Station</p>
         <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl leading-tight mb-6">
           Canvas Totes &amp;<br className="hidden sm:block" /> Makeup Bags
