@@ -97,6 +97,8 @@ export default function ContactsTab({ headers, onLogout }: { headers: Record<str
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
   const [exporting, setExporting] = useState(false)
+  const [emailOptInCount, setEmailOptInCount] = useState(0)
+  const [smsOptInCount, setSmsOptInCount] = useState(0)
   const LIMIT = 50
 
   const fetchContacts = useCallback(async () => {
@@ -115,6 +117,8 @@ export default function ContactsTab({ headers, onLogout }: { headers: Record<str
     const data = await res.json()
     setContacts(data.contacts || [])
     setTotal(data.total || 0)
+    setEmailOptInCount(data.emailOptInCount || 0)
+    setSmsOptInCount(data.smsOptInCount || 0)
     setLoading(false)
   }, [headers.Authorization, statusFilter, optInFilter, search, offset])
 
@@ -138,9 +142,6 @@ export default function ContactsTab({ headers, onLogout }: { headers: Record<str
     finally { setExporting(false) }
   }
 
-  const emailCount = contacts.filter(c => c.email_opt_in).length
-  const smsCount = contacts.filter(c => c.sms_opt_in).length
-
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
       {/* Stats bar */}
@@ -150,11 +151,11 @@ export default function ContactsTab({ headers, onLogout }: { headers: Record<str
           <p className="text-[10px] sm:text-xs text-gray-500">Total Contacts</p>
         </div>
         <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
-          <p className="text-lg sm:text-2xl font-bold text-emerald-600">{emailCount}</p>
+          <p className="text-lg sm:text-2xl font-bold text-emerald-600">{emailOptInCount}</p>
           <p className="text-[10px] sm:text-xs text-gray-500">Email Opted In</p>
         </div>
         <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
-          <p className="text-lg sm:text-2xl font-bold text-blue-600">{smsCount}</p>
+          <p className="text-lg sm:text-2xl font-bold text-blue-600">{smsOptInCount}</p>
           <p className="text-[10px] sm:text-xs text-gray-500">SMS Opted In</p>
         </div>
       </div>

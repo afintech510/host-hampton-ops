@@ -37,5 +37,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ contacts: contacts || [], total: count || 0 })
+  const [{ count: emailOptInCount }, { count: smsOptInCount }] = await Promise.all([
+    supabase.from('contacts').select('*', { count: 'exact', head: true }).eq('email_opt_in', true),
+    supabase.from('contacts').select('*', { count: 'exact', head: true }).eq('sms_opt_in', true),
+  ])
+
+  return NextResponse.json({
+    contacts: contacts || [],
+    total: count || 0,
+    emailOptInCount: emailOptInCount || 0,
+    smsOptInCount: smsOptInCount || 0,
+  })
 }
