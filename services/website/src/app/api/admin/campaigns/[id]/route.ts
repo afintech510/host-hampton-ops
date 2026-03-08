@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
-import { sendCampaign } from '@/lib/brevo'
+import { sendCampaign, sendTransactionalEmail } from '@/lib/brevo'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +31,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const supabase = getSupabase()
   const body = await req.json()
 
+  // Test email send
+  if (body.action === 'test') {
+    const { testEmail } = body
+    if (!testEmail) return NextResponse.json({ error: 'testEmail required' }, { status: 400 })
+
+    const { data: campaign } = await supabase
+      .from('scheduled_campaigns')
+      .select('subject, body_html')
+      .eq('id', id)
+      .single()
+
+    if (!campaign) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+
+    const ok = await sendTransactionalEmail(
+      testEmail,
+      `[TEST] ${campaign.subject}`,
+      campaign.body_html || '<p>No content</p>'
+    )
+
+    if (!ok) return NextResponse.json({ error: 'Failed to send test email via Brevo' }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
   // If sending now
   if (body.status === 'sending') {
     const { data: campaign } = await supabase
@@ -44,7 +67,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     if (campaign.campaign_type === 'email') {
-      const listId = parseInt(process.env.BREVO_DEFAULT_LIST_ID || '0', 10)
+      const listId = body.listId ? parseInt(body.listId, 10) : parseInt(process.env.BREVO_DEFAULT_LIST_ID || '0', 10)
       if (!listId) {
         return NextResponse.json({ error: 'BREVO_DEFAULT_LIST_ID not configured' }, { status: 500 })
       }

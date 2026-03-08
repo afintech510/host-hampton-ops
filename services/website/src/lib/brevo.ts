@@ -241,6 +241,45 @@ export async function sendCampaign(
 }
 
 /**
+ * Send a single transactional email via Brevo (for test sends).
+ * POST /smtp/email — does NOT create a campaign.
+ * Returns true on success, false on error.
+ */
+export async function sendTransactionalEmail(
+  to: string,
+  subject: string,
+  htmlContent: string,
+  senderName = 'Host Hampton'
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
+      method: 'POST',
+      headers: brevoHeaders(),
+      body: JSON.stringify({
+        to: [{ email: to }],
+        subject,
+        htmlContent,
+        sender: {
+          name: senderName,
+          email: process.env.BREVO_SENDER_EMAIL ?? 'hosthampton295@gmail.com',
+        },
+      }),
+    })
+
+    if (!res.ok) {
+      const body = await res.text()
+      console.error('brevo:sendTransactionalEmail error:', res.status, body)
+      return false
+    }
+
+    return true
+  } catch (err) {
+    console.error('brevo:sendTransactionalEmail exception:', err)
+    return false
+  }
+}
+
+/**
  * Fetch statistics for an existing campaign.
  * GET /emailCampaigns/{campaignId}
  * Returns the campaign stats object or null on error.

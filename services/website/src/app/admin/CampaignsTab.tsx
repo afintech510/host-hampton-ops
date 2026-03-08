@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronUp, Loader2, Plus, Send, Zap, FileText, X, Clock, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Plus, Send, Zap, FileText, X, Clock, Trash2, Edit2, Save, Mail } from 'lucide-react'
 
 /* ─── Interfaces ─────────────────────────────────────── */
 
@@ -306,19 +306,62 @@ export default function CampaignsTab({ headers, onLogout }: { headers: Record<st
 function CampaignDetail({ campaign, headers, onRefresh }: { campaign: Campaign; headers: Record<string, string>; onRefresh: () => void }) {
   const [sending, setSending] = useState(false)
   const [msg, setMsg] = useState('')
+  const [editMode, setEditMode] = useState(false)
+  const [editSubject, setEditSubject] = useState(campaign.subject || '')
+  const [editBodyHtml, setEditBodyHtml] = useState(campaign.body_html || '')
+  const [saving, setSaving] = useState(false)
+  const [testEmail, setTestEmail] = useState('')
+  const [testSending, setTestSending] = useState(false)
+  const [sendListId, setSendListId] = useState(3)
+
+  const isDraft = campaign.status === 'draft' || campaign.status === 'scheduled'
+
+  async function handleSave() {
+    setSaving(true)
+    setMsg('')
+    const res = await fetch(`/api/admin/campaigns/${campaign.id}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ subject: editSubject, body_html: editBodyHtml }),
+    })
+    setSaving(false)
+    if (res.ok) {
+      setMsg('Saved!')
+      setEditMode(false)
+      onRefresh()
+    } else {
+      const d = await res.json()
+      setMsg(`Error: ${d.error}`)
+    }
+  }
+
+  async function handleSendTest() {
+    if (!testEmail) return
+    setTestSending(true)
+    setMsg('')
+    const res = await fetch(`/api/admin/campaigns/${campaign.id}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ action: 'test', testEmail }),
+    })
+    setTestSending(false)
+    const d = await res.json()
+    setMsg(res.ok ? `Test email sent to ${testEmail}` : `Error: ${d.error}`)
+  }
 
   async function handleSend() {
-    if (!confirm(`Send "${campaign.subject}" now? This will send to all opted-in contacts via Brevo.`)) return
+    const label = sendListId === 3 ? 'all email opt-ins (List 3)' : `List ${sendListId}`
+    if (!confirm(`Send "${editMode ? editSubject : campaign.subject}" to ${label}? This cannot be undone.`)) return
     setSending(true)
     setMsg('')
     const res = await fetch(`/api/admin/campaigns/${campaign.id}`, {
       method: 'PATCH',
       headers,
-      body: JSON.stringify({ status: 'sending' }),
+      body: JSON.stringify({ status: 'sending', listId: sendListId }),
     })
     setSending(false)
     if (res.ok) {
-      setMsg('Campaign sent!')
+      setMsg('Campaign sent via Brevo!')
       onRefresh()
     } else {
       const d = await res.json()
@@ -332,10 +375,11 @@ function CampaignDetail({ campaign, headers, onRefresh }: { campaign: Campaign; 
     if (res.ok) onRefresh()
   }
 
-  const isDraft = campaign.status === 'draft' || campaign.status === 'scheduled'
+  const previewHtml = editMode ? editBodyHtml : campaign.body_html
 
   return (
-    <div className="border-t border-hampton-pink/10 px-4 py-4 bg-gray-50/50 space-y-4">
+    <div className="border-t border-hampton-pink/10 px-4 py-5 bg-gray-50/50 space-y-5">
+
       {/* Stats (if sent) */}
       {campaign.status === 'sent' && (
         <div className="grid grid-cols-4 gap-2 text-center">
@@ -353,57 +397,148 @@ function CampaignDetail({ campaign, headers, onRefresh }: { campaign: Campaign; 
         </div>
       )}
 
-      {/* Preview */}
-      {campaign.body_html && (
-        <div>
-          <h4 className="text-xs font-semibold text-hampton-navy uppercase tracking-wide mb-2">Preview</h4>
-          <div className="bg-white rounded-lg border border-hampton-pink/10 p-4 max-h-64 overflow-y-auto">
+      {/* Edit / Preview */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-xs font-semibold text-hampton-navy uppercase tracking-wide">
+            {editMode ? 'Edit Campaign' : 'Preview'}
+          </h4>
+          {isDraft && (
+            <button
+              onClick={() => { setEditMode(!editMode); setMsg('') }}
+              className="flex items-center gap-1 text-xs font-medium text-hampton-blue hover:text-hampton-navy transition-colors"
+            >
+              <Edit2 className="w-3 h-3" />
+              {editMode ? 'Cancel Edit' : 'Edit'}
+            </button>
+          )}
+        </div>
+
+        {editMode ? (
+          <div className="space-y-3">
+            <input
+              type="text"
+              value={editSubject}
+              onChange={e => setEditSubject(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white"
+              placeholder="Subject"
+            />
+            <textarea
+              value={editBodyHtml}
+              onChange={e => setEditBodyHtml(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 h-44 resize-y font-mono bg-white"
+              placeholder="HTML body"
+            />
+            {editBodyHtml && (
+              <div className="bg-white rounded-xl border border-hampton-pink/10 overflow-hidden shadow-sm">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide px-3 py-1.5 border-b border-gray-100 bg-gray-50">Live Preview</p>
+                <iframe
+                  srcDoc={editBodyHtml}
+                  title="Live preview"
+                  className="w-full border-0"
+                  style={{ height: '460px' }}
+                  sandbox=""
+                />
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-hampton-navy text-white rounded-lg disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Save Changes
+              </button>
+              <button
+                onClick={() => { setEditMode(false); setEditSubject(campaign.subject || ''); setEditBodyHtml(campaign.body_html || '') }}
+                className="px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg bg-white"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        ) : previewHtml ? (
+          <div className="bg-white rounded-xl border border-hampton-pink/10 overflow-hidden shadow-sm">
             <iframe
-              srcDoc={campaign.body_html}
+              srcDoc={previewHtml}
               title="Campaign preview"
-              className="w-full border-0 min-h-[200px]"
+              className="w-full border-0"
+              style={{ height: '500px' }}
               sandbox=""
             />
           </div>
-        </div>
-      )}
-
-      {campaign.body_text && !campaign.body_html && (
-        <div>
-          <h4 className="text-xs font-semibold text-hampton-navy uppercase tracking-wide mb-2">Message</h4>
-          <p className="text-sm text-gray-700 whitespace-pre-wrap bg-white rounded-lg border border-hampton-pink/10 p-3">{campaign.body_text}</p>
-        </div>
-      )}
+        ) : campaign.body_text ? (
+          <p className="text-sm text-gray-700 whitespace-pre-wrap bg-white rounded-xl border border-hampton-pink/10 p-4">
+            {campaign.body_text}
+          </p>
+        ) : null}
+      </div>
 
       {/* Meta */}
       <div className="text-xs text-gray-400 space-y-0.5">
-        {campaign.target_segment && <p>Target: {campaign.target_segment}</p>}
+        {campaign.target_segment && <p>Segment: {campaign.target_segment}</p>}
         {campaign.scheduled_for && <p>Scheduled: {formatDateTime(campaign.scheduled_for)}</p>}
         {campaign.brevo_campaign_id && <p>Brevo ID: {campaign.brevo_campaign_id}</p>}
       </div>
 
-      {/* Actions */}
+      {/* Draft actions */}
       {isDraft && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={handleSend}
-            disabled={sending}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-hampton-navy text-white rounded-lg disabled:opacity-50"
-          >
-            {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-            Send Now
-          </button>
-          <button
-            onClick={handleCancel}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50"
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Cancel
-          </button>
+        <div className="space-y-4">
+          {/* Test email */}
+          <div>
+            <p className="text-xs font-semibold text-hampton-navy mb-2">Send Test Email</p>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                placeholder="test@example.com"
+                value={testEmail}
+                onChange={e => setTestEmail(e.target.value)}
+                className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white min-w-0"
+              />
+              <button
+                onClick={handleSendTest}
+                disabled={testSending || !testEmail}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-hampton-navy text-hampton-navy rounded-lg hover:bg-hampton-navy hover:text-white transition-colors disabled:opacity-50 whitespace-nowrap"
+              >
+                {testSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                Send Test
+              </button>
+            </div>
+          </div>
+
+          {/* Segment + send */}
+          <div>
+            <p className="text-xs font-semibold text-hampton-navy mb-2">Send Campaign</p>
+            <div className="flex flex-wrap gap-2 items-center">
+              <select
+                value={sendListId}
+                onChange={e => setSendListId(Number(e.target.value))}
+                className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
+              >
+                <option value={3}>All Email Opt-Ins (List 3)</option>
+              </select>
+              <button
+                onClick={handleSend}
+                disabled={sending}
+                className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium bg-hampton-navy text-white rounded-lg disabled:opacity-50 hover:bg-hampton-navy/90"
+              >
+                {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                Send Now
+              </button>
+              <button
+                onClick={handleCancel}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50 ml-auto"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Cancel Campaign
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
       {msg && (
-        <div className={`text-sm px-3 py-2 rounded ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+        <div className={`text-sm px-3 py-2 rounded-lg ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
           {msg}
         </div>
       )}
