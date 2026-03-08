@@ -40,29 +40,40 @@ export default function VendorRegistrationPage() {
   }
 
   return (
-    <main style={{ minHeight: '100vh', background: '#F6F1EB', paddingTop: 100, paddingBottom: 60, paddingLeft: 20, paddingRight: 20 }}>
-      <div style={{ maxWidth: 520, margin: '0 auto' }}>
+    <main style={{ minHeight: '100vh', background: '#F6F1EB' }}>
 
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <p style={{ color: '#1a2744', opacity: 0.6, fontSize: 12, letterSpacing: 2, textTransform: 'uppercase', margin: '0 0 12px', fontFamily: 'sans-serif' }}>
-            Host Hampton &middot; Speonk, NY
-          </p>
-          <h1 style={{ color: '#1a2744', fontSize: 36, fontFamily: 'Georgia, serif', fontWeight: 'normal', margin: '0 0 12px', lineHeight: 1.2 }}>
-            Vendor Event<br />Registration
-          </h1>
-          <p style={{ color: '#555', fontSize: 15, margin: '0 0 20px', fontFamily: 'sans-serif' }}>
-            Spring Market &mdash; 295 Montauk Hwy, Speonk NY
-          </p>
+      {/* ── Hero gradient (matches canvas-bags pattern) ── */}
+      <section
+        style={{
+          background: 'linear-gradient(to bottom, #BCCDEB 0%, #dae6f0 220px, #F7F2E8 420px)',
+          paddingTop: 'calc(5rem + 6rem)',
+          paddingBottom: '5rem',
+          textAlign: 'center',
+          paddingLeft: 20,
+          paddingRight: 20,
+        }}
+      >
+        <p style={{ color: '#1a2744', opacity: 0.6, fontSize: 12, letterSpacing: 2, textTransform: 'uppercase', margin: '0 0 12px', fontFamily: 'sans-serif' }}>
+          Host Hampton &middot; Speonk, NY
+        </p>
+        <h1 style={{ color: '#1a2744', fontSize: 40, fontFamily: 'Georgia, serif', fontWeight: 'normal', margin: '0 0 14px', lineHeight: 1.2 }}>
+          Vendor Event<br />Registration
+        </h1>
+        <p style={{ color: '#1a2744', opacity: 0.7, fontSize: 16, margin: '0 0 24px', fontFamily: 'sans-serif' }}>
+          Spring Market &mdash; 295 Montauk Hwy, Speonk NY
+        </p>
 
-          {/* Price badge */}
-          <div style={{ display: 'inline-block', background: 'linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%)', borderRadius: 12, padding: '14px 28px' }}>
-            <div style={{ color: '#1a2744', fontSize: 22, fontWeight: 'bold', fontFamily: 'Georgia, serif' }}>$46.35</div>
-            <div style={{ color: '#1a2744', fontSize: 12, opacity: 0.7, fontFamily: 'sans-serif', marginTop: 2 }}>
-              $45.00 registration + $1.35 service fee
-            </div>
+        {/* Price badge */}
+        <div style={{ display: 'inline-block', background: 'white', borderRadius: 12, padding: '14px 32px', boxShadow: '0 2px 12px rgba(26,39,68,0.10)' }}>
+          <div style={{ color: '#1a2744', fontSize: 24, fontWeight: 'bold', fontFamily: 'Georgia, serif' }}>$46.35</div>
+          <div style={{ color: '#555', fontSize: 12, fontFamily: 'sans-serif', marginTop: 3 }}>
+            $45.00 registration + $1.35 service fee &middot; no sales tax
           </div>
         </div>
+      </section>
+
+      {/* ── Form section ── */}
+      <div style={{ maxWidth: 520, margin: '0 auto', padding: '0 20px 60px' }}>
 
         {/* Form Card */}
         <div style={{ background: 'white', borderRadius: 16, padding: '36px 32px', boxShadow: '0 4px 24px rgba(26,39,68,0.10)' }}>
@@ -168,7 +179,7 @@ export default function VendorRegistrationPage() {
             (631) 998-9325
           </a>
         </p>
-      </div>
+      </div>  {/* end form section */}
     </main>
   )
 }
