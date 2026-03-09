@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
-import { sendCampaign, sendTransactionalEmail } from '@/lib/brevo'
+import { sendCampaign, sendTransactionalEmail, cancelCampaign } from '@/lib/brevo'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,6 +51,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     )
 
     if (!ok) return NextResponse.json({ error: 'Failed to send test email via Brevo' }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
+  // Cancel campaign (works for draft, scheduled, sending — also suspends in Brevo)
+  if (body.action === 'cancel') {
+    const { data: campaign } = await supabase
+      .from('scheduled_campaigns')
+      .select('status, brevo_campaign_id')
+      .eq('id', id)
+      .single()
+
+    if (!campaign) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+
+    if (campaign.brevo_campaign_id) {
+      await cancelCampaign(campaign.brevo_campaign_id)
+    }
+
+    await supabase.from('scheduled_campaigns').update({ status: 'cancelled' }).eq('id', id)
     return NextResponse.json({ ok: true })
   }
 

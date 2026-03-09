@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronUp, Loader2, Plus, Send, Zap, FileText, X, Clock, Trash2, Edit2, Save, Mail } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { ChevronDown, ChevronUp, Loader2, Plus, Send, Zap, FileText, X, Clock, Trash2, Edit2, Save, Mail, Ban, BarChart3 } from 'lucide-react'
 
 /* ─── Interfaces ─────────────────────────────────────── */
 
@@ -370,9 +370,19 @@ function CampaignDetail({ campaign, headers, onRefresh }: { campaign: Campaign; 
   }
 
   async function handleCancel() {
-    if (!confirm('Cancel this campaign?')) return
-    const res = await fetch(`/api/admin/campaigns/${campaign.id}`, { method: 'DELETE', headers })
-    if (res.ok) onRefresh()
+    if (!confirm('Cancel this campaign? This will also suspend delivery in Brevo if already sent.')) return
+    const res = await fetch(`/api/admin/campaigns/${campaign.id}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ action: 'cancel' }),
+    })
+    if (res.ok) {
+      setMsg('Campaign cancelled.')
+      onRefresh()
+    } else {
+      const d = await res.json()
+      setMsg(`Error: ${d.error}`)
+    }
   }
 
   const previewHtml = editMode ? editBodyHtml : campaign.body_html
@@ -380,21 +390,9 @@ function CampaignDetail({ campaign, headers, onRefresh }: { campaign: Campaign; 
   return (
     <div className="border-t border-hampton-pink/10 px-4 py-5 bg-gray-50/50 space-y-5">
 
-      {/* Stats (if sent) */}
-      {campaign.status === 'sent' && (
-        <div className="grid grid-cols-4 gap-2 text-center">
-          {[
-            { label: 'Recipients', val: campaign.total_recipients },
-            { label: 'Opened', val: campaign.opened },
-            { label: 'Clicked', val: campaign.clicked },
-            { label: 'Bounced', val: campaign.bounced },
-          ].map(s => (
-            <div key={s.label} className="bg-white rounded-lg border border-hampton-pink/10 p-2">
-              <p className="text-sm font-bold text-hampton-navy">{s.val ?? '—'}</p>
-              <p className="text-[10px] text-gray-400">{s.label}</p>
-            </div>
-          ))}
-        </div>
+      {/* Live Stats Module (sent or sending) */}
+      {(campaign.status === 'sent' || campaign.status === 'sending') && campaign.brevo_campaign_id && (
+        <CampaignStatusModule campaignId={campaign.id} brevoId={campaign.brevo_campaign_id} status={campaign.status} sentAt={campaign.sent_at} headers={headers} onCancel={handleCancel} />
       )}
 
       {/* Edit / Preview */}
@@ -537,10 +535,133 @@ function CampaignDetail({ campaign, headers, onRefresh }: { campaign: Campaign; 
         </div>
       )}
 
+      {/* Cancel for sent/sending (not in draft actions) */}
+      {(campaign.status === 'sent' || campaign.status === 'sending') && (
+        <div className="flex justify-end">
+          <button
+            onClick={handleCancel}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50"
+          >
+            <Ban className="w-3.5 h-3.5" /> Cancel Campaign
+          </button>
+        </div>
+      )}
+
       {msg && (
         <div className={`text-sm px-3 py-2 rounded-lg ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
           {msg}
         </div>
+      )}
+    </div>
+  )
+}
+
+/* ─── Campaign Status Module ─────────────────────────── */
+
+interface StatusModuleProps {
+  campaignId: string
+  brevoId: number
+  status: string
+  sentAt: string | null
+  headers: Record<string, string>
+  onCancel: () => void
+}
+
+function CampaignStatusModule({ campaignId, brevoId, status, sentAt, headers, onCancel }: StatusModuleProps) {
+  const [stats, setStats] = useState<{ sent: number; delivered: number; opened: number; clicked: number; bounced: number; unsubscribed: number; brevoStatus: string } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/admin/campaigns/${campaignId}/stats`, { headers })
+      if (res.ok) {
+        const data = await res.json()
+        setStats(data)
+      }
+    } catch { /* ignore */ }
+    setLoading(false)
+  }, [campaignId, headers])
+
+  useEffect(() => {
+    fetchStats()
+    const ms = status === 'sending' ? 5000 : 30000
+    intervalRef.current = setInterval(fetchStats, ms)
+
+    // Stop polling after 10 minutes
+    const timeout = setTimeout(() => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }, 10 * 60 * 1000)
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+      clearTimeout(timeout)
+    }
+  }, [fetchStats, status])
+
+  // Stop polling if fully delivered
+  useEffect(() => {
+    if (stats && stats.sent > 0 && stats.delivered >= stats.sent && intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }, [stats])
+
+  if (loading && !stats) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-gray-400 py-3">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading delivery stats...
+      </div>
+    )
+  }
+
+  if (!stats) return null
+
+  const pct = stats.sent > 0 ? Math.round((stats.delivered / stats.sent) * 100) : 0
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-hampton-navy" />
+          <span className="text-xs font-semibold text-hampton-navy uppercase tracking-wide">Delivery Status</span>
+        </div>
+        {sentAt && <span className="text-[10px] text-gray-400">Sent {formatDateTime(sentAt)}</span>}
+      </div>
+
+      {/* Progress Bar */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-hampton-navy font-medium">{stats.delivered.toLocaleString()} / {stats.sent.toLocaleString()} delivered</span>
+          <span className="text-xs font-bold text-hampton-navy">{pct}%</span>
+        </div>
+        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-hampton-blue to-emerald-400 rounded-full transition-all duration-500"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-5 gap-2 text-center">
+        {[
+          { label: 'Sent', val: stats.sent, color: 'text-hampton-navy' },
+          { label: 'Delivered', val: stats.delivered, color: 'text-emerald-600' },
+          { label: 'Opened', val: stats.opened, color: 'text-blue-600' },
+          { label: 'Clicked', val: stats.clicked, color: 'text-purple-600' },
+          { label: 'Bounced', val: stats.bounced, color: 'text-red-500' },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-lg border border-hampton-pink/10 p-2">
+            <p className={`text-sm font-bold ${s.color}`}>{s.val.toLocaleString()}</p>
+            <p className="text-[10px] text-gray-400">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {stats.unsubscribed > 0 && (
+        <p className="text-[10px] text-gray-400">Unsubscribed: {stats.unsubscribed}</p>
       )}
     </div>
   )

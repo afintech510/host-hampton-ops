@@ -304,3 +304,29 @@ export async function getCampaignStats(
     return null
   }
 }
+
+/**
+ * Suspend (cancel) a Brevo campaign that is queued or in progress.
+ * PUT /emailCampaigns/{campaignId}/status with { status: "suspended" }
+ * Returns true if suspended, false if already completed or error.
+ */
+export async function cancelCampaign(campaignId: number): Promise<boolean> {
+  try {
+    const res = await fetch(`${BREVO_BASE}/emailCampaigns/${campaignId}/status`, {
+      method: 'PUT',
+      headers: brevoHeaders(),
+      body: JSON.stringify({ status: 'suspended' }),
+    })
+
+    if (!res.ok) {
+      const body = await res.text()
+      console.error('brevo:cancelCampaign error:', res.status, body)
+      return false
+    }
+
+    return true
+  } catch (err) {
+    console.error('brevo:cancelCampaign exception:', err)
+    return false
+  }
+}
