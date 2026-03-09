@@ -14,6 +14,19 @@ import { captureUtm, getUtmParams } from '@/lib/utm'
 const MINI_PARTY_DISCOUNT = 200
 const MINI_PARTY_MAX_GUESTS = 7
 
+const PARTY_INCLUDES = [
+  '10 guests + birthday child',
+  '2hr Party',
+  'Themed decor',
+  'Fun activities',
+  'Host & helpers',
+  'Cutest party setup',
+  'Pizza or Bagels',
+  'Cupcakes',
+  'Full cleanup',
+  'Stress free experience',
+]
+
 /** Match a display theme name to a pricing_items row by normalised first word. */
 function lookupThemePrice(displayName: string, items: PricingItem[]): number | null {
   if (!items.length) return null
@@ -561,7 +574,15 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                     <h3 className="font-semibold text-hampton-navy text-lg">{t.name}</h3>
                     <span className="text-hampton-navy font-bold text-lg">from ${(lookupThemePrice(t.name, pricingItems) ?? t.price).toLocaleString()}</span>
                   </div>
-                  <p className="text-sm leading-relaxed text-hampton-navy/70">{t.desc}</p>
+                  <p className="text-sm leading-relaxed text-hampton-navy/70 mb-4">{t.desc}</p>
+                  <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    {PARTY_INCLUDES.map(item => (
+                      <li key={item} className="flex items-start gap-1.5 text-xs text-hampton-navy/75">
+                        <Check size={12} strokeWidth={3} className="text-hampton-pink shrink-0 mt-0.5" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             ))}
