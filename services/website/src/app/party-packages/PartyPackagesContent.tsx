@@ -506,7 +506,9 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                       <span className={`text-sm font-bold px-3 py-1 rounded-full ${
                         isMiniParty ? 'bg-yellow-300 text-hampton-navy' : 'bg-hampton-pink/20 text-hampton-navy'
                       }`}>
-                        {isMiniParty ? 'Active ✓' : 'Save $200'}
+                        {isMiniParty
+                          ? `$${((selectedThemePrice ?? selectedThemeData?.price ?? 0) - MINI_PARTY_DISCOUNT).toLocaleString()} ✓`
+                          : 'Save $200'}
                       </span>
                     </button>
                   </div>
