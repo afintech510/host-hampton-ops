@@ -460,7 +460,18 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                 <div className="p-6">
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="font-semibold text-hampton-navy text-xl">{selectedThemeData.name}</h3>
-                    <span className="text-hampton-navy font-bold text-xl">from ${(selectedThemePrice ?? selectedThemeData.price).toLocaleString()}</span>
+                    <div className="text-right">
+                      {isMiniParty && (
+                        <span className="text-hampton-navy/40 font-bold text-xl line-through block">
+                          from ${(selectedThemePrice ?? selectedThemeData.price).toLocaleString()}
+                        </span>
+                      )}
+                      <span className="text-hampton-navy font-bold text-xl">
+                        {isMiniParty
+                          ? `$${((selectedThemePrice ?? selectedThemeData.price) - MINI_PARTY_DISCOUNT).toLocaleString()}`
+                          : `from $${(selectedThemePrice ?? selectedThemeData.price).toLocaleString()}`}
+                      </span>
+                    </div>
                   </div>
                   <p className="text-sm leading-relaxed text-hampton-navy/80">
                     {selectedThemeData.extendedDesc}
@@ -486,7 +497,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                       <div className="flex items-center gap-3">
                         <Zap size={18} className={isMiniParty ? 'text-yellow-300' : 'text-hampton-pink'} />
                         <div className="text-left">
-                          <p className="font-bold text-sm">Mini Party — $200 Off</p>
+                          <p className="font-bold text-sm">Mini Party — Save $200</p>
                           <p className={`text-xs ${isMiniParty ? 'text-white/70' : 'text-hampton-navy/60'}`}>
                             Max 7 guests + birthday child · 1.5 hr duration
                           </p>
@@ -495,7 +506,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                       <span className={`text-sm font-bold px-3 py-1 rounded-full ${
                         isMiniParty ? 'bg-yellow-300 text-hampton-navy' : 'bg-hampton-pink/20 text-hampton-navy'
                       }`}>
-                        {isMiniParty ? 'Active ✓' : '− $200'}
+                        {isMiniParty ? 'Active ✓' : 'Save $200'}
                       </span>
                     </button>
                   </div>
