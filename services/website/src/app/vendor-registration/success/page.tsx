@@ -1,4 +1,21 @@
+'use client'
+
+import { useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { trackPurchase } from '@/lib/gtag'
+
 export default function VendorRegistrationSuccessPage() {
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const sessionId = searchParams.get('session_id')
+    if (!sessionId) return
+    const key = `hh_conversion_${sessionId}`
+    if (typeof window !== 'undefined' && sessionStorage.getItem(key)) return
+    trackPurchase(sessionId, 46.35, 'Vendor Registration')
+    sessionStorage.setItem(key, '1')
+  }, [searchParams])
+
   return (
     <main style={{
       minHeight: '100vh',

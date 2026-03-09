@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Loader2, CheckCircle } from 'lucide-react'
+import { trackLead } from '@/lib/gtag'
 
 const ORG_TYPES = [
   { value: '', label: 'Select your organization type...' },
@@ -68,6 +69,7 @@ export default function FundraiserForm() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Something went wrong')
 
+      trackLead('fundraiser', email)
       setSubmitted(true)
     } catch (err: any) {
       setError(err.message || 'Something went wrong. Please try again.')
