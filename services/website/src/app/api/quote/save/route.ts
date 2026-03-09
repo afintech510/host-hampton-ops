@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
   const protocol = host.includes('localhost') ? 'http' : 'https'
   const encoded = Buffer.from(JSON.stringify(quoteData)).toString('base64url')
-  const quotePath = sourcePage === 'kids-party-menu' ? '/kids-party-menu' : '/party-quote'
+  const quotePath = '/kids-party-menu'
   const quoteLink = `${protocol}://${host}${quotePath}?q=${encoded}`
 
   // Build the book link (with date/time for auto-selection + encoded quote data including summary)
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
         contact_id: contactId,
         type: 'form_submission',
         summary: `Saved party quote: ${summary || 'no summary'}${slotDisplay ? ` — ${slotDisplay}` : ''}`,
-        metadata: { page: 'party-quote', action: 'save_for_later', quoteData, partyDate, partyTime },
+        metadata: { page: 'kids-party-menu', action: 'save_for_later', quoteData, partyDate, partyTime },
       })
     } catch (err) {
       console.error('Interaction insert error (non-fatal):', err)

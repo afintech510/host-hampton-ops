@@ -229,7 +229,7 @@ function LeadGateForm({ onUnlock }: { onUnlock: (c: { name: string; email: strin
       const res = await fetch('/api/lead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName: name.trim(), email: email.trim(), phone: phone.trim(), eventType: 'Quote Builder', sourcePage: 'party-quote', marketingConsent: consent }),
+        body: JSON.stringify({ fullName: name.trim(), email: email.trim(), phone: phone.trim(), eventType: 'Quote Builder', sourcePage: 'kids-party-menu', marketingConsent: consent }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
