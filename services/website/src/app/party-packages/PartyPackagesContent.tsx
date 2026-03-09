@@ -474,21 +474,22 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="font-semibold text-hampton-navy text-xl">{selectedThemeData.name}</h3>
                     <div className="text-right">
-                      {isMiniParty && (
-                        <span className="text-hampton-navy/40 font-bold text-xl line-through block">
-                          from ${(selectedThemePrice ?? selectedThemeData.price).toLocaleString()}
-                        </span>
-                      )}
-                      <span className="text-hampton-navy font-bold text-xl">
-                        {isMiniParty
-                          ? `$${((selectedThemePrice ?? selectedThemeData.price) - MINI_PARTY_DISCOUNT).toLocaleString()}`
-                          : `from $${(selectedThemePrice ?? selectedThemeData.price).toLocaleString()}`}
+                      <span className={`text-hampton-navy font-bold text-xl ${isMiniParty ? 'line-through text-hampton-navy/40' : ''}`}>
+                        from ${(selectedThemePrice ?? selectedThemeData.price).toLocaleString()}
                       </span>
                     </div>
                   </div>
-                  <p className="text-sm leading-relaxed text-hampton-navy/80">
+                  <p className="text-sm leading-relaxed text-hampton-navy/80 mb-4">
                     {selectedThemeData.extendedDesc}
                   </p>
+                  <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 mb-4">
+                    {PARTY_INCLUDES.map(item => (
+                      <li key={item} className="flex items-start gap-1.5 text-xs text-hampton-navy/75">
+                        <Check size={12} strokeWidth={3} className="text-hampton-pink shrink-0 mt-0.5" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
                   <div className="flex items-center gap-2 text-hampton-pink text-sm font-semibold pt-4 animate-[fadeIn_0.5s_ease-in]">
                     <div className="w-5 h-5 rounded-full bg-hampton-pink flex items-center justify-center">
                       <Check size={12} strokeWidth={3} className="text-white" />
@@ -574,15 +575,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                     <h3 className="font-semibold text-hampton-navy text-lg">{t.name}</h3>
                     <span className="text-hampton-navy font-bold text-lg">from ${(lookupThemePrice(t.name, pricingItems) ?? t.price).toLocaleString()}</span>
                   </div>
-                  <p className="text-sm leading-relaxed text-hampton-navy/70 mb-4">{t.desc}</p>
-                  <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                    {PARTY_INCLUDES.map(item => (
-                      <li key={item} className="flex items-start gap-1.5 text-xs text-hampton-navy/75">
-                        <Check size={12} strokeWidth={3} className="text-hampton-pink shrink-0 mt-0.5" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
+                  <p className="text-sm leading-relaxed text-hampton-navy/70">{t.desc}</p>
                 </div>
               </div>
             ))}
