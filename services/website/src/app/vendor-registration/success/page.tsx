@@ -1,21 +1,23 @@
 'use client'
 
-import { useEffect } from 'react'
+import { Suspense, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { trackPurchase } from '@/lib/gtag'
 
-export default function VendorRegistrationSuccessPage() {
+function VendorConversionTracker() {
   const searchParams = useSearchParams()
-
   useEffect(() => {
     const sessionId = searchParams.get('session_id')
     if (!sessionId) return
     const key = `hh_conversion_${sessionId}`
-    if (typeof window !== 'undefined' && sessionStorage.getItem(key)) return
+    if (sessionStorage.getItem(key)) return
     trackPurchase(sessionId, 46.35, 'Vendor Registration')
     sessionStorage.setItem(key, '1')
   }, [searchParams])
+  return null
+}
 
+export default function VendorRegistrationSuccessPage() {
   return (
     <main style={{
       minHeight: '100vh',
@@ -25,6 +27,9 @@ export default function VendorRegistrationSuccessPage() {
       justifyContent: 'center',
       padding: '40px 20px',
     }}>
+      <Suspense fallback={null}>
+        <VendorConversionTracker />
+      </Suspense>
       <div style={{ maxWidth: 480, textAlign: 'center' }}>
 
         {/* Check circle */}
