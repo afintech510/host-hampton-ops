@@ -24,7 +24,7 @@ export function event(action: string, params?: GtagEvent) {
 
 /** Lead form submitted (party inquiry, room rental, etc.) */
 export function trackLead(source: string, email?: string) {
-  event('generate_lead', {
+  event('lead_submission', {
     event_category: 'engagement',
     event_label: source,
     value: 1,
