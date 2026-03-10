@@ -167,40 +167,45 @@ function parseDate(val: string): string {
 
 function categorize(desc: string): string {
   const d = desc.toLowerCase()
-  if (d.includes('party') || d.includes('birthday')) return 'Party Booking'
-  if (d.includes('ticket') || d.includes('event') || d.includes('admission')) return 'Event Ticket'
+  if (d.includes('party') || d.includes('birthday') || d.includes('celebration')) return 'Party Booking'
+  if (d.includes('ticket') || d.includes('bingo') || d.includes('admission')) return 'Event Ticket'
+  if (d.includes('sourdough') || d.includes('class') || d.includes('workshop') || d.includes('101')) return 'Event Ticket'
+  if (d.includes('drop off') || d.includes('drop-off') || d.includes('camp') || d.includes('soft play')) return 'Event Ticket'
+  if (d.includes('photo shoot') || d.includes('photoshoot') || d.includes('pet photo')) return 'Event Ticket'
   if (d.includes('room') || d.includes('rental')) return 'Room Rental'
-  if (d.includes('jewelry') || d.includes('bracelet') || d.includes('necklace')) return 'Permanent Jewelry'
+  if (d.includes('jewelry') || d.includes('bracelet') || d.includes('necklace') || d.includes('initial necklace') || d.includes('chain')) return 'Permanent Jewelry'
   if (d.includes('canvas') || d.includes('bag') || d.includes('tote')) return 'Canvas Bags'
-  if (d.includes('hat') || d.includes('trucker')) return 'Trucker Hats'
+  if (d.includes('hat') || d.includes('trucker') || d.includes('patch') || d.includes('pouch')) return 'Trucker Hats'
   if (d.includes('food') || d.includes('drink') || d.includes('beverage') || d.includes('coffee') || d.includes('snack')) return 'Food & Beverage'
   if (d.includes('gift card') || d.includes('giftcard')) return 'Gift Card'
   if (d.includes('vendor') || d.includes('booth')) return 'Vendor Fee'
-  if (d.includes('deposit')) return 'Deposit'
-  if (d.includes('merch') || d.includes('shirt') || d.includes('sticker')) return 'Merchandise'
+  if (d.includes('deposit') || d.includes('retainer')) return 'Deposit'
+  if (d.includes('merch') || d.includes('shirt') || d.includes('sticker') || d.includes('tumbler') || d.includes('slipper') || d.includes('lip gloss') || d.includes('wrapping paper')) return 'Merchandise'
   return 'Other'
 }
 
 /* ─── GoDaddy (POS + Paylinks) ───────────────────────── */
-// Common GoDaddy export columns:
-// Date, Order Number, Item, Quantity, Price, Total, Payment Method, Customer Name, Customer Email
-// OR: Transaction Date, Transaction ID, Description, Amount, Status, Customer
+// Actual columns: Date, Order ID, Items, Channel, Order Status, Fulfillment Mode,
+// Fulfillment Status, Subtotal, Discount, Fee, Tax, Shipping, Order Total
+// Sanitized: date, order_id, items, channel, order_status, order_total, subtotal
 
 function parseGoDaddy(rows: Record<string, string>[]): TransactionRow[] {
   return rows.map(r => {
-    // Try various column name patterns
-    const date = r.date || r.transaction_date || r.order_date || r.created || r.created_at || ''
-    const desc = r.item || r.description || r.product || r.item_name || r.name || ''
-    const amount = r.total || r.amount || r.price || r.net || r.gross || ''
-    const ref = r.order_number || r.transaction_id || r.order_id || r.id || ''
-    const customer = r.customer_name || r.customer || r.name || r.buyer || ''
-    const status = (r.status || r.payment_status || '').toLowerCase()
+    const date = r.date || ''
+    const desc = r.items || r.item || r.description || ''
+    const amount = r.order_total || r.total || r.subtotal || ''
+    const ref = r.order_id || r.order_number || ''
+    const channel = r.channel || ''
+    const status = (r.order_status || r.status || '').toLowerCase()
 
-    // Skip refunds/voids
+    // Skip refunds/voids/cancelled
     if (status === 'refunded' || status === 'voided' || status === 'cancelled') return null
 
     const amountCents = parseAmount(amount)
     if (amountCents <= 0) return null
+
+    // Clean the ref — remove "Order #" prefix
+    const cleanRef = ref.replace(/^Order\s*#?/i, '').trim()
 
     return {
       date: parseDate(date),
@@ -208,69 +213,107 @@ function parseGoDaddy(rows: Record<string, string>[]): TransactionRow[] {
       amount_cents: amountCents,
       source: 'godaddy',
       category: categorize(desc),
-      customer_name: customer || null,
-      reference: ref ? `gd-${ref}` : null,
-      notes: null,
+      customer_name: null,
+      reference: cleanRef ? `gd-${cleanRef}` : null,
+      notes: channel ? `Channel: ${channel}` : null,
     }
   }).filter(Boolean) as TransactionRow[]
 }
 
 /* ─── Squarespace ─────────────────────────────────────── */
-// Common Squarespace export columns:
-// Order ID, Order Date, Product Name, Quantity, Unit Price, Total, Customer Email, Billing Name
+// Actual columns: Order ID, Email, Financial Status, Paid at, Fulfillment Status,
+// Currency, Subtotal, Shipping, Taxes, Amount Refunded, Total, Discount Amount,
+// Lineitem quantity, Lineitem name, Lineitem price, Billing Name, ...
+// Sanitized: order_id, email, financial_status, paid_at, total, lineitem_name,
+// lineitem_price, billing_name, lineitem_quantity
 
 function parseSquarespace(rows: Record<string, string>[]): TransactionRow[] {
-  return rows.map(r => {
-    const date = r.order_date || r.date || r.created_on || r.fulfilled_on || ''
-    const desc = r.product_name || r.product || r.line_item || r.description || r.item || ''
-    const amount = r.total || r.subtotal || r.amount || r.unit_price || ''
-    const ref = r.order_id || r.order_number || r.id || r.transaction_id || ''
-    const customer = r.billing_name || r.customer_name || r.name || r.customer_email || ''
+  // Squarespace exports one row per line item — group by order_id to avoid duplicates
+  const orderMap = new Map<string, { date: string; desc: string[]; total: number; customer: string; email: string }>()
 
-    const amountCents = parseAmount(amount)
-    if (amountCents <= 0) return null
+  for (const r of rows) {
+    const orderId = r.order_id || ''
+    const status = (r.financial_status || '').toLowerCase()
+
+    // Only import paid orders
+    if (status !== 'paid') continue
+
+    const existing = orderMap.get(orderId)
+    if (existing) {
+      // Add line item to existing order
+      const itemName = r.lineitem_name || ''
+      if (itemName && !existing.desc.includes(itemName)) {
+        existing.desc.push(itemName)
+      }
+    } else {
+      orderMap.set(orderId, {
+        date: r.paid_at || r.created_at || '',
+        desc: [r.lineitem_name || ''].filter(Boolean),
+        total: parseAmount(r.total || ''),
+        customer: r.billing_name || '',
+        email: r.email || '',
+      })
+    }
+  }
+
+  return Array.from(orderMap.entries()).map(([orderId, order]) => {
+    if (order.total <= 0) return null
+
+    const desc = order.desc.join(', ') || 'Squarespace Sale'
 
     return {
-      date: parseDate(date),
-      description: desc || 'Squarespace Sale',
-      amount_cents: amountCents,
+      date: parseDate(order.date),
+      description: desc,
+      amount_cents: order.total,
       source: 'squarespace',
       category: categorize(desc),
-      customer_name: customer || null,
-      reference: ref ? `sq-${ref}` : null,
-      notes: null,
+      customer_name: order.customer || null,
+      reference: orderId ? `sq-${orderId}` : null,
+      notes: order.email || null,
     }
   }).filter(Boolean) as TransactionRow[]
 }
 
 /* ─── HoneyBook ───────────────────────────────────────── */
-// Common HoneyBook export columns:
-// Project Name, Client Name, Payment Date, Amount, Status, Invoice Number, Service Type
+// Actual columns: COMPANY_NAME, PROJECT_NAME, PROJECT_DATE, VENDOR_INFO, CLIENT_INFO,
+// INVOICE, PAYMENT_STATUS, PAYMENT_NAME, CHARGE_NOTES, PAYMENT_METHOD, DUE_DATE,
+// TRANSACTION_DATE, TOTAL_AMOUNT, NET_AMOUNT, ...
+// Sanitized: project_name, client_info, invoice, payment_status, payment_name,
+// transaction_date, total_amount, net_amount, payment_method, charge_notes
 
 function parseHoneyBook(rows: Record<string, string>[]): TransactionRow[] {
   return rows.map(r => {
-    const date = r.payment_date || r.date || r.paid_date || r.created_date || r.created || ''
-    const desc = r.project_name || r.project || r.service_type || r.description || r.invoice_description || ''
-    const amount = r.amount || r.total || r.payment_amount || r.net || ''
-    const ref = r.invoice_number || r.payment_id || r.transaction_id || r.id || ''
-    const customer = r.client_name || r.client || r.customer || r.customer_name || ''
-    const status = (r.status || r.payment_status || '').toLowerCase()
+    const date = r.transaction_date || r.due_date || r.project_date || ''
+    const desc = r.project_name || r.payment_name || ''
+    const amount = r.total_amount || r.net_amount || ''
+    const ref = r.invoice || ''
+    const status = (r.payment_status || '').toLowerCase()
+    const paymentMethod = r.payment_method || ''
+    const chargeNotes = r.charge_notes || ''
+
+    // Extract client name from CLIENT_INFO (format: "Name (email)")
+    const clientInfo = r.client_info || ''
+    const clientMatch = clientInfo.match(/^(.+?)\s*\(/)
+    const customer = clientMatch ? clientMatch[1].trim() : clientInfo
 
     // Skip unpaid/cancelled
-    if (status === 'unpaid' || status === 'cancelled' || status === 'refunded' || status === 'void') return null
+    if (status !== 'paid') return null
 
     const amountCents = parseAmount(amount)
     if (amountCents <= 0) return null
 
+    // Build description: project name + payment name
+    const fullDesc = r.payment_name ? `${desc} — ${r.payment_name}` : desc
+
     return {
       date: parseDate(date),
-      description: desc || 'HoneyBook Payment',
+      description: fullDesc || 'HoneyBook Payment',
       amount_cents: amountCents,
       source: 'honeybook',
       category: categorize(desc),
       customer_name: customer || null,
       reference: ref ? `hb-${ref}` : null,
-      notes: null,
+      notes: [paymentMethod, chargeNotes].filter(Boolean).join(' — ') || null,
     }
   }).filter(Boolean) as TransactionRow[]
 }
