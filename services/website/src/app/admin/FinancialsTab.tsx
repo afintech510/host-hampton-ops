@@ -5,7 +5,8 @@ import {
   DollarSign, Upload, Plus, Download, Filter, Search,
   Calendar, TrendingUp, CreditCard, Banknote, Store,
   FileSpreadsheet, X, ChevronDown, ChevronUp, Loader2, Check,
-  ArrowUpRight, ArrowDownRight, PieChart, BarChart3
+  ArrowUpRight, ArrowDownRight, PieChart, BarChart3,
+  ChevronLeft, ChevronRight
 } from 'lucide-react'
 
 /* ─── Interfaces ─────────────────────────────────────── */
@@ -23,17 +24,18 @@ interface Transaction {
   created_at: string
 }
 
-interface FinancialSummary {
+interface SummaryData {
   totalRevenue: number
+  totalCount: number
   thisMonth: number
   lastMonth: number
-  bySource: Record<string, number>
+  bySource: Record<string, { revenue: number; count: number }>
   byCategory: Record<string, number>
 }
 
-type ViewMode = 'overview' | 'transactions' | 'import'
+type ViewMode = 'overview' | 'transactions'
 type SourceFilter = 'all' | Transaction['source']
-type TimeFilter = 'all' | 'today' | 'week' | 'month' | 'last_month' | 'quarter' | 'ytd' | 'year' | 'custom'
+type TimeFilter = 'all' | 'month' | 'last_month' | 'quarter' | 'ytd' | 'year' | 'custom'
 
 const TIME_OPTIONS: { key: TimeFilter; label: string }[] = [
   { key: 'month', label: 'This Month' },
@@ -60,12 +62,54 @@ const CATEGORIES = [
   'Vendor Fee', 'Gift Card', 'Deposit', 'Other'
 ]
 
+const PAGE_SIZE = 100
+
+/* ─── Date range helpers ─────────────────────────────── */
+
+function getDateRange(filter: TimeFilter, customStart: string, customEnd: string): { start?: string; end?: string } {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth()
+
+  switch (filter) {
+    case 'month':
+      return { start: `${y}-${String(m + 1).padStart(2, '0')}-01` }
+    case 'last_month': {
+      const lm = new Date(y, m - 1, 1)
+      const lmEnd = new Date(y, m, 0)
+      return {
+        start: `${lm.getFullYear()}-${String(lm.getMonth() + 1).padStart(2, '0')}-01`,
+        end: `${lmEnd.getFullYear()}-${String(lmEnd.getMonth() + 1).padStart(2, '0')}-${String(lmEnd.getDate()).padStart(2, '0')}`,
+      }
+    }
+    case 'quarter': {
+      const qStart = new Date(y, Math.floor(m / 3) * 3, 1)
+      return { start: `${qStart.getFullYear()}-${String(qStart.getMonth() + 1).padStart(2, '0')}-01` }
+    }
+    case 'ytd':
+      return { start: `${y}-01-01` }
+    case 'year':
+      return { start: `${y}-01-01`, end: `${y}-12-31` }
+    case 'custom':
+      return { start: customStart || undefined, end: customEnd || undefined }
+    case 'all':
+    default:
+      return {}
+  }
+}
+
+/* ─── Main Component ─────────────────────────────────── */
+
 export default function FinancialsTab({ headers, onLogout }: { headers: Record<string, string>; onLogout: () => void }) {
+  const [summary, setSummary] = useState<SummaryData | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(true)
+  const [totalTxns, setTotalTxns] = useState(0)
+  const [page, setPage] = useState(0)
+  const [loadingSummary, setLoadingSummary] = useState(true)
+  const [loadingTxns, setLoadingTxns] = useState(false)
   const [view, setView] = useState<ViewMode>('overview')
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('month')
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
@@ -73,82 +117,85 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
   const [showImportModal, setShowImportModal] = useState(false)
   const [importSource, setImportSource] = useState<'godaddy' | 'squarespace' | 'honeybook'>('godaddy')
 
-  useEffect(() => {
-    loadTransactions()
-  }, [])
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  async function loadTransactions() {
-    setLoading(true)
+  // Build query params from current filters
+  const buildParams = useCallback(() => {
+    const { start, end } = getDateRange(timeFilter, customStart, customEnd)
+    const params = new URLSearchParams()
+    if (start) params.set('start', start)
+    if (end) params.set('end', end)
+    if (sourceFilter !== 'all') params.set('source', sourceFilter)
+    return params
+  }, [timeFilter, customStart, customEnd, sourceFilter])
+
+  // Load summary (KPIs + charts)
+  const loadSummary = useCallback(async () => {
+    setLoadingSummary(true)
     try {
-      const res = await fetch('/api/admin/financials', { headers })
+      const params = buildParams()
+      const res = await fetch(`/api/admin/financials/summary?${params}`, { headers })
+      if (res.status === 401) { onLogout(); return }
+      if (res.ok) {
+        const data = await res.json()
+        setSummary(data)
+      }
+    } catch (err) {
+      console.error('Failed to load summary:', err)
+    } finally {
+      setLoadingSummary(false)
+    }
+  }, [buildParams, headers, onLogout])
+
+  // Load transactions (paginated)
+  const loadTransactions = useCallback(async (pageNum: number = 0, search: string = searchQuery) => {
+    setLoadingTxns(true)
+    try {
+      const params = buildParams()
+      params.set('limit', String(PAGE_SIZE))
+      params.set('offset', String(pageNum * PAGE_SIZE))
+      if (search) params.set('search', search)
+      const res = await fetch(`/api/admin/financials?${params}`, { headers })
       if (res.status === 401) { onLogout(); return }
       if (res.ok) {
         const data = await res.json()
         setTransactions(data.transactions || [])
+        setTotalTxns(data.total || 0)
       }
     } catch (err) {
-      console.error('Failed to load financials:', err)
+      console.error('Failed to load transactions:', err)
     } finally {
-      setLoading(false)
+      setLoadingTxns(false)
     }
+  }, [buildParams, headers, onLogout, searchQuery])
+
+  // Reload on filter change
+  useEffect(() => {
+    loadSummary()
+    setPage(0)
+    if (view === 'transactions') loadTransactions(0)
+  }, [timeFilter, customStart, customEnd, sourceFilter])
+
+  // Load transactions when switching to transactions view
+  useEffect(() => {
+    if (view === 'transactions') loadTransactions(page)
+  }, [view, page])
+
+  // Initial load
+  useEffect(() => { loadSummary() }, [])
+
+  // Debounced search
+  function handleSearchChange(val: string) {
+    setSearchQuery(val)
+    if (searchTimeout.current) clearTimeout(searchTimeout.current)
+    searchTimeout.current = setTimeout(() => {
+      setPage(0)
+      loadTransactions(0, val)
+    }, 400)
   }
 
-  // Filter transactions
-  const filtered = transactions.filter(t => {
-    if (sourceFilter !== 'all' && t.source !== sourceFilter) return false
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      if (!(t.description?.toLowerCase().includes(q) || t.customer_name?.toLowerCase().includes(q) || t.reference?.toLowerCase().includes(q))) return false
-    }
-    if (timeFilter !== 'all') {
-      const d = new Date(t.date + 'T12:00:00')
-      const now = new Date()
-      if (timeFilter === 'today' && d.toDateString() !== now.toDateString()) return false
-      if (timeFilter === 'week') {
-        const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7)
-        if (d < weekAgo) return false
-      }
-      if (timeFilter === 'month') {
-        if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return false
-      }
-      if (timeFilter === 'last_month') {
-        const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-        const lmEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-        if (d < lm || d > lmEnd) return false
-      }
-      if (timeFilter === 'quarter') {
-        const qStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)
-        if (d < qStart) return false
-      }
-      if (timeFilter === 'ytd') {
-        const yearStart = new Date(now.getFullYear(), 0, 1)
-        if (d < yearStart) return false
-      }
-      if (timeFilter === 'year') {
-        if (d.getFullYear() !== now.getFullYear()) return false
-      }
-      if (timeFilter === 'custom') {
-        if (customStart && d < new Date(customStart + 'T00:00:00')) return false
-        if (customEnd && d > new Date(customEnd + 'T23:59:59')) return false
-      }
-    }
-    return true
-  })
-
-  // Summary calculations
-  const summary: FinancialSummary = {
-    totalRevenue: filtered.reduce((s, t) => s + t.amount_cents, 0),
-    thisMonth: filtered.filter(t => {
-      const d = new Date(t.date), now = new Date()
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-    }).reduce((s, t) => s + t.amount_cents, 0),
-    lastMonth: transactions.filter(t => {
-      const d = new Date(t.date), now = new Date()
-      const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear()
-    }).reduce((s, t) => s + t.amount_cents, 0),
-    bySource: filtered.reduce((acc, t) => { acc[t.source] = (acc[t.source] || 0) + t.amount_cents; return acc }, {} as Record<string, number>),
-    byCategory: filtered.reduce((acc, t) => { acc[t.category] = (acc[t.category] || 0) + t.amount_cents; return acc }, {} as Record<string, number>),
+  function handlePageChange(newPage: number) {
+    setPage(newPage)
   }
 
   function fmt(cents: number) {
@@ -158,6 +205,8 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
   function fmtShort(cents: number) {
     return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   }
+
+  const totalPages = Math.ceil(totalTxns / PAGE_SIZE)
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -238,7 +287,7 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
           <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-500/5 pointer-events-none" />
           <div className="relative">
             <div className="admin-kpi-icon mb-3"><DollarSign className="w-5 h-5 text-hampton-blue" /></div>
-            <p className="admin-kpi-value">{fmtShort(summary.totalRevenue)}</p>
+            <p className="admin-kpi-value">{loadingSummary ? '...' : fmtShort(summary?.totalRevenue || 0)}</p>
             <p className="admin-kpi-label">Total ({TIME_OPTIONS.find(t => t.key === timeFilter)?.label || timeFilter})</p>
           </div>
         </div>
@@ -246,7 +295,7 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 pointer-events-none" />
           <div className="relative">
             <div className="admin-kpi-icon mb-3"><TrendingUp className="w-5 h-5 text-emerald-600" /></div>
-            <p className="admin-kpi-value">{fmtShort(summary.thisMonth)}</p>
+            <p className="admin-kpi-value">{loadingSummary ? '...' : fmtShort(summary?.thisMonth || 0)}</p>
             <p className="admin-kpi-label">This Month</p>
           </div>
         </div>
@@ -254,7 +303,7 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
           <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-purple-500/5 pointer-events-none" />
           <div className="relative">
             <div className="admin-kpi-icon mb-3"><PieChart className="w-5 h-5 text-purple-600" /></div>
-            <p className="admin-kpi-value">{Object.keys(summary.bySource).length}</p>
+            <p className="admin-kpi-value">{loadingSummary ? '...' : Object.keys(summary?.bySource || {}).length}</p>
             <p className="admin-kpi-label">Revenue Sources</p>
           </div>
         </div>
@@ -262,14 +311,14 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
           <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-amber-500/5 pointer-events-none" />
           <div className="relative">
             <div className="admin-kpi-icon mb-3"><BarChart3 className="w-5 h-5 text-amber-600" /></div>
-            <p className="admin-kpi-value">{filtered.length}</p>
+            <p className="admin-kpi-value">{loadingSummary ? '...' : (summary?.totalCount || 0).toLocaleString()}</p>
             <p className="admin-kpi-label">Transactions</p>
           </div>
         </div>
       </div>
 
       {view === 'overview' ? (
-        <OverviewView summary={summary} fmt={fmt} fmtShort={fmtShort} />
+        <OverviewView summary={summary} loading={loadingSummary} fmtShort={fmtShort} />
       ) : (
         <>
           {/* ── Filters ── */}
@@ -278,7 +327,7 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => handleSearchChange(e.target.value)}
                 placeholder="Search transactions..."
                 className="form-input pl-10"
               />
@@ -296,7 +345,35 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
           </div>
 
           {/* ── Transaction List ── */}
-          <TransactionList transactions={filtered} fmt={fmt} loading={loading} />
+          <TransactionList transactions={transactions} fmt={fmt} loading={loadingTxns} />
+
+          {/* ── Pagination ── */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-xs text-hampton-mauve">
+                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalTxns)} of {totalTxns.toLocaleString()}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handlePageChange(page - 1)}
+                  disabled={page === 0}
+                  className="admin-btn-ghost text-xs disabled:opacity-30"
+                >
+                  <ChevronLeft className="w-4 h-4" /> Prev
+                </button>
+                <span className="text-xs text-gray-500">
+                  Page {page + 1} of {totalPages}
+                </span>
+                <button
+                  onClick={() => handlePageChange(page + 1)}
+                  disabled={page >= totalPages - 1}
+                  className="admin-btn-ghost text-xs disabled:opacity-30"
+                >
+                  Next <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -305,7 +382,7 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
         <CashEntryModal
           headers={headers}
           onClose={() => setShowCashForm(false)}
-          onSaved={() => { setShowCashForm(false); loadTransactions() }}
+          onSaved={() => { setShowCashForm(false); loadSummary(); if (view === 'transactions') loadTransactions(page) }}
         />
       )}
 
@@ -316,7 +393,7 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
           source={importSource}
           onSourceChange={setImportSource}
           onClose={() => setShowImportModal(false)}
-          onImported={() => { setShowImportModal(false); loadTransactions() }}
+          onImported={() => { setShowImportModal(false); loadSummary(); if (view === 'transactions') loadTransactions(page) }}
         />
       )}
     </div>
@@ -325,10 +402,18 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
 
 /* ─── Overview View ──────────────────────────────────── */
 
-function OverviewView({ summary, fmt, fmtShort }: { summary: FinancialSummary; fmt: (n: number) => string; fmtShort: (n: number) => string }) {
-  const sortedSources = Object.entries(summary.bySource).sort((a, b) => b[1] - a[1])
+function OverviewView({ summary, loading, fmtShort }: { summary: SummaryData | null; loading: boolean; fmtShort: (n: number) => string }) {
+  if (loading || !summary) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 text-hampton-blue animate-spin" />
+      </div>
+    )
+  }
+
+  const sortedSources = Object.entries(summary.bySource).sort((a, b) => b[1].revenue - a[1].revenue)
   const sortedCategories = Object.entries(summary.byCategory).sort((a, b) => b[1] - a[1])
-  const maxSource = sortedSources.length > 0 ? sortedSources[0][1] : 1
+  const maxSource = sortedSources.length > 0 ? sortedSources[0][1].revenue : 1
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -340,24 +425,25 @@ function OverviewView({ summary, fmt, fmtShort }: { summary: FinancialSummary; f
           <p className="text-sm text-hampton-mauve py-8 text-center">No transaction data yet. Import your sales data to get started.</p>
         ) : (
           <div className="space-y-3">
-            {sortedSources.map(([source, amount]) => {
+            {sortedSources.map(([source, { revenue, count }]) => {
               const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.other
-              const pct = Math.round((amount / (summary.totalRevenue || 1)) * 100)
+              const pct = Math.round((revenue / (summary.totalRevenue || 1)) * 100)
               return (
                 <div key={source}>
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2">
                       <span className={`admin-badge ${cfg.color} ring-1`}>{cfg.label}</span>
+                      <span className="text-[10px] text-gray-400">{count.toLocaleString()} txns</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-hampton-mauve">{pct}%</span>
-                      <span className="text-sm font-semibold text-hampton-navy">{fmtShort(amount)}</span>
+                      <span className="text-sm font-semibold text-hampton-navy">{fmtShort(revenue)}</span>
                     </div>
                   </div>
                   <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-hampton-blue to-hampton-blue/70 rounded-full transition-all duration-700"
-                      style={{ width: `${Math.round((amount / maxSource) * 100)}%` }}
+                      style={{ width: `${Math.round((revenue / maxSource) * 100)}%` }}
                     />
                   </div>
                 </div>
