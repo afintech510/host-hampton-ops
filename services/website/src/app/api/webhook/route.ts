@@ -8,6 +8,27 @@ import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
 
+/* Record a Stripe payment in the unified financial_transactions table (non-fatal) */
+async function recordFinancialTransaction(supabase: ReturnType<typeof getSupabase>, opts: {
+  date: string; description: string; amountCents: number; category: string;
+  customerName: string | null; reference: string; notes?: string | null;
+}) {
+  await supabase.from('financial_transactions').insert({
+    date: opts.date,
+    description: opts.description,
+    amount_cents: opts.amountCents,
+    source: 'stripe',
+    category: opts.category,
+    customer_name: opts.customerName,
+    reference: `stripe-${opts.reference}`,
+    notes: opts.notes || null,
+  }).then(({ error }) => {
+    if (error && !error.message.includes('duplicate')) {
+      console.error('Financial txn insert error (non-fatal):', error.message)
+    }
+  })
+}
+
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
@@ -75,6 +96,17 @@ export async function POST(req: NextRequest) {
           await supabase.rpc('decrement_event_tickets', { eid: m.eventId, qty })
         }
         console.log('Ticket created:', ticketRef, 'for', m.customerEmail)
+
+        // Record in financials (non-fatal)
+        await recordFinancialTransaction(supabase, {
+          date: new Date().toISOString().split('T')[0],
+          description: evt?.title || 'Event Ticket',
+          amountCents: totalCents,
+          category: 'Event Ticket',
+          customerName: m.customerName,
+          reference: `tk-${ticketRef}`,
+          notes: m.customerEmail,
+        })
 
         // Upsert contact (non-fatal)
         const contactId = await upsertContact({
@@ -200,6 +232,18 @@ export async function POST(req: NextRequest) {
       }
 
       console.log('Multi-session tickets created:', groupRef, ticketRefs.length, 'sessions for', m.customerEmail)
+
+      // Record in financials (non-fatal)
+      const multiTotalCents = session.amount_total || 0
+      await recordFinancialTransaction(supabase, {
+        date: new Date().toISOString().split('T')[0],
+        description: `${evt?.title || 'Event'} (${sessionIds.length} sessions)`,
+        amountCents: multiTotalCents,
+        category: 'Event Ticket',
+        customerName: m.customerName,
+        reference: `tk-${groupRef}`,
+        notes: m.customerEmail,
+      })
 
       // Upsert contact (non-fatal)
       const contactId = await upsertContact({
@@ -375,6 +419,18 @@ export async function POST(req: NextRequest) {
 
       console.log('Cart checkout processed:', cartRef, ticketRefs.length, 'tickets for', m.customerEmail)
 
+      // Record in financials (non-fatal)
+      const cartTotalCents = session.amount_total || 0
+      await recordFinancialTransaction(supabase, {
+        date: new Date().toISOString().split('T')[0],
+        description: eventTitles.join(' + '),
+        amountCents: cartTotalCents,
+        category: 'Event Ticket',
+        customerName: m.customerName,
+        reference: `tk-${cartRef}`,
+        notes: m.customerEmail,
+      })
+
       // Upsert contact
       const contactId = await upsertContact({
         name: m.customerName,
@@ -498,6 +554,17 @@ export async function POST(req: NextRequest) {
         console.error('Vendor registration insert error:', dbError)
       } else {
         console.log('Vendor registration created:', vendorRef, m.businessName, m.contactEmail)
+
+        // Record in financials (non-fatal)
+        await recordFinancialTransaction(supabase, {
+          date: new Date().toISOString().split('T')[0],
+          description: `Vendor Registration — ${m.businessName}`,
+          amountCents: 4635,
+          category: 'Vendor Fee',
+          customerName: m.contactName,
+          reference: `bk-${vendorRef}`,
+          notes: m.contactEmail,
+        })
       }
 
       // Upsert contact
@@ -630,6 +697,18 @@ export async function POST(req: NextRequest) {
       console.error('Supabase insert error:', dbError)
     } else {
       console.log('Booking created:', bookingRef, 'for', m.contactEmail, 'on', partyDate)
+
+      // Record in financials (non-fatal)
+      const bookingAmountCents = session.amount_total || (m.depositCents ? parseInt(m.depositCents, 10) : 25000)
+      await recordFinancialTransaction(supabase, {
+        date: new Date().toISOString().split('T')[0],
+        description: `${(m.eventType || 'Party').split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} Deposit${m.packageName ? ` — ${m.packageName}` : ''}`,
+        amountCents: bookingAmountCents,
+        category: m.eventType?.includes('room') ? 'Room Rental' : 'Party Booking',
+        customerName: m.contactName,
+        reference: `bk-${bookingRef}`,
+        notes: m.contactEmail,
+      })
 
       // Upsert contact (non-fatal)
       const contactId = await upsertContact({

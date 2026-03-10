@@ -33,7 +33,17 @@ interface FinancialSummary {
 
 type ViewMode = 'overview' | 'transactions' | 'import'
 type SourceFilter = 'all' | Transaction['source']
-type TimeFilter = 'all' | 'today' | 'week' | 'month' | 'quarter' | 'year'
+type TimeFilter = 'all' | 'today' | 'week' | 'month' | 'last_month' | 'quarter' | 'ytd' | 'year' | 'custom'
+
+const TIME_OPTIONS: { key: TimeFilter; label: string }[] = [
+  { key: 'month', label: 'This Month' },
+  { key: 'last_month', label: 'Last Month' },
+  { key: 'quarter', label: 'This Quarter' },
+  { key: 'ytd', label: 'YTD' },
+  { key: 'year', label: 'This Year' },
+  { key: 'all', label: 'All Time' },
+  { key: 'custom', label: 'Custom' },
+]
 
 const SOURCE_CONFIG: Record<string, { label: string; color: string; icon: typeof DollarSign }> = {
   stripe:      { label: 'Stripe',      color: 'bg-purple-50 text-purple-700 ring-purple-200',   icon: CreditCard },
@@ -57,6 +67,8 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('month')
   const [searchQuery, setSearchQuery] = useState('')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
   const [showCashForm, setShowCashForm] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [importSource, setImportSource] = useState<'godaddy' | 'squarespace' | 'honeybook'>('godaddy')
@@ -89,7 +101,7 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
       if (!(t.description?.toLowerCase().includes(q) || t.customer_name?.toLowerCase().includes(q) || t.reference?.toLowerCase().includes(q))) return false
     }
     if (timeFilter !== 'all') {
-      const d = new Date(t.date)
+      const d = new Date(t.date + 'T12:00:00')
       const now = new Date()
       if (timeFilter === 'today' && d.toDateString() !== now.toDateString()) return false
       if (timeFilter === 'week') {
@@ -99,12 +111,25 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
       if (timeFilter === 'month') {
         if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return false
       }
+      if (timeFilter === 'last_month') {
+        const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        const lmEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+        if (d < lm || d > lmEnd) return false
+      }
       if (timeFilter === 'quarter') {
         const qStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)
         if (d < qStart) return false
       }
+      if (timeFilter === 'ytd') {
+        const yearStart = new Date(now.getFullYear(), 0, 1)
+        if (d < yearStart) return false
+      }
       if (timeFilter === 'year') {
         if (d.getFullYear() !== now.getFullYear()) return false
+      }
+      if (timeFilter === 'custom') {
+        if (customStart && d < new Date(customStart + 'T00:00:00')) return false
+        if (customEnd && d > new Date(customEnd + 'T23:59:59')) return false
       }
     }
     return true
@@ -136,31 +161,75 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-      {/* ── Header Actions ── */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        {/* View toggle */}
-        <div className="flex items-center bg-white rounded-xl border border-gray-200 p-1">
-          {(['overview', 'transactions'] as ViewMode[]).map(v => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                view === v ? 'bg-hampton-navy text-white shadow-sm' : 'text-gray-500 hover:text-hampton-navy'
-              }`}
-            >
-              {v === 'overview' ? 'Overview' : 'Transactions'}
+      {/* ── Timeframe + View Controls ── */}
+      <div className="admin-card p-3 mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Timeframe pills */}
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
+            <Calendar className="w-4 h-4 text-hampton-mauve mr-1 shrink-0" />
+            {TIME_OPTIONS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setTimeFilter(key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                  timeFilter === key
+                    ? 'bg-hampton-navy text-white shadow-sm'
+                    : 'text-gray-500 hover:text-hampton-navy hover:bg-gray-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* View toggle */}
+            <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+              {(['overview', 'transactions'] as ViewMode[]).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                    view === v ? 'bg-white text-hampton-navy shadow-sm' : 'text-gray-500 hover:text-hampton-navy'
+                  }`}
+                >
+                  {v === 'overview' ? 'Overview' : 'Transactions'}
+                </button>
+              ))}
+            </div>
+
+            <button onClick={() => setShowCashForm(true)} className="admin-btn-secondary text-xs">
+              <Plus className="w-3.5 h-3.5" /> Cash
             </button>
-          ))}
+            <button onClick={() => setShowImportModal(true)} className="admin-btn-primary text-xs">
+              <Upload className="w-3.5 h-3.5" /> Import
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowCashForm(true)} className="admin-btn-secondary text-xs">
-            <Plus className="w-3.5 h-3.5" /> Cash Entry
-          </button>
-          <button onClick={() => setShowImportModal(true)} className="admin-btn-primary text-xs">
-            <Upload className="w-3.5 h-3.5" /> Import
-          </button>
-        </div>
+        {/* Custom date range inputs */}
+        {timeFilter === 'custom' && (
+          <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-100">
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-hampton-mauve font-medium">From</label>
+              <input
+                type="date"
+                value={customStart}
+                onChange={e => setCustomStart(e.target.value)}
+                className="form-input py-1.5 text-xs w-auto"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-hampton-mauve font-medium">To</label>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={e => setCustomEnd(e.target.value)}
+                className="form-input py-1.5 text-xs w-auto"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── KPI Row ── */}
@@ -170,7 +239,7 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
           <div className="relative">
             <div className="admin-kpi-icon mb-3"><DollarSign className="w-5 h-5 text-hampton-blue" /></div>
             <p className="admin-kpi-value">{fmtShort(summary.totalRevenue)}</p>
-            <p className="admin-kpi-label">Total ({timeFilter === 'all' ? 'All Time' : timeFilter})</p>
+            <p className="admin-kpi-label">Total ({TIME_OPTIONS.find(t => t.key === timeFilter)?.label || timeFilter})</p>
           </div>
         </div>
         <div className="admin-kpi">
@@ -223,18 +292,6 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
               {Object.entries(SOURCE_CONFIG).map(([k, v]) => (
                 <option key={k} value={k}>{v.label}</option>
               ))}
-            </select>
-            <select
-              value={timeFilter}
-              onChange={e => setTimeFilter(e.target.value as TimeFilter)}
-              className="form-input w-auto"
-            >
-              <option value="all">All Time</option>
-              <option value="today">Today</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-              <option value="quarter">This Quarter</option>
-              <option value="year">This Year</option>
             </select>
           </div>
 
