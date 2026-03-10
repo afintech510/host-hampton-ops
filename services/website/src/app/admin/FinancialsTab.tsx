@@ -29,6 +29,12 @@ interface SummaryData {
   totalCount: number
   thisMonth: number
   lastMonth: number
+  thisQuarter: number
+  sameQuarterLastYear: number
+  ytd: number
+  lastYearYtd: number
+  annualRunRate: number
+  quarterlyRunRate: number
   bySource: Record<string, { revenue: number; count: number }>
   byCategory: Record<string, number>
 }
@@ -289,30 +295,42 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
             <div className="admin-kpi-icon mb-3"><DollarSign className="w-5 h-5 text-hampton-blue" /></div>
             <p className="admin-kpi-value">{loadingSummary ? '...' : fmtShort(summary?.totalRevenue || 0)}</p>
             <p className="admin-kpi-label">Total ({TIME_OPTIONS.find(t => t.key === timeFilter)?.label || timeFilter})</p>
+            {!loadingSummary && summary && (
+              <p className="text-[10px] text-gray-400 mt-1">{summary.totalCount.toLocaleString()} transactions</p>
+            )}
           </div>
         </div>
         <div className="admin-kpi">
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 pointer-events-none" />
           <div className="relative">
             <div className="admin-kpi-icon mb-3"><TrendingUp className="w-5 h-5 text-emerald-600" /></div>
-            <p className="admin-kpi-value">{loadingSummary ? '...' : fmtShort(summary?.thisMonth || 0)}</p>
-            <p className="admin-kpi-label">This Month</p>
+            <p className="admin-kpi-value">{loadingSummary ? '...' : fmtShort(summary?.quarterlyRunRate || 0)}</p>
+            <p className="admin-kpi-label">Quarterly Run Rate</p>
+            {!loadingSummary && summary && (
+              <PaceIndicator current={summary.thisQuarter} lastYear={summary.sameQuarterLastYear} label="vs same Q last year" />
+            )}
           </div>
         </div>
         <div className="admin-kpi">
           <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-purple-500/5 pointer-events-none" />
           <div className="relative">
-            <div className="admin-kpi-icon mb-3"><PieChart className="w-5 h-5 text-purple-600" /></div>
-            <p className="admin-kpi-value">{loadingSummary ? '...' : Object.keys(summary?.bySource || {}).length}</p>
-            <p className="admin-kpi-label">Revenue Sources</p>
+            <div className="admin-kpi-icon mb-3"><BarChart3 className="w-5 h-5 text-purple-600" /></div>
+            <p className="admin-kpi-value">{loadingSummary ? '...' : fmtShort(summary?.annualRunRate || 0)}</p>
+            <p className="admin-kpi-label">Annual Run Rate</p>
+            {!loadingSummary && summary && (
+              <PaceIndicator current={summary.ytd} lastYear={summary.lastYearYtd} label="YTD vs last year" />
+            )}
           </div>
         </div>
         <div className="admin-kpi">
           <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-amber-500/5 pointer-events-none" />
           <div className="relative">
-            <div className="admin-kpi-icon mb-3"><BarChart3 className="w-5 h-5 text-amber-600" /></div>
-            <p className="admin-kpi-value">{loadingSummary ? '...' : (summary?.totalCount || 0).toLocaleString()}</p>
-            <p className="admin-kpi-label">Transactions</p>
+            <div className="admin-kpi-icon mb-3"><Calendar className="w-5 h-5 text-amber-600" /></div>
+            <p className="admin-kpi-value">{loadingSummary ? '...' : fmtShort(summary?.thisMonth || 0)}</p>
+            <p className="admin-kpi-label">This Month</p>
+            {!loadingSummary && summary && summary.lastMonth > 0 && (
+              <p className="text-[10px] text-gray-400 mt-1">Last month: {fmtShort(summary.lastMonth)}</p>
+            )}
           </div>
         </div>
       </div>
@@ -396,6 +414,31 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
           onImported={() => { setShowImportModal(false); loadSummary(); if (view === 'transactions') loadTransactions(page) }}
         />
       )}
+    </div>
+  )
+}
+
+/* ─── Pace Indicator ─────────────────────────────────── */
+
+function PaceIndicator({ current, lastYear, label }: { current: number; lastYear: number; label: string }) {
+  if (lastYear === 0 && current === 0) return null
+
+  const pctChange = lastYear > 0 ? Math.round(((current - lastYear) / lastYear) * 100) : (current > 0 ? 100 : 0)
+  const ahead = pctChange >= 0
+  const paceText = lastYear === 0 ? 'No data last year' : ahead ? 'Ahead' : 'Behind'
+  const color = ahead ? 'text-emerald-600' : 'text-red-500'
+
+  return (
+    <div className="flex items-center gap-1 mt-1">
+      {lastYear > 0 ? (
+        <>
+          {ahead ? <ArrowUpRight className="w-3 h-3 text-emerald-600" /> : <ArrowDownRight className="w-3 h-3 text-red-500" />}
+          <span className={`text-[10px] font-semibold ${color}`}>{Math.abs(pctChange)}% {paceText}</span>
+        </>
+      ) : (
+        <span className="text-[10px] text-gray-400">{paceText}</span>
+      )}
+      <span className="text-[10px] text-gray-400 ml-0.5">{label}</span>
     </div>
   )
 }
