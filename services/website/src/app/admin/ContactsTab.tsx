@@ -145,18 +145,27 @@ export default function ContactsTab({ headers, onLogout }: { headers: Record<str
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
       {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
-          <p className="text-lg sm:text-2xl font-bold text-hampton-navy">{total}</p>
-          <p className="text-[10px] sm:text-xs text-gray-500">Total Contacts</p>
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        <div className="admin-kpi">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-500/5 pointer-events-none" />
+          <div className="relative">
+            <p className="admin-kpi-value">{total}</p>
+            <p className="admin-kpi-label">Total Contacts</p>
+          </div>
         </div>
-        <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
-          <p className="text-lg sm:text-2xl font-bold text-emerald-600">{emailOptInCount}</p>
-          <p className="text-[10px] sm:text-xs text-gray-500">Email Opted In</p>
+        <div className="admin-kpi">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 pointer-events-none" />
+          <div className="relative">
+            <p className="admin-kpi-value text-emerald-600">{emailOptInCount}</p>
+            <p className="admin-kpi-label">Email Opted In</p>
+          </div>
         </div>
-        <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
-          <p className="text-lg sm:text-2xl font-bold text-blue-600">{smsOptInCount}</p>
-          <p className="text-[10px] sm:text-xs text-gray-500">SMS Opted In</p>
+        <div className="admin-kpi">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-500/5 pointer-events-none" />
+          <div className="relative">
+            <p className="admin-kpi-value text-blue-600">{smsOptInCount}</p>
+            <p className="admin-kpi-label">SMS Opted In</p>
+          </div>
         </div>
       </div>
 

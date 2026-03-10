@@ -50,6 +50,104 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer components {
+  /* ─── Admin Sidebar ─────────────────────── */
+  .admin-sidebar {
+    @apply bg-gradient-to-b from-[#1a2030] to-[#2F343B] text-white flex flex-col;
+  }
+  .admin-sidebar-link {
+    @apply flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-white/60 hover:text-white hover:bg-white/10 transition-all duration-200 cursor-pointer;
+  }
+  .admin-sidebar-link.active {
+    @apply bg-white/10 text-white shadow-sm;
+    background: linear-gradient(135deg, rgba(143,168,191,0.2) 0%, rgba(255,255,255,0.08) 100%);
+  }
+
+  /* ─── Admin Cards ───────────────────────── */
+  .admin-card {
+    @apply bg-white rounded-2xl border border-gray-200/60 shadow-sm hover:shadow-md transition-all duration-300;
+  }
+  .admin-card-glass {
+    @apply bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-sm hover:shadow-md transition-all duration-300;
+  }
+
+  /* ─── Admin KPI Cards ───────────────────── */
+  .admin-kpi {
+    @apply relative overflow-hidden bg-white rounded-2xl border border-gray-200/60 p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5;
+  }
+  .admin-kpi::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #8FA8BF, #C7A36B);
+    border-radius: 2xl 2xl 0 0;
+  }
+  .admin-kpi-value {
+    @apply text-3xl font-bold text-hampton-navy tracking-tight;
+    animation: countUp 0.5s ease-out;
+  }
+  .admin-kpi-label {
+    @apply text-xs font-semibold text-hampton-mauve uppercase tracking-widest mt-1;
+  }
+  .admin-kpi-icon {
+    @apply w-10 h-10 rounded-xl flex items-center justify-center;
+    background: linear-gradient(135deg, #8FA8BF22, #C7A36B11);
+  }
+
+  /* ─── Admin Table Rows ──────────────────── */
+  .admin-row {
+    @apply bg-white rounded-xl border border-gray-100 p-4 transition-all duration-200 hover:border-hampton-blue/30 hover:shadow-sm;
+  }
+  .admin-row-active {
+    @apply bg-white rounded-xl border-2 border-hampton-blue/40 p-4 shadow-sm;
+  }
+
+  /* ─── Admin Badges ──────────────────────── */
+  .admin-badge {
+    @apply inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full;
+  }
+  .admin-badge-success { @apply bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200; }
+  .admin-badge-warning { @apply bg-amber-50 text-amber-700 ring-1 ring-amber-200; }
+  .admin-badge-danger  { @apply bg-red-50 text-red-700 ring-1 ring-red-200; }
+  .admin-badge-info    { @apply bg-blue-50 text-blue-700 ring-1 ring-blue-200; }
+  .admin-badge-neutral { @apply bg-gray-50 text-gray-600 ring-1 ring-gray-200; }
+
+  /* ─── Admin Buttons ─────────────────────── */
+  .admin-btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer;
+  }
+  .admin-btn-primary {
+    @apply admin-btn bg-hampton-navy text-white hover:bg-[#1a2030] shadow-sm hover:shadow-md;
+  }
+  .admin-btn-secondary {
+    @apply admin-btn border-2 border-gray-200 text-hampton-navy hover:border-hampton-navy hover:bg-hampton-navy/5;
+  }
+  .admin-btn-ghost {
+    @apply admin-btn text-hampton-mauve hover:text-hampton-navy hover:bg-gray-100;
+  }
+
+  /* ─── Admin Section Headers ─────────────── */
+  .admin-section-title {
+    @apply text-lg font-semibold text-hampton-navy tracking-tight;
+  }
+  .admin-section-subtitle {
+    @apply text-xs font-medium text-hampton-mauve uppercase tracking-widest;
+  }
+}
+
 @layer utilities {
   .scrollbar-hide {
     -ms-overflow-style: none;
@@ -57,6 +155,12 @@
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+  .animate-slide-in {
+    animation: slideIn 0.3s ease-out;
+  }
+  .animate-count-up {
+    animation: countUp 0.5s ease-out;
   }
 }
 

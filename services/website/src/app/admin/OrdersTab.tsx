@@ -104,18 +104,27 @@ export default function OrdersTab({ headers, onLogout }: { headers: Record<strin
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
       {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
-          <p className="text-lg sm:text-2xl font-bold text-hampton-navy">{orders.length}</p>
-          <p className="text-[10px] sm:text-xs text-gray-500">Total Orders</p>
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        <div className="admin-kpi">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-500/5 pointer-events-none" />
+          <div className="relative">
+            <p className="admin-kpi-value">{orders.length}</p>
+            <p className="admin-kpi-label">Total Orders</p>
+          </div>
         </div>
-        <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
-          <p className="text-lg sm:text-2xl font-bold text-emerald-600">{formatPrice(totalRevenue)}</p>
-          <p className="text-[10px] sm:text-xs text-gray-500">Active Revenue</p>
+        <div className="admin-kpi">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 pointer-events-none" />
+          <div className="relative">
+            <p className="admin-kpi-value text-emerald-600">{formatPrice(totalRevenue)}</p>
+            <p className="admin-kpi-label">Active Revenue</p>
+          </div>
         </div>
-        <div className="bg-white rounded-xl border border-hampton-pink/20 p-3 sm:p-4 text-center">
-          <p className="text-lg sm:text-2xl font-bold text-hampton-navy">{bookingCount}B / {ticketCount}T</p>
-          <p className="text-[10px] sm:text-xs text-gray-500">Bookings / Tickets</p>
+        <div className="admin-kpi">
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-purple-500/5 pointer-events-none" />
+          <div className="relative">
+            <p className="admin-kpi-value">{bookingCount}B / {ticketCount}T</p>
+            <p className="admin-kpi-label">Bookings / Tickets</p>
+          </div>
         </div>
       </div>
 
@@ -123,7 +132,7 @@ export default function OrdersTab({ headers, onLogout }: { headers: Record<strin
       <div className="flex justify-end">
         <button
           onClick={() => setShowNewBooking(!showNewBooking)}
-          className="btn-primary text-sm py-1.5 px-4 flex items-center gap-1.5"
+          className="admin-btn-primary text-xs"
         >
           <Plus className="w-3.5 h-3.5" /> New Booking
         </button>

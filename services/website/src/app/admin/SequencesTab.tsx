@@ -105,18 +105,21 @@ export default function SequencesTab({ headers, onLogout }: { headers: Record<st
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
       {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-6">
         {[
-          { label: 'Active Sequences', value: activeCount, icon: Mail },
-          { label: 'Active Enrollments', value: totalEnrollments, icon: UsersIcon },
-          { label: 'Completed', value: totalCompleted, icon: Clock },
-        ].map(({ label, value, icon: Icon }) => (
-          <div key={label} className="bg-white rounded-xl border border-hampton-pink/20 p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Icon className="w-4 h-4 text-hampton-blue" />
-              <p className="text-xs text-gray-500 uppercase tracking-wide">{label}</p>
+          { label: 'Active Sequences', value: activeCount, icon: Mail, gradient: 'from-blue-500/10 to-blue-500/5' },
+          { label: 'Active Enrollments', value: totalEnrollments, icon: UsersIcon, gradient: 'from-purple-500/10 to-purple-500/5' },
+          { label: 'Completed', value: totalCompleted, icon: Clock, gradient: 'from-emerald-500/10 to-emerald-500/5' },
+        ].map(({ label, value, icon: Icon, gradient }) => (
+          <div key={label} className="admin-kpi">
+            <div className={`absolute inset-0 bg-gradient-to-br ${gradient} pointer-events-none`} />
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="admin-kpi-icon"><Icon className="w-4 h-4 text-hampton-blue" /></div>
+              </div>
+              <p className="admin-kpi-value">{value}</p>
+              <p className="admin-kpi-label">{label}</p>
             </div>
-            <p className="text-2xl font-serif text-hampton-navy">{value}</p>
           </div>
         ))}
       </div>
