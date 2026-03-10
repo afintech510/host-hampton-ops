@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { upsertContact } from '@/lib/contacts'
+import { enrollInSequence } from '@/lib/sequences'
 import { getSupabase } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
@@ -27,6 +28,15 @@ export async function POST(req: NextRequest) {
     serviceInterests: ['general'],
     marketingConsent: !!marketingConsent,
   })
+
+  if (contactId) {
+    await enrollInSequence({
+      contactId,
+      contactEmail: email,
+      triggerEvent: 'new_inquiry',
+      serviceType: 'general',
+    }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+  }
 
   // Log interaction
   if (contactId) {

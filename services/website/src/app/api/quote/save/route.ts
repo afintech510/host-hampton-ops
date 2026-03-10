@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { savedQuoteHtml } from '@/lib/emailTemplates'
 import { upsertContact } from '@/lib/contacts'
+import { enrollInSequence } from '@/lib/sequences'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,6 +61,15 @@ export async function POST(req: NextRequest) {
     sourceDetail: 'Quote Builder — Save for Later',
     serviceInterests: ['kids-party'],
   })
+
+  if (contactId) {
+    await enrollInSequence({
+      contactId,
+      contactEmail: email,
+      triggerEvent: 'new_inquiry',
+      serviceType: 'kids_party',
+    }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+  }
 
   if (contactId) {
     try {

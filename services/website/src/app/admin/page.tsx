@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt, Palette, Users, Megaphone } from 'lucide-react'
+import { LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt, Palette, Users, Megaphone, ListOrdered } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
 import OrdersTab from './OrdersTab'
 import ThemesTab from './ThemesTab'
 import ContactsTab from './ContactsTab'
+import SequencesTab from './SequencesTab'
 import CampaignsTab from './CampaignsTab'
 
 /* ─── Page (Login Gate) ──────────────────────────────── */
@@ -58,7 +59,7 @@ export default function AdminPage() {
 /* ─── Dashboard (Tabs) ───────────────────────────────── */
 
 function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
-  const [activeTab, setActiveTab] = useState<'events' | 'calendar' | 'orders' | 'themes' | 'contacts' | 'campaigns'>('events')
+  const [activeTab, setActiveTab] = useState<'events' | 'calendar' | 'orders' | 'themes' | 'contacts' | 'sequences' | 'campaigns'>('events')
   const [refreshKey, setRefreshKey] = useState(0)
 
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
@@ -96,6 +97,7 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
             { key: 'orders' as const, label: 'Orders', Icon: Receipt },
             { key: 'themes' as const, label: 'Themes', Icon: Palette },
             { key: 'contacts' as const, label: 'Contacts', Icon: Users },
+            { key: 'sequences' as const, label: 'Sequences', Icon: ListOrdered },
             { key: 'campaigns' as const, label: 'Campaigns', Icon: Megaphone },
           ]).map(({ key, label, Icon }) => (
             <button
@@ -129,6 +131,9 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
       )}
       {activeTab === 'contacts' && (
         <ContactsTab key={`contacts-${refreshKey}`} headers={headers} onLogout={onLogout} />
+      )}
+      {activeTab === 'sequences' && (
+        <SequencesTab key={`sequences-${refreshKey}`} headers={headers} onLogout={onLogout} />
       )}
       {activeTab === 'campaigns' && (
         <CampaignsTab key={`campaigns-${refreshKey}`} headers={headers} onLogout={onLogout} />

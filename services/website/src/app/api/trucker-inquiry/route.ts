@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { upsertContact } from '@/lib/contacts'
+import { enrollInSequence } from '@/lib/sequences'
 import { getSupabase } from '@/lib/supabase'
 import { Resend } from 'resend'
 
@@ -26,6 +27,15 @@ export async function POST(req: NextRequest) {
     serviceInterests: ['trucker-hat-bar'],
     marketingConsent: !!marketingConsent,
   })
+
+  if (contactId) {
+    await enrollInSequence({
+      contactId,
+      contactEmail: email,
+      triggerEvent: 'new_inquiry',
+      serviceType: 'trucker_hat_bar',
+    }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+  }
 
   if (contactId) {
     try {

@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enqueueBookingReminders } from '@/lib/reminders'
+import { enrollInSequence } from '@/lib/sequences'
 
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
       console.log('Free booking created:', bookingRef, 'for', contactEmail, 'on', partyDate)
 
       // Upsert contact (non-fatal)
-      await upsertContact({
+      const contactId = await upsertContact({
         name: contactName,
         email: contactEmail,
         phone: contactPhone,
@@ -96,6 +97,18 @@ export async function POST(req: NextRequest) {
         serviceInterests: [bookingTypeSlug || 'general'],
         marketingConsent: !!marketingConsent,
       })
+
+      // Enroll in post-booking sequence (non-fatal)
+      if (contactId) {
+        await enrollInSequence({
+          contactId,
+          contactEmail: contactEmail,
+          triggerEvent: 'booking_confirmed',
+          serviceType: bookingTypeSlug || eventType || 'general',
+          eventDate: partyDate,
+          bookingRef,
+        }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+      }
 
       // Enqueue booking reminders (non-fatal)
       if (partyDate) {

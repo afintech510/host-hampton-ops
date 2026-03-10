@@ -1,17 +1,31 @@
 import { getSupabase } from '@/lib/supabase'
 
+/** Parse "7:00 PM" or "19:00" into hours/minutes */
+function parseTime(timeStr: string): { hours: number; minutes: number } | null {
+  const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i)
+  if (!match) return null
+  let hours = parseInt(match[1])
+  const minutes = parseInt(match[2])
+  const period = match[3]?.toUpperCase()
+  if (period === 'PM' && hours < 12) hours += 12
+  if (period === 'AM' && hours === 12) hours = 0
+  return { hours, minutes }
+}
+
 /**
  * Enqueue reminders for an event ticket purchase.
- * Creates reminder rows in scheduled_reminders for 3-day, day-of, and SMS reminders.
+ * Creates reminder rows in scheduled_reminders for 3-day, day-of, 1-day SMS, and 2-hr SMS reminders.
  */
 export async function enqueueEventReminders({
   contactEmail,
   eventId,
   eventDate,
+  eventTime,
 }: {
   contactEmail: string
   eventId: string
   eventDate: string // YYYY-MM-DD
+  eventTime?: string // e.g. "7:00 PM" — needed for 2hr SMS
 }): Promise<void> {
   try {
     const supabase = getSupabase()
@@ -81,6 +95,7 @@ export async function enqueueEventReminders({
           channel: 'sms',
         })
       }
+
     }
 
     if (reminders.length > 0) {
@@ -180,5 +195,64 @@ export async function enqueueBookingReminders({
     }
   } catch (err) {
     console.error('enqueueBookingReminders error (non-fatal):', err)
+  }
+}
+
+/**
+ * Enqueue a post-event/post-booking review request SMS.
+ * Scheduled for the day after the event at 2 PM.
+ * Deduplicates by contact + reference to avoid repeat asks.
+ */
+export async function enqueueReviewRequest({
+  contactEmail,
+  referenceType,
+  referenceId,
+  eventDate,
+}: {
+  contactEmail: string
+  referenceType: 'event' | 'booking'
+  referenceId: string
+  eventDate: string // YYYY-MM-DD
+}): Promise<void> {
+  try {
+    const supabase = getSupabase()
+
+    const { data: contact } = await supabase
+      .from('contacts')
+      .select('id, sms_opt_in')
+      .eq('email', contactEmail)
+      .single()
+
+    if (!contact?.sms_opt_in) return
+
+    // Schedule for day after event at 2 PM
+    const reviewDate = new Date(eventDate + 'T14:00:00')
+    reviewDate.setDate(reviewDate.getDate() + 1)
+
+    if (reviewDate <= new Date()) return
+
+    // Avoid duplicate review requests
+    const { data: existing } = await supabase
+      .from('scheduled_reminders')
+      .select('id')
+      .eq('contact_id', contact.id)
+      .eq('reminder_type', 'review_request_sms')
+      .eq('reference_id', referenceId)
+      .limit(1)
+
+    if (existing && existing.length > 0) return
+
+    await supabase.from('scheduled_reminders').insert({
+      contact_id: contact.id,
+      reminder_type: 'review_request_sms',
+      reference_type: referenceType,
+      reference_id: referenceId,
+      scheduled_for: reviewDate.toISOString(),
+      channel: 'sms',
+    })
+
+    console.log(`Enqueued review request for ${contactEmail} after ${eventDate}`)
+  } catch (err) {
+    console.error('enqueueReviewRequest error (non-fatal):', err)
   }
 }

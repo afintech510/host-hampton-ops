@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronUp, Loader2, Search, Mail, Send, RotateCcw, X, DollarSign } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Search, Mail, Send, RotateCcw, X, DollarSign, Plus, Save } from 'lucide-react'
 
 /* ─── Interfaces ─────────────────────────────────────── */
 
@@ -73,6 +73,7 @@ export default function OrdersTab({ headers, onLogout }: { headers: Record<strin
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
+  const [showNewBooking, setShowNewBooking] = useState(false)
 
   const fetchOrders = useCallback(async () => {
     setLoading(true)
@@ -117,6 +118,24 @@ export default function OrdersTab({ headers, onLogout }: { headers: Record<strin
           <p className="text-[10px] sm:text-xs text-gray-500">Bookings / Tickets</p>
         </div>
       </div>
+
+      {/* New Booking button + form */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowNewBooking(!showNewBooking)}
+          className="btn-primary text-sm py-1.5 px-4 flex items-center gap-1.5"
+        >
+          <Plus className="w-3.5 h-3.5" /> New Booking
+        </button>
+      </div>
+
+      {showNewBooking && (
+        <ManualBookingForm
+          headers={headers}
+          onCreated={() => { setShowNewBooking(false); fetchOrders() }}
+          onCancel={() => setShowNewBooking(false)}
+        />
+      )}
 
       {/* Filters */}
       <div className="space-y-2 sm:space-y-0 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
@@ -538,6 +557,159 @@ function RefundForm({
         >
           {processing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
           Process Refund
+        </button>
+      </div>
+    </form>
+  )
+}
+
+/* ─── Manual Booking Form ───────────────────────────── */
+
+function ManualBookingForm({ headers, onCreated, onCancel }: {
+  headers: Record<string, string>; onCreated: () => void; onCancel: () => void
+}) {
+  const [form, setForm] = useState({
+    contactName: '', contactEmail: '', contactPhone: '',
+    partyDate: '', partyTime: '', eventType: 'kids-party',
+    packageName: '', childName: '', childAge: '',
+    guestCount: '', notes: '', depositAmount: '0', source: 'HoneyBook',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const set = (field: string, value: string) => setForm(f => ({ ...f, [field]: value }))
+  const isKidsParty = form.eventType === 'kids-party' || form.eventType === 'kids_party'
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/bookings', {
+        method: 'POST', headers,
+        body: JSON.stringify(form),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setError(data.error || 'Failed to create booking')
+        setSaving(false)
+        return
+      }
+      onCreated()
+    } catch {
+      setError('Network error')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-hampton-pink/20 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-medium text-hampton-navy">New Booking (Manual Entry)</h3>
+        <button type="button" onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+      </div>
+
+      {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+
+      {/* Contact info row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Name *</label>
+          <input value={form.contactName} onChange={e => set('contactName', e.target.value)} className="form-input" required />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Email *</label>
+          <input type="email" value={form.contactEmail} onChange={e => set('contactEmail', e.target.value)} className="form-input" required />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Phone</label>
+          <input type="tel" value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} className="form-input" />
+        </div>
+      </div>
+
+      {/* Event info row */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Date *</label>
+          <input type="date" value={form.partyDate} onChange={e => set('partyDate', e.target.value)} className="form-input" required />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Time *</label>
+          <input type="time" value={form.partyTime} onChange={e => set('partyTime', e.target.value)} className="form-input" required />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Event Type *</label>
+          <select value={form.eventType} onChange={e => set('eventType', e.target.value)} className="form-input" required>
+            <option value="kids-party">Kids Party</option>
+            <option value="room-rental">Room Rental</option>
+            <option value="permanent-jewelry">Permanent Jewelry</option>
+            <option value="trucker-hat-bar">Trucker Hat Bar</option>
+            <option value="fundraiser">Fundraiser</option>
+            <option value="workshop">Workshop</option>
+            <option value="host-your-client">Host Your Client</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Package</label>
+          <input value={form.packageName} onChange={e => set('packageName', e.target.value)} className="form-input" placeholder="e.g. Glam Party" />
+        </div>
+      </div>
+
+      {/* Kids party fields */}
+      {isKidsParty && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Child Name</label>
+            <input value={form.childName} onChange={e => set('childName', e.target.value)} className="form-input" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Child Age</label>
+            <input type="number" min={1} max={18} value={form.childAge} onChange={e => set('childAge', e.target.value)} className="form-input" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Guest Count</label>
+            <input type="number" min={1} value={form.guestCount} onChange={e => set('guestCount', e.target.value)} className="form-input" />
+          </div>
+        </div>
+      )}
+
+      {!isKidsParty && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Guest Count</label>
+            <input type="number" min={1} value={form.guestCount} onChange={e => set('guestCount', e.target.value)} className="form-input" />
+          </div>
+        </div>
+      )}
+
+      {/* Bottom row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Deposit ($)</label>
+          <input type="number" min={0} step={0.01} value={form.depositAmount} onChange={e => set('depositAmount', e.target.value)} className="form-input" />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Source</label>
+          <select value={form.source} onChange={e => set('source', e.target.value)} className="form-input">
+            <option value="HoneyBook">HoneyBook</option>
+            <option value="Phone">Phone</option>
+            <option value="Walk-in">Walk-in</option>
+            <option value="Instagram DM">Instagram DM</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Notes</label>
+          <input value={form.notes} onChange={e => set('notes', e.target.value)} className="form-input" placeholder="Optional notes" />
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5">Cancel</button>
+        <button type="submit" disabled={saving} className="btn-primary text-sm py-1.5 px-4 flex items-center gap-1.5">
+          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+          Create Booking
         </button>
       </div>
     </form>

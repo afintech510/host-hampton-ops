@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
+import { enrollInSequence } from '@/lib/sequences'
 import { Resend } from 'resend'
 import {
   fundraiserInquiryAutoReplyHtml,
@@ -49,6 +50,15 @@ export async function POST(req: NextRequest) {
     serviceInterests: ['fundraiser'],
     marketingConsent: !!marketingConsent,
   })
+
+  if (contactId) {
+    await enrollInSequence({
+      contactId,
+      contactEmail: email,
+      triggerEvent: 'new_inquiry',
+      serviceType: 'fundraiser',
+    }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+  }
 
   // Set business fields separately (upsertContact doesn't handle these)
   if (contactId) {

@@ -5,6 +5,7 @@ import { upsertContact } from '@/lib/contacts'
 import { Resend } from 'resend'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTemplates'
 import { enqueueEventReminders } from '@/lib/reminders'
+import { enrollInSequence } from '@/lib/sequences'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Upsert contact (non-fatal)
-      await upsertContact({
+      const contactId = await upsertContact({
         name: customerName,
         email: customerEmail,
         phone: customerPhone,
@@ -100,6 +101,16 @@ export async function POST(req: NextRequest) {
         serviceInterests: ['event'],
         marketingConsent: !!marketingConsent,
       })
+
+      // Enroll in post-booking sequence (non-fatal)
+      if (contactId) {
+        await enrollInSequence({
+          contactId,
+          contactEmail: customerEmail,
+          triggerEvent: 'booking_confirmed',
+          serviceType: 'event',
+        }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+      }
 
       // Enqueue reminders for each session (non-fatal)
       for (const sess of sessionsData) {
@@ -287,7 +298,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Upsert contact (non-fatal)
-    await upsertContact({
+    const contactId = await upsertContact({
       name: customerName,
       email: customerEmail,
       phone: customerPhone,
@@ -295,6 +306,16 @@ export async function POST(req: NextRequest) {
       serviceInterests: ['event'],
       marketingConsent: !!marketingConsent,
     })
+
+    // Enroll in post-booking sequence (non-fatal)
+    if (contactId) {
+      await enrollInSequence({
+        contactId,
+        contactEmail: customerEmail,
+        triggerEvent: 'booking_confirmed',
+        serviceType: 'event',
+      }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+    }
 
     // Enqueue reminders (non-fatal)
     const reminderDate = sessionRow?.session_date || event.event_date

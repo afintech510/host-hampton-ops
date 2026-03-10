@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { leadNotifyHtml, leadConfirmHtml } from '@/lib/emailTemplates'
 import { upsertContact } from '@/lib/contacts'
+import { enrollInSequence } from '@/lib/sequences'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,6 +62,15 @@ export async function POST(req: NextRequest) {
     serviceInterests,
     marketingConsent: !!marketingConsent,
   })
+
+  if (contactId) {
+    await enrollInSequence({
+      contactId,
+      contactEmail: email,
+      triggerEvent: 'new_inquiry',
+      serviceType: serviceInterests[0] || 'general',
+    }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+  }
 
   if (contactId) {
     try {

@@ -5,7 +5,8 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
-import { enqueueEventReminders, enqueueBookingReminders } from '@/lib/reminders'
+import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest } from '@/lib/reminders'
+import { enrollInSequence } from '@/lib/sequences'
 
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
         console.log('Ticket created:', ticketRef, 'for', m.customerEmail)
 
         // Upsert contact (non-fatal)
-        await upsertContact({
+        const contactId = await upsertContact({
           name: m.customerName,
           email: m.customerEmail,
           phone: m.customerPhone,
@@ -85,13 +86,31 @@ export async function POST(req: NextRequest) {
           marketingConsent: m.marketingConsent === 'true',
         })
 
+        // Enroll in post-booking sequence (non-fatal)
+        if (contactId) {
+          await enrollInSequence({
+            contactId,
+            contactEmail: m.customerEmail,
+            triggerEvent: 'booking_confirmed',
+            serviceType: 'event',
+          }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+        }
+
         // Enqueue reminders (non-fatal)
         if (evt?.event_date) {
           await enqueueEventReminders({
             contactEmail: m.customerEmail,
             eventId: m.eventId,
             eventDate: evt.event_date,
+            eventTime: evt.event_time || undefined,
           }).catch(err => console.error('Reminder enqueue error:', err))
+
+          await enqueueReviewRequest({
+            contactEmail: m.customerEmail,
+            referenceType: 'event',
+            referenceId: m.eventId,
+            eventDate: evt.event_date,
+          }).catch(err => console.error('Review request enqueue error:', err))
         }
       }
 
@@ -183,7 +202,7 @@ export async function POST(req: NextRequest) {
       console.log('Multi-session tickets created:', groupRef, ticketRefs.length, 'sessions for', m.customerEmail)
 
       // Upsert contact (non-fatal)
-      await upsertContact({
+      const contactId = await upsertContact({
         name: m.customerName,
         email: m.customerEmail,
         phone: m.customerPhone,
@@ -192,6 +211,16 @@ export async function POST(req: NextRequest) {
         marketingConsent: m.marketingConsent === 'true',
       })
 
+      // Enroll in post-booking sequence (non-fatal)
+      if (contactId) {
+        await enrollInSequence({
+          contactId,
+          contactEmail: m.customerEmail,
+          triggerEvent: 'booking_confirmed',
+          serviceType: 'event',
+        }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+      }
+
       // Enqueue reminders for each session date (non-fatal)
       for (const sess of (sessionsData || [])) {
         if (sess.session_date) {
@@ -199,8 +228,20 @@ export async function POST(req: NextRequest) {
             contactEmail: m.customerEmail,
             eventId: m.eventId,
             eventDate: sess.session_date,
+            eventTime: sess.session_time || undefined,
           }).catch(err => console.error('Reminder enqueue error:', err))
         }
+      }
+
+      // Review request after last session (non-fatal)
+      const lastSession = sessionsData?.[sessionsData.length - 1]
+      if (lastSession?.session_date) {
+        await enqueueReviewRequest({
+          contactEmail: m.customerEmail,
+          referenceType: 'event',
+          referenceId: m.eventId,
+          eventDate: lastSession.session_date,
+        }).catch(err => console.error('Review request enqueue error:', err))
       }
 
       // Send emails
@@ -335,7 +376,7 @@ export async function POST(req: NextRequest) {
       console.log('Cart checkout processed:', cartRef, ticketRefs.length, 'tickets for', m.customerEmail)
 
       // Upsert contact
-      await upsertContact({
+      const contactId = await upsertContact({
         name: m.customerName,
         email: m.customerEmail,
         phone: m.customerPhone,
@@ -344,12 +385,22 @@ export async function POST(req: NextRequest) {
         marketingConsent: m.marketingConsent === 'true',
       })
 
+      // Enroll in post-booking sequence (non-fatal)
+      if (contactId) {
+        await enrollInSequence({
+          contactId,
+          contactEmail: m.customerEmail,
+          triggerEvent: 'booking_confirmed',
+          serviceType: 'event',
+        }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+      }
+
       // Enqueue reminders per event (non-fatal)
       for (const ci of cartItems) {
         // Fetch event_date for each cart item
         const { data: ciEvt } = await supabase
           .from('events')
-          .select('event_date')
+          .select('event_date, event_time')
           .eq('id', ci.eventId)
           .single()
 
@@ -358,7 +409,15 @@ export async function POST(req: NextRequest) {
             contactEmail: m.customerEmail,
             eventId: ci.eventId,
             eventDate: ciEvt.event_date,
+            eventTime: ciEvt.event_time || undefined,
           }).catch(err => console.error('Cart reminder enqueue error:', err))
+
+          await enqueueReviewRequest({
+            contactEmail: m.customerEmail,
+            referenceType: 'event',
+            referenceId: ci.eventId,
+            eventDate: ciEvt.event_date,
+          }).catch(err => console.error('Cart review request error:', err))
         }
       }
 
@@ -442,7 +501,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Upsert contact
-      await upsertContact({
+      const contactId = await upsertContact({
         name: m.contactName,
         email: m.contactEmail,
         phone: m.contactPhone,
@@ -450,6 +509,16 @@ export async function POST(req: NextRequest) {
         serviceInterests: ['general'],
         marketingConsent: true,
       })
+
+      // Enroll in post-booking sequence (non-fatal)
+      if (contactId) {
+        await enrollInSequence({
+          contactId,
+          contactEmail: m.contactEmail,
+          triggerEvent: 'booking_confirmed',
+          serviceType: 'general',
+        }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+      }
 
       // Confirmation emails
       if (process.env.RESEND_API_KEY) {
@@ -563,7 +632,7 @@ export async function POST(req: NextRequest) {
       console.log('Booking created:', bookingRef, 'for', m.contactEmail, 'on', partyDate)
 
       // Upsert contact (non-fatal)
-      await upsertContact({
+      const contactId = await upsertContact({
         name: m.contactName,
         email: m.contactEmail,
         phone: m.contactPhone,
@@ -572,6 +641,18 @@ export async function POST(req: NextRequest) {
         marketingConsent: m.marketingConsent === 'true',
       })
 
+      // Enroll in post-booking sequence (non-fatal)
+      if (contactId) {
+        await enrollInSequence({
+          contactId,
+          contactEmail: m.contactEmail,
+          triggerEvent: 'booking_confirmed',
+          serviceType: m.bookingTypeSlug || m.eventType || 'general',
+          eventDate: partyDate,
+          bookingRef,
+        }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+      }
+
       // Enqueue booking reminders (non-fatal)
       if (partyDate) {
         await enqueueBookingReminders({
@@ -579,6 +660,13 @@ export async function POST(req: NextRequest) {
           bookingRef,
           partyDate,
         }).catch(err => console.error('Booking reminder enqueue error:', err))
+
+        await enqueueReviewRequest({
+          contactEmail: m.contactEmail,
+          referenceType: 'booking',
+          referenceId: bookingRef,
+          eventDate: partyDate,
+        }).catch(err => console.error('Review request enqueue error:', err))
       }
 
       // Write back to Google Calendar
