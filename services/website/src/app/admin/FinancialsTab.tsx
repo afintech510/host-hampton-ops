@@ -115,6 +115,7 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
   const [loadingTxns, setLoadingTxns] = useState(false)
   const [view, setView] = useState<ViewMode>('overview')
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [customStart, setCustomStart] = useState('')
@@ -132,8 +133,9 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
     if (start) params.set('start', start)
     if (end) params.set('end', end)
     if (sourceFilter !== 'all') params.set('source', sourceFilter)
+    if (categoryFilter !== 'all') params.set('category', categoryFilter)
     return params
-  }, [timeFilter, customStart, customEnd, sourceFilter])
+  }, [timeFilter, customStart, customEnd, sourceFilter, categoryFilter])
 
   // Load summary (KPIs + charts)
   const loadSummary = useCallback(async () => {
@@ -180,7 +182,7 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
     loadSummary()
     setPage(0)
     if (view === 'transactions') loadTransactions(0)
-  }, [timeFilter, customStart, customEnd, sourceFilter])
+  }, [timeFilter, customStart, customEnd, sourceFilter, categoryFilter])
 
   // Load transactions when switching to transactions view
   useEffect(() => {
@@ -202,6 +204,22 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
 
   function handlePageChange(newPage: number) {
     setPage(newPage)
+  }
+
+  async function updateCategory(txnId: string, newCategory: string) {
+    try {
+      const res = await fetch('/api/admin/financials', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ id: txnId, category: newCategory }),
+      })
+      if (res.ok) {
+        // Update local state immediately
+        setTransactions(prev => prev.map(t => t.id === txnId ? { ...t, category: newCategory } : t))
+      }
+    } catch (err) {
+      console.error('Category update error:', err)
+    }
   }
 
   function fmt(cents: number) {
@@ -360,10 +378,20 @@ export default function FinancialsTab({ headers, onLogout }: { headers: Record<s
                 <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
+            <select
+              value={categoryFilter}
+              onChange={e => setCategoryFilter(e.target.value)}
+              className="form-input w-auto"
+            >
+              <option value="all">All Categories</option>
+              {CATEGORIES.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </div>
 
           {/* ── Transaction List ── */}
-          <TransactionList transactions={transactions} fmt={fmt} loading={loadingTxns} />
+          <TransactionList transactions={transactions} fmt={fmt} loading={loadingTxns} onCategoryChange={updateCategory} />
 
           {/* ── Pagination ── */}
           {totalPages > 1 && (
@@ -528,7 +556,14 @@ function OverviewView({ summary, loading, fmtShort }: { summary: SummaryData | n
 
 /* ─── Transaction List ───────────────────────────────── */
 
-function TransactionList({ transactions, fmt, loading }: { transactions: Transaction[]; fmt: (n: number) => string; loading: boolean }) {
+function TransactionList({ transactions, fmt, loading, onCategoryChange }: {
+  transactions: Transaction[]
+  fmt: (n: number) => string
+  loading: boolean
+  onCategoryChange: (id: string, category: string) => void
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -554,6 +589,7 @@ function TransactionList({ transactions, fmt, loading }: { transactions: Transac
           <tbody>
             {transactions.map(t => {
               const cfg = SOURCE_CONFIG[t.source] || SOURCE_CONFIG.other
+              const isEditing = editingId === t.id
               return (
                 <tr key={t.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                   <td className="py-3 px-4 text-gray-500 whitespace-nowrap">
@@ -564,7 +600,30 @@ function TransactionList({ transactions, fmt, loading }: { transactions: Transac
                   <td className="py-3 px-4">
                     <span className={`admin-badge ${cfg.color} ring-1`}>{cfg.label}</span>
                   </td>
-                  <td className="py-3 px-4 text-gray-500 text-xs">{t.category}</td>
+                  <td className="py-2 px-4">
+                    {isEditing ? (
+                      <select
+                        autoFocus
+                        value={t.category}
+                        onChange={e => {
+                          onCategoryChange(t.id, e.target.value)
+                          setEditingId(null)
+                        }}
+                        onBlur={() => setEditingId(null)}
+                        className="text-xs border border-hampton-blue/40 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-hampton-blue/30"
+                      >
+                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    ) : (
+                      <button
+                        onClick={() => setEditingId(t.id)}
+                        className="text-xs text-gray-500 hover:text-hampton-navy hover:bg-gray-100 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                        title="Click to change category"
+                      >
+                        {t.category}
+                      </button>
+                    )}
+                  </td>
                   <td className="py-3 px-4 text-right font-semibold text-hampton-navy">{fmt(t.amount_cents)}</td>
                 </tr>
               )

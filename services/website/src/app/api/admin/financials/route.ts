@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabase()
   const { searchParams } = new URL(req.url)
   const source = searchParams.get('source')
+  const category = searchParams.get('category')
   const startDate = searchParams.get('start')
   const endDate = searchParams.get('end')
   const search = searchParams.get('search')
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest) {
     .order('date', { ascending: false })
 
   if (source && source !== 'all') query = query.eq('source', source)
+  if (category && category !== 'all') query = query.eq('category', category)
   if (startDate) query = query.gte('date', startDate)
   if (endDate) query = query.lte('date', endDate)
   if (search) query = query.or(`description.ilike.%${search}%,customer_name.ilike.%${search}%,reference.ilike.%${search}%`)
@@ -69,6 +71,40 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error('Financials insert error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ transaction: data })
+}
+
+/* PATCH /api/admin/financials — update a transaction field (e.g. category) */
+export async function PATCH(req: NextRequest) {
+  if (!isAdminAuthorized(req)) return unauthorizedResponse()
+
+  const body = await req.json()
+  const { id, category } = body
+
+  if (!id) {
+    return NextResponse.json({ error: 'id is required' }, { status: 400 })
+  }
+
+  const updates: Record<string, string> = {}
+  if (category) updates.category = category
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+  }
+
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from('financial_transactions')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Financials update error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
