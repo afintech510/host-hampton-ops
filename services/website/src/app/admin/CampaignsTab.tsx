@@ -518,13 +518,14 @@ function CampaignDetail({ campaign, headers, onRefresh }: { campaign: Campaign; 
           <div>
             <p className="text-xs font-semibold text-hampton-navy mb-2">Send Campaign</p>
             <div className="flex flex-wrap gap-2 items-center">
-              <select
-                value={sendListId}
-                onChange={e => setSendListId(Number(e.target.value))}
-                className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
-              >
-                <option value={3}>All Email Opt-Ins (List 3)</option>
-              </select>
+              <span className="text-sm text-gray-600 bg-gray-100 rounded-lg px-3 py-1.5">
+                Target: {campaign.target_segment === 'sms_opted_in' ? 'SMS Opted-In' :
+                  campaign.target_segment === 'email_opted_in' ? 'Email Opted-In' :
+                  campaign.target_segment === 'customers' ? 'Customers Only' :
+                  campaign.target_segment === 'leads' ? 'Leads Only' :
+                  campaign.target_segment === 'all' ? 'All Contacts' :
+                  campaign.target_segment || 'Unknown'}
+              </span>
               <button
                 onClick={handleSend}
                 disabled={sending}
