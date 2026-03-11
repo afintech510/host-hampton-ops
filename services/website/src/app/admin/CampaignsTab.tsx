@@ -684,12 +684,46 @@ function CampaignComposer({ headers, onClose, onCreated }: { headers: Record<str
   const [bodyHtml, setBodyHtml] = useState('')
   const [bodyText, setBodyText] = useState('')
   const [segment, setSegment] = useState('email_opted_in')
+  const [testRecipients, setTestRecipients] = useState('')
   const [scheduledFor, setScheduledFor] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  const [testResult, setTestResult] = useState('')
+
+  const isTest = segment === 'test'
+
+  async function handleTestSend() {
+    if (!subject.trim()) { setError('Subject required'); return }
+    const recipients = testRecipients.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean)
+    if (recipients.length === 0) { setError(type === 'email' ? 'Enter at least one email address' : 'Enter at least one phone number'); return }
+
+    setCreating(true)
+    setError('')
+    setTestResult('')
+    const res = await fetch('/api/admin/campaigns/test', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        type,
+        subject,
+        body_html: type === 'email' ? bodyHtml : null,
+        body_text: type === 'sms' ? bodyText : null,
+        recipients,
+      }),
+    })
+    setCreating(false)
+
+    const d = await res.json()
+    if (res.ok) {
+      setTestResult(d.message)
+    } else {
+      setError(d.error || 'Failed to send test')
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
+    if (isTest) { handleTestSend(); return }
     if (!subject.trim()) { setError('Subject required'); return }
 
     setCreating(true)
@@ -776,6 +810,7 @@ function CampaignComposer({ headers, onClose, onCreated }: { headers: Record<str
             onChange={e => setSegment(e.target.value)}
             className="text-sm border border-gray-200 rounded px-3 py-1.5"
           >
+            <option value="test">Test Send</option>
             <option value="email_opted_in">Email Opted-In</option>
             <option value="sms_opted_in">SMS Opted-In</option>
             <option value="customers">Customers Only</option>
@@ -783,28 +818,48 @@ function CampaignComposer({ headers, onClose, onCreated }: { headers: Record<str
             <option value="all">All Contacts</option>
           </select>
         </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-1">Schedule (optional)</label>
-          <input
-            type="datetime-local"
-            value={scheduledFor}
-            onChange={e => setScheduledFor(e.target.value)}
-            className="text-sm border border-gray-200 rounded px-3 py-1.5"
-          />
-        </div>
+        {!isTest && (
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Schedule (optional)</label>
+            <input
+              type="datetime-local"
+              value={scheduledFor}
+              onChange={e => setScheduledFor(e.target.value)}
+              className="text-sm border border-gray-200 rounded px-3 py-1.5"
+            />
+          </div>
+        )}
       </div>
 
+      {/* Test recipients input */}
+      {isTest && (
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">
+            {type === 'email' ? 'Email addresses' : 'Phone numbers'} (comma or newline separated, max 10)
+          </label>
+          <textarea
+            placeholder={type === 'email' ? 'test@example.com, another@example.com' : '6315551234, 6315555678'}
+            value={testRecipients}
+            onChange={e => setTestRecipients(e.target.value)}
+            className="w-full text-sm border border-gray-200 rounded px-3 py-2 h-16 resize-y"
+          />
+        </div>
+      )}
+
       {error && <p className="text-red-600 text-xs">{error}</p>}
+      {testResult && <p className="text-emerald-600 text-xs">{testResult}</p>}
 
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onClose} className="text-xs text-gray-500 px-3 py-1.5">Cancel</button>
         <button
           type="submit"
           disabled={creating}
-          className="flex items-center gap-1.5 text-xs font-medium bg-hampton-navy text-white px-4 py-1.5 rounded-lg disabled:opacity-50"
+          className={`flex items-center gap-1.5 text-xs font-medium text-white px-4 py-1.5 rounded-lg disabled:opacity-50 ${
+            isTest ? 'bg-purple-600 hover:bg-purple-700' : 'bg-hampton-navy hover:bg-hampton-navy/90'
+          }`}
         >
-          {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-          {scheduledFor ? 'Schedule' : 'Save Draft'}
+          {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isTest ? <Send className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+          {isTest ? 'Send Test' : scheduledFor ? 'Schedule' : 'Save Draft'}
         </button>
       </div>
     </form>
