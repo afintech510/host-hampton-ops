@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
-  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles
+  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image
 } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
@@ -15,10 +15,11 @@ import SequencesTab from './SequencesTab'
 import CampaignsTab from './CampaignsTab'
 import DashboardTab from './DashboardTab'
 import FinancialsTab from './FinancialsTab'
+import MediaTab from './MediaTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'themes' | 'contacts' | 'sequences' | 'campaigns' | 'financials'
+type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'financials'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
@@ -27,6 +28,7 @@ const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[]
   { key: 'orders',     label: 'Orders',     Icon: Receipt,         group: 'manage' },
   { key: 'financials', label: 'Financials', Icon: DollarSign,      group: 'manage' },
   { key: 'themes',     label: 'Themes',     Icon: Palette,         group: 'content' },
+  { key: 'media',      label: 'Media',      Icon: Image,           group: 'content' },
   { key: 'contacts',   label: 'Contacts',   Icon: Users,           group: 'marketing' },
   { key: 'sequences',  label: 'Sequences',  Icon: ListOrdered,     group: 'marketing' },
   { key: 'campaigns',  label: 'Campaigns',  Icon: Megaphone,       group: 'marketing' },
@@ -239,6 +241,9 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
           )}
           {activeTab === 'themes' && (
             <ThemesTab key={`themes-${refreshKey}`} headers={headers} onLogout={onLogout} />
+          )}
+          {activeTab === 'media' && (
+            <MediaTab key={`media-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
           {activeTab === 'contacts' && (
             <ContactsTab key={`contacts-${refreshKey}`} headers={headers} onLogout={onLogout} />
