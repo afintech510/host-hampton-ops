@@ -5,8 +5,29 @@ import { getSupabase } from '@/lib/supabase'
 import EventFilters from './EventFilters'
 
 export const metadata: Metadata = {
-  title: 'Events & Workshops',
-  description: 'Workshops, classes, and community events at Host Hampton in Speonk, NY. Embroidery, sourdough, spirit readings, and more.',
+  title: 'Events & Workshops | Host Hampton',
+  description: 'Workshops, classes, and community events at Host Hampton in Remsenburg-Speonk, NY. Embroidery, sourdough, spirit readings, and more.',
+  openGraph: {
+    title: 'Host Hampton Events',
+    description: 'Workshops, classes, and community events in Remsenburg-Speonk, NY.',
+    url: 'https://www.hosthampton.com/events',
+    siteName: 'Host Hampton',
+    images: [
+      {
+        url: 'https://www.hosthampton.com/og/events-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'Host Hampton Events — Remsenburg-Speonk, NY',
+      },
+    ],
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Host Hampton Events',
+    description: 'Workshops, classes, and community events in Remsenburg-Speonk, NY.',
+    images: ['https://www.hosthampton.com/og/events-og.jpg'],
+  },
 }
 
 export const dynamic = 'force-dynamic'
