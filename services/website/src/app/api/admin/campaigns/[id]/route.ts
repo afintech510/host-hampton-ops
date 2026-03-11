@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { sendCampaign, sendTransactionalEmail, cancelCampaign } from '@/lib/brevo'
+import { sendBulkSMS } from '@/lib/twilio'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,8 +116,46 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ ok: true, brevo_campaign_id: brevoCampaignId })
     }
 
-    // SMS campaigns would go here when Twilio is configured
-    return NextResponse.json({ error: 'SMS campaigns not yet supported' }, { status: 400 })
+    // SMS campaign send via Twilio
+    if (campaign.campaign_type === 'sms') {
+      const segmentFilter = campaign.target_segment === 'sms_opted_in' ? 'sms_opt_in' : 'sms_opt_in'
+
+      const { data: contacts, error: contactsErr } = await supabase
+        .from('contacts')
+        .select('phone')
+        .eq(segmentFilter, true)
+        .not('phone', 'is', null)
+
+      if (contactsErr || !contacts?.length) {
+        await supabase.from('scheduled_campaigns').update({ status: 'failed' }).eq('id', id)
+        return NextResponse.json({ error: 'No SMS-opted-in contacts found' }, { status: 400 })
+      }
+
+      const smsContacts = contacts
+        .filter(c => c.phone)
+        .map(c => {
+          const normalized = c.phone!.replace(/[^\d+]/g, '')
+          const to = normalized.startsWith('+') ? normalized : `+1${normalized}`
+          return { phone: to, body: campaign.body_text || '' }
+        })
+
+      const mediaUrls = campaign.media_urls && campaign.media_urls.length > 0
+        ? campaign.media_urls
+        : undefined
+
+      const results = await sendBulkSMS(smsContacts, 1000, mediaUrls)
+      const successCount = results.filter(r => r !== null).length
+
+      await supabase.from('scheduled_campaigns').update({
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        total_recipients: smsContacts.length,
+      }).eq('id', id)
+
+      return NextResponse.json({ ok: true, sent: successCount, total: smsContacts.length })
+    }
+
+    return NextResponse.json({ error: 'Unknown campaign type' }, { status: 400 })
   }
 
   // Update draft fields
@@ -124,6 +163,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.subject !== undefined) allowed.subject = body.subject
   if (body.body_html !== undefined) allowed.body_html = body.body_html
   if (body.body_text !== undefined) allowed.body_text = body.body_text
+  if (body.media_urls !== undefined) allowed.media_urls = Array.isArray(body.media_urls) && body.media_urls.length > 0 ? body.media_urls : null
   if (body.target_segment !== undefined) allowed.target_segment = body.target_segment
   if (body.scheduled_for !== undefined) {
     allowed.scheduled_for = body.scheduled_for

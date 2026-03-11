@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabase()
   const body = await req.json()
 
-  const { campaign_type, subject, body_html, body_text, target_segment, scheduled_for } = body
+  const { campaign_type, subject, body_html, body_text, media_urls, target_segment, scheduled_for } = body
 
   if (!subject) {
     return NextResponse.json({ error: 'Subject is required' }, { status: 400 })
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
       subject,
       body_html: body_html || null,
       body_text: body_text || null,
+      media_urls: Array.isArray(media_urls) && media_urls.length > 0 ? media_urls : null,
       target_segment: target_segment || null,
       status,
       scheduled_for: scheduled_for || null,

@@ -11,6 +11,7 @@ interface Campaign {
   subject: string | null
   body_html: string | null
   body_text: string | null
+  media_urls: string[] | null
   target_segment: string | null
   status: string
   scheduled_for: string | null
@@ -476,9 +477,24 @@ function CampaignDetail({ campaign, headers, onRefresh }: { campaign: Campaign; 
             />
           </div>
         ) : campaign.body_text ? (
-          <p className="text-sm text-gray-700 whitespace-pre-wrap bg-white rounded-xl border border-hampton-pink/10 p-4">
-            {campaign.body_text}
-          </p>
+          <div className="bg-white rounded-xl border border-hampton-pink/10 p-4 space-y-3">
+            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+              {campaign.body_text}
+            </p>
+            {campaign.media_urls && campaign.media_urls.length > 0 && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {campaign.media_urls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                    <img
+                      src={url}
+                      alt={`MMS attachment ${i + 1}`}
+                      className="w-20 h-20 object-cover rounded-lg border border-gray-200 hover:border-hampton-blue transition-colors"
+                    />
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
         ) : null}
       </div>
 
