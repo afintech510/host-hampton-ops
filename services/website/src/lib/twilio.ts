@@ -72,28 +72,38 @@ export async function sendSMS(to: string, body: string): Promise<string | null> 
 }
 
 /**
- * Send an MMS message with a media attachment.
- * POST /Messages.json with MediaUrl included.
+ * Send an MMS message with one or more media attachments.
+ * POST /Messages.json with MediaUrl parameter(s).
+ * Twilio supports up to 10 MediaUrl values per message.
  * Returns the Twilio message SID on success, null on error.
  */
 export async function sendMMS(
   to: string,
   body: string,
-  mediaUrl: string
+  mediaUrls: string | string[]
 ): Promise<string | null> {
   try {
+    const urls = Array.isArray(mediaUrls) ? mediaUrls : [mediaUrls]
+    if (urls.length > 10) {
+      console.error('twilio:sendMMS max 10 media URLs per message')
+      return null
+    }
+
+    const params = new URLSearchParams()
+    params.append('From', twilioFrom())
+    params.append('To', to)
+    params.append('Body', body)
+    for (const url of urls) {
+      params.append('MediaUrl', url)
+    }
+
     const res = await fetch(`${twilioBase()}/Messages.json`, {
       method: 'POST',
       headers: {
         Authorization: twilioAuthHeader(),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: new URLSearchParams({
-        From: twilioFrom(),
-        To: to,
-        Body: body,
-        MediaUrl: mediaUrl,
-      }),
+      body: params,
     })
 
     if (!res.ok) {
@@ -117,10 +127,11 @@ export async function sendMMS(
 }
 
 /**
- * Send SMS messages to multiple contacts in sequence.
+ * Send SMS/MMS messages to multiple contacts in sequence.
  *
  * A delay is inserted between each send (default 1000ms) to avoid hitting
  * Twilio's rate limits. Each message body can be personalized per contact.
+ * If mediaUrls are provided, messages are sent as MMS.
  *
  * Returns an array of results in the same order as `contacts`:
  *   - message SID string on success
@@ -128,13 +139,16 @@ export async function sendMMS(
  */
 export async function sendBulkSMS(
   contacts: { phone: string; body: string }[],
-  batchDelayMs = 1000
+  batchDelayMs = 1000,
+  mediaUrls?: string[]
 ): Promise<(string | null)[]> {
   const results: (string | null)[] = []
 
   for (let i = 0; i < contacts.length; i++) {
     const { phone, body } = contacts[i]
-    const sid = await sendSMS(phone, body)
+    const sid = mediaUrls && mediaUrls.length > 0
+      ? await sendMMS(phone, body, mediaUrls)
+      : await sendSMS(phone, body)
     results.push(sid)
 
     // Delay between sends — skip after the final message

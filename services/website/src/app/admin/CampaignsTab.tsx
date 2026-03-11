@@ -683,6 +683,7 @@ function CampaignComposer({ headers, onClose, onCreated }: { headers: Record<str
   const [subject, setSubject] = useState('')
   const [bodyHtml, setBodyHtml] = useState('')
   const [bodyText, setBodyText] = useState('')
+  const [mediaUrls, setMediaUrls] = useState<string[]>([''])
   const [segment, setSegment] = useState('email_opted_in')
   const [testRecipients, setTestRecipients] = useState('')
   const [scheduledFor, setScheduledFor] = useState('')
@@ -700,6 +701,7 @@ function CampaignComposer({ headers, onClose, onCreated }: { headers: Record<str
     setCreating(true)
     setError('')
     setTestResult('')
+    const validMediaUrls = mediaUrls.filter(u => u.trim())
     const res = await fetch('/api/admin/campaigns/test', {
       method: 'POST',
       headers,
@@ -708,6 +710,7 @@ function CampaignComposer({ headers, onClose, onCreated }: { headers: Record<str
         subject,
         body_html: type === 'email' ? bodyHtml : null,
         body_text: type === 'sms' ? bodyText : null,
+        media_urls: type === 'sms' && validMediaUrls.length > 0 ? validMediaUrls : null,
         recipients,
       }),
     })
@@ -728,6 +731,7 @@ function CampaignComposer({ headers, onClose, onCreated }: { headers: Record<str
 
     setCreating(true)
     setError('')
+    const validMediaUrls = mediaUrls.filter(u => u.trim())
     const res = await fetch('/api/admin/campaigns', {
       method: 'POST',
       headers,
@@ -736,6 +740,7 @@ function CampaignComposer({ headers, onClose, onCreated }: { headers: Record<str
         subject,
         body_html: type === 'email' ? bodyHtml : null,
         body_text: type === 'sms' ? bodyText : null,
+        media_urls: type === 'sms' && validMediaUrls.length > 0 ? validMediaUrls : null,
         target_segment: segment,
         scheduled_for: scheduledFor || null,
       }),
@@ -790,15 +795,62 @@ function CampaignComposer({ headers, onClose, onCreated }: { headers: Record<str
           className="w-full text-sm border border-gray-200 rounded px-3 py-2 h-32 resize-y font-mono"
         />
       ) : (
-        <div>
-          <textarea
-            placeholder="SMS message text (160 chars = 1 segment)"
-            value={bodyText}
-            onChange={e => setBodyText(e.target.value)}
-            className="w-full text-sm border border-gray-200 rounded px-3 py-2 h-20 resize-y"
-            maxLength={480}
-          />
-          <p className="text-xs text-gray-400 mt-1">{bodyText.length}/160 chars ({Math.ceil(bodyText.length / 160) || 0} segment{bodyText.length > 160 ? 's' : ''})</p>
+        <div className="space-y-3">
+          <div>
+            <textarea
+              placeholder="SMS message text (160 chars = 1 segment)"
+              value={bodyText}
+              onChange={e => setBodyText(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded px-3 py-2 h-20 resize-y"
+              maxLength={480}
+            />
+            <p className="text-xs text-gray-400 mt-1">{bodyText.length}/160 chars ({Math.ceil(bodyText.length / 160) || 0} segment{bodyText.length > 160 ? 's' : ''})</p>
+          </div>
+
+          {/* MMS Media URLs */}
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">
+              Image URLs (optional — adds images to make it MMS, max 10)
+            </label>
+            {mediaUrls.map((url, i) => (
+              <div key={i} className="flex gap-2 mb-1.5">
+                <input
+                  type="url"
+                  placeholder="https://example.com/image.jpg"
+                  value={url}
+                  onChange={e => {
+                    const updated = [...mediaUrls]
+                    updated[i] = e.target.value
+                    setMediaUrls(updated)
+                  }}
+                  className="flex-1 text-sm border border-gray-200 rounded px-3 py-1.5"
+                />
+                {mediaUrls.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setMediaUrls(mediaUrls.filter((_, j) => j !== i))}
+                    className="text-red-400 hover:text-red-600 px-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+            {mediaUrls.length < 10 && (
+              <button
+                type="button"
+                onClick={() => setMediaUrls([...mediaUrls, ''])}
+                className="text-xs text-hampton-blue hover:text-hampton-navy font-medium mt-1"
+              >
+                + Add another image
+              </button>
+            )}
+            {mediaUrls.some(u => u.trim()) && (
+              <p className="text-xs text-purple-600 mt-1.5">
+                {mediaUrls.filter(u => u.trim()).length} image{mediaUrls.filter(u => u.trim()).length !== 1 ? 's' : ''} attached — will send as MMS
+              </p>
+            )}
+          </div>
         </div>
       )}
 

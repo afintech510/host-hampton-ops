@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
-import { sendSMS } from '@/lib/twilio'
+import { sendSMS, sendMMS } from '@/lib/twilio'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * POST /api/admin/campaigns/test — send a test email or SMS to specific recipients
- * Body: { type: 'email' | 'sms', subject?, body_html?, body_text?, recipients: string[] }
+ * POST /api/admin/campaigns/test — send a test email, SMS, or MMS to specific recipients
+ * Body: { type: 'email' | 'sms', subject?, body_html?, body_text?, media_urls?: string[], recipients: string[] }
  */
 export async function POST(req: NextRequest) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
-  const { type, subject, body_html, body_text, recipients } = await req.json()
+  const { type, subject, body_html, body_text, media_urls, recipients } = await req.json()
 
   if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
     return NextResponse.json({ error: 'At least one recipient is required' }, { status: 400 })
@@ -50,10 +50,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'body_text required for SMS test' }, { status: 400 })
     }
 
+    const hasMedia = media_urls && Array.isArray(media_urls) && media_urls.length > 0
+
     for (const phone of recipients) {
       const normalized = phone.trim().replace(/[^\d+]/g, '')
       const to = normalized.startsWith('+') ? normalized : `+1${normalized}`
-      const sid = await sendSMS(to, `[TEST] ${body_text}`)
+      const sid = hasMedia
+        ? await sendMMS(to, `[TEST] ${body_text}`, media_urls)
+        : await sendSMS(to, `[TEST] ${body_text}`)
       results.push({ recipient: phone, success: !!sid, error: sid ? undefined : 'Send failed' })
     }
   } else {
