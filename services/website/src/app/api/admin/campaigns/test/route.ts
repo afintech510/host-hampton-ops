@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
         const { error } = await resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL || 'Host Hampton <noreply@mail.hosthampton.com>',
           to: email.trim(),
-          subject: `[TEST] ${subject}`,
+          subject,
           html: body_html,
         })
         results.push({ recipient: email, success: !error, error: error?.message })
@@ -56,8 +56,8 @@ export async function POST(req: NextRequest) {
       const normalized = phone.trim().replace(/[^\d+]/g, '')
       const to = normalized.startsWith('+') ? normalized : `+1${normalized}`
       const sid = hasMedia
-        ? await sendMMS(to, `[TEST] ${body_text}`, media_urls)
-        : await sendSMS(to, `[TEST] ${body_text}`)
+        ? await sendMMS(to, body_text, media_urls)
+        : await sendSMS(to, body_text)
       results.push({ recipient: phone, success: !!sid, error: sid ? undefined : 'Send failed' })
     }
   } else {
