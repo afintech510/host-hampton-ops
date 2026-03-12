@@ -65,6 +65,13 @@
   .admin-sidebar {
     @apply bg-gradient-to-b from-[#1a2030] to-[#2F343B] text-white flex flex-col;
   }
+  .admin-sidebar nav {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .admin-sidebar nav::-webkit-scrollbar {
+    display: none;
+  }
   .admin-sidebar-link {
     @apply flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-white/60 hover:text-white hover:bg-white/10 transition-all duration-200 cursor-pointer;
   }
