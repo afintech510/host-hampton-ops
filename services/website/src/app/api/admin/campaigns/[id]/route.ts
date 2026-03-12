@@ -131,12 +131,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ error: 'No SMS-opted-in contacts found' }, { status: 400 })
       }
 
+      const seen = new Set<string>()
       const smsContacts = contacts
         .filter(c => c.phone)
         .map(c => {
           const normalized = c.phone!.replace(/[^\d+]/g, '')
           const to = normalized.startsWith('+') ? normalized : `+1${normalized}`
           return { phone: to, body: campaign.body_text || '' }
+        })
+        .filter(c => {
+          if (seen.has(c.phone)) return false
+          seen.add(c.phone)
+          return true
         })
 
       const mediaUrls = campaign.media_urls && campaign.media_urls.length > 0
