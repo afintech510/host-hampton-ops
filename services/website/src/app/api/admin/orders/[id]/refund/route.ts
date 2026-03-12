@@ -95,7 +95,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Already refunded' }, { status: 400 })
   }
 
-  const depositCents = (booking.deposit_amount || 0) * 100
+  const depositCents = booking.deposit_amount || 0
   const refundAmountCents = amountCents || depositCents
 
   // Stripe refund

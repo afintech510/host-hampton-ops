@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
           customer_name: b.contact_name,
           customer_email: b.contact_email,
           customer_phone: b.contact_phone || null,
-          amount_cents: (b.deposit_amount || 0) * 100,
+          amount_cents: b.deposit_amount || 0,
           status: b.status,
           event_title: eventTypeDisplay,
           event_date: b.party_date,

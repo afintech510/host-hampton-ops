@@ -684,7 +684,7 @@ export async function POST(req: NextRequest) {
       contact_name: m.contactName,
       contact_email: m.contactEmail,
       contact_phone: m.contactPhone || null,
-      deposit_amount: m.depositCents ? parseInt(m.depositCents, 10) / 100 : 250,
+      deposit_amount: m.depositCents ? parseInt(m.depositCents, 10) : 25000,
       stripe_payment_intent_id: session.payment_intent as string,
       stripe_session_id: session.id,
       party_tags: partyTags,

@@ -80,7 +80,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         .toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
     : 'day of your event'
 
-  const depositFormatted = `$${(booking.deposit_amount || 0).toFixed(2)}`
+  const depositFormatted = `$${((booking.deposit_amount || 0) / 100).toFixed(2)}`
   const isRoomRental = (booking.event_type || '').includes('room-rental')
   const eventTypeDisplay = (booking.event_type || 'Party')
     .split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
