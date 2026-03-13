@@ -9,7 +9,7 @@ export default function CMCheerLayout({ children }: { children: React.ReactNode 
   return (
     <>
       {/* Hide the Host Hampton nav on this standalone fundraiser page */}
-      <style dangerouslySetInnerHTML={{ __html: 'body > header.fixed { display: none !important; }' }} />
+      <style dangerouslySetInnerHTML={{ __html: 'body > header.fixed { display: none !important; } body main.flex-1 { padding-top: 0 !important; }' }} />
       {children}
     </>
   )
