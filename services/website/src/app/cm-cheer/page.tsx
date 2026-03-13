@@ -210,12 +210,7 @@ export default function CMCheerPage() {
 
   return (
     <>
-      <Script src="https://cdn.tailwindcss.com" strategy="beforeInteractive" />
       <Script src="https://unpkg.com/lucide@latest" strategy="afterInteractive" onLoad={() => { if ((window as any).lucide) (window as any).lucide.createIcons() }} />
-      <Script id="tw-config" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: `
-        if (typeof tailwind !== 'undefined') {
-          tailwind.config = { theme: { extend: { colors: { cmBlack: '#111111', cmRed: '#CE1126', cmGray: '#f4f4f5' }, fontFamily: { varsity: ['"Bebas Neue"','sans-serif'], oswald: ['"Oswald"','sans-serif'], sans: ['Inter','sans-serif'] } } } }
-        }` }} />
       <style dangerouslySetInnerHTML={{ __html: `
         #cm-cheer-root input[type="number"]::-webkit-inner-spin-button,
         #cm-cheer-root input[type="number"]::-webkit-outer-spin-button { -webkit-appearance:none;margin:0 }

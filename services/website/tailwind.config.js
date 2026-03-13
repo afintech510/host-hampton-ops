@@ -9,10 +9,15 @@ module.exports = {
         'hampton-pink':  '#C7A36B', // muted gold accent
         'hampton-ivory': '#F7F2E8', // cream base
         'hampton-mauve': '#AEB6C2', // soft silver
+        'cmBlack': '#111111',
+        'cmRed':   '#CE1126',
+        'cmGray':  '#f4f4f5',
       },
       fontFamily: {
         serif: ['Playfair Display', 'Georgia', 'serif'],
         sans:  ['Montserrat', 'system-ui', 'sans-serif'],
+        varsity: ['"Bebas Neue"', 'sans-serif'],
+        oswald:  ['"Oswald"', 'sans-serif'],
       },
       animation: {
         'fade-in-up': 'fadeInUp 0.6s ease-out',

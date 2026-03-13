@@ -10,7 +10,7 @@ export default function OrderLayout({ children }: { children: React.ReactNode })
   return (
     <>
       {/* Hide the Host Hampton nav on this standalone order page */}
-      <style dangerouslySetInnerHTML={{ __html: 'body > header.sticky { display: none !important; }' }} />
+      <style dangerouslySetInnerHTML={{ __html: 'body > header.fixed { display: none !important; }' }} />
       {children}
     </>
   )
