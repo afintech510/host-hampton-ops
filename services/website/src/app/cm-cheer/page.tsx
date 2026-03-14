@@ -256,11 +256,11 @@ export default function CMCheerPage() {
                 {/* Trucker Hat */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="flex gap-2 mb-3">
-                    <button type="button" className="flex-1 py-1.5 border-2 border-cmBlack bg-cmBlack text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="black" data-src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/9abbad29-aac7-4470-bcef-5a6474a455c9/cm-hat-black.png">Black</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 hover:border-cmRed hover:text-cmRed text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="red" data-src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/5ab83078-472a-4cae-8cae-0abc9ff77a06/cm-hat-red.png">Red</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-cmBlack bg-cmBlack text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="black" data-src="/images/cm-hat-black.webp">Black</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 hover:border-cmRed hover:text-cmRed text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="red" data-src="/images/cm-hat-red.webp">Red</button>
                   </div>
                   <div className="w-full aspect-square bg-gray-100 rounded-lg mb-4 overflow-hidden relative">
-                    <img id="img-hat" src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/9abbad29-aac7-4470-bcef-5a6474a455c9/cm-hat-black.png" alt="CM Cheer Trucker Hat" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
+                    <img id="img-hat" src="/images/cm-hat-black.webp" alt="CM Cheer Trucker Hat" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
                   </div>
                   <div className="flex-grow">
                     <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Trucker Hat</h3>
@@ -290,11 +290,11 @@ export default function CMCheerPage() {
                 {/* Canvas Tote */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="flex gap-2 mb-3">
-                    <button type="button" className="flex-1 py-1.5 border-2 border-cmBlack bg-cmBlack text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="black" data-src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/bdb0b0d7-6b56-4704-b26d-0a414903e419/cm-tote-black.png">Black</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 hover:border-cmRed hover:text-cmRed text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="red" data-src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/f4d2ef08-6d54-4207-aeb4-30dd5cd628d6/cm-tote-red.png">Red</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-cmBlack bg-cmBlack text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="black" data-src="/images/tote-cm-black.webp">Black</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 hover:border-cmRed hover:text-cmRed text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="red" data-src="/images/tote-cm-red.webp">Red</button>
                   </div>
                   <div className="w-full aspect-square bg-gray-100 rounded-lg mb-4 overflow-hidden relative">
-                    <img id="img-tote" src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/bdb0b0d7-6b56-4704-b26d-0a414903e419/cm-tote-black.png" alt="CM Cheer Canvas Tote" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
+                    <img id="img-tote" src="/images/tote-cm-black.webp" alt="CM Cheer Canvas Tote" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
                   </div>
                   <div className="flex-grow">
                     <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Canvas Tote</h3>
@@ -324,11 +324,11 @@ export default function CMCheerPage() {
                 {/* Accessory Pouch */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="flex gap-2 mb-3">
-                    <button type="button" className="flex-1 py-1.5 border-2 border-cmBlack bg-cmBlack text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="black" data-src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/30250ed3-ab27-4d3c-8496-0c36119d3dcd/cm-pouch-black.png">Black</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 hover:border-cmRed hover:text-cmRed text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="red" data-src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/d51aa39c-df6f-43e0-9ef4-082e67cc566e/cm-pouch-red.png">Red</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-cmBlack bg-cmBlack text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="black" data-src="/images/makeup-bag-black.webp">Black</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 hover:border-cmRed hover:text-cmRed text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="red" data-src="/images/makeup-bag-red.webp">Red</button>
                   </div>
                   <div className="w-full aspect-square bg-gray-100 rounded-lg mb-4 overflow-hidden relative">
-                    <img id="img-pouch" src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/30250ed3-ab27-4d3c-8496-0c36119d3dcd/cm-pouch-black.png" alt="CM Cheer Canvas Pouch" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
+                    <img id="img-pouch" src="/images/makeup-bag-black.webp" alt="CM Cheer Canvas Pouch" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
                   </div>
                   <div className="flex-grow">
                     <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Accessory Pouch</h3>
@@ -359,7 +359,7 @@ export default function CMCheerPage() {
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="h-[34px] mb-3"></div>
                   <div className="w-full aspect-square bg-gray-100 rounded-lg mb-4 overflow-hidden relative p-8">
-                    <img src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/80d55d7b-9151-47b7-aff9-e17d4203bb7b/CM-cheer-patch_sample.png" alt="CM Cheer Patch" className="w-full h-full object-contain transform group-hover:scale-105 transition-transform duration-500" />
+                    <img src="/images/cm-cheer-patch.webp" alt="CM Cheer Patch" className="w-full h-full object-contain transform group-hover:scale-105 transition-transform duration-500" />
                   </div>
                   <div className="flex-grow">
                     <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Team Patch</h3>
