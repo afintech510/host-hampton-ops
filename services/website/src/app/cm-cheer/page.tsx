@@ -48,9 +48,10 @@ export default function CMCheerPage() {
           const newSrc = btn.getAttribute('data-src')
           if (targetImgId && newSrc) { const img = document.getElementById(targetImgId) as HTMLImageElement; if (img) img.src = newSrc }
           const siblings = btn.parentElement?.querySelectorAll('.color-toggle')
-          siblings?.forEach((sib) => { sib.classList.remove('border-cmBlack','bg-cmBlack','text-white'); sib.classList.add('border-gray-200','bg-white','text-gray-500') })
+          siblings?.forEach((sib) => { sib.classList.remove('border-cmBlack','bg-cmBlack','border-cmRed','bg-cmRed','text-white'); sib.classList.add('border-gray-200','bg-white','text-gray-500') })
           btn.classList.remove('border-gray-200','bg-white','text-gray-500')
-          btn.classList.add('border-cmBlack','bg-cmBlack','text-white')
+          const isRed = btn.getAttribute('data-color') === 'red'
+          btn.classList.add(isRed ? 'border-cmRed' : 'border-cmBlack', isRed ? 'bg-cmRed' : 'bg-cmBlack', 'text-white')
         })
       })
     }
