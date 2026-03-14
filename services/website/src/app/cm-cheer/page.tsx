@@ -251,7 +251,7 @@ export default function CMCheerPage() {
             <div className="p-4 md:p-8 border-b border-gray-100 bg-gray-50/50">
               <div className="flex items-center gap-3 mb-8">
                 <div className="p-2 bg-cmRed/10 rounded-lg text-cmRed"><i data-lucide="shopping-bag" className="w-6 h-6"></i></div>
-                <h2 className="text-3xl font-bold text-cmBlack font-oswald uppercase tracking-wide">The Merch</h2>
+                <h2 className="text-xl sm:text-3xl font-bold text-cmBlack font-oswald uppercase tracking-wide">The Merch</h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
@@ -387,7 +387,7 @@ export default function CMCheerPage() {
             <div className="p-6 md:p-8">
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-cmRed/10 rounded-lg text-cmRed"><i data-lucide="user" className="w-6 h-6"></i></div>
-                <h2 className="text-3xl font-bold text-cmBlack font-oswald uppercase tracking-wide">Athlete / Parent Info</h2>
+                <h2 className="text-xl sm:text-3xl font-bold text-cmBlack font-oswald uppercase tracking-wide">Athlete / Parent Info</h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
@@ -413,7 +413,7 @@ export default function CMCheerPage() {
             <div className="p-6 md:p-8 bg-gray-50 border-y border-gray-200">
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-cmRed/10 rounded-lg text-cmRed"><i data-lucide="credit-card" className="w-6 h-6"></i></div>
-                <h2 className="text-3xl font-bold text-cmBlack font-oswald uppercase tracking-wide">Payment Method</h2>
+                <h2 className="text-xl sm:text-3xl font-bold text-cmBlack font-oswald uppercase tracking-wide">Payment Method</h2>
               </div>
               <div className="grid grid-cols-2 gap-3 mb-6">
                 <label className="cursor-pointer group">
@@ -425,28 +425,28 @@ export default function CMCheerPage() {
                   <div className="py-4 px-2 border-2 border-gray-200 bg-white rounded-xl text-center peer-checked:border-cmRed peer-checked:text-cmRed peer-checked:bg-red-50 transition-all text-sm font-bold text-gray-600 uppercase group-hover:border-gray-300">Cash (To Coach)</div>
                 </label>
               </div>
-              <div id="digitalPaymentInfo" className="hidden bg-white border border-gray-200 rounded-xl p-6 shadow-sm mb-2 flex flex-col md:flex-row items-center gap-6">
+              <div id="digitalPaymentInfo" className="hidden bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm mb-2 flex-col md:flex-row items-center gap-4 sm:gap-6">
                 <div className="p-2 bg-white rounded-xl border border-gray-100 shadow-sm flex-shrink-0">
                   <img src="https://images.squarespace-cdn.com/content/66b583cc5e40c13a4c5600b6/b4432485-82d3-4dae-8420-f8563d93a755/qrcode-cm-cheer-venmo_red.png" alt="Venmo QR Code" className="w-32 h-32 object-contain" />
                 </div>
                 <div className="text-center md:text-left">
                   <p className="text-cmBlack font-oswald text-xl uppercase mb-1">Scan to Complete Payment</p>
                   <p className="text-gray-500 text-sm mb-4">Please include the <strong className="text-cmRed">athlete&apos;s name</strong> in the payment description/memo.</p>
-                  <div className="inline-flex items-center gap-2 px-5 py-2 bg-black text-white rounded-full font-mono text-sm font-bold border border-gray-800">
-                    <span>@CM-PAL-Red-Devils-Football</span>
+                  <div className="inline-flex items-center gap-2 px-3 sm:px-5 py-2 bg-black text-white rounded-full font-mono text-xs sm:text-sm font-bold border border-gray-800 max-w-full">
+                    <span className="truncate">@CM-PAL-Red-Devils-Football</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Submit */}
-            <div className="p-6 md:p-10 bg-white">
-              <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="p-4 sm:p-6 md:p-10 bg-white">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-8">
                 <div className="text-center md:text-left">
                   <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Total Due</p>
-                  <p id="totalPriceDisplay" className="text-5xl font-black text-cmRed">$0.00</p>
+                  <p id="totalPriceDisplay" className="text-4xl sm:text-5xl font-black text-cmRed">$0.00</p>
                 </div>
-                <button type="submit" className="w-full md:w-auto bg-cmBlack hover:bg-cmRed text-white font-oswald tracking-widest py-5 px-12 rounded-xl text-xl transition-all shadow-xl hover:shadow-2xl flex items-center justify-center gap-3 group">
+                <button type="submit" className="w-full md:w-auto bg-cmBlack hover:bg-cmRed text-white font-oswald tracking-widest py-4 sm:py-5 px-8 sm:px-12 rounded-xl text-lg sm:text-xl transition-all shadow-xl hover:shadow-2xl flex items-center justify-center gap-3 group">
                   REVIEW ORDER
                   <i data-lucide="arrow-right" className="w-6 h-6 group-hover:translate-x-1 transition-transform"></i>
                 </button>

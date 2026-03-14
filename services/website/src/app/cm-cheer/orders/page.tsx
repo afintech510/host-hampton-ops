@@ -181,47 +181,51 @@ export default function CMCheerOrdersPage() {
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
 
         {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center shadow-sm">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Total Orders</p>
-            <p className="text-3xl font-black text-zinc-900">{filtered.length}</p>
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-2.5 sm:p-4 text-center shadow-sm">
+            <p className="text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Orders</p>
+            <p className="text-2xl sm:text-3xl font-black text-zinc-900">{filtered.length}</p>
           </div>
-          <div className="bg-white rounded-xl border border-yellow-200 p-4 text-center shadow-sm">
-            <p className="text-xs font-bold text-yellow-600 uppercase tracking-wider mb-1">Pending</p>
-            <p className="text-3xl font-black text-yellow-600">{pendingCount}</p>
+          <div className="bg-white rounded-xl border border-yellow-200 p-2.5 sm:p-4 text-center shadow-sm">
+            <p className="text-[10px] sm:text-xs font-bold text-yellow-600 uppercase tracking-wider mb-1">Pending</p>
+            <p className="text-2xl sm:text-3xl font-black text-yellow-600">{pendingCount}</p>
           </div>
-          <div className="bg-white rounded-xl border border-green-200 p-4 text-center shadow-sm">
-            <p className="text-xs font-bold text-green-600 uppercase tracking-wider mb-1">Collected</p>
-            <p className="text-3xl font-black text-green-700">{fmt(totalRevenue)}</p>
-            <p className="text-xs text-gray-400">{paidCount} paid</p>
+          <div className="bg-white rounded-xl border border-green-200 p-2.5 sm:p-4 text-center shadow-sm">
+            <p className="text-[10px] sm:text-xs font-bold text-green-600 uppercase tracking-wider mb-1">Collected</p>
+            <p className="text-xl sm:text-3xl font-black text-green-700">{fmt(totalRevenue)}</p>
+            <p className="text-[10px] sm:text-xs text-gray-400">{paidCount} paid</p>
           </div>
         </div>
 
         {/* Filters + actions */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center">
           <input
             type="text" placeholder="Search athlete, parent, email, ref…" value={search} onChange={e => setSearch(e.target.value)}
-            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-400"
+            className="w-full sm:flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-400"
           />
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
-            <option value="">All Statuses</option>
-            <option value="pending_payment">Pending</option>
-            <option value="paid">Paid</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-          <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
-            <option value="">All Payments</option>
-            <option value="venmo">Venmo</option>
-            <option value="cash">Cash</option>
-          </select>
-          <button onClick={fetchOrders} className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-2 text-sm hover:bg-gray-50 transition-colors">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
-          </button>
-          <button onClick={exportCSV} className="flex items-center gap-1.5 bg-zinc-900 text-white rounded-lg px-3 py-2 text-sm hover:bg-zinc-700 transition-colors">
-            <Download size={14} /> Export CSV
-          </button>
+          <div className="flex gap-2">
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+              className="flex-1 sm:flex-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
+              <option value="">All Statuses</option>
+              <option value="pending_payment">Pending</option>
+              <option value="paid">Paid</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)}
+              className="flex-1 sm:flex-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
+              <option value="">All Payments</option>
+              <option value="venmo">Venmo</option>
+              <option value="cash">Cash</option>
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={fetchOrders} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 border border-gray-200 rounded-lg px-3 py-2 text-sm hover:bg-gray-50 transition-colors">
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+            </button>
+            <button onClick={exportCSV} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-zinc-900 text-white rounded-lg px-3 py-2 text-sm hover:bg-zinc-700 transition-colors">
+              <Download size={14} /> Export CSV
+            </button>
+          </div>
         </div>
 
         {/* Orders list */}
@@ -232,28 +236,29 @@ export default function CMCheerOrdersPage() {
             <div key={order.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               {/* Row */}
               <div
-                className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                className="flex items-start sm:items-center gap-2 sm:gap-3 p-3 sm:p-4 cursor-pointer hover:bg-gray-50 transition-colors"
                 onClick={() => setExpanded(expanded === order.id ? null : order.id)}
               >
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                     <span className="font-bold text-zinc-900 text-sm">{order.athlete_name}</span>
-                    <span className="text-gray-400 text-xs">·</span>
-                    <span className="text-gray-500 text-xs">{order.parent_name}</span>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${statusBadge(order.status)}`}>{statusLabel(order.status)}</span>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${paymentBadge(order.payment_method)}`}>{order.payment_method === 'venmo' ? 'Venmo' : 'Cash'}</span>
+                    <span className="text-gray-400 text-xs hidden sm:inline">·</span>
+                    <span className="text-gray-500 text-xs hidden sm:inline">{order.parent_name}</span>
+                    <span className={`text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 rounded-full border ${statusBadge(order.status)}`}>{statusLabel(order.status)}</span>
+                    <span className={`text-[10px] sm:text-xs font-medium px-1.5 sm:px-2 py-0.5 rounded-full border ${paymentBadge(order.payment_method)}`}>{order.payment_method === 'venmo' ? 'Venmo' : 'Cash'}</span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5">{order.order_ref} · {fmtDate(order.created_at)}</p>
+                  <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5">{order.order_ref} · {fmtDate(order.created_at)}</p>
+                  <p className="text-xs text-gray-500 sm:hidden mt-0.5">{order.parent_name}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="font-black text-zinc-900 text-base">{fmt(order.subtotal_cents)}</p>
+                  <p className="font-black text-zinc-900 text-sm sm:text-base">{fmt(order.subtotal_cents)}</p>
                 </div>
                 {expanded === order.id ? <ChevronUp size={16} className="text-gray-400 shrink-0" /> : <ChevronDown size={16} className="text-gray-400 shrink-0" />}
               </div>
 
               {/* Expanded detail */}
               {expanded === order.id && (
-                <div className="border-t border-gray-100 p-4 bg-gray-50 space-y-4">
+                <div className="border-t border-gray-100 p-3 sm:p-4 bg-gray-50 space-y-3 sm:space-y-4">
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
                       <p className="text-xs font-bold text-gray-400 uppercase mb-2">Contact</p>
