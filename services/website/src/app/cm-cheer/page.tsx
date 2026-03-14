@@ -218,7 +218,8 @@ export default function CMCheerPage() {
         #cm-cheer-root input[type="number"] { -moz-appearance:textfield }
         .varsity-outline { -webkit-text-stroke:1px white;text-shadow:2px 2px 0px rgba(0,0,0,0.5) }
         .loader { border:3px solid #f3f3f3;border-top:3px solid #CE1126;border-radius:50%;width:20px;height:20px;animation:spin 1s linear infinite;display:inline-block }
-        @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }` }} />
+        @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+        .color-toggle.bg-white:hover { border-color:#111111 !important; color:#111111 !important; }` }} />
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -258,7 +259,7 @@ export default function CMCheerPage() {
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="flex gap-2 mb-3">
                     <button type="button" className="flex-1 py-1.5 border-2 border-cmBlack bg-cmBlack text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="black" data-src="/images/cm-hat-black.webp">Black</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 hover:border-cmRed hover:text-cmRed text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="red" data-src="/images/cm-hat-red.webp">Red</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="red" data-src="/images/cm-hat-red.webp">Red</button>
                   </div>
                   <div className="w-full aspect-square bg-gray-100 rounded-lg mb-4 overflow-hidden relative">
                     <img id="img-hat" src="/images/cm-hat-black.webp" alt="CM Cheer Trucker Hat" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
@@ -292,7 +293,7 @@ export default function CMCheerPage() {
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="flex gap-2 mb-3">
                     <button type="button" className="flex-1 py-1.5 border-2 border-cmBlack bg-cmBlack text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="black" data-src="/images/tote-cm-black.webp">Black</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 hover:border-cmRed hover:text-cmRed text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="red" data-src="/images/tote-cm-red.webp">Red</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="red" data-src="/images/tote-cm-red.webp">Red</button>
                   </div>
                   <div className="w-full aspect-square bg-gray-100 rounded-lg mb-4 overflow-hidden relative">
                     <img id="img-tote" src="/images/tote-cm-black.webp" alt="CM Cheer Canvas Tote" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
@@ -326,7 +327,7 @@ export default function CMCheerPage() {
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="flex gap-2 mb-3">
                     <button type="button" className="flex-1 py-1.5 border-2 border-cmBlack bg-cmBlack text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="black" data-src="/images/makeup-bag-black.webp">Black</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 hover:border-cmRed hover:text-cmRed text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="red" data-src="/images/makeup-bag-red.webp">Red</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="red" data-src="/images/makeup-bag-red.webp">Red</button>
                   </div>
                   <div className="w-full aspect-square bg-gray-100 rounded-lg mb-4 overflow-hidden relative">
                     <img id="img-pouch" src="/images/makeup-bag-black.webp" alt="CM Cheer Canvas Pouch" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
