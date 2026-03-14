@@ -69,11 +69,29 @@ export default function SignupPage() {
         <div className="signup-card">
           {/* Header band */}
           <div className="signup-header">
-            <img src="/images/host-hampton-logo.png" alt="Host Hampton" className="signup-logo" />
             <h1 className="signup-heading">Join the Host Hampton Family</h1>
             <p className="signup-subtext">
               Sign up and we&apos;ll send you 10% off your first party booking — straight to your inbox.
             </p>
+            <div className="services-list">
+              <span>Kids Birthday Parties</span>
+              <span className="services-dot">&middot;</span>
+              <span>DIY Parties &amp; Room Rentals</span>
+              <span className="services-dot">&middot;</span>
+              <span>Mobile Party Services</span>
+              <span className="services-dot">&middot;</span>
+              <span>Permanent Jewelry</span>
+              <span className="services-dot">&middot;</span>
+              <span>Custom Merchandise</span>
+              <span className="services-dot">&middot;</span>
+              <span>Adult &amp; Kids Events</span>
+              <span className="services-dot">&middot;</span>
+              <span>Workshops</span>
+              <span className="services-dot">&middot;</span>
+              <span>Pop-Up Markets</span>
+              <span className="services-dot">&middot;</span>
+              <span>Community Events</span>
+            </div>
           </div>
 
           {/* Form */}
@@ -152,9 +170,17 @@ const mobileStyles = `
     text-align: center;
   }
 
-  .signup-logo {
-    height: 56px;
-    margin-bottom: 14px;
+  .services-list {
+    margin-top: 14px;
+    font-family: 'Poppins', sans-serif;
+    font-size: 12px;
+    color: #1a2744;
+    opacity: 0.7;
+    line-height: 1.8;
+  }
+  .services-dot {
+    margin: 0 4px;
+    opacity: 0.4;
   }
 
   .signup-heading {
@@ -344,10 +370,6 @@ const mobileStyles = `
     }
     .signup-header {
       padding: 36px 32px;
-    }
-    .signup-logo {
-      height: 64px;
-      margin-bottom: 16px;
     }
     .signup-form {
       padding: 28px 32px 36px;
