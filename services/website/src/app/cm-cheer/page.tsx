@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import Script from 'next/script'
-import Footer from '@/components/Footer'
+// Footer is rendered by root layout
 
 export default function CMCheerPage() {
   useEffect(() => {
@@ -507,7 +507,6 @@ export default function CMCheerPage() {
         </div>
       </div>
 
-      <Footer />
     </>
   )
 }
