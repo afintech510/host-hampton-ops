@@ -10,7 +10,7 @@ interface OrderItem { name: string; qty: number; unit_price: number; line_total:
 interface Order {
   id: string; order_ref: string; athlete_name: string; parent_name: string
   email: string; phone: string; payment_method: string; items: OrderItem[]
-  subtotal_cents: number; status: string; status_note: string | null; created_at: string
+  subtotal_cents: number; status: string; status_note: string | null; notes: string | null; created_at: string
 }
 
 function fmt(cents: number) { return `$${(cents / 100).toFixed(2)}` }
@@ -45,6 +45,9 @@ export default function CMCheerOrdersPage() {
   const [updating, setUpdating] = useState<string | null>(null)
   const [cancelNote, setCancelNote] = useState('')
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
+  const [editingNotes, setEditingNotes] = useState<string | null>(null)
+  const [notesInput, setNotesInput] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
 
   useEffect(() => {
     if (localStorage.getItem(TOKEN_KEY) === CM_PASSWORD) setAuthed(true)
@@ -90,6 +93,18 @@ export default function CMCheerOrdersPage() {
     setCancelNote('')
   }
 
+  async function saveNotes(id: string) {
+    setSavingNotes(true)
+    await fetch(`/api/cm-cheer-orders/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CM_PASSWORD}` },
+      body: JSON.stringify({ notes: notesInput }),
+    })
+    await fetchOrders()
+    setSavingNotes(false)
+    setEditingNotes(null)
+  }
+
   const filtered = orders.filter(o => {
     if (!search) return true
     const q = search.toLowerCase()
@@ -97,11 +112,12 @@ export default function CMCheerOrdersPage() {
   })
 
   function exportCSV() {
-    const rows = [['Order Ref','Athlete','Parent','Email','Phone','Payment','Total','Status','Items','Date']]
+    const rows = [['Order Ref','Athlete','Parent','Email','Phone','Payment','Total','Status','Items','Notes','Date']]
     filtered.forEach(o => rows.push([
       o.order_ref, o.athlete_name, o.parent_name, o.email, o.phone,
       o.payment_method, fmt(o.subtotal_cents), o.status,
       o.items.map(i => `${i.qty}x ${i.name}`).join(' | '),
+      o.notes || '',
       fmtDate(o.created_at),
     ]))
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n')
@@ -262,9 +278,47 @@ export default function CMCheerOrdersPage() {
 
                   {order.status_note && (
                     <p className="text-xs text-gray-500 bg-white border border-gray-200 rounded-lg px-3 py-2">
-                      <span className="font-bold">Note:</span> {order.status_note}
+                      <span className="font-bold">Status Note:</span> {order.status_note}
                     </p>
                   )}
+
+                  {/* Editable notes */}
+                  <div className="bg-white border border-gray-200 rounded-lg p-3">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-1.5">Notes</p>
+                    {editingNotes === order.id ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={notesInput}
+                          onChange={e => setNotesInput(e.target.value)}
+                          rows={2}
+                          placeholder="Add a note about this order…"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-400 resize-none"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => saveNotes(order.id)}
+                            disabled={savingNotes}
+                            className="bg-zinc-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                          >
+                            {savingNotes ? 'Saving…' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => setEditingNotes(null)}
+                            className="border border-gray-200 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => { setEditingNotes(order.id); setNotesInput(order.notes || '') }}
+                        className="text-sm text-gray-600 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5 -mx-1 transition-colors min-h-[28px]"
+                      >
+                        {order.notes || <span className="text-gray-300 italic">Click to add note…</span>}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Actions */}
                   {order.status === 'pending_payment' && (
