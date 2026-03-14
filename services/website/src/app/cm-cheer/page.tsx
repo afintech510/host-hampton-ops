@@ -251,7 +251,7 @@ export default function CMCheerPage() {
             <div className="p-4 md:p-8 border-b border-gray-100 bg-gray-50/50">
               <div className="flex items-center gap-3 mb-8">
                 <div className="p-2 bg-cmRed/10 rounded-lg text-cmRed"><i data-lucide="shopping-bag" className="w-6 h-6"></i></div>
-                <h2 className="text-3xl font-bold text-cmBlack font-oswald uppercase tracking-wide">Team Gear</h2>
+                <h2 className="text-3xl font-bold text-cmBlack font-oswald uppercase tracking-wide">The Merch</h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
