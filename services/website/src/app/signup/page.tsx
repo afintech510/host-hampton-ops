@@ -106,7 +106,7 @@ export default function SignupPage() {
             </button>
 
             <p className="signup-fine-print">
-              By signing up you agree to receive marketing emails from Host Hampton. Unsubscribe anytime.
+              By signing up you agree to receive marketing emails and SMS messages from Host Hampton. Msg &amp; data rates may apply. Unsubscribe anytime.
             </p>
           </form>
         </div>

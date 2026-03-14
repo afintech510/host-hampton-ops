@@ -14,17 +14,21 @@ export default async function SignupSheetPage() {
     <>
       <style dangerouslySetInnerHTML={{ __html: printStyles }} />
       <div className="signup-sheet">
-        {/* ── Top dusty blue band ── */}
-        <div className="top-band" />
-
-        {/* ── Logo ── */}
-        <div className="logo-wrap">
-          <img src="/images/host-hampton-logo.png" alt="Host Hampton" className="logo" />
+        {/* ── Top dusty blue band with logo + QR ── */}
+        <div className="top-band">
+          <div className="top-band-content">
+            <div className="top-qr">
+              <img src={qrDataUrl} alt="QR Code" className="qr-code" />
+              <p className="qr-text">Scan to sign up<br />instantly &amp; get<br />your 10% off!</p>
+            </div>
+            <div className="top-center">
+              <img src="/images/host-hampton-logo.png" alt="Host Hampton" className="logo" />
+              <h1 className="headline">Join the Party!</h1>
+              <p className="subheadline">Sign up &amp; get 10% off your first party booking</p>
+            </div>
+            <div className="top-qr-spacer" />
+          </div>
         </div>
-
-        {/* ── Headline ── */}
-        <h1 className="headline">Join the Party!</h1>
-        <p className="subheadline">Sign up &amp; get 10% off your first party booking</p>
 
         {/* ── Signup table ── */}
         <table className="signup-table">
@@ -45,12 +49,6 @@ export default async function SignupSheetPage() {
             ))}
           </tbody>
         </table>
-
-        {/* ── QR code section ── */}
-        <div className="qr-section">
-          <img src={qrDataUrl} alt="QR Code" className="qr-code" />
-          <p className="qr-text">Scan to sign up instantly<br />&amp; get your 10% off coupon!</p>
-        </div>
 
         {/* ── Bottom dusty blue band ── */}
         <div className="bottom-band">
@@ -77,43 +75,53 @@ const printStyles = `
   }
 
   .top-band {
-    height: 1.6in;
-    background: linear-gradient(180deg, #A1B5C8 0%, #A1B5C8 40%, rgba(161,181,200,0) 100%);
+    background: linear-gradient(180deg, #A1B5C8 0%, #A1B5C8 55%, rgba(161,181,200,0) 100%);
+    padding: 0.3in 0.5in 0.5in;
   }
-
-  .logo-wrap {
+  .top-band-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .top-qr {
     text-align: center;
-    margin-top: -0.9in;
-    position: relative;
-    z-index: 2;
+    flex-shrink: 0;
+    width: 1.6in;
+  }
+  .top-qr-spacer {
+    width: 1.6in;
+    flex-shrink: 0;
+  }
+  .top-center {
+    text-align: center;
+    flex: 1;
   }
   .logo {
-    height: 1.1in;
+    height: 1in;
     width: auto;
+    margin-bottom: 0.05in;
   }
 
   .headline {
-    text-align: center;
     font-family: 'Libre Baskerville', Georgia, serif;
     color: #1a2744;
-    font-size: 32pt;
-    margin: 0.15in 0 0.05in;
+    font-size: 30pt;
+    margin: 0 0 0.03in;
     font-weight: 700;
     line-height: 1.2;
   }
   .subheadline {
-    text-align: center;
     font-family: 'Poppins', Arial, sans-serif;
     color: #C9A9A6;
-    font-size: 13pt;
-    margin: 0 0 0.25in;
+    font-size: 12pt;
+    margin: 0;
     font-weight: 500;
   }
 
   /* ── Table ── */
   .signup-table {
     width: 7.3in;
-    margin: 0 auto;
+    margin: 0.2in auto 0;
     border-collapse: collapse;
     font-family: 'Poppins', Arial, sans-serif;
   }
@@ -145,24 +153,19 @@ const printStyles = `
   .signup-table th:nth-child(3),
   .signup-table td:nth-child(3) { width: 40%; }
 
-  /* ── QR section ── */
-  .qr-section {
-    position: absolute;
-    bottom: 1.7in;
-    right: 0.6in;
-    text-align: center;
-    z-index: 2;
-  }
+  /* ── QR code (top-left) ── */
   .qr-code {
-    width: 1.35in;
-    height: 1.35in;
+    width: 1.2in;
+    height: 1.2in;
+    border: 2px solid #ffffff;
+    border-radius: 6px;
   }
   .qr-text {
     font-family: 'Poppins', Arial, sans-serif;
-    font-size: 8pt;
+    font-size: 7.5pt;
     color: #1a2744;
-    margin: 4px 0 0;
-    line-height: 1.4;
+    margin: 3px 0 0;
+    line-height: 1.35;
     font-weight: 500;
   }
 
