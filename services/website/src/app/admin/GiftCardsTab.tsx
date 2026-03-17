@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Gift, RefreshCw, XCircle } from 'lucide-react'
+import { Search, Gift, RefreshCw, XCircle, Send, Mail, MessageSquare, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 
 interface GiftCard {
   id: string
@@ -49,6 +49,13 @@ export default function GiftCardsTab({ headers, onLogout }: { headers: Record<st
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [promoOpen, setPromoOpen] = useState(false)
+  const [promoName, setPromoName] = useState('')
+  const [promoEmail, setPromoEmail] = useState('')
+  const [promoPhone, setPromoPhone] = useState('')
+  const [promoChannel, setPromoChannel] = useState<'email' | 'sms' | 'both'>('email')
+  const [promoSending, setPromoSending] = useState(false)
+  const [promoResult, setPromoResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   const fetchCards = useCallback(async () => {
     setLoading(true)
@@ -66,6 +73,36 @@ export default function GiftCardsTab({ headers, onLogout }: { headers: Record<st
   }, [headers, onLogout, statusFilter, search])
 
   useEffect(() => { fetchCards() }, [fetchCards])
+
+  async function handleSendPromo() {
+    if (!promoName.trim()) return
+    if ((promoChannel === 'email' || promoChannel === 'both') && !promoEmail.trim()) return
+    if ((promoChannel === 'sms' || promoChannel === 'both') && !promoPhone.trim()) return
+    setPromoSending(true)
+    setPromoResult(null)
+    try {
+      const res = await fetch('/api/admin/gift-cards/send-promo', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: promoName.trim(),
+          email: promoEmail.trim() || null,
+          phone: promoPhone.trim() || null,
+          channel: promoChannel,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Send failed')
+      setPromoResult({ ok: true, message: data.results?.join(' & ') || 'Sent!' })
+      setPromoName('')
+      setPromoEmail('')
+      setPromoPhone('')
+    } catch (err: any) {
+      setPromoResult({ ok: false, message: err.message || 'Failed to send' })
+    } finally {
+      setPromoSending(false)
+    }
+  }
 
   async function handleStatusChange(id: string, newStatus: string) {
     if (!confirm(`Change this gift card to "${newStatus}"?`)) return
@@ -109,6 +146,102 @@ export default function GiftCardsTab({ headers, onLogout }: { headers: Record<st
           </div>
         </div>
       )}
+
+      {/* Send Gift Card Promo */}
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <button
+          onClick={() => setPromoOpen(!promoOpen)}
+          className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#E8C7CB] to-[#A1B5C8] flex items-center justify-center">
+              <Send className="w-4 h-4 text-white" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-semibold text-hampton-navy">Send Gift Card Promo</p>
+              <p className="text-xs text-gray-400">Email or text someone a link to buy a gift card</p>
+            </div>
+          </div>
+          {promoOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        </button>
+
+        {promoOpen && (
+          <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">Name *</label>
+                <input
+                  type="text"
+                  value={promoName}
+                  onChange={e => setPromoName(e.target.value)}
+                  placeholder="Jane Smith"
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-blue/30"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">Email</label>
+                <input
+                  type="email"
+                  value={promoEmail}
+                  onChange={e => setPromoEmail(e.target.value)}
+                  placeholder="jane@example.com"
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-blue/30"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">Phone</label>
+                <input
+                  type="tel"
+                  value={promoPhone}
+                  onChange={e => setPromoPhone(e.target.value)}
+                  placeholder="+16315551234"
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-blue/30"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Send via:</span>
+              <div className="flex gap-2">
+                {(['email', 'sms', 'both'] as const).map(ch => (
+                  <button
+                    key={ch}
+                    type="button"
+                    onClick={() => setPromoChannel(ch)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      promoChannel === ch
+                        ? 'bg-hampton-navy text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {ch === 'email' && <Mail className="w-3 h-3" />}
+                    {ch === 'sms' && <MessageSquare className="w-3 h-3" />}
+                    {ch === 'both' && <Send className="w-3 h-3" />}
+                    {ch === 'email' ? 'Email' : ch === 'sms' ? 'SMS' : 'Both'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSendPromo}
+                disabled={promoSending || !promoName.trim() || ((promoChannel === 'email' || promoChannel === 'both') && !promoEmail.trim()) || ((promoChannel === 'sms' || promoChannel === 'both') && !promoPhone.trim())}
+                className="px-5 py-2.5 rounded-xl bg-hampton-navy text-white text-sm font-semibold disabled:opacity-50 hover:bg-hampton-navy/90 transition-colors flex items-center gap-2"
+              >
+                <Send className="w-3.5 h-3.5" />
+                {promoSending ? 'Sending...' : 'Send Promo'}
+              </button>
+              {promoResult && (
+                <p className={`text-sm flex items-center gap-1.5 ${promoResult.ok ? 'text-green-600' : 'text-red-500'}`}>
+                  {promoResult.ok && <CheckCircle2 className="w-4 h-4" />}
+                  {promoResult.message}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
