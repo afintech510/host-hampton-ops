@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
-import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml } from '@/lib/emailTemplates'
+import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml, giftCardHtml, giftCardNotifyHtml, giftCardPurchaseConfirmHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
@@ -654,6 +654,107 @@ export async function POST(req: NextRequest) {
           }),
         ])
         console.log('Vendor confirmation sent to', m.contactEmail)
+      }
+
+      return NextResponse.json({ received: true })
+    }
+
+    // ── Gift card purchase ────────────────────────────────────
+    if (m.type === 'gift_card') {
+      const amountCents = parseInt(m.amountCents || '0', 10)
+      const amountFormatted = `$${(amountCents / 100).toFixed(0)}`
+
+      // Generate unique 12-char code: HH-XXXX-XXXX
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no O/0/I/1
+      let codeBody = ''
+      for (let i = 0; i < 8; i++) codeBody += chars[Math.floor(Math.random() * chars.length)]
+      const code = `HH-${codeBody.slice(0, 4)}-${codeBody.slice(4)}`
+
+      const { error: gcErr } = await supabase.from('gift_cards').insert({
+        code,
+        amount_cents: amountCents,
+        balance_cents: amountCents,
+        purchaser_name: m.purchaserName,
+        purchaser_email: m.purchaserEmail,
+        recipient_name: m.recipientName,
+        recipient_email: m.recipientEmail,
+        personal_message: m.personalMessage || null,
+        stripe_session_id: session.id,
+        status: 'active',
+      })
+
+      if (gcErr) {
+        console.error('Gift card insert error:', gcErr)
+      } else {
+        console.log('Gift card created:', code, amountFormatted, 'for', m.recipientEmail)
+
+        // Record in financials (non-fatal)
+        await recordFinancialTransaction(supabase, {
+          date: new Date().toISOString().split('T')[0],
+          description: `Gift Card — ${code}`,
+          amountCents,
+          category: 'Gift Card',
+          customerName: m.purchaserName,
+          reference: `gc-${code}`,
+          notes: `Purchaser: ${m.purchaserEmail} | Recipient: ${m.recipientEmail}`,
+        })
+
+        // Upsert purchaser contact (non-fatal)
+        await upsertContact({
+          name: m.purchaserName,
+          email: m.purchaserEmail,
+          sourceDetail: `Gift card purchase — ${code}`,
+          serviceInterests: ['general'],
+          marketingConsent: false,
+        }).catch(err => console.error('Gift card contact upsert error (non-fatal):', err))
+      }
+
+      // Send emails
+      if (process.env.RESEND_API_KEY) {
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+
+        await Promise.allSettled([
+          // Recipient gets the gift card
+          resend.emails.send({
+            from, to: m.recipientEmail,
+            subject: `You've received a ${amountFormatted} Host Hampton Gift Card!`,
+            html: giftCardHtml({
+              recipientName: m.recipientName,
+              senderName: m.purchaserName,
+              amountFormatted,
+              code,
+              personalMessage: m.personalMessage || undefined,
+            }),
+          }),
+          // Purchaser gets confirmation
+          resend.emails.send({
+            from, to: m.purchaserEmail,
+            subject: `Gift Card Sent! ${amountFormatted} for ${m.recipientName}`,
+            html: giftCardPurchaseConfirmHtml({
+              purchaserName: m.purchaserName,
+              recipientName: m.recipientName,
+              amountFormatted,
+              code,
+            }),
+          }),
+          // Owner notification
+          resend.emails.send({
+            from, to: 'hosthampton295@gmail.com',
+            subject: `New gift card: ${m.purchaserName} → ${m.recipientName} (${amountFormatted})`,
+            html: giftCardNotifyHtml({
+              code,
+              amountFormatted,
+              purchaserName: m.purchaserName,
+              purchaserEmail: m.purchaserEmail,
+              recipientName: m.recipientName,
+              recipientEmail: m.recipientEmail,
+              personalMessage: m.personalMessage || undefined,
+              stripePI: session.payment_intent as string,
+            }),
+          }),
+        ])
+        console.log('Gift card emails sent:', code)
       }
 
       return NextResponse.json({ received: true })
