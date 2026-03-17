@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
-  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image
+  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift
 } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
@@ -16,10 +16,11 @@ import CampaignsTab from './CampaignsTab'
 import DashboardTab from './DashboardTab'
 import FinancialsTab from './FinancialsTab'
 import MediaTab from './MediaTab'
+import GiftCardsTab from './GiftCardsTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'financials'
+type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'financials' | 'gift-cards'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
@@ -27,6 +28,7 @@ const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[]
   { key: 'calendar',   label: 'Calendar',   Icon: Calendar,        group: 'manage' },
   { key: 'orders',     label: 'Orders',     Icon: Receipt,         group: 'manage' },
   { key: 'financials', label: 'Financials', Icon: DollarSign,      group: 'manage' },
+  { key: 'gift-cards', label: 'Gift Cards', Icon: Gift,           group: 'manage' },
   { key: 'themes',     label: 'Themes',     Icon: Palette,         group: 'content' },
   { key: 'media',      label: 'Media',      Icon: Image,           group: 'content' },
   { key: 'contacts',   label: 'Contacts',   Icon: Users,           group: 'marketing' },
@@ -253,6 +255,9 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
           )}
           {activeTab === 'campaigns' && (
             <CampaignsTab key={`campaigns-${refreshKey}`} headers={headers} onLogout={onLogout} />
+          )}
+          {activeTab === 'gift-cards' && (
+            <GiftCardsTab key={`gc-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
         </main>
       </div>

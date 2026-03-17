@@ -209,6 +209,10 @@ function BookingForm() {
   const [themes, setThemes] = useState<ThemeItem[]>([])
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null)
   const [marketingConsent, setMarketingConsent] = useState(false)
+  const [giftCardCode, setGiftCardCode] = useState('')
+  const [giftCardValid, setGiftCardValid] = useState<{ code: string; balanceCents: number; balanceFormatted: string } | null>(null)
+  const [giftCardError, setGiftCardError] = useState('')
+  const [giftCardLoading, setGiftCardLoading] = useState(false)
   const [form, setForm] = useState({
     contactName: '',
     contactEmail: '',
@@ -282,6 +286,27 @@ function BookingForm() {
     setForm(prev => ({ ...prev, notes: '', packageName: '' }))
   }
 
+  async function handleApplyGiftCard() {
+    if (!giftCardCode.trim()) return
+    setGiftCardLoading(true)
+    setGiftCardError('')
+    setGiftCardValid(null)
+    try {
+      const res = await fetch('/api/gift-cards/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: giftCardCode.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Invalid gift card')
+      setGiftCardValid(data)
+    } catch (err: any) {
+      setGiftCardError(err.message || 'Invalid gift card')
+    } finally {
+      setGiftCardLoading(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!selection?.date || !selection?.timeSlot) {
@@ -302,6 +327,7 @@ function BookingForm() {
           partyTime: selection.timeSlot.start,
           eventType: selection.bookingType?.slug || 'other',
           bookingTypeSlug: selection.bookingType?.slug,
+          giftCardCode: giftCardValid?.code || null,
           partyTags: {
             theme: form.packageName || undefined,
             ...(isRoomRental ? {
@@ -617,6 +643,38 @@ function BookingForm() {
                   <><Bookmark size={16} /> Save Quote</>
                 )}
               </button>
+
+              {/* Gift Card */}
+              {hasDeposit && (
+                <div className="w-full mb-3">
+                  <label className="form-label">Gift Card Code</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={giftCardCode}
+                      onChange={e => { setGiftCardCode(e.target.value.toUpperCase()); setGiftCardValid(null); setGiftCardError('') }}
+                      className="form-input flex-1 font-mono tracking-wider"
+                      placeholder="HH-XXXX-XXXX"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyGiftCard}
+                      disabled={!giftCardCode.trim() || giftCardLoading}
+                      className="px-4 py-2 rounded-lg bg-hampton-navy text-white text-sm font-semibold disabled:opacity-50 hover:bg-hampton-navy/90 transition-colors shrink-0"
+                    >
+                      {giftCardLoading ? '...' : 'Apply'}
+                    </button>
+                  </div>
+                  {giftCardValid && (
+                    <p className="text-green-600 text-xs mt-1.5 font-medium">
+                      Gift card applied — {giftCardValid.balanceFormatted} available. Will be applied toward your deposit.
+                    </p>
+                  )}
+                  {giftCardError && (
+                    <p className="text-red-500 text-xs mt-1.5">{giftCardError}</p>
+                  )}
+                </div>
+              )}
 
               {/* Pay Deposit / Book */}
               <button type="submit" disabled={loading}

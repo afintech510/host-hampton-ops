@@ -97,6 +97,28 @@ export async function POST(req: NextRequest) {
         }
         console.log('Ticket created:', ticketRef, 'for', m.customerEmail)
 
+        // Redeem partial gift card if used (non-fatal)
+        if (m.giftCardCode && m.giftCardDeductCents) {
+          const gcDeduct = parseInt(m.giftCardDeductCents, 10)
+          if (gcDeduct > 0) {
+            const { data: gc } = await supabase
+              .from('gift_cards')
+              .select('id, balance_cents')
+              .eq('code', m.giftCardCode)
+              .eq('status', 'active')
+              .single()
+            if (gc) {
+              const newBal = Math.max(0, gc.balance_cents - gcDeduct)
+              await supabase.from('gift_cards').update({
+                balance_cents: newBal,
+                status: newBal === 0 ? 'redeemed' : 'active',
+                redeemed_at: newBal === 0 ? new Date().toISOString() : null,
+              }).eq('id', gc.id)
+              console.log(`Gift card ${m.giftCardCode} redeemed ${gcDeduct}c via webhook. New balance: ${newBal}c`)
+            }
+          }
+        }
+
         // Record in financials (non-fatal)
         await recordFinancialTransaction(supabase, {
           date: new Date().toISOString().split('T')[0],
@@ -798,6 +820,28 @@ export async function POST(req: NextRequest) {
       console.error('Supabase insert error:', dbError)
     } else {
       console.log('Booking created:', bookingRef, 'for', m.contactEmail, 'on', partyDate)
+
+      // Redeem partial gift card if used (non-fatal)
+      if (m.giftCardCode && m.giftCardDeductCents) {
+        const gcDeduct = parseInt(m.giftCardDeductCents, 10)
+        if (gcDeduct > 0) {
+          const { data: gc } = await supabase
+            .from('gift_cards')
+            .select('id, balance_cents')
+            .eq('code', m.giftCardCode)
+            .eq('status', 'active')
+            .single()
+          if (gc) {
+            const newBal = Math.max(0, gc.balance_cents - gcDeduct)
+            await supabase.from('gift_cards').update({
+              balance_cents: newBal,
+              status: newBal === 0 ? 'redeemed' : 'active',
+              redeemed_at: newBal === 0 ? new Date().toISOString() : null,
+            }).eq('id', gc.id)
+            console.log(`Gift card ${m.giftCardCode} redeemed ${gcDeduct}c for booking ${bookingRef}. New balance: ${newBal}c`)
+          }
+        }
+      }
 
       // Record in financials (non-fatal)
       const bookingAmountCents = session.amount_total || (m.depositCents ? parseInt(m.depositCents, 10) : 25000)

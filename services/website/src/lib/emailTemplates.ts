@@ -550,8 +550,11 @@ export function giftCardHtml(d: GiftCardEmailData): string {
         <li>Your balance will be applied automatically</li>
       </ol>
     </div>
+    <div style="text-align:center;margin-bottom:16px;">
+      <a href="https://www.hosthampton.com/book" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Book a Party</a>
+    </div>
     <div style="text-align:center;margin-bottom:24px;">
-      <a href="https://www.hosthampton.com/book" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Start Planning Your Party</a>
+      <a href="https://www.hosthampton.com/events" style="display:inline-block;background:transparent;color:${BRAND.navy};padding:12px 32px;border-radius:50px;text-decoration:none;font-size:13px;font-weight:bold;letter-spacing:0.5px;border:2px solid ${BRAND.navy};">Browse Events</a>
     </div>
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}

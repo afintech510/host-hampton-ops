@@ -58,6 +58,10 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [marketingConsent, setMarketingConsent] = useState(false)
+  const [giftCardCode, setGiftCardCode] = useState('')
+  const [giftCardValid, setGiftCardValid] = useState<{ code: string; balanceCents: number; balanceFormatted: string } | null>(null)
+  const [giftCardError, setGiftCardError] = useState('')
+  const [giftCardLoading, setGiftCardLoading] = useState(false)
 
   const isMultiSession = event.allow_multi_session && event.has_sessions
 
@@ -86,7 +90,11 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
   const CC_RATE = 0.03
   const taxCents = isFree ? 0 : Math.round(total * TAX_RATE)
   const ccFeeCents = isFree ? 0 : Math.round((total + taxCents) * CC_RATE)
-  const grandTotal = total + taxCents + ccFeeCents
+  // Gift card discount
+  const giftCardDiscountCents = giftCardValid
+    ? Math.min(giftCardValid.balanceCents, total + taxCents + ccFeeCents)
+    : 0
+  const grandTotal = total + taxCents + ccFeeCents - giftCardDiscountCents
 
   const maxAvail = isMultiSession
     ? Math.min(...(selectedSessions.length > 0 ? selectedSessions.map(s => s.available_tickets) : [event.available_tickets]))
@@ -101,6 +109,27 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
         ? prev.filter(s => s.id !== session.id)
         : [...prev, session]
     )
+  }
+
+  async function handleApplyGiftCard() {
+    if (!giftCardCode.trim()) return
+    setGiftCardLoading(true)
+    setGiftCardError('')
+    setGiftCardValid(null)
+    try {
+      const res = await fetch('/api/gift-cards/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: giftCardCode.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Invalid gift card')
+      setGiftCardValid(data)
+    } catch (err: any) {
+      setGiftCardError(err.message || 'Invalid gift card')
+    } finally {
+      setGiftCardLoading(false)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -126,6 +155,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
           customerEmail: email,
           customerPhone: phone || null,
           marketingConsent,
+          giftCardCode: giftCardValid?.code || null,
         }),
       })
 
@@ -306,6 +336,38 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
         </>
       )}
 
+      {/* Gift Card */}
+      {!soldOut && !isFree && (
+        <div className="mb-5">
+          <label className="form-label">Gift Card Code</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={giftCardCode}
+              onChange={e => { setGiftCardCode(e.target.value.toUpperCase()); setGiftCardValid(null); setGiftCardError('') }}
+              className="form-input flex-1 font-mono tracking-wider"
+              placeholder="HH-XXXX-XXXX"
+            />
+            <button
+              type="button"
+              onClick={handleApplyGiftCard}
+              disabled={!giftCardCode.trim() || giftCardLoading}
+              className="px-4 py-2 rounded-lg bg-hampton-navy text-white text-sm font-semibold disabled:opacity-50 hover:bg-hampton-navy/90 transition-colors shrink-0"
+            >
+              {giftCardLoading ? '...' : 'Apply'}
+            </button>
+          </div>
+          {giftCardValid && (
+            <p className="text-green-600 text-xs mt-1.5 font-medium">
+              Gift card applied — {giftCardValid.balanceFormatted} available
+            </p>
+          )}
+          {giftCardError && (
+            <p className="text-red-500 text-xs mt-1.5">{giftCardError}</p>
+          )}
+        </div>
+      )}
+
       {/* Total with tax + CC fee breakdown */}
       {!soldOut && !isFree && (
         <div className="py-3 px-4 bg-hampton-ivory rounded-xl mb-5 space-y-1.5">
@@ -321,9 +383,15 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
             <span className="text-xs text-hampton-mauve">Processing Fee (3%)</span>
             <span className="text-xs text-hampton-mauve">{formatPrice(ccFeeCents)}</span>
           </div>
+          {giftCardDiscountCents > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-green-600 font-medium">Gift Card ({giftCardValid?.code})</span>
+              <span className="text-xs text-green-600 font-medium">-{formatPrice(giftCardDiscountCents)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between pt-1.5 border-t border-hampton-navy/10">
             <span className="text-sm font-semibold text-hampton-navy">Total</span>
-            <span className="text-xl font-bold text-hampton-navy">{formatPrice(grandTotal)}</span>
+            <span className="text-xl font-bold text-hampton-navy">{grandTotal === 0 ? 'Free (Gift Card)' : formatPrice(grandTotal)}</span>
           </div>
         </div>
       )}

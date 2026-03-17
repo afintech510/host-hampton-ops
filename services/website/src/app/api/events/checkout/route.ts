@@ -15,7 +15,7 @@ const CC_RATE = 0.03
 export async function POST(req: NextRequest) {
   const supabase = getSupabase()
   const body = await req.json()
-  const { eventId, sessionId, sessionIds, quantity, variantLabel, customerName, customerEmail, customerPhone, marketingConsent } = body
+  const { eventId, sessionId, sessionIds, quantity, variantLabel, customerName, customerEmail, customerPhone, marketingConsent, giftCardCode } = body
 
   if (!eventId || !customerName || !customerEmail || !customerPhone || !quantity) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -364,15 +364,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url: `/events/success?ref=${ticketRef}` })
   }
 
-  // PAID events: create Stripe checkout session
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
+  // PAID events: check for gift card coverage
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
 
   // Tax + CC fee
   const taxCents = Math.round(totalCents * TAX_RATE)
   const ccFeeCents = Math.round((totalCents + taxCents) * CC_RATE)
+  const grandTotalCents = totalCents + taxCents + ccFeeCents
 
-  // Event date/time for Stripe description
+  // Event date/time for description
   const eventDateDisplay = sessionRow?.session_date
     ? new Date(sessionRow.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
     : event.event_date
@@ -381,38 +381,159 @@ export async function POST(req: NextRequest) {
   const eventTimeDisplay = sessionRow?.session_time || event.event_time || ''
   const eventLocation = event.location || 'Host Hampton'
 
+  // ── Gift card: validate and check if it covers the full amount ──
+  let giftCard: { id: string; code: string; balance_cents: number } | null = null
+  if (giftCardCode) {
+    const { data: gc } = await supabase
+      .from('gift_cards')
+      .select('id, code, balance_cents, status')
+      .eq('code', giftCardCode.trim().toUpperCase())
+      .eq('status', 'active')
+      .single()
+    if (gc && gc.balance_cents > 0) giftCard = gc
+  }
+
+  const giftCardCoversCents = giftCard ? Math.min(giftCard.balance_cents, grandTotalCents) : 0
+  const remainingAfterGiftCard = grandTotalCents - giftCardCoversCents
+
+  // If gift card covers full amount, skip Stripe
+  if (giftCard && remainingAfterGiftCard <= 0) {
+    const { data: seqData } = await supabase.rpc('nextval_event_ticket_seq')
+    const seqNum = seqData ?? Date.now().toString().slice(-4)
+    const ticketRef = `HH-EVT-${String(seqNum).padStart(4, '0')}`
+
+    const { error: insertErr } = await supabase.from('event_tickets').insert({
+      ticket_ref: ticketRef,
+      event_id: eventId,
+      session_id: sessionId || null,
+      customer_name: customerName,
+      customer_email: customerEmail,
+      customer_phone: customerPhone || null,
+      quantity,
+      variant_label: variantLabel || null,
+      unit_price_cents: unitPriceCents,
+      total_cents: grandTotalCents,
+      status: 'confirmed',
+    })
+
+    if (insertErr) {
+      console.error('Gift card ticket insert error:', insertErr)
+      return NextResponse.json({ error: 'Failed to create ticket' }, { status: 500 })
+    }
+
+    // Decrement tickets
+    if (sessionId) {
+      await supabase.rpc('decrement_session_tickets', { sid: sessionId, qty: quantity })
+    } else {
+      await supabase.rpc('decrement_event_tickets', { eid: eventId, qty: quantity })
+    }
+
+    // Redeem gift card
+    const newBalance = giftCard.balance_cents - grandTotalCents
+    await supabase.from('gift_cards').update({
+      balance_cents: Math.max(0, newBalance),
+      status: newBalance <= 0 ? 'redeemed' : 'active',
+      redeemed_at: newBalance <= 0 ? new Date().toISOString() : null,
+    }).eq('id', giftCard.id)
+    console.log(`Gift card ${giftCard.code} redeemed ${grandTotalCents}c for ticket ${ticketRef}`)
+
+    // Upsert contact (non-fatal)
+    const contactId = await upsertContact({
+      name: customerName, email: customerEmail, phone: customerPhone,
+      sourceDetail: `Event ticket (gift card) — ${event.title}`,
+      serviceInterests: ['event'], marketingConsent: !!marketingConsent,
+    })
+    if (contactId) {
+      await enrollInSequence({ contactId, contactEmail: customerEmail, triggerEvent: 'booking_confirmed', serviceType: 'event' })
+        .catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+    }
+
+    // Enqueue reminders
+    const reminderDate = sessionRow?.session_date || event.event_date
+    if (reminderDate) {
+      await enqueueEventReminders({ contactEmail: customerEmail, eventId, eventDate: reminderDate })
+        .catch(err => console.error('Reminder enqueue error:', err))
+    }
+
+    // Send confirmation emails
+    if (process.env.RESEND_API_KEY) {
+      const resend = new Resend(process.env.RESEND_API_KEY)
+      const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+      const totalFormatted = `$${(grandTotalCents / 100).toFixed(2)} (Gift Card)`
+      await Promise.allSettled([
+        resend.emails.send({
+          from, to: customerEmail,
+          subject: `You're in! ${event.title} at Host Hampton`,
+          html: ticketConfirmationHtml({
+            customerName, eventTitle: event.title, eventDate: eventDateDisplay,
+            eventTime: eventTimeDisplay, location: eventLocation,
+            quantity, variantLabel, totalFormatted, ticketRef, isFree: false,
+          }),
+        }),
+        resend.emails.send({
+          from, to: 'hosthampton295@gmail.com',
+          subject: `New ticket (gift card): ${customerName} — ${event.title} (${ticketRef})`,
+          html: ticketPurchaseNotifyHtml({
+            ticketRef, customerName, customerEmail, customerPhone,
+            eventTitle: event.title, eventDate: eventDateDisplay, eventTime: eventTimeDisplay,
+            quantity, variantLabel, totalFormatted, isFree: false,
+          }),
+        }),
+      ])
+    }
+
+    return NextResponse.json({ url: `/events/success?ref=${ticketRef}` })
+  }
+
+  // ── Partial gift card or no gift card: create Stripe session ──
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
+
+  const lineItems: any[] = [
+    {
+      price_data: {
+        currency: 'usd',
+        product_data: {
+          name: `${event.title}${variantLabel ? ` (${variantLabel})` : ''}`,
+          description: `${eventDateDisplay}${eventTimeDisplay ? ` at ${eventTimeDisplay}` : ''} | ${eventLocation}`,
+        },
+        unit_amount: unitPriceCents,
+      },
+      quantity,
+    },
+    {
+      price_data: {
+        currency: 'usd',
+        product_data: { name: 'Sales Tax (8.75%)' },
+        unit_amount: taxCents,
+      },
+      quantity: 1,
+    },
+    {
+      price_data: {
+        currency: 'usd',
+        product_data: { name: 'Processing Fee (3%)' },
+        unit_amount: ccFeeCents,
+      },
+      quantity: 1,
+    },
+  ]
+
+  // If partial gift card, add a discount line item
+  if (giftCard && giftCardCoversCents > 0) {
+    lineItems.push({
+      price_data: {
+        currency: 'usd',
+        product_data: { name: `Gift Card (${giftCard.code})` },
+        unit_amount: -giftCardCoversCents,
+      },
+      quantity: 1,
+    })
+  }
+
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     customer_email: customerEmail,
-    line_items: [
-      {
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: `${event.title}${variantLabel ? ` (${variantLabel})` : ''}`,
-            description: `${eventDateDisplay}${eventTimeDisplay ? ` at ${eventTimeDisplay}` : ''} | ${eventLocation}`,
-          },
-          unit_amount: unitPriceCents,
-        },
-        quantity,
-      },
-      {
-        price_data: {
-          currency: 'usd',
-          product_data: { name: 'Sales Tax (8.75%)' },
-          unit_amount: taxCents,
-        },
-        quantity: 1,
-      },
-      {
-        price_data: {
-          currency: 'usd',
-          product_data: { name: 'Processing Fee (3%)' },
-          unit_amount: ccFeeCents,
-        },
-        quantity: 1,
-      },
-    ],
+    line_items: lineItems,
     metadata: {
       type: 'event_ticket',
       eventId,
@@ -427,6 +548,8 @@ export async function POST(req: NextRequest) {
       eventTime: eventTimeDisplay,
       eventLocation,
       marketingConsent: marketingConsent ? 'true' : 'false',
+      giftCardCode: giftCard?.code || '',
+      giftCardDeductCents: giftCard ? String(giftCardCoversCents) : '',
     },
     success_url: `https://${host}/events/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `https://${host}/events/${event.slug}?cancelled=true`,
