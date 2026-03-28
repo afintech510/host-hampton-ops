@@ -681,6 +681,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
+    // ── Pay link (admin-generated) ──────────────────────────
+    if (m.type === 'pay_link') {
+      const amountCents = parseInt(m.amountCents || '0', 10)
+
+      // Record in financials
+      await recordFinancialTransaction(supabase, {
+        date: new Date().toISOString().split('T')[0],
+        description: m.description || 'Pay Link Payment',
+        amountCents,
+        category: m.category || 'Room Rental',
+        customerName: m.customerName || null,
+        reference: `pl-${session.payment_intent}`,
+        notes: m.customerEmail || null,
+      })
+
+      // Upsert contact (non-fatal)
+      if (m.customerEmail) {
+        await upsertContact({
+          name: m.customerName || 'Unknown',
+          email: m.customerEmail,
+          phone: m.customerPhone || undefined,
+          sourceDetail: `Pay link — ${m.description || 'payment'}`,
+          serviceInterests: ['general'],
+          marketingConsent: false,
+        }).catch(err => console.error('Pay link contact upsert error (non-fatal):', err))
+      }
+
+      console.log('Pay link completed:', m.customerName, `$${(amountCents / 100).toFixed(2)}`, m.description)
+      return NextResponse.json({ received: true })
+    }
+
     // ── Gift card purchase ────────────────────────────────────
     if (m.type === 'gift_card') {
       const amountCents = parseInt(m.amountCents || '0', 10)

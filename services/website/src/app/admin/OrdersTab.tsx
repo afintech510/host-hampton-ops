@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { ChevronDown, ChevronUp, Loader2, Search, Mail, Send, RotateCcw, X, DollarSign, Plus, Save } from 'lucide-react'
+import PayLinkPanel from './PayLinkPanel'
 
 /* ─── Interfaces ─────────────────────────────────────── */
 
@@ -127,6 +128,9 @@ export default function OrdersTab({ headers, onLogout }: { headers: Record<strin
           </div>
         </div>
       </div>
+
+      {/* Pay Link */}
+      <PayLinkPanel headers={headers} onLogout={onLogout} />
 
       {/* New Booking button + form */}
       <div className="flex justify-end">
