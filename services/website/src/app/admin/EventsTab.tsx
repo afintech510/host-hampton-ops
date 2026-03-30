@@ -27,6 +27,8 @@ interface Ticket {
   customer_phone: string | null; quantity: number; variant_label: string | null
   total_cents: number; status: string; created_at: string
   stripe_payment_intent_id: string | null
+  session_id: string | null
+  group_ref: string | null
 }
 
 interface Variant { label: string; priceCents: number }
@@ -675,6 +677,7 @@ function ImageUploader({
 function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers: Record<string, string>; onRefresh: () => void }) {
   const [tab, setTab] = useState<'attendees' | 'email'>('attendees')
   const [tickets, setTickets] = useState<Ticket[]>([])
+  const [sessions, setSessions] = useState<EventSession[]>([])
   const [loadingTickets, setLoadingTickets] = useState(true)
   const [refunding, setRefunding] = useState<string | null>(null)
   const [refundReason, setRefundReason] = useState('')
@@ -683,11 +686,23 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
 
   async function fetchTickets() {
     setLoadingTickets(true)
-    const res = await fetch(`/api/admin/events/${event.id}/tickets`, { headers })
-    const data = await res.json()
-    setTickets(data.tickets || [])
+    const [ticketRes, eventRes] = await Promise.all([
+      fetch(`/api/admin/events/${event.id}/tickets`, { headers }),
+      event.has_sessions ? fetch(`/api/admin/events/${event.id}`, { headers }) : null,
+    ])
+    const ticketData = await ticketRes.json()
+    setTickets(ticketData.tickets || [])
+    if (eventRes) {
+      const eventData = await eventRes.json()
+      setSessions(eventData.sessions || [])
+    }
     setLoadingTickets(false)
   }
+
+  // Build session lookup map: session_id → session info
+  const sessionMap = new Map<string, EventSession>()
+  sessions.forEach(s => { if (s.id) sessionMap.set(s.id, s) })
+  const hasSessions = event.has_sessions && sessions.length > 0
 
   async function processRefund(ticketId: string) {
     if (!confirm('Process full refund for this ticket?')) return
@@ -701,13 +716,21 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
     setRefundReason('')
   }
 
+  function getSessionLabel(t: Ticket) {
+    if (!t.session_id) return ''
+    const s = sessionMap.get(t.session_id)
+    if (!s) return ''
+    return s.session_date ? formatDate(s.session_date) + (s.label ? ` (${s.label})` : '') : (s.label || '')
+  }
+
   function printAttendees() {
     const confirmed = tickets.filter(t => t.status === 'confirmed')
+    const sessionCol = hasSessions
     const html = `<html><head><title>Attendees - ${event.title}</title>
       <style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{padding:8px 12px;border:1px solid #ddd;text-align:left;font-size:13px}th{background:#f5f5f5;font-weight:bold}.title{font-size:18px;margin-bottom:4px}.meta{color:#888;font-size:13px;margin-bottom:16px}</style></head>
       <body><div class="title">${event.title}</div><div class="meta">${confirmed.length} confirmed attendees · ${confirmed.reduce((s, t) => s + t.quantity, 0)} total tickets</div>
-      <table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th><th>Qty</th><th>Option</th></tr></thead><tbody>
-      ${confirmed.map((t, i) => `<tr><td>${i + 1}</td><td>${t.customer_name}</td><td>${t.customer_email}</td><td>${t.customer_phone || '—'}</td><td>${t.quantity}</td><td>${t.variant_label || '—'}</td></tr>`).join('')}
+      <table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th>${sessionCol ? '<th>Date</th>' : ''}<th>Qty</th><th>Option</th></tr></thead><tbody>
+      ${confirmed.map((t, i) => `<tr><td>${i + 1}</td><td>${t.customer_name}</td><td>${t.customer_email}</td><td>${t.customer_phone || '—'}</td>${sessionCol ? `<td>${getSessionLabel(t) || '—'}</td>` : ''}<td>${t.quantity}</td><td>${t.variant_label || '—'}</td></tr>`).join('')}
       </tbody></table></body></html>`
     const w = window.open('', '_blank')
     if (w) { w.document.write(html); w.document.close(); w.print() }
@@ -715,8 +738,11 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
 
   function downloadCSV() {
     const confirmed = tickets.filter(t => t.status === 'confirmed')
-    const csv = 'Name,Email,Phone,Qty,Option,Paid,Ref\n' +
-      confirmed.map(t => `"${t.customer_name}","${t.customer_email}","${t.customer_phone || ''}",${t.quantity},"${t.variant_label || ''}","${formatPrice(t.total_cents)}","${t.ticket_ref}"`).join('\n')
+    const csv = (hasSessions ? 'Name,Email,Phone,Date,Qty,Option,Paid,Ref\n' : 'Name,Email,Phone,Qty,Option,Paid,Ref\n') +
+      confirmed.map(t => {
+        const datePart = hasSessions ? `"${getSessionLabel(t)}",` : ''
+        return `"${t.customer_name}","${t.customer_email}","${t.customer_phone || ''}",${datePart}${t.quantity},"${t.variant_label || ''}","${formatPrice(t.total_cents)}","${t.ticket_ref}"`
+      }).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url; a.download = `${event.slug}-attendees.csv`; a.click()
@@ -724,6 +750,36 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
 
   const confirmed = tickets.filter(t => t.status === 'confirmed')
   const refunded = tickets.filter(t => t.status === 'refunded')
+
+  // Group confirmed tickets by session for multi-date events
+  const groupedBySession: { label: string; date: string; tickets: Ticket[] }[] = []
+  if (hasSessions) {
+    const grouped = new Map<string, Ticket[]>()
+    const noSession: Ticket[] = []
+    confirmed.forEach(t => {
+      if (t.session_id) {
+        const arr = grouped.get(t.session_id) || []
+        arr.push(t)
+        grouped.set(t.session_id, arr)
+      } else {
+        noSession.push(t)
+      }
+    })
+    // Sort sessions by date
+    const sortedSessions = [...sessions].sort((a, b) => (a.session_date || '').localeCompare(b.session_date || ''))
+    sortedSessions.forEach(s => {
+      if (s.id && grouped.has(s.id)) {
+        groupedBySession.push({
+          label: s.label || formatDate(s.session_date),
+          date: s.session_date,
+          tickets: grouped.get(s.id)!,
+        })
+      }
+    })
+    if (noSession.length > 0) {
+      groupedBySession.push({ label: 'No session assigned', date: '', tickets: noSession })
+    }
+  }
 
   return (
     <div className="border-t border-hampton-pink/10 px-4 pb-4">
@@ -754,9 +810,94 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
             <Loader2 className="w-5 h-5 animate-spin mx-auto my-6 text-hampton-mauve" />
           ) : confirmed.length === 0 ? (
             <p className="text-sm text-hampton-mauve py-4 text-center">No tickets sold yet.</p>
+          ) : hasSessions ? (
+            /* ── Grouped by session date ── */
+            <div className="space-y-4">
+              {groupedBySession.map((group, gi) => (
+                <div key={gi} className="border border-hampton-pink/10 rounded-xl overflow-hidden">
+                  <div className="bg-gradient-to-r from-purple-50 to-blue-50 px-4 py-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-hampton-navy">
+                        {group.date ? formatDate(group.date) : group.label}
+                      </span>
+                      {group.date && group.label !== formatDate(group.date) && (
+                        <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">{group.label}</span>
+                      )}
+                    </div>
+                    <span className="text-xs text-hampton-mauve">
+                      {group.tickets.length} attendee{group.tickets.length !== 1 ? 's' : ''} &middot; {group.tickets.reduce((s, t) => s + t.quantity, 0)} ticket{group.tickets.reduce((s, t) => s + t.quantity, 0) !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  {/* Desktop table */}
+                  <div className="overflow-x-auto hidden sm:block">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-hampton-mauve border-b border-hampton-pink/10">
+                          <th className="py-2 px-4 pr-3">Ref</th>
+                          <th className="py-2 pr-3">Name</th>
+                          <th className="py-2 pr-3">Email</th>
+                          <th className="py-2 pr-3">Phone</th>
+                          <th className="py-2 pr-3">Qty</th>
+                          <th className="py-2 pr-3">Paid</th>
+                          <th className="py-2">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.tickets.map(t => (
+                          <tr key={t.id} className="border-b border-hampton-pink/5">
+                            <td className="py-2 px-4 pr-3 text-xs font-mono text-hampton-navy">{t.ticket_ref}</td>
+                            <td className="py-2 pr-3">{t.customer_name}</td>
+                            <td className="py-2 pr-3 text-hampton-mauve">{t.customer_email}</td>
+                            <td className="py-2 pr-3 text-hampton-mauve">{t.customer_phone || '—'}</td>
+                            <td className="py-2 pr-3">{t.quantity}</td>
+                            <td className="py-2 pr-3">{formatPrice(t.total_cents)}</td>
+                            <td className="py-2">
+                              {t.stripe_payment_intent_id ? (
+                                <button onClick={() => processRefund(t.id)} disabled={refunding === t.id}
+                                  className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50">
+                                  {refunding === t.id ? 'Refunding...' : 'Refund'}
+                                </button>
+                              ) : (
+                                <span className="text-xs text-green-600">Free</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* Mobile cards */}
+                  <div className="sm:hidden space-y-2 p-3">
+                    {group.tickets.map(t => (
+                      <div key={t.id} className="bg-white border border-hampton-pink/10 rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-sm text-hampton-navy">{t.customer_name}</span>
+                          <span className="text-sm font-semibold">{formatPrice(t.total_cents)}</span>
+                        </div>
+                        <div className="text-xs text-hampton-mauve space-y-0.5">
+                          <p>{t.customer_email}</p>
+                          {t.customer_phone && <p>{t.customer_phone}</p>}
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="font-mono text-gray-400">{t.ticket_ref} · Qty {t.quantity}</span>
+                            {t.stripe_payment_intent_id ? (
+                              <button onClick={() => processRefund(t.id)} disabled={refunding === t.id}
+                                className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50">
+                                {refunding === t.id ? 'Refunding...' : 'Refund'}
+                              </button>
+                            ) : (
+                              <span className="text-xs text-green-600">Free</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <>
-            {/* Desktop table */}
+            {/* Desktop table (flat — no sessions) */}
             <div className="overflow-x-auto hidden sm:block">
               <table className="w-full text-sm">
                 <thead>
