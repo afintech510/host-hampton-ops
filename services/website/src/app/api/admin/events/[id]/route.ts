@@ -22,6 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .from('event_sessions')
       .select('*')
       .eq('event_id', params.id)
+      .eq('is_active', true)
       .order('session_date', { ascending: true })
     sessions = data
   }
