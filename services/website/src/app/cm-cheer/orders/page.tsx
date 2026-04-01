@@ -10,7 +10,7 @@ interface OrderItem { name: string; qty: number; unit_price: number; line_total:
 interface Order {
   id: string; order_ref: string; athlete_name: string; parent_name: string
   email: string; phone: string; payment_method: string; items: OrderItem[]
-  subtotal_cents: number; status: string; status_note: string | null; notes: string | null; created_at: string
+  subtotal_cents: number; profit_cents: number; status: string; status_note: string | null; notes: string | null; created_at: string
 }
 
 function fmt(cents: number) { return `$${(cents / 100).toFixed(2)}` }
@@ -126,9 +126,18 @@ export default function CMCheerOrdersPage() {
     a.download = `cm-cheer-orders-${new Date().toISOString().slice(0,10)}.csv`; a.click()
   }
 
-  const totalRevenue = filtered.filter(o => o.status !== 'cancelled').reduce((s, o) => s + o.subtotal_cents, 0)
+  const nonCancelled = filtered.filter(o => o.status !== 'cancelled')
+  const totalRevenue = nonCancelled.reduce((s, o) => s + o.subtotal_cents, 0)
+  const totalRaised = nonCancelled.reduce((s, o) => s + (o.profit_cents || 0), 0)
   const pendingCount = filtered.filter(o => o.status === 'pending_payment').length
   const paidCount = filtered.filter(o => o.status === 'paid').length
+
+  // Aggregate items sold across non-cancelled orders
+  const itemSummary: Record<string, number> = {}
+  nonCancelled.forEach(o => o.items?.forEach(i => {
+    itemSummary[i.name] = (itemSummary[i.name] || 0) + i.qty
+  }))
+  const itemSummaryList = Object.entries(itemSummary).sort((a, b) => b[1] - a[1])
 
   // ── Login gate ──
   if (!authed) {
@@ -181,7 +190,7 @@ export default function CMCheerOrdersPage() {
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
 
         {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
           <div className="bg-white rounded-xl border border-gray-200 p-2.5 sm:p-4 text-center shadow-sm">
             <p className="text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Orders</p>
             <p className="text-2xl sm:text-3xl font-black text-zinc-900">{filtered.length}</p>
@@ -195,7 +204,27 @@ export default function CMCheerOrdersPage() {
             <p className="text-xl sm:text-3xl font-black text-green-700">{fmt(totalRevenue)}</p>
             <p className="text-[10px] sm:text-xs text-gray-400">{paidCount} paid</p>
           </div>
+          <div className="bg-white rounded-xl border-2 border-red-200 p-2.5 sm:p-4 text-center shadow-sm">
+            <p className="text-[10px] sm:text-xs font-bold text-red-600 uppercase tracking-wider mb-1">Total Raised</p>
+            <p className="text-xl sm:text-3xl font-black text-red-600">{fmt(totalRaised)}</p>
+            <p className="text-[10px] sm:text-xs text-gray-400">sales − cost</p>
+          </div>
         </div>
+
+        {/* Items sold summary */}
+        {itemSummaryList.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 shadow-sm">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Items Sold</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {itemSummaryList.map(([name, qty]) => (
+                <div key={name} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                  <span className="text-sm text-gray-700 truncate mr-2">{name}</span>
+                  <span className="text-sm font-black text-zinc-900 shrink-0">{qty}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Filters + actions */}
         <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center">
