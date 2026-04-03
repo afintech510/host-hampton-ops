@@ -41,6 +41,7 @@ interface TicketConfirmationData {
   totalFormatted: string
   ticketRef: string
   isFree: boolean
+  sessions?: { date: string; time: string; label?: string }[]
 }
 
 export function ticketConfirmationHtml(d: TicketConfirmationData): string {
@@ -51,6 +52,21 @@ export function ticketConfirmationHtml(d: TicketConfirmationData): string {
   const priceLine = d.isFree
     ? '<span style="font-weight:bold;color:#059669;">FREE</span>'
     : `<span style="font-weight:bold;color:#059669;">${d.totalFormatted} ✓</span>`
+
+  // Build date/time rows — multi-session gets a list of dates instead of single date+time
+  let dateTimeRows: string
+  if (d.sessions && d.sessions.length > 1) {
+    const sessionLines = d.sessions.map(s => {
+      const label = s.label ? ` — ${s.label}` : ''
+      return `<div style="padding:4px 0;">${s.date} at ${s.time}${label}</div>`
+    }).join('')
+    dateTimeRows = `
+          <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;vertical-align:top;"><strong>Dates</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${sessionLines}</td></tr>`
+  } else {
+    dateTimeRows = `
+          <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Date</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${d.eventDate}</td></tr>
+          <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Time</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${d.eventTime}</td></tr>`
+  }
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -70,8 +86,7 @@ export function ticketConfirmationHtml(d: TicketConfirmationData): string {
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
           <tr><td style="padding:8px 0;color:${BRAND.gray};width:120px;"><strong>Ref</strong></td><td style="padding:8px 0;color:${BRAND.navy};font-weight:bold;">${d.ticketRef}</td></tr>
           <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Event</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${d.eventTitle}</td></tr>
-          <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Date</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${d.eventDate}</td></tr>
-          <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Time</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${d.eventTime}</td></tr>
+          ${dateTimeRows}
           ${variantLine}
           <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Qty</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${d.quantity}</td></tr>
           <tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Total</strong></td><td style="padding:8px 0;border-top:1px solid #f0ece7;">${priceLine}</td></tr>
@@ -106,9 +121,14 @@ interface TicketNotifyData {
   totalFormatted: string
   isFree: boolean
   stripePI?: string
+  sessions?: { date: string; time: string; label?: string }[]
 }
 
 export function ticketPurchaseNotifyHtml(d: TicketNotifyData): string {
+  const dateCell = d.sessions && d.sessions.length > 1
+    ? d.sessions.map(s => `${s.date} at ${s.time}${s.label ? ` — ${s.label}` : ''}`).join('<br>')
+    : d.eventDate + (d.eventTime ? ` at ${d.eventTime}` : '')
+
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:20px;background:${BRAND.bodyBg};font-family:sans-serif;">
@@ -123,7 +143,7 @@ export function ticketPurchaseNotifyHtml(d: TicketNotifyData): string {
       <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="mailto:${d.customerEmail}">${d.customerEmail}</a></td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Phone</td><td style="padding:10px 12px;">${d.customerPhone || '—'}</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;">Event</td><td style="padding:10px 12px;">${d.eventTitle}</td></tr>
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Date</td><td style="padding:10px 12px;">${d.eventDate}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;vertical-align:top;">Date</td><td style="padding:10px 12px;">${dateCell}</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;">Qty</td><td style="padding:10px 12px;">${d.quantity}</td></tr>
       ${d.variantLabel ? `<tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Option</td><td style="padding:10px 12px;">${d.variantLabel}</td></tr>` : ''}
       <tr><td style="padding:10px 12px;font-weight:bold;">Total</td><td style="padding:10px 12px;color:#059669;font-weight:bold;">${d.totalFormatted}</td></tr>

@@ -172,10 +172,26 @@ export async function POST(req: NextRequest) {
       if (process.env.RESEND_API_KEY && evt) {
         const resend = new Resend(process.env.RESEND_API_KEY)
         const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
-        const dateDisplay = evt.event_date
+        const totalFormatted = `$${(totalCents / 100).toFixed(2)}`
+
+        // If this ticket is for a specific session, use the session date/time
+        let dateDisplay = evt.event_date
           ? new Date(evt.event_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
           : 'TBD'
-        const totalFormatted = `$${(totalCents / 100).toFixed(2)}`
+        let timeDisplay = evt.event_time || ''
+
+        if (m.sessionId) {
+          const { data: sess } = await supabase
+            .from('event_sessions')
+            .select('session_date, session_time, label')
+            .eq('id', m.sessionId)
+            .single()
+          if (sess?.session_date) {
+            dateDisplay = new Date(sess.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+            if (sess.label) dateDisplay += ` — ${sess.label}`
+          }
+          if (sess?.session_time) timeDisplay = sess.session_time
+        }
 
         await Promise.allSettled([
           resend.emails.send({
@@ -183,7 +199,7 @@ export async function POST(req: NextRequest) {
             subject: `You're in! ${evt.title} at Host Hampton 🎉`,
             html: ticketConfirmationHtml({
               customerName: m.customerName, eventTitle: evt.title, eventDate: dateDisplay,
-              eventTime: evt.event_time || '', location: evt.location, quantity: qty,
+              eventTime: timeDisplay, location: evt.location, quantity: qty,
               variantLabel: m.variantLabel || undefined, totalFormatted, ticketRef, isFree: false,
             }),
           }),
@@ -193,7 +209,7 @@ export async function POST(req: NextRequest) {
             html: ticketPurchaseNotifyHtml({
               ticketRef, customerName: m.customerName, customerEmail: m.customerEmail,
               customerPhone: m.customerPhone || undefined, eventTitle: evt.title,
-              eventDate: dateDisplay, eventTime: evt.event_time || '', quantity: qty,
+              eventDate: dateDisplay, eventTime: timeDisplay, quantity: qty,
               variantLabel: m.variantLabel || undefined, totalFormatted, isFree: false,
               stripePI: session.payment_intent as string,
             }),
@@ -317,10 +333,12 @@ export async function POST(req: NextRequest) {
         const totalCents = session.amount_total || 0
         const totalFormatted = `$${(totalCents / 100).toFixed(2)}`
 
-        const sessionDates = (sessionsData || []).map(s => {
-          const d = new Date(s.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-          return `${d} at ${s.session_time}${s.label ? ` — ${s.label}` : ''}`
-        }).join(', ')
+        // Build structured sessions array for email templates
+        const emailSessions = (sessionsData || []).map(s => ({
+          date: new Date(s.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+          time: s.session_time || '',
+          label: s.label || undefined,
+        }))
 
         await Promise.allSettled([
           resend.emails.send({
@@ -329,10 +347,11 @@ export async function POST(req: NextRequest) {
             html: ticketConfirmationHtml({
               customerName: m.customerName, eventTitle: evt.title,
               eventDate: `${sessionIds.length} sessions`,
-              eventTime: sessionDates,
+              eventTime: '',
               location: evt.location, quantity: qty,
               variantLabel: m.variantLabel || undefined,
               totalFormatted, ticketRef: groupRef, isFree: false,
+              sessions: emailSessions,
             }),
           }),
           resend.emails.send({
@@ -344,10 +363,11 @@ export async function POST(req: NextRequest) {
               customerPhone: m.customerPhone || undefined,
               eventTitle: evt.title,
               eventDate: `${sessionIds.length} sessions`,
-              eventTime: sessionDates, quantity: qty,
+              eventTime: '', quantity: qty,
               variantLabel: m.variantLabel || undefined,
               totalFormatted, isFree: false,
               stripePI: session.payment_intent as string,
+              sessions: emailSessions,
             }),
           }),
         ])
