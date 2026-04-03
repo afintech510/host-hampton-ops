@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Calendar, Clock, MapPin, ArrowLeft } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import TicketForm from './TicketForm'
+import ImageGallery from './ImageGallery'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,11 +75,15 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
           {/* Left: details */}
           <div className="lg:col-span-3">
-            {/* Image */}
+            {/* Image(s) */}
             {(() => {
-              const images = event.images || []
-              const primaryImg = images.find((i: any) => i.is_primary) || images[0]
-              const imgUrl = primaryImg?.url || event.image_url
+              const images: { url: string; name: string; is_primary: boolean }[] = event.images || []
+              // Sort so primary is first
+              const sorted = [...images].sort((a, b) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0))
+              if (sorted.length > 1) {
+                return <ImageGallery images={sorted} title={event.title} />
+              }
+              const imgUrl = sorted[0]?.url || event.image_url
               if (imgUrl) {
                 return (
                   <div className="rounded-2xl overflow-hidden mb-6 bg-white">
