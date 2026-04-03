@@ -526,9 +526,61 @@ export async function POST(req: NextRequest) {
         const totalCents = session.amount_total || 0
         const totalFormatted = `$${(totalCents / 100).toFixed(2)}`
 
-        const itemsSummary = cartItems.map(ci =>
-          `${ci.eventTitle}${ci.sessionIds?.length ? ` (${ci.sessionIds.length} sessions)` : ''} x${ci.quantity}`
-        ).join(', ')
+        // Calculate actual total ticket quantity (sum of qty per cart item)
+        const totalQty = cartItems.reduce((sum, ci) => sum + ci.quantity, 0)
+
+        // Build structured sessions for each cart item (fetch session dates)
+        const emailSessions: { date: string; time: string; label?: string }[] = []
+        let cartEventDate = ''
+
+        for (const ci of cartItems) {
+          if (ci.sessionIds?.length) {
+            const { data: sessData } = await supabase
+              .from('event_sessions')
+              .select('session_date, session_time, label')
+              .in('id', ci.sessionIds)
+              .order('session_date', { ascending: true })
+            for (const s of (sessData || [])) {
+              emailSessions.push({
+                date: new Date(s.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+                time: s.session_time || '',
+                label: s.label || undefined,
+              })
+            }
+          } else if (ci.sessionId) {
+            const { data: sess } = await supabase
+              .from('event_sessions')
+              .select('session_date, session_time, label')
+              .eq('id', ci.sessionId)
+              .single()
+            if (sess) {
+              emailSessions.push({
+                date: new Date(sess.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+                time: sess.session_time || '',
+                label: sess.label || undefined,
+              })
+            }
+          } else {
+            // No session — use event date
+            const { data: ciEvt } = await supabase
+              .from('events')
+              .select('event_date, event_time')
+              .eq('id', ci.eventId)
+              .single()
+            if (ciEvt?.event_date) {
+              cartEventDate = new Date(ciEvt.event_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+            }
+          }
+        }
+
+        // Determine date display
+        const hasMultipleSessions = emailSessions.length > 1
+        const dateDisplay = hasMultipleSessions
+          ? `${emailSessions.length} sessions`
+          : emailSessions.length === 1
+            ? emailSessions[0].date
+            : cartEventDate || 'TBD'
+        const timeDisplay = emailSessions.length === 1 ? emailSessions[0].time : ''
 
         await Promise.allSettled([
           resend.emails.send({
@@ -537,13 +589,14 @@ export async function POST(req: NextRequest) {
             html: ticketConfirmationHtml({
               customerName: m.customerName,
               eventTitle: eventTitles.join(' + '),
-              eventDate: `${ticketRefs.length} ticket${ticketRefs.length > 1 ? 's' : ''}`,
-              eventTime: itemsSummary,
+              eventDate: dateDisplay,
+              eventTime: timeDisplay,
               location: 'Host Hampton',
-              quantity: ticketRefs.length,
+              quantity: totalQty,
               totalFormatted,
               ticketRef: cartRef,
               isFree: false,
+              sessions: hasMultipleSessions ? emailSessions : undefined,
             }),
           }),
           resend.emails.send({
@@ -555,12 +608,13 @@ export async function POST(req: NextRequest) {
               customerEmail: m.customerEmail,
               customerPhone: m.customerPhone || undefined,
               eventTitle: eventTitles.join(' + '),
-              eventDate: `${ticketRefs.length} ticket${ticketRefs.length > 1 ? 's' : ''}`,
-              eventTime: itemsSummary,
-              quantity: ticketRefs.length,
+              eventDate: dateDisplay,
+              eventTime: timeDisplay,
+              quantity: totalQty,
               totalFormatted,
               isFree: false,
               stripePI: session.payment_intent as string,
+              sessions: hasMultipleSessions ? emailSessions : undefined,
             }),
           }),
         ])
