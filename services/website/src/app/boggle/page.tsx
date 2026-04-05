@@ -31,10 +31,14 @@ function solveBoggle(grid: string[][], trie: TrieNode): SolveResult[] {
   const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]
 
   function dfs(r: number, c: number, node: TrieNode, path: [number,number][], word: string, visited: Set<number>) {
-    const ch = grid[r][c].toLowerCase()
-    if (!node.children[ch]) return
-    const next = node.children[ch]
-    const newWord = word + ch
+    // Handle multi-char cells like "QU" — traverse trie for each character
+    const cell = grid[r][c].toLowerCase()
+    let next: TrieNode | undefined = node
+    for (const ch of cell) {
+      next = next?.children[ch]
+      if (!next) return
+    }
+    const newWord = word + cell
     path.push([r, c])
     if (next.isWord && !found.has(newWord)) found.set(newWord, [...path])
     for (const [dr, dc] of dirs) {
@@ -65,7 +69,12 @@ function solveBoggle(grid: string[][], trie: TrieNode): SolveResult[] {
 function parseGrid(text: string): string[][] | null {
   const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0)
   const g = lines.map(line =>
-    line.toUpperCase().split(/[\s,;|]+/).filter(c => /^[A-Z]$/.test(c))
+    line.toUpperCase().split(/[\s,;|]+/).filter(c => /^[A-Z]{1,2}$/.test(c)).map(c => {
+      // Normalize: "QU" stays as "QU", lone "Q" becomes "QU" (standard Boggle rule), all else single letter
+      if (c === 'QU' || c === 'Q') return 'QU'
+      if (c.length === 2 && c !== 'QU') return c[0] // stray 2-letter token: take first char only
+      return c
+    })
   )
   const maxCols = Math.max(...g.map(r => r.length))
   if (g.length >= 2 && maxCols >= 2 && g.every(r => r.length === maxCols)) return g
@@ -95,7 +104,9 @@ export default function BoggleSolver() {
     async function loadDict() {
       try {
         setDictStatus('loading')
-        const res = await fetch('https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt')
+        // ENABLE1 — curated US English word game dictionary (~173k words)
+        // Excludes proper nouns, abbreviations, archaic/obsolete, and offensive words
+        const res = await fetch('https://raw.githubusercontent.com/dolph/dictionary/master/enable1.txt')
         const text = await res.text()
         const words = text.split('\n').map(w => w.trim().toLowerCase()).filter(w => w.length >= 3 && w.length <= 12 && /^[a-z]+$/.test(w))
         setDictCount(words.length)
@@ -243,7 +254,7 @@ export default function BoggleSolver() {
             rows={7}
             value={gridText}
             onChange={e => handleGridTextChange(e.target.value)}
-            placeholder={'A M K U G S\nR X I Y R O\nK O R I T E\nD E D E S I\nI N N N L G\nN R A S O H'}
+            placeholder={'A M K Qu G S\nR X I Y R O\nK O R I T E\nD E D E S I\nI N N N L G\nN R A S O H'}
             spellCheck={false}
           />
 
@@ -269,12 +280,12 @@ export default function BoggleSolver() {
                         <div key={c} style={{
                           width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center',
                           borderRadius: 6, background: isStart ? '#22c55e' : isEnd ? '#f43f5e' : isHighlighted ? '#818cf8' : '#334155',
-                          fontSize: 16, fontWeight: 700, position: 'relative' as const, transition: 'all 0.15s', flexDirection: 'column' as const,
+                          fontSize: cell.length > 1 ? 13 : 16, fontWeight: 700, position: 'relative' as const, transition: 'all 0.15s', flexDirection: 'column' as const,
                           color: isHighlighted ? '#fff' : '#e2e8f0',
                           transform: isHighlighted ? 'scale(1.08)' : 'none',
                           boxShadow: isStart ? '0 0 12px #22c55e55' : isEnd ? '0 0 12px #f43f5e55' : isHighlighted ? '0 0 12px #818cf855' : 'none',
                         }}>
-                          <span style={{ fontSize: 16, lineHeight: 1 }}>{cell}</span>
+                          <span style={{ fontSize: cell.length > 1 ? 13 : 16, lineHeight: 1 }}>{cell.length > 1 ? cell[0] + cell.slice(1).toLowerCase() : cell}</span>
                           {isHighlighted && <span style={{ fontSize: 8, position: 'absolute' as const, bottom: 2, right: 4, opacity: 0.7 }}>{hlIndex! + 1}</span>}
                         </div>
                       )

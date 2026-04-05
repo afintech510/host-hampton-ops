@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
               },
               {
                 type: 'text',
-                text: 'Extract the letter grid from this word game screenshot. Output ONLY the grid as rows of single letters separated by spaces, one row per line. No other text. Example format:\nA B C D E F\nG H I J K L\nM N O P Q R',
+                text: 'Extract the letter grid from this word game screenshot. Output ONLY the grid as rows of letters separated by spaces, one row per line. No other text. IMPORTANT: If a tile shows "Qu" (Q and u together on one tile), output it as "Qu" — do NOT split it into separate letters. Example format:\nA B C Qu E F\nG H I J K L\nM N O P R S',
               },
             ],
           },
