@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Minus, Plus, Loader2, ShoppingCart } from 'lucide-react'
 import { useCart } from '@/context/CartContext'
 
-interface Variant { label: string; priceCents: number }
+interface Variant { label: string; priceCents: number; seats?: number }
 interface BundleTier { minSessions: number; pricePerSessionCents: number }
 interface Session { id: string; session_date: string; session_time: string; label?: string; available_tickets: number; price_cents?: number }
 interface EventProps {

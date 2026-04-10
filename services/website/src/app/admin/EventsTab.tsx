@@ -31,7 +31,7 @@ interface Ticket {
   group_ref: string | null
 }
 
-interface Variant { label: string; priceCents: number }
+interface Variant { label: string; priceCents: number; seats?: number }
 
 interface EventSession {
   id?: string
@@ -418,12 +418,14 @@ function EventForm({
 /* ─── Variants Editor ────────────────────────────────── */
 
 function VariantsEditor({ variants, onChange }: { variants: Variant[]; onChange: (v: Variant[]) => void }) {
-  function addVariant() { onChange([...variants, { label: '', priceCents: 0 }]) }
+  function addVariant() { onChange([...variants, { label: '', priceCents: 0, seats: 1 }]) }
   function removeVariant(i: number) { onChange(variants.filter((_, idx) => idx !== i)) }
-  function updateVariant(i: number, field: 'label' | 'priceCents', value: string) {
+  function updateVariant(i: number, field: 'label' | 'priceCents' | 'seats', value: string) {
     const updated = [...variants]
     if (field === 'priceCents') {
       updated[i] = { ...updated[i], priceCents: Math.round(parseFloat(value || '0') * 100) }
+    } else if (field === 'seats') {
+      updated[i] = { ...updated[i], seats: Math.max(1, parseInt(value || '1', 10)) }
     } else {
       updated[i] = { ...updated[i], label: value }
     }
@@ -449,6 +451,9 @@ function VariantsEditor({ variants, onChange }: { variants: Variant[]; onChange:
               onChange={e => updateVariant(i, 'priceCents', e.target.value)}
               className="form-input pl-6 text-sm" placeholder="0" />
           </div>
+          <input type="number" min="1" value={v.seats ?? 1}
+            onChange={e => updateVariant(i, 'seats', e.target.value)}
+            className="form-input w-14 text-sm text-center" title="Seats per ticket" />
           <button type="button" onClick={() => removeVariant(i)} className="text-red-400 hover:text-red-600 p-1"><X className="w-4 h-4" /></button>
         </div>
       ))}
@@ -723,14 +728,21 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
     return s.session_date ? formatDate(s.session_date) + (s.label ? ` (${s.label})` : '') : (s.label || '')
   }
 
+  // Compute actual headcount: quantity × seats-per-variant (default 1)
+  function headcount(t: Ticket): number {
+    if (!t.variant_label || !event.has_variants || !event.variants) return t.quantity
+    const v = (event.variants as Variant[]).find(v => v.label === t.variant_label)
+    return t.quantity * (v?.seats ?? 1)
+  }
+
   function printAttendees() {
     const confirmed = tickets.filter(t => t.status === 'confirmed')
     const sessionCol = hasSessions
     const html = `<html><head><title>Attendees - ${event.title}</title>
       <style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{padding:8px 12px;border:1px solid #ddd;text-align:left;font-size:13px}th{background:#f5f5f5;font-weight:bold}.title{font-size:18px;margin-bottom:4px}.meta{color:#888;font-size:13px;margin-bottom:16px}</style></head>
-      <body><div class="title">${event.title}</div><div class="meta">${confirmed.length} confirmed attendees · ${confirmed.reduce((s, t) => s + t.quantity, 0)} total tickets</div>
+      <body><div class="title">${event.title}</div><div class="meta">${confirmed.length} confirmed attendees · ${confirmed.reduce((s, t) => s + headcount(t), 0)} total tickets</div>
       <table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th>${sessionCol ? '<th>Date</th>' : ''}<th>Qty</th><th>Option</th></tr></thead><tbody>
-      ${confirmed.map((t, i) => `<tr><td>${i + 1}</td><td>${t.customer_name}</td><td>${t.customer_email}</td><td>${t.customer_phone || '—'}</td>${sessionCol ? `<td>${getSessionLabel(t) || '—'}</td>` : ''}<td>${t.quantity}</td><td>${t.variant_label || '—'}</td></tr>`).join('')}
+      ${confirmed.map((t, i) => `<tr><td>${i + 1}</td><td>${t.customer_name}</td><td>${t.customer_email}</td><td>${t.customer_phone || '—'}</td>${sessionCol ? `<td>${getSessionLabel(t) || '—'}</td>` : ''}<td>${headcount(t)}</td><td>${t.variant_label || '—'}</td></tr>`).join('')}
       </tbody></table></body></html>`
     const w = window.open('', '_blank')
     if (w) { w.document.write(html); w.document.close(); w.print() }
@@ -741,7 +753,7 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
     const csv = (hasSessions ? 'Name,Email,Phone,Date,Qty,Option,Paid,Ref\n' : 'Name,Email,Phone,Qty,Option,Paid,Ref\n') +
       confirmed.map(t => {
         const datePart = hasSessions ? `"${getSessionLabel(t)}",` : ''
-        return `"${t.customer_name}","${t.customer_email}","${t.customer_phone || ''}",${datePart}${t.quantity},"${t.variant_label || ''}","${formatPrice(t.total_cents)}","${t.ticket_ref}"`
+        return `"${t.customer_name}","${t.customer_email}","${t.customer_phone || ''}",${datePart}${headcount(t)},"${t.variant_label || ''}","${formatPrice(t.total_cents)}","${t.ticket_ref}"`
       }).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
@@ -825,7 +837,7 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
                       )}
                     </div>
                     <span className="text-xs text-hampton-mauve">
-                      {group.tickets.length} attendee{group.tickets.length !== 1 ? 's' : ''} &middot; {group.tickets.reduce((s, t) => s + t.quantity, 0)} ticket{group.tickets.reduce((s, t) => s + t.quantity, 0) !== 1 ? 's' : ''}
+                      {group.tickets.length} attendee{group.tickets.length !== 1 ? 's' : ''} &middot; {group.tickets.reduce((s, t) => s + headcount(t), 0)} ticket{group.tickets.reduce((s, t) => s + headcount(t), 0) !== 1 ? 's' : ''}
                     </span>
                   </div>
                   {/* Desktop table */}
@@ -849,7 +861,7 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
                             <td className="py-2 pr-3">{t.customer_name}</td>
                             <td className="py-2 pr-3 text-hampton-mauve">{t.customer_email}</td>
                             <td className="py-2 pr-3 text-hampton-mauve">{t.customer_phone || '—'}</td>
-                            <td className="py-2 pr-3">{t.quantity}</td>
+                            <td className="py-2 pr-3">{headcount(t)}</td>
                             <td className="py-2 pr-3">{formatPrice(t.total_cents)}</td>
                             <td className="py-2">
                               {t.stripe_payment_intent_id ? (
@@ -878,7 +890,7 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
                           <p>{t.customer_email}</p>
                           {t.customer_phone && <p>{t.customer_phone}</p>}
                           <div className="flex items-center justify-between pt-1">
-                            <span className="font-mono text-gray-400">{t.ticket_ref} · Qty {t.quantity}</span>
+                            <span className="font-mono text-gray-400">{t.ticket_ref} · Qty {headcount(t)}</span>
                             {t.stripe_payment_intent_id ? (
                               <button onClick={() => processRefund(t.id)} disabled={refunding === t.id}
                                 className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50">
@@ -918,7 +930,7 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
                       <td className="py-2 pr-3">{t.customer_name}</td>
                       <td className="py-2 pr-3 text-hampton-mauve">{t.customer_email}</td>
                       <td className="py-2 pr-3 text-hampton-mauve">{t.customer_phone || '—'}</td>
-                      <td className="py-2 pr-3">{t.quantity}</td>
+                      <td className="py-2 pr-3">{headcount(t)}</td>
                       <td className="py-2 pr-3">{formatPrice(t.total_cents)}</td>
                       <td className="py-2">
                         {t.stripe_payment_intent_id ? (
@@ -947,7 +959,7 @@ function EventDetailPanel({ event, headers, onRefresh }: { event: Event; headers
                     <p>{t.customer_email}</p>
                     {t.customer_phone && <p>{t.customer_phone}</p>}
                     <div className="flex items-center justify-between pt-1">
-                      <span className="font-mono text-gray-400">{t.ticket_ref} · Qty {t.quantity}</span>
+                      <span className="font-mono text-gray-400">{t.ticket_ref} · Qty {headcount(t)}</span>
                       {t.stripe_payment_intent_id ? (
                         <button onClick={() => processRefund(t.id)} disabled={refunding === t.id}
                           className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50">
