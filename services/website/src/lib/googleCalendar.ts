@@ -91,12 +91,18 @@ export function parseCalendarBlocks(events: CalendarEvent[]): Map<string, Calend
       blocks.get(date)!.push({ start: '00:00', end: '23:59', allDay: true })
     } else if (ev.start.dateTime) {
       // Timed event — blocks specific range
+      // Use toLocaleString to get Eastern time (server runs in UTC)
+      const TZ = 'America/New_York'
       const dt = new Date(ev.start.dateTime)
-      const date = dt.toISOString().split('T')[0]
-      const startTime = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
+      const startParts = dt.toLocaleString('en-US', { timeZone: TZ, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      const [datePart, timePart] = startParts.split(', ')
+      const [mm, dd, yyyy] = datePart.split('/')
+      const date = `${yyyy}-${mm}-${dd}`
+      const startTime = timePart.replace(/^24:/, '00:')
 
       const endDt = new Date(ev.end.dateTime!)
-      const endTime = `${String(endDt.getHours()).padStart(2, '0')}:${String(endDt.getMinutes()).padStart(2, '0')}`
+      const endParts = endDt.toLocaleString('en-US', { timeZone: TZ, hour12: false, hour: '2-digit', minute: '2-digit' })
+      const endTime = endParts.replace(/^24:/, '00:')
 
       if (!blocks.has(date)) blocks.set(date, [])
       blocks.get(date)!.push({ start: startTime, end: endTime, allDay: false })
