@@ -11,14 +11,24 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const supabase = getSupabase()
   const { data: event } = await supabase
     .from('events')
-    .select('title, short_description')
+    .select('title, short_description, image_url, images')
     .eq('slug', params.slug)
     .single()
 
   if (!event) return { title: 'Event Not Found' }
+
+  const description = event.short_description || `Join us for ${event.title} at Host Hampton in Speonk, NY.`
+  const imgs: { url: string; is_primary: boolean }[] = event.images || []
+  const ogImage = event.image_url || (imgs.find(i => i.is_primary) || imgs[0])?.url || null
+
   return {
     title: event.title,
-    description: event.short_description || `Join us for ${event.title} at Host Hampton in Speonk, NY.`,
+    description,
+    openGraph: {
+      title: event.title,
+      description,
+      ...(ogImage ? { images: [{ url: ogImage }] } : {}),
+    },
   }
 }
 
