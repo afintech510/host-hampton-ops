@@ -36,7 +36,7 @@ function LoginContent() {
           My Booking
         </h1>
         <p className="text-gray-500 text-sm text-center mb-6">
-          Enter your email to receive a secure link to your booking portal.
+          Enter your email to access your booking portal. If you have a saved party quote, we&apos;ll send you a link to pick up where you left off.
         </p>
 
         {errorType && errorMessages[errorType] && (

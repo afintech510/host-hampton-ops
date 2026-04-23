@@ -258,6 +258,11 @@ interface QuoteData {
   contactName: string
   contactEmail: string
   contactPhone: string
+  preferredDate?: string
+  partyName?: string
+  isMiniParty?: boolean
+  foodQtyMap?: Record<string, number>
+  decorQtyMap?: Record<string, number>
 }
 
 function parseQuoteParam(q: string | null | undefined): QuoteData | null {
@@ -289,15 +294,15 @@ export default function KidsPartyMenuContent({
 
   /* ── selection state ── */
   const [selectedTheme, setSelectedTheme] = useState<string | null>(restored?.theme ?? null)
-  const [isMiniParty, setIsMiniParty] = useState(false)
+  const [isMiniParty, setIsMiniParty] = useState(restored?.isMiniParty ?? false)
   const [guestCount, setGuestCount] = useState(restored?.guestCount ?? INCLUDED_GUESTS)
   const [selectedActivities, setSelectedActivities] = useState<Set<string>>(new Set(restored?.activities))
   const [selectedFood, setSelectedFood] = useState<Set<string>>(new Set(restored?.food))
-  const [foodQty, setFoodQty] = useState<Map<string, number>>(new Map())
+  const [foodQty, setFoodQty] = useState<Map<string, number>>(new Map(Object.entries(restored?.foodQtyMap || {}) as [string, number][]))
   const [selectedDesserts, setSelectedDesserts] = useState<Set<string>>(new Set(restored?.desserts))
   const [selectedBeverages, setSelectedBeverages] = useState<Set<string>>(new Set(restored?.beverages))
   const [selectedDecor, setSelectedDecor] = useState<Set<string>>(new Set(restored?.decor))
-  const [decorQty, setDecorQty] = useState<Map<string, number>>(new Map())
+  const [decorQty, setDecorQty] = useState<Map<string, number>>(new Map(Object.entries(restored?.decorQtyMap || {}) as [string, number][]))
   const [selectedEntertainment, setSelectedEntertainment] = useState<Set<string>>(new Set(restored?.entertainment))
   const [selectedPartyAddOns, setSelectedPartyAddOns] = useState<Set<string>>(new Set(restored?.extras))
 
@@ -308,7 +313,7 @@ export default function KidsPartyMenuContent({
   /* ── form state ── */
   const [contact, setContact] = useState({
     fullName: restored?.contactName || '', email: restored?.contactEmail || '', phone: restored?.contactPhone || '',
-    preferredDate: '', guestCountField: '', partyName: '',
+    preferredDate: restored?.preferredDate || '', guestCountField: '', partyName: restored?.partyName || '',
   })
   const [consent, setConsent] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -543,6 +548,10 @@ export default function KidsPartyMenuContent({
       contactPhone: contact.phone,
       childName: contact.partyName || '',
       preferredDate: contact.preferredDate || '',
+      partyName: contact.partyName || '',
+      isMiniParty,
+      foodQtyMap: Object.fromEntries(foodQty),
+      decorQtyMap: Object.fromEntries(decorQty),
       lineItems,
     }
   }

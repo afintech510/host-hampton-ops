@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import { calculateCardFee, calculateLineItemTotal, formatMoney, getDepositCents } from '@/lib/partyPricing'
 import type { BookingLineItem, PaymentMethod } from '@/types/booking-flow'
 import { PAYMENT_METHODS } from '@/types/booking-flow'
+import UniversalCalendar from '@/components/UniversalCalendar'
+import type { CalendarSelection } from '@/components/UniversalCalendar/types'
+import { ArrowLeft } from 'lucide-react'
 
 const STORAGE_KEY = 'hh_quote_data'
 
@@ -45,6 +48,7 @@ export default function SummaryContent() {
   const [childName, setChildName] = useState('')
   const [childAge, setChildAge] = useState('')
   const [notes, setNotes] = useState('')
+  const [address, setAddress] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -147,6 +151,7 @@ export default function SummaryContent() {
           packageType: quote.themeName || 'Kids Party',
           paymentMethod,
           notes,
+          address,
         }),
       })
 
@@ -186,6 +191,11 @@ export default function SummaryContent() {
   return (
     <div className="min-h-screen bg-[#F6F1EB]">
       <div className="max-w-5xl mx-auto px-4 py-10 md:py-16">
+        <div className="text-left mb-4">
+          <a href="/kids-party-menu" className="inline-flex items-center gap-1.5 text-sm text-[#A1B5C8] hover:text-[#1a2744] transition-colors">
+            <ArrowLeft size={16} /> Back to Menu
+          </a>
+        </div>
         <h1 className="font-display text-3xl md:text-4xl text-[#1a2744] text-center mb-2">
           Review Your Party
         </h1>
@@ -194,7 +204,7 @@ export default function SummaryContent() {
         </p>
 
         <div className="grid md:grid-cols-5 gap-8">
-          {/* Left: Line items */}
+          {/* Left: Line items + Date & Time */}
           <div className="md:col-span-3 space-y-6">
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h2 className="font-display text-xl text-[#1a2744] mb-4">Your Selections</h2>
@@ -270,45 +280,28 @@ export default function SummaryContent() {
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Right: Date/Time + Payment + Contact */}
-          <div className="md:col-span-2 space-y-6">
-            {/* Date & Time */}
+            {/* Date & Time via UniversalCalendar */}
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h2 className="font-display text-xl text-[#1a2744] mb-4">Date & Time</h2>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Party Date</label>
-                  <input
-                    type="date"
-                    value={partyDate}
-                    onChange={e => setPartyDate(e.target.value)}
-                    min={new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#A1B5C8] focus:border-transparent outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Party Time</label>
-                  <select
-                    value={partyTime}
-                    onChange={e => setPartyTime(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#A1B5C8] focus:border-transparent outline-none"
-                  >
-                    <option value="">Select a time</option>
-                    <option value="10:00 AM">10:00 AM</option>
-                    <option value="11:00 AM">11:00 AM</option>
-                    <option value="12:00 PM">12:00 PM</option>
-                    <option value="1:00 PM">1:00 PM</option>
-                    <option value="2:00 PM">2:00 PM</option>
-                    <option value="3:00 PM">3:00 PM</option>
-                    <option value="4:00 PM">4:00 PM</option>
-                    <option value="5:00 PM">5:00 PM</option>
-                  </select>
-                </div>
-              </div>
+              <UniversalCalendar
+                mode="booking"
+                lockedBookingType="kids-party"
+                defaultDate={partyDate || undefined}
+                expandable={false}
+                initialExpanded={true}
+                showSummary={false}
+                timeSlotHeading="Select Party Start Time"
+                showTimePlaceholder={true}
+                onSelect={(sel: CalendarSelection) => {
+                  if (sel.date) setPartyDate(sel.date)
+                  if (sel.timeSlot) setPartyTime(sel.timeSlot.start)
+                }}
+              />
             </div>
+          </div>
 
+          {/* Right: Payment + Contact */}
+          <div className="md:col-span-2 space-y-6">
             {/* Child Info */}
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h2 className="font-display text-xl text-[#1a2744] mb-4">Birthday Child</h2>
@@ -333,6 +326,21 @@ export default function SummaryContent() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#A1B5C8] focus:border-transparent outline-none"
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* Home Address */}
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <h2 className="font-display text-xl text-[#1a2744] mb-4">Home Address</h2>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Street Address</label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={e => setAddress(e.target.value)}
+                  placeholder="123 Main St, Town, NY 11xxx"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#A1B5C8] focus:border-transparent outline-none"
+                />
               </div>
             </div>
 

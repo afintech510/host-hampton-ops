@@ -25,6 +25,49 @@ export async function POST(req: NextRequest) {
 
   // Always return success to prevent email enumeration
   if (!booking) {
+    // Check for saved quotes in contact_interactions
+    const { data: contact } = await supabase
+      .from('contacts')
+      .select('id')
+      .eq('email', email.toLowerCase().trim())
+      .single()
+
+    if (contact) {
+      const { data: interaction } = await supabase
+        .from('contact_interactions')
+        .select('metadata')
+        .eq('contact_id', contact.id)
+        .eq('type', 'form_submission')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (interaction?.metadata?.action === 'save_for_later' && interaction.metadata.quoteData) {
+        const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
+        const protocol = host.includes('localhost') ? 'http' : 'https'
+        const encoded = Buffer.from(JSON.stringify(interaction.metadata.quoteData)).toString('base64url')
+        const quoteLink = `${protocol}://${host}/kids-party-menu?q=${encoded}`
+
+        if (process.env.RESEND_API_KEY) {
+          const { Resend } = await import('resend')
+          const resend = new Resend(process.env.RESEND_API_KEY)
+          const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+          const { savedQuoteHtml } = await import('@/lib/emailTemplates')
+
+          await resend.emails.send({
+            from,
+            to: email.toLowerCase().trim(),
+            subject: 'Your Saved Party Quote — Host Hampton',
+            html: savedQuoteHtml({
+              customerName: interaction.metadata.quoteData.contactName || 'there',
+              quoteLink,
+              summary: interaction.metadata.quoteData.summary || '',
+            }),
+          })
+        }
+      }
+    }
+
     return NextResponse.json({ ok: true })
   }
 
