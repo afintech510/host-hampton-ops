@@ -490,6 +490,41 @@ export default function KidsPartyMenuContent({
   }
 
   function getQuoteData() {
+    // Build structured line items with prices for summary page
+    const lineItems: { name: string; category: string; quantity: number; unit_price_cents: number; price_type: string; guest_multiplied: boolean; pricing_item_id?: string }[] = []
+
+    if (themeItem) {
+      let themePriceCents = themeItem.price_cents
+      if (isMiniParty) themePriceCents = Math.max(0, themePriceCents - MINI_PARTY_DISCOUNT_CENTS)
+      lineItems.push({ name: themeItem.name, category: 'theme', quantity: 1, unit_price_cents: themePriceCents, price_type: 'flat', guest_multiplied: false, pricing_item_id: themeItem.id })
+    }
+    if (extraGuests > 0) {
+      lineItems.push({ name: 'Additional Guests', category: 'theme', quantity: extraGuests, unit_price_cents: EXTRA_GUEST_CENTS, price_type: 'flat', guest_multiplied: false })
+    }
+
+    const addItemsFromSet = (ids: Set<string>, cat: string, qtyMap?: Map<string, number>) => {
+      for (const id of Array.from(ids)) {
+        const item = itemMap.get(id)
+        if (!item) continue
+        const qty = qtyMap?.get(id) ?? 1
+        lineItems.push({
+          name: item.name, category: cat, quantity: qty,
+          unit_price_cents: item.price_cents,
+          price_type: item.price_type === 'per_person' ? 'per_person' : 'flat',
+          guest_multiplied: item.price_type === 'per_person',
+          pricing_item_id: item.id,
+        })
+      }
+    }
+
+    addItemsFromSet(selectedActivities, 'activity-add-on')
+    addItemsFromSet(selectedFood, 'food-add-on', foodQty)
+    addItemsFromSet(selectedDesserts, 'dessert-add-on')
+    addItemsFromSet(selectedBeverages, 'beverage-add-on')
+    addItemsFromSet(selectedDecor, 'decor-add-on', decorQty)
+    addItemsFromSet(selectedEntertainment, 'entertainment-add-on')
+    addItemsFromSet(selectedPartyAddOns, 'extra')
+
     return {
       theme: selectedTheme,
       themeName: themeItem?.name ?? null,
@@ -506,6 +541,9 @@ export default function KidsPartyMenuContent({
       contactName: contact.fullName,
       contactEmail: contact.email,
       contactPhone: contact.phone,
+      childName: contact.partyName || '',
+      preferredDate: contact.preferredDate || '',
+      lineItems,
     }
   }
 
@@ -571,9 +609,7 @@ export default function KidsPartyMenuContent({
       const quotePayload = { ...getQuoteData(), summary: buildSummary(), totalCents: total }
       localStorage.setItem(LS_KEY, JSON.stringify(quotePayload))
       setSubmitted(true)
-      const bookParams = new URLSearchParams({ type: 'kids-party', from: 'quote' })
-      if (contact.preferredDate) bookParams.set('date', contact.preferredDate)
-      window.location.href = `/book?${bookParams.toString()}`
+      window.location.href = '/kids-party-menu/summary'
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setSubmitting(false)
@@ -1050,7 +1086,7 @@ export default function KidsPartyMenuContent({
               </button>
               <button type="submit" disabled={submitting || submitted}
                 className="w-full bg-hampton-navy text-white font-bold py-3.5 px-6 rounded-full text-sm hover:bg-opacity-90 hover:shadow-[0_8px_25px_rgba(47,52,59,0.3)] transition-all disabled:opacity-60 flex items-center justify-center gap-2">
-                {submitting ? <><Loader2 size={16} className="animate-spin" /> Submitting...</> : <><Calendar size={16} /> Check Availability</>}
+                {submitting ? <><Loader2 size={16} className="animate-spin" /> Submitting...</> : <><Calendar size={16} /> Review Your Party</>}
               </button>
             </div>
           </form>

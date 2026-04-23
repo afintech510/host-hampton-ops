@@ -7,10 +7,13 @@ import {
   reminderBooking7DayHtml,
   reminderBooking1DayHtml,
 } from '@/lib/email-templates/reminders'
+import { partyBalanceReminderHtml, partyAdminUnpaidDayOfHtml } from '@/lib/emailTemplates'
+import { formatMoney } from '@/lib/partyPricing'
 import {
   smsEventReminder1Day,
   smsEventReminder2Hr,
   smsBookingReminder1Day,
+  smsReviewRequest,
 } from '@/lib/sms-templates'
 import { sendSMS } from '@/lib/twilio'
 
@@ -130,7 +133,7 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any) 
   } else if (reminder.reference_type === 'booking') {
     const { data: booking } = await supabase
       .from('bookings')
-      .select('booking_ref, party_date, party_time, package_type')
+      .select('booking_ref, party_date, party_time, package_type, balance_due_cents, contact_name, contact_phone')
       .eq('booking_ref', reminder.reference_id)
       .single()
 
@@ -156,6 +159,41 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any) 
         partyTime: booking.party_time || '',
         packageName: booking.package_type,
       })
+    } else if (reminder.reminder_type === 'party_balance_t2' || reminder.reminder_type === 'party_balance_t1') {
+      // Check if balance is still owed
+      const balanceDue = booking.balance_due_cents || 0
+      if (balanceDue <= 0) return // Already paid, skip reminder
+
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com'
+      subject = `Balance Reminder — ${booking.booking_ref}`
+      html = partyBalanceReminderHtml({
+        customerName: contact.first_name || 'there',
+        bookingRef: booking.booking_ref,
+        partyDate: dateDisplay,
+        balanceFormatted: formatMoney(balanceDue),
+        payUrl: `${siteUrl}/my-booking/pay`,
+      })
+    } else if (reminder.reminder_type === 'party_admin_unpaid_dayof') {
+      // Send to admin, not to customer
+      const balanceDue = booking.balance_due_cents || 0
+      if (balanceDue <= 0) return
+
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com'
+      subject = `ALERT: Unpaid balance — ${booking.booking_ref} party today`
+      html = partyAdminUnpaidDayOfHtml({
+        bookingRef: booking.booking_ref,
+        customerName: booking.contact_name || contact.first_name || 'Unknown',
+        customerPhone: booking.contact_phone || contact.phone || undefined,
+        partyDate: dateDisplay,
+        balanceFormatted: formatMoney(balanceDue),
+        adminUrl: `${siteUrl}/admin?tab=parties&ref=${booking.booking_ref}`,
+      })
+
+      // Override recipient to admin
+      if (subject && html) {
+        await resend.emails.send({ from, to: 'hosthampton295@gmail.com', subject, html })
+        return // Don't send to customer
+      }
     }
   }
 
@@ -195,6 +233,11 @@ async function processSmsReminder(reminder: any, contact: any, supabase: any) {
     if (reminder.reminder_type === 'booking_sms_1day') {
       body = smsBookingReminder1Day({ firstName, partyTime: booking.party_time || '' })
     }
+  }
+
+  // Review request (works for both events and bookings)
+  if (!body && reminder.reminder_type === 'review_request_sms') {
+    body = smsReviewRequest({ firstName })
   }
 
   if (body) {

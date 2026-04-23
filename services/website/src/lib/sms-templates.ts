@@ -101,3 +101,17 @@ export function smsFlashSale(params: SmsFlashSaleParams): string {
   const { offerText, deadline, link } = params
   return `FLASH SALE! Host Hampton: ${offerText}. Offer ends ${deadline}. Book now: ${link} Reply STOP to opt out`
 }
+
+/* ── Transactional — Post-Event Review Request ─────────────── */
+
+export interface SmsReviewRequestParams {
+  firstName: string
+}
+
+/**
+ * Review request sent 24 hours after an event or booking. ~180 chars (2 segments).
+ */
+export function smsReviewRequest(params: SmsReviewRequestParams): string {
+  const { firstName } = params
+  return `Hi ${firstName}! Hope you had an amazing time at Host Hampton! We'd love your feedback: https://search.google.com/local/writereview?placeid=ChIJv3k3iqn36IkRfD0Mkz2QWj4 Reply STOP to opt out`
+}

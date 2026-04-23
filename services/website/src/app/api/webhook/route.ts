@@ -3,9 +3,11 @@ import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
-import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml, giftCardHtml, giftCardNotifyHtml, giftCardPurchaseConfirmHtml } from '@/lib/emailTemplates'
+import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml, giftCardHtml, giftCardNotifyHtml, giftCardPurchaseConfirmHtml, partyDepositReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
+import { calculateCardFee, formatMoney } from '@/lib/partyPricing'
+import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
-import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest } from '@/lib/reminders'
+import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest, enqueuePartyReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
 
 /* Record a Stripe payment in the unified financial_transactions table (non-fatal) */
@@ -750,6 +752,224 @@ export async function POST(req: NextRequest) {
           }),
         ])
         console.log('Vendor confirmation sent to', m.contactEmail)
+      }
+
+      return NextResponse.json({ received: true })
+    }
+
+    // ── Party builder deposit / payment ─────────────────────
+    if (m.type === 'party_builder') {
+      const bookingRef = m.booking_ref
+      const bookingId = m.booking_id
+      const paymentType = m.payment_type || 'deposit'
+      const depositCents = parseInt(m.depositCents || '0', 10)
+      const cardFeeCents = parseInt(m.cardFeeCents || '0', 10)
+      const totalCharged = session.amount_total || 0
+
+      if (paymentType === 'deposit') {
+        // Update booking status
+        const { error: updateErr } = await supabase
+          .from('bookings')
+          .update({ status: 'pending_review' })
+          .eq('id', bookingId)
+
+        if (updateErr) {
+          console.error('Party builder booking update error:', updateErr)
+        }
+
+        // Insert payment record
+        const { error: payErr } = await supabase.from('booking_payments').insert({
+          booking_id: bookingId,
+          payment_type: 'deposit',
+          payment_method: 'card',
+          amount_cents: depositCents,
+          card_fee_cents: cardFeeCents,
+          total_charged_cents: totalCharged,
+          stripe_payment_intent_id: session.payment_intent as string,
+          stripe_session_id: session.id,
+          recorded_by: 'system',
+        })
+        if (payErr) console.error('Party builder payment insert error:', payErr)
+
+        // Insert audit log
+        await supabase.from('booking_modifications').insert({
+          booking_id: bookingId,
+          modified_by: 'system',
+          change_summary: `Deposit of ${formatMoney(depositCents)} received via card`,
+        }).then(({ error }) => {
+          if (error) console.error('Modification log error (non-fatal):', error)
+        })
+
+        // Record in financials
+        await recordFinancialTransaction(supabase, {
+          date: new Date().toISOString().split('T')[0],
+          description: `Party Deposit — ${m.packageType || 'Kids Party'}`,
+          amountCents: totalCharged,
+          category: 'Party Booking',
+          customerName: m.contactName,
+          reference: `pb-${bookingRef}`,
+          notes: m.contactEmail,
+        })
+
+        // Generate portal link
+        const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+        const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
+        await supabase.from('portal_tokens').insert({
+          booking_id: bookingId,
+          token_hash: hash,
+          expires_at: expiresAt.toISOString(),
+        }).then(({ error }) => {
+          if (error) console.error('Portal token insert error (non-fatal):', error)
+        })
+
+        const portalUrl = buildPortalUrl(bookingRef, rawToken)
+        const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+
+        // Fetch line items for email
+        const { data: liRows } = await supabase
+          .from('booking_line_items')
+          .select('name, quantity, unit_price_cents, guest_multiplied')
+          .eq('booking_id', bookingId)
+          .order('sort_order')
+
+        const guestCount = parseInt(m.guestCount || '10', 10)
+        const emailLineItems = (liRows || []).map(li => ({
+          name: li.name,
+          quantity: li.quantity,
+          unit_price_cents: li.unit_price_cents,
+          guest_multiplied: li.guest_multiplied,
+          totalCents: li.guest_multiplied
+            ? li.unit_price_cents * li.quantity * guestCount
+            : li.unit_price_cents * li.quantity,
+        }))
+
+        // Fetch booking total
+        const { data: bk } = await supabase
+          .from('bookings')
+          .select('total_cents')
+          .eq('id', bookingId)
+          .single()
+
+        // Send emails
+        if (process.env.RESEND_API_KEY) {
+          const resend = new Resend(process.env.RESEND_API_KEY)
+          const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+
+          const partyDateFormatted = m.partyDate
+            ? new Date(m.partyDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+            : 'TBD'
+
+          await Promise.allSettled([
+            resend.emails.send({
+              from,
+              to: m.contactEmail,
+              subject: `Deposit Received — ${bookingRef}`,
+              html: partyDepositReceivedHtml({
+                customerName: m.contactName,
+                bookingRef,
+                depositFormatted: formatMoney(depositCents),
+                partyDate: partyDateFormatted,
+                portalUrl,
+                lineItems: emailLineItems,
+                totalFormatted: formatMoney(bk?.total_cents || 0),
+              }),
+            }),
+            resend.emails.send({
+              from,
+              to: 'hosthampton295@gmail.com',
+              subject: `New party booking: ${m.contactName} — ${bookingRef}`,
+              html: partyAdminNewBookingHtml({
+                bookingRef,
+                customerName: m.contactName,
+                customerEmail: m.contactEmail,
+                customerPhone: m.contactPhone || undefined,
+                partyDate: partyDateFormatted,
+                partyTime: m.partyTime || 'TBD',
+                guestCount,
+                packageType: m.packageType || 'Kids Party',
+                depositFormatted: formatMoney(depositCents),
+                totalFormatted: formatMoney(bk?.total_cents || 0),
+                paymentMethod: 'card',
+                lineItems: emailLineItems,
+                adminUrl: `https://${host}/admin?tab=parties&ref=${bookingRef}`,
+              }),
+            }),
+          ])
+          console.log('Party deposit emails sent for', bookingRef)
+        }
+
+        // Enqueue party balance reminders (non-fatal)
+        if (m.partyDate) {
+          await enqueuePartyReminders({ contactEmail: m.contactEmail, bookingRef, partyDate: m.partyDate })
+            .catch(err => console.error('Party reminder enqueue error:', err))
+        }
+
+        console.log('Party builder deposit processed:', bookingRef, formatMoney(depositCents))
+      } else {
+        // Subsequent payment (partial or final)
+        const amountCents = parseInt(m.amountCents || '0', 10)
+        const pCardFee = parseInt(m.cardFeeCents || '0', 10)
+
+        await supabase.from('booking_payments').insert({
+          booking_id: bookingId,
+          payment_type: paymentType,
+          payment_method: 'card',
+          amount_cents: amountCents,
+          card_fee_cents: pCardFee,
+          total_charged_cents: totalCharged,
+          stripe_payment_intent_id: session.payment_intent as string,
+          stripe_session_id: session.id,
+          recorded_by: 'system',
+        }).then(({ error }) => {
+          if (error) console.error('Party payment insert error:', error)
+        })
+
+        // Recalculate balance
+        const { data: payments } = await supabase
+          .from('booking_payments')
+          .select('amount_cents, payment_type')
+          .eq('booking_id', bookingId)
+
+        const { data: bk } = await supabase
+          .from('bookings')
+          .select('total_cents')
+          .eq('id', bookingId)
+          .single()
+
+        let paid = 0
+        for (const p of (payments || [])) {
+          if (p.payment_type === 'refund') paid -= p.amount_cents
+          else paid += p.amount_cents
+        }
+        const newBalance = Math.max(0, (bk?.total_cents || 0) - paid)
+
+        const updateFields: Record<string, unknown> = { balance_due_cents: newBalance }
+        if (newBalance === 0) {
+          updateFields.paid_in_full_at = new Date().toISOString()
+          updateFields.status = 'paid_in_full'
+        }
+
+        await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+
+        await supabase.from('booking_modifications').insert({
+          booking_id: bookingId,
+          modified_by: 'system',
+          change_summary: `Payment of ${formatMoney(amountCents)} received via card. Balance: ${formatMoney(newBalance)}`,
+        }).then(({ error }) => {
+          if (error) console.error('Modification log error (non-fatal):', error)
+        })
+
+        await recordFinancialTransaction(supabase, {
+          date: new Date().toISOString().split('T')[0],
+          description: `Party ${paymentType === 'final' ? 'Final' : 'Partial'} Payment — ${bookingRef}`,
+          amountCents: totalCharged,
+          category: 'Party Booking',
+          customerName: m.contactName || null,
+          reference: `pb-${bookingRef}-${paymentType}`,
+          notes: m.contactEmail || null,
+        })
+
+        console.log('Party builder payment processed:', bookingRef, paymentType, formatMoney(amountCents), 'balance:', formatMoney(newBalance))
       }
 
       return NextResponse.json({ received: true })

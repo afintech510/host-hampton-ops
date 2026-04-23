@@ -256,3 +256,88 @@ export async function enqueueReviewRequest({
     console.error('enqueueReviewRequest error (non-fatal):', err)
   }
 }
+
+export async function enqueuePartyReminders({
+  contactEmail,
+  bookingRef,
+  partyDate,
+}: {
+  contactEmail: string
+  bookingRef: string
+  partyDate: string
+}): Promise<void> {
+  try {
+    const supabase = getSupabase()
+
+    const { data: contact } = await supabase
+      .from('contacts')
+      .select('id')
+      .eq('email', contactEmail)
+      .single()
+
+    if (!contact) return
+
+    const partyDateObj = new Date(partyDate + 'T12:00:00')
+    const now = new Date()
+
+    const reminders: {
+      contact_id: string
+      reminder_type: string
+      reference_type: string
+      reference_id: string
+      scheduled_for: string
+      channel: string
+    }[] = []
+
+    // T-2 balance reminder (email)
+    const twoDaysBefore = new Date(partyDateObj)
+    twoDaysBefore.setDate(twoDaysBefore.getDate() - 2)
+    twoDaysBefore.setHours(10, 0, 0, 0)
+    if (twoDaysBefore > now) {
+      reminders.push({
+        contact_id: contact.id,
+        reminder_type: 'party_balance_t2',
+        reference_type: 'booking',
+        reference_id: bookingRef,
+        scheduled_for: twoDaysBefore.toISOString(),
+        channel: 'email',
+      })
+    }
+
+    // T-1 balance reminder (email)
+    const oneDayBefore = new Date(partyDateObj)
+    oneDayBefore.setDate(oneDayBefore.getDate() - 1)
+    oneDayBefore.setHours(10, 0, 0, 0)
+    if (oneDayBefore > now) {
+      reminders.push({
+        contact_id: contact.id,
+        reminder_type: 'party_balance_t1',
+        reference_type: 'booking',
+        reference_id: bookingRef,
+        scheduled_for: oneDayBefore.toISOString(),
+        channel: 'email',
+      })
+    }
+
+    // Day-of admin alert
+    const dayOf = new Date(partyDateObj)
+    dayOf.setHours(7, 0, 0, 0)
+    if (dayOf > now) {
+      reminders.push({
+        contact_id: contact.id,
+        reminder_type: 'party_admin_unpaid_dayof',
+        reference_type: 'booking',
+        reference_id: bookingRef,
+        scheduled_for: dayOf.toISOString(),
+        channel: 'email',
+      })
+    }
+
+    if (reminders.length > 0) {
+      await supabase.from('scheduled_reminders').insert(reminders)
+      console.log(`Enqueued ${reminders.length} party reminders for ${bookingRef}`)
+    }
+  } catch (err) {
+    console.error('enqueuePartyReminders error (non-fatal):', err)
+  }
+}

@@ -17,16 +17,18 @@ import DashboardTab from './DashboardTab'
 import FinancialsTab from './FinancialsTab'
 import MediaTab from './MediaTab'
 import GiftCardsTab from './GiftCardsTab'
+import PartiesTab from './PartiesTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'financials' | 'gift-cards'
+type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'parties' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'financials' | 'gift-cards'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
   { key: 'events',     label: 'Events',     Icon: Ticket,          group: 'manage' },
   { key: 'calendar',   label: 'Calendar',   Icon: Calendar,        group: 'manage' },
   { key: 'orders',     label: 'Orders',     Icon: Receipt,         group: 'manage' },
+  { key: 'parties',    label: 'Parties',    Icon: Sparkles,        group: 'manage' },
   { key: 'financials', label: 'Financials', Icon: DollarSign,      group: 'manage' },
   { key: 'gift-cards', label: 'Gift Cards', Icon: Gift,           group: 'manage' },
   { key: 'themes',     label: 'Themes',     Icon: Palette,         group: 'content' },
@@ -255,6 +257,9 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
           )}
           {activeTab === 'campaigns' && (
             <CampaignsTab key={`campaigns-${refreshKey}`} headers={headers} onLogout={onLogout} />
+          )}
+          {activeTab === 'parties' && (
+            <PartiesTab key={`parties-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
           {activeTab === 'gift-cards' && (
             <GiftCardsTab key={`gc-${refreshKey}`} headers={headers} onLogout={onLogout} />

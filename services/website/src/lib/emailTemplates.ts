@@ -682,3 +682,298 @@ export function ticketRefundHtml(d: { customerName: string; eventTitle: string; 
 </div>
 </body></html>`
 }
+
+/* ── Party Builder — helpers ─────────────────────────────────── */
+
+interface PartyLineItem { name: string; quantity: number; unit_price_cents: number; guest_multiplied: boolean; totalCents: number }
+
+function lineItemRows(items: PartyLineItem[]): string {
+  return items.map(i => `
+    <tr>
+      <td style="padding:6px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${i.name}${i.quantity > 1 ? ` ×${i.quantity}` : ''}${i.guest_multiplied ? ' (per guest)' : ''}</td>
+      <td style="padding:6px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;text-align:right;">$${(i.totalCents / 100).toFixed(2)}</td>
+    </tr>`).join('')
+}
+
+function payButton(url: string, label: string): string {
+  return `<div style="text-align:center;margin:28px 0;">
+    <a href="${url}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 40px;font-size:16px;text-decoration:none;border-radius:6px;font-family:Georgia,serif;">${label}</a>
+  </div>`
+}
+
+/* ── Party Deposit Received (customer) ───────────────────────── */
+
+export function partyDepositReceivedHtml(d: { customerName: string; bookingRef: string; depositFormatted: string; partyDate: string; portalUrl: string; lineItems: PartyLineItem[]; totalFormatted: string }): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Deposit Received!</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 20px;">Thank you! Your deposit of <strong>${d.depositFormatted}</strong> for booking <strong>${d.bookingRef}</strong> has been received.</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Your party date: <strong>${d.partyDate}</strong></p>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+      <tr><td colspan="2" style="padding:8px 0;color:${BRAND.navy};font-weight:bold;border-bottom:2px solid ${BRAND.navy};">Your Party</td></tr>
+      ${lineItemRows(d.lineItems)}
+      <tr><td style="padding:8px 0;color:${BRAND.navy};font-weight:bold;">Total</td><td style="padding:8px 0;color:${BRAND.navy};font-weight:bold;text-align:right;">${d.totalFormatted}</td></tr>
+    </table>
+    <div style="background:${BRAND.bodyBg};border-radius:8px;padding:16px 20px;margin:0 0 24px;">
+      <p style="color:${BRAND.navy};font-size:14px;margin:0;"><strong>What happens next:</strong></p>
+      <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:8px 0 0;">We'll review and confirm all details within 24 hours. You'll receive an email once your booking is approved.</p>
+    </div>
+    ${payButton(d.portalUrl, 'View Your Booking')}
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline('Let the celebration begin!')}
+</div>
+</body></html>`
+}
+
+/* ── Party Admin New Booking (admin) ─────────────────────────── */
+
+export function partyAdminNewBookingHtml(d: { bookingRef: string; customerName: string; customerEmail: string; customerPhone?: string; partyDate: string; partyTime: string; guestCount: number; packageType: string; depositFormatted: string; totalFormatted: string; paymentMethod: string; lineItems: PartyLineItem[]; notes?: string; adminUrl: string }): string {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBgAdmin};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Admin</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">New Party Booking</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="color:${BRAND.navy};font-size:18px;font-weight:bold;margin:0 0 20px;">${d.bookingRef}</p>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+      <tr><td style="padding:6px 0;color:${BRAND.gray};width:130px;">Customer</td><td style="padding:6px 0;color:${BRAND.navy};font-weight:bold;">${d.customerName}</td></tr>
+      <tr><td style="padding:6px 0;color:${BRAND.gray};">Email</td><td style="padding:6px 0;color:${BRAND.navy};">${d.customerEmail}</td></tr>
+      ${d.customerPhone ? `<tr><td style="padding:6px 0;color:${BRAND.gray};">Phone</td><td style="padding:6px 0;color:${BRAND.navy};">${d.customerPhone}</td></tr>` : ''}
+      <tr><td style="padding:6px 0;color:${BRAND.gray};">Date</td><td style="padding:6px 0;color:${BRAND.navy};">${d.partyDate}</td></tr>
+      <tr><td style="padding:6px 0;color:${BRAND.gray};">Time</td><td style="padding:6px 0;color:${BRAND.navy};">${d.partyTime}</td></tr>
+      <tr><td style="padding:6px 0;color:${BRAND.gray};">Guests</td><td style="padding:6px 0;color:${BRAND.navy};">${d.guestCount}</td></tr>
+      <tr><td style="padding:6px 0;color:${BRAND.gray};">Package</td><td style="padding:6px 0;color:${BRAND.navy};">${d.packageType}</td></tr>
+      <tr><td style="padding:6px 0;color:${BRAND.gray};">Payment</td><td style="padding:6px 0;color:${BRAND.navy};">${d.paymentMethod}</td></tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+      <tr><td colspan="2" style="padding:8px 0;color:${BRAND.navy};font-weight:bold;border-bottom:2px solid ${BRAND.navy};">Line Items</td></tr>
+      ${lineItemRows(d.lineItems)}
+      <tr><td style="padding:8px 0;color:${BRAND.navy};font-weight:bold;">Total</td><td style="padding:8px 0;color:${BRAND.navy};font-weight:bold;text-align:right;">${d.totalFormatted}</td></tr>
+      <tr><td style="padding:4px 0;color:${BRAND.gray};font-size:13px;">Deposit</td><td style="padding:4px 0;color:${BRAND.gray};font-size:13px;text-align:right;">${d.depositFormatted}</td></tr>
+    </table>
+    ${d.notes ? `<div style="background:#f8f6f3;border-radius:6px;padding:12px 16px;margin:0 0 20px;"><p style="color:${BRAND.gray};font-size:13px;margin:0;"><strong>Customer Notes:</strong> ${d.notes}</p></div>` : ''}
+    ${payButton(d.adminUrl, 'Review & Approve')}
+  </div>
+  ${footer}
+</div>
+</body></html>`
+}
+
+/* ── Party Approved (customer) ───────────────────────────────── */
+
+export function partyApprovedHtml(d: { customerName: string; bookingRef: string; partyDate: string; partyTime: string; balanceFormatted: string; portalUrl: string }): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">You're Confirmed!</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Great news — your party booking <strong>${d.bookingRef}</strong> has been approved!</p>
+    <div style="background:${BRAND.bodyBg};border-radius:8px;padding:20px 24px;margin:0 0 24px;">
+      <p style="color:${BRAND.navy};margin:0 0 8px;"><strong>Date:</strong> ${d.partyDate}</p>
+      <p style="color:${BRAND.navy};margin:0 0 8px;"><strong>Time:</strong> ${d.partyTime}</p>
+      <p style="color:${BRAND.navy};margin:0;"><strong>Remaining Balance:</strong> ${d.balanceFormatted}</p>
+    </div>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">You can view your booking details, make changes, or submit payments through your portal anytime.</p>
+    ${payButton(d.portalUrl, 'View Your Booking')}
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline("We can't wait to celebrate with you!")}
+</div>
+</body></html>`
+}
+
+/* ── Party Changes Requested (customer) ──────────────────────── */
+
+export function partyChangesRequestedHtml(d: { customerName: string; bookingRef: string; adminMessage: string; portalUrl: string }): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">A Note About Your Booking</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 20px;">We have an update regarding your booking <strong>${d.bookingRef}</strong>:</p>
+    <div style="background:${BRAND.bodyBg};border-radius:8px;padding:16px 20px;margin:0 0 24px;border-left:4px solid ${BRAND.navy};">
+      <p style="color:${BRAND.navy};font-size:14px;line-height:1.7;margin:0;">${d.adminMessage}</p>
+    </div>
+    ${payButton(d.portalUrl, 'View Your Booking')}
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footer}
+</div>
+</body></html>`
+}
+
+/* ── Party Payment Received (customer) ───────────────────────── */
+
+export function partyPaymentReceivedHtml(d: { customerName: string; bookingRef: string; amountFormatted: string; paymentMethod: string; newBalanceFormatted: string; portalUrl: string }): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Payment Received</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">We've received your payment of <strong>${d.amountFormatted}</strong> via <strong>${d.paymentMethod}</strong> for booking <strong>${d.bookingRef}</strong>.</p>
+    <div style="background:${BRAND.bodyBg};border-radius:8px;padding:16px 20px;margin:0 0 24px;text-align:center;">
+      <p style="color:${BRAND.gray};font-size:13px;margin:0 0 4px;">Remaining Balance</p>
+      <p style="color:${BRAND.navy};font-size:28px;font-weight:bold;margin:0;">${d.newBalanceFormatted}</p>
+    </div>
+    ${payButton(d.portalUrl, 'View Your Booking')}
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline('Thank you!')}
+</div>
+</body></html>`
+}
+
+/* ── Party Balance Reminder (customer, T-2 / T-1) ───────────── */
+
+export function partyBalanceReminderHtml(d: { customerName: string; bookingRef: string; partyDate: string; balanceFormatted: string; payUrl: string }): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Balance Reminder</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Your party on <strong>${d.partyDate}</strong> is almost here! A friendly reminder that the remaining balance of <strong>${d.balanceFormatted}</strong> is due before the event.</p>
+    ${payButton(d.payUrl, 'Pay Now')}
+    <p style="color:${BRAND.gray};font-size:13px;line-height:1.7;margin:0 0 24px;">You can also pay via Venmo, Zelle, or cash — just let us know!</p>
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footer}
+</div>
+</body></html>`
+}
+
+/* ── Party Portal Magic Link (customer) ──────────────────────── */
+
+export function partyPortalMagicLinkHtml(d: { customerName: string; bookingRef: string; portalUrl: string }): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Your Booking Portal</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Click below to access your booking <strong>${d.bookingRef}</strong>. You can view details, make changes, and submit payments.</p>
+    ${payButton(d.portalUrl, 'Access My Booking')}
+    <p style="color:${BRAND.gray};font-size:13px;line-height:1.7;margin:0 0 24px;">This link expires in 72 hours. If it expires, you can request a new one from the login page.</p>
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footer}
+</div>
+</body></html>`
+}
+
+/* ── Party Payment Instructions (customer, non-card) ─────────── */
+
+export function partyPaymentInstructionsHtml(d: { customerName: string; bookingRef: string; depositFormatted: string; paymentMethod: string; venmoHandle?: string; zelleEmail?: string; portalUrl: string }): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  let instructions = ''
+  if (d.paymentMethod === 'venmo') {
+    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Venmo:</strong> Send ${d.depositFormatted} to <strong>${d.venmoHandle || '@HostHampton'}</strong></p><p style="color:${BRAND.gray};font-size:13px;margin:4px 0 0;">Include your booking ref <strong>${d.bookingRef}</strong> in the note.</p>`
+  } else if (d.paymentMethod === 'zelle') {
+    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Zelle:</strong> Send ${d.depositFormatted} to <strong>${d.zelleEmail || 'hosthampton295@gmail.com'}</strong></p><p style="color:${BRAND.gray};font-size:13px;margin:4px 0 0;">Include your booking ref <strong>${d.bookingRef}</strong> in the memo.</p>`
+  } else {
+    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Cash:</strong> Bring ${d.depositFormatted} to Host Hampton before or on the day of your event.</p>`
+  }
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Payment Instructions</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Thank you for booking with Host Hampton! Your booking <strong>${d.bookingRef}</strong> has been reserved. Please send your deposit to confirm:</p>
+    <div style="background:${BRAND.bodyBg};border-radius:8px;padding:20px 24px;margin:0 0 24px;">
+      ${instructions}
+    </div>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Once we receive your deposit, we'll confirm all details within 24 hours.</p>
+    ${payButton(d.portalUrl, 'View Your Booking')}
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footer}
+</div>
+</body></html>`
+}
+
+/* ── Party Admin Unpaid Day-Of (admin alert) ─────────────────── */
+
+export function partyAdminUnpaidDayOfHtml(d: { bookingRef: string; customerName: string; customerPhone?: string; partyDate: string; balanceFormatted: string; adminUrl: string }): string {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBgAdmin};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Admin Alert</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Unpaid Balance — Today</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 20px;">Booking <strong>${d.bookingRef}</strong> has a party today (<strong>${d.partyDate}</strong>) with an outstanding balance.</p>
+    <div style="background:#fff3f3;border-radius:8px;padding:16px 20px;margin:0 0 24px;text-align:center;">
+      <p style="color:#c00;font-size:13px;margin:0 0 4px;">Unpaid Balance</p>
+      <p style="color:#c00;font-size:28px;font-weight:bold;margin:0;">${d.balanceFormatted}</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+      <tr><td style="padding:6px 0;color:${BRAND.gray};width:100px;">Customer</td><td style="padding:6px 0;color:${BRAND.navy};font-weight:bold;">${d.customerName}</td></tr>
+      ${d.customerPhone ? `<tr><td style="padding:6px 0;color:${BRAND.gray};">Phone</td><td style="padding:6px 0;color:${BRAND.navy};"><a href="tel:${d.customerPhone}" style="color:${BRAND.navy};">${d.customerPhone}</a></td></tr>` : ''}
+    </table>
+    ${payButton(d.adminUrl, 'View Booking')}
+  </div>
+  ${footer}
+</div>
+</body></html>`
+}
