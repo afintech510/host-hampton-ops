@@ -13,115 +13,110 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/ssl/hosthampton:/etc/ssl/hosthampton:ro
     depends_on:
-      - hampton
-      - frontend
       - website
     networks:
       - hampton_net
 
-  # ─── REDIS (Task Queue + Caching) ────────────────────────────
-  redis:
-    image: redis:7-alpine
-    container_name: hampton_redis
-    restart: unless-stopped
-    volumes:
-      - redis_data:/data
-    networks:
-      - hampton_net
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  # ─── ORCHESTRATOR (HAMPTON) ───────────────────────────────────
-  hampton:
-    build: ./services/hampton
-    container_name: hampton_orchestrator
-    restart: unless-stopped
-    environment:
-      - NODE_ENV=production
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - REDIS_URL=redis://redis:6379
-      - OWNER_PHONE=${OWNER_PHONE}
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - hampton_net
-    volumes:
-      - uploads:/app/uploads
-
-  # ─── SOCIAL MEDIA AGENT (SOC) ─────────────────────────────────
-  soc:
-    build: ./services/soc
-    container_name: hampton_soc
-    restart: unless-stopped
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
-      - META_PAGE_ID=${META_PAGE_ID}
-      - META_IG_ACCOUNT_ID=${META_IG_ACCOUNT_ID}
-      - REDIS_URL=redis://redis:6379
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-    depends_on:
-      - redis
-      - hampton
-    networks:
-      - hampton_net
-
-  # ─── CONTENT AGENT (COPY) ─────────────────────────────────────
-  copy:
-    build: ./services/copy
-    container_name: hampton_copy
-    restart: unless-stopped
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - MAILCHIMP_API_KEY=${MAILCHIMP_API_KEY}
-      - REDIS_URL=redis://redis:6379
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-    depends_on:
-      - redis
-    networks:
-      - hampton_net
-
-  # ─── IMAGE AGENT (IMAGE) ──────────────────────────────────────
-  image:
-    build: ./services/image
-    container_name: hampton_image
-    restart: unless-stopped
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - REPLICATE_API_KEY=${REPLICATE_API_KEY}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - CLOUDFLARE_R2_ACCOUNT_ID=${CF_R2_ACCOUNT_ID}
-      - CLOUDFLARE_R2_ACCESS_KEY=${CF_R2_ACCESS_KEY}
-      - CLOUDFLARE_R2_SECRET_KEY=${CF_R2_SECRET_KEY}
-      - CF_R2_BUCKET=${CF_R2_BUCKET}
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - redis
-      - hampton
-    volumes:
-      - uploads:/app/uploads
-    networks:
-      - hampton_net
-
-  # 🖥️ DASHBOARD (served behind /app on VPS)
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_API_URL: https://api.hosthampton.com
-    container_name: hampton_frontend
-    restart: unless-stopped
-    networks:
-      - hampton_net
+  # ─── DISABLED: Agent stack + dashboard (not in active use) ───
+  # To re-enable, uncomment redis, hampton, soc, copy, image, frontend below
+  #
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: hampton_redis
+  #   restart: unless-stopped
+  #   volumes:
+  #     - redis_data:/data
+  #   networks:
+  #     - hampton_net
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #
+  # hampton:
+  #   build: ./services/hampton
+  #   container_name: hampton_orchestrator
+  #   restart: unless-stopped
+  #   environment:
+  #     - NODE_ENV=production
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+  #     - SUPABASE_URL=${SUPABASE_URL}
+  #     - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+  #     - REDIS_URL=redis://redis:6379
+  #     - OWNER_PHONE=${OWNER_PHONE}
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - hampton_net
+  #   volumes:
+  #     - uploads:/app/uploads
+  #
+  # soc:
+  #   build: ./services/soc
+  #   container_name: hampton_soc
+  #   restart: unless-stopped
+  #   environment:
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+  #     - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+  #     - META_PAGE_ID=${META_PAGE_ID}
+  #     - META_IG_ACCOUNT_ID=${META_IG_ACCOUNT_ID}
+  #     - REDIS_URL=redis://redis:6379
+  #     - SUPABASE_URL=${SUPABASE_URL}
+  #     - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+  #   depends_on:
+  #     - redis
+  #     - hampton
+  #   networks:
+  #     - hampton_net
+  #
+  # copy:
+  #   build: ./services/copy
+  #   container_name: hampton_copy
+  #   restart: unless-stopped
+  #   environment:
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+  #     - MAILCHIMP_API_KEY=${MAILCHIMP_API_KEY}
+  #     - REDIS_URL=redis://redis:6379
+  #     - SUPABASE_URL=${SUPABASE_URL}
+  #     - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+  #   depends_on:
+  #     - redis
+  #   networks:
+  #     - hampton_net
+  #
+  # image:
+  #   build: ./services/image
+  #   container_name: hampton_image
+  #   restart: unless-stopped
+  #   environment:
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+  #     - REPLICATE_API_KEY=${REPLICATE_API_KEY}
+  #     - SUPABASE_URL=${SUPABASE_URL}
+  #     - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+  #     - CLOUDFLARE_R2_ACCOUNT_ID=${CF_R2_ACCOUNT_ID}
+  #     - CLOUDFLARE_R2_ACCESS_KEY=${CF_R2_ACCESS_KEY}
+  #     - CLOUDFLARE_R2_SECRET_KEY=${CF_R2_SECRET_KEY}
+  #     - CF_R2_BUCKET=${CF_R2_BUCKET}
+  #     - REDIS_URL=redis://redis:6379
+  #   depends_on:
+  #     - redis
+  #     - hampton
+  #   volumes:
+  #     - uploads:/app/uploads
+  #   networks:
+  #     - hampton_net
+  #
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     args:
+  #       VITE_API_URL: https://api.hosthampton.com
+  #   container_name: hampton_frontend
+  #   restart: unless-stopped
+  #   networks:
+  #     - hampton_net
 
   # ─── WEBSITE (Next.js) ────────────────────────────────────────
   website:
@@ -175,45 +170,43 @@ services:
   #   networks:
   #     - hampton_net
 
-  # ─── CRM + LIST AGENT ─────────────────────────────────────────
-  list:
-    build: ./services/list
-    container_name: hampton_list
-    restart: unless-stopped
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - MAILCHIMP_API_KEY=${MAILCHIMP_API_KEY}
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - redis
-      - hampton
-    networks:
-      - hampton_net
-
-  # ─── EMAIL + SMS AGENT (OUTBOUND) ────────────────────────────
-  outbound:
-    build: ./services/outbound
-    container_name: hampton_outbound
-    restart: unless-stopped
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - MAILCHIMP_API_KEY=${MAILCHIMP_API_KEY}
-      - MAILCHIMP_LIST_ID=${MAILCHIMP_LIST_ID}
-      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
-      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
-      - RESEND_API_KEY=${RESEND_API_KEY}
-      - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - redis
-      - hampton
-    networks:
-      - hampton_net
+  # list:
+  #   build: ./services/list
+  #   container_name: hampton_list
+  #   restart: unless-stopped
+  #   environment:
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+  #     - SUPABASE_URL=${SUPABASE_URL}
+  #     - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+  #     - MAILCHIMP_API_KEY=${MAILCHIMP_API_KEY}
+  #     - REDIS_URL=redis://redis:6379
+  #   depends_on:
+  #     - redis
+  #     - hampton
+  #   networks:
+  #     - hampton_net
+  #
+  # outbound:
+  #   build: ./services/outbound
+  #   container_name: hampton_outbound
+  #   restart: unless-stopped
+  #   environment:
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+  #     - MAILCHIMP_API_KEY=${MAILCHIMP_API_KEY}
+  #     - MAILCHIMP_LIST_ID=${MAILCHIMP_LIST_ID}
+  #     - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+  #     - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+  #     - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+  #     - RESEND_API_KEY=${RESEND_API_KEY}
+  #     - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL}
+  #     - SUPABASE_URL=${SUPABASE_URL}
+  #     - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+  #     - REDIS_URL=redis://redis:6379
+  #   depends_on:
+  #     - redis
+  #     - hampton
+  #   networks:
+  #     - hampton_net
 
   # ─── PAID ADS AGENT (PAID) ────────────────────────────────────
   # ⚠️  PHASE 1B ONLY — comment out until Phase 1B authorized by owner
@@ -234,77 +227,75 @@ services:
   #   networks:
   #     - hampton_net
 
-  # ─── ANALYTICS AGENT (INTEL) ──────────────────────────────────
-  intel:
-    build: ./services/intel
-    container_name: hampton_intel
-    restart: unless-stopped
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - GA4_PROPERTY_ID=${GA4_PROPERTY_ID}
-      - GOOGLE_SERVICE_ACCOUNT_EMAIL=${GOOGLE_SERVICE_ACCOUNT_EMAIL}
-      - GOOGLE_PRIVATE_KEY=${GOOGLE_PRIVATE_KEY}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - redis
-      - hampton
-    networks:
-      - hampton_net
-
-  # ─── MCP SERVERS ──────────────────────────────────────────────
-  mcp_meta:
-    build: ./mcp-servers/meta-api
-    container_name: hampton_mcp_meta
-    restart: unless-stopped
-    environment:
-      - META_APP_ID=${META_APP_ID}
-      - META_APP_SECRET=${META_APP_SECRET}
-      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
-      - META_PAGE_ID=${META_PAGE_ID}
-      - META_IG_ACCOUNT_ID=${META_IG_ACCOUNT_ID}
-    networks:
-      - hampton_net
-
-  mcp_google:
-    build: ./mcp-servers/google-apis
-    container_name: hampton_mcp_google
-    restart: unless-stopped
-    environment:
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
-      - GBP_LOCATION_ID=${GBP_LOCATION_ID}
-      - GA4_PROPERTY_ID=${GA4_PROPERTY_ID}
-    networks:
-      - hampton_net
-
-  mcp_image:
-    build: ./mcp-servers/image-processor
-    container_name: hampton_mcp_image
-    restart: unless-stopped
-    volumes:
-      - uploads:/app/uploads
-    networks:
-      - hampton_net
-
-  mcp_tasks:
-    build: ./mcp-servers/task-queue
-    container_name: hampton_mcp_tasks
-    restart: unless-stopped
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - hampton_net
+  # intel:
+  #   build: ./services/intel
+  #   container_name: hampton_intel
+  #   restart: unless-stopped
+  #   environment:
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+  #     - GA4_PROPERTY_ID=${GA4_PROPERTY_ID}
+  #     - GOOGLE_SERVICE_ACCOUNT_EMAIL=${GOOGLE_SERVICE_ACCOUNT_EMAIL}
+  #     - GOOGLE_PRIVATE_KEY=${GOOGLE_PRIVATE_KEY}
+  #     - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+  #     - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+  #     - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
+  #     - SUPABASE_URL=${SUPABASE_URL}
+  #     - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+  #     - REDIS_URL=redis://redis:6379
+  #   depends_on:
+  #     - redis
+  #     - hampton
+  #   networks:
+  #     - hampton_net
+  #
+  # mcp_meta:
+  #   build: ./mcp-servers/meta-api
+  #   container_name: hampton_mcp_meta
+  #   restart: unless-stopped
+  #   environment:
+  #     - META_APP_ID=${META_APP_ID}
+  #     - META_APP_SECRET=${META_APP_SECRET}
+  #     - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+  #     - META_PAGE_ID=${META_PAGE_ID}
+  #     - META_IG_ACCOUNT_ID=${META_IG_ACCOUNT_ID}
+  #   networks:
+  #     - hampton_net
+  #
+  # mcp_google:
+  #   build: ./mcp-servers/google-apis
+  #   container_name: hampton_mcp_google
+  #   restart: unless-stopped
+  #   environment:
+  #     - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+  #     - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+  #     - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
+  #     - GBP_LOCATION_ID=${GBP_LOCATION_ID}
+  #     - GA4_PROPERTY_ID=${GA4_PROPERTY_ID}
+  #   networks:
+  #     - hampton_net
+  #
+  # mcp_image:
+  #   build: ./mcp-servers/image-processor
+  #   container_name: hampton_mcp_image
+  #   restart: unless-stopped
+  #   volumes:
+  #     - uploads:/app/uploads
+  #   networks:
+  #     - hampton_net
+  #
+  # mcp_tasks:
+  #   build: ./mcp-servers/task-queue
+  #   container_name: hampton_mcp_tasks
+  #   restart: unless-stopped
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379
+  #     - SUPABASE_URL=${SUPABASE_URL}
+  #     - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - hampton_net
 
 # ─── NETWORKS ───────────────────────────────────────────────────
 networks:
@@ -315,3 +306,4 @@ networks:
 volumes:
   redis_data:
   uploads:
+  # redis_data and uploads retained for when agent stack is re-enabled
