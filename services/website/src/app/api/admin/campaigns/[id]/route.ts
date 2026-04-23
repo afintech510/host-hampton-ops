@@ -85,7 +85,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     }
 
-    if (campaign.campaign_type === 'email') {
+    if (campaign.campaign_type === 'email' || campaign.campaign_type === 'event_update') {
       const listId = body.listId ? parseInt(body.listId, 10) : parseInt(process.env.BREVO_DEFAULT_LIST_ID || '0', 10)
       if (!listId) {
         return NextResponse.json({ error: 'BREVO_DEFAULT_LIST_ID not configured' }, { status: 500 })
