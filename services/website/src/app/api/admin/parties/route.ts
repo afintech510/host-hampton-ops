@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.ADMIN_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
   const supabase = getSupabase()
   const status = req.nextUrl.searchParams.get('status')

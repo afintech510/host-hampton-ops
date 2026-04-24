@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { formatMoney } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 
-function auth(req: NextRequest): boolean {
-  return req.headers.get('authorization') === `Bearer ${process.env.ADMIN_SECRET}`
-}
-
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!auth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
   const { id } = await params
   const supabase = getSupabase()
@@ -35,7 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!auth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
   const { id } = await params
   const supabase = getSupabase()
@@ -68,7 +65,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!auth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
   const { id } = await params
   const supabase = getSupabase()
