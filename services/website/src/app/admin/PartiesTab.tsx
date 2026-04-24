@@ -26,7 +26,8 @@ interface PartyDetail extends PartyBookingSummary {
   notes: string | null
   approved_at: string | null
   paid_in_full_at: string | null
-  line_items: { name: string; quantity: number; unit_price_cents: number; guest_multiplied: boolean; category: string }[]
+  child_age: number | null
+  line_items: { id: string; name: string; quantity: number; unit_price_cents: number; guest_multiplied: boolean; category: string }[]
   payments: { id: string; payment_type: string; payment_method: string; amount_cents: number; card_fee_cents: number; paid_at: string; recorded_by: string; notes: string | null }[]
   modifications: { id: string; modified_by: string; change_summary: string; created_at: string }[]
 }
@@ -56,6 +57,13 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState('cash')
   const [payNotes, setPayNotes] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState<Record<string, string>>({})
+  const [addingItem, setAddingItem] = useState(false)
+  const [newItem, setNewItem] = useState({ name: '', price: '', quantity: '1', guest_multiplied: false })
+  const [discountName, setDiscountName] = useState('')
+  const [discountAmount, setDiscountAmount] = useState('')
+  const [showDiscount, setShowDiscount] = useState(false)
 
   useEffect(() => { fetchBookings() }, [statusFilter, page])
 
@@ -74,6 +82,20 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
     const res = await fetch(`/api/admin/parties/${id}`, { headers })
     const data = await res.json()
     setSelected(data)
+  }
+
+  async function patchBooking(updates: Record<string, unknown>) {
+    if (!selected) return
+    setActionLoading('save')
+    await fetch(`/api/admin/parties/${selected.id}`, {
+      method: 'PATCH',
+      headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    })
+    await fetchDetail(selected.id)
+    await fetchBookings()
+    setActionLoading('')
+    setEditing(false)
   }
 
   async function doAction(action: string, extra?: Record<string, unknown>) {
@@ -204,26 +226,185 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
 
           {/* Event details */}
           <div className="bg-white rounded-xl border p-5">
-            <h3 className="text-sm font-medium text-[#1a2744] mb-3">Event</h3>
-            <div className="text-sm space-y-1 text-gray-600">
-              <p>Date: <strong>{selected.party_date || 'TBD'}</strong></p>
-              <p>Time: <strong>{selected.party_time || 'TBD'}</strong></p>
-              <p>Guests: <strong>{selected.guest_count_approx || '—'}</strong></p>
-              <p>Theme: <strong>{selected.package_type || '—'}</strong></p>
-              {selected.child_name && <p>Child: <strong>{selected.child_name}</strong></p>}
-              {selected.notes && <p className="text-gray-400">Notes: {selected.notes}</p>}
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-[#1a2744]">Event</h3>
+              {!editing ? (
+                <button onClick={() => { setEditing(true); setEditForm({
+                  party_date: selected.party_date || '',
+                  party_time: selected.party_time || '',
+                  guest_count_approx: String(selected.guest_count_approx || ''),
+                  package_type: selected.package_type || '',
+                  child_name: selected.child_name || '',
+                  child_age: String((selected as PartyDetail).child_age || ''),
+                  notes: selected.notes || '',
+                  admin_notes: (selected as PartyDetail).admin_notes || '',
+                }) }} className="text-xs text-[#A1B5C8] hover:text-[#1a2744] font-medium">Edit</button>
+              ) : (
+                <div className="flex gap-2">
+                  <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+                  <button
+                    onClick={() => patchBooking({
+                      party_date: editForm.party_date || null,
+                      party_time: editForm.party_time || null,
+                      guest_count_approx: editForm.guest_count_approx ? Number(editForm.guest_count_approx) : null,
+                      package_type: editForm.package_type || null,
+                      child_name: editForm.child_name || null,
+                      notes: editForm.notes || null,
+                      admin_notes: editForm.admin_notes || null,
+                    })}
+                    disabled={!!actionLoading}
+                    className="text-xs bg-[#1a2744] text-white px-3 py-1 rounded font-medium disabled:opacity-50"
+                  >
+                    {actionLoading === 'save' ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              )}
             </div>
+            {!editing ? (
+              <div className="text-sm space-y-1 text-gray-600">
+                <p>Date: <strong>{selected.party_date || 'TBD'}</strong></p>
+                <p>Time: <strong>{selected.party_time || 'TBD'}</strong></p>
+                <p>Guests: <strong>{selected.guest_count_approx || '—'}</strong></p>
+                <p>Theme: <strong>{selected.package_type || '—'}</strong></p>
+                {selected.child_name && <p>Child: <strong>{selected.child_name}{(selected as PartyDetail).child_age ? `, age ${(selected as PartyDetail).child_age}` : ''}</strong></p>}
+                {selected.notes && <p className="text-gray-400 mt-2">Notes: {selected.notes}</p>}
+                {(selected as PartyDetail).admin_notes && <p className="text-amber-600 mt-1 text-xs">Admin: {(selected as PartyDetail).admin_notes}</p>}
+              </div>
+            ) : (
+              <div className="space-y-2 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-gray-500">Date</label>
+                    <input type="date" value={editForm.party_date} onChange={e => setEditForm(f => ({ ...f, party_date: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Time</label>
+                    <input type="time" value={editForm.party_time} onChange={e => setEditForm(f => ({ ...f, party_time: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-gray-500">Guests</label>
+                    <input type="number" min="1" value={editForm.guest_count_approx} onChange={e => setEditForm(f => ({ ...f, guest_count_approx: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Theme / Package</label>
+                    <input type="text" value={editForm.package_type} onChange={e => setEditForm(f => ({ ...f, package_type: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-gray-500">Child Name</label>
+                    <input type="text" value={editForm.child_name} onChange={e => setEditForm(f => ({ ...f, child_name: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Child Age</label>
+                    <input type="number" min="1" max="18" value={editForm.child_age} onChange={e => setEditForm(f => ({ ...f, child_age: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Customer Notes</label>
+                  <textarea value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="w-full border rounded px-2 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Admin Notes (internal)</label>
+                  <textarea value={editForm.admin_notes} onChange={e => setEditForm(f => ({ ...f, admin_notes: e.target.value }))} rows={2} className="w-full border rounded px-2 py-1.5 text-sm" />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Line items */}
           <div className="bg-white rounded-xl border p-5">
-            <h3 className="text-sm font-medium text-[#1a2744] mb-3">Line Items</h3>
-            {(selected.line_items || []).map((li, idx) => (
-              <div key={idx} className="flex justify-between py-1 text-sm border-b border-gray-100 last:border-0">
-                <span className="text-gray-600">{li.name}{li.quantity > 1 ? ` ×${li.quantity}` : ''}{li.guest_multiplied ? ' (per guest)' : ''}</span>
-                <span className="text-[#1a2744]">{formatMoney(li.guest_multiplied ? li.unit_price_cents * li.quantity * (selected.guest_count_approx || 1) : li.unit_price_cents * li.quantity)}</span>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-[#1a2744]">Line Items</h3>
+              <div className="flex gap-2">
+                <button onClick={() => setShowDiscount(d => !d)} className="text-xs text-amber-600 hover:text-amber-700 font-medium">+ Discount</button>
+                <button onClick={() => setAddingItem(a => !a)} className="text-xs text-[#A1B5C8] hover:text-[#1a2744] font-medium">+ Add Item</button>
               </div>
-            ))}
+            </div>
+            {(selected.line_items || []).map(li => {
+              const amt = li.guest_multiplied ? li.unit_price_cents * li.quantity * (selected.guest_count_approx || 1) : li.unit_price_cents * li.quantity
+              const isDiscount = li.unit_price_cents < 0 || li.category === 'discount'
+              return (
+                <div key={li.id} className="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 last:border-0 group">
+                  <span className={isDiscount ? 'text-amber-600' : 'text-gray-600'}>
+                    {li.name}{li.quantity > 1 ? ` ×${li.quantity}` : ''}{li.guest_multiplied ? ' (per guest)' : ''}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={isDiscount ? 'text-amber-600' : 'text-[#1a2744]'}>{formatMoney(amt)}</span>
+                    <button
+                      onClick={() => { if (confirm(`Remove "${li.name}"?`)) doAction('remove_line_item', { line_item_id: li.id }) }}
+                      className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                      title="Remove"
+                    >✕</button>
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Add item form */}
+            {addingItem && (
+              <div className="mt-3 pt-3 border-t border-dashed border-gray-200 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="text" value={newItem.name} onChange={e => setNewItem(n => ({ ...n, name: e.target.value }))} placeholder="Item name" className="border rounded px-2 py-1.5 text-sm" />
+                  <input type="number" value={newItem.price} onChange={e => setNewItem(n => ({ ...n, price: e.target.value }))} placeholder="Price ($)" className="border rounded px-2 py-1.5 text-sm" step="0.01" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <input type="number" min="1" value={newItem.quantity} onChange={e => setNewItem(n => ({ ...n, quantity: e.target.value }))} className="w-16 border rounded px-2 py-1.5 text-sm" />
+                  <label className="flex items-center gap-1 text-xs text-gray-500">
+                    <input type="checkbox" checked={newItem.guest_multiplied} onChange={e => setNewItem(n => ({ ...n, guest_multiplied: e.target.checked }))} />
+                    Per guest
+                  </label>
+                  <div className="flex-1" />
+                  <button
+                    onClick={() => {
+                      const cents = Math.round(Number(newItem.price) * 100)
+                      if (!newItem.name || !cents) return
+                      doAction('add_line_item', {
+                        name: newItem.name,
+                        quantity: Number(newItem.quantity) || 1,
+                        unit_price_cents: cents,
+                        guest_multiplied: newItem.guest_multiplied,
+                      })
+                      setNewItem({ name: '', price: '', quantity: '1', guest_multiplied: false })
+                      setAddingItem(false)
+                    }}
+                    disabled={!newItem.name || !newItem.price || !!actionLoading}
+                    className="bg-[#1a2744] text-white px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50"
+                  >Add</button>
+                </div>
+              </div>
+            )}
+
+            {/* Discount form */}
+            {showDiscount && (
+              <div className="mt-3 pt-3 border-t border-dashed border-amber-200 space-y-2">
+                <div className="flex gap-2">
+                  <input type="text" value={discountName} onChange={e => setDiscountName(e.target.value)} placeholder="Discount reason" className="flex-1 border rounded px-2 py-1.5 text-sm" />
+                  <input type="number" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} placeholder="Amount ($)" className="w-24 border rounded px-2 py-1.5 text-sm" step="0.01" />
+                  <button
+                    onClick={() => {
+                      const cents = Math.round(Number(discountAmount) * 100)
+                      if (!discountName || !cents) return
+                      doAction('add_line_item', {
+                        name: discountName,
+                        category: 'discount',
+                        quantity: 1,
+                        unit_price_cents: -Math.abs(cents),
+                        guest_multiplied: false,
+                      })
+                      setDiscountName('')
+                      setDiscountAmount('')
+                      setShowDiscount(false)
+                    }}
+                    disabled={!discountName || !discountAmount || !!actionLoading}
+                    className="bg-amber-500 text-white px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50"
+                  >Apply</button>
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-between pt-2 mt-2 border-t-2 border-[#1a2744] text-[#1a2744] font-semibold text-sm">
               <span>Total</span><span>{formatMoney(selected.total_cents || 0)}</span>
             </div>

@@ -267,5 +267,98 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, action: 'portal_link_sent' })
   }
 
+  if (action === 'add_line_item') {
+    const { name, category, quantity, unit_price_cents, guest_multiplied } = body
+    if (!name || unit_price_cents === undefined) {
+      return NextResponse.json({ error: 'name and unit_price_cents required' }, { status: 400 })
+    }
+
+    const maxSort = (await supabase
+      .from('booking_line_items')
+      .select('sort_order')
+      .eq('booking_id', id)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+      .single()
+    ).data?.sort_order ?? 0
+
+    await supabase.from('booking_line_items').insert({
+      booking_id: id,
+      name,
+      category: category || (unit_price_cents < 0 ? 'discount' : 'add-on'),
+      quantity: quantity || 1,
+      unit_price_cents,
+      price_type: guest_multiplied ? 'per_person' : 'flat',
+      guest_multiplied: !!guest_multiplied,
+      sort_order: maxSort + 1,
+    })
+
+    await recalcTotals(supabase, id, booking)
+
+    await supabase.from('booking_modifications').insert({
+      booking_id: id, modified_by: 'admin',
+      change_summary: `Added line item: ${name} (${formatMoney(unit_price_cents)})`,
+    })
+
+    return NextResponse.json({ ok: true, action: 'line_item_added' })
+  }
+
+  if (action === 'remove_line_item') {
+    const { line_item_id } = body
+    if (!line_item_id) return NextResponse.json({ error: 'line_item_id required' }, { status: 400 })
+
+    const { data: li } = await supabase
+      .from('booking_line_items')
+      .select('name')
+      .eq('id', line_item_id)
+      .eq('booking_id', id)
+      .single()
+
+    if (!li) return NextResponse.json({ error: 'Line item not found' }, { status: 404 })
+
+    await supabase.from('booking_line_items').delete().eq('id', line_item_id)
+    await recalcTotals(supabase, id, booking)
+
+    await supabase.from('booking_modifications').insert({
+      booking_id: id, modified_by: 'admin',
+      change_summary: `Removed line item: ${li.name}`,
+    })
+
+    return NextResponse.json({ ok: true, action: 'line_item_removed' })
+  }
+
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+}
+
+async function recalcTotals(supabase: ReturnType<typeof getSupabase>, bookingId: string, booking: Record<string, unknown>) {
+  const { data: items } = await supabase
+    .from('booking_line_items')
+    .select('unit_price_cents, quantity, guest_multiplied')
+    .eq('booking_id', bookingId)
+
+  const guestCount = (booking.guest_count_approx as number) || 1
+  let total = 0
+  for (const li of items || []) {
+    total += li.guest_multiplied
+      ? li.unit_price_cents * li.quantity * guestCount
+      : li.unit_price_cents * li.quantity
+  }
+
+  const { data: payments } = await supabase
+    .from('booking_payments')
+    .select('amount_cents, payment_type')
+    .eq('booking_id', bookingId)
+
+  let paid = 0
+  for (const p of payments || []) {
+    if (p.payment_type === 'refund') paid -= p.amount_cents
+    else paid += p.amount_cents
+  }
+
+  const balance = Math.max(0, total - paid)
+  await supabase.from('bookings').update({
+    total_cents: total,
+    balance_due_cents: balance,
+    updated_at: new Date().toISOString(),
+  }).eq('id', bookingId)
 }
