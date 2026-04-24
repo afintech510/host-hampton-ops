@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Suspense, useState, useCallback, useEffect } from 'react'
 import {
-  Calendar, User, Mail, Phone, Baby, Users, Loader2, Bookmark, PartyPopper, Clock, Lock,
+  Calendar, User, Mail, Phone, Baby, Users, Loader2, Bookmark, PartyPopper, Clock,
   X, Check, Palette, Sparkles, UtensilsCrossed, Cake, Wine, Paintbrush, Music, Gift, DollarSign, ArrowRight,
 } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
@@ -209,10 +209,6 @@ function BookingForm() {
   const [themes, setThemes] = useState<ThemeItem[]>([])
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null)
   const [marketingConsent, setMarketingConsent] = useState(false)
-  const [giftCardCode, setGiftCardCode] = useState('')
-  const [giftCardValid, setGiftCardValid] = useState<{ code: string; balanceCents: number; balanceFormatted: string } | null>(null)
-  const [giftCardError, setGiftCardError] = useState('')
-  const [giftCardLoading, setGiftCardLoading] = useState(false)
   const [form, setForm] = useState({
     contactName: '',
     contactEmail: '',
@@ -286,27 +282,6 @@ function BookingForm() {
     setForm(prev => ({ ...prev, notes: '', packageName: '' }))
   }
 
-  async function handleApplyGiftCard() {
-    if (!giftCardCode.trim()) return
-    setGiftCardLoading(true)
-    setGiftCardError('')
-    setGiftCardValid(null)
-    try {
-      const res = await fetch('/api/gift-cards/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: giftCardCode.trim() }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Invalid gift card')
-      setGiftCardValid(data)
-    } catch (err: any) {
-      setGiftCardError(err.message || 'Invalid gift card')
-    } finally {
-      setGiftCardLoading(false)
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!selection?.date || !selection?.timeSlot) {
@@ -327,7 +302,7 @@ function BookingForm() {
           partyTime: selection.timeSlot.start,
           eventType: selection.bookingType?.slug || 'other',
           bookingTypeSlug: selection.bookingType?.slug,
-          giftCardCode: giftCardValid?.code || null,
+          giftCardCode: null,
           partyTags: {
             theme: form.packageName || undefined,
             ...(isRoomRental ? {
@@ -522,19 +497,32 @@ function BookingForm() {
                   <label className="form-label flex items-center gap-2">
                     <Clock size={14} className="text-hampton-navy" /> Rental Duration (hours) *
                   </label>
-                  <select required value={form.rentalDuration}
-                          onChange={e => update('rentalDuration', e.target.value)}
-                          className="form-input">
-                    <option value="3">3 hours</option>
-                    <option value="4">4 hours</option>
-                    <option value="5">5 hours</option>
-                    <option value="6">6 hours</option>
-                    <option value="7">7 hours</option>
-                    <option value="8">8 hours</option>
-                  </select>
-                  <p className="text-xs text-hampton-navy/50 mt-1.5">
-                    Include time for setup and cleanup in your rental duration.
-                  </p>
+                  {(() => {
+                    const isWeekend = selection?.date
+                      ? [0, 6].includes(new Date(selection.date + 'T12:00:00').getDay())
+                      : null
+                    const extraRate = isWeekend ? 100 : 50
+                    return (
+                      <>
+                        <select required value={form.rentalDuration}
+                                onChange={e => update('rentalDuration', e.target.value)}
+                                className="form-input">
+                          <option value="3">3 hours (included)</option>
+                          {[4, 5, 6, 7, 8].map(h => (
+                            <option key={h} value={String(h)}>
+                              {h} hours {isWeekend !== null ? `(+$${(h - 3) * extraRate})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-hampton-navy/50 mt-1.5">
+                          3 hours included. Additional hours: {isWeekend !== null
+                            ? <span className="font-medium">${extraRate}/hr ({isWeekend ? 'weekend' : 'weekday'} rate)</span>
+                            : '$50/hr weekday, $100/hr weekend'
+                          }. Includes setup &amp; cleanup time.
+                        </p>
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
             )}
@@ -644,63 +632,22 @@ function BookingForm() {
                 )}
               </button>
 
-              {/* Gift Card */}
-              {hasDeposit && (
-                <div className="w-full mb-3">
-                  <label className="form-label">Gift Card Code</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={giftCardCode}
-                      onChange={e => { setGiftCardCode(e.target.value.toUpperCase()); setGiftCardValid(null); setGiftCardError('') }}
-                      className="form-input flex-1 font-mono tracking-wider"
-                      placeholder="HH-XXXX-XXXX"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleApplyGiftCard}
-                      disabled={!giftCardCode.trim() || giftCardLoading}
-                      className="px-4 py-2 rounded-lg bg-hampton-navy text-white text-sm font-semibold disabled:opacity-50 hover:bg-hampton-navy/90 transition-colors shrink-0"
-                    >
-                      {giftCardLoading ? '...' : 'Apply'}
-                    </button>
-                  </div>
-                  {giftCardValid && (
-                    <p className="text-green-600 text-xs mt-1.5 font-medium">
-                      Gift card applied — {giftCardValid.balanceFormatted} available. Will be applied toward your deposit.
-                    </p>
-                  )}
-                  {giftCardError && (
-                    <p className="text-red-500 text-xs mt-1.5">{giftCardError}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Pay Deposit / Book */}
+              {/* Book Now */}
               <button type="submit" disabled={loading}
                       className="flex-1 bg-hampton-navy text-hampton-ivory font-semibold py-4 px-8 rounded-full hover:bg-opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
                 {loading ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    {hasDeposit ? 'Redirecting to Stripe...' : 'Booking...'}
-                  </>
-                ) : hasDeposit ? (
-                  <>
-                    <Lock size={16} />
-                    Pay ${depositDollars} Deposit
-                  </>
+                  <><Loader2 size={18} className="animate-spin" /> Processing...</>
                 ) : (
-                  'Book Appointment'
+                  'Book Now'
                 )}
               </button>
             </div>
 
-            {hasDeposit && (
-              <p className="text-center text-hampton-navy/60 text-xs">
-                Secure payment via Stripe. Your ${depositDollars} deposit is applied toward your total balance.
-                <br />You can change all details up to 1 week before your event.
-              </p>
-            )}
+            <p className="text-center text-hampton-navy/60 text-xs">
+              {hasDeposit
+                ? `Secure payment via Stripe. Your $${depositDollars} deposit is applied toward your total balance. You can change all details up to 1 week before your event.`
+                : 'You can change all details up to 1 week before your event.'}
+            </p>
           </form>
         )}
       </section>
