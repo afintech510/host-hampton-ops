@@ -125,6 +125,7 @@ services:
       args:
         NEXT_PUBLIC_GA_ID: ${NEXT_PUBLIC_GA_ID:-G-BX1DJ77T15}
         NEXT_PUBLIC_GADS_ID: ${NEXT_PUBLIC_GADS_ID:-AW-16667795146}
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
     container_name: hampton_website
     restart: unless-stopped
     environment:
@@ -147,6 +148,9 @@ services:
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - PORTAL_LINK_SIGNING_SECRET=${PORTAL_LINK_SIGNING_SECRET}
+      - VENMO_HANDLE=${VENMO_HANDLE:-@hosthampton}
+      - ZELLE_PHONE=${ZELLE_PHONE}
     networks:
       - hampton_net
 
