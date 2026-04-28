@@ -101,14 +101,23 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   async function doAction(action: string, extra?: Record<string, unknown>) {
     if (!selected) return
     setActionLoading(action)
-    await fetch(`/api/admin/parties/${selected.id}`, {
+    const res = await fetch(`/api/admin/parties/${selected.id}`, {
       method: 'POST',
       headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, ...extra }),
     })
+    const data = await res.json()
     await fetchDetail(selected.id)
     await fetchBookings()
     setActionLoading('')
+    return data
+  }
+
+  async function openPortal() {
+    const data = await doAction('generate_portal_url')
+    if (data?.portalUrl) {
+      window.open(data.portalUrl, '_blank')
+    }
   }
 
   // List view
@@ -450,6 +459,14 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
                 className="w-full bg-[#A1B5C8] text-white py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
               >
                 {actionLoading === 'send_portal_link' ? 'Sending...' : 'Send Portal Link'}
+              </button>
+
+              <button
+                onClick={openPortal}
+                disabled={!!actionLoading}
+                className="w-full border-2 border-[#1a2744] text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-[#1a2744]/5 disabled:opacity-50"
+              >
+                {actionLoading === 'generate_portal_url' ? 'Opening...' : 'Open Portal (New Tab)'}
               </button>
 
               {selected.status !== 'cancelled' && selected.status !== 'completed' && (

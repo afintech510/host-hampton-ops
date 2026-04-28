@@ -243,13 +243,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, action: 'payment_recorded', newBalance })
   }
 
-  if (action === 'send_portal_link') {
+  if (action === 'send_portal_link' || action === 'generate_portal_url') {
     const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
     const { token: rawToken, hash, expiresAt } = generatePortalToken(booking.booking_ref, secret)
     await supabase.from('portal_tokens').insert({ booking_id: id, token_hash: hash, expires_at: expiresAt.toISOString() })
     const portalUrl = buildPortalUrl(booking.booking_ref, rawToken)
 
-    if (process.env.RESEND_API_KEY) {
+    if (action === 'send_portal_link' && process.env.RESEND_API_KEY) {
       const { Resend } = await import('resend')
       const resend = new Resend(process.env.RESEND_API_KEY)
       const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
@@ -264,7 +264,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       })
     }
 
-    return NextResponse.json({ ok: true, action: 'portal_link_sent' })
+    return NextResponse.json({ ok: true, action: action === 'send_portal_link' ? 'portal_link_sent' : 'portal_url_generated', portalUrl })
   }
 
   if (action === 'add_line_item') {

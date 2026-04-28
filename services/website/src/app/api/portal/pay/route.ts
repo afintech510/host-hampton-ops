@@ -5,6 +5,7 @@ import { getPortalBookingRef } from '@/lib/portalAuth'
 import { calculateCardFee, formatMoney } from '@/lib/partyPricing'
 
 const MIN_PARTIAL_CENTS = 5000
+const MIN_DEPOSIT_CENTS = 9900
 
 export async function POST(req: NextRequest) {
   const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
@@ -17,15 +18,21 @@ export async function POST(req: NextRequest) {
 
   const supabase = getSupabase()
   const body = await req.json()
-  const { amountCents, paymentMethod } = body as { amountCents: number; paymentMethod: 'card' | 'cash' | 'venmo' | 'zelle' }
+  const { amountCents, paymentMethod, embedded, paymentType } = body as {
+    amountCents: number
+    paymentMethod: 'card' | 'cash' | 'venmo' | 'zelle'
+    embedded?: boolean
+    paymentType?: 'deposit' | 'partial' | 'final'
+  }
 
-  if (!amountCents || amountCents < MIN_PARTIAL_CENTS) {
-    return NextResponse.json({ error: `Minimum payment is ${formatMoney(MIN_PARTIAL_CENTS)}` }, { status: 400 })
+  const minAmount = paymentType === 'deposit' ? MIN_DEPOSIT_CENTS : MIN_PARTIAL_CENTS
+  if (!amountCents || amountCents < minAmount) {
+    return NextResponse.json({ error: `Minimum payment is ${formatMoney(minAmount)}` }, { status: 400 })
   }
 
   const { data: booking } = await supabase
     .from('bookings')
-    .select('id, balance_due_cents, contact_name, contact_email, booking_ref, package_type')
+    .select('id, balance_due_cents, total_cents, contact_name, contact_email, booking_ref, package_type, status')
     .eq('booking_ref', bookingRef)
     .single()
 
@@ -35,13 +42,14 @@ export async function POST(req: NextRequest) {
 
   const effectiveAmount = Math.min(amountCents, booking.balance_due_cents || amountCents)
   const isFinalPayment = effectiveAmount >= (booking.balance_due_cents || 0)
+  const resolvedType = paymentType || (isFinalPayment ? 'final' : 'partial')
 
   if (paymentMethod === 'card') {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
     const cardFeeCents = calculateCardFee(effectiveAmount)
     const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
 
-    const session = await stripe.checkout.sessions.create({
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: ['card'],
       mode: 'payment',
       line_items: [
@@ -49,7 +57,7 @@ export async function POST(req: NextRequest) {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: `${booking.booking_ref} — ${isFinalPayment ? 'Final' : 'Partial'} Payment`,
+              name: `${booking.booking_ref} — ${resolvedType === 'deposit' ? 'Deposit' : isFinalPayment ? 'Final' : 'Partial'} Payment`,
               description: booking.package_type || 'Party Booking',
             },
             unit_amount: effectiveAmount,
@@ -68,7 +76,7 @@ export async function POST(req: NextRequest) {
       customer_email: booking.contact_email,
       metadata: {
         type: 'party_builder',
-        payment_type: isFinalPayment ? 'final' : 'partial',
+        payment_type: resolvedType,
         booking_ref: booking.booking_ref,
         booking_id: booking.id,
         amountCents: String(effectiveAmount),
@@ -76,14 +84,24 @@ export async function POST(req: NextRequest) {
         contactName: booking.contact_name,
         contactEmail: booking.contact_email,
       },
-      success_url: `https://${host}/my-booking?payment=success`,
-      cancel_url: `https://${host}/my-booking/pay?cancelled=true`,
-    })
+    }
 
+    if (embedded) {
+      sessionParams.ui_mode = 'embedded'
+      sessionParams.return_url = `https://${host}/my-booking?session_id={CHECKOUT_SESSION_ID}`
+    } else {
+      sessionParams.success_url = `https://${host}/my-booking?payment=success`
+      sessionParams.cancel_url = `https://${host}/my-booking/pay?cancelled=true`
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams)
+
+    if (embedded) {
+      return NextResponse.json({ clientSecret: session.client_secret, method: 'card' })
+    }
     return NextResponse.json({ url: session.url, method: 'card' })
   }
 
-  // Non-card: just return instructions (admin will record receipt)
   return NextResponse.json({
     method: paymentMethod,
     amount: formatMoney(effectiveAmount),
