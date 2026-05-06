@@ -11,35 +11,23 @@ import type { BookingLineItem } from '@/types/booking-flow'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const {
-      lineItems,
-      contactName,
-      contactEmail,
-      contactPhone,
-      childName,
-      childAge,
-      guestCount,
-      partyDate,
-      partyTime,
-      packageType,
-      paymentMethod,
-      notes,
-      marketingConsent,
-    } = body as {
-      lineItems: BookingLineItem[]
-      contactName: string
-      contactEmail: string
-      contactPhone?: string
-      childName?: string
-      childAge?: string
-      guestCount: number
-      partyDate: string
-      partyTime: string
-      packageType: string
-      paymentMethod: 'card' | 'cash' | 'venmo' | 'zelle'
-      notes?: string
-      marketingConsent?: boolean
-    }
+
+    // Support both flat fields (contactName) and nested contact object ({ contact: { fullName } })
+    const contactObj = body.contact as { fullName?: string; email?: string; phone?: string; childName?: string } | undefined
+    const lineItems = body.lineItems as BookingLineItem[]
+    const contactName = body.contactName || contactObj?.fullName || ''
+    const contactEmail = body.contactEmail || contactObj?.email || ''
+    const contactPhone = body.contactPhone || contactObj?.phone || ''
+    const childName = body.childName || contactObj?.childName || ''
+    const childAge = body.childAge || ''
+    const guestCount = body.guestCount as number
+    const partyDate = body.partyDate as string
+    const partyTime = body.partyTime as string
+    const packageType = body.packageType as string
+    const paymentMethod = (body.paymentMethod || 'card') as 'card' | 'cash' | 'venmo' | 'zelle'
+    const notes = body.notes as string | undefined
+    const marketingConsent = body.marketingConsent as boolean | undefined
+    const embedded = body.embedded as boolean | undefined
 
     if (!lineItems?.length || !contactName || !contactEmail || !partyDate || !partyTime || !guestCount || !paymentMethod) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -135,7 +123,7 @@ export async function POST(req: NextRequest) {
       const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
       const cardFeeCents = calculateCardFee(depositCents)
 
-      const session = await stripe.checkout.sessions.create({
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
         payment_method_types: ['card'],
         mode: 'payment',
         line_items: [
@@ -181,10 +169,21 @@ export async function POST(req: NextRequest) {
           childName: childName || '',
           childAge: childAge || '',
         },
-        success_url: `https://${host}/kids-party-menu/success?ref=${bookingRef}&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `https://${host}/kids-party-menu?cancelled=true`,
-      })
+      }
 
+      if (embedded) {
+        sessionParams.ui_mode = 'embedded'
+        sessionParams.return_url = `https://${host}/party-builder?session_id={CHECKOUT_SESSION_ID}&status=complete`
+      } else {
+        sessionParams.success_url = `https://${host}/party-builder?ref=${bookingRef}&session_id={CHECKOUT_SESSION_ID}&status=complete`
+        sessionParams.cancel_url = `https://${host}/party-builder?cancelled=true`
+      }
+
+      const session = await stripe.checkout.sessions.create(sessionParams)
+
+      if (embedded) {
+        return NextResponse.json({ clientSecret: session.client_secret, method: 'card' })
+      }
       return NextResponse.json({ url: session.url, method: 'card' })
     }
 

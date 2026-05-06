@@ -27,9 +27,11 @@ export function validatePortalToken(
   return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(storedHash))
 }
 
-export function buildPortalUrl(bookingRef: string, rawToken: string): string {
+export function buildPortalUrl(bookingRef: string, rawToken: string, redirect?: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com'
-  return `${baseUrl}/api/portal/auth?ref=${encodeURIComponent(bookingRef)}&token=${encodeURIComponent(rawToken)}`
+  let url = `${baseUrl}/api/portal/auth?ref=${encodeURIComponent(bookingRef)}&token=${encodeURIComponent(rawToken)}`
+  if (redirect) url += `&redirect=${encodeURIComponent(redirect)}`
+  return url
 }
 
 export function buildPortalCookieValue(bookingRef: string, secret: string): string {

@@ -4,12 +4,12 @@ import PartyBuilderContent from './PartyBuilderContent'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 
 export const metadata: Metadata = {
-  title: "Kids Party Builder — Host Hampton, Speonk NY",
+  title: "Host Hampton Party Plan — Speonk NY",
   description:
-    'Build your custom kids party — choose a theme, add activities, food, decor & more. See pricing in real time, pick your date, and book with a $99 deposit.',
+    'Your custom Host Hampton Party Plan — review details, add options, pick a date, and pay your $99 deposit to reserve.',
   openGraph: {
-    title: "Kids Party Builder — Host Hampton",
-    description: 'Build your custom party, pick a date, and book instantly with a $99 deposit.',
+    title: "Host Hampton Party Plan",
+    description: 'Review, customize, and reserve your party in one place.',
   },
 }
 
@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic'
 export default async function PartyBuilderPage({
   searchParams,
 }: {
-  searchParams: { q?: string }
+  searchParams: { q?: string; status?: string; session_id?: string }
 }) {
   let items: PricingItem[] = []
   try {
@@ -48,6 +48,8 @@ export default async function PartyBuilderPage({
       entertainment={byCategory('entertainment-add-on')}
       partyAddOns={byCategory('party-add-on')}
       savedQuote={searchParams.q ?? null}
+      checkoutStatus={searchParams.status ?? null}
+      checkoutSessionId={searchParams.session_id ?? null}
     />
   )
 }

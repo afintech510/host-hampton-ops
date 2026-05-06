@@ -44,9 +44,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/my-booking/login?error=expired', req.url))
   }
 
-  // Set cookie and redirect to portal
+  // Set cookie and redirect to portal (or custom redirect)
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
-  const response = NextResponse.redirect(new URL('/my-booking', `https://${host}`))
+  const redirectTo = req.nextUrl.searchParams.get('redirect')
+  const allowedRedirects = ['/my-booking', '/party-builder']
+  const destination = redirectTo && allowedRedirects.includes(redirectTo) ? redirectTo : '/my-booking'
+  const response = NextResponse.redirect(new URL(destination, `https://${host}`))
   response.headers.set('Set-Cookie', setPortalCookieHeader(ref, secret))
 
   return response

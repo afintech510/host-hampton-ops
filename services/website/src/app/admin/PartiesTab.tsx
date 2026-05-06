@@ -65,7 +65,61 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   const [discountAmount, setDiscountAmount] = useState('')
   const [showDiscount, setShowDiscount] = useState(false)
 
+  // New Party Plan form state
+  const [showNewForm, setShowNewForm] = useState(false)
+  const [newForm, setNewForm] = useState({
+    contactName: '', contactEmail: '', contactPhone: '', childName: '',
+    partyDate: '', partyTime: '', guestCount: '10', packageType: '', notes: '',
+    sendEmail: true, lockDate: true,
+  })
+  const [creating, setCreating] = useState(false)
+  const [createResult, setCreateResult] = useState<{ ok: boolean; bookingRef?: string; builderUrl?: string; error?: string } | null>(null)
+
   useEffect(() => { fetchBookings() }, [statusFilter, page])
+
+  async function createPartyPlan() {
+    if (!newForm.contactName || !newForm.contactEmail) {
+      setCreateResult({ ok: false, error: 'Name and email are required' })
+      return
+    }
+    setCreating(true)
+    setCreateResult(null)
+    const res = await fetch('/api/admin/parties/create', {
+      method: 'POST',
+      headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contactName: newForm.contactName,
+        contactEmail: newForm.contactEmail,
+        contactPhone: newForm.contactPhone || undefined,
+        childName: newForm.childName || undefined,
+        partyDate: newForm.partyDate || undefined,
+        partyTime: newForm.partyTime || undefined,
+        guestCount: parseInt(newForm.guestCount, 10) || 10,
+        packageType: newForm.packageType || undefined,
+        notes: newForm.notes || undefined,
+        sendEmail: newForm.sendEmail,
+        lockDate: newForm.lockDate,
+      }),
+    })
+    const data = await res.json()
+    setCreating(false)
+    if (res.ok) {
+      setCreateResult({ ok: true, bookingRef: data.bookingRef, builderUrl: data.builderUrl })
+      await fetchBookings()
+    } else {
+      setCreateResult({ ok: false, error: data.error || 'Failed to create' })
+    }
+  }
+
+  function resetNewForm() {
+    setShowNewForm(false)
+    setCreateResult(null)
+    setNewForm({
+      contactName: '', contactEmail: '', contactPhone: '', childName: '',
+      partyDate: '', partyTime: '', guestCount: '10', packageType: '', notes: '',
+      sendEmail: true, lockDate: true,
+    })
+  }
 
   async function fetchBookings() {
     setLoading(true)
@@ -124,22 +178,169 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   if (!selected) {
     return (
       <div>
-        <div className="flex items-center gap-3 mb-6 flex-wrap">
-          {STATUS_FILTERS.map(s => {
-            const info = STATUS_LABELS[s] || { label: s === 'all' ? 'All' : s, color: 'bg-gray-100 text-gray-700' }
-            return (
-              <button
-                key={s}
-                onClick={() => { setStatusFilter(s); setPage(1) }}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  statusFilter === s ? 'bg-[#1a2744] text-white' : info.color + ' hover:opacity-80'
-                }`}
-              >
-                {s === 'all' ? 'All' : info.label}
-              </button>
-            )
-          })}
+        <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            {STATUS_FILTERS.map(s => {
+              const info = STATUS_LABELS[s] || { label: s === 'all' ? 'All' : s, color: 'bg-gray-100 text-gray-700' }
+              return (
+                <button
+                  key={s}
+                  onClick={() => { setStatusFilter(s); setPage(1) }}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    statusFilter === s ? 'bg-[#1a2744] text-white' : info.color + ' hover:opacity-80'
+                  }`}
+                >
+                  {s === 'all' ? 'All' : info.label}
+                </button>
+              )
+            })}
+          </div>
+          <button
+            onClick={() => setShowNewForm(true)}
+            className="px-4 py-2 bg-[#1a2744] text-white rounded-lg text-sm font-semibold hover:bg-[#2a3754] transition-colors"
+          >
+            + New Party Plan
+          </button>
         </div>
+
+        {showNewForm && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={resetNewForm}>
+            <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-4 border-b sticky top-0 bg-white rounded-t-2xl flex items-center justify-between">
+                <h2 className="text-lg font-bold text-[#1a2744]">New Host Hampton Party Plan</h2>
+                <button onClick={resetNewForm} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+              </div>
+
+              {createResult?.ok ? (
+                <div className="p-6 space-y-4">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <p className="font-bold text-green-800 mb-1">✓ Party Plan Created</p>
+                    <p className="text-sm text-green-700">Booking ref: <span className="font-mono">{createResult.bookingRef}</span></p>
+                    {newForm.sendEmail && <p className="text-sm text-green-700 mt-1">Quote email sent to {newForm.contactEmail}</p>}
+                  </div>
+                  {createResult.builderUrl && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Customer link (copy & share)</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={createResult.builderUrl}
+                          className="flex-1 px-3 py-2 border rounded-lg text-xs font-mono bg-gray-50"
+                          onClick={e => (e.target as HTMLInputElement).select()}
+                        />
+                        <button
+                          onClick={() => navigator.clipboard.writeText(createResult.builderUrl || '')}
+                          className="px-3 py-2 bg-[#1a2744] text-white rounded-lg text-xs font-semibold"
+                        >
+                          Copy
+                        </button>
+                        <button
+                          onClick={() => window.open(createResult.builderUrl, '_blank')}
+                          className="px-3 py-2 border border-[#1a2744] text-[#1a2744] rounded-lg text-xs font-semibold"
+                        >
+                          Open
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={resetNewForm} className="flex-1 px-4 py-2 border rounded-lg text-sm font-semibold">Done</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 space-y-4">
+                  <p className="text-sm text-gray-500">Enter the lead&apos;s info. They&apos;ll get a branded email with a link to review the plan, add options, and pay the deposit.</p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Customer Name *</label>
+                      <input type="text" value={newForm.contactName} onChange={e => setNewForm({ ...newForm, contactName: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Jane Doe" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Email *</label>
+                      <input type="email" value={newForm.contactEmail} onChange={e => setNewForm({ ...newForm, contactEmail: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="jane@example.com" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Phone</label>
+                      <input type="tel" value={newForm.contactPhone} onChange={e => setNewForm({ ...newForm, contactPhone: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="(631) 555-1234" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Child / Party Name</label>
+                      <input type="text" value={newForm.childName} onChange={e => setNewForm({ ...newForm, childName: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Cora's 8th Birthday" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Date</label>
+                      <input type="date" value={newForm.partyDate} onChange={e => setNewForm({ ...newForm, partyDate: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Time</label>
+                      <input type="time" value={newForm.partyTime} onChange={e => setNewForm({ ...newForm, partyTime: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Guests</label>
+                      <input type="number" min="1" max="50" value={newForm.guestCount} onChange={e => setNewForm({ ...newForm, guestCount: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg text-sm" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Package / Theme (optional)</label>
+                    <input type="text" value={newForm.packageType} onChange={e => setNewForm({ ...newForm, packageType: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="e.g. Princess Dream Party" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Internal Notes (visible to customer)</label>
+                    <textarea value={newForm.notes} onChange={e => setNewForm({ ...newForm, notes: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg text-sm h-20" placeholder="Any details or notes for the customer" />
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input type="checkbox" checked={newForm.lockDate} onChange={e => setNewForm({ ...newForm, lockDate: e.target.checked })}
+                        className="mt-0.5" />
+                      <span className="text-sm text-gray-700">
+                        <strong>Lock date &amp; time</strong> — customer can&apos;t change date or time (only admin can)
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input type="checkbox" checked={newForm.sendEmail} onChange={e => setNewForm({ ...newForm, sendEmail: e.target.checked })}
+                        className="mt-0.5" />
+                      <span className="text-sm text-gray-700">
+                        <strong>Email party plan to customer</strong> with link to review &amp; pay deposit
+                      </span>
+                    </label>
+                  </div>
+
+                  {createResult?.error && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{createResult.error}</div>
+                  )}
+
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={resetNewForm} className="flex-1 px-4 py-2 border rounded-lg text-sm font-semibold">Cancel</button>
+                    <button
+                      onClick={createPartyPlan}
+                      disabled={creating || !newForm.contactName || !newForm.contactEmail}
+                      className="flex-1 px-4 py-2 bg-[#1a2744] text-white rounded-lg text-sm font-semibold disabled:opacity-40"
+                    >
+                      {creating ? 'Creating...' : 'Create & Send Plan'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <p className="text-gray-400 text-center py-10">Loading...</p>

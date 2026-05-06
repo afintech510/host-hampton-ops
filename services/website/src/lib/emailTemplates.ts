@@ -952,6 +952,71 @@ export function partyPaymentInstructionsHtml(d: { customerName: string; bookingR
 
 /* ── Party Admin Unpaid Day-Of (admin alert) ─────────────────── */
 
+export function partyQuoteSentHtml(d: {
+  customerName: string; bookingRef: string; partyDate?: string; partyTime?: string;
+  guestCount: number; packageType: string; childName?: string;
+  totalFormatted: string; depositFormatted: string; balanceFormatted: string;
+  lineItems: PartyLineItem[]; builderUrl: string; notes?: string;
+}): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  const dateLine = d.partyDate
+    ? `<tr><td style="padding:6px 0;color:${BRAND.gray};width:130px;">Date</td><td style="padding:6px 0;color:${BRAND.navy};font-weight:bold;">${d.partyDate}</td></tr>`
+    : ''
+  const timeLine = d.partyTime
+    ? `<tr><td style="padding:6px 0;color:${BRAND.gray};">Time</td><td style="padding:6px 0;color:${BRAND.navy};">${d.partyTime}</td></tr>`
+    : ''
+  const childLine = d.childName
+    ? `<tr><td style="padding:6px 0;color:${BRAND.gray};">Celebration</td><td style="padding:6px 0;color:${BRAND.navy};font-weight:bold;">${d.childName}</td></tr>`
+    : ''
+  const notesLine = d.notes
+    ? `<div style="background:#f0ece7;border-radius:8px;padding:16px 20px;margin:0 0 24px;"><p style="color:${BRAND.navy};font-size:13px;margin:0 0 6px;font-weight:bold;">Notes</p><p style="color:${BRAND.gray};font-size:14px;line-height:1.6;margin:0;">${d.notes}</p></div>`
+    : ''
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0 0 6px;font-weight:normal;">Your Host Hampton Party Plan</h1>
+    <p style="color:${BRAND.navy};opacity:0.7;font-size:15px;margin:0;">Booking ${d.bookingRef}</p>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">We've put together your custom party plan! Review the details below — you can add or remove options, then pay your $99 deposit to lock it in. We can't wait to celebrate with you.</p>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+      ${childLine}
+      <tr><td style="padding:6px 0;color:${BRAND.gray};width:130px;">Package</td><td style="padding:6px 0;color:${BRAND.navy};">${d.packageType}</td></tr>
+      <tr><td style="padding:6px 0;color:${BRAND.gray};">Guests</td><td style="padding:6px 0;color:${BRAND.navy};">${d.guestCount}</td></tr>
+      ${dateLine}
+      ${timeLine}
+    </table>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+      <tr><td colspan="2" style="padding:8px 0;color:${BRAND.navy};font-weight:bold;border-bottom:2px solid ${BRAND.navy};">Your Party</td></tr>
+      ${lineItemRows(d.lineItems)}
+      <tr><td style="padding:8px 0;color:${BRAND.navy};font-weight:bold;">Estimated Total</td><td style="padding:8px 0;color:${BRAND.navy};font-weight:bold;text-align:right;">${d.totalFormatted}</td></tr>
+    </table>
+    <div style="background:${BRAND.bodyBg};border-radius:8px;padding:16px 20px;margin:0 0 24px;">
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <tr><td style="padding:4px 0;color:${BRAND.gray};">Deposit to reserve</td><td style="padding:4px 0;color:${BRAND.navy};font-weight:bold;text-align:right;">${d.depositFormatted}</td></tr>
+        <tr><td style="padding:4px 0;color:${BRAND.gray};">Remaining balance</td><td style="padding:4px 0;color:${BRAND.navy};text-align:right;">${d.balanceFormatted}</td></tr>
+      </table>
+    </div>
+    ${notesLine}
+    ${payButton(d.builderUrl, 'View & Customize Your Party Plan')}
+    <p style="font-size:13px;color:${BRAND.gray};line-height:1.7;margin:0 0 20px;text-align:center;">
+      Use the link above to customize your add-ons and pay your $99 deposit to lock it in.
+    </p>
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline("Let's plan something amazing!")}
+</div>
+</body></html>`
+}
+
+/* ── Party Admin Unpaid Day-of (admin) ─────────────────────── */
+
 export function partyAdminUnpaidDayOfHtml(d: { bookingRef: string; customerName: string; customerPhone?: string; partyDate: string; balanceFormatted: string; adminUrl: string }): string {
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>

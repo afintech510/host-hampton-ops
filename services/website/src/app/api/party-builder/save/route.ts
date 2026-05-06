@@ -1,0 +1,297 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getSupabase } from '@/lib/supabase'
+import { upsertContact } from '@/lib/contacts'
+import { enrollInSequence } from '@/lib/sequences'
+import { calculateLineItemTotal, computeCutoffDates, generatePartyRef, formatMoney, getDepositCents } from '@/lib/partyPricing'
+import { generatePortalToken, buildPortalUrl, getPortalBookingRef } from '@/lib/portalAuth'
+import { partyQuoteSentHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
+import type { BookingLineItem } from '@/types/booking-flow'
+
+function formatDate(dateStr: string): string {
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  } catch { return dateStr }
+}
+
+function formatTime(timeStr: string): string {
+  try {
+    const [h, m] = timeStr.split(':').map(Number)
+    const ampm = h >= 12 ? 'PM' : 'AM'
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+  } catch { return timeStr }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const {
+      lineItems,
+      contactName,
+      contactEmail,
+      contactPhone,
+      childName,
+      guestCount,
+      partyDate,
+      partyTime,
+      packageType,
+      isMiniParty,
+      notes,
+      marketingConsent,
+      quoteData,
+    } = body as {
+      lineItems: BookingLineItem[]
+      contactName: string
+      contactEmail: string
+      contactPhone?: string
+      childName?: string
+      guestCount: number
+      partyDate?: string
+      partyTime?: string
+      packageType?: string
+      isMiniParty?: boolean
+      notes?: string
+      marketingConsent?: boolean
+      quoteData?: Record<string, unknown>
+    }
+
+    if (!contactName || !contactEmail) {
+      return NextResponse.json({ error: 'Name and email are required' }, { status: 400 })
+    }
+
+    const supabase = getSupabase()
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
+    const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+    const depositCents = getDepositCents()
+    const totalCents = lineItems?.length ? calculateLineItemTotal(lineItems, guestCount || 10) : 0
+    const balanceDueCents = Math.max(0, totalCents - depositCents)
+
+    // Check if updating an existing booking via portal cookie
+    const cookieHeader = req.headers.get('cookie')
+    const existingRef = getPortalBookingRef(cookieHeader, portalSecret)
+
+    let bookingRef: string
+    let bookingId: string
+
+    const insertLineItems = async (bId: string) => {
+      if (!lineItems?.length) return
+      const rows = lineItems.map((item, idx) => ({
+        booking_id: bId,
+        pricing_item_id: item.pricing_item_id || null,
+        name: item.name,
+        category: item.category,
+        quantity: item.quantity,
+        unit_price_cents: item.unit_price_cents,
+        price_type: item.price_type,
+        guest_multiplied: item.guest_multiplied,
+        sort_order: idx,
+      }))
+      await supabase.from('booking_line_items').insert(rows)
+    }
+
+    const snapshotData = quoteData ? { ...quoteData, lineItems, guestCount, totalCents, depositCents } : null
+
+    const createNew = async (ref: string): Promise<string> => {
+      const cutoffs = partyDate ? computeCutoffDates(partyDate) : null
+
+      const { data: booking, error: dbErr } = await supabase.from('bookings').insert({
+        booking_ref: ref,
+        status: 'awaiting_deposit',
+        event_type: 'kid-party',
+        party_date: partyDate || null,
+        party_time: partyTime || null,
+        package_type: packageType || null,
+        guest_count_approx: guestCount || 10,
+        child_name: childName || null,
+        contact_name: contactName,
+        contact_email: contactEmail,
+        contact_phone: contactPhone || null,
+        deposit_amount: depositCents,
+        total_cents: totalCents,
+        balance_due_cents: balanceDueCents,
+        card_fee_rate: 0.03,
+        modification_cutoff: cutoffs?.modificationCutoff || null,
+        guest_count_cutoff: cutoffs?.guestCountCutoff || null,
+        quote_snapshot: snapshotData,
+        payment_method_preference: 'card',
+        notes: notes || null,
+        party_tags: {},
+      }).select('id').single()
+
+      if (dbErr || !booking) {
+        console.error('Party builder save error:', dbErr)
+        throw new Error('Failed to create booking')
+      }
+
+      await insertLineItems(booking.id)
+      return booking.id
+    }
+
+    if (existingRef) {
+      // Update existing booking
+      const { data: existing } = await supabase
+        .from('bookings')
+        .select('id, status')
+        .eq('booking_ref', existingRef)
+        .single()
+
+      if (existing) {
+        bookingRef = existingRef
+        bookingId = existing.id
+
+        const updateData: Record<string, unknown> = {
+          contact_name: contactName,
+          contact_email: contactEmail,
+          contact_phone: contactPhone || null,
+          child_name: childName || null,
+          guest_count_approx: guestCount || 10,
+          total_cents: totalCents,
+          balance_due_cents: balanceDueCents,
+          package_type: packageType || null,
+          notes: notes || null,
+          quote_snapshot: snapshotData,
+        }
+
+        if (partyDate) {
+          updateData.party_date = partyDate
+          const cutoffs = computeCutoffDates(partyDate)
+          updateData.modification_cutoff = cutoffs.modificationCutoff
+          updateData.guest_count_cutoff = cutoffs.guestCountCutoff
+        }
+        if (partyTime) updateData.party_time = partyTime
+
+        await supabase.from('bookings').update(updateData).eq('id', bookingId)
+
+        // Replace line items
+        if (lineItems?.length) {
+          await supabase.from('booking_line_items').delete().eq('booking_id', bookingId)
+          await insertLineItems(bookingId)
+        }
+
+        // Log modification
+        await supabase.from('booking_modifications').insert({
+          booking_id: bookingId,
+          modified_by: 'customer',
+          change_summary: 'Quote updated via party builder',
+          new_data: { lineItems, guestCount, partyDate, partyTime, packageType },
+        })
+      } else {
+        bookingRef = generatePartyRef()
+        bookingId = await createNew(bookingRef)
+      }
+    } else {
+      bookingRef = generatePartyRef()
+      bookingId = await createNew(bookingRef)
+    }
+
+    // Upsert contact
+    const contactId = await upsertContact({
+      name: contactName,
+      email: contactEmail,
+      phone: contactPhone,
+      sourceDetail: 'Party Builder — Save Quote',
+      serviceInterests: ['kids_party'],
+      marketingConsent: !!marketingConsent,
+    })
+
+    if (contactId) {
+      await enrollInSequence({
+        contactId,
+        contactEmail,
+        triggerEvent: 'new_inquiry',
+        serviceType: 'kids_party',
+        eventDate: partyDate,
+        bookingRef,
+      }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
+    }
+
+    // Generate portal token
+    const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
+    await supabase.from('portal_tokens').insert({
+      booking_id: bookingId,
+      token_hash: hash,
+      expires_at: expiresAt.toISOString(),
+    }).then(({ error }) => {
+      if (error) console.error('Portal token insert error (non-fatal):', error)
+    })
+
+    const builderUrl = buildPortalUrl(bookingRef, rawToken, '/party-builder')
+
+    // Prepare email line items
+    const emailLineItems = (lineItems || []).map(item => ({
+      name: item.name,
+      quantity: item.quantity,
+      unit_price_cents: item.unit_price_cents,
+      guest_multiplied: item.guest_multiplied,
+      totalCents: item.guest_multiplied
+        ? item.unit_price_cents * item.quantity * (guestCount || 10)
+        : item.unit_price_cents * item.quantity,
+    }))
+
+    // Send emails
+    if (process.env.RESEND_API_KEY) {
+      const { Resend } = await import('resend')
+      const resend = new Resend(process.env.RESEND_API_KEY)
+      const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+
+      const dateDisplay = partyDate ? formatDate(partyDate) : undefined
+      const timeDisplay = partyTime ? formatTime(partyTime) : undefined
+
+      await Promise.allSettled([
+        resend.emails.send({
+          from,
+          to: contactEmail,
+          subject: `Your Party Quote — ${bookingRef} | Host Hampton`,
+          html: partyQuoteSentHtml({
+            customerName: contactName,
+            bookingRef,
+            partyDate: dateDisplay,
+            partyTime: timeDisplay,
+            guestCount: guestCount || 10,
+            packageType: packageType || 'Kids Party',
+            childName,
+            totalFormatted: formatMoney(totalCents),
+            depositFormatted: formatMoney(depositCents),
+            balanceFormatted: formatMoney(balanceDueCents),
+            lineItems: emailLineItems,
+            builderUrl,
+            notes,
+          }),
+        }),
+        resend.emails.send({
+          from,
+          to: 'hosthampton295@gmail.com',
+          subject: `Quote sent: ${contactName} — ${bookingRef}`,
+          html: partyAdminNewBookingHtml({
+            bookingRef,
+            customerName: contactName,
+            customerEmail: contactEmail,
+            customerPhone: contactPhone,
+            partyDate: dateDisplay || 'TBD',
+            partyTime: timeDisplay || 'TBD',
+            guestCount: guestCount || 10,
+            packageType: packageType || 'Kids Party',
+            depositFormatted: formatMoney(depositCents),
+            totalFormatted: formatMoney(totalCents),
+            paymentMethod: 'pending',
+            lineItems: emailLineItems,
+            notes,
+            adminUrl: `https://${host}/admin?tab=parties&ref=${bookingRef}`,
+          }),
+        }),
+      ])
+    }
+
+    return NextResponse.json({
+      ok: true,
+      bookingRef,
+      bookingId,
+      builderUrl,
+    })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Save failed'
+    console.error('Party builder save error:', message)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}

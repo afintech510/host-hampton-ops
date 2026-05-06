@@ -265,11 +265,14 @@ interface Props {
   entertainment: PricingItem[]
   partyAddOns: PricingItem[]
   savedQuote?: string | null
+  checkoutStatus?: string | null
+  checkoutSessionId?: string | null
 }
 
 export default function PartyBuilderContent({
   themes, premiumActivities, standardActivities,
   food, desserts, beverages, decor, entertainment, partyAddOns, savedQuote,
+  checkoutStatus, checkoutSessionId,
 }: Props) {
   const restored = useMemo(() => parseQuoteParam(savedQuote), [savedQuote])
 
@@ -300,6 +303,18 @@ export default function PartyBuilderContent({
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [error, setError] = useState('')
+
+  /* ── loaded booking state ── */
+  const [loadedBooking, setLoadedBooking] = useState<{
+    booking_ref: string; status: string; total_cents: number; balance_due_cents: number; deposit_amount: number;
+    party_date?: string | null; party_time?: string | null; party_tags?: { date_locked?: boolean; created_by?: string } | null;
+  } | null>(null)
+  const dateLocked = !!loadedBooking?.party_tags?.date_locked
+  const [loadedPayments, setLoadedPayments] = useState<{
+    id: string; payment_type: string; payment_method: string; amount_cents: number;
+    card_fee_cents: number; total_charged_cents: number; paid_at: string
+  }[]>([])
+  const [bookingLoading, setBookingLoading] = useState(true)
 
   /* ── calendar state ── */
   const [calendarSelection, setCalendarSelection] = useState<CalendarSelection | null>(null)
@@ -355,6 +370,69 @@ export default function PartyBuilderContent({
     }
     setDecorQty(new Map(decorQty).set(id, qty))
   }, [selectedDecor, decorQty])
+
+  /* ── detect checkout return ── */
+  useEffect(() => {
+    if (checkoutStatus === 'complete' && checkoutSessionId) {
+      setPaymentSuccess(true)
+      // Clean URL params without reload
+      window.history.replaceState({}, '', '/party-builder')
+    }
+  }, [checkoutStatus, checkoutSessionId])
+
+  /* ── load booking from portal cookie ── */
+  useEffect(() => {
+    let cancelled = false
+    async function loadBooking() {
+      try {
+        const res = await fetch('/api/party-builder/load')
+        if (!res.ok) { setBookingLoading(false); return }
+        const data = await res.json()
+        if (cancelled) return
+
+        const b = data.booking
+        setLoadedBooking(b)
+        setLoadedPayments(data.payments || [])
+
+        // Restore contact info
+        setContact({
+          fullName: b.contact_name || '',
+          email: b.contact_email || '',
+          phone: b.contact_phone || '',
+          partyName: b.child_name || '',
+        })
+
+        // Pre-fill calendar if booking already has date/time
+        if (b.party_date && b.party_time) {
+          setCalendarSelection({
+            date: b.party_date,
+            timeSlot: { start: b.party_time, end: b.party_time, status: 'open' },
+          } as CalendarSelection)
+        }
+
+        // Restore selections from quote_snapshot if available
+        const snap = b.quote_snapshot
+        if (snap) {
+          if (snap.theme) setSelectedTheme(snap.theme)
+          if (snap.guestCount) setGuestCount(snap.guestCount)
+          if (snap.isMiniParty) setIsMiniParty(true)
+          if (snap.activities) setSelectedActivities(new Set(snap.activities))
+          if (snap.food) setSelectedFood(new Set(snap.food))
+          if (snap.desserts) setSelectedDesserts(new Set(snap.desserts))
+          if (snap.beverages) setSelectedBeverages(new Set(snap.beverages))
+          if (snap.decor) setSelectedDecor(new Set(snap.decor))
+          if (snap.entertainment) setSelectedEntertainment(new Set(snap.entertainment))
+          if (snap.extras) setSelectedPartyAddOns(new Set(snap.extras))
+          if (snap.foodQtyMap) setFoodQty(new Map(Object.entries(snap.foodQtyMap) as [string, number][]))
+          if (snap.decorQtyMap) setDecorQty(new Map(Object.entries(snap.decorQtyMap) as [string, number][]))
+        }
+      } catch { /* no booking — fresh start */ }
+      if (!cancelled) setBookingLoading(false)
+    }
+    if (!restored) loadBooking()
+    else setBookingLoading(false)
+    return () => { cancelled = true }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── item lookup ── */
   const allItems = useMemo(
@@ -507,13 +585,22 @@ export default function PartyBuilderContent({
     setSaving(true)
     setSaveSuccess(false)
     try {
-      await fetch('/api/quote/save', {
+      const res = await fetch('/api/party-builder/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: contact.fullName,
-          email: contact.email,
-          phone: contact.phone,
+          lineItems: getLineItems(),
+          contactName: contact.fullName,
+          contactEmail: contact.email,
+          contactPhone: contact.phone,
+          childName: contact.partyName || undefined,
+          guestCount: effectiveGuestCount,
+          partyDate: calendarSelection?.date || undefined,
+          partyTime: calendarSelection?.timeSlot?.start || undefined,
+          packageType: themeItem?.name || 'Kids Party',
+          isMiniParty,
+          notes: undefined,
+          marketingConsent: consent,
           quoteData: {
             theme: selectedTheme, themeName: themeItem?.name ?? null, guestCount,
             activities: Array.from(selectedActivities), food: Array.from(selectedFood),
@@ -524,12 +611,15 @@ export default function PartyBuilderContent({
             partyName: contact.partyName, isMiniParty,
             foodQtyMap: Object.fromEntries(foodQty), decorQtyMap: Object.fromEntries(decorQty),
           },
-          summary: buildSummary(),
-          partyDate: calendarSelection?.date || null,
-          partyTime: calendarSelection?.timeSlot?.start || null,
-          sourcePage: 'party-builder',
         }),
       })
+      const data = await res.json()
+      if (res.ok && data.bookingRef) {
+        setLoadedBooking(prev => prev ? { ...prev, booking_ref: data.bookingRef } : {
+          booking_ref: data.bookingRef, status: 'awaiting_deposit',
+          total_cents: total, balance_due_cents: Math.max(0, total - DEPOSIT_CENTS), deposit_amount: DEPOSIT_CENTS,
+        })
+      }
       setSaveSuccess(true)
     } catch { /* silent */ }
     setSaving(false)
@@ -676,18 +766,56 @@ export default function PartyBuilderContent({
       {/* ── Hero ── */}
       <section className="py-20 text-center px-4">
         <h1 className="font-serif text-5xl md:text-6xl font-black tracking-tight text-hampton-navy mb-3">
-          KIDS PARTY MENU
+          {loadedBooking ? 'YOUR PARTY PLAN' : 'HOST HAMPTON PARTY PLAN'}
         </h1>
         <p className="text-lg font-semibold tracking-[0.25em] text-hampton-navy/50 uppercase">
-          Full Pricing &amp; Quote Builder
+          {loadedBooking ? `Booking ${loadedBooking.booking_ref}` : 'Build · Customize · Reserve'}
         </p>
         <p className="text-hampton-navy/70 text-base max-w-xl mx-auto mt-4 leading-relaxed">
-          Browse everything we offer, tap items to build your custom quote, and
-          see your estimated total in real time.
+          {loadedBooking
+            ? 'Review your party plan below, customize your add-ons, and pay your $99 deposit to lock it in.'
+            : 'Browse everything we offer, tap items to build your custom party plan, and see your estimated total in real time.'}
         </p>
       </section>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-10 pb-10">
+
+        {/* ── Booking status banner ── */}
+        {loadedBooking && (
+          <div className="bg-gradient-to-r from-hampton-blue/10 to-hampton-pink/10 border border-hampton-blue/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between">
+            <div>
+              <p className="text-sm font-bold text-hampton-navy">
+                Booking {loadedBooking.booking_ref}
+                <span className={`ml-2 inline-block px-2.5 py-0.5 text-xs rounded-full font-semibold ${
+                  loadedBooking.status === 'approved' ? 'bg-green-100 text-green-800' :
+                  loadedBooking.status === 'pending_review' ? 'bg-yellow-100 text-yellow-800' :
+                  loadedBooking.status === 'paid_in_full' ? 'bg-green-100 text-green-800' :
+                  'bg-hampton-blue/15 text-hampton-navy'
+                }`}>
+                  {loadedBooking.status.replace(/_/g, ' ')}
+                </span>
+              </p>
+              <p className="text-xs text-hampton-navy/50 mt-1">
+                Make changes below, then click &quot;Save &amp; Email My Quote&quot; to update.
+              </p>
+            </div>
+            {loadedPayments.length > 0 && (
+              <div className="text-right shrink-0">
+                <p className="text-xs text-hampton-navy/50">Paid so far</p>
+                <p className="text-lg font-bold text-green-700">
+                  {fmt(loadedPayments.reduce((sum, p) => sum + (p.payment_type === 'refund' ? -p.amount_cents : p.amount_cents), 0))}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {bookingLoading && !restored && (
+          <div className="text-center py-8">
+            <Loader2 size={24} className="animate-spin mx-auto text-hampton-navy/40" />
+            <p className="text-sm text-hampton-navy/40 mt-2">Loading your booking...</p>
+          </div>
+        )}
 
         {/* ══ 1. Themed Party Packages ══ */}
         <CategoryModule title="THEMED PARTY PACKAGES" subtitle="2 Hours Private Studio &bull; Everything Included" headerBg="bg-hampton-navy">
@@ -985,7 +1113,7 @@ export default function PartyBuilderContent({
 
             <button type="button" onClick={handleSaveForLater} disabled={saving}
               className="w-full border-2 border-hampton-navy text-hampton-navy font-bold py-3.5 px-6 rounded-full text-sm hover:bg-hampton-navy/5 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
-              {saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><Bookmark size={16} /> Save &amp; Email My Quote</>}
+              {saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><Bookmark size={16} /> {loadedBooking ? 'Update My Party Plan' : 'Save & Email My Party Plan'}</>}
             </button>
           </div>
         </div>
@@ -1039,6 +1167,33 @@ export default function PartyBuilderContent({
                   Remaining balance of <span className="font-bold">{fmt(Math.max(0, total - DEPOSIT_CENTS))}</span> due before event
                 </p>
               </div>
+
+              {/* Payment history */}
+              {loadedPayments.length > 0 && (
+                <div className="mt-6 pt-5 border-t-2 border-hampton-navy/10">
+                  <h3 className="font-serif font-bold text-sm text-hampton-navy mb-3 uppercase tracking-wider">Payment History</h3>
+                  <div className="space-y-2">
+                    {loadedPayments.map(p => (
+                      <div key={p.id} className="flex items-center justify-between py-2 px-3 bg-green-50 border border-green-200 rounded-lg text-sm">
+                        <div>
+                          <span className="font-medium text-green-800 capitalize">{p.payment_type}</span>
+                          <span className="text-green-600 ml-2">via {p.payment_method}</span>
+                          <span className="text-green-500 ml-2 text-xs">
+                            {new Date(p.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                        </div>
+                        <span className="font-bold text-green-800">{fmt(p.amount_cents)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {loadedBooking && (
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-hampton-mauve/15 text-sm">
+                      <span className="text-hampton-navy/60">Balance remaining</span>
+                      <span className="font-bold text-hampton-navy">{fmt(loadedBooking.balance_due_cents)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1047,33 +1202,61 @@ export default function PartyBuilderContent({
         {hasSelections && (
           <div ref={calendarRef} className="scroll-mt-24 bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
             <div className="bg-hampton-navy px-8 py-5 text-center">
-              <h2 className="font-serif text-2xl font-black text-white tracking-tight">CHOOSE YOUR DATE &amp; TIME</h2>
+              <h2 className="font-serif text-2xl font-black text-white tracking-tight">
+                {dateLocked ? 'YOUR PARTY DATE' : 'CHOOSE YOUR DATE & TIME'}
+              </h2>
               <p className="text-hampton-ivory/60 text-xs font-semibold tracking-[0.2em] uppercase mt-1">
-                Select an Available Party Slot
+                {dateLocked ? 'Reserved for You' : 'Select an Available Party Slot'}
               </p>
             </div>
 
             <div className="p-6 sm:p-8">
-              <UniversalCalendar
-                mode="booking"
-                lockedBookingType="kids-party"
-                expandable={false}
-                initialExpanded={true}
-                showSummary={false}
-                timeSlotHeading="Select Party Start Time"
-                showTimePlaceholder={true}
-                onSelect={(sel: CalendarSelection) => setCalendarSelection(sel)}
-              />
-
-              {calendarSelection?.date && calendarSelection?.timeSlot && (
-                <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-                  <p className="text-green-800 text-sm font-medium">
-                    {new Date(calendarSelection.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                    {' '}at {calendarSelection.timeSlot.start.replace(/^(\d{1,2}):(\d{2})$/, (_, h, m) => {
-                      const hr = parseInt(h); return `${hr > 12 ? hr - 12 : hr}:${m} ${hr >= 12 ? 'PM' : 'AM'}`
-                    })}
+              {dateLocked ? (
+                <div className="bg-gradient-to-br from-hampton-pink/10 to-hampton-blue/10 border border-hampton-blue/20 rounded-2xl p-6 text-center">
+                  <p className="text-xs font-semibold tracking-widest uppercase text-hampton-navy/50 mb-2">Your Reserved Slot</p>
+                  {loadedBooking?.party_date && (
+                    <p className="font-serif text-2xl font-black text-hampton-navy">
+                      {new Date(loadedBooking.party_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  )}
+                  {loadedBooking?.party_time && (
+                    <p className="text-lg text-hampton-navy/80 mt-1">
+                      at {loadedBooking.party_time.replace(/^(\d{1,2}):(\d{2})$/, (_, h, m) => {
+                        const hr = parseInt(h); return `${hr > 12 ? hr - 12 : hr}:${m} ${hr >= 12 ? 'PM' : 'AM'}`
+                      })}
+                    </p>
+                  )}
+                  <p className="text-xs text-hampton-navy/50 mt-4 leading-relaxed">
+                    Your date &amp; time are locked in. Need to change them? Call us at{' '}
+                    <a href="tel:6319989325" className="font-semibold underline">(631) 998-9325</a>{' '}
+                    or email{' '}
+                    <a href="mailto:hosthampton295@gmail.com" className="font-semibold underline">hosthampton295@gmail.com</a>.
                   </p>
                 </div>
+              ) : (
+                <>
+                  <UniversalCalendar
+                    mode="booking"
+                    lockedBookingType="kids-party"
+                    expandable={false}
+                    initialExpanded={true}
+                    showSummary={false}
+                    timeSlotHeading="Select Party Start Time"
+                    showTimePlaceholder={true}
+                    onSelect={(sel: CalendarSelection) => setCalendarSelection(sel)}
+                  />
+
+                  {calendarSelection?.date && calendarSelection?.timeSlot && (
+                    <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                      <p className="text-green-800 text-sm font-medium">
+                        {new Date(calendarSelection.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                        {' '}at {calendarSelection.timeSlot.start.replace(/^(\d{1,2}):(\d{2})$/, (_, h, m) => {
+                          const hr = parseInt(h); return `${hr > 12 ? hr - 12 : hr}:${m} ${hr >= 12 ? 'PM' : 'AM'}`
+                        })}
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
