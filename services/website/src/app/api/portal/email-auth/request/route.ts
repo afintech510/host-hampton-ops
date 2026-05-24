@@ -31,19 +31,22 @@ export async function POST(req: NextRequest) {
       .gte('created_at', oneHourAgo)
 
     if ((recentCount ?? 0) >= 3) {
+      console.warn(`email-auth/request: rate limit hit for ${rawEmail} (${recentCount} in last hour)`)
       return NextResponse.json({ error: 'Too many sign-in attempts. Try again in an hour.' }, { status: 429 })
     }
 
     // Confirm there's at least one booking for this email — if not, return ok
     // anyway (to prevent email enumeration) but skip the send.
+    // Case-insensitive match because contact_email rows can be mixed case.
     const { data: anyBooking } = await supabase
       .from('bookings')
       .select('id')
-      .eq('contact_email', rawEmail)
+      .ilike('contact_email', rawEmail)
       .limit(1)
       .maybeSingle()
 
     if (!anyBooking) {
+      console.warn(`email-auth/request: no booking found for ${rawEmail} — skipping send`)
       // Stall briefly to make timing indistinguishable from the send path
       await new Promise(r => setTimeout(r, 250))
       return NextResponse.json({ ok: true })
@@ -63,14 +66,20 @@ export async function POST(req: NextRequest) {
       const { Resend } = await import('resend')
       const resend = new Resend(process.env.RESEND_API_KEY)
       const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
-      await resend.emails.send({
+      const sendRes = await resend.emails.send({
         from,
         to: rawEmail,
         subject: `Your Host Hampton sign-in code: ${code}`,
         html: emailAuthCodeHtml({ code, expiresMinutes: 15 }),
-      }).catch(err => console.error('Email auth send error:', err))
+      }).catch(err => ({ error: err }))
+      const sendErr = (sendRes as { error?: unknown }).error
+      if (sendErr) {
+        console.error('email-auth/request: Resend send failed for', rawEmail, sendErr)
+      } else {
+        console.log('email-auth/request: code sent to', rawEmail)
+      }
     } else {
-      console.warn('Email auth: RESEND_API_KEY not set; code is', code)
+      console.warn('email-auth/request: RESEND_API_KEY not set; code for', rawEmail, 'is', code)
     }
 
     return NextResponse.json({ ok: true })

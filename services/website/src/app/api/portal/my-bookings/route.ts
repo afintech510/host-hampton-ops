@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const { data: bookings } = await supabase
     .from('bookings')
     .select('id, booking_ref, status, event_type, party_date, party_time, package_type, child_name, child_age, total_cents, balance_due_cents, party_tags, paid_in_full_at, created_at')
-    .eq('contact_email', email)
+    .ilike('contact_email', email)
     .in('event_type', ['kid-party', 'kids-party', 'kids_party'])
     .order('party_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     .eq('booking_ref', bookingRef)
     .maybeSingle()
 
-  if (!booking || (booking.contact_email || '').toLowerCase() !== email) {
+  if (!booking || (booking.contact_email || '').toLowerCase() !== email.toLowerCase()) {
     return NextResponse.json({ error: 'Booking not found for this email' }, { status: 404 })
   }
 

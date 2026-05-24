@@ -2497,17 +2497,21 @@ export default function PartyBuilderContent({
                 <span className="font-serif font-bold text-2xl text-hampton-navy">{fmt(total)}</span>
               </div>
 
-              {/* Deposit callout */}
-              <div className="mt-4 bg-hampton-pink/10 border border-hampton-pink/20 rounded-xl p-4 text-center">
-                <p className="text-sm text-hampton-navy font-medium">
-                  <span className="font-bold">{fmt(depositCents)} deposit (25%)</span> to reserve your date — fully applied toward your balance
-                </p>
-                <p className="text-xs text-hampton-navy/50 mt-1">
-                  Remaining balance of <span className="font-bold">{fmt(Math.max(0, total - depositCents))}</span> due before event
-                </p>
-              </div>
+              {/* Deposit callout — pre-deposit only.
+                  After deposit, the payment-history block below shows the
+                  authoritative paid + live remaining. */}
+              {!depositPaid && (
+                <div className="mt-4 bg-hampton-pink/10 border border-hampton-pink/20 rounded-xl p-4 text-center">
+                  <p className="text-sm text-hampton-navy font-medium">
+                    <span className="font-bold">{fmt(depositCents)} deposit (25%)</span> to reserve your date — fully applied toward your balance
+                  </p>
+                  <p className="text-xs text-hampton-navy/50 mt-1">
+                    Remaining balance of <span className="font-bold">{fmt(Math.max(0, total - depositCents))}</span> due before event
+                  </p>
+                </div>
+              )}
 
-              {/* Payment history */}
+              {/* Payment history (post-deposit) */}
               {loadedPayments.length > 0 && (
                 <div className="mt-6 pt-5 border-t-2 border-hampton-navy/10">
                   <h3 className="font-serif font-bold text-sm text-hampton-navy mb-3 uppercase tracking-wider">Payment History</h3>
@@ -2525,12 +2529,21 @@ export default function PartyBuilderContent({
                       </div>
                     ))}
                   </div>
-                  {loadedBooking && (
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-hampton-mauve/15 text-sm">
-                      <span className="text-hampton-navy/60">Balance remaining</span>
-                      <span className="font-bold text-hampton-navy">{fmt(loadedBooking.balance_due_cents)}</span>
+                  <div className="mt-3 pt-3 border-t border-hampton-mauve/15 space-y-1.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-hampton-navy/60">Total paid</span>
+                      <span className="font-semibold text-green-700">{fmt(totalPaid)}</span>
                     </div>
-                  )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-hampton-navy/60">Balance remaining</span>
+                      <span className="font-bold text-hampton-navy">{fmt(balanceRemaining)}</span>
+                    </div>
+                    {loadedBooking && balanceRemaining !== loadedBooking.balance_due_cents && (
+                      <p className="text-[11px] text-hampton-navy/40 italic mt-1">
+                        Reflects your current selections — save to update the booking record.
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
