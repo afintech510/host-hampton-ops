@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
     const contactPhone = body.contactPhone || contactObj?.phone || ''
     const childName = body.childName || contactObj?.childName || ''
     const childAge = body.childAge || ''
+    const catchyPartyName = (body.catchyPartyName as string | undefined) || ''
     const guestCount = body.guestCount as number
     const partyDate = body.partyDate as string
     const partyTime = body.partyTime as string
@@ -34,20 +35,42 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabase()
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3002'
+    const forwardedProto = req.headers.get('x-forwarded-proto')
+    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
+    const proto = forwardedProto || (isLocal ? 'http' : 'https')
+    const origin = `${proto}://${host}`
     const bookingRef = generatePartyRef()
-    const depositCents = getDepositCents()
     const totalCents = calculateLineItemTotal(lineItems, guestCount)
+    const depositCents = getDepositCents(totalCents)
     const balanceDueCents = Math.max(0, totalCents - depositCents)
     const { modificationCutoff, guestCountCutoff } = computeCutoffDates(partyDate)
 
+    // Merge structured selection data (sent from the planner) so /load can
+    // fully restore the form. Falls back to a minimal snapshot for legacy
+    // callers that don't send quoteData.
+    const incomingQuoteData = (body.quoteData as Record<string, unknown> | undefined) || {}
     const quoteSnapshot = {
+      ...incomingQuoteData,
       lineItems,
       guestCount,
       totalCents,
       depositCents,
       packageType,
       paymentMethod,
+    }
+
+    // For non-card pledges (Venmo / Zelle / Cash), we lock the date immediately
+    // so the customer's slot can't be double-booked while we wait for payment to
+    // land. Card is handled by Stripe — date_locked is set in confirm-session
+    // and the webhook once the charge succeeds.
+    const partyTags: Record<string, unknown> = {}
+    if (catchyPartyName) partyTags.catchy_party_name = catchyPartyName
+    if (paymentMethod !== 'card') {
+      partyTags.date_locked = true
+      partyTags.pledge_method = paymentMethod
+      partyTags.pledge_amount_cents = depositCents
+      partyTags.pledged_at = new Date().toISOString()
     }
 
     // Insert booking
@@ -73,7 +96,7 @@ export async function POST(req: NextRequest) {
       quote_snapshot: quoteSnapshot,
       payment_method_preference: paymentMethod,
       notes: notes || null,
-      party_tags: {},
+      party_tags: partyTags,
     }).select('id').single()
 
     if (dbError || !booking) {
@@ -118,40 +141,23 @@ export async function POST(req: NextRequest) {
       }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
     }
 
-    // Card payment → Stripe checkout
+    // Card payment → in-page Stripe Payment Element (PaymentIntent)
     if (paymentMethod === 'card') {
       const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
       const cardFeeCents = calculateCardFee(depositCents)
+      const totalChargeCents = depositCents + cardFeeCents
 
-      const sessionParams: Stripe.Checkout.SessionCreateParams = {
-        payment_method_types: ['card'],
-        mode: 'payment',
-        line_items: [
-          {
-            price_data: {
-              currency: 'usd',
-              product_data: {
-                name: childName
-                  ? `${childName}'s ${packageType || 'Birthday'} Party — Deposit`
-                  : `Host Hampton — ${packageType || 'Party'} Deposit`,
-                description: `Booking ${bookingRef} | ${partyDate} at ${partyTime} | ${guestCount} guests`,
-              },
-              unit_amount: depositCents,
-            },
-            quantity: 1,
-          },
-          {
-            price_data: {
-              currency: 'usd',
-              product_data: {
-                name: 'Card Processing Fee (3%)',
-              },
-              unit_amount: cardFeeCents,
-            },
-            quantity: 1,
-          },
-        ],
-        customer_email: contactEmail,
+      // We bundle the deposit + 3% card fee into a single PaymentIntent.
+      // The breakdown lives in metadata so the webhook can record both pieces.
+      const intent = await stripe.paymentIntents.create({
+        amount: totalChargeCents,
+        currency: 'usd',
+        automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+        receipt_email: contactEmail,
+        description: childName
+          ? `${childName}'s ${packageType || 'Birthday'} Party — Deposit (${bookingRef})`
+          : `Host Hampton — ${packageType || 'Party'} Deposit (${bookingRef})`,
+        statement_descriptor_suffix: 'PARTY DEPOSIT',
         metadata: {
           type: 'party_builder',
           payment_type: 'deposit',
@@ -169,22 +175,19 @@ export async function POST(req: NextRequest) {
           childName: childName || '',
           childAge: childAge || '',
         },
-      }
+      })
 
-      if (embedded) {
-        sessionParams.ui_mode = 'embedded'
-        sessionParams.return_url = `https://${host}/party-builder?session_id={CHECKOUT_SESSION_ID}&status=complete`
-      } else {
-        sessionParams.success_url = `https://${host}/party-builder?ref=${bookingRef}&session_id={CHECKOUT_SESSION_ID}&status=complete`
-        sessionParams.cancel_url = `https://${host}/party-builder?cancelled=true`
-      }
-
-      const session = await stripe.checkout.sessions.create(sessionParams)
-
-      if (embedded) {
-        return NextResponse.json({ clientSecret: session.client_secret, method: 'card' })
-      }
-      return NextResponse.json({ url: session.url, method: 'card' })
+      // `embedded` is kept in the response for caller compatibility but ignored
+      // — Payment Element always renders in-page.
+      void embedded
+      void origin
+      return NextResponse.json({
+        clientSecret: intent.client_secret,
+        paymentIntentId: intent.id,
+        bookingRef,
+        bookingId: booking.id,
+        method: 'card',
+      })
     }
 
     // Non-card payment → skip Stripe, send instructions
@@ -252,7 +255,7 @@ export async function POST(req: NextRequest) {
             paymentMethod,
             lineItems: emailLineItems,
             notes,
-            adminUrl: `https://${host}/admin?tab=parties&ref=${bookingRef}`,
+            adminUrl: `${origin}/admin?tab=parties&ref=${bookingRef}`,
           }),
         }),
       ])
@@ -260,7 +263,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      url: `https://${host}/kids-party-menu/success?ref=${bookingRef}&method=${paymentMethod}`,
+      url: `${origin}/kids-party-menu/success?ref=${bookingRef}&method=${paymentMethod}&deposit=${depositCents}`,
       method: paymentMethod,
     })
   } catch (err: unknown) {

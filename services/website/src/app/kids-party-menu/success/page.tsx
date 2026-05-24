@@ -8,6 +8,11 @@ function SuccessContent() {
   const params = useSearchParams()
   const ref = params.get('ref')
   const method = params.get('method')
+  const depositCentsRaw = params.get('deposit')
+  const depositCents = depositCentsRaw ? parseInt(depositCentsRaw, 10) : null
+  const depositFormatted = depositCents && depositCents > 0
+    ? `$${(depositCents / 100).toLocaleString('en-US')}`
+    : 'your deposit'
 
   const isNonCard = method === 'venmo' || method === 'zelle' || method === 'cash'
   const methodLabel = method === 'venmo' ? 'Venmo' : method === 'zelle' ? 'Zelle' : method === 'cash' ? 'Cash' : 'Card'
@@ -28,7 +33,7 @@ function SuccessContent() {
 
         {isNonCard ? (
           <div className="text-left bg-[#F6F1EB] rounded-xl p-6 mb-6">
-            <p className="text-[#1a2744] font-semibold mb-3">Send your $99 deposit via {methodLabel}:</p>
+            <p className="text-[#1a2744] font-semibold mb-3">Send {depositFormatted} via {methodLabel}:</p>
             {method === 'venmo' && (
               <p className="text-gray-600 text-sm">
                 Send to <strong>@HostHampton</strong> on Venmo.
@@ -43,13 +48,13 @@ function SuccessContent() {
             )}
             {method === 'cash' && (
               <p className="text-gray-600 text-sm">
-                Bring $99 cash to Host Hampton before or on the day of your event.
+                Bring {depositFormatted} cash to Host Hampton before or on the day of your event.
               </p>
             )}
           </div>
         ) : (
           <p className="text-gray-600 mb-6">
-            Thank you! Your $99 deposit has been received.
+            Thank you! Your deposit of {depositFormatted} has been received.
           </p>
         )}
 

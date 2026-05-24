@@ -326,7 +326,7 @@ function MyBookingInner() {
                   }}
                   className="mt-4 bg-[#1a2744] text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-[#2a3754] transition-colors"
                 >
-                  {isDeposit ? 'Pay $99 Deposit' : 'Make a Payment'}
+                  {isDeposit ? 'Pay Deposit' : 'Make a Payment'}
                 </button>
               )}
             </div>
@@ -378,7 +378,7 @@ function MyBookingInner() {
                             className={`py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
                               paymentType === 'deposit' ? 'border-[#1a2744] bg-[#1a2744]/5 text-[#1a2744]' : 'border-gray-200 text-gray-600'
                             }`}
-                          >$99 Deposit</button>
+                          >Deposit</button>
                         )}
                         <button
                           onClick={() => setPaymentType('full')}

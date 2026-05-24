@@ -753,3 +753,278 @@ Full communications infrastructure is built: Brevo for bulk email campaigns, Twi
 - `services/website/src/app/events/[slug]/TicketForm.tsx` — Modified: standardized consent checkbox
 - `services/website/src/app/book/page.tsx` — Modified: standardized consent checkbox
 - `docker-compose.yml` — Modified: added Twilio/Brevo/Cron env vars to website service
+
+---
+
+## Session 12 — 2026-03-07
+
+### What Was Accomplished
+- **Admin Communications Interface** — built Contacts tab (list/filter/search, expandable detail with interactions & reminders, editable status/notes/opt-in) and Campaigns tab (CRUD campaigns, Brevo send, draft newsletter, process reminders, campaign composer modal, reminders section)
+- **Webhook bug fixes** — fixed `interaction_type` → `type` column name in both Brevo and Twilio webhook handlers (inserts were silently failing)
+- **Marketing consent checkboxes** — added TCPA-compliant consent checkbox to all lead/contact forms (ContactForm, FundraiserForm, KidsPartyMenuContent, PartyPackagesContent, InquiryForm, QuoteBuilder, RoomRentalLeadForm) with corresponding API route changes
+- **Database migration** — created `scheduled_reminders` and `scheduled_campaigns` tables, expanded `contact_interactions.type` CHECK constraint to include webhook event types
+- **178-test suite** — built comprehensive automated tests across 15 suites covering all API routes (admin contacts, campaigns, orders, events, checkout, webhook, refund, Brevo/Twilio webhooks, contact/lead forms, SMS templates, email templates, admin auth)
+- **Contact export for retargeting** — built `GET /api/admin/contacts/export?format=google-ads|meta` endpoint with CSV download, export buttons in Contacts tab. Normalizes phone to E.164 for better match rates
+- **Deployed to staging** — two commits pushed and deployed to staging.hosthampton.com (VPS Docker rebuild, build succeeded, 200 responses confirmed)
+
+### Decisions Made
+- **Export only email_opt_in=true contacts**: Compliance-first approach — only opted-in contacts exported for ad retargeting
+- **Two export formats**: Google Ads Customer Match and Meta Custom Audience have slightly different CSV header conventions (Email vs email, First Name vs fn)
+- **Phone normalization to E.164**: `+1XXXXXXXXXX` format improves match rates on both Google and Meta platforms
+- **No jest.resetModules()**: Confirmed pattern — breaks mock references with top-level imports. Use jest.clearAllMocks() + reconfigure in beforeEach instead
+
+### Known Issues / Blockers
+- **545 opted-in contacts** — below Google's ~1,000 minimum for Customer Match. May work but match rate could be low
+- **Pre-existing checkout.test.ts failures (6 tests)**: Checkout route contract changed previously but tests weren't updated. Not from this session
+- **Brevo/Twilio/Cron not yet configured**: API keys, webhook URLs, and external cron service still pending setup
+- **DNS cutover still pending**: www.hosthampton.com still on Squarespace
+- **User requested SQL to bulk-enable opt-in**: `UPDATE contacts SET email_opt_in=TRUE, sms_opt_in=CASE WHEN phone IS NOT NULL AND phone!='' THEN TRUE ELSE sms_opt_in END WHERE email IS NOT NULL AND email!=''` — not yet executed
+
+### Current Project State
+Admin dashboard now has 6 tabs: Events, Calendar, Orders, Themes, Contacts, Campaigns. Full communications management UI is deployed to staging. Test suite covers 178 tests across 15 suites. Contact export for Google Ads and Meta retargeting is live. The bulk opt-in SQL and ad platform configuration are the immediate next steps.
+
+### Updated Priority TODO (in order)
+1. **Run bulk opt-in SQL** — enable email/sms opt-in for existing contacts
+2. **Fix checkout.test.ts** — 6 pre-existing test failures
+3. **Configure Brevo** — API key, contact list, DNS records, webhook URL
+4. **Configure Twilio webhook** — point SMS webhook to `/api/webhooks/twilio`
+5. **Set up external cron** — cron-job.org hitting 3 endpoints every 15 min
+6. **DNS cutover** www.hosthampton.com → VPS
+7. **Upload contact CSV to Google Ads** — Customer Match audience
+8. **SEO optimization pass** — meta tags, Open Graph, structured data
+
+### Files Changed This Session
+- `services/website/src/app/admin/page.tsx` — Added Contacts + Campaigns tab pills and conditional renders
+- `services/website/src/app/admin/ContactsTab.tsx` — New: full contacts management UI with export buttons
+- `services/website/src/app/admin/CampaignsTab.tsx` — New: campaigns management UI with composer, reminders
+- `services/website/src/app/api/admin/contacts/route.ts` — New: GET contacts with filters
+- `services/website/src/app/api/admin/contacts/[id]/route.ts` — New: GET detail, PATCH update
+- `services/website/src/app/api/admin/contacts/export/route.ts` — New: CSV export for Google Ads/Meta
+- `services/website/src/app/api/admin/campaigns/route.ts` — New: GET/POST campaigns
+- `services/website/src/app/api/admin/campaigns/[id]/route.ts` — New: GET/PATCH/DELETE campaign
+- `services/website/src/app/api/admin/campaigns/actions/route.ts` — New: draft-newsletter, process-reminders
+- `services/website/src/app/api/admin/reminders/route.ts` — New: GET pending, PATCH bulk cancel
+- `services/website/src/app/api/webhooks/brevo/route.ts` — Fix: interaction_type → type
+- `services/website/src/app/api/webhooks/twilio/route.ts` — Fix: interaction_type → type
+- `services/website/src/app/api/contact/route.ts` — Added phone + marketingConsent
+- `services/website/src/app/api/lead/route.ts` — Added marketingConsent
+- `services/website/src/app/api/fundraiser-inquiry/route.ts` — Added marketingConsent
+- `services/website/src/components/ContactForm.tsx` — Added consent checkbox
+- `services/website/src/components/RoomRentalLeadForm.tsx` — Added consent checkbox
+- `services/website/src/app/fundraiser/FundraiserForm.tsx` — Added consent checkbox
+- `services/website/src/app/party-packages/PartyPackagesContent.tsx` — Added consent checkbox
+- `services/website/src/app/kids-party-menu/KidsPartyMenuContent.tsx` — Added consent checkbox
+- `services/website/src/app/trucker-hat-bar/InquiryForm.tsx` — Added consent checkbox
+- `services/website/src/components/QuoteBuilder/QuoteBuilder.tsx` — Added consent checkbox
+- `services/website/src/__tests__/` — 15 test suites (178 tests total)
+- `services/website/TESTING.md` — New: test suite documentation
+
+---
+
+## Session 13 — 2026-03-10
+
+### What Was Accomplished
+
+- **Admin UI Modernization**: Complete visual overhaul of the admin dashboard to match the frontend's polish:
+  - Sidebar navigation with 9 tabs grouped into Overview / Manage / Content / Marketing sections
+  - Glass-morphism login page on dark gradient background
+  - Custom Tailwind `@layer components` classes: `admin-kpi`, `admin-card`, `admin-badge-*`, `admin-btn-*`, `admin-sidebar-link`
+  - KPI cards with gradient accents and animations (`slideIn`, `countUp`) across all admin tabs
+  - Mobile-responsive sidebar with overlay
+
+- **Dashboard Tab**: New overview tab with KPI cards (revenue, orders, contacts, events), revenue comparison bars, and recent orders table
+
+- **Financials System (end-to-end)**:
+  - Created `financial_transactions` table (migration_008 RUN): amount_cents, source, category, reference, dedup index
+  - CSV import endpoint with source-specific parsers: GoDaddy (POS + paylinks), Squarespace (order-ID grouping to avoid duplicates), HoneyBook (CLIENT_INFO name extraction)
+  - Imported all 3 report CSVs (1,513 transactions / $147,949 total): GoDaddy 779/$92,767, Squarespace 700/$42,970, HoneyBook 25/$11,495
+  - Stripe auto-recording: `recordFinancialTransaction()` wired into all webhook checkout handlers + synced 9 existing Stripe event tickets via SQL
+  - **Fixed data accuracy bug**: Moved aggregation server-side via new `/api/admin/financials/summary` endpoint — client was only receiving 500 of 1,513 transactions due to default limit
+  - Timeframe selector: This Month, Last Month, This Quarter, YTD, This Year, All Time, Custom (date range)
+  - Quarterly/annual run rates with YoY pace comparison indicators
+  - Category filter dropdown (server-side filtering)
+  - Inline category editing — click any category in the transaction table to change it via dropdown, saves immediately via PATCH
+
+- **Email Sequences Engine**: 4 active sequences, cron processor, enrollment wired into all 13 contact creation points (built during this session window, logged in MEMORY.md)
+
+### Decisions Made
+
+- **Server-side aggregation for financials**: Client-side filtering of 1,500+ transactions was inaccurate (API limit cap). Created dedicated `/api/admin/financials/summary` endpoint that returns pre-computed totals by source, by category, month-over-month, and YoY pace — client only fetches paginated transactions for the table view.
+- **Squarespace order-ID grouping**: Squarespace exports have one row per line item. Parser groups by Order ID and sums amounts to create one transaction per order — avoids inflating transaction count.
+- **HoneyBook CLIENT_INFO parsing**: Format is "Name (email)" — regex extracts name portion for customer_name field.
+- **Partial unique index for dedup**: `(source, reference) WHERE reference IS NOT NULL` — allows multiple null-reference rows while preventing duplicate imports.
+- **PATCH endpoint for inline editing**: Lightweight update for individual field changes (category) without requiring full transaction PUT.
+
+### Known Issues / Blockers
+
+- **Stripe webhook URL needs update**: Still pointed at staging, needs to be `https://www.hosthampton.com/api/webhook` (endpoint ID: we_1T39vM1FJrT9O2vgEqoLxuZF)
+- **Brevo/Twilio/Cron not yet configured**: API keys, webhook URLs, and external cron service still pending
+- **migration_005 still NOT RUN**: events/tickets tables don't exist in Supabase yet (event pages return empty data)
+- **Remaining hardcoded prices**: Some pages still use hardcoded values instead of `pricing_items` table
+- **SEO optimization pass**: Meta tags, Open Graph, structured data still needed
+
+### Current Project State
+
+Admin dashboard fully modernized with 9-tab sidebar layout (Dashboard, Events, Calendar, Orders, Financials, Themes, Contacts, Sequences, Campaigns). Financials system is complete with $147,949 across 1,513 transactions imported from 4 sources, server-side aggregation, timeframe filtering, category filtering, and inline category editing. Email sequences engine is live with 4 active sequences. All deployed to www.hosthampton.com.
+
+### Updated Priority TODO (in order)
+
+1. **Update Stripe webhook URL** to `https://www.hosthampton.com/api/webhook`
+2. **Run migration_005** in Supabase — unblocks event ticketing
+3. **Configure Brevo** — API key, contact list, DNS records, webhook URL
+4. **Configure Twilio webhook** — SMS webhook to `/api/webhooks/twilio`
+5. **Set up external cron** — cron-job.org hitting process-sequences + reminders every 15 min
+6. **Migrate remaining hardcoded prices** to `pricing_items` table
+7. **SEO optimization pass** — meta tags, Open Graph, structured data
+8. **Agent content pipeline** — COPY → website_content → ISR → published pages
+
+### Files Changed This Session
+
+**New:**
+- `services/website/src/app/admin/DashboardTab.tsx` — KPI cards, revenue bars, recent orders
+- `services/website/src/app/admin/FinancialsTab.tsx` — Full financials UI (overview + transactions views, filters, modals)
+- `services/website/src/app/api/admin/financials/route.ts` — GET (paginated, filtered), POST (cash entry), PATCH (category update)
+- `services/website/src/app/api/admin/financials/import/route.ts` — CSV import with GoDaddy/Squarespace/HoneyBook parsers
+- `services/website/src/app/api/admin/financials/summary/route.ts` — Server-side aggregation endpoint
+- `starting_plan/migration_008_financial_transactions.sql` — Table definition
+
+**Modified:**
+- `services/website/src/app/globals.css` — Admin component classes (@layer components)
+- `services/website/src/app/admin/page.tsx` — Sidebar nav, 9 tabs, glass login
+- `services/website/src/app/admin/layout.tsx` — Admin background override
+- `services/website/src/app/admin/OrdersTab.tsx` — KPI cards updated to admin-kpi
+- `services/website/src/app/admin/ContactsTab.tsx` — KPI cards updated to admin-kpi
+- `services/website/src/app/admin/SequencesTab.tsx` — KPI cards updated to admin-kpi
+- `services/website/src/app/admin/CampaignsTab.tsx` — KPI cards updated to admin-kpi
+- `services/website/src/app/api/webhook/route.ts` — recordFinancialTransaction() for all checkout paths
+
+### Commits This Session
+
+- d8c1cc2: fix: tune CSV parsers to match actual GoDaddy, Squarespace, HoneyBook export formats
+- 1365361: feat: auto-record Stripe payments in financials + timeframe selector
+- f2d7b29: fix: server-side aggregation for financials — fixes inaccurate dashboard totals
+- 50d8879: feat: quarterly/annual run rates with YoY pace comparison to financials
+- 8283d96: feat: add category filter and inline category editing to financials
+
+---
+
+## Session 14 — 2026-03-13
+
+### What Was Accomplished
+
+- **CM Cheer Page Styling Overhaul**: Fixed broken page styling — nav was still showing (CSS selector `header.sticky` → `header.fixed`), CDN Tailwind removed (incompatible with Next.js production builds), custom colors (`cmBlack`, `cmRed`, `cmGray`) and fonts (`varsity`, `oswald`) added to `tailwind.config.js`
+- **Layout Fixes**: Removed dusty blue bar (top padding when nav hidden), removed duplicate footer, hid Host Hampton footer/gradient via CSS injection in `cm-cheer/layout.tsx`
+- **Product Photos**: Replaced all 7 Squarespace CDN image URLs with local `/images/*.webp` files
+- **Color Toggle Fix**: RED option now fills with red (not black) — added `data-color` attribute check in JS click handler
+- **Hover States**: Unselected color buttons show black border/text on hover via `.color-toggle.bg-white:hover` CSS rule
+- **Section Title**: Renamed "Team Gear" → "The Merch"
+- **Supabase Security**: Enabled RLS on `cm_cheer_orders` table (was UNRESTRICTED), added service role full access policy
+- **Notes Field**: Added `notes` column to `cm_cheer_orders`, editable notes UI in organizer dashboard (click-to-edit), notes included in CSV export
+- **PATCH API**: Updated `/api/cm-cheer-orders/[id]` to support notes-only updates
+- **Mobile Optimization**: Both `/cm-cheer` and `/cm-cheer/orders` pages optimized for mobile — responsive text sizes, compact summary cards, full-width filters, scaled badges and buttons
+
+### Decisions Made
+
+- **CDN Tailwind removal**: CDN `<Script>` tags with runtime `tailwind.config` don't work in Next.js production builds — moved all custom values to build-time `tailwind.config.js`
+- **CSS hover approach**: Used `.color-toggle.bg-white:hover` to target only unselected buttons, avoiding conflicts with JS-managed selected state classes
+- **RLS with permissive policy**: API uses service_role key (bypasses RLS), but enabling RLS blocks anonymous/anon key access from client side
+- **Notes-only PATCH path**: Separate code path when `notes` is provided without `status` — avoids requiring status validation for simple note edits
+
+### Known Issues / Blockers
+
+- Remaining hardcoded prices on some pages
+- SEO optimization pass still needed
+- Brevo/Twilio not yet configured
+- Agent content pipeline not yet built
+
+### Current Project State
+
+CM Cheer fundraiser fully deployed — order form at `/cm-cheer` with local product photos, proper styling, and Supabase backend; organizer dashboard at `/cm-cheer/orders` with filtering, notes, status management, and CSV export. Both pages mobile-optimized. RLS enabled. All 9 commits deployed to VPS.
+
+### Updated Priority TODO (in order)
+
+1. Migrate remaining hardcoded prices to `pricing_items` table
+2. SEO optimization pass — meta tags, Open Graph, structured data
+3. Configure Brevo — API key, contact list, DNS records, webhook URL
+4. Configure Twilio webhook — SMS webhook to `/api/webhooks/twilio`
+5. Agent content pipeline — COPY → website_content → ISR → published pages
+
+### Files Changed This Session
+
+**Modified:**
+- `services/website/tailwind.config.js` — Added cmBlack/cmRed/cmGray colors and varsity/oswald fonts
+- `services/website/src/app/cm-cheer/page.tsx` — Removed CDN Tailwind, replaced CDN images with local webp, fixed color toggle, removed footer, added hover CSS, mobile optimization
+- `services/website/src/app/cm-cheer/layout.tsx` — Updated CSS to hide nav, footer, gradient, remove top padding
+- `services/website/src/app/cm-cheer/order/layout.tsx` — CSS selector header.sticky → header.fixed
+- `services/website/src/app/cm-cheer/orders/page.tsx` — Added notes field/UI, CSV export with notes, mobile optimization
+- `services/website/src/app/api/cm-cheer-orders/[id]/route.ts` — Added notes-only PATCH path
+
+**Added:**
+- `services/website/public/images/cm-hat-black.webp` (+ 6 more product photos)
+
+**Database:**
+- `ALTER TABLE cm_cheer_orders ENABLE ROW LEVEL SECURITY` + service role policy
+- `ALTER TABLE cm_cheer_orders ADD COLUMN notes TEXT`
+
+### Commits This Session
+
+- 4430eb4: fix: CM Cheer page — hide nav, add cmBlack/cmRed to Tailwind config, remove CDN Tailwind
+- 1395c13: fix: remove top padding on CM Cheer pages when nav is hidden
+- 9c5d130: feat: replace Squarespace CDN product photos with local webp images
+- 9fc0a1c: fix: CM Cheer color toggle — red option fills with red instead of black
+- e78ca2d: fix: remove duplicate footer and Host Hampton footer/gradient from CM Cheer page
+- 4eacdfa: fix: CM Cheer color toggle hover — unselected buttons show black border/text on hover
+- 9f89ba5: fix: rename CM Cheer section title from "Team Gear" to "The Merch"
+- 6c0c38f: feat: CM Cheer — enable RLS, add editable notes field to orders + CSV export
+- 05eb7e8: fix: optimize both CM Cheer pages for mobile viewing
+
+---
+
+## Session 15 — 2026-04-23
+
+### What Was Accomplished
+
+- **OG image support for event pages**: Updated `generateMetadata` in `events/[slug]/page.tsx` to fetch `image_url` and `images` from the database and populate `openGraph` metadata (title, description, image). Prioritizes `image_url` (dedicated OG image) over gallery images.
+- **Bitchy Bingo OG image deployed**: Saved `bitchy-bingo-og.jpg` to `public/images/`, updated the event's `image_url` in Supabase to `https://www.hosthampton.com/images/bitchy-bingo-og.jpg`. Link previews on social/messaging now show the Bitchy Bingo flyer.
+- **Google Ads conversion tracking audit**: Full audit of the tracking infrastructure — gtag.ts, GoogleAnalytics.tsx, ConversionTracker.tsx, all success pages, all lead forms. Found:
+  - GA4 `purchase` event fires correctly on all success pages (book, events, vendor-registration)
+  - Lead tracking fires on party-packages, room-rental, fundraiser forms
+  - Contact tracking on contact form, mobile party, canvas bags, trucker hat bar
+  - Conversion is configured as a **GA4-imported conversion** in Google Ads (not tag-based), so no `GADS_PURCHASE_LABEL` is needed
+  - GA4 ↔ Google Ads link confirmed active
+  - Live test confirmed: `purchase` event appears in GA4 Realtime when visiting success page
+  - Conclusion: tracking is working correctly; GA4-imported conversions have 24-48 hour reporting lag in Google Ads
+
+### Decisions Made
+
+- **GA4-imported conversions are sufficient**: The existing setup uses GA4 as the conversion source (not Google Ads tags). This means `GADS_PURCHASE_LABEL` and `GADS_LEAD_LABEL` env vars are not needed for the current configuration — the `purchase` event flows from gtag → GA4 → Google Ads via linked accounts.
+- **`image_url` prioritized for OG over gallery images**: Since `image_url` is now used as the dedicated OG/social preview image, it takes priority in metadata. Gallery images (`images` array) are the fallback.
+
+### Known Issues / Blockers
+
+- **Google Ads conversion reporting lag**: GA4-imported conversions can take 24-48 hours to appear in Google Ads reporting. Need to verify after a few real purchases that conversions show up in Google Ads dashboard.
+- **Remaining hardcoded prices** on some pages
+- **SEO optimization pass** still needed
+- **Brevo/Twilio** not yet fully configured
+
+### Current Project State
+
+OG images now work on all event pages (pulls from DB). Google Ads conversion tracking confirmed working — the `purchase` event fires correctly and reaches GA4 in real-time. The GA4 → Google Ads import pipeline is the conversion path. All deployed to www.hosthampton.com.
+
+### Updated Priority TODO (in order)
+
+1. **Verify Google Ads conversions appear** after 24-48 hours with real purchases
+2. **Migrate remaining hardcoded prices** to pricing_items table
+3. **SEO optimization pass** — meta tags, Open Graph on remaining pages, structured data
+4. **Configure Brevo** — API key, contact list, DNS records, webhook URL
+5. **Configure Twilio webhook** — SMS webhook to `/api/webhooks/twilio`
+6. **Agent content pipeline** — COPY → website_content → ISR → published pages
+
+### Files Changed This Session
+
+- `services/website/src/app/events/[slug]/page.tsx` — Updated `generateMetadata` to include openGraph with image from event DB
+- `services/website/public/images/bitchy-bingo-og.jpg` — New: Bitchy Bingo OG preview image
+
+### Commits This Session
+
+- 6a0bd6c: feat: add OG image support for event pages + bitchy bingo preview

@@ -47,33 +47,16 @@ export async function POST(req: NextRequest) {
   if (paymentMethod === 'card') {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
     const cardFeeCents = calculateCardFee(effectiveAmount)
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+    const totalChargeCents = effectiveAmount + cardFeeCents
+    void embedded
 
-    const sessionParams: Stripe.Checkout.SessionCreateParams = {
-      payment_method_types: ['card'],
-      mode: 'payment',
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: `${booking.booking_ref} — ${resolvedType === 'deposit' ? 'Deposit' : isFinalPayment ? 'Final' : 'Partial'} Payment`,
-              description: booking.package_type || 'Party Booking',
-            },
-            unit_amount: effectiveAmount,
-          },
-          quantity: 1,
-        },
-        {
-          price_data: {
-            currency: 'usd',
-            product_data: { name: 'Card Processing Fee (3%)' },
-            unit_amount: cardFeeCents,
-          },
-          quantity: 1,
-        },
-      ],
-      customer_email: booking.contact_email,
+    const intent = await stripe.paymentIntents.create({
+      amount: totalChargeCents,
+      currency: 'usd',
+      automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+      receipt_email: booking.contact_email,
+      description: `${booking.booking_ref} — ${resolvedType === 'deposit' ? 'Deposit' : isFinalPayment ? 'Final' : 'Partial'} Payment`,
+      statement_descriptor_suffix: 'PARTY PAYMENT',
       metadata: {
         type: 'party_builder',
         payment_type: resolvedType,
@@ -84,22 +67,13 @@ export async function POST(req: NextRequest) {
         contactName: booking.contact_name,
         contactEmail: booking.contact_email,
       },
-    }
+    })
 
-    if (embedded) {
-      sessionParams.ui_mode = 'embedded'
-      sessionParams.return_url = `https://${host}/my-booking?session_id={CHECKOUT_SESSION_ID}`
-    } else {
-      sessionParams.success_url = `https://${host}/my-booking?payment=success`
-      sessionParams.cancel_url = `https://${host}/my-booking/pay?cancelled=true`
-    }
-
-    const session = await stripe.checkout.sessions.create(sessionParams)
-
-    if (embedded) {
-      return NextResponse.json({ clientSecret: session.client_secret, method: 'card' })
-    }
-    return NextResponse.json({ url: session.url, method: 'card' })
+    return NextResponse.json({
+      clientSecret: intent.client_secret,
+      paymentIntentId: intent.id,
+      method: 'card',
+    })
   }
 
   return NextResponse.json({

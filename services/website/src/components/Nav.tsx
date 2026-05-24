@@ -19,6 +19,9 @@ export default function Nav() {
   const [scrolled, setScrolled] = useState(false)
   const pathname = usePathname()
 
+  // Hide on party planner routes — they have their own section nav
+  if (pathname === '/party-planner' || pathname === '/party-builder') return null
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
     window.addEventListener('scroll', onScroll, { passive: true })

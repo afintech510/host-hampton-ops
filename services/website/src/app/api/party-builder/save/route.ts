@@ -32,6 +32,8 @@ export async function POST(req: NextRequest) {
       contactEmail,
       contactPhone,
       childName,
+      childAge,
+      catchyPartyName,
       guestCount,
       partyDate,
       partyTime,
@@ -40,14 +42,20 @@ export async function POST(req: NextRequest) {
       notes,
       marketingConsent,
       quoteData,
+      locationType,
+      locationAddress,
     } = body as {
       lineItems: BookingLineItem[]
       contactName: string
       contactEmail: string
       contactPhone?: string
       childName?: string
+      childAge?: number | string
+      catchyPartyName?: string
       guestCount: number
       partyDate?: string
+      locationType?: 'host_hampton' | 'mobile'
+      locationAddress?: string
       partyTime?: string
       packageType?: string
       isMiniParty?: boolean
@@ -62,9 +70,13 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabase()
     const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
+    const forwardedProto = req.headers.get('x-forwarded-proto')
+    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
+    const proto = forwardedProto || (isLocal ? 'http' : 'https')
+    const origin = `${proto}://${host}`
     const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
-    const depositCents = getDepositCents()
     const totalCents = lineItems?.length ? calculateLineItemTotal(lineItems, guestCount || 10) : 0
+    const depositCents = getDepositCents(totalCents)
     const balanceDueCents = Math.max(0, totalCents - depositCents)
 
     // Check if updating an existing booking via portal cookie
@@ -73,6 +85,7 @@ export async function POST(req: NextRequest) {
 
     let bookingRef: string
     let bookingId: string
+    let isNewBooking = false
 
     const insertLineItems = async (bId: string) => {
       if (!lineItems?.length) return
@@ -91,6 +104,15 @@ export async function POST(req: NextRequest) {
     }
 
     const snapshotData = quoteData ? { ...quoteData, lineItems, guestCount, totalCents, depositCents } : null
+    const parsedChildAge = childAge != null && childAge !== ''
+      ? (typeof childAge === 'number' ? childAge : parseInt(childAge, 10))
+      : null
+    const buildPartyTags = (existing: Record<string, unknown> | null | undefined) => ({
+      ...(existing || {}),
+      ...(locationType ? { location_type: locationType } : {}),
+      ...(locationAddress ? { location_address: locationAddress } : {}),
+      ...(catchyPartyName ? { catchy_party_name: catchyPartyName } : {}),
+    })
 
     const createNew = async (ref: string): Promise<string> => {
       const cutoffs = partyDate ? computeCutoffDates(partyDate) : null
@@ -104,6 +126,7 @@ export async function POST(req: NextRequest) {
         package_type: packageType || null,
         guest_count_approx: guestCount || 10,
         child_name: childName || null,
+        child_age: parsedChildAge,
         contact_name: contactName,
         contact_email: contactEmail,
         contact_phone: contactPhone || null,
@@ -116,7 +139,7 @@ export async function POST(req: NextRequest) {
         quote_snapshot: snapshotData,
         payment_method_preference: 'card',
         notes: notes || null,
-        party_tags: {},
+        party_tags: buildPartyTags(null),
       }).select('id').single()
 
       if (dbErr || !booking) {
@@ -140,17 +163,22 @@ export async function POST(req: NextRequest) {
         bookingRef = existingRef
         bookingId = existing.id
 
+        const { data: existingFull } = await supabase
+          .from('bookings').select('party_tags').eq('id', bookingId).single()
+
         const updateData: Record<string, unknown> = {
           contact_name: contactName,
           contact_email: contactEmail,
           contact_phone: contactPhone || null,
           child_name: childName || null,
+          child_age: parsedChildAge,
           guest_count_approx: guestCount || 10,
           total_cents: totalCents,
           balance_due_cents: balanceDueCents,
           package_type: packageType || null,
           notes: notes || null,
           quote_snapshot: snapshotData,
+          party_tags: buildPartyTags(existingFull?.party_tags as Record<string, unknown> | null),
         }
 
         if (partyDate) {
@@ -179,10 +207,12 @@ export async function POST(req: NextRequest) {
       } else {
         bookingRef = generatePartyRef()
         bookingId = await createNew(bookingRef)
+        isNewBooking = true
       }
     } else {
       bookingRef = generatePartyRef()
       bookingId = await createNew(bookingRef)
+      isNewBooking = true
     }
 
     // Upsert contact
@@ -216,7 +246,7 @@ export async function POST(req: NextRequest) {
       if (error) console.error('Portal token insert error (non-fatal):', error)
     })
 
-    const builderUrl = buildPortalUrl(bookingRef, rawToken, '/party-builder')
+    const builderUrl = buildPortalUrl(bookingRef, rawToken, '/party-planner')
 
     // Prepare email line items
     const emailLineItems = (lineItems || []).map(item => ({
@@ -229,7 +259,9 @@ export async function POST(req: NextRequest) {
         : item.unit_price_cents * item.quantity,
     }))
 
-    // Send emails
+    // Send emails (unconditional of date — even without date, customer gets a link)
+    let emailSent = false
+    let emailDiagnostic: string | undefined
     if (process.env.RESEND_API_KEY) {
       const { Resend } = await import('resend')
       const resend = new Resend(process.env.RESEND_API_KEY)
@@ -238,11 +270,15 @@ export async function POST(req: NextRequest) {
       const dateDisplay = partyDate ? formatDate(partyDate) : undefined
       const timeDisplay = partyTime ? formatTime(partyTime) : undefined
 
-      await Promise.allSettled([
+      // Customer always gets an updated quote on every save.
+      // Admin only gets pinged on the FIRST save for this booking — subsequent
+      // iterations are quiet so admin inbox doesn't fill up with re-saves.
+      // Admin will still get the loud "Deposit paid" email when money lands.
+      const emailJobs: Promise<unknown>[] = [
         resend.emails.send({
           from,
           to: contactEmail,
-          subject: `Your Party Quote — ${bookingRef} | Host Hampton`,
+          subject: `Your Host Hampton Party Plan — ${bookingRef}`,
           html: partyQuoteSentHtml({
             customerName: contactName,
             bookingRef,
@@ -259,28 +295,57 @@ export async function POST(req: NextRequest) {
             notes,
           }),
         }),
-        resend.emails.send({
-          from,
-          to: 'hosthampton295@gmail.com',
-          subject: `Quote sent: ${contactName} — ${bookingRef}`,
-          html: partyAdminNewBookingHtml({
-            bookingRef,
-            customerName: contactName,
-            customerEmail: contactEmail,
-            customerPhone: contactPhone,
-            partyDate: dateDisplay || 'TBD',
-            partyTime: timeDisplay || 'TBD',
-            guestCount: guestCount || 10,
-            packageType: packageType || 'Kids Party',
-            depositFormatted: formatMoney(depositCents),
-            totalFormatted: formatMoney(totalCents),
-            paymentMethod: 'pending',
-            lineItems: emailLineItems,
-            notes,
-            adminUrl: `https://${host}/admin?tab=parties&ref=${bookingRef}`,
+      ]
+
+      if (isNewBooking) {
+        emailJobs.push(
+          resend.emails.send({
+            from,
+            to: 'hosthampton295@gmail.com',
+            subject: `Quote sent: ${contactName} — ${bookingRef}`,
+            html: partyAdminNewBookingHtml({
+              bookingRef,
+              customerName: contactName,
+              customerEmail: contactEmail,
+              customerPhone: contactPhone,
+              partyDate: dateDisplay || 'TBD',
+              partyTime: timeDisplay || 'TBD',
+              guestCount: guestCount || 10,
+              packageType: packageType || 'Kids Party',
+              depositFormatted: formatMoney(depositCents),
+              totalFormatted: formatMoney(totalCents),
+              paymentMethod: 'pending',
+              lineItems: emailLineItems,
+              notes,
+              adminUrl: `${origin}/admin?tab=parties&ref=${bookingRef}`,
+            }),
           }),
-        }),
-      ])
+        )
+      }
+
+      const results = await Promise.allSettled(emailJobs)
+      let emailErrors: string[] = []
+      results.forEach((r, i) => {
+        const which = i === 0 ? 'customer' : 'admin'
+        if (r.status === 'rejected') {
+          const msg = r.reason instanceof Error ? r.reason.message : String(r.reason)
+          console.error(`Party builder save: ${which} email failed:`, msg)
+          emailErrors.push(`${which}: ${msg}`)
+        } else {
+          const value = r.value as { error?: unknown } | null
+          if (value && value.error) {
+            const errObj = value.error
+            const msg = errObj instanceof Error ? errObj.message : JSON.stringify(errObj)
+            console.error(`Party builder save: ${which} email Resend error:`, msg)
+            emailErrors.push(`${which}: ${msg}`)
+          }
+        }
+      })
+      emailSent = emailErrors.length === 0
+      emailDiagnostic = emailErrors.length ? emailErrors.join('; ') : undefined
+    } else {
+      console.warn('Party builder save: RESEND_API_KEY not set — skipping email send')
+      emailDiagnostic = 'RESEND_API_KEY not configured'
     }
 
     return NextResponse.json({
@@ -288,6 +353,8 @@ export async function POST(req: NextRequest) {
       bookingRef,
       bookingId,
       builderUrl,
+      emailSent,
+      emailDiagnostic,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Save failed'

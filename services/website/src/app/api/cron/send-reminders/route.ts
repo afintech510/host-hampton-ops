@@ -7,8 +7,9 @@ import {
   reminderBooking7DayHtml,
   reminderBooking1DayHtml,
 } from '@/lib/email-templates/reminders'
-import { partyBalanceReminderHtml, partyAdminUnpaidDayOfHtml } from '@/lib/emailTemplates'
+import { partyBalanceReminderHtml, partyAdminUnpaidDayOfHtml, partyThankYouHtml } from '@/lib/emailTemplates'
 import { formatMoney } from '@/lib/partyPricing'
+import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import {
   smsEventReminder1Day,
   smsEventReminder2Hr,
@@ -133,7 +134,7 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any) 
   } else if (reminder.reference_type === 'booking') {
     const { data: booking } = await supabase
       .from('bookings')
-      .select('booking_ref, party_date, party_time, package_type, balance_due_cents, contact_name, contact_phone')
+      .select('id, booking_ref, party_date, party_time, package_type, balance_due_cents, contact_name, contact_phone, child_name, photo_gallery_url')
       .eq('booking_ref', reminder.reference_id)
       .single()
 
@@ -164,14 +165,38 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any) 
       const balanceDue = booking.balance_due_cents || 0
       if (balanceDue <= 0) return // Already paid, skip reminder
 
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com'
+      // Generate a fresh portal magic link straight into the planner so the
+      // customer lands on their plan with the payment section ready to go.
+      const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+      const { token: rawToken, hash, expiresAt } = generatePortalToken(booking.booking_ref, portalSecret)
+      await supabase.from('portal_tokens').insert({
+        booking_id: booking.id,
+        token_hash: hash,
+        expires_at: expiresAt.toISOString(),
+      }).then((res: { error: { message: string } | null }) => {
+        if (res.error) console.error('Portal token insert (non-fatal):', res.error)
+      })
+      const payUrl = buildPortalUrl(booking.booking_ref, rawToken, '/party-planner')
+
       subject = `Balance Reminder — ${booking.booking_ref}`
       html = partyBalanceReminderHtml({
         customerName: contact.first_name || 'there',
         bookingRef: booking.booking_ref,
         partyDate: dateDisplay,
         balanceFormatted: formatMoney(balanceDue),
-        payUrl: `${siteUrl}/my-booking/pay`,
+        payUrl,
+      })
+    } else if (reminder.reminder_type === 'party_thank_you_t1') {
+      // Post-party thank-you, fired T+1 morning. Photo gallery section is
+      // conditional on photo_gallery_url being set by an admin.
+      subject = `Thank you for celebrating with us! — ${booking.booking_ref}`
+      html = partyThankYouHtml({
+        customerName: booking.contact_name || contact.first_name || 'there',
+        bookingRef: booking.booking_ref,
+        partyDate: dateDisplay,
+        photoGalleryUrl: booking.photo_gallery_url,
+        childName: booking.child_name,
+        reviewUrl: 'https://search.google.com/local/writereview?placeid=ChIJv3k3iqn36IkRfD0Mkz2QWj4',
       })
     } else if (reminder.reminder_type === 'party_admin_unpaid_dayof') {
       // Send to admin, not to customer

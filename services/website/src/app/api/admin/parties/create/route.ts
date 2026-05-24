@@ -53,10 +53,14 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabase()
     const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
+    const forwardedProto = req.headers.get('x-forwarded-proto')
+    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
+    const proto = forwardedProto || (isLocal ? 'http' : 'https')
+    const origin = `${proto}://${host}`
     const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
-    const depositCents = getDepositCents()
     const guests = guestCount || 10
     const totalCents = lineItems.length ? calculateLineItemTotal(lineItems, guests) : 0
+    const depositCents = getDepositCents(totalCents)
     const balanceDueCents = Math.max(0, totalCents - depositCents)
     const cutoffs = partyDate ? computeCutoffDates(partyDate) : null
     const bookingRef = generatePartyRef()
@@ -143,7 +147,7 @@ export async function POST(req: NextRequest) {
       if (error) console.error('Portal token insert (non-fatal):', error)
     })
 
-    const builderUrl = buildPortalUrl(bookingRef, rawToken, '/party-builder')
+    const builderUrl = buildPortalUrl(bookingRef, rawToken, '/party-planner')
 
     // Send email
     if (sendEmail && process.env.RESEND_API_KEY) {
@@ -188,7 +192,7 @@ export async function POST(req: NextRequest) {
       bookingRef,
       bookingId: booking.id,
       builderUrl,
-      adminUrl: `https://${host}/admin?tab=parties&ref=${bookingRef}`,
+      adminUrl: `${origin}/admin?tab=parties&ref=${bookingRef}`,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Create failed'

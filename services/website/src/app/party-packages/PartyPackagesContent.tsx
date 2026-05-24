@@ -871,10 +871,10 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                 <div className="bg-hampton-pink/10 rounded-xl px-5 py-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-semibold text-hampton-navy">Deposit to Reserve</span>
-                    <span className="text-lg font-bold text-hampton-navy">$99</span>
+                    <span className="text-lg font-bold text-hampton-navy">25%</span>
                   </div>
                   <p className="text-xs text-hampton-navy/60 leading-relaxed">
-                    Your $99 deposit is fully applied toward your party balance. All party details — theme, date, guest count — can be modified up to 1 week before your event.
+                    Your 25% deposit is fully applied toward your party balance. All party details — theme, date, guest count — can be modified up to 1 week before your event.
                   </p>
                 </div>
 
@@ -919,7 +919,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                     {reserving ? (
                       <><Loader2 size={18} className="animate-spin" /> Redirecting...</>
                     ) : (
-                      'Secure Reservation — $99 Deposit'
+                      'Secure Reservation — 25% Deposit'
                     )}
                   </button>
                 </div>
@@ -953,7 +953,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
           >
             Design Your Party
           </Link>
-          <p className="text-hampton-navy/40 text-xs mt-4">Reserve with just $99 · Change details anytime</p>
+          <p className="text-hampton-navy/40 text-xs mt-4">Reserve with a simple 25% deposit · Change details anytime</p>
         </div>
       </section>
 

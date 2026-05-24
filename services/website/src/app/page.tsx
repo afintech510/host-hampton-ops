@@ -9,7 +9,7 @@ import { getSupabase } from '@/lib/supabase'
 export const metadata: Metadata = {
   title: 'Birthday Party Venue in the Hamptons, NY',
   description:
-    'Upscale themed birthday parties in a private Hamptons studio — at prices you\u2019d pay anywhere. Hands-on hosts, fully customizable, stress-free. Reserve with a $99 deposit.',
+    'Upscale themed birthday parties in a private Hamptons studio — at prices you\u2019d pay anywhere. Hands-on hosts, fully customizable, stress-free. Reserve with a 25% deposit.',
 }
 
 const themes = [
@@ -27,12 +27,12 @@ const whyUs = [
   { icon: <Sparkles size={22} />, title: 'Hands-On Hosts', desc: 'We don\u2019t just set up and step back. Our hosts guide every child through every activity so parents can actually relax.' },
   { icon: <Shield size={22} />,   title: 'Upscale & Private',         desc: 'A beautifully styled Hamptons studio — exclusively yours. No shared spaces, no outside noise.' },
   { icon: <Clock size={22} />,    title: 'Fully Handled',             desc: 'We set up before you arrive and clean up after you leave. You show up, enjoy, and walk out.' },
-  { icon: <Heart size={22} />,    title: 'Your Party, Your Budget',   desc: 'Add extras or keep it simple. Scale up for a blowout, scale down for something intimate. $99 locks your date.' },
+  { icon: <Heart size={22} />,    title: 'Your Party, Your Budget',   desc: 'Add extras or keep it simple. Scale up for a blowout, scale down for something intimate. A 25% deposit locks your date.' },
 ]
 
 const steps = [
   { n: '01', title: 'Pick Your Theme',    desc: 'Browse 10+ themed party packages with everything included.' },
-  { n: '02', title: 'Reserve Your Date', desc: 'Pay a $99 deposit to lock in your date. No stress — details can change.' },
+  { n: '02', title: 'Reserve Your Date', desc: 'Pay a 25% deposit to lock in your date. No stress — details can change.' },
   { n: '03', title: 'Celebrate!',         desc: 'Arrive, enjoy, make memories. We handle everything before and after.' },
 ]
 
@@ -102,7 +102,7 @@ export default async function Home() {
       {/* ── TRUST BAR ────────────────────────────────────────── */}
       <section className="bg-hampton-pink/20 border-y border-hampton-pink/30 py-4">
         <div className="max-w-7xl mx-auto px-4 flex flex-wrap justify-center gap-6 md:gap-12 text-sm text-hampton-navy font-medium">
-          {['✨ Hamptons Vibe, Honest Pricing', '🎉 Private Studio — All Yours', '⏱ 2 Hours, Fully Hosted', '💳 $99 Locks Your Date', '🔄 Customize Everything'].map(t => (
+          {['✨ Hamptons Vibe, Honest Pricing', '🎉 Private Studio — All Yours', '⏱ 2 Hours, Fully Hosted', '💳 25% Locks Your Date', '🔄 Customize Everything'].map(t => (
             <span key={t}>{t}</span>
           ))}
         </div>
@@ -140,7 +140,7 @@ export default async function Home() {
           >
             Design Your Party
           </Link>
-          <p className="text-hampton-navy/40 text-xs mt-4">Reserve with just $99 · Change details anytime</p>
+          <p className="text-hampton-navy/40 text-xs mt-4">Reserve with a simple 25% deposit · Change details anytime</p>
         </div>
       </section>
 
@@ -165,7 +165,7 @@ export default async function Home() {
                   className="bg-hampton-pink text-hampton-navy font-bold px-8 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-lg">
               Reserve Your Date
             </Link>
-            <p className="text-hampton-navy/70 text-xs mt-3">Change your theme, date, or details any time. Your $99 deposit is fully applied to your balance.</p>
+            <p className="text-hampton-navy/70 text-xs mt-3">Change your theme, date, or details any time. Your 25% deposit is fully applied to your balance.</p>
           </div>
         </div>
       </section>
@@ -246,7 +246,7 @@ export default async function Home() {
             Your Kid Deserves the Good Party
           </h2>
           <p className="text-hampton-navy/70 text-base mb-8">
-            Lock in your date with $99. Pick your theme, tweak the details later — we make it easy.
+            Lock in your date with a 25% deposit. Pick your theme, tweak the details later — we make it easy.
           </p>
           <Link href="/book"
                 className="bg-hampton-navy text-hampton-ivory font-bold px-10 py-4 rounded-full text-base hover:bg-opacity-90 transition-all shadow-xl">

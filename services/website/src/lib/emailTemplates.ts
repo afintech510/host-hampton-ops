@@ -390,7 +390,7 @@ export function leadConfirmHtml(d: {
       ${dateRow}
       ${guestRow}
     </table>
-    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Ready to secure your date? Reserve with just a $99 deposit:</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Ready to secure your date? Reserve with a 25% deposit:</p>
     <div style="text-align:center;margin-bottom:24px;">
       <a href="${d.bookLink}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Check Availability &amp; Reserve</a>
     </div>
@@ -982,7 +982,7 @@ export function partyQuoteSentHtml(d: {
   </div>
   <div style="padding:36px 40px;">
     <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
-    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">We've put together your custom party plan! Review the details below — you can add or remove options, then pay your $99 deposit to lock it in. We can't wait to celebrate with you.</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">We've put together your custom party plan! Review the details below — you can add or remove options, then pay your 25% deposit (${d.depositFormatted}) to lock it in. We can't wait to celebrate with you.</p>
     <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
       ${childLine}
       <tr><td style="padding:6px 0;color:${BRAND.gray};width:130px;">Package</td><td style="padding:6px 0;color:${BRAND.navy};">${d.packageType}</td></tr>
@@ -1004,7 +1004,7 @@ export function partyQuoteSentHtml(d: {
     ${notesLine}
     ${payButton(d.builderUrl, 'View & Customize Your Party Plan')}
     <p style="font-size:13px;color:${BRAND.gray};line-height:1.7;margin:0 0 20px;text-align:center;">
-      Use the link above to customize your add-ons and pay your $99 deposit to lock it in.
+      Use the link above to customize your add-ons and pay your 25% deposit to lock it in.
     </p>
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
@@ -1039,6 +1039,92 @@ export function partyAdminUnpaidDayOfHtml(d: { bookingRef: string; customerName:
     ${payButton(d.adminUrl, 'View Booking')}
   </div>
   ${footer}
+</div>
+</body></html>`
+}
+
+/* ── Email Login Code (6-digit) ─────────────────────────────── */
+
+export function emailAuthCodeHtml(d: { code: string; expiresMinutes?: number }): string {
+  const minutes = d.expiresMinutes ?? 15
+  // Spaced-out display of the code so it's easy to read at a glance.
+  const codeDisplay = d.code.split('').join('&nbsp;')
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:32px 36px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:24px;margin:0;font-weight:normal;">Your Sign-In Code</h1>
+  </div>
+  <div style="padding:32px 36px;text-align:center;">
+    <p style="color:${BRAND.gray};font-size:15px;line-height:1.6;margin:0 0 24px;">
+      Use this code to sign in to your party planner and view your saved plans.
+    </p>
+    <div style="background:${BRAND.bodyBg};border:2px dashed ${BRAND.navy};border-radius:12px;padding:24px 16px;margin:0 0 20px;">
+      <p style="color:${BRAND.navy};font-size:36px;font-weight:bold;letter-spacing:6px;margin:0;font-family:'Courier New',monospace;">${codeDisplay}</p>
+    </div>
+    <p style="color:${BRAND.gray};font-size:13px;line-height:1.6;margin:0 0 24px;">
+      This code expires in <strong>${minutes} minutes</strong>. If you didn&rsquo;t request it, you can safely ignore this email.
+    </p>
+    <p style="font-size:13px;color:${BRAND.gray};line-height:1.7;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footer}
+</div>
+</body></html>`
+}
+
+/* ── Party Thank You / Post-Event (customer, T+1) ────────────── */
+
+export function partyThankYouHtml(d: {
+  customerName: string
+  bookingRef: string
+  partyDate: string
+  photoGalleryUrl?: string | null
+  reviewUrl?: string
+  childName?: string | null
+}): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  const celebrant = d.childName ? `${d.childName}'s ` : ''
+  const photoBlock = d.photoGalleryUrl
+    ? `<div style="background:${BRAND.bodyBg};border-radius:10px;padding:24px;margin:0 0 24px;text-align:center;">
+        <h3 style="font-size:16px;color:${BRAND.navy};margin:0 0 8px;">📸 Your Party Photos</h3>
+        <p style="color:${BRAND.gray};font-size:14px;line-height:1.6;margin:0 0 16px;">We captured the magic! Click below to see the full gallery.</p>
+        ${payButton(d.photoGalleryUrl, 'View Photos')}
+      </div>`
+    : ''
+  const reviewBlock = d.reviewUrl
+    ? `<div style="text-align:center;margin:0 0 24px;">
+        <p style="color:${BRAND.navy};font-size:15px;margin:0 0 12px;">Loved your celebration? A quick review means the world to us.</p>
+        <a href="${d.reviewUrl}" style="display:inline-block;background:#fff;border:2px solid ${BRAND.navy};color:${BRAND.navy};padding:10px 28px;font-size:14px;text-decoration:none;border-radius:6px;font-family:Georgia,serif;">Leave a Google Review</a>
+      </div>`
+    : `<p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:0 0 24px;">If you loved your celebration, we'd be so grateful for a quick Google review — just search <strong>Host Hampton</strong> on Google and click "Write a review."</p>`
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Thank You for Celebrating With Us 💛</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">
+      Thank you for hosting ${celebrant}party with us on <strong>${d.partyDate}</strong>! It was such a joy to be part of your celebration, and we hope every moment felt as special as it looked from our side.
+    </p>
+    ${photoBlock}
+    ${reviewBlock}
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;font-size:14px;">
+      Already thinking about the next celebration? We'd love to help — birthdays, communions, baby showers, permanent jewelry parties, room rentals, you name it.
+    </p>
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions or memories to share? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline('See you again soon!')}
 </div>
 </body></html>`
 }

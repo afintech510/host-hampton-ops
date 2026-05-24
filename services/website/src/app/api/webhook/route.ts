@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
-import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml, giftCardHtml, giftCardNotifyHtml, giftCardPurchaseConfirmHtml, partyDepositReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
+import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml, giftCardHtml, giftCardNotifyHtml, giftCardPurchaseConfirmHtml, partyDepositReceivedHtml, partyAdminNewBookingHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
 import { calculateCardFee, formatMoney } from '@/lib/partyPricing'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
@@ -50,6 +50,202 @@ export async function POST(req: NextRequest) {
     const message = err instanceof Error ? err.message : 'Signature verification failed'
     console.error('Webhook signature error:', message)
     return NextResponse.json({ error: message }, { status: 400 })
+  }
+
+  // ── Payment Intent succeeded (in-page Payment Element flow) ──
+  // This fires for the planner deposit + additional payment flows that were
+  // migrated off Checkout Session. Event tickets, gift cards, vendor regs,
+  // and pay-links still use Checkout, so we fall through to the Checkout
+  // handler below for those.
+  if (event.type === 'payment_intent.succeeded') {
+    const pi = event.data.object as Stripe.PaymentIntent
+    const m = pi.metadata || {}
+
+    if (m.type !== 'party_builder') {
+      // Not from the planner — no-op (other event types are handled below)
+      return NextResponse.json({ received: true, ignored: 'non-planner PI' })
+    }
+
+    const bookingRef = m.booking_ref
+    const bookingId = m.booking_id
+    const paymentType = (m.payment_type || 'deposit') as 'deposit' | 'partial' | 'final'
+    const depositCents = parseInt(m.depositCents || '0', 10)
+    const cardFeeCents = parseInt(m.cardFeeCents || '0', 10)
+    const amountCents = paymentType === 'deposit'
+      ? depositCents
+      : parseInt(m.amountCents || '0', 10)
+    const totalCharged = pi.amount
+
+    // Insert payment record. confirm-session may have already inserted; the
+    // unique stripe_payment_intent_id constraint fails silently in that case.
+    const { error: payErr } = await supabase.from('booking_payments').insert({
+      booking_id: bookingId,
+      payment_type: paymentType,
+      payment_method: 'card',
+      amount_cents: amountCents,
+      card_fee_cents: cardFeeCents,
+      total_charged_cents: totalCharged,
+      stripe_payment_intent_id: pi.id,
+      stripe_session_id: null,
+      recorded_by: 'system',
+    })
+    const alreadyRecorded = !!payErr && (payErr.message || '').toLowerCase().includes('duplicate')
+    if (payErr && !alreadyRecorded) console.error('Party builder PI payment insert error:', payErr)
+
+    // Recalc balance + status from authoritative payment rows
+    const { data: payRows } = await supabase
+      .from('booking_payments')
+      .select('amount_cents, payment_type')
+      .eq('booking_id', bookingId)
+    let paidSum = 0
+    for (const p of payRows || []) {
+      if (p.payment_type === 'refund') paidSum -= p.amount_cents
+      else paidSum += p.amount_cents
+    }
+    const { data: bkRow } = await supabase
+      .from('bookings')
+      .select('total_cents, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, package_type, guest_count_approx')
+      .eq('id', bookingId)
+      .single()
+    const newBal = Math.max(0, (bkRow?.total_cents || 0) - paidSum)
+    const existingTags = (bkRow?.party_tags as Record<string, unknown> | null) || {}
+
+    const updateFields: Record<string, unknown> = { balance_due_cents: newBal }
+    if (paymentType === 'deposit') {
+      updateFields.status = newBal === 0 ? 'paid_in_full' : 'pending_review'
+      updateFields.party_tags = { ...existingTags, date_locked: true }
+    } else if (newBal === 0) {
+      updateFields.status = 'paid_in_full'
+    }
+    if (newBal === 0) updateFields.paid_in_full_at = new Date().toISOString()
+    await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+
+    // Audit log
+    await supabase.from('booking_modifications').insert({
+      booking_id: bookingId,
+      modified_by: 'system',
+      change_summary: paymentType === 'deposit'
+        ? `Deposit of ${formatMoney(amountCents)} received via card`
+        : `${paymentType === 'final' ? 'Final' : 'Partial'} payment of ${formatMoney(amountCents)} via card. Balance: ${formatMoney(newBal)}`,
+    }).then((res: { error: { message: string } | null }) => {
+      if (res.error) console.error('Modification log error (non-fatal):', res.error)
+    })
+
+    // Financials
+    await recordFinancialTransaction(supabase, {
+      date: new Date().toISOString().split('T')[0],
+      description: paymentType === 'deposit'
+        ? `Party Deposit — ${bkRow?.package_type || 'Kids Party'}`
+        : `Party ${paymentType === 'final' ? 'Final' : 'Partial'} Payment — ${bookingRef}`,
+      amountCents: totalCharged,
+      category: 'Party Booking',
+      customerName: bkRow?.contact_name || m.contactName || null,
+      reference: `pb-${bookingRef}-${paymentType}`,
+      notes: bkRow?.contact_email || m.contactEmail || null,
+    })
+
+    // Portal magic link for the receipt email
+    const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+    const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
+    await supabase.from('portal_tokens').insert({
+      booking_id: bookingId,
+      token_hash: hash,
+      expires_at: expiresAt.toISOString(),
+    }).then((res: { error: { message: string } | null }) => {
+      if (res.error) console.error('Portal token insert (non-fatal):', res.error)
+    })
+    const portalUrl = buildPortalUrl(bookingRef, rawToken, '/party-planner')
+
+    // Emails
+    if (process.env.RESEND_API_KEY && bkRow?.contact_email) {
+      const resend = new Resend(process.env.RESEND_API_KEY)
+      const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+      const partyDateFormatted = bkRow.party_date
+        ? new Date(bkRow.party_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+        : 'TBD'
+
+      if (paymentType === 'deposit') {
+        // Build line items array for the receipt email
+        const { data: liRows } = await supabase
+          .from('booking_line_items')
+          .select('name, quantity, unit_price_cents, guest_multiplied')
+          .eq('booking_id', bookingId)
+          .order('sort_order')
+        const guestCount = bkRow.guest_count_approx || 10
+        const emailLineItems = (liRows || []).map(li => ({
+          name: li.name,
+          quantity: li.quantity,
+          unit_price_cents: li.unit_price_cents,
+          guest_multiplied: li.guest_multiplied,
+          totalCents: li.guest_multiplied
+            ? li.unit_price_cents * li.quantity * guestCount
+            : li.unit_price_cents * li.quantity,
+        }))
+
+        const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+        const isLocal = (host || '').startsWith('localhost')
+        const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
+        const origin = host ? `${proto}://${host}` : 'https://www.hosthampton.com'
+
+        await Promise.allSettled([
+          resend.emails.send({
+            from, to: bkRow.contact_email,
+            subject: `Deposit Received — ${bookingRef} | Host Hampton`,
+            html: partyDepositReceivedHtml({
+              customerName: bkRow.contact_name || 'there',
+              bookingRef,
+              depositFormatted: formatMoney(amountCents),
+              partyDate: partyDateFormatted,
+              portalUrl,
+              lineItems: emailLineItems,
+              totalFormatted: formatMoney(bkRow.total_cents || 0),
+            }),
+          }),
+          resend.emails.send({
+            from, to: 'hosthampton295@gmail.com',
+            subject: `Deposit paid: ${bkRow.contact_name} — ${bookingRef}`,
+            html: partyAdminNewBookingHtml({
+              bookingRef,
+              customerName: bkRow.contact_name || '',
+              customerEmail: bkRow.contact_email,
+              customerPhone: bkRow.contact_phone || undefined,
+              partyDate: partyDateFormatted,
+              partyTime: bkRow.party_time || 'TBD',
+              guestCount,
+              packageType: bkRow.package_type || 'Kids Party',
+              depositFormatted: formatMoney(amountCents),
+              totalFormatted: formatMoney(bkRow.total_cents || 0),
+              paymentMethod: 'card',
+              lineItems: emailLineItems,
+              adminUrl: `${origin}/admin?tab=parties&ref=${bookingRef}`,
+            }),
+          }),
+        ])
+      } else {
+        await resend.emails.send({
+          from, to: bkRow.contact_email,
+          subject: `Payment Received — ${bookingRef}`,
+          html: partyPaymentReceivedHtml({
+            customerName: bkRow.contact_name || 'there',
+            bookingRef,
+            amountFormatted: formatMoney(amountCents),
+            paymentMethod: 'card',
+            newBalanceFormatted: formatMoney(newBal),
+            portalUrl,
+          }),
+        }).catch(err => console.error('Party payment receipt email error:', err))
+      }
+    }
+
+    // Enqueue party balance reminders on first deposit
+    if (paymentType === 'deposit' && bkRow?.party_date && bkRow.contact_email) {
+      await enqueuePartyReminders({ contactEmail: bkRow.contact_email, bookingRef, partyDate: bkRow.party_date })
+        .catch(err => console.error('Party reminder enqueue error:', err))
+    }
+
+    void alreadyRecorded
+    console.log('Party builder PI processed:', bookingRef, paymentType, formatMoney(amountCents))
+    return NextResponse.json({ received: true })
   }
 
   if (event.type === 'checkout.session.completed') {
@@ -767,17 +963,10 @@ export async function POST(req: NextRequest) {
       const totalCharged = session.amount_total || 0
 
       if (paymentType === 'deposit') {
-        // Update booking status
-        const { error: updateErr } = await supabase
-          .from('bookings')
-          .update({ status: 'pending_review' })
-          .eq('id', bookingId)
-
-        if (updateErr) {
-          console.error('Party builder booking update error:', updateErr)
-        }
-
-        // Insert payment record
+        // Insert payment record first. If confirm-session already inserted (UI
+        // returned from Stripe before the webhook fired), the unique
+        // stripe_session_id constraint fails — that's fine, we still send the
+        // confirmation email below since confirm-session no longer does.
         const { error: payErr } = await supabase.from('booking_payments').insert({
           booking_id: bookingId,
           payment_type: 'deposit',
@@ -789,7 +978,47 @@ export async function POST(req: NextRequest) {
           stripe_session_id: session.id,
           recorded_by: 'system',
         })
-        if (payErr) console.error('Party builder payment insert error:', payErr)
+        const alreadyRecorded = !!payErr && (payErr.message || '').toLowerCase().includes('duplicate')
+        if (payErr && !alreadyRecorded) console.error('Party builder payment insert error:', payErr)
+
+        // Recalculate balance from all payments + lock the date.
+        // Idempotent: if confirm-session already set these to the same values,
+        // this is a no-op write.
+        const { data: payRows } = await supabase
+          .from('booking_payments')
+          .select('amount_cents, payment_type')
+          .eq('booking_id', bookingId)
+        let paidSum = 0
+        for (const p of payRows || []) {
+          if (p.payment_type === 'refund') paidSum -= p.amount_cents
+          else paidSum += p.amount_cents
+        }
+        const { data: bkRow } = await supabase
+          .from('bookings')
+          .select('total_cents, party_tags')
+          .eq('id', bookingId)
+          .single()
+        const newBal = Math.max(0, (bkRow?.total_cents || 0) - paidSum)
+        const existingTags = (bkRow?.party_tags as Record<string, unknown> | null) || {}
+        const { error: updateErr } = await supabase
+          .from('bookings')
+          .update({
+            status: newBal === 0 ? 'paid_in_full' : 'pending_review',
+            balance_due_cents: newBal,
+            party_tags: { ...existingTags, date_locked: true },
+            ...(newBal === 0 ? { paid_in_full_at: new Date().toISOString() } : {}),
+          })
+          .eq('id', bookingId)
+        if (updateErr) console.error('Party builder booking update error:', updateErr)
+
+        // If the payment was already recorded (confirm-session won the race),
+        // the audit log + financials + reminders were skipped previously and
+        // need to fire now (this is where webhook does its side-effects work).
+        // The duplicate-suppression below relies on each side-effect being
+        // either idempotent or naturally deduplicated.
+        if (alreadyRecorded) {
+          console.log('Party builder deposit: confirm-session won race for', bookingRef, '— webhook sending side-effects + email')
+        }
 
         // Insert audit log
         await supabase.from('booking_modifications').insert({
@@ -968,6 +1197,36 @@ export async function POST(req: NextRequest) {
           reference: `pb-${bookingRef}-${paymentType}`,
           notes: m.contactEmail || null,
         })
+
+        // Send payment receipt to customer (confirm-session no longer sends emails)
+        if (process.env.RESEND_API_KEY && m.contactEmail) {
+          const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+          const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
+          await supabase.from('portal_tokens').insert({
+            booking_id: bookingId,
+            token_hash: hash,
+            expires_at: expiresAt.toISOString(),
+          }).then(({ error }) => {
+            if (error) console.error('Portal token insert (non-fatal):', error)
+          })
+          const portalUrl = buildPortalUrl(bookingRef, rawToken, '/party-planner')
+
+          const resend = new Resend(process.env.RESEND_API_KEY)
+          const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+          await resend.emails.send({
+            from,
+            to: m.contactEmail,
+            subject: `Payment Received — ${bookingRef}`,
+            html: partyPaymentReceivedHtml({
+              customerName: m.contactName || 'there',
+              bookingRef,
+              amountFormatted: formatMoney(amountCents),
+              paymentMethod: 'card',
+              newBalanceFormatted: formatMoney(newBalance),
+              portalUrl,
+            }),
+          }).catch(err => console.error('Party payment receipt email error:', err))
+        }
 
         console.log('Party builder payment processed:', bookingRef, paymentType, formatMoney(amountCents), 'balance:', formatMoney(newBalance))
       }

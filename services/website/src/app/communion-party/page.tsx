@@ -5,7 +5,7 @@ import { Check } from 'lucide-react'
 export const metadata: Metadata = {
   title: 'First Communion Party Venue — Long Island',
   description:
-    'Celebrate your child\'s First Communion at Host Hampton in Speonk, NY. Private party room, elegant decor, full catering, and customizable themes. Reserve with a $99 deposit. Serving all of Long Island and the Hamptons.',
+    'Celebrate your child\'s First Communion at Host Hampton in Speonk, NY. Private party room, elegant decor, full catering, and customizable themes. Reserve with a 25% deposit. Serving all of Long Island and the Hamptons.',
   keywords: ['communion party venue Long Island', 'first communion party Hamptons', 'communion celebration venue NY', 'communion party room rental Speonk'],
 }
 
@@ -81,7 +81,7 @@ export default function CommunionParty() {
       <section className="bg-gradient-to-r from-hampton-pink to-hampton-pink/30 py-14 text-center px-4">
         <h2 className="font-serif text-3xl text-hampton-navy mb-4">Ready to Celebrate This Milestone?</h2>
         <p className="text-hampton-navy/70 text-base max-w-md mx-auto mb-7">
-          Reserve your date with a $99 deposit. We'll be in touch within 24 hours to start planning every beautiful detail.
+          Reserve your date with a 25% deposit. We'll be in touch within 24 hours to start planning every beautiful detail.
         </p>
         <Link href="/book?event_type=communion"
               className="bg-hampton-navy text-white font-bold px-8 py-4 rounded-full hover:bg-opacity-90 transition-all shadow-lg">

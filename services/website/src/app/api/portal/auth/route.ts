@@ -45,12 +45,15 @@ export async function GET(req: NextRequest) {
   }
 
   // Set cookie and redirect to portal (or custom redirect)
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3002'
+  const forwardedProto = req.headers.get('x-forwarded-proto')
+  const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
+  const proto = forwardedProto || (isLocal ? 'http' : 'https')
   const redirectTo = req.nextUrl.searchParams.get('redirect')
-  const allowedRedirects = ['/my-booking', '/party-builder']
-  const destination = redirectTo && allowedRedirects.includes(redirectTo) ? redirectTo : '/my-booking'
-  const response = NextResponse.redirect(new URL(destination, `https://${host}`))
-  response.headers.set('Set-Cookie', setPortalCookieHeader(ref, secret))
+  const allowedRedirects = ['/my-booking', '/party-builder', '/party-planner']
+  const destination = redirectTo && allowedRedirects.includes(redirectTo) ? redirectTo : '/party-planner'
+  const response = NextResponse.redirect(new URL(destination, `${proto}://${host}`))
+  response.headers.set('Set-Cookie', setPortalCookieHeader(ref, secret, isLocal))
 
   return response
 }

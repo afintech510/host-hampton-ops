@@ -333,6 +333,21 @@ export async function enqueuePartyReminders({
       })
     }
 
+    // T+1 thank-you (email, morning after the party at 10am)
+    const dayAfter = new Date(partyDateObj)
+    dayAfter.setDate(dayAfter.getDate() + 1)
+    dayAfter.setHours(10, 0, 0, 0)
+    if (dayAfter > now) {
+      reminders.push({
+        contact_id: contact.id,
+        reminder_type: 'party_thank_you_t1',
+        reference_type: 'booking',
+        reference_id: bookingRef,
+        scheduled_for: dayAfter.toISOString(),
+        channel: 'email',
+      })
+    }
+
     if (reminders.length > 0) {
       await supabase.from('scheduled_reminders').insert(reminders)
       console.log(`Enqueued ${reminders.length} party reminders for ${bookingRef}`)

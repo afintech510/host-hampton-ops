@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
-  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift
+  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera
 } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
@@ -18,10 +18,11 @@ import FinancialsTab from './FinancialsTab'
 import MediaTab from './MediaTab'
 import GiftCardsTab from './GiftCardsTab'
 import PartiesTab from './PartiesTab'
+import PhotosTab from './PhotosTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'parties' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'financials' | 'gift-cards'
+type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'financials' | 'gift-cards'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
@@ -29,6 +30,7 @@ const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[]
   { key: 'calendar',   label: 'Calendar',   Icon: Calendar,        group: 'manage' },
   { key: 'orders',     label: 'Orders',     Icon: Receipt,         group: 'manage' },
   { key: 'parties',    label: 'Parties',    Icon: Sparkles,        group: 'manage' },
+  { key: 'photos',     label: 'Photos',     Icon: Camera,          group: 'manage' },
   { key: 'financials', label: 'Financials', Icon: DollarSign,      group: 'manage' },
   { key: 'gift-cards', label: 'Gift Cards', Icon: Gift,           group: 'manage' },
   { key: 'themes',     label: 'Themes',     Icon: Palette,         group: 'content' },
@@ -260,6 +262,9 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
           )}
           {activeTab === 'parties' && (
             <PartiesTab key={`parties-${refreshKey}`} headers={headers} onLogout={onLogout} />
+          )}
+          {activeTab === 'photos' && (
+            <PhotosTab key={`photos-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
           {activeTab === 'gift-cards' && (
             <GiftCardsTab key={`gc-${refreshKey}`} headers={headers} onLogout={onLogout} />

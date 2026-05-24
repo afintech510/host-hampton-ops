@@ -49,7 +49,7 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   const [bookings, setBookings] = useState<PartyBookingSummary[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState('pending_review')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<PartyDetail | null>(null)
   const [actionLoading, setActionLoading] = useState('')
@@ -195,15 +195,17 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
               )
             })}
           </div>
-          <button
-            onClick={() => setShowNewForm(true)}
+          <a
+            href="/party-planner"
+            target="_blank"
+            rel="noopener noreferrer"
             className="px-4 py-2 bg-[#1a2744] text-white rounded-lg text-sm font-semibold hover:bg-[#2a3754] transition-colors"
           >
             + New Party Plan
-          </button>
+          </a>
         </div>
 
-        {showNewForm && (
+        {false && showNewForm && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={resetNewForm}>
             <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b sticky top-0 bg-white rounded-t-2xl flex items-center justify-between">
@@ -211,32 +213,34 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
                 <button onClick={resetNewForm} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
               </div>
 
-              {createResult?.ok ? (
+              {createResult?.ok ? (() => {
+                const result = createResult as NonNullable<typeof createResult>
+                return (
                 <div className="p-6 space-y-4">
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <p className="font-bold text-green-800 mb-1">✓ Party Plan Created</p>
-                    <p className="text-sm text-green-700">Booking ref: <span className="font-mono">{createResult.bookingRef}</span></p>
+                    <p className="text-sm text-green-700">Booking ref: <span className="font-mono">{result.bookingRef}</span></p>
                     {newForm.sendEmail && <p className="text-sm text-green-700 mt-1">Quote email sent to {newForm.contactEmail}</p>}
                   </div>
-                  {createResult.builderUrl && (
+                  {result.builderUrl && (
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1">Customer link (copy & share)</label>
                       <div className="flex gap-2">
                         <input
                           type="text"
                           readOnly
-                          value={createResult.builderUrl}
+                          value={result.builderUrl}
                           className="flex-1 px-3 py-2 border rounded-lg text-xs font-mono bg-gray-50"
                           onClick={e => (e.target as HTMLInputElement).select()}
                         />
                         <button
-                          onClick={() => navigator.clipboard.writeText(createResult.builderUrl || '')}
+                          onClick={() => navigator.clipboard.writeText(result.builderUrl || '')}
                           className="px-3 py-2 bg-[#1a2744] text-white rounded-lg text-xs font-semibold"
                         >
                           Copy
                         </button>
                         <button
-                          onClick={() => window.open(createResult.builderUrl, '_blank')}
+                          onClick={() => window.open(result.builderUrl, '_blank')}
                           className="px-3 py-2 border border-[#1a2744] text-[#1a2744] rounded-lg text-xs font-semibold"
                         >
                           Open
@@ -248,7 +252,8 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
                     <button onClick={resetNewForm} className="flex-1 px-4 py-2 border rounded-lg text-sm font-semibold">Done</button>
                   </div>
                 </div>
-              ) : (
+                )
+              })() : (
                 <div className="p-6 space-y-4">
                   <p className="text-sm text-gray-500">Enter the lead&apos;s info. They&apos;ll get a branded email with a link to review the plan, add options, and pay the deposit.</p>
 
@@ -323,7 +328,7 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
                   </div>
 
                   {createResult?.error && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{createResult.error}</div>
+                    <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{createResult?.error}</div>
                   )}
 
                   <div className="flex gap-3 pt-2">

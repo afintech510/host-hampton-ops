@@ -231,7 +231,7 @@ export default function ThemeTileGrid({ themes: dbThemes }: { themes?: ThemeData
 
             <div className="px-6 py-4 bg-hampton-pink/10 border-t border-hampton-pink/20 flex flex-col sm:flex-row gap-3 items-center justify-between">
               <p className="text-hampton-navy/70 text-xs text-center sm:text-left">
-                Lock your date with a <strong>$99 deposit</strong> — change theme or details any time.
+                Lock your date with a <strong>25% deposit</strong> — change theme or details any time.
               </p>
               <div className="flex gap-3 shrink-0">
                 <Link
@@ -244,7 +244,7 @@ export default function ThemeTileGrid({ themes: dbThemes }: { themes?: ThemeData
                   href={`/book?package=${encodeURIComponent(selected.name)}`}
                   className="bg-hampton-navy text-white font-bold px-6 py-2 rounded-full text-sm hover:bg-hampton-navy/90 transition-all shadow-sm"
                 >
-                  Reserve Date — $99
+                  Reserve Date
                 </Link>
               </div>
             </div>

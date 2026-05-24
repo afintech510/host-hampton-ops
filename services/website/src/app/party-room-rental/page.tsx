@@ -58,7 +58,7 @@ const faqs = [
   },
   {
     q: "How do I book? What\u2019s the reservation deposit?",
-    a: 'Click Check Availability below, pick your date, and complete the reservation form. A $99 non-refundable deposit holds your date. The remaining balance is due 7 days before the event.',
+    a: 'Click Check Availability below, pick your date, and complete the reservation form. A 25% non-refundable deposit holds your date. The remaining balance is due 7 days before the event.',
   },
   {
     q: "What\u2019s the difference between a room rental and studio rental?",
@@ -365,7 +365,7 @@ export default async function PartyRoomRental() {
       <section className="py-14 text-center px-4">
         <h2 className="section-heading mb-3">Book the Studio</h2>
         <p className="text-hampton-navy mb-7 max-w-md mx-auto">
-          Reserve with a $99 deposit. Perfect for any event where you want a gorgeous, private
+          Reserve with a 25% deposit. Perfect for any event where you want a gorgeous, private
           setting.
         </p>
         <Link href="/book?type=room-rental" className="btn-primary px-10 py-4 text-base">

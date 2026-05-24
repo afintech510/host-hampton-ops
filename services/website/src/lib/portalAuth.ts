@@ -39,9 +39,10 @@ export function buildPortalCookieValue(bookingRef: string, secret: string): stri
   return `${bookingRef}:${sig}`
 }
 
-export function setPortalCookieHeader(bookingRef: string, secret: string): string {
+export function setPortalCookieHeader(bookingRef: string, secret: string, isInsecure = false): string {
   const value = buildPortalCookieValue(bookingRef, secret)
-  return `${COOKIE_NAME}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}; Secure`
+  const secureFlag = isInsecure ? '' : '; Secure'
+  return `${COOKIE_NAME}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}${secureFlag}`
 }
 
 export function getPortalBookingRef(cookieHeader: string | null, secret: string): string | null {
@@ -70,4 +71,78 @@ export function getPortalBookingRef(cookieHeader: string | null, secret: string)
 
 export function clearPortalCookieHeader(): string {
   return `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`
+}
+
+/* ── Email-based login (multi-booking) ─────────────────────────
+ * Separate cookie from the per-booking portal cookie. Lets a returning
+ * customer pick from all bookings tied to their email address.
+ */
+
+const EMAIL_COOKIE_NAME = 'hh_portal_email'
+const EMAIL_COOKIE_MAX_AGE = 30 * 24 * 60 * 60 // 30 days
+const EMAIL_CODE_TTL_MS = 15 * 60 * 1000 // 15 minutes
+const EMAIL_CODE_MAX_ATTEMPTS = 5
+
+export function generateEmailLoginCode(): { code: string; expiresAt: Date } {
+  // 6-digit numeric, padded — generated from crypto for uniformity
+  const n = crypto.randomInt(0, 1_000_000)
+  const code = String(n).padStart(6, '0')
+  const expiresAt = new Date(Date.now() + EMAIL_CODE_TTL_MS)
+  return { code, expiresAt }
+}
+
+export function hashEmailLoginCode(code: string, email: string, secret: string): string {
+  // Email is part of the HMAC payload so a code stolen via DB read can't be
+  // replayed against a different email row.
+  return crypto.createHmac('sha256', secret).update(`emailcode:${email.toLowerCase()}:${code}`).digest('hex')
+}
+
+export function verifyEmailLoginCode(submittedCode: string, email: string, storedHash: string, secret: string): boolean {
+  const computed = hashEmailLoginCode(submittedCode, email, secret)
+  try {
+    return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(storedHash))
+  } catch {
+    return false
+  }
+}
+
+export function getEmailCodeMaxAttempts(): number {
+  return EMAIL_CODE_MAX_ATTEMPTS
+}
+
+export function setEmailCookieHeader(email: string, secret: string, isInsecure = false): string {
+  const normalized = email.toLowerCase()
+  const sig = crypto.createHmac('sha256', secret).update(`emailcookie:${normalized}`).digest('hex')
+  const value = `${encodeURIComponent(normalized)}:${sig}`
+  const secureFlag = isInsecure ? '' : '; Secure'
+  return `${EMAIL_COOKIE_NAME}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${EMAIL_COOKIE_MAX_AGE}${secureFlag}`
+}
+
+export function getEmailFromCookie(cookieHeader: string | null, secret: string): string | null {
+  if (!cookieHeader) return null
+
+  const cookies = cookieHeader.split(';').map(c => c.trim())
+  const target = cookies.find(c => c.startsWith(`${EMAIL_COOKIE_NAME}=`))
+  if (!target) return null
+
+  const value = target.slice(EMAIL_COOKIE_NAME.length + 1)
+  const sepIdx = value.lastIndexOf(':')
+  if (sepIdx === -1) return null
+
+  let email = value.slice(0, sepIdx)
+  const sig = value.slice(sepIdx + 1)
+  try { email = decodeURIComponent(email) } catch { return null }
+  email = email.toLowerCase()
+
+  const expected = crypto.createHmac('sha256', secret).update(`emailcookie:${email}`).digest('hex')
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null
+  } catch {
+    return null
+  }
+  return email
+}
+
+export function clearEmailCookieHeader(): string {
+  return `${EMAIL_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`
 }

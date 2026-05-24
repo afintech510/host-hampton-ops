@@ -1,7 +1,7 @@
 import type { BookingLineItem, BookingPayment } from '@/types/booking-flow'
 
 const DEFAULT_CARD_FEE_RATE = 0.03
-const DEFAULT_DEPOSIT_CENTS = 9900
+const DEPOSIT_RATE = 0.25
 
 export function calculateCardFee(amountCents: number, rate = DEFAULT_CARD_FEE_RATE): number {
   return Math.round(amountCents * rate)
@@ -44,6 +44,59 @@ export function computeCutoffDates(partyDateStr: string): { modificationCutoff: 
   }
 }
 
+/* ── Per-category change cutoffs for paid bookings ──
+ * Once the deposit is paid, different parts of the plan lock at different
+ * lead times. The customer can always update locked sections by calling us.
+ */
+export type LockCategory =
+  | 'activities'
+  | 'desserts'
+  | 'entertainment'
+  | 'food'
+  | 'beverages'
+  | 'decor'
+  | 'extras'
+
+const CATEGORY_LEAD_DAYS: Record<LockCategory, number> = {
+  activities: 21,
+  desserts: 21,
+  entertainment: 21,
+  food: 7,
+  beverages: 7,
+  decor: 7,
+  extras: 7,
+}
+
+export function getCategoryLockState(
+  category: LockCategory,
+  partyDateStr: string | null | undefined,
+  nowStr?: string
+): { locked: boolean; cutoffDate: string | null; daysBefore: number; reason?: string } {
+  const days = CATEGORY_LEAD_DAYS[category]
+  if (!partyDateStr) return { locked: false, cutoffDate: null, daysBefore: days }
+  const [y, m, d] = partyDateStr.split('-').map(Number)
+  const partyDate = new Date(y, m - 1, d)
+  const cutoff = new Date(partyDate)
+  cutoff.setDate(cutoff.getDate() - days)
+  const cutoffStr = toDateStr(cutoff)
+  const now = nowStr || todayStr()
+  if (now >= cutoffStr) {
+    return {
+      locked: true,
+      cutoffDate: cutoffStr,
+      daysBefore: days,
+      reason: `Locked since ${formatDateDisplayInternal(cutoffStr)}. Contact us at (631) 998-9325 to make changes.`,
+    }
+  }
+  return { locked: false, cutoffDate: cutoffStr, daysBefore: days }
+}
+
+function formatDateDisplayInternal(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
+
 export function isModificationAllowed(
   partyDateStr: string,
   changeType: 'full' | 'guest_count',
@@ -79,8 +132,9 @@ export function generatePartyRef(): string {
   return `HH-PTY-${code}`
 }
 
-export function getDepositCents(): number {
-  return DEFAULT_DEPOSIT_CENTS
+export function getDepositCents(totalCents = 0): number {
+  // 25% of total, rounded to nearest dollar
+  return Math.round((totalCents * DEPOSIT_RATE) / 100) * 100
 }
 
 function toDateStr(d: Date): string {

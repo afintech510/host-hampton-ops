@@ -56,11 +56,16 @@
 - [x] **Homepage theme tiles** — image slider, mini party pricing, two-tier card, scroll-to-panel, updated CTAs
 - [x] **kids-party-menu** — DIY rental section (collapsible) + food/balloon qty adjusters
 - [x] **Book page UX** — show form/themes immediately on party type select (no timeslot wait)
-- [ ] **Run migration_005 in Supabase** — unblocks event ticketing on staging
-- [ ] **DNS cutover**: www.hosthampton.com from Squarespace → VPS
-- [ ] **Update Stripe webhook URL** to www after DNS cutover
+- [x] **DNS cutover**: www.hosthampton.com from Squarespace → VPS ✅ (2026-03-07)
+- [x] **Admin UI modernization**: Sidebar nav, Dashboard tab, KPI cards, glass login
+- [x] **Financials system**: financial_transactions table, CSV import (GoDaddy/Squarespace/HoneyBook), Stripe auto-record, server-side aggregation, timeframe selector, category filter, inline category editing
+- [x] **Email sequences engine**: 4 active sequences, cron processor, 13 enrollment points
+- [x] **Update Stripe webhook URL** to `https://www.hosthampton.com/api/webhook` ✅ (we_1T7ckv02uXWznKaWMiPeXCCf)
+- [x] **Run migration_005 in Supabase** — event ticketing live ✅
+- [x] **CM Cheer Fundraiser**: Order form at `/cm-cheer`, organizer dashboard at `/cm-cheer/orders`, Supabase DB + RLS, local product photos, mobile-optimized, notes field, CSV export
 - [ ] **Migrate remaining hardcoded prices** to pricing_items table
-- [ ] **SEO optimization pass** (meta tags, Open Graph, structured data)
+- [x] **OG image support for event pages** — dynamic openGraph metadata from DB images
+- [ ] **SEO optimization pass** (meta tags, Open Graph on remaining pages, structured data)
 - [ ] **Agent content pipeline**: COPY → website_content → ISR → published pages
 
 ## Phase 3B: Communications Infrastructure ✅ COMPLETE
@@ -73,9 +78,15 @@
 - [x] Cron routes (send-reminders, send-campaigns, draft-newsletter)
 - [x] Webhook handlers (Brevo bounces/unsubscribes, Twilio STOP/HELP/inbound)
 - [x] TCPA/CTIA/10DLC compliance (Privacy Policy, Terms of Service, consent checkboxes)
+- [x] Admin Contacts tab (list/filter/search, detail, edit status/notes/opt-in)
+- [x] Admin Campaigns tab (CRUD, Brevo send, draft newsletter, process reminders)
+- [x] Webhook bug fixes (interaction_type → type in Brevo + Twilio handlers)
+- [x] Marketing consent checkboxes on all lead/contact forms
+- [x] Contact export for Google Ads / Meta retargeting (CSV download)
+- [x] 178-test suite across 15 suites (all API routes covered)
 - [ ] Configure Brevo (API key, contact list, DNS records, webhook URL)
 - [ ] Configure Twilio webhook URL in console
-- [ ] Set up external cron service (cron-job.org, every 15 min)
+- [x] Set up external cron service (cron-job.org, every 15 min) ✅ (4 jobs running)
 
 ## Phase 4: Campaign Automation
 
