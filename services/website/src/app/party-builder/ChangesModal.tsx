@@ -1,6 +1,6 @@
 'use client'
 
-import { X, Loader2, Save, AlertCircle } from 'lucide-react'
+import { X, Loader2, Save, AlertCircle, Mail } from 'lucide-react'
 import type { ChangeRow } from './planDiff'
 
 /**
@@ -9,25 +9,32 @@ import type { ChangeRow } from './planDiff'
  *
  * Also surfaces the live total delta (was X → now Y) so the customer sees the
  * pricing impact, not just the items added/removed.
+ *
+ * Admin mode: shows two confirm buttons — Save Only (silent, no customer
+ * notification) and Save & Send (existing customer-email behavior).
  */
 export default function ChangesModal({
   open,
   onClose,
   onConfirm,
+  onConfirmSilent,
   changes,
   oldTotalFormatted,
   newTotalFormatted,
   saving,
   error,
+  isAdmin,
 }: {
   open: boolean
   onClose: () => void
   onConfirm: () => void
+  onConfirmSilent?: () => void
   changes: ChangeRow[]
   oldTotalFormatted: string
   newTotalFormatted: string
   saving: boolean
   error?: string
+  isAdmin?: boolean
 }) {
   if (!open) return null
   const totalChanged = oldTotalFormatted !== newTotalFormatted
@@ -85,24 +92,56 @@ export default function ChangesModal({
           )}
         </div>
 
-        <div className="px-5 py-4 border-t border-hampton-mauve/15 flex gap-2">
-          <button
-            onClick={onClose}
-            disabled={saving}
-            className="flex-1 py-2.5 rounded-full border-2 border-hampton-navy/20 text-hampton-navy text-sm font-semibold hover:bg-hampton-navy/5 disabled:opacity-40"
-          >
-            Keep Editing
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={saving || changes.length === 0}
-            className="flex-1 py-2.5 rounded-full bg-hampton-navy text-white text-sm font-semibold hover:bg-opacity-90 disabled:opacity-40 flex items-center justify-center gap-2"
-          >
-            {saving
-              ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
-              : <><Save size={14} /> Save Changes</>
-            }
-          </button>
+        <div className="px-5 py-4 border-t border-hampton-mauve/15 flex flex-col gap-2">
+          {isAdmin && onConfirmSilent ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={onConfirmSilent}
+                  disabled={saving || changes.length === 0}
+                  className="py-2.5 rounded-full border-2 border-hampton-navy/30 text-hampton-navy text-sm font-semibold hover:bg-hampton-navy/5 disabled:opacity-40 flex items-center justify-center gap-1.5"
+                  title="Save without notifying the customer"
+                >
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <><Save size={14} /> Save Only</>}
+                </button>
+                <button
+                  onClick={onConfirm}
+                  disabled={saving || changes.length === 0}
+                  className="py-2.5 rounded-full bg-hampton-navy text-white text-sm font-semibold hover:bg-opacity-90 disabled:opacity-40 flex items-center justify-center gap-1.5"
+                  title="Save and email the customer the updated plan"
+                >
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <><Mail size={14} /> Save &amp; Send</>}
+                </button>
+              </div>
+              <button
+                onClick={onClose}
+                disabled={saving}
+                className="py-2.5 rounded-full text-xs text-hampton-navy/60 hover:text-hampton-navy disabled:opacity-40"
+              >
+                Keep Editing
+              </button>
+            </>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={onClose}
+                disabled={saving}
+                className="flex-1 py-2.5 rounded-full border-2 border-hampton-navy/20 text-hampton-navy text-sm font-semibold hover:bg-hampton-navy/5 disabled:opacity-40"
+              >
+                Keep Editing
+              </button>
+              <button
+                onClick={onConfirm}
+                disabled={saving || changes.length === 0}
+                className="flex-1 py-2.5 rounded-full bg-hampton-navy text-white text-sm font-semibold hover:bg-opacity-90 disabled:opacity-40 flex items-center justify-center gap-2"
+              >
+                {saving
+                  ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
+                  : <><Save size={14} /> Save Changes</>
+                }
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

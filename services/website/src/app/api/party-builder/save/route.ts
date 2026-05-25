@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
       quoteData,
       locationType,
       locationAddress,
+      sendEmail = true,
     } = body as {
       lineItems: BookingLineItem[]
       contactName: string
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
       notes?: string
       marketingConsent?: boolean
       quoteData?: Record<string, unknown>
+      sendEmail?: boolean // admin can save silently without notifying customer
     }
 
     if (!contactName || !contactEmail) {
@@ -259,10 +261,13 @@ export async function POST(req: NextRequest) {
         : item.unit_price_cents * item.quantity,
     }))
 
-    // Send emails (unconditional of date — even without date, customer gets a link)
+    // Send emails (unconditional of date — even without date, customer gets a link).
+    // Admin can opt out with sendEmail=false for "save without notifying".
     let emailSent = false
     let emailDiagnostic: string | undefined
-    if (process.env.RESEND_API_KEY) {
+    if (!sendEmail) {
+      emailDiagnostic = 'Skipped — admin saved silently'
+    } else if (process.env.RESEND_API_KEY) {
       const { Resend } = await import('resend')
       const resend = new Resend(process.env.RESEND_API_KEY)
       const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'

@@ -667,6 +667,23 @@ export default function PartyBuilderContent({
   useEffect(() => {
     let cancelled = false
     async function loadBooking() {
+      // Admin click on "+ New Party Plan" → ?new=true → clear any existing
+      // portal cookie server-side first so we boot into a blank planner even
+      // if a customer's session was previously active in this browser.
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search)
+        if (params.get('new') === 'true') {
+          try {
+            await fetch('/api/portal/clear', { method: 'POST' })
+          } catch { /* non-fatal — proceed with whatever cookie state we have */ }
+          // Strip the param so a refresh doesn't re-clear and confuse downstream code
+          params.delete('new')
+          const remaining = params.toString()
+          window.history.replaceState({}, '', `${window.location.pathname}${remaining ? `?${remaining}` : ''}`)
+          setBookingLoading(false)
+          return
+        }
+      }
       try {
         const res = await fetch('/api/party-builder/load')
         if (!res.ok) { setBookingLoading(false); return }
@@ -1239,7 +1256,11 @@ export default function PartyBuilderContent({
   // Confirm in modal → reuse the existing save handler.
   // Closing on success is handled by the useEffect below (watches saveSuccess).
   async function confirmSaveChanges() {
-    await handleSaveForLater()
+    await handleSaveForLater({ sendEmail: true })
+  }
+  // Admin-only silent variant — saves without notifying the customer
+  async function confirmSaveChangesSilent() {
+    await handleSaveForLater({ sendEmail: false })
   }
 
   // Revert any unsaved changes back to the last saved baseline
@@ -1301,11 +1322,14 @@ export default function PartyBuilderContent({
   }
 
   /* ── save for later ── */
-  async function handleSaveForLater() {
+  async function handleSaveForLater(options?: { sendEmail?: boolean }) {
     if (!contact.fullName || !contact.email || !contact.phone) {
       setError('Please fill in Name, Email, and Phone to save your quote.')
       return
     }
+    // Default behavior: customer saves → always send email. Admin can opt out
+    // by passing { sendEmail: false } from the silent-save button.
+    const shouldSendEmail = options?.sendEmail ?? true
     setError('')
     setSaving(true)
     setSaveSuccess(false)
@@ -1333,6 +1357,7 @@ export default function PartyBuilderContent({
           marketingConsent: consent,
           locationType,
           locationAddress: locationType === 'mobile' ? mobileAddress : undefined,
+          sendEmail: shouldSendEmail,
           quoteData: {
             partyPreferences, characterRequest,
             pizzaOrBagels, cupcakeFlavor, addMobileCupcakes,
@@ -2841,10 +2866,28 @@ export default function PartyBuilderContent({
               </div>
             )}
 
-            <button type="button" onClick={handleSaveForLater} disabled={saving}
-              className="w-full border-2 border-hampton-navy text-hampton-navy font-bold py-3.5 px-6 rounded-full text-sm hover:bg-hampton-navy/5 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
-              {saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><Bookmark size={16} /> {loadedBooking ? 'Update My Party Plan' : 'Save & Email My Party Plan'}</>}
-            </button>
+            {isAdmin ? (
+              // Admin: two-button save — silent (no customer email) or notify.
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => handleSaveForLater({ sendEmail: false })} disabled={saving}
+                  className="border-2 border-hampton-navy/30 text-hampton-navy font-bold py-3.5 px-4 rounded-full text-sm hover:bg-hampton-navy/5 transition-all disabled:opacity-60 flex items-center justify-center gap-1.5"
+                  title="Save without notifying the customer"
+                >
+                  {saving ? <Loader2 size={16} className="animate-spin" /> : <><Bookmark size={16} /> Save Only</>}
+                </button>
+                <button type="button" onClick={() => handleSaveForLater({ sendEmail: true })} disabled={saving}
+                  className="bg-hampton-navy text-white font-bold py-3.5 px-4 rounded-full text-sm hover:bg-opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-1.5"
+                  title="Save and email the customer the updated plan"
+                >
+                  {saving ? <Loader2 size={16} className="animate-spin" /> : <><Bookmark size={16} /> Save &amp; Send</>}
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => handleSaveForLater()} disabled={saving}
+                className="w-full border-2 border-hampton-navy text-hampton-navy font-bold py-3.5 px-6 rounded-full text-sm hover:bg-hampton-navy/5 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+                {saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><Bookmark size={16} /> {loadedBooking ? 'Update My Party Plan' : 'Save & Email My Party Plan'}</>}
+              </button>
+            )}
           </div>
         </div>
 
@@ -3393,41 +3436,27 @@ export default function PartyBuilderContent({
           {barExpanded && (
             <div className="flex-1 overflow-y-auto pt-12 pb-4">
               <div className="max-w-3xl mx-auto px-4 sm:px-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
                   <h2 className="font-serif text-2xl font-black text-hampton-navy">Your Party Plan</h2>
                   {isAdmin && (
-                    <span className="bg-hampton-pink/15 text-hampton-pink px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1">
-                      <ShieldCheck size={12} /> Admin Mode
-                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="bg-hampton-pink/15 text-hampton-pink px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1">
+                        <ShieldCheck size={12} /> Admin Mode
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!window.confirm('Clear the currently loaded plan and start a new blank party plan?')) return
+                          try { await fetch('/api/portal/clear', { method: 'POST' }) } catch { /* ignore */ }
+                          window.location.assign('/party-planner?new=true')
+                        }}
+                        className="text-xs font-semibold text-hampton-navy/70 hover:text-hampton-navy border border-hampton-navy/25 hover:border-hampton-navy rounded-full px-3 py-1 transition-colors"
+                        title="Discard the loaded booking and start fresh"
+                      >
+                        Start New Plan
+                      </button>
+                    </div>
                   )}
-                </div>
-
-                {/* Guest count card */}
-                <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-hampton-blue/10 border border-hampton-blue/20">
-                  <Users size={18} className="text-hampton-navy/60" />
-                  <div className="flex-1">
-                    <p className="text-xs text-hampton-navy/50 font-semibold uppercase tracking-wider">Guest Count</p>
-                    <p className="text-sm text-hampton-navy">
-                      {effectiveGuestCount} guest{effectiveGuestCount !== 1 ? 's' : ''} + birthday child
-                      {isMiniParty && <span className="ml-2 text-xs text-hampton-pink font-bold">Mini Party (max {MINI_PARTY_MAX_GUESTS})</span>}
-                    </p>
-                    {extraGuests > 0 && (
-                      <p className="text-[11px] text-hampton-navy/50">{extraGuests} additional @ $35 = {fmt(extraGuests * EXTRA_GUEST_CENTS)}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => setGuestCount(Math.max(1, guestCount - 1))}
-                      disabled={guestCount <= 1}
-                      className="w-8 h-8 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue disabled:opacity-30">
-                      <Minus size={14} />
-                    </button>
-                    <span className="w-10 text-center font-bold text-hampton-navy">{effectiveGuestCount}</span>
-                    <button type="button" onClick={() => setGuestCount(Math.min(isMiniParty ? MINI_PARTY_MAX_GUESTS : 50, guestCount + 1))}
-                      disabled={effectiveGuestCount >= (isMiniParty ? MINI_PARTY_MAX_GUESTS : 50)}
-                      className="w-8 h-8 rounded-lg border-2 border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue disabled:opacity-30">
-                      <Plus size={14} />
-                    </button>
-                  </div>
                 </div>
 
                 {summaryLineItems.length === 0 ? (
@@ -3660,6 +3689,8 @@ export default function PartyBuilderContent({
         open={changesOpen}
         onClose={() => setChangesOpen(false)}
         onConfirm={confirmSaveChanges}
+        onConfirmSilent={confirmSaveChangesSilent}
+        isAdmin={isAdmin}
         changes={currentChanges}
         oldTotalFormatted={fmt(oldTotalAtModalOpen)}
         newTotalFormatted={fmt(total)}
