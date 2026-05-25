@@ -1,13 +1,16 @@
 'use client'
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import { Check, Minus, Plus, Users, RotateCcw, Bookmark, Loader2, Sparkles, Zap, Building2, CreditCard, ChevronUp, ChevronDown, Trash2, X, Tag, Wallet, ShieldCheck } from 'lucide-react'
+import { Check, Minus, Plus, Users, RotateCcw, Bookmark, Loader2, Sparkles, Zap, Building2, CreditCard, ChevronUp, ChevronDown, Trash2, X, Tag, Wallet, ShieldCheck, Save, Undo2, MessageCircle } from 'lucide-react'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import { loadStripe } from '@stripe/stripe-js'
 import { formatMoney, calculateCardFee, getCategoryLockState, type LockCategory } from '@/lib/partyPricing'
 import MyPartiesModal from './MyPartiesModal'
+import ChangesModal from './ChangesModal'
+import SendMessageModal from './SendMessageModal'
+import { diffPlanSnapshots } from './planDiff'
 
 /* ── constants ─────────────────────────────────────── */
 
@@ -15,6 +18,14 @@ const INCLUDED_GUESTS = 10
 const EXTRA_GUEST_CENTS = 3500
 const MINI_PARTY_DISCOUNT_CENTS = 20000
 const MINI_PARTY_MAX_GUESTS = 6
+
+// Mobile Party pricing tiers — flat base by guest-count band, plus travel
+// fee from the mileage API. Activities priced per-activity-per-person.
+const MOBILE_BASE_CENTS = 40000          // $400 for up to 18 guests
+const MOBILE_TIER2_SURCHARGE_CENTS = 15000 // +$150 for 19–27 guests
+const MOBILE_TIER3_SURCHARGE_CENTS = 15000 // +$150 again for 28+ guests
+const MOBILE_TIER2_GUEST_THRESHOLD = 18
+const MOBILE_TIER3_GUEST_THRESHOLD = 27
 const LS_KEY = 'hh_quote_data'
 const DEPOSIT_RATE = 0.25
 const computeDeposit = (totalCents: number): number =>
@@ -328,6 +339,39 @@ export default function PartyBuilderContent({
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [error, setError] = useState('')
 
+  /* ── change-tracking baseline ──
+   * Snapshot of all customer-editable state at last load OR last save.
+   * Used to: (a) detect unsaved changes for the Save modal, (b) revert on
+   * Cancel.
+   * NOTE: kept simple (JSON-serializable) — Sets become sorted arrays.
+   */
+  type PlanSnapshot = {
+    guestCount: number
+    isMiniParty: boolean
+    selectedTheme: string | null
+    activities: string[]
+    food: string[]
+    desserts: string[]
+    beverages: string[]
+    decor: string[]
+    entertainment: string[]
+    extras: string[]
+    foodQty: Record<string, number>
+    decorQty: Record<string, number>
+    partyPreferences: string
+    characterRequest: string
+    pizzaOrBagels: 'pizza' | 'bagels'
+    cupcakeFlavor: 'vanilla' | 'chocolate'
+    addMobileCupcakes: boolean
+    locationType: 'host_hampton' | 'mobile'
+    mobileAddress: string
+    childName: string
+    childAge: string
+    catchyPartyName: string
+    totalCents: number
+  }
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<PlanSnapshot | null>(null)
+
   /* ── loaded booking state ── */
   const [loadedBooking, setLoadedBooking] = useState<{
     id?: string; booking_ref: string; status: string; total_cents: number; balance_due_cents: number; deposit_amount: number;
@@ -346,6 +390,10 @@ export default function PartyBuilderContent({
 
   /* ── My Parties modal (email login) ── */
   const [myPartiesOpen, setMyPartiesOpen] = useState(false)
+  /* ── Save + Send Message modals (post-deposit bottom bar) ── */
+  const [changesOpen, setChangesOpen] = useState(false)
+  const [sendMsgOpen, setSendMsgOpen] = useState(false)
+  const [oldTotalAtModalOpen, setOldTotalAtModalOpen] = useState(0)
 
   /* ── admin custom items (added before booking exists or as part of edit) ── */
   const [customItems, setCustomItems] = useState<{
@@ -394,26 +442,12 @@ export default function PartyBuilderContent({
     setMileageError('')
   }
 
-  // Add/remove the Mobile Party Fee line item based on confirmed address.
-  // The fee amount is opaque to the customer's view of the line item label —
-  // it just says "Mobile Party Fee" and shows the dollar amount.
+  // Clean up any legacy "travel-fee" custom item from older bookings — the
+  // Mobile Party Package now bundles the travel fee directly inside its
+  // composite line item, so we don't want a duplicate row.
   useEffect(() => {
-    if (locationType === 'mobile' && mileage && mileage.feeCents > 0) {
-      setCustomItems(prev => {
-        const existing = prev.filter(ci => ci.id !== 'travel-fee')
-        return [...existing, {
-          id: 'travel-fee',
-          name: 'Mobile Party Fee',
-          price_cents: mileage.feeCents,
-          quantity: 1,
-          guest_multiplied: false,
-          is_discount: false,
-        }]
-      })
-    } else {
-      setCustomItems(prev => prev.filter(ci => ci.id !== 'travel-fee'))
-    }
-  }, [locationType, mileage])
+    setCustomItems(prev => prev.filter(ci => ci.id !== 'travel-fee'))
+  }, [locationType])
 
   /* ── party preferences (notes, character visit details) ── */
   const [partyPreferences, setPartyPreferences] = useState('')
@@ -443,22 +477,32 @@ export default function PartyBuilderContent({
     }
   }, [locationType, addMobileCupcakes, cupcakeFlavor])
 
-  /* ── sliding section nav ── */
-  const SECTIONS = [
-    { id: 'sec-date', label: 'Date' },
-    { id: 'sec-location', label: 'Location' },
-    { id: 'sec-themes', label: 'Themes' },
-    { id: 'sec-activities', label: 'Activities' },
-    { id: 'sec-food', label: 'Food' },
-    { id: 'sec-desserts', label: 'Desserts' },
-    { id: 'sec-drinks', label: 'Drinks' },
-    { id: 'sec-decor', label: 'Décor' },
-    { id: 'sec-extras', label: 'Extras' },
-    { id: 'sec-entertainment', label: 'Entertainment' },
-    { id: 'sec-contact', label: 'Contact' },
-    { id: 'sec-summary', label: 'Summary' },
-    { id: 'sec-book', label: 'Book' },
-  ] as const
+  /* ── sliding section nav ──
+   * Mobile mode hides Themes, Food, Desserts, Drinks, Décor, Extras
+   * because those modules aren't rendered in mobile flow.
+   */
+  const SECTIONS = useMemo(() => {
+    const all = [
+      { id: 'sec-date', label: 'Date' },
+      { id: 'sec-location', label: 'Location' },
+      { id: 'sec-themes', label: 'Themes' },
+      { id: 'sec-activities', label: 'Activities' },
+      { id: 'sec-food', label: 'Food' },
+      { id: 'sec-desserts', label: 'Desserts' },
+      { id: 'sec-drinks', label: 'Drinks' },
+      { id: 'sec-decor', label: 'Décor' },
+      { id: 'sec-extras', label: 'Extras' },
+      { id: 'sec-entertainment', label: 'Entertainment' },
+      { id: 'sec-contact', label: 'Contact' },
+      { id: 'sec-summary', label: 'Summary' },
+      { id: 'sec-book', label: 'Book' },
+    ]
+    if (locationType === 'mobile') {
+      const mobileHidden = new Set(['sec-themes', 'sec-food', 'sec-desserts', 'sec-drinks', 'sec-decor', 'sec-extras'])
+      return all.filter(s => !mobileHidden.has(s.id))
+    }
+    return all
+  }, [locationType])
   const [activeSection, setActiveSection] = useState<string>('sec-date')
   const sectionNavRef = useRef<HTMLDivElement>(null)
 
@@ -803,7 +847,41 @@ export default function PartyBuilderContent({
     return cost
   }, [selectedPremiumIds.length, selectedStandardIds.length, effectiveGuestCount])
 
+  /* ── mobile party derived values ── */
+  const isMobile = locationType === 'mobile'
+
+  // Mobile Party Package base (depends on guest count tier) + travel fee.
+  // The fee comes from the mileage API state (`mileage.feeCents`) and is
+  // already opaque to the customer (no miles/rate disclosure).
+  const mobilePackageBaseCents = useMemo(() => {
+    if (!isMobile) return 0
+    let base = MOBILE_BASE_CENTS
+    if (effectiveGuestCount > MOBILE_TIER2_GUEST_THRESHOLD) base += MOBILE_TIER2_SURCHARGE_CENTS
+    if (effectiveGuestCount > MOBILE_TIER3_GUEST_THRESHOLD) base += MOBILE_TIER3_SURCHARGE_CENTS
+    return base
+  }, [isMobile, effectiveGuestCount])
+
+  const mobileTravelFeeCents = isMobile ? (mileage?.feeCents ?? 0) : 0
+  const mobilePackageCents = mobilePackageBaseCents + mobileTravelFeeCents
+
+  // Mobile activity cost — per-activity-per-person for every selected
+  // activity (no first-free rule, no premium/standard distinction).
+  const mobileActivityCost = useMemo(() => {
+    if (!isMobile) return 0
+    let sum = 0
+    for (const id of Array.from(selectedActivities)) {
+      const item = itemMap.get(id)
+      if (!item) continue
+      sum += item.price_cents * effectiveGuestCount
+    }
+    return sum
+  }, [isMobile, selectedActivities, itemMap, effectiveGuestCount])
+
   const getActivityLabel = (item: PricingItem): string => {
+    if (isMobile) {
+      // Per-person × guests, billed for every selected activity
+      return `${fmt(item.price_cents)}/person`
+    }
     const isPremium = premiumIdSet.has(item.id)
     const isStandard = standardIdSet.has(item.id)
     if (isPremium) {
@@ -823,6 +901,27 @@ export default function PartyBuilderContent({
 
   const total = useMemo(() => {
     let sum = 0
+
+    if (isMobile) {
+      // Mobile Party: composite package (base tier + travel) + activities
+      // per-person + entertainment (existing pricing) + admin custom items.
+      // Theme/food/drinks/desserts/decor are hidden in mobile mode.
+      sum += mobilePackageCents
+      sum += mobileActivityCost
+      for (const id of Array.from(selectedEntertainment)) {
+        const item = itemMap.get(id)
+        if (!item) continue
+        sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount : item.price_cents
+      }
+      for (const ci of customItems) {
+        // Skip the legacy mobile-cupcakes auto-item if it's still hanging around
+        if (ci.id === 'mobile-cupcakes') continue
+        sum += ci.guest_multiplied ? ci.price_cents * ci.quantity * effectiveGuestCount : ci.price_cents * ci.quantity
+      }
+      return Math.max(0, sum)
+    }
+
+    // Studio party (Host Hampton)
     if (selectedTheme) sum += itemMap.get(selectedTheme)?.price_cents ?? 0
     if (isMiniParty && selectedTheme) sum -= MINI_PARTY_DISCOUNT_CENTS
     sum += extraGuests * EXTRA_GUEST_CENTS
@@ -854,7 +953,77 @@ export default function PartyBuilderContent({
       sum += ci.guest_multiplied ? ci.price_cents * ci.quantity * effectiveGuestCount : ci.price_cents * ci.quantity
     }
     return Math.max(0, sum)
-  }, [selectedTheme, isMiniParty, extraGuests, effectiveGuestCount, activityCost, selectedFood, foodQty, selectedDesserts, selectedBeverages, selectedDecor, decorQty, selectedEntertainment, selectedPartyAddOns, itemMap, customItems])
+  }, [isMobile, mobilePackageCents, mobileActivityCost, selectedTheme, isMiniParty, extraGuests, effectiveGuestCount, activityCost, selectedFood, foodQty, selectedDesserts, selectedBeverages, selectedDecor, decorQty, selectedEntertainment, selectedPartyAddOns, itemMap, customItems])
+
+  /* ── capture / apply snapshot helpers ── */
+  const captureSnapshot = useCallback((): PlanSnapshot => ({
+    guestCount,
+    isMiniParty,
+    selectedTheme,
+    activities: Array.from(selectedActivities).sort(),
+    food: Array.from(selectedFood).sort(),
+    desserts: Array.from(selectedDesserts).sort(),
+    beverages: Array.from(selectedBeverages).sort(),
+    decor: Array.from(selectedDecor).sort(),
+    entertainment: Array.from(selectedEntertainment).sort(),
+    extras: Array.from(selectedPartyAddOns).sort(),
+    foodQty: Object.fromEntries(foodQty),
+    decorQty: Object.fromEntries(decorQty),
+    partyPreferences,
+    characterRequest,
+    pizzaOrBagels,
+    cupcakeFlavor,
+    addMobileCupcakes,
+    locationType,
+    mobileAddress,
+    childName: contact.childName,
+    childAge: contact.childAge,
+    catchyPartyName: contact.catchyPartyName,
+    totalCents: total,
+  }), [
+    guestCount, isMiniParty, selectedTheme, selectedActivities, selectedFood,
+    selectedDesserts, selectedBeverages, selectedDecor, selectedEntertainment,
+    selectedPartyAddOns, foodQty, decorQty, partyPreferences, characterRequest,
+    pizzaOrBagels, cupcakeFlavor, addMobileCupcakes, locationType, mobileAddress,
+    contact.childName, contact.childAge, contact.catchyPartyName, total,
+  ])
+
+  const applySnapshot = useCallback((snap: PlanSnapshot) => {
+    setGuestCount(snap.guestCount)
+    setIsMiniParty(snap.isMiniParty)
+    setSelectedTheme(snap.selectedTheme)
+    setSelectedActivities(new Set(snap.activities))
+    setSelectedFood(new Set(snap.food))
+    setSelectedDesserts(new Set(snap.desserts))
+    setSelectedBeverages(new Set(snap.beverages))
+    setSelectedDecor(new Set(snap.decor))
+    setSelectedEntertainment(new Set(snap.entertainment))
+    setSelectedPartyAddOns(new Set(snap.extras))
+    setFoodQty(new Map(Object.entries(snap.foodQty)))
+    setDecorQty(new Map(Object.entries(snap.decorQty)))
+    setPartyPreferences(snap.partyPreferences)
+    setCharacterRequest(snap.characterRequest)
+    setPizzaOrBagels(snap.pizzaOrBagels)
+    setCupcakeFlavor(snap.cupcakeFlavor)
+    setAddMobileCupcakes(snap.addMobileCupcakes)
+    setLocationType(snap.locationType)
+    setMobileAddress(snap.mobileAddress)
+    setContact(prev => ({
+      ...prev,
+      childName: snap.childName,
+      childAge: snap.childAge,
+      catchyPartyName: snap.catchyPartyName,
+    }))
+  }, [])
+
+  // Capture the initial baseline after the load effect settles. Without this,
+  // the Save modal would show "no changes" until the customer saves once.
+  useEffect(() => {
+    if (bookingLoading) return
+    if (lastSavedSnapshot) return // already captured
+    if (!loadedBooking) return // fresh planner — no baseline needed until first save
+    setLastSavedSnapshot(captureSnapshot())
+  }, [bookingLoading, loadedBooking, lastSavedSnapshot, captureSnapshot])
 
   const addOnCount =
     selectedActivities.size + selectedFood.size + selectedDesserts.size +
@@ -882,6 +1051,69 @@ export default function PartyBuilderContent({
   /* ── build structured line items ── */
   function getLineItems() {
     const lineItems: { name: string; category: string; quantity: number; unit_price_cents: number; price_type: string; guest_multiplied: boolean; pricing_item_id?: string }[] = []
+
+    if (isMobile) {
+      // Mobile Party: one composite "Mobile Party Package" line covering the
+      // base fee + travel. Activities billed per-person, every activity. No
+      // theme/food/drinks/desserts/decor lines.
+      const tierLabel = effectiveGuestCount > MOBILE_TIER3_GUEST_THRESHOLD
+        ? ' (28+ guests)'
+        : effectiveGuestCount > MOBILE_TIER2_GUEST_THRESHOLD
+          ? ' (19–27 guests)'
+          : ' (up to 18 guests)'
+      lineItems.push({
+        name: `Mobile Party Package${tierLabel}`,
+        category: 'mobile-package',
+        quantity: 1,
+        unit_price_cents: mobilePackageCents, // base tier + travel, bundled
+        price_type: 'flat',
+        guest_multiplied: false,
+      })
+
+      // Per-activity per-person — every selected activity is billed
+      for (const id of Array.from(selectedActivities)) {
+        const item = itemMap.get(id); if (!item) continue
+        lineItems.push({
+          name: item.name,
+          category: 'activity-add-on',
+          quantity: 1,
+          unit_price_cents: item.price_cents,
+          price_type: 'per_person',
+          guest_multiplied: true,
+          pricing_item_id: item.id,
+        })
+      }
+
+      // Entertainment — existing per-item pricing
+      for (const id of Array.from(selectedEntertainment)) {
+        const item = itemMap.get(id); if (!item) continue
+        lineItems.push({
+          name: item.name,
+          category: 'entertainment-add-on',
+          quantity: 1,
+          unit_price_cents: item.price_cents,
+          price_type: item.price_type === 'per_person' ? 'per_person' : 'flat',
+          guest_multiplied: item.price_type === 'per_person',
+          pricing_item_id: item.id,
+        })
+      }
+
+      // Admin custom items (skip the legacy mobile-cupcakes auto-item)
+      for (const ci of customItems) {
+        if (ci.id === 'mobile-cupcakes') continue
+        lineItems.push({
+          name: ci.name,
+          category: ci.is_discount ? 'discount' : 'custom',
+          quantity: ci.quantity,
+          unit_price_cents: ci.price_cents,
+          price_type: ci.guest_multiplied ? 'per_person' : 'flat',
+          guest_multiplied: ci.guest_multiplied,
+        })
+      }
+      return lineItems
+    }
+
+    // Studio party (Host Hampton)
     if (themeItem) {
       let themePriceCents = themeItem.price_cents
       if (isMiniParty) themePriceCents = Math.max(0, themePriceCents - MINI_PARTY_DISCOUNT_CENTS)
@@ -949,6 +1181,45 @@ export default function PartyBuilderContent({
     }
     return lineItems
   }
+
+  /* ── post-deposit bottom-bar handlers ── */
+
+  // Save click: capture the "before" total so the modal can show the delta
+  function openSaveChangesModal() {
+    setOldTotalAtModalOpen(lastSavedSnapshot?.totalCents ?? total)
+    setError('')
+    setChangesOpen(true)
+  }
+
+  // Confirm in modal → reuse the existing save handler.
+  // Closing on success is handled by the useEffect below (watches saveSuccess).
+  async function confirmSaveChanges() {
+    await handleSaveForLater()
+  }
+
+  // Revert any unsaved changes back to the last saved baseline
+  function revertChanges() {
+    if (!lastSavedSnapshot) return
+    if (!window.confirm('Discard your unsaved changes and revert to your last saved plan?')) return
+    applySnapshot(lastSavedSnapshot)
+  }
+
+  // Compute the diff for the modal. Recomputed on each render the modal is
+  // open — cheap enough for typical plan sizes.
+  const currentChanges = useMemo(() => {
+    if (!changesOpen || !lastSavedSnapshot) return []
+    return diffPlanSnapshots(lastSavedSnapshot, captureSnapshot(), itemMap)
+  }, [changesOpen, lastSavedSnapshot, captureSnapshot, itemMap])
+
+  // Close the changes modal automatically when a save succeeds
+  useEffect(() => {
+    if (changesOpen && saveSuccess) {
+      setChangesOpen(false)
+      // Reset the success flag so subsequent opens don't immediately close
+      const t = setTimeout(() => setSaveSuccess(false), 3000)
+      return () => clearTimeout(t)
+    }
+  }, [changesOpen, saveSuccess])
 
   function buildSummary(): string {
     const lines: string[] = []
@@ -1039,6 +1310,8 @@ export default function PartyBuilderContent({
           total_cents: total, balance_due_cents: Math.max(0, total - depositCents), deposit_amount: depositCents,
         })
         setSaveSuccess(true)
+        // Update the baseline so subsequent diff checks start from this point
+        setLastSavedSnapshot(captureSnapshot())
         if (data.emailSent === false && data.emailDiagnostic) {
           setError(`Saved, but the email did not send: ${data.emailDiagnostic}`)
         }
@@ -1991,9 +2264,42 @@ export default function PartyBuilderContent({
           </div>
         </div>
 
-        {/* ══ 1. Themed Party Packages ══ */}
-        <div id="sec-themes" className="scroll-mt-20" />
+        {/* ══ Mobile Party Package summary (shown only in mobile mode) ══ */}
+        {isMobile && (
+          <div className="bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
+            <div className="bg-hampton-navy px-8 py-5 text-center">
+              <h2 className="font-serif text-2xl font-black text-white tracking-tight">MOBILE PARTY PACKAGE</h2>
+              <p className="text-hampton-ivory/60 text-xs font-semibold tracking-[0.2em] uppercase mt-1">
+                We bring the party to you
+              </p>
+            </div>
+            <div className="p-6 sm:p-8 space-y-4">
+              <div className="bg-hampton-ivory/50 rounded-xl p-4 space-y-1.5 text-sm">
+                <div className="flex justify-between"><span className="text-hampton-navy/60">Base (up to 18 guests)</span><span className="font-semibold text-hampton-navy">{fmt(MOBILE_BASE_CENTS)}</span></div>
+                <div className="flex justify-between text-xs text-hampton-navy/50"><span>19–27 guests</span><span>+{fmt(MOBILE_TIER2_SURCHARGE_CENTS)}</span></div>
+                <div className="flex justify-between text-xs text-hampton-navy/50"><span>28+ guests</span><span>+{fmt(MOBILE_TIER3_SURCHARGE_CENTS)} more</span></div>
+                {mobileTravelFeeCents > 0 && (
+                  <div className="flex justify-between pt-1.5 mt-1.5 border-t border-hampton-mauve/20">
+                    <span className="text-hampton-navy/60">Mobile Party Fee</span>
+                    <span className="font-semibold text-hampton-navy">{fmt(mobileTravelFeeCents)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between pt-1.5 mt-1.5 border-t-2 border-hampton-navy/20">
+                  <span className="font-bold text-hampton-navy">Package total</span>
+                  <span className="font-serif font-black text-base text-hampton-navy">{fmt(mobilePackageCents)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-hampton-navy/50 leading-relaxed">
+                Customize your party below — activities are billed per person, entertainment add-ons available too. Food, drinks, and decor are not part of the mobile package; you supply those at your location.
+              </p>
+            </div>
+          </div>
+        )}
 
+        {/* ══ 1. Themed Party Packages (studio only) ══ */}
+        {!isMobile && <div id="sec-themes" className="scroll-mt-20" />}
+
+        {!isMobile && (
         <CategoryModule title="THEMED PARTY PACKAGES" subtitle="2 Hours Private Studio &bull; Everything Included" headerBg="bg-hampton-navy">
           <div className="mb-6 bg-hampton-blue/10 border-l-4 border-hampton-blue p-5 rounded-r-lg -mt-2">
             <h3 className="font-serif font-bold text-lg text-hampton-navy mb-1">All-Inclusive Celebration</h3>
@@ -2111,6 +2417,7 @@ export default function PartyBuilderContent({
           </div>
           )}
         </CategoryModule>
+        )}
 
         {/* ══ 1b. Tell Us What You Want ══ */}
         <div className="bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
@@ -2170,17 +2477,29 @@ export default function PartyBuilderContent({
         <div id="sec-activities" className="scroll-mt-20" />
 
         {(premiumActivities.length > 0 || standardActivities.length > 0) && (
-          <CategoryModule title="ACTIVITIES" subtitle="Included With Every Party Package" headerBg="bg-hampton-navy" lock={categoryLocks.activities}>
+          <CategoryModule
+            title="ACTIVITIES"
+            subtitle={isMobile ? 'Billed per person · pick as many as you like' : 'Included With Every Party Package'}
+            headerBg="bg-hampton-navy"
+            lock={categoryLocks.activities}
+          >
+            {isMobile && (
+              <div className="mb-5 p-4 bg-hampton-blue/10 border border-hampton-blue/20 rounded-xl text-xs text-hampton-navy/70 leading-relaxed">
+                For mobile parties, each activity is billed at its per-person rate × {effectiveGuestCount} guests. No first-free rule — every activity you pick is added to your total.
+              </div>
+            )}
             {premiumActivities.length > 0 && (
               <div className="mb-6">
-                <h3 className="font-serif font-bold text-lg text-hampton-navy mb-1 border-b border-gray-200 pb-2">Premium Activities</h3>
-                <p className="text-[11px] text-hampton-navy/60 mb-4">
-                  1st included &bull; 2nd is +$25/person × guests+1 &bull; max {MAX_PREMIUM_ACTIVITIES}
-                </p>
+                <h3 className="font-serif font-bold text-lg text-hampton-navy mb-1 border-b border-gray-200 pb-2">{isMobile ? 'Activities' : 'Premium Activities'}</h3>
+                {!isMobile && (
+                  <p className="text-[11px] text-hampton-navy/60 mb-4">
+                    1st included &bull; 2nd is +$25/person × guests+1 &bull; max {MAX_PREMIUM_ACTIVITIES}
+                  </p>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {premiumActivities.map(a => {
                     const isSelected = selectedActivities.has(a.id)
-                    const atMax = !isSelected && selectedPremiumIds.length >= MAX_PREMIUM_ACTIVITIES
+                    const atMax = !isMobile && !isSelected && selectedPremiumIds.length >= MAX_PREMIUM_ACTIVITIES
                     return (
                       <SelectableActivityChip
                         key={a.id} item={a} selected={isSelected}
@@ -2195,14 +2514,16 @@ export default function PartyBuilderContent({
             )}
             {standardActivities.length > 0 && (
               <div>
-                <h3 className="font-serif font-bold text-lg text-hampton-navy mb-1 border-b border-gray-200 pb-2">Standard Activities</h3>
-                <p className="text-[11px] text-hampton-navy/60 mb-4">
-                  1st &amp; 2nd included &bull; 3rd is +$5/person × guests+1 &bull; max {MAX_STANDARD_ACTIVITIES}
-                </p>
+                <h3 className="font-serif font-bold text-lg text-hampton-navy mb-1 border-b border-gray-200 pb-2">{isMobile ? 'More Activities' : 'Standard Activities'}</h3>
+                {!isMobile && (
+                  <p className="text-[11px] text-hampton-navy/60 mb-4">
+                    1st &amp; 2nd included &bull; 3rd is +$5/person × guests+1 &bull; max {MAX_STANDARD_ACTIVITIES}
+                  </p>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {standardActivities.map(a => {
                     const isSelected = selectedActivities.has(a.id)
-                    const atMax = !isSelected && selectedStandardIds.length >= MAX_STANDARD_ACTIVITIES
+                    const atMax = !isMobile && !isSelected && selectedStandardIds.length >= MAX_STANDARD_ACTIVITIES
                     return (
                       <SelectableActivityChip
                         key={a.id} item={a} selected={isSelected}
@@ -2218,9 +2539,10 @@ export default function PartyBuilderContent({
           </CategoryModule>
         )}
 
-        {/* ══ 4. Food & Catering ══ */}
-        <div id="sec-food" className="scroll-mt-20" />
+        {/* ══ 4. Food & Catering (studio only) ══ */}
+        {!isMobile && <div id="sec-food" className="scroll-mt-20" />}
 
+        {!isMobile && (
         <CategoryModule title="FOOD &amp; CATERING" subtitle="Upgrade Your Menu" titleColor="text-hampton-pink" lock={categoryLocks.food}>
           {/* Pizza or Bagels selector — included at HH */}
           {locationType === 'host_hampton' && (
@@ -2244,10 +2566,12 @@ export default function PartyBuilderContent({
             <AddOnGridWithQty items={food} selected={selectedFood} qty={foodQty} onToggle={toggleFood} onQtyChange={setFoodItemQty} />
           )}
         </CategoryModule>
+        )}
 
-        {/* ══ 5. Desserts ══ */}
-        <div id="sec-desserts" className="scroll-mt-20" />
+        {/* ══ 5. Desserts (studio only) ══ */}
+        {!isMobile && <div id="sec-desserts" className="scroll-mt-20" />}
 
+        {!isMobile && (
         <CategoryModule title="DESSERTS" subtitle="Sweet Additions" headerBg="bg-gradient-to-r from-hampton-pink to-hampton-mauve" lock={categoryLocks.desserts}>
           {/* Cupcake flavor — included at HH, add-on at mobile */}
           <div className="mb-5 p-4 bg-hampton-pink/10 border border-hampton-pink/20 rounded-xl">
@@ -2268,28 +2592,19 @@ export default function PartyBuilderContent({
                 </button>
               ))}
             </div>
-            {locationType === 'mobile' && (
-              <label className="flex items-center gap-2 mt-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={addMobileCupcakes}
-                  onChange={e => setAddMobileCupcakes(e.target.checked)}
-                  className="w-4 h-4 rounded border-hampton-mauve/40 text-hampton-navy focus:ring-hampton-blue"
-                />
-                <span className="text-sm text-hampton-navy">
-                  Add cupcakes for {effectiveGuestCount} guests — <strong>{fmt(300 * effectiveGuestCount)}</strong>
-                </span>
-              </label>
-            )}
+            {/* Mobile cupcake add-on retired with the Mobile Party Package
+                rebuild — dessert section is studio-only now. */}
           </div>
           {desserts.length > 0 && (
             <AddOnGrid items={desserts} selected={selectedDesserts} onToggle={id => toggle(selectedDesserts, setSelectedDesserts, id)} />
           )}
         </CategoryModule>
+        )}
 
-        {/* ══ 6. Beverages ══ */}
-        <div id="sec-drinks" className="scroll-mt-20" />
+        {/* ══ 6. Beverages (studio only) ══ */}
+        {!isMobile && <div id="sec-drinks" className="scroll-mt-20" />}
 
+        {!isMobile && (
         <CategoryModule title="BEVERAGES" subtitle="Refreshments" titleColor="text-hampton-pink" lock={categoryLocks.beverages}>
           {locationType === 'host_hampton' && (
             <div className="mb-5 p-3 bg-hampton-blue/10 border border-hampton-blue/15 rounded-lg">
@@ -2302,11 +2617,12 @@ export default function PartyBuilderContent({
             <AddOnGrid items={beverages} selected={selectedBeverages} onToggle={id => toggle(selectedBeverages, setSelectedBeverages, id)} />
           )}
         </CategoryModule>
+        )}
 
-        {/* ══ 7. Decor ══ */}
-        <div id="sec-decor" className="scroll-mt-20" />
+        {/* ══ 7. Decor (studio only) ══ */}
+        {!isMobile && <div id="sec-decor" className="scroll-mt-20" />}
 
-        {decor.length > 0 && (
+        {!isMobile && decor.length > 0 && (
           <CategoryModule title="DÉCOR UPGRADES" subtitle="Elevate the Atmosphere" headerBg="bg-hampton-navy" lock={categoryLocks.decor}>
             {balloonDecor.length > 0 && (
               <div className="mb-5">
@@ -2772,7 +3088,7 @@ export default function PartyBuilderContent({
 
         {/* ══ 14. Make a Payment (post-deposit) ══ */}
         {depositPaid && balanceRemaining > 0 && (
-          <div className="bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
+          <div data-section="make-payment" className="scroll-mt-24 bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
             <div className="bg-gradient-to-r from-hampton-navy to-hampton-navy/90 px-8 py-5 text-center">
               <h2 className="font-serif text-2xl font-black text-white tracking-tight">MAKE A PAYMENT</h2>
               <p className="text-hampton-ivory/60 text-xs font-semibold tracking-[0.2em] uppercase mt-1">
@@ -3167,15 +3483,74 @@ export default function PartyBuilderContent({
                 </button>
               </div>
             )}
-            <button type="button" onClick={() => { setBarExpanded(false); scrollToForm() }}
-              className="shrink-0 bg-hampton-navy text-white font-bold px-3 sm:px-5 py-3 rounded-full text-sm hover:bg-opacity-90 transition-all flex items-center gap-1.5">
-              <CreditCard size={14} />
-              <span className="hidden sm:inline">{depositPaid ? 'Add More' : 'Book Now'}</span>
-              <span className="sm:hidden">{depositPaid ? 'More' : 'Book'}</span>
-            </button>
+            {/* Post-deposit bottom bar — Save / Cancel / Pay / Msg */}
+            {depositPaid ? (
+              <div className="shrink-0 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={openSaveChangesModal}
+                  className="bg-hampton-navy text-white font-bold p-2.5 sm:px-4 sm:py-2.5 rounded-full text-sm hover:bg-opacity-90 transition-all flex items-center gap-1.5"
+                  title="Save changes"
+                >
+                  <Save size={14} />
+                  <span className="hidden sm:inline">Save</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={revertChanges}
+                  className="border border-hampton-navy/25 text-hampton-navy p-2.5 sm:px-3 sm:py-2.5 rounded-full text-sm hover:bg-hampton-navy/5 transition-all flex items-center gap-1.5"
+                  title="Discard unsaved changes"
+                >
+                  <Undo2 size={14} />
+                  <span className="hidden sm:inline">Cancel</span>
+                </button>
+                {balanceRemaining > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setBarExpanded(false); const el = document.querySelector('[data-section="make-payment"]'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
+                    className="bg-hampton-pink text-hampton-navy font-bold p-2.5 sm:px-3 sm:py-2.5 rounded-full text-sm hover:bg-opacity-90 transition-all flex items-center gap-1.5"
+                    title="Make a payment"
+                  >
+                    <CreditCard size={14} />
+                    <span className="hidden sm:inline">Pay</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSendMsgOpen(true)}
+                  className="border border-hampton-navy/25 text-hampton-navy p-2.5 sm:px-3 sm:py-2.5 rounded-full text-sm hover:bg-hampton-navy/5 transition-all flex items-center gap-1.5"
+                  title="Message Host Hampton"
+                >
+                  <MessageCircle size={14} />
+                  <span className="hidden sm:inline">Msg</span>
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => { setBarExpanded(false); scrollToForm() }}
+                className="shrink-0 bg-hampton-navy text-white font-bold px-3 sm:px-5 py-3 rounded-full text-sm hover:bg-opacity-90 transition-all flex items-center gap-1.5">
+                <CreditCard size={14} />
+                <span className="hidden sm:inline">Book Now</span>
+                <span className="sm:hidden">Book</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
+      <ChangesModal
+        open={changesOpen}
+        onClose={() => setChangesOpen(false)}
+        onConfirm={confirmSaveChanges}
+        changes={currentChanges}
+        oldTotalFormatted={fmt(oldTotalAtModalOpen)}
+        newTotalFormatted={fmt(total)}
+        saving={saving}
+        error={error}
+      />
+      <SendMessageModal
+        open={sendMsgOpen}
+        onClose={() => setSendMsgOpen(false)}
+        bookingRef={loadedBooking?.booking_ref}
+      />
     </div>
   )
 }

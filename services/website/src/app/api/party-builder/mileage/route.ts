@@ -4,9 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 const HH_LAT = 40.8294
 const HH_LON = -72.6925
 const ROAD_FACTOR = 1.3 // crude convert from great-circle to road distance
-const MAX_MILES = 200
-const FREE_RADIUS_MILES = 20 // no mobile-party fee inside this radius
-const PER_MILE_CENTS = 500 // $5/mile — kept server-side, not disclosed to UI
+const PER_MILE_CENTS = 500 // $5/mile, one-way — server-side, not disclosed to UI
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,26 +37,11 @@ export async function POST(req: NextRequest) {
     const straightMiles = R * c
     const drivingMilesEstimate = straightMiles * ROAD_FACTOR
 
-    // Out-of-service-area: no fee, generic warning (no distance disclosed)
-    if (drivingMilesEstimate > MAX_MILES) {
-      return NextResponse.json({
-        feeCents: 0,
-        resolvedAddress: display_name,
-        warning: `This address is outside our typical service area. We'll review and confirm pricing.`,
-      })
-    }
+    // Mobile Party Fee component: one-way miles × $5. No free zone, no cap,
+    // no rounding. Miles + rate stay server-side — UI only sees the dollar
+    // amount.
+    const feeCents = Math.round(drivingMilesEstimate * PER_MILE_CENTS)
 
-    // Inside free radius: no fee, no further disclosure
-    if (drivingMilesEstimate < FREE_RADIUS_MILES) {
-      return NextResponse.json({
-        feeCents: 0,
-        resolvedAddress: display_name,
-      })
-    }
-
-    // Otherwise: opaque fee, rounded to nearest $25 — UI does not see miles or rate
-    const rawCents = drivingMilesEstimate * PER_MILE_CENTS
-    const feeCents = Math.round(rawCents / 2500) * 2500
     return NextResponse.json({
       feeCents,
       resolvedAddress: display_name,
