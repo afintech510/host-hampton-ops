@@ -705,12 +705,16 @@ export default function PartyBuilderContent({
           catchyPartyName: (b.party_tags as Record<string, unknown> | null)?.catchy_party_name as string || '',
         }))
 
-        // Pre-fill calendar if booking already has date/time
+        // Pre-fill calendar if booking already has date/time, and collapse
+        // the calendar to the compact "selected date" card so the customer
+        // doesn't see the full month picker on a plan they've already dated.
+        // They can still click "Change" to re-expand.
         if (b.party_date && b.party_time) {
           setCalendarSelection({
             date: b.party_date,
             timeSlot: { start: b.party_time, end: b.party_time, status: 'open' },
           } as CalendarSelection)
+          setCalendarExpanded(false)
         }
 
         // Restore selections from quote_snapshot if available
