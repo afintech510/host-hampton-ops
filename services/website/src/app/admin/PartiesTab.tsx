@@ -53,6 +53,7 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<PartyDetail | null>(null)
   const [actionLoading, setActionLoading] = useState('')
+  const [copyToast, setCopyToast] = useState('')
   const [changeMessage, setChangeMessage] = useState('')
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState('cash')
@@ -172,6 +173,21 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
     if (data?.portalUrl) {
       window.open(data.portalUrl, '_blank')
     }
+  }
+
+  async function copyPortalLink() {
+    // Generates a fresh portal token + URL, copies to clipboard. Same backend
+    // action as Open Portal — just a different post-success behavior.
+    const data = await doAction('generate_portal_url')
+    if (!data?.portalUrl) return
+    try {
+      await navigator.clipboard.writeText(data.portalUrl)
+      setCopyToast('Portal link copied to clipboard')
+    } catch {
+      // Older browsers / non-secure context fallback — show the URL in a prompt
+      window.prompt('Copy this portal link:', data.portalUrl)
+    }
+    setTimeout(() => setCopyToast(''), 2500)
   }
 
   // List view
@@ -676,6 +692,14 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
                 className="w-full border-2 border-[#1a2744] text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-[#1a2744]/5 disabled:opacity-50"
               >
                 {actionLoading === 'generate_portal_url' ? 'Opening...' : 'Open Portal (New Tab)'}
+              </button>
+
+              <button
+                onClick={copyPortalLink}
+                disabled={!!actionLoading}
+                className="w-full border-2 border-[#1a2744]/40 text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-[#1a2744]/5 disabled:opacity-50"
+              >
+                {copyToast || 'Copy Portal Link'}
               </button>
 
               {selected.status !== 'cancelled' && selected.status !== 'completed' && (
