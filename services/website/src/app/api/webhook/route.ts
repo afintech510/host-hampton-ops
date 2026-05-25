@@ -245,6 +245,22 @@ export async function POST(req: NextRequest) {
         .catch(err => console.error('Party reminder enqueue error:', err))
     }
 
+    // Write the party to Google Calendar on first deposit. All parties block
+    // a 2-hour slot regardless of the booking_type's slot_duration_min
+    // (which now controls customer-selectable start times at 1-hour intervals,
+    // NOT actual party length).
+    if (paymentType === 'deposit' && bkRow?.party_date && bkRow.party_time) {
+      const endTime = addMinutes(bkRow.party_time, 120)
+      const calEventId = await createCalendarEvent({
+        summary: `[BOOKING] ${bkRow.contact_name || 'Party'} - ${bkRow.package_type || 'Party'}`,
+        startDate: bkRow.party_date,
+        startTime: bkRow.party_time,
+        endTime,
+        description: `Ref: ${bookingRef}\nContact: ${bkRow.contact_name || ''} (${bkRow.contact_email || ''})\nGuests: ~${bkRow.guest_count_approx || ''}`,
+      }).catch(err => { console.error('GCal error:', err); return null })
+      if (calEventId) console.log('Google Calendar event created:', calEventId)
+    }
+
     void alreadyRecorded
     console.log('Party builder PI processed:', bookingRef, paymentType, formatMoney(amountCents))
     return NextResponse.json({ received: true })
@@ -1479,10 +1495,12 @@ export async function POST(req: NextRequest) {
         }).catch(err => console.error('Review request enqueue error:', err))
       }
 
-      // Write back to Google Calendar
+      // Write back to Google Calendar.
+      // All parties block 2 hours regardless of booking_type.slot_duration_min
+      // (slot_duration_min now controls customer-selectable start time interval
+      // only, not actual party length).
       if (partyDate && m.partyTime) {
-        const duration = parseInt(m.slotDurationMin || '120', 10)
-        const endTime = addMinutes(m.partyTime, duration)
+        const endTime = addMinutes(m.partyTime, 120)
         const calEventId = await createCalendarEvent({
           summary: `[BOOKING] ${m.contactName} - ${m.eventType || 'Party'}`,
           startDate: partyDate,
