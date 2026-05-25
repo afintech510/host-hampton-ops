@@ -2223,7 +2223,20 @@ export default function PartyBuilderContent({
                     showSummary={false}
                     timeSlotHeading="Select Party Start Time"
                     showTimePlaceholder={true}
-                    onSelect={(sel: CalendarSelection) => { setCalendarSelection(sel); if (sel.timeSlot) setCalendarExpanded(false) }}
+                    onSelect={(sel: CalendarSelection) => {
+                      setCalendarSelection(sel)
+                      if (sel.timeSlot) {
+                        setCalendarExpanded(false)
+                        // After date+time is locked in, advance the customer
+                        // to the next section (Location). Without this the
+                        // viewport jumped past Location to Themes due to the
+                        // calendar's collapse height change.
+                        requestAnimationFrame(() => {
+                          const el = document.getElementById('sec-location')
+                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        })
+                      }
+                    }}
                   />
                 </div>
                 {calendarSelection?.date && calendarSelection?.timeSlot && (
