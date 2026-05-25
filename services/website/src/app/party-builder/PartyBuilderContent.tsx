@@ -498,7 +498,7 @@ export default function PartyBuilderContent({
       { id: 'sec-book', label: 'Book' },
     ]
     if (locationType === 'mobile') {
-      const mobileHidden = new Set(['sec-themes', 'sec-food', 'sec-desserts', 'sec-drinks', 'sec-decor', 'sec-extras'])
+      const mobileHidden = new Set(['sec-themes', 'sec-food', 'sec-desserts', 'sec-drinks', 'sec-decor'])
       return all.filter(s => !mobileHidden.has(s.id))
     }
     return all
@@ -547,6 +547,9 @@ export default function PartyBuilderContent({
   const addPayIntentIdRef = useRef<string | null>(null)
   const [addPayCheckoutReady, setAddPayCheckoutReady] = useState(false)
   const [addPayConfirming, setAddPayConfirming] = useState(false)
+  /* ── tip jar (final / near-event card payments only) ── */
+  const [tipCents, setTipCents] = useState(0)
+  const [tipTouched, setTipTouched] = useState(false)
   const [loadedPayments, setLoadedPayments] = useState<{
     id: string; payment_type: string; payment_method: string; amount_cents: number;
     card_fee_cents: number; total_charged_cents: number; paid_at: string
@@ -865,22 +868,38 @@ export default function PartyBuilderContent({
   const mobilePackageCents = mobilePackageBaseCents + mobileTravelFeeCents
 
   // Mobile activity cost — per-activity-per-person for every selected
-  // activity (no first-free rule, no premium/standard distinction).
+  // activity. Activities in pricing_items have price_cents=0 (they're
+  // "included" in the studio package), so for mobile we fall back to:
+  //   premium activity  → $25/person × guests
+  //   standard activity → $5/person × guests
+  //   anything else with a non-zero price → its own price × guests
+  // No first-free rule.
   const mobileActivityCost = useMemo(() => {
     if (!isMobile) return 0
     let sum = 0
     for (const id of Array.from(selectedActivities)) {
       const item = itemMap.get(id)
       if (!item) continue
-      sum += item.price_cents * effectiveGuestCount
+      let rate = item.price_cents
+      if (rate <= 0) {
+        if (premiumIdSet.has(id)) rate = PREMIUM_EXTRA_CENTS
+        else if (standardIdSet.has(id)) rate = STANDARD_EXTRA_CENTS
+      }
+      sum += rate * effectiveGuestCount
     }
     return sum
-  }, [isMobile, selectedActivities, itemMap, effectiveGuestCount])
+  }, [isMobile, selectedActivities, itemMap, effectiveGuestCount, premiumIdSet, standardIdSet])
 
   const getActivityLabel = (item: PricingItem): string => {
     if (isMobile) {
-      // Per-person × guests, billed for every selected activity
-      return `${fmt(item.price_cents)}/person`
+      // Mirror the mobile rate logic from mobileActivityCost so the chip price
+      // matches what shows up in the total.
+      let rate = item.price_cents
+      if (rate <= 0) {
+        if (premiumIdSet.has(item.id)) rate = PREMIUM_EXTRA_CENTS
+        else if (standardIdSet.has(item.id)) rate = STANDARD_EXTRA_CENTS
+      }
+      return `${fmt(rate)}/person`
     }
     const isPremium = premiumIdSet.has(item.id)
     const isStandard = standardIdSet.has(item.id)
@@ -904,11 +923,16 @@ export default function PartyBuilderContent({
 
     if (isMobile) {
       // Mobile Party: composite package (base tier + travel) + activities
-      // per-person + entertainment (existing pricing) + admin custom items.
+      // per-person + entertainment + party extras + admin custom items.
       // Theme/food/drinks/desserts/decor are hidden in mobile mode.
       sum += mobilePackageCents
       sum += mobileActivityCost
       for (const id of Array.from(selectedEntertainment)) {
+        const item = itemMap.get(id)
+        if (!item) continue
+        sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount : item.price_cents
+      }
+      for (const id of Array.from(selectedPartyAddOns)) {
         const item = itemMap.get(id)
         if (!item) continue
         sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount : item.price_cents
@@ -1070,14 +1094,21 @@ export default function PartyBuilderContent({
         guest_multiplied: false,
       })
 
-      // Per-activity per-person — every selected activity is billed
+      // Per-activity per-person — every selected activity is billed.
+      // Activities in pricing_items have price_cents=0 (they're "included" in
+      // studio mode), so fall back to premium/standard category rates.
       for (const id of Array.from(selectedActivities)) {
         const item = itemMap.get(id); if (!item) continue
+        let rate = item.price_cents
+        if (rate <= 0) {
+          if (premiumIdSet.has(id)) rate = PREMIUM_EXTRA_CENTS
+          else if (standardIdSet.has(id)) rate = STANDARD_EXTRA_CENTS
+        }
         lineItems.push({
           name: item.name,
           category: 'activity-add-on',
           quantity: 1,
-          unit_price_cents: item.price_cents,
+          unit_price_cents: rate,
           price_type: 'per_person',
           guest_multiplied: true,
           pricing_item_id: item.id,
@@ -1090,6 +1121,20 @@ export default function PartyBuilderContent({
         lineItems.push({
           name: item.name,
           category: 'entertainment-add-on',
+          quantity: 1,
+          unit_price_cents: item.price_cents,
+          price_type: item.price_type === 'per_person' ? 'per_person' : 'flat',
+          guest_multiplied: item.price_type === 'per_person',
+          pricing_item_id: item.id,
+        })
+      }
+
+      // Party Extras — same per-item pricing as studio
+      for (const id of Array.from(selectedPartyAddOns)) {
+        const item = itemMap.get(id); if (!item) continue
+        lineItems.push({
+          name: item.name,
+          category: 'extra',
           quantity: 1,
           unit_price_cents: item.price_cents,
           price_type: item.price_type === 'per_person' ? 'per_person' : 'flat',
@@ -1488,8 +1533,12 @@ export default function PartyBuilderContent({
       if (addPayElementRef.current) addPayElementRef.current.unmount()
       addPayElementRef.current = null
       setAddPayCheckoutReady(false)
-      setAddPaySuccess('Payment received. Thanks!')
+      setAddPaySuccess(tipCents > 0
+        ? `Payment received — including a ${formatMoney(tipCents)} tip for the helpers. Thanks!`
+        : 'Payment received. Thanks!')
       setAddPayAmount('')
+      setTipCents(0)
+      setTipTouched(false)
       try {
         const reload = await fetch('/api/party-builder/load')
         if (reload.ok) {
@@ -1709,6 +1758,37 @@ export default function PartyBuilderContent({
   const depositPaid = totalPaid > 0 || paymentSuccess
   const balanceRemaining = Math.max(0, total - totalPaid)
 
+  /* ── Tip jar derived values ──
+   * The tip module shows when the customer is paying their FINAL bill on a
+   * card — either paying the full remaining balance, or paying any amount
+   * within 7 days of the party. Recommended tip = 10% of party total,
+   * rounded to nearest dollar.
+   */
+  const daysUntilParty = useMemo(() => {
+    const date = loadedBooking?.party_date
+    if (!date) return Infinity
+    const [y, m, d] = date.split('-').map(Number)
+    const partyTs = new Date(y, m - 1, d).getTime()
+    return Math.ceil((partyTs - Date.now()) / (1000 * 60 * 60 * 24))
+  }, [loadedBooking?.party_date])
+
+  const addPayAmountCents = Math.round((parseFloat(addPayAmount) || 0) * 100)
+  const isPayingFull = addPayAmountCents > 0 && addPayAmountCents >= balanceRemaining
+  const showTipModule = addPayMethod === 'card' && (isPayingFull || daysUntilParty <= 7)
+  const recommendedTipCents = Math.round(total * 0.10 / 100) * 100
+
+  // Auto-fill the tip the first time the module appears. After the customer
+  // touches the field we leave it alone (so a manual $0 doesn't get clobbered).
+  useEffect(() => {
+    if (showTipModule && !tipTouched && tipCents === 0) {
+      setTipCents(recommendedTipCents)
+    }
+    if (!showTipModule && tipCents > 0) {
+      setTipCents(0)
+      setTipTouched(false)
+    }
+  }, [showTipModule, recommendedTipCents, tipCents, tipTouched])
+
   // Per-category change cutoffs only matter after the deposit lands. Before
   // deposit the customer can edit everything freely.
   const partyDateForLocks = loadedBooking?.party_date || calendarSelection?.date || null
@@ -1799,9 +1879,11 @@ export default function PartyBuilderContent({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            amount_cents: amountCents,
+            amountCents,
+            paymentMethod: 'card',
             paymentType: amountCents >= balanceRemaining ? 'final' : 'partial',
             embedded: true,
+            tipCents: showTipModule ? tipCents : 0,
           }),
         })
         const data = await res.json()
@@ -2807,10 +2889,11 @@ export default function PartyBuilderContent({
                 ))}
               </div>
 
-              {/* Total */}
+              {/* Total — pre-deposit emphasis is on the total; post-deposit
+                  the balance gets the big number below. */}
               <div className="flex items-baseline justify-between mt-4 pt-4 border-t-2 border-hampton-navy">
-                <span className="font-serif font-bold text-lg text-hampton-navy">Estimated Total</span>
-                <span className="font-serif font-bold text-2xl text-hampton-navy">{fmt(total)}</span>
+                <span className={`font-serif font-bold ${depositPaid ? 'text-sm text-hampton-navy/70' : 'text-lg text-hampton-navy'}`}>Estimated Total</span>
+                <span className={`font-serif font-bold ${depositPaid ? 'text-base text-hampton-navy/70' : 'text-2xl text-hampton-navy'}`}>{fmt(total)}</span>
               </div>
 
               {/* Deposit callout — pre-deposit only.
@@ -2845,14 +2928,14 @@ export default function PartyBuilderContent({
                       </div>
                     ))}
                   </div>
-                  <div className="mt-3 pt-3 border-t border-hampton-mauve/15 space-y-1.5 text-sm">
-                    <div className="flex items-center justify-between">
+                  <div className="mt-3 pt-3 border-t border-hampton-mauve/15 space-y-2">
+                    <div className="flex items-center justify-between text-sm">
                       <span className="text-hampton-navy/60">Total paid</span>
                       <span className="font-semibold text-green-700">{fmt(totalPaid)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-hampton-navy/60">Balance remaining</span>
-                      <span className="font-bold text-hampton-navy">{fmt(balanceRemaining)}</span>
+                    <div className="flex items-baseline justify-between pt-2 border-t-2 border-hampton-navy/15">
+                      <span className="font-serif font-bold text-xl text-hampton-navy">Balance Remaining</span>
+                      <span className="font-serif font-black text-3xl text-hampton-navy">{fmt(balanceRemaining)}</span>
                     </div>
                     {loadedBooking && balanceRemaining !== loadedBooking.balance_due_cents && (
                       <p className="text-[11px] text-hampton-navy/40 italic mt-1">
@@ -3185,19 +3268,75 @@ export default function PartyBuilderContent({
                     </div>
                   </div>
 
+                  {/* Tip jar — shows on card payments when paying full balance
+                      or within a week of the party. Customer can adjust or
+                      zero out. Tip lifts the Stripe charge but doesn't count
+                      toward the booking balance. */}
+                  {showTipModule && (
+                    <div className="bg-hampton-pink/10 border border-hampton-pink/25 rounded-xl p-4 space-y-3">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-hampton-navy/70">Tip for the party helpers</p>
+                        <p className="text-[11px] text-hampton-navy/60 mt-0.5">Optional gratuity for the team running your party. Default is 10% of the party total — adjust as you like.</p>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[0, 10, 15, 20].map(pct => {
+                          const presetCents = Math.round(total * pct / 100 / 100) * 100
+                          const active = tipCents === presetCents
+                          return (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() => { setTipCents(presetCents); setTipTouched(true) }}
+                              className={`py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                                active
+                                  ? 'bg-hampton-navy text-white border-hampton-navy'
+                                  : 'bg-white text-hampton-navy border-hampton-mauve/30 hover:border-hampton-navy'
+                              }`}
+                            >
+                              {pct === 0 ? 'None' : `${pct}%`}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-hampton-navy/60">$</span>
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={tipCents > 0 ? (tipCents / 100).toFixed(0) : ''}
+                          onChange={e => {
+                            const dollars = parseFloat(e.target.value)
+                            setTipCents(isNaN(dollars) || dollars < 0 ? 0 : Math.round(dollars) * 100)
+                            setTipTouched(true)
+                          }}
+                          placeholder={`${(recommendedTipCents / 100).toFixed(0)}`}
+                          className="flex-1 text-sm font-semibold text-hampton-navy bg-white/60 border border-hampton-mauve/30 rounded-lg px-3 py-1.5 focus:outline-none focus:border-hampton-navy"
+                        />
+                        <span className="text-[11px] text-hampton-navy/40">custom</span>
+                      </div>
+                    </div>
+                  )}
+
                   {addPayMethod === 'card' && addPayAmount && (
                     <div className="bg-hampton-ivory/50 rounded-xl p-3 text-xs space-y-1">
                       <div className="flex justify-between text-hampton-navy/70">
                         <span>Payment</span>
                         <span>{fmt(Math.round(parseFloat(addPayAmount || '0') * 100))}</span>
                       </div>
+                      {showTipModule && tipCents > 0 && (
+                        <div className="flex justify-between text-hampton-navy/70">
+                          <span>Tip</span>
+                          <span>{fmt(tipCents)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-hampton-navy/50">
                         <span>Card fee (3%)</span>
-                        <span>{fmt(calculateCardFee(Math.round(parseFloat(addPayAmount || '0') * 100)))}</span>
+                        <span>{fmt(calculateCardFee(Math.round(parseFloat(addPayAmount || '0') * 100) + (showTipModule ? tipCents : 0)))}</span>
                       </div>
                       <div className="flex justify-between font-bold text-hampton-navy pt-1 border-t border-hampton-mauve/20">
                         <span>Total charge</span>
-                        <span>{fmt(Math.round(parseFloat(addPayAmount || '0') * 100) + calculateCardFee(Math.round(parseFloat(addPayAmount || '0') * 100)))}</span>
+                        <span>{fmt(Math.round(parseFloat(addPayAmount || '0') * 100) + (showTipModule ? tipCents : 0) + calculateCardFee(Math.round(parseFloat(addPayAmount || '0') * 100) + (showTipModule ? tipCents : 0)))}</span>
                       </div>
                     </div>
                   )}
@@ -3464,65 +3603,46 @@ export default function PartyBuilderContent({
                 </>
               )}
             </div>
-            {/* Guest counter */}
-            {!barExpanded && (
-              <div className="flex items-center gap-1 shrink-0 border-l border-hampton-mauve/20 pl-2 mr-1">
-                <button type="button" onClick={() => setGuestCount(Math.max(1, guestCount - 1))}
-                  disabled={guestCount <= 1}
-                  className="w-7 h-7 rounded-lg border border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue disabled:opacity-30">
-                  <Minus size={11} />
-                </button>
-                <div className="flex flex-col items-center min-w-[36px]">
-                  <span className="text-xs font-bold text-hampton-navy leading-none">{effectiveGuestCount}</span>
-                  <span className="text-[9px] text-hampton-navy/50 uppercase tracking-wider">guests</span>
-                </div>
-                <button type="button" onClick={() => setGuestCount(Math.min(isMiniParty ? MINI_PARTY_MAX_GUESTS : 50, guestCount + 1))}
-                  disabled={effectiveGuestCount >= (isMiniParty ? MINI_PARTY_MAX_GUESTS : 50)}
-                  className="w-7 h-7 rounded-lg border border-hampton-mauve/30 flex items-center justify-center text-hampton-navy hover:border-hampton-blue disabled:opacity-30">
-                  <Plus size={11} />
-                </button>
-              </div>
-            )}
-            {/* Post-deposit bottom bar — Save / Cancel / Pay / Msg */}
+            {/* Post-deposit bottom bar — Cancel · Msg · Pay · Save (L→R) */}
             {depositPaid ? (
-              <div className="shrink-0 flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={openSaveChangesModal}
-                  className="bg-hampton-navy text-white font-bold p-2.5 sm:px-4 sm:py-2.5 rounded-full text-sm hover:bg-opacity-90 transition-all flex items-center gap-1.5"
-                  title="Save changes"
-                >
-                  <Save size={14} />
-                  <span className="hidden sm:inline">Save</span>
-                </button>
+              <div className="shrink-0 flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={revertChanges}
-                  className="border border-hampton-navy/25 text-hampton-navy p-2.5 sm:px-3 sm:py-2.5 rounded-full text-sm hover:bg-hampton-navy/5 transition-all flex items-center gap-1.5"
+                  className="border border-hampton-navy/25 text-hampton-navy px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm hover:bg-hampton-navy/5 transition-all flex items-center gap-1 sm:gap-1.5"
                   title="Discard unsaved changes"
                 >
-                  <Undo2 size={14} />
-                  <span className="hidden sm:inline">Cancel</span>
+                  <Undo2 size={13} />
+                  <span>Cancel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSendMsgOpen(true)}
+                  className="border border-hampton-navy/25 text-hampton-navy px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm hover:bg-hampton-navy/5 transition-all flex items-center gap-1 sm:gap-1.5"
+                  title="Message Host Hampton"
+                >
+                  <MessageCircle size={13} />
+                  <span>Msg</span>
                 </button>
                 {balanceRemaining > 0 && (
                   <button
                     type="button"
                     onClick={() => { setBarExpanded(false); const el = document.querySelector('[data-section="make-payment"]'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
-                    className="bg-hampton-pink text-hampton-navy font-bold p-2.5 sm:px-3 sm:py-2.5 rounded-full text-sm hover:bg-opacity-90 transition-all flex items-center gap-1.5"
+                    className="bg-hampton-pink text-hampton-navy font-bold px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm hover:bg-opacity-90 transition-all flex items-center gap-1 sm:gap-1.5"
                     title="Make a payment"
                   >
-                    <CreditCard size={14} />
-                    <span className="hidden sm:inline">Pay</span>
+                    <CreditCard size={13} />
+                    <span>Pay</span>
                   </button>
                 )}
                 <button
                   type="button"
-                  onClick={() => setSendMsgOpen(true)}
-                  className="border border-hampton-navy/25 text-hampton-navy p-2.5 sm:px-3 sm:py-2.5 rounded-full text-sm hover:bg-hampton-navy/5 transition-all flex items-center gap-1.5"
-                  title="Message Host Hampton"
+                  onClick={openSaveChangesModal}
+                  className="bg-hampton-navy text-white font-bold px-3 sm:px-4 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm hover:bg-opacity-90 transition-all flex items-center gap-1 sm:gap-1.5"
+                  title="Save changes"
                 >
-                  <MessageCircle size={14} />
-                  <span className="hidden sm:inline">Msg</span>
+                  <Save size={13} />
+                  <span>Save</span>
                 </button>
               </div>
             ) : (

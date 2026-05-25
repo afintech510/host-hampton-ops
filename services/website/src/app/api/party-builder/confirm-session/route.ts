@@ -67,8 +67,9 @@ export async function POST(req: NextRequest) {
     const paymentType = (m.payment_type || 'deposit') as 'deposit' | 'partial' | 'final'
     const depositCents = parseInt(m.depositCents || '0', 10)
     const cardFeeCents = parseInt(m.cardFeeCents || '0', 10)
+    const tipCents = parseInt(m.tipCents || '0', 10)
     const amountCents = paymentType === 'deposit' ? depositCents : parseInt(m.amountCents || '0', 10)
-    const totalCharged = amountTotal || amountCents + cardFeeCents
+    const totalCharged = amountTotal || amountCents + tipCents + cardFeeCents
 
     const supabase = getSupabase()
 
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest) {
       stripe_payment_intent_id: resolvedPaymentIntentId,
       stripe_session_id: resolvedSessionId,
       recorded_by: 'system',
+      notes: tipCents > 0 ? `Includes $${(tipCents / 100).toFixed(2)} tip for party helpers` : null,
     })
     if (payErr) console.error('confirm-session payment insert error:', payErr)
 

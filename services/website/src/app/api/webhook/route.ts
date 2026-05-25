@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
     const paymentType = (m.payment_type || 'deposit') as 'deposit' | 'partial' | 'final'
     const depositCents = parseInt(m.depositCents || '0', 10)
     const cardFeeCents = parseInt(m.cardFeeCents || '0', 10)
+    const tipCents = parseInt(m.tipCents || '0', 10)
     const amountCents = paymentType === 'deposit'
       ? depositCents
       : parseInt(m.amountCents || '0', 10)
@@ -88,6 +89,7 @@ export async function POST(req: NextRequest) {
       stripe_payment_intent_id: pi.id,
       stripe_session_id: null,
       recorded_by: 'system',
+      notes: tipCents > 0 ? `Includes ${formatMoney(tipCents)} tip for party helpers` : null,
     })
     const alreadyRecorded = !!payErr && (payErr.message || '').toLowerCase().includes('duplicate')
     if (payErr && !alreadyRecorded) console.error('Party builder PI payment insert error:', payErr)
