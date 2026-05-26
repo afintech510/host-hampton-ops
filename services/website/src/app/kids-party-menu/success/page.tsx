@@ -36,13 +36,13 @@ function SuccessContent() {
             <p className="text-[#1a2744] font-semibold mb-3">Send {depositFormatted} via {methodLabel}:</p>
             {method === 'venmo' && (
               <p className="text-gray-600 text-sm">
-                Send to <strong>@HostHampton</strong> on Venmo.
+                Contact <strong>Allie at <a href="tel:6319989325" className="underline">(631) 998-9325</a></strong> for the Venmo handle.
                 Include <strong>{ref}</strong> in the note.
               </p>
             )}
             {method === 'zelle' && (
               <p className="text-gray-600 text-sm">
-                Send to <strong>hosthampton295@gmail.com</strong> via Zelle.
+                Contact <strong>Allie at <a href="tel:6319989325" className="underline">(631) 998-9325</a></strong> for the Zelle phone number.
                 Include <strong>{ref}</strong> in the memo.
               </p>
             )}

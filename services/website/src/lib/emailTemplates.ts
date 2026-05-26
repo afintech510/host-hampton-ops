@@ -919,9 +919,9 @@ export function partyPaymentInstructionsHtml(d: { customerName: string; bookingR
   const firstName = d.customerName.split(' ')[0] || 'there'
   let instructions = ''
   if (d.paymentMethod === 'venmo') {
-    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Venmo:</strong> Send ${d.depositFormatted} to <strong>${d.venmoHandle || '@HostHampton'}</strong></p><p style="color:${BRAND.gray};font-size:13px;margin:4px 0 0;">Include your booking ref <strong>${d.bookingRef}</strong> in the note.</p>`
+    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Venmo:</strong> Send ${d.depositFormatted} — contact <strong>Allie at (631) 998-9325</strong> for the Venmo handle.</p><p style="color:${BRAND.gray};font-size:13px;margin:4px 0 0;">Include your booking ref <strong>${d.bookingRef}</strong> in the note.</p>`
   } else if (d.paymentMethod === 'zelle') {
-    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Zelle:</strong> Send ${d.depositFormatted} to <strong>${d.zelleEmail || 'hosthampton295@gmail.com'}</strong></p><p style="color:${BRAND.gray};font-size:13px;margin:4px 0 0;">Include your booking ref <strong>${d.bookingRef}</strong> in the memo.</p>`
+    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Zelle:</strong> Send ${d.depositFormatted} — contact <strong>Allie at (631) 998-9325</strong> for the Zelle phone number.</p><p style="color:${BRAND.gray};font-size:13px;margin:4px 0 0;">Include your booking ref <strong>${d.bookingRef}</strong> in the memo.</p>`
   } else {
     instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Cash:</strong> Bring ${d.depositFormatted} to Host Hampton before or on the day of your event.</p>`
   }

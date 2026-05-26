@@ -3225,10 +3225,10 @@ export default function PartyBuilderContent({
                     <div className="bg-hampton-blue/10 border border-hampton-blue/20 rounded-xl p-4 mb-5 text-sm text-hampton-navy/80 leading-relaxed">
                       <p className="font-bold text-hampton-navy mb-2">Send {formatMoney(depositCents)} via {depositMethod.charAt(0).toUpperCase() + depositMethod.slice(1)}:</p>
                       {depositMethod === 'venmo' && (
-                        <p>Venmo <strong>@hosthampton</strong> with note &quot;Party Deposit&quot; — your booking ref will be sent in the email.</p>
+                        <p>Contact <strong>Allie</strong> at <a href="tel:6319989325" className="underline">(631) 998-9325</a> for the Venmo handle. Reference your party with note &quot;Party Deposit&quot;.</p>
                       )}
                       {depositMethod === 'zelle' && (
-                        <p>Zelle to <strong>(631) 998-9325</strong> with memo &quot;Party Deposit&quot; — your booking ref will be sent in the email.</p>
+                        <p>Contact <strong>Allie</strong> at <a href="tel:6319989325" className="underline">(631) 998-9325</a> for the Zelle phone number. Reference your party with memo &quot;Party Deposit&quot;.</p>
                       )}
                       {depositMethod === 'cash' && (
                         <p>Bring cash to Host Hampton at <strong>295 Montauk Hwy, Speonk NY</strong>, or pay day-of at the party.</p>
@@ -3438,8 +3438,8 @@ export default function PartyBuilderContent({
 
                   {addPayMethod !== 'card' && addPayAmount && (
                     <div className="bg-hampton-blue/10 border border-hampton-blue/20 rounded-xl p-3 text-xs text-hampton-navy/70 leading-relaxed">
-                      {addPayMethod === 'venmo' && <>Send {fmt(Math.round(parseFloat(addPayAmount || '0') * 100))} to <strong>@hosthampton</strong> on Venmo. Confirm below and we&apos;ll match it up.</>}
-                      {addPayMethod === 'zelle' && <>Send {fmt(Math.round(parseFloat(addPayAmount || '0') * 100))} via Zelle to <strong>(631) 998-9325</strong>. Confirm below and we&apos;ll match it up.</>}
+                      {addPayMethod === 'venmo' && <>Send {fmt(Math.round(parseFloat(addPayAmount || '0') * 100))} via Venmo — contact <strong>Allie at <a href="tel:6319989325" className="underline">(631) 998-9325</a></strong> for the handle. Confirm below and we&apos;ll match it up.</>}
+                      {addPayMethod === 'zelle' && <>Send {fmt(Math.round(parseFloat(addPayAmount || '0') * 100))} via Zelle — contact <strong>Allie at <a href="tel:6319989325" className="underline">(631) 998-9325</a></strong> for the phone number. Confirm below and we&apos;ll match it up.</>}
                       {addPayMethod === 'cash' && <>Bring {fmt(Math.round(parseFloat(addPayAmount || '0') * 100))} in cash to your party or the studio. Confirm below.</>}
                     </div>
                   )}

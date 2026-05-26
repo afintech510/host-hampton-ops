@@ -91,9 +91,9 @@ export async function POST(req: NextRequest) {
     method: paymentMethod,
     amount: formatMoney(effectiveAmount),
     instructions: paymentMethod === 'venmo'
-      ? `Send ${formatMoney(effectiveAmount)} to ${process.env.VENMO_HANDLE || '@HostHampton'} with note: ${bookingRef}`
+      ? `Send ${formatMoney(effectiveAmount)} via Venmo — contact Allie at (631) 998-9325 for the handle. Note: ${bookingRef}`
       : paymentMethod === 'zelle'
-        ? `Send ${formatMoney(effectiveAmount)} to ${process.env.ZELLE_EMAIL || 'hosthampton295@gmail.com'} with memo: ${bookingRef}`
+        ? `Send ${formatMoney(effectiveAmount)} via Zelle — contact Allie at (631) 998-9325 for the phone number. Memo: ${bookingRef}`
         : `Bring ${formatMoney(effectiveAmount)} cash to Host Hampton`,
   })
 }
