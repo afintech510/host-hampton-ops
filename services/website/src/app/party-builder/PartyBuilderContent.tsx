@@ -843,9 +843,15 @@ export default function PartyBuilderContent({
   const themeItem = selectedTheme ? itemMap.get(selectedTheme) : null
 
   /* ── activity pricing rules ──
-     Premium: 1st included, 2nd = $25/person × (guests+1), max 2
-     Standard: 1st & 2nd included, 3rd = $5/person × (guests+1), max 3 */
-  const PREMIUM_EXTRA_CENTS = 2500
+     Themes >= $950 include 1 premium activity.
+     Themes < $950 (e.g. $850) include 0 premium activities; first premium
+       costs a flat $100 (which lands the customer at the same effective
+       price as picking the $950 theme outright).
+     Second premium (regardless of theme): +$25/person × (guests+1).
+     Standard: 1st & 2nd included, 3rd = $5/person × (guests+1), max 3. */
+  const PREMIUM_EXTRA_CENTS = 2500              // 2nd premium per-person rate
+  const PREMIUM_UPGRADE_FLAT_CENTS = 10000      // $100 flat — first premium on sub-$950 themes
+  const THEME_PREMIUM_INCLUDED_THRESHOLD = 95000 // $950 — themes at/above include 1 premium
   const STANDARD_EXTRA_CENTS = 500
   const MAX_PREMIUM_ACTIVITIES = 2
   const MAX_STANDARD_ACTIVITIES = 3
@@ -861,15 +867,24 @@ export default function PartyBuilderContent({
     [selectedActivities, standardIdSet]
   )
 
+  // How many premium activities the selected theme includes for free.
+  // Computed from the theme item price so admin can adjust thresholds in DB.
+  const themeItemForPremium = selectedTheme ? itemMap.get(selectedTheme) : null
+  const includedPremiumCount = themeItemForPremium && themeItemForPremium.price_cents >= THEME_PREMIUM_INCLUDED_THRESHOLD ? 1 : 0
+
   const activityCost = useMemo(() => {
     const multiplier = effectiveGuestCount + 1 // includes birthday child
     let cost = 0
-    // Premium: index 0 free, index 1 charged
+    // Premium 1 (idx 0): free if theme includes it, else +$100 flat
+    if (selectedPremiumIds.length >= 1 && includedPremiumCount < 1) {
+      cost += PREMIUM_UPGRADE_FLAT_CENTS
+    }
+    // Premium 2 (idx 1): always +$25/person × (guests+1)
     if (selectedPremiumIds.length >= 2) cost += PREMIUM_EXTRA_CENTS * multiplier
-    // Standard: indices 0-1 free, index 2 charged
+    // Standard 3+ (idx 2+): +$5/person × (guests+1)
     if (selectedStandardIds.length >= 3) cost += STANDARD_EXTRA_CENTS * multiplier
     return cost
-  }, [selectedPremiumIds.length, selectedStandardIds.length, effectiveGuestCount])
+  }, [selectedPremiumIds.length, selectedStandardIds.length, effectiveGuestCount, includedPremiumCount])
 
   /* ── mobile party derived values ── */
   const isMobile = locationType === 'mobile'
@@ -926,7 +941,7 @@ export default function PartyBuilderContent({
     const isStandard = standardIdSet.has(item.id)
     if (isPremium) {
       const idx = selectedPremiumIds.indexOf(item.id)
-      if (idx === 0) return 'Included'
+      if (idx === 0) return includedPremiumCount >= 1 ? 'Included' : '+$100'
       if (idx === 1) return `+$25/person`
       return '+$25/person'
     }
@@ -1202,15 +1217,32 @@ export default function PartyBuilderContent({
         })
       }
     }
-    // Activities: special pricing — only charge for 2nd premium / 3rd standard
+    // Activities: special pricing rules.
+    // - 1st premium: free if theme includes it ($950+), else +$100 flat
+    // - 2nd premium: +$25/person × (guests+1)
+    // - 3rd standard: +$5/person × (guests+1)
     const aMult = effectiveGuestCount + 1
     selectedPremiumIds.forEach((id, idx) => {
       const item = itemMap.get(id); if (!item) return
+      let unitPriceCents: number
+      let suffix: string
+      if (idx === 0) {
+        if (includedPremiumCount >= 1) {
+          unitPriceCents = 0
+          suffix = ' (1st premium — included)'
+        } else {
+          unitPriceCents = PREMIUM_UPGRADE_FLAT_CENTS
+          suffix = ' (1st premium — +$100 upgrade)'
+        }
+      } else {
+        unitPriceCents = PREMIUM_EXTRA_CENTS * aMult
+        suffix = ' (2nd premium — extra)'
+      }
       lineItems.push({
-        name: item.name + (idx === 0 ? ' (1st premium — included)' : ' (2nd premium — extra)'),
+        name: item.name + suffix,
         category: 'activity-add-on',
         quantity: 1,
-        unit_price_cents: idx === 0 ? 0 : PREMIUM_EXTRA_CENTS * aMult,
+        unit_price_cents: unitPriceCents,
         price_type: 'flat',
         guest_multiplied: false,
         pricing_item_id: item.id,
@@ -2617,7 +2649,10 @@ export default function PartyBuilderContent({
                 <h3 className="font-serif font-bold text-lg text-hampton-navy mb-1 border-b border-gray-200 pb-2">{isMobile ? 'Activities' : 'Premium Activities'}</h3>
                 {!isMobile && (
                   <p className="text-[11px] text-hampton-navy/60 mb-4">
-                    1st included &bull; 2nd is +$25/person × guests+1 &bull; max {MAX_PREMIUM_ACTIVITIES}
+                    {includedPremiumCount >= 1
+                      ? <>1st included &bull; 2nd is +$25/person × guests+1 &bull; max {MAX_PREMIUM_ACTIVITIES}</>
+                      : <>1st adds +$100 to your party &bull; 2nd is +$25/person × guests+1 &bull; max {MAX_PREMIUM_ACTIVITIES}</>
+                    }
                   </p>
                 )}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
