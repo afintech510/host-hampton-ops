@@ -32,3 +32,6 @@ Thumbs.db
 .claude/settings.local.json
 .mcp.json
 *.swp
+
+# Server-only Compose overrides (per-host, e.g. VPS nginx SSL mounts)
+docker-compose.override.yml

@@ -26,32 +26,28 @@ pop → rebuild → health check). If you'd rather do it by hand, see "Manual de
 
 ---
 
-## Two recurring gotchas (READ THIS — this is why deploys feel painful)
+## Why deploys used to be painful (now fixed)
 
-### 1. The GitHub token on the box expires
-The VPS `origin` remote has a Personal Access Token baked into the URL
-(`https://x-access-token:ghp_…@github.com/…`). It works until the PAT expires,
-then `git pull` fails with **"Authentication failed … Password authentication is
-not supported."** This is not a code problem — the token aged out.
+Two pieces of server drift broke `git pull` on the box every time. Both are now
+permanently resolved (2026-06-08), so a plain pull is clean:
 
-- **Immediate workaround** (what `scripts/deploy.sh` does): pull using *your*
-  laptop's token via `gh auth token`, so the box's stale token is bypassed.
-- **Permanent fix (do this once):** switch the box to an **SSH deploy key** so no
-  token is involved and nothing expires. See "Permanent fixes" below. Until then,
-  **rotate** any committed `ghp_…` token in GitHub → Settings → Developer settings.
+1. **Expired GitHub token.** The `origin` remote had a `ghp_…` PAT baked into the
+   URL; it worked until the token aged out, then `git pull` failed with
+   "Authentication failed." → **Fixed:** the box now uses an **SSH deploy key**
+   (`~/.ssh/hosthampton_deploy`, read-only) via the `github-hosthampton` SSH alias;
+   `origin` is `git@github-hosthampton:afintech510/host-hampton-ops.git`. No token,
+   no expiry. (Rotate/revoke the old `ghp_…` PAT in GitHub settings if not already.)
 
-### 2. `docker-compose.yml` / `nginx.conf` are edited directly on the box
-The server hosts several domains (maningomethod, mygravelguy, benchworksai…), so
-`nginx/nginx.conf` and the nginx `volumes:` in `docker-compose.yml` carry
-**server-only SSL mounts** that are NOT in git. A plain `git pull` aborts with
-*"Your local changes would be overwritten."* (That's why `/opt/hosthampton` is
-littered with `*.bak` files — each deploy fought this.)
+2. **Server-only edits to `docker-compose.yml` / `nginx.conf`** (multi-domain SSL
+   mounts for maningomethod, mygravelguy, benchworksai…) conflicted with every pull.
+   → **Fixed:** the SSL mounts now live in **`/opt/hosthampton/docker-compose.override.yml`**
+   (gitignored; Compose auto-merges it), and `nginx/nginx.conf` is marked
+   `git update-index --skip-worktree` so the box owns it. The tracked files match
+   the repo, so pulls never conflict.
 
-- **Immediate workaround** (what the script does): `git stash` those two files,
-  pull, `git stash pop`. The server edits and the repo edits live in different
-  sections, so they re-merge cleanly.
-- **Permanent fix:** move the server-only nginx mounts into a **gitignored
-  `docker-compose.override.yml`** so the tracked file never conflicts. See below.
+If you ever need to edit the server-only mounts, edit `docker-compose.override.yml`
+on the box. If you need to change `nginx.conf`, edit it on the box directly (it's
+skip-worktree; to let git manage it again: `git update-index --no-skip-worktree nginx/nginx.conf`).
 
 ---
 
@@ -60,20 +56,8 @@ littered with `*.bak` files — each deploy fought this.)
 ```bash
 ssh hampton-vps
 cd /opt/hosthampton
-
-# 1. Preserve server-only config so the pull won't abort
-git stash push -m deploy -- docker-compose.yml nginx/nginx.conf
-
-# 2. Pull main. If the box token is dead, pull with your own token from the URL:
-git pull "https://x-access-token:<GH_TOKEN>@github.com/afintech510/host-hampton-ops.git" main --ff-only
-
-# 3. Re-apply the server-only config
-git stash pop
-
-# 4. Rebuild + recreate ONLY the website (nginx stays up)
-docker compose up -d --build website
-
-# 5. Verify
+git pull --ff-only                       # clean — deploy key + override handle drift
+docker compose up -d --build website     # rebuild + recreate (nginx stays up)
 docker compose ps
 curl -s -o /dev/null -w "%{http_code}\n" https://www.hosthampton.com/
 ```
@@ -130,19 +114,19 @@ ssh hampton-vps 'cd /opt/hosthampton && git checkout <good_sha> -- . && docker c
 
 ---
 
-## Permanent fixes (recommended — kills both gotchas for good)
+## Infrastructure setup (already applied 2026-06-08)
 
-**A. SSH deploy key (no more token expiry):**
-1. On the box: `ssh-keygen -t ed25519 -f ~/.ssh/hosthampton_deploy -N ""`
-2. Add the public key to the repo: GitHub → repo → Settings → Deploy keys (read-only),
-   or `gh repo deploy-key add ~/.ssh/hosthampton_deploy.pub -R afintech510/host-hampton-ops`.
-3. Point the remote at SSH with that key (host alias in `~/.ssh/config`), then
-   `git remote set-url origin git@github.com-hosthampton:afintech510/host-hampton-ops.git`.
-4. Revoke the old `ghp_…` PAT.
+For reference / disaster recovery — how the box is wired so deploys stay clean:
 
-**B. `docker-compose.override.yml` (no more pull conflicts):**
-Move the server-only nginx SSL `volumes:` out of `docker-compose.yml` into
-`/opt/hosthampton/docker-compose.override.yml` (Compose merges it automatically and
-it's gitignored). Then the tracked `docker-compose.yml` matches the repo and
-`git pull` never conflicts — no stash/pop needed. Do the same conceptually for
-`nginx.conf` if practical, or keep it stashed.
+**SSH deploy key:**
+- `~/.ssh/hosthampton_deploy` on the VPS (read-only deploy key on the repo, titled
+  `hosthampton-vps-deploy`).
+- `~/.ssh/config` has a `github-hosthampton` Host alias → `HostName github.com`,
+  `IdentityFile ~/.ssh/hosthampton_deploy`, `IdentitiesOnly yes` (the box also holds
+  other repos' keys, so `IdentitiesOnly` is required to pick the right one).
+- `origin` = `git@github-hosthampton:afintech510/host-hampton-ops.git`.
+
+**Config drift:**
+- `/opt/hosthampton/docker-compose.override.yml` (gitignored) holds the nginx
+  server-only SSL volume mounts.
+- `nginx/nginx.conf` is `skip-worktree` on the box.
