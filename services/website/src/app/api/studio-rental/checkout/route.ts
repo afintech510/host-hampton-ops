@@ -26,12 +26,6 @@ function generateStudioRef(): string {
   return `HH-STU-${code}`
 }
 
-function formatDateLong(dateStr: string): string {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-  })
-}
-
 function to12hr(time24: string): string {
   const [h, m] = time24.split(':').map(Number)
   const period = h >= 12 ? 'PM' : 'AM'
@@ -203,7 +197,10 @@ export async function POST(req: NextRequest) {
             phone: contactPhone,
             email: contactEmail,
             event_type: eventType,
-            event_date: formatDateLong(partyDate),
+            // SignWell date field requires a full ISO-8601 datetime (date-only is
+            // rejected). partyDate is YYYY-MM-DD; append midnight UTC. SignWell
+            // renders it in the field's configured format on the signed PDF.
+            event_date: `${partyDate}T00:00:00Z`,
             start_time: to12hr(startTime),
             end_time: to12hr(endTime),
             headcount: guestCount,
