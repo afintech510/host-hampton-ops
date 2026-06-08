@@ -88,6 +88,10 @@ export async function POST(req: NextRequest) {
     let bookingRef: string
     let bookingId: string
     let isNewBooking = false
+    // Default = new-quote projection (total − 25%). For an existing, already-paid
+    // booking we override this below with total − actual payments, so adding
+    // line items raises the balance by the delta only (not a fresh 25% assumption).
+    let finalBalanceDueCents = balanceDueCents
 
     const insertLineItems = async (bId: string) => {
       if (!lineItems?.length) return
@@ -168,6 +172,20 @@ export async function POST(req: NextRequest) {
         const { data: existingFull } = await supabase
           .from('bookings').select('party_tags').eq('id', bookingId).single()
 
+        // Balance must reflect what's actually been paid on this booking, not a
+        // fresh 25% deposit. Without this, editing add-ons on a paid booking
+        // understates the balance by (25% of total − amount actually paid).
+        const { data: payRows } = await supabase
+          .from('booking_payments')
+          .select('amount_cents, payment_type')
+          .eq('booking_id', bookingId)
+        let paidCents = 0
+        for (const p of payRows || []) {
+          if (p.payment_type === 'refund') paidCents -= p.amount_cents
+          else paidCents += p.amount_cents
+        }
+        finalBalanceDueCents = Math.max(0, totalCents - paidCents)
+
         const updateData: Record<string, unknown> = {
           contact_name: contactName,
           contact_email: contactEmail,
@@ -176,7 +194,7 @@ export async function POST(req: NextRequest) {
           child_age: parsedChildAge,
           guest_count_approx: guestCount || 10,
           total_cents: totalCents,
-          balance_due_cents: balanceDueCents,
+          balance_due_cents: finalBalanceDueCents,
           package_type: packageType || null,
           notes: notes || null,
           quote_snapshot: snapshotData,
@@ -294,7 +312,7 @@ export async function POST(req: NextRequest) {
             childName,
             totalFormatted: formatMoney(totalCents),
             depositFormatted: formatMoney(depositCents),
-            balanceFormatted: formatMoney(balanceDueCents),
+            balanceFormatted: formatMoney(finalBalanceDueCents),
             lineItems: emailLineItems,
             builderUrl,
             notes,
