@@ -376,7 +376,7 @@ export default function PartyBuilderContent({
   const [loadedBooking, setLoadedBooking] = useState<{
     id?: string; booking_ref: string; status: string; total_cents: number; balance_due_cents: number; deposit_amount: number;
     party_date?: string | null; party_time?: string | null;
-    party_tags?: { date_locked?: boolean; created_by?: string; location_type?: string; location_address?: string; catchy_party_name?: string } | null;
+    party_tags?: { date_locked?: boolean; created_by?: string; location_type?: string; location_address?: string; catchy_party_name?: string; modifications_unlocked?: boolean } | null;
     contact_name?: string; contact_email?: string; contact_phone?: string;
     child_name?: string | null; child_age?: number | null;
   } | null>(null)
@@ -1853,8 +1853,12 @@ export default function PartyBuilderContent({
   // Per-category change cutoffs only matter after the deposit lands. Before
   // deposit the customer can edit everything freely.
   const partyDateForLocks = loadedBooking?.party_date || calendarSelection?.date || null
+  // Admin escape hatch: party_tags.modifications_unlocked re-opens all categories
+  // for a specific booking (e.g. a short-notice booking made inside the normal
+  // lead-time windows). Set per-booking; default behavior is unchanged.
+  const modificationsUnlocked = !!loadedBooking?.party_tags?.modifications_unlocked
   const categoryLocks = useMemo(() => {
-    if (!depositPaid) {
+    if (!depositPaid || modificationsUnlocked) {
       const empty = { locked: false, cutoffDate: null, daysBefore: 0 } as const
       return {
         activities: empty, desserts: empty, entertainment: empty,
@@ -1870,7 +1874,7 @@ export default function PartyBuilderContent({
       decor: getCategoryLockState('decor', partyDateForLocks),
       extras: getCategoryLockState('extras', partyDateForLocks),
     }
-  }, [depositPaid, partyDateForLocks])
+  }, [depositPaid, partyDateForLocks, modificationsUnlocked])
 
   /* ── admin actions ── */
   function addCustomItemFromForm() {
