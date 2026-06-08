@@ -368,7 +368,7 @@ export default async function PartyRoomRental() {
           Reserve with a 25% deposit. Perfect for any event where you want a gorgeous, private
           setting.
         </p>
-        <Link href="/book?type=room-rental" className="btn-primary px-10 py-4 text-base">
+        <Link href="/studio-rental" className="btn-primary px-10 py-4 text-base">
           Check Availability
         </Link>
       </section>

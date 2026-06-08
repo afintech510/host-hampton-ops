@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
-import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml, giftCardHtml, giftCardNotifyHtml, giftCardPurchaseConfirmHtml, partyDepositReceivedHtml, partyAdminNewBookingHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
+import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml, giftCardHtml, giftCardNotifyHtml, giftCardPurchaseConfirmHtml, partyDepositReceivedHtml, partyAdminNewBookingHtml, partyPaymentReceivedHtml, studioRentalConfirmationHtml } from '@/lib/emailTemplates'
 import { calculateCardFee, formatMoney } from '@/lib/partyPricing'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
@@ -60,6 +60,187 @@ export async function POST(req: NextRequest) {
   if (event.type === 'payment_intent.succeeded') {
     const pi = event.data.object as Stripe.PaymentIntent
     const m = pi.metadata || {}
+
+    // ── Studio Rental deposit (in-page Payment Element) ──────────
+    if (m.type === 'studio_rental') {
+      const bookingRef = m.booking_ref
+      const bookingId = m.booking_id
+      const depositCents = parseInt(m.depositCents || '0', 10)
+      const cardFeeCents = parseInt(m.cardFeeCents || '0', 10)
+      const totalCharged = pi.amount
+
+      // Record payment (confirm-session may have raced; duplicate PI fails silently)
+      const { error: payErr } = await supabase.from('booking_payments').insert({
+        booking_id: bookingId,
+        payment_type: 'deposit',
+        payment_method: 'card',
+        amount_cents: depositCents,
+        card_fee_cents: cardFeeCents,
+        total_charged_cents: totalCharged,
+        stripe_payment_intent_id: pi.id,
+        stripe_session_id: null,
+        recorded_by: 'system',
+      })
+      const alreadyRecorded = !!payErr && (payErr.message || '').toLowerCase().includes('duplicate')
+      if (payErr && !alreadyRecorded) console.error('Studio rental PI payment insert error:', payErr)
+
+      // Recalc balance + status
+      const { data: payRows } = await supabase
+        .from('booking_payments').select('amount_cents, payment_type').eq('booking_id', bookingId)
+      let paidSum = 0
+      for (const p of payRows || []) {
+        if (p.payment_type === 'refund') paidSum -= p.amount_cents
+        else paidSum += p.amount_cents
+      }
+      const { data: bkRow } = await supabase
+        .from('bookings')
+        .select('total_cents, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, package_type, guest_count_approx, agreement_pdf_url')
+        .eq('id', bookingId)
+        .single()
+      const newBal = Math.max(0, (bkRow?.total_cents || 0) - paidSum)
+      const existingTags = (bkRow?.party_tags as Record<string, unknown> | null) || {}
+
+      const updateFields: Record<string, unknown> = {
+        balance_due_cents: newBal,
+        status: newBal === 0 ? 'paid_in_full' : 'pending_review',
+        party_tags: { ...existingTags, date_locked: true },
+      }
+      if (newBal === 0) updateFields.paid_in_full_at = new Date().toISOString()
+      await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+
+      // Audit log
+      await supabase.from('booking_modifications').insert({
+        booking_id: bookingId,
+        modified_by: 'system',
+        change_summary: `Studio rental deposit of ${formatMoney(depositCents)} received via card`,
+      }).then((res: { error: { message: string } | null }) => {
+        if (res.error) console.error('Studio modification log error (non-fatal):', res.error)
+      })
+
+      // Financials
+      await recordFinancialTransaction(supabase, {
+        date: new Date().toISOString().split('T')[0],
+        description: `Studio Rental Deposit — ${bkRow?.package_type || 'Studio Rental'}`,
+        amountCents: totalCharged,
+        category: 'Room Rental',
+        customerName: bkRow?.contact_name || m.contactName || null,
+        reference: `studio-${bookingRef}-deposit`,
+        notes: bkRow?.contact_email || m.contactEmail || null,
+      })
+
+      // Portal magic link
+      const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+      const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
+      await supabase.from('portal_tokens').insert({
+        booking_id: bookingId,
+        token_hash: hash,
+        expires_at: expiresAt.toISOString(),
+      }).then((res: { error: { message: string } | null }) => {
+        if (res.error) console.error('Studio portal token insert (non-fatal):', res.error)
+      })
+      const portalUrl = buildPortalUrl(bookingRef, rawToken, '/my-booking')
+
+      const tags = existingTags as Record<string, string>
+      const startTime = (tags.rental_start_time as string) || bkRow?.party_time || '12:00'
+      const endTime = (tags.rental_end_time as string) || addMinutes(startTime, 180)
+      const guestCount = bkRow?.guest_count_approx || 0
+      const eventDateFmt = bkRow?.party_date
+        ? new Date(bkRow.party_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+        : 'TBD'
+      const balanceDueFmt = tags.balance_due_date
+        ? new Date(tags.balance_due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        : 'TBD'
+      const fmtTime = (t: string) => {
+        const [h, mm] = t.split(':').map(Number)
+        const period = h >= 12 ? 'PM' : 'AM'
+        const h12 = h % 12 === 0 ? 12 : h % 12
+        return `${h12}:${String(mm).padStart(2, '0')} ${period}`
+      }
+
+      // Emails (only on a genuine first record, not a webhook/confirm race)
+      if (!alreadyRecorded && process.env.RESEND_API_KEY && bkRow?.contact_email) {
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        const { data: liRows } = await supabase
+          .from('booking_line_items')
+          .select('name, quantity, unit_price_cents, guest_multiplied')
+          .eq('booking_id', bookingId)
+          .order('sort_order')
+        const emailLineItems = (liRows || []).map(li => ({
+          name: li.name,
+          quantity: li.quantity,
+          unit_price_cents: li.unit_price_cents,
+          guest_multiplied: li.guest_multiplied,
+          totalCents: li.guest_multiplied
+            ? li.unit_price_cents * li.quantity * guestCount
+            : li.unit_price_cents * li.quantity,
+        }))
+        const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+        const isLocal = (host || '').startsWith('localhost')
+        const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
+        const origin = host ? `${proto}://${host}` : 'https://www.hosthampton.com'
+
+        await Promise.allSettled([
+          resend.emails.send({
+            from, to: bkRow.contact_email,
+            subject: `Studio Reserved — ${bookingRef} | Host Hampton`,
+            html: studioRentalConfirmationHtml({
+              customerName: bkRow.contact_name || 'there',
+              bookingRef,
+              depositFormatted: formatMoney(depositCents),
+              eventDate: eventDateFmt,
+              startTime: fmtTime(startTime),
+              endTime: fmtTime(endTime),
+              guestCount,
+              lineItems: emailLineItems,
+              totalFormatted: formatMoney(bkRow.total_cents || 0),
+              balanceFormatted: formatMoney(newBal),
+              balanceDueDate: balanceDueFmt,
+              portalUrl,
+              agreementUrl: bkRow.agreement_pdf_url || null,
+            }),
+          }),
+          resend.emails.send({
+            from, to: 'hosthampton295@gmail.com',
+            subject: `Studio rental booked: ${bkRow.contact_name} — ${bookingRef}`,
+            html: partyAdminNewBookingHtml({
+              bookingRef,
+              customerName: bkRow.contact_name || '',
+              customerEmail: bkRow.contact_email,
+              customerPhone: bkRow.contact_phone || undefined,
+              partyDate: eventDateFmt,
+              partyTime: `${fmtTime(startTime)} – ${fmtTime(endTime)}`,
+              guestCount,
+              packageType: bkRow.package_type || 'Studio Rental',
+              depositFormatted: formatMoney(depositCents),
+              totalFormatted: formatMoney(bkRow.total_cents || 0),
+              paymentMethod: 'card',
+              lineItems: emailLineItems,
+              adminUrl: `${origin}/admin?tab=parties&ref=${bookingRef}`,
+            }),
+          }),
+        ])
+      }
+
+      // Balance reminder + Google Calendar block over the real rental window
+      if (!alreadyRecorded && bkRow?.party_date && bkRow.contact_email) {
+        await enqueuePartyReminders({ contactEmail: bkRow.contact_email, bookingRef, partyDate: bkRow.party_date })
+          .catch(err => console.error('Studio reminder enqueue error:', err))
+      }
+      if (!alreadyRecorded && bkRow?.party_date) {
+        const calEventId = await createCalendarEvent({
+          summary: `[STUDIO RENTAL] ${bkRow.contact_name || 'Rental'} — ${tags.event_label || 'Event'}`,
+          startDate: bkRow.party_date,
+          startTime,
+          endTime,
+          description: `Ref: ${bookingRef}\nContact: ${bkRow.contact_name || ''} (${bkRow.contact_email || ''})\nGuests: ~${guestCount}\nEvent: ${tags.event_label || ''}`,
+        }).catch(err => { console.error('Studio GCal error:', err); return null })
+        if (calEventId) console.log('Studio rental GCal event created:', calEventId)
+      }
+
+      console.log('Studio rental PI processed:', bookingRef, formatMoney(depositCents))
+      return NextResponse.json({ received: true })
+    }
 
     if (m.type !== 'party_builder') {
       // Not from the planner — no-op (other event types are handled below)

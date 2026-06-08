@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<!--
+  HOST HAMPTON — STUDIO RENTAL AGREEMENT (SignWell upload template)
+  ────────────────────────────────────────────────────────────────
+  HOW TO USE:
+    1. Open this file in a browser → Print → "Save as PDF" (Letter, margins ~0.5in).
+       (Keep text selectable — do NOT print to image.)
+    2. Upload that PDF to SignWell as a NEW TEMPLATE.
+    3. SignWell reads the hidden {{...}} text tags and auto-creates every field,
+       with the API IDs the booking flow expects + the client signature block.
+    4. Confirm the single signer role is named "Client" (matches the code).
+    5. (Optional) Select the 14 detail/payment fields → toggle "Read only" so the
+       client can't edit the reservation details we pre-fill.
+    6. Save → copy the Template ID → set SIGNWELL_TEMPLATE_ID in .env.
+
+  The {{...}} tags are white-on-white so they're invisible in the PDF but readable
+  by SignWell (their recommended hide method). Do not change the api_id values —
+  they must match /api/studio-rental/checkout.
+
+  Policy choices (cancellation tiers, reschedule window) are finalized — no placeholders remain.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Host Hampton — Studio Rental Agreement</title>
+<style>
+  @page { size: Letter; margin: 0.55in; }
+  * { box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; color: #1f2937; font-size: 11px; line-height: 1.5; margin: 0; }
+  h1 { color: #1d4ed8; font-size: 22px; text-align: center; margin: 0 0 2px; }
+  .sub { text-align: center; color: #4b5563; font-size: 11px; max-width: 560px; margin: 0 auto 14px; }
+  h2 { color: #1d4ed8; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1.5px solid #1d4ed8; padding-bottom: 2px; margin: 16px 0 8px; }
+  h3 { font-size: 11.5px; margin: 12px 0 4px; color: #111827; }
+  p { margin: 0 0 7px; }
+  ul { margin: 0 0 8px; padding-left: 18px; }
+  li { margin: 0 0 3px; }
+  table { width: 100%; border-collapse: collapse; margin: 4px 0 10px; }
+  td { border: 1px solid #cbd5e1; padding: 5px 8px; vertical-align: middle; }
+  td.k { background: #f1f5f9; font-weight: bold; width: 38%; color: #111827; }
+  td.note { color: #64748b; font-size: 10px; width: 30%; }
+  /* Hidden SignWell text tags — invisible in print, readable by SignWell */
+  .sw { color: #ffffff; font-size: 9px; }
+  .rules { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; }
+  .sigrow { margin-top: 6px; }
+  .siglabel { font-size: 10px; color: #6b7280; }
+  .small { font-size: 10px; color: #6b7280; }
+  .pagebreak { page-break-before: always; }
+</style>
+</head>
+<body>
+
+  <h1>Host Hampton — Studio Rental Agreement</h1>
+  <p class="sub">Private event space rental (DIY / room-only) for your celebration. This agreement
+  outlines expectations so your event runs smoothly and the studio stays beautiful for everyone.</p>
+
+  <h2>Reservation Details</h2>
+  <table>
+    <tr><td class="k">Client Name</td><td><span class="sw">{{text:1:n:Client Name::client_name:240:20}}</span></td></tr>
+    <tr><td class="k">Phone</td><td><span class="sw">{{text:1:n:Phone::phone:240:20}}</span></td></tr>
+    <tr><td class="k">Email</td><td><span class="sw">{{text:1:n:Email::email:240:20}}</span></td></tr>
+    <tr><td class="k">Event Type</td><td><span class="sw">{{text:1:n:Event Type::event_type:240:20}}</span></td></tr>
+    <tr><td class="k">Event Date</td><td><span class="sw">{{text:1:n:Event Date::event_date:240:20}}</span></td></tr>
+    <tr><td class="k">Rental Start Time</td><td><span class="sw">{{text:1:n:Start Time::start_time:240:20}}</span></td></tr>
+    <tr><td class="k">Rental End Time</td><td><span class="sw">{{text:1:n:End Time::end_time:240:20}}</span></td></tr>
+    <tr><td class="k">Estimated Headcount</td><td><span class="sw">{{text:1:n:Headcount::headcount:240:20}}</span></td></tr>
+  </table>
+  <p class="small">Studio capacity: seats up to 65 · standing room for up to 85. Your reserved
+  window must include all of your own setup and cleanup time.</p>
+
+  <h2>Payment Summary</h2>
+  <table>
+    <tr><td class="k">Rental Fee</td><td><span class="sw">{{text:1:n:Rental Fee::rental_fee:120:20}}</span></td><td class="note">Block rate for your reserved window</td></tr>
+    <tr><td class="k">Add-Ons (optional)</td><td><span class="sw">{{text:1:n:Add-Ons::addons:120:20}}</span></td><td class="note">Décor, food, services, etc.</td></tr>
+    <tr><td class="k">Total Rental</td><td><span class="sw">{{text:1:n:Total Due::total_due:120:20}}</span></td><td class="note">Rental fee + add-ons</td></tr>
+    <tr><td class="k">Reservation Deposit (due now)</td><td><span class="sw">{{text:1:n:Deposit Due::deposit_due:120:20}}</span></td><td class="note">25% — non-refundable, applied to total</td></tr>
+    <tr><td class="k">Balance Due</td><td><span class="sw">{{text:1:n:Balance Due::balance_due:120:20}}</span></td><td class="note">Due 7 days before your event</td></tr>
+    <tr><td class="k">Security Deposit (refundable)</td><td><span class="sw">{{text:1:n:Security Deposit::security_deposit:120:20}}</span></td><td class="note">Card hold placed day-of; auto-releases in ~7 days</td></tr>
+  </table>
+
+  <div class="rules">
+    <strong>Quick Rules:</strong>
+    <ul style="margin-bottom:0;">
+      <li>No confetti / glitter / silly string.</li>
+      <li>No nails / tacks / tape on the walls.</li>
+      <li>No smoking or vaping anywhere on the premises.</li>
+      <li>Respect your start and end times.</li>
+      <li>Leave the space as you found it.</li>
+    </ul>
+  </div>
+
+  <h2>1. Payment Terms &amp; Deposits</h2>
+  <p>This Agreement uses <strong>two separate deposits</strong>, which serve different purposes:</p>
+  <ul>
+    <li><strong>Reservation Deposit (25%, non-refundable):</strong> Due at booking to secure your date.
+      It is applied toward your Total Rental and is <strong>not refundable</strong>, including if you cancel.</li>
+    <li><strong>Security Deposit (refundable hold):</strong> A refundable authorization hold placed on the
+      Client's payment card on or about the day of the event. It is a hold, not a charge; it
+      auto-releases within approximately 7 days if no issues are found. It may be captured (charged), in
+      whole or part, to cover cleaning, repairs, replacement of damaged items, overtime, lost-property
+      recovery, or policy violations.</li>
+  </ul>
+  <p><strong>Balance:</strong> The remaining balance (Total Rental minus Reservation Deposit) is due
+  <strong>7 days before</strong> the event. <strong>Add-on quantities</strong> (e.g., final guest count
+  for per-person items) lock 7 days before the event; some décor and food items may lock earlier.</p>
+  <p>Payments are non-transferable to other dates unless approved in writing by Host Hampton. Late or
+  missed payment may result in cancellation of the reservation, in which case the Reservation Deposit is
+  forfeited.</p>
+  <p><strong>Card Authorization.</strong> By signing, the Client authorizes Host Hampton to charge the
+  payment card on file for: (a) the balance due if not otherwise paid by the due date; (b) overtime as
+  described in Section 4; and (c) damages, excessive cleaning, missing items, or policy violations as
+  described in Sections 5–6, up to and including capture of the Security Deposit hold and any amount in
+  excess that is documented.</p>
+
+  <h2>2. What's Included</h2>
+  <ul>
+    <li>Private use of the studio during your reserved rental time.</li>
+    <li>Standard tables and chairs (seating up to 65; standing room up to 85).</li>
+    <li>Wi-Fi, Bluetooth sound, prep area, and restroom access.</li>
+    <li>Basic cleanup guidelines provided at check-in (trash bag locations, wiping surfaces, etc.).</li>
+  </ul>
+
+  <h2>3. What's Not Included (Unless Added)</h2>
+  <ul>
+    <li>Staff-led activities, themed décor setup, balloons, or a party host.</li>
+    <li>Food, desserts, beverages, paper goods, candles, utensils, or serving supplies.</li>
+    <li>Photographer, DJ, specialty lighting, or dedicated tech support.</li>
+    <li>Garbage removal (unless a clean-up/garbage add-on is purchased — otherwise all garbage must be removed).</li>
+  </ul>
+
+  <h2>4. Setup, Breakdown &amp; Overtime</h2>
+  <p>Your rental time <strong>must include all setup and breakdown</strong>. Access before your start
+  time is not guaranteed and may be denied if another event is in progress. Exceeding your end time
+  impacts other bookings.</p>
+  <ul>
+    <li><strong>Overtime:</strong> charged in 15-minute increments at <strong>$25 per 15 minutes</strong>,
+      authorized against the card on file.</li>
+    <li><strong>Check-in / out:</strong> the Client is responsible for a walk-through at the start and end
+      of the rental.</li>
+    <li>The Client must not exceed the stated occupancy limits at any time.</li>
+  </ul>
+
+  <h2>5. Security Deposit, Damage &amp; Cleaning</h2>
+  <p>The Security Deposit (Section 1) may be applied to cleaning, repairs, replacement of damaged items,
+  overtime, or policy violations. If no issues are found, the hold is released within approximately 7
+  days. The Client is responsible for damage caused by their guests, vendors, or children.</p>
+  <ul>
+    <li>Do not move large furniture without approval.</li>
+    <li>No adhesives that remove paint or leave residue (including certain balloon tapes).</li>
+    <li>Bag all trash and remove it from the studio; remove all personal items, décor, food, and favors.</li>
+    <li>Wipe down obvious spills and food messes; leave floors reasonably free of debris.</li>
+  </ul>
+  <p>If excessive cleaning is required, cleaning fees may be charged.</p>
+
+  <h2>6. Food, Alcohol &amp; Candles</h2>
+  <ul>
+    <li><strong>Outside food:</strong> allowed unless otherwise noted for your booking.</li>
+    <li><strong>Alcohol:</strong> only if explicitly approved in writing and compliant with local laws;
+      no glass bottles unless approved. Host Hampton may require a licensed/insured bartender. The Client
+      is solely responsible for the lawful, responsible service of alcohol and assumes all related
+      liability.</li>
+    <li><strong>Candles:</strong> permitted for cake only; no open-flame décor. LED candles recommended.</li>
+  </ul>
+
+  <h2>7. Safety, Supervision &amp; Conduct</h2>
+  <ul>
+    <li>Children must be supervised at all times by the Client and/or designated adults.</li>
+    <li>No running outside the studio, climbing on furniture, or unsafe behavior.</li>
+    <li>No weapons, illegal substances, or smoking/vaping on the premises.</li>
+    <li>Host Hampton may end an event for unsafe or disruptive behavior; refunds are not guaranteed.</li>
+  </ul>
+
+  <h2>8. Cancellations, Reschedules &amp; Weather</h2>
+  <ul>
+    <li><strong>Cancellation:</strong> the 25% Reservation Deposit is non-refundable. If the Client
+      cancels more than 30 days before the event, amounts paid above the deposit are refunded; if within
+      30 days, 50% of the balance paid is refundable; if within 7 days, no amounts paid are refundable.</li>
+    <li><strong>Reschedule:</strong> one reschedule may be accommodated when requested at least 14 days
+      in advance, subject to availability; date changes are not guaranteed.</li>
+    <li><strong>Severe weather / emergencies:</strong> Host Hampton will work with you on the next best
+      option (such as a reschedule credit) when feasible.</li>
+  </ul>
+
+  <h2>9. Liability Waiver &amp; Indemnification</h2>
+  <p>The Client assumes responsibility for all guests and acknowledges that participation in events
+  carries inherent risks. To the fullest extent permitted by law, the Client releases, holds harmless,
+  and agrees to indemnify and defend Host Hampton, its owners, staff, and affiliates from any claims,
+  damages, losses, or expenses (including reasonable attorneys' fees) related to injury, loss, or damage
+  arising from the Client's event, guests, or vendors — except to the extent caused by Host Hampton's
+  gross negligence or willful misconduct.</p>
+
+  <h2>10. Vendor Requirements</h2>
+  <ul>
+    <li>All vendors (balloons, catering, entertainment, photographers, etc.) must be disclosed in advance.</li>
+    <li>Vendors must operate within your reserved time window and follow studio rules.</li>
+    <li>Host Hampton may require proof of insurance for certain vendors or activities.</li>
+  </ul>
+
+  <h2>11. Photography &amp; Marketing</h2>
+  <p>Host Hampton may photograph or video the studio and event setup for marketing and social media. The
+  Client may opt out by notifying Host Hampton in writing before the event. The Client is responsible for
+  obtaining any consent needed from their own guests.</p>
+
+  <h2>12. Electronic Signature Consent</h2>
+  <p>The Client consents to do business electronically and agrees that an electronic signature on this
+  Agreement is the legal equivalent of a handwritten signature and is binding under the U.S. ESIGN Act
+  and New York UETA.</p>
+
+  <h2>13. Agreement &amp; Governing Law</h2>
+  <p>This Agreement is the entire understanding between the parties and supersedes prior discussions
+  regarding this rental. Any changes must be in writing. If any provision is found unenforceable, the
+  remainder stays in effect. This Agreement is governed by the laws of the State of New York, with venue
+  in Suffolk County. In any dispute, the prevailing party is entitled to reasonable attorneys' fees and
+  costs.</p>
+
+  <h2>Acknowledgement &amp; Signature</h2>
+  <p>By signing below, the Client confirms they have read, understood, and agree to this Studio Rental
+  Agreement, including the payment terms and card authorization in Section 1.</p>
+
+  <table>
+    <tr>
+      <td style="width:60%;">
+        <div class="siglabel">Client Signature</div>
+        <div class="sigrow"><span class="sw">{{signature:1:y:Client Signature:::260:55}}</span></div>
+      </td>
+      <td>
+        <div class="siglabel">Date Signed</div>
+        <div class="sigrow"><span class="sw">{{date:1:y:Date Signed:::150:30}}</span></div>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <div class="siglabel">Printed Name</div>
+        <div class="sigrow"><span class="sw">{{text:1:y:Printed Name::signer_printed_name:240:22}}</span></div>
+      </td>
+      <td></td>
+    </tr>
+  </table>
+
+  <p class="small" style="text-align:center; margin-top:14px;">
+    Host Hampton · Allie Larkin · (631) 998-9325 · hosthampton295@gmail.com<br>
+    295 Montauk Hwy, Speonk, NY 11972 · www.hosthampton.com
+  </p>
+
+</body>
+</html>

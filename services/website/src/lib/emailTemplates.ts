@@ -736,6 +736,66 @@ export function partyDepositReceivedHtml(d: { customerName: string; bookingRef: 
 </body></html>`
 }
 
+/* ── Studio Rental Confirmation (customer) ───────────────────── */
+
+export function studioRentalConfirmationHtml(d: {
+  customerName: string
+  bookingRef: string
+  depositFormatted: string
+  eventDate: string          // pre-formatted, e.g. "Saturday, June 13, 2026"
+  startTime: string          // "2:00 PM"
+  endTime: string            // "6:00 PM"
+  guestCount: number
+  lineItems: PartyLineItem[]
+  totalFormatted: string
+  balanceFormatted: string
+  balanceDueDate: string     // pre-formatted
+  portalUrl: string
+  agreementUrl?: string | null
+}): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Your Studio is Reserved!</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 20px;">Your deposit of <strong>${d.depositFormatted}</strong> for booking <strong>${d.bookingRef}</strong> is in — your date is locked. 🎉</p>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+      <tr><td style="padding:6px 0;color:${BRAND.gray};width:130px;">Date</td><td style="padding:6px 0;color:${BRAND.navy};font-weight:bold;">${d.eventDate}</td></tr>
+      <tr><td style="padding:6px 0;color:${BRAND.gray};">Time</td><td style="padding:6px 0;color:${BRAND.navy};">${d.startTime} – ${d.endTime}</td></tr>
+      <tr><td style="padding:6px 0;color:${BRAND.gray};">Guests</td><td style="padding:6px 0;color:${BRAND.navy};">${d.guestCount}</td></tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+      <tr><td colspan="2" style="padding:8px 0;color:${BRAND.navy};font-weight:bold;border-bottom:2px solid ${BRAND.navy};">Your Rental</td></tr>
+      ${lineItemRows(d.lineItems)}
+      <tr><td style="padding:8px 0;color:${BRAND.navy};font-weight:bold;">Total</td><td style="padding:8px 0;color:${BRAND.navy};font-weight:bold;text-align:right;">${d.totalFormatted}</td></tr>
+      <tr><td style="padding:4px 0;color:${BRAND.gray};font-size:13px;">Deposit paid</td><td style="padding:4px 0;color:${BRAND.gray};font-size:13px;text-align:right;">${d.depositFormatted}</td></tr>
+      <tr><td style="padding:4px 0;color:${BRAND.navy};font-size:13px;font-weight:bold;">Balance due ${d.balanceDueDate}</td><td style="padding:4px 0;color:${BRAND.navy};font-size:13px;font-weight:bold;text-align:right;">${d.balanceFormatted}</td></tr>
+    </table>
+    <div style="background:${BRAND.bodyBg};border-radius:8px;padding:16px 20px;margin:0 0 24px;">
+      <p style="color:${BRAND.navy};font-size:14px;margin:0 0 6px;"><strong>A few things to know:</strong></p>
+      <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:0;">
+        • Your balance is due <strong>${d.balanceDueDate}</strong> (7 days before your event).<br>
+        • A <strong>$500 refundable security hold</strong> is placed on your card the day of your event and auto-releases within 7 days if there's no damage.<br>
+        • Your rental window includes your own setup and cleanup time.
+      </p>
+    </div>
+    ${d.agreementUrl ? `<p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0 0 8px;">📄 <a href="${d.agreementUrl}" style="color:${BRAND.navy};">View your signed rental agreement</a></p>` : ''}
+    ${payButton(d.portalUrl, 'View Your Booking')}
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline('We can’t wait to host you!')}
+</div>
+</body></html>`
+}
+
 /* ── Party Admin New Booking (admin) ─────────────────────────── */
 
 export function partyAdminNewBookingHtml(d: { bookingRef: string; customerName: string; customerEmail: string; customerPhone?: string; partyDate: string; partyTime: string; guestCount: number; packageType: string; depositFormatted: string; totalFormatted: string; paymentMethod: string; lineItems: PartyLineItem[]; notes?: string; adminUrl: string }): string {
