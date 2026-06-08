@@ -53,6 +53,7 @@ export async function POST(req: NextRequest) {
     const startTime = body.startTime as string // 'HH:mm'
     const endTime = body.endTime as string     // 'HH:mm'
     const guestCount = Number(body.guestCount)
+    const seatingNeeded = body.seatingNeeded != null ? Number(body.seatingNeeded) : null
     const notes = (body.notes as string | undefined)?.trim() || null
     const addOns = (body.lineItems as IncomingLineItem[]) || []
     const marketingConsent = !!body.marketingConsent
@@ -102,6 +103,7 @@ export async function POST(req: NextRequest) {
       is_weekend: rate.isWeekend,
       event_label: eventType,
       address: contactAddress || null,
+      seating_needed: seatingNeeded,
       balance_due_date: balanceDueDate,
       security_deposit_cents: SECURITY_DEPOSIT_CENTS,
     }

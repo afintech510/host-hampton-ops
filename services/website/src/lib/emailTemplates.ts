@@ -736,6 +736,42 @@ export function partyDepositReceivedHtml(d: { customerName: string; bookingRef: 
 </body></html>`
 }
 
+/* ── Studio Rental Invite (customer) ─────────────────────────── */
+
+export function studioRentalInviteHtml(d: {
+  customerName: string
+  studioUrl: string
+}): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Reserve Our Studio</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 20px;">Thanks for your interest in renting our private Hamptons studio for your celebration! We made it easy to book online, start to finish.</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Just pick your date and time, add any extras (décor, food, treats, photo booth and more), review and sign the rental agreement, and reserve with a deposit — all in one place.</p>
+    <div style="background:${BRAND.bodyBg};border-radius:8px;padding:16px 20px;margin:0 0 24px;">
+      <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:0;">
+        • Seats up to 65 · standing room for 85<br>
+        • Weekend $575 / 3 hrs (+$100/hr) · Weekday $450 / 3 hrs (+$75/hr)<br>
+        • 25% deposit holds your date; balance due 7 days before
+      </p>
+    </div>
+    ${payButton(d.studioUrl, 'Start Your Booking')}
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? We're happy to help:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline('We can’t wait to host you!')}
+</div>
+</body></html>`
+}
+
 /* ── Studio Rental Confirmation (customer) ───────────────────── */
 
 export function studioRentalConfirmationHtml(d: {

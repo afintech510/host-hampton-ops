@@ -63,6 +63,7 @@ export default function StudioRentalContent(props: Props) {
   const [startTime, setStartTime] = useState('14:00')
   const [endTime, setEndTime] = useState('17:00')
   const [guestCount, setGuestCount] = useState(25)
+  const [seatingNeeded, setSeatingNeeded] = useState('')
   const [eventType, setEventType] = useState('')
   const [contact, setContact] = useState({ name: '', email: '', phone: '', address: '' })
   const [notes, setNotes] = useState('')
@@ -166,6 +167,7 @@ export default function StudioRentalContent(props: Props) {
           startTime,
           endTime,
           guestCount,
+          seatingNeeded: seatingNeeded ? parseInt(seatingNeeded, 10) : null,
           notes,
           lineItems,
           marketingConsent: consent,
@@ -336,6 +338,13 @@ export default function StudioRentalContent(props: Props) {
                 <span className="text-sm font-medium text-hampton-navy flex items-center gap-1"><Users size={14} /> Guests</span>
                 <input type="number" min={1} max={STUDIO_STANDING_CAPACITY} value={guestCount}
                   onChange={e => setGuestCount(parseInt(e.target.value || '0', 10))}
+                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-hampton-navy flex items-center gap-1"><Users size={14} /> Seating needed for how many guests?</span>
+                <input type="number" min={0} max={STUDIO_SEATED_CAPACITY} value={seatingNeeded}
+                  onChange={e => setSeatingNeeded(e.target.value)}
+                  placeholder={`Up to ${STUDIO_SEATED_CAPACITY} seated`}
                   className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
               </label>
               <label className="block">

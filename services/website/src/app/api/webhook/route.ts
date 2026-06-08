@@ -233,7 +233,7 @@ export async function POST(req: NextRequest) {
           startDate: bkRow.party_date,
           startTime,
           endTime,
-          description: `Ref: ${bookingRef}\nContact: ${bkRow.contact_name || ''} (${bkRow.contact_email || ''})\nGuests: ~${guestCount}\nEvent: ${tags.event_label || ''}`,
+          description: `Ref: ${bookingRef}\nContact: ${bkRow.contact_name || ''} (${bkRow.contact_email || ''})\nGuests: ~${guestCount}${tags.seating_needed ? `\nSeating needed: ${tags.seating_needed}` : ''}\nEvent: ${tags.event_label || ''}`,
         }).catch(err => { console.error('Studio GCal error:', err); return null })
         if (calEventId) console.log('Studio rental GCal event created:', calEventId)
       }

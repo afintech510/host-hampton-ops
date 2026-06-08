@@ -144,6 +144,9 @@ export default function ContactsTab({ headers, onLogout }: { headers: Record<str
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
+      {/* Studio rental invite */}
+      <StudioInviteCard headers={headers} />
+
       {/* Stats bar */}
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
         <div className="admin-kpi">
@@ -546,6 +549,67 @@ function ContactDetail({ contactId, headers, onRefresh }: { contactId: string; h
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ─── Studio Rental Invite card ─────────────────────────── */
+function StudioInviteCard({ headers }: { headers: Record<string, string> }) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  async function send() {
+    setMsg(null)
+    if (!name.trim() || !/.+@.+\..+/.test(email)) {
+      setMsg({ ok: false, text: 'Enter a name and a valid email.' })
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/admin/studio-rental/invite', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), phone: phone.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setMsg({ ok: false, text: data.error || 'Failed to send invite.' })
+      } else {
+        setMsg({ ok: true, text: `Invite sent to ${data.sentTo}.` })
+        setName(''); setEmail(''); setPhone('')
+      }
+    } catch (err) {
+      setMsg({ ok: false, text: err instanceof Error ? err.message : 'Something went wrong.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Mail size={16} className="text-slate-500" />
+        <h3 className="font-semibold text-slate-800 text-sm">Send Studio Rental Invite</h3>
+      </div>
+      <div className="grid sm:grid-cols-4 gap-2">
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name"
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800" />
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email"
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800" />
+        <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone (optional)"
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800" />
+        <button onClick={send} disabled={busy}
+          className="rounded-lg bg-slate-800 text-white text-sm font-medium px-4 py-2 disabled:opacity-60 hover:bg-slate-700">
+          {busy ? 'Sending…' : 'Send Invite'}
+        </button>
+      </div>
+      {msg && (
+        <p className={`mt-2 text-xs ${msg.ok ? 'text-emerald-600' : 'text-red-600'}`}>{msg.text}</p>
+      )}
+      <p className="mt-1 text-[11px] text-slate-400">Adds the contact and emails them the link to the studio rental booking page.</p>
     </div>
   )
 }
