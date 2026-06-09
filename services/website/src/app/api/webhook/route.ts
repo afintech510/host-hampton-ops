@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
       }).then((res: { error: { message: string } | null }) => {
         if (res.error) console.error('Studio portal token insert (non-fatal):', res.error)
       })
-      const portalUrl = buildPortalUrl(bookingRef, rawToken, '/my-booking')
+      const portalUrl = buildPortalUrl(bookingRef, rawToken, '/studio-rental?manage=1')
 
       const tags = existingTags as Record<string, string>
       const startTime = (tags.rental_start_time as string) || bkRow?.party_time || '12:00'
@@ -235,7 +235,12 @@ export async function POST(req: NextRequest) {
           endTime,
           description: `Ref: ${bookingRef}\nContact: ${bkRow.contact_name || ''} (${bkRow.contact_email || ''})\nGuests: ~${guestCount}${tags.seating_needed ? `\nSeating needed: ${tags.seating_needed}` : ''}\nEvent: ${tags.event_label || ''}`,
         }).catch(err => { console.error('Studio GCal error:', err); return null })
-        if (calEventId) console.log('Studio rental GCal event created:', calEventId)
+        if (calEventId) {
+          console.log('Studio rental GCal event created:', calEventId)
+          // Store the event id so later time-edits can update (not duplicate) it.
+          await supabase.from('bookings').update({ google_calendar_event_id: calEventId }).eq('id', bookingId)
+            .then(({ error }) => { if (error) console.error('Studio GCal id store error (non-fatal):', error) })
+        }
       }
 
       console.log('Studio rental PI processed:', bookingRef, formatMoney(depositCents))

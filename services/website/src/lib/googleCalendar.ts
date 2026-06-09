@@ -176,3 +176,41 @@ export async function createCalendarEvent(details: {
   const data = await res.json()
   return data.id || null
 }
+
+/**
+ * Update an existing calendar event's window (and optionally summary/description).
+ * Returns true on success. Used when a studio rental's time is extended/changed.
+ */
+export async function updateCalendarEvent(eventId: string, details: {
+  startDate: string   // YYYY-MM-DD
+  startTime: string   // HH:mm
+  endTime: string     // HH:mm
+  summary?: string
+  description?: string
+}): Promise<boolean> {
+  const calendarId = process.env.GOOGLE_CALENDAR_ID
+  const accessToken = await getGoogleAccessToken()
+  if (!calendarId || !accessToken || !eventId) return false
+
+  const patch: Record<string, unknown> = {
+    start: { dateTime: `${details.startDate}T${details.startTime}:00`, timeZone: 'America/New_York' },
+    end: { dateTime: `${details.startDate}T${details.endTime}:00`, timeZone: 'America/New_York' },
+  }
+  if (details.summary) patch.summary = details.summary
+  if (details.description != null) patch.description = details.description
+
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }
+  )
+
+  if (!res.ok) {
+    console.error('Google Calendar update error:', res.status, await res.text())
+    return false
+  }
+  return true
+}

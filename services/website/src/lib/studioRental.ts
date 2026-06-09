@@ -19,14 +19,19 @@ const WEEKEND_BASE_CENTS = 57500
 const WEEKDAY_BASE_CENTS = 45000
 const WEEKEND_ADDL_HOUR_CENTS = 10000
 const WEEKDAY_ADDL_HOUR_CENTS = 7500
+// Full-day caps: the fee never exceeds these no matter the window length
+// (any start time through midnight that day). Weekend $975 / Weekday $700.
+const WEEKEND_FULL_DAY_CENTS = 97500
+const WEEKDAY_FULL_DAY_CENTS = 70000
 
 export interface StudioRate {
   isWeekend: boolean
   hours: number          // chargeable hours (>= STUDIO_MIN_HOURS)
   baseCents: number      // first 3 hours
   addlHours: number      // hours beyond the 3-hour base
-  addlHourCents: number  // total for the additional hours
-  rentalCents: number    // baseCents + addlHourCents
+  addlHourCents: number  // total for the additional hours (after the cap)
+  rentalCents: number    // min(baseCents + addl, full-day cap)
+  isFullDay: boolean     // true when the fee is capped at the full-day rate
   lineItemLabel: string
 }
 
@@ -48,17 +53,23 @@ export function studioRentalRate(dateStr: string, totalHours: number): StudioRat
   const baseCents = isWeekend ? WEEKEND_BASE_CENTS : WEEKDAY_BASE_CENTS
   const addlHours = hours - STUDIO_MIN_HOURS
   const addlHourRate = isWeekend ? WEEKEND_ADDL_HOUR_CENTS : WEEKDAY_ADDL_HOUR_CENTS
-  const addlHourCents = addlHours * addlHourRate
-  const rentalCents = baseCents + addlHourCents
+  const fullDayCents = isWeekend ? WEEKEND_FULL_DAY_CENTS : WEEKDAY_FULL_DAY_CENTS
+
+  const uncappedCents = baseCents + addlHours * addlHourRate
+  const rentalCents = Math.min(uncappedCents, fullDayCents)
+  const isFullDay = rentalCents >= fullDayCents
 
   return {
     isWeekend,
     hours,
     baseCents,
     addlHours,
-    addlHourCents,
+    addlHourCents: rentalCents - baseCents,
     rentalCents,
-    lineItemLabel: `Studio Rental — ${isWeekend ? 'Weekend' : 'Weekday'} ${hours} hr${hours === 1 ? '' : 's'}`,
+    isFullDay,
+    lineItemLabel: isFullDay
+      ? `Studio Rental — ${isWeekend ? 'Weekend' : 'Weekday'} Full Day`
+      : `Studio Rental — ${isWeekend ? 'Weekend' : 'Weekday'} ${hours} hr${hours === 1 ? '' : 's'}`,
   }
 }
 

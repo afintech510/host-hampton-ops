@@ -822,7 +822,8 @@ export function studioRentalConfirmationHtml(d: {
       </p>
     </div>
     ${d.agreementUrl ? `<p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0 0 8px;">📄 <a href="${d.agreementUrl}" style="color:${BRAND.navy};">View your signed rental agreement</a></p>` : ''}
-    ${payButton(d.portalUrl, 'View Your Booking')}
+    <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:0 0 4px;text-align:center;">Need more time or want to add extras? Manage your booking anytime:</p>
+    ${payButton(d.portalUrl, 'View & Manage Booking')}
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
     </p>

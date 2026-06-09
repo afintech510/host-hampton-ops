@@ -4,7 +4,8 @@ import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { formatMoney } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
-import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
+import { createCalendarEvent, addMinutes, updateCalendarEvent } from '@/lib/googleCalendar'
+import { studioRentalRate, hoursBetween } from '@/lib/studioRental'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
@@ -325,6 +326,61 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
 
     return NextResponse.json({ ok: true, action: 'line_item_removed' })
+  }
+
+  // Studio rental: change start/end time → re-price the rental fee + recompute balance.
+  if (action === 'edit_rental') {
+    if (booking.event_type !== 'studio-rental') {
+      return NextResponse.json({ error: 'Not a studio rental booking' }, { status: 400 })
+    }
+    const startTime = body.startTime as string
+    const endTime = body.endTime as string
+    if (!startTime || !endTime) return NextResponse.json({ error: 'startTime and endTime required' }, { status: 400 })
+    const hours = hoursBetween(startTime, endTime)
+    if (hours < 3) return NextResponse.json({ error: 'Minimum rental is 3 hours' }, { status: 400 })
+    const rate = studioRentalRate(booking.party_date as string, hours)
+
+    // Update (or create) the rental line item.
+    const { data: rentalLi } = await supabase
+      .from('booking_line_items').select('id').eq('booking_id', id).eq('category', 'rental').limit(1).maybeSingle()
+    if (rentalLi) {
+      await supabase.from('booking_line_items').update({
+        name: rate.lineItemLabel, unit_price_cents: rate.rentalCents, quantity: 1, guest_multiplied: false,
+      }).eq('id', rentalLi.id)
+    } else {
+      await supabase.from('booking_line_items').insert({
+        booking_id: id, name: rate.lineItemLabel, category: 'rental', quantity: 1,
+        unit_price_cents: rate.rentalCents, price_type: 'flat', guest_multiplied: false, sort_order: 0,
+      })
+    }
+
+    // Update times on the booking + party_tags.
+    const tags = (booking.party_tags as Record<string, unknown> | null) || {}
+    await supabase.from('bookings').update({
+      party_time: startTime,
+      party_tags: { ...tags, rental_start_time: startTime, rental_end_time: endTime, rental_hours: rate.hours, is_weekend: rate.isWeekend },
+      updated_at: new Date().toISOString(),
+    }).eq('id', id)
+
+    await recalcTotals(supabase, id, booking)
+
+    // Update the calendar block.
+    const summary = `[STUDIO RENTAL] ${booking.contact_name || 'Rental'} — ${(tags.event_label as string) || 'Event'}`
+    const desc = `Ref: ${booking.booking_ref}\nContact: ${booking.contact_name || ''}\nGuests: ~${booking.guest_count_approx || ''}\nUpdated by admin`
+    const evId = booking.google_calendar_event_id as string | null
+    if (evId) {
+      await updateCalendarEvent(evId, { startDate: booking.party_date as string, startTime, endTime, summary, description: desc }).catch(() => {})
+    } else {
+      const newId = await createCalendarEvent({ summary, startDate: booking.party_date as string, startTime, endTime, description: desc }).catch(() => null)
+      if (newId) await supabase.from('bookings').update({ google_calendar_event_id: newId }).eq('id', id)
+    }
+
+    await supabase.from('booking_modifications').insert({
+      booking_id: id, modified_by: 'admin',
+      change_summary: `Rental time → ${startTime}–${endTime} (${rate.hours} hrs); rental fee ${formatMoney(rate.rentalCents)}`,
+    })
+
+    return NextResponse.json({ ok: true, action: 'rental_edited', rentalCents: rate.rentalCents, hours: rate.hours })
   }
 
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
