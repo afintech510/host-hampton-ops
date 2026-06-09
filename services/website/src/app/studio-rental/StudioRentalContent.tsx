@@ -89,6 +89,16 @@ export default function StudioRentalContent(props: Props) {
   const clientSecretRef = useRef<string | null>(null)
   const checkoutRef = useRef<HTMLDivElement | null>(null)
 
+  // Refs for required fields, so we can scroll to the first incomplete one.
+  const eventTypeRef = useRef<HTMLSelectElement>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
+  const dateRef = useRef<HTMLInputElement>(null)
+  const guestRef = useRef<HTMLInputElement>(null)
+  const agreeRulesRef = useRef<HTMLInputElement>(null)
+  const consentRef = useRef<HTMLInputElement>(null)
+  const signwellRef = useRef<{ open: () => void } | null>(null)
+
   // ── Derived pricing ─────────────────────────────────────────
   const hours = useMemo(() => Math.max(STUDIO_MIN_HOURS, hoursBetween(startTime, endTime)), [startTime, endTime])
   const rate = useMemo(() => (date ? studioRentalRate(date, hours) : null), [date, hours])
@@ -117,11 +127,6 @@ export default function StudioRentalContent(props: Props) {
   const overStanding = guestCount > STUDIO_STANDING_CAPACITY
   const timeValid = hoursBetween(startTime, endTime) >= STUDIO_MIN_HOURS
 
-  const canReserve =
-    !!date && timeValid && !overStanding && guestCount > 0 &&
-    !!eventType && !!contact.name.trim() && /.+@.+\..+/.test(contact.email) &&
-    consent && agreeRules
-
   // ── Add-on handlers ─────────────────────────────────────────
   function toggle(item: PricingItem) {
     setSelected(prev => {
@@ -135,10 +140,31 @@ export default function StudioRentalContent(props: Props) {
     setSelected(prev => ({ ...prev, [id]: Math.max(1, qty) }))
   }
 
+  // Scroll to the first incomplete required field; returns false if any are missing.
+  function scrollToInvalid(): boolean {
+    const checks: { ok: boolean; el: HTMLElement | null }[] = [
+      { ok: !!eventType, el: eventTypeRef.current },
+      { ok: !!contact.name.trim(), el: nameRef.current },
+      { ok: /.+@.+\..+/.test(contact.email), el: emailRef.current },
+      { ok: !!date, el: dateRef.current },
+      { ok: timeValid, el: dateRef.current },
+      { ok: guestCount > 0 && !overStanding, el: guestRef.current },
+      { ok: agreeRules, el: agreeRulesRef.current },
+      { ok: consent, el: consentRef.current },
+    ]
+    const bad = checks.find(c => !c.ok)
+    if (!bad) return true
+    bad.el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setTimeout(() => bad.el?.focus({ preventScroll: true }), 400)
+    setError('Please complete the highlighted field to continue.')
+    return false
+  }
+
   // ── Reserve → create booking + agreement + PaymentIntent ────
   async function reserve() {
     setError('')
-    if (!canReserve || !rate) return
+    if (!scrollToInvalid()) return
+    if (!rate) return
     setReserving(true)
     try {
       const lineItems = Object.keys(selected).map(id => {
@@ -269,18 +295,55 @@ export default function StudioRentalContent(props: Props) {
     }
   }
 
-  // SignWell embedded posts a window message on completion; advance to payment.
-  useEffect(() => {
-    if (phase !== 'sign') return
-    function onMsg(e: MessageEvent) {
-      const t = typeof e.data === 'string' ? e.data : (e.data?.type || e.data?.event || '')
-      if (typeof t === 'string' && /sign|complet/i.test(t)) {
-        mountPayment()
+  // SignWell's embedded signing page sets X-Frame-Options: SAMEORIGIN, so it
+  // can't be dropped into a raw <iframe>. Their embedded.js library embeds it
+  // correctly and emits a `completed` event we use to advance to payment.
+  function loadSignwellScript(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const w = window as unknown as { SignWellEmbed?: unknown }
+      if (w.SignWellEmbed) return resolve()
+      const id = 'signwell-embedded-js'
+      const existing = document.getElementById(id)
+      if (existing) {
+        existing.addEventListener('load', () => resolve())
+        existing.addEventListener('error', () => reject(new Error('SignWell script error')))
+        return
       }
+      const s = document.createElement('script')
+      s.id = id
+      s.src = 'https://static.signwell.com/assets/embedded.js'
+      s.onload = () => resolve()
+      s.onerror = () => reject(new Error('Failed to load SignWell'))
+      document.body.appendChild(s)
+    })
+  }
+
+  const openSignwell = useCallback(async (url: string) => {
+    try {
+      await loadSignwellScript()
+      const Embed = (window as unknown as {
+        SignWellEmbed: new (o: Record<string, unknown>) => { open: () => void }
+      }).SignWellEmbed
+      const embed = new Embed({
+        url,
+        containerId: 'signwell-container',
+        allowDecline: false,
+        events: {
+          completed: () => mountPayment(),
+          error: () => setError('There was a problem loading the agreement. Please use the reload link below.'),
+        },
+      })
+      signwellRef.current = embed
+      embed.open()
+    } catch {
+      setError('Could not load the signing window. Please use the reload link below.')
     }
-    window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
-  }, [phase, mountPayment])
+  }, [mountPayment])
+
+  // Open the SignWell embed once we enter the sign phase and the container exists.
+  useEffect(() => {
+    if (phase === 'sign' && signingUrl) openSignwell(signingUrl)
+  }, [phase, signingUrl, openSignwell])
 
   useEffect(() => () => { if (paymentElementRef.current) paymentElementRef.current.unmount() }, [])
 
@@ -323,6 +386,56 @@ export default function StudioRentalContent(props: Props) {
 
       {phase === 'build' && (
         <div className="space-y-8">
+          {/* Your details */}
+          <section className="bg-white rounded-2xl border border-hampton-pink/20 p-6">
+            <h2 className="font-serif text-xl font-bold text-hampton-navy mb-4">Your details</h2>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <label className="block">
+                <span className="text-sm font-medium text-hampton-navy">Event type</span>
+                <select ref={eventTypeRef} value={eventType} onChange={e => setEventType(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy bg-white">
+                  <option value="">Select…</option>
+                  {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-hampton-navy">Full name</span>
+                <input ref={nameRef} value={contact.name} onChange={e => setContact({ ...contact, name: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-hampton-navy">Email</span>
+                <input ref={emailRef} type="email" value={contact.email} onChange={e => setContact({ ...contact, email: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-hampton-navy">Phone</span>
+                <input value={contact.phone} onChange={e => setContact({ ...contact, phone: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="text-sm font-medium text-hampton-navy">Mailing address</span>
+                <input value={contact.address} onChange={e => setContact({ ...contact, address: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="text-sm font-medium text-hampton-navy">Tell us about your event (optional)</span>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
+              </label>
+            </div>
+            <div className="mt-4 space-y-2">
+              <label className="flex items-start gap-2 text-sm text-hampton-navy/80">
+                <input ref={agreeRulesRef} type="checkbox" checked={agreeRules} onChange={e => setAgreeRules(e.target.checked)} className="mt-1" />
+                <span>I understand the rental includes my own setup &amp; cleanup time, a 25% deposit holds my date with the balance due 7 days before, and a refundable <strong>$500 security hold</strong> ({formatMoney(SECURITY_DEPOSIT_CENTS)}) is placed on my card the day of the event.</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-hampton-navy/80">
+                <input ref={consentRef} type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1" />
+                <span>I agree to receive booking updates from Host Hampton and to sign the Studio Rental Agreement in the next step.</span>
+              </label>
+            </div>
+          </section>
+
           {/* Step 1: Date & time */}
           <section className="bg-white rounded-2xl border border-hampton-pink/20 p-6">
             <h2 className="font-serif text-xl font-bold text-hampton-navy mb-4 flex items-center gap-2">
@@ -331,12 +444,12 @@ export default function StudioRentalContent(props: Props) {
             <div className="grid sm:grid-cols-2 gap-4">
               <label className="block">
                 <span className="text-sm font-medium text-hampton-navy">Date</span>
-                <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                <input ref={dateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
               </label>
               <label className="block">
                 <span className="text-sm font-medium text-hampton-navy flex items-center gap-1"><Users size={14} /> Guests</span>
-                <input type="number" min={1} max={STUDIO_STANDING_CAPACITY} value={guestCount}
+                <input ref={guestRef} type="number" min={1} max={STUDIO_STANDING_CAPACITY} value={guestCount}
                   onChange={e => setGuestCount(parseInt(e.target.value || '0', 10))}
                   className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
               </label>
@@ -431,56 +544,6 @@ export default function StudioRentalContent(props: Props) {
               </div>
             </section>
           )}
-
-          {/* Step 3: Details */}
-          <section className="bg-white rounded-2xl border border-hampton-pink/20 p-6">
-            <h2 className="font-serif text-xl font-bold text-hampton-navy mb-4">Your details</h2>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <label className="block">
-                <span className="text-sm font-medium text-hampton-navy">Event type</span>
-                <select value={eventType} onChange={e => setEventType(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy bg-white">
-                  <option value="">Select…</option>
-                  {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-hampton-navy">Full name</span>
-                <input value={contact.name} onChange={e => setContact({ ...contact, name: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-hampton-navy">Email</span>
-                <input type="email" value={contact.email} onChange={e => setContact({ ...contact, email: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-hampton-navy">Phone</span>
-                <input value={contact.phone} onChange={e => setContact({ ...contact, phone: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
-              </label>
-              <label className="block sm:col-span-2">
-                <span className="text-sm font-medium text-hampton-navy">Mailing address</span>
-                <input value={contact.address} onChange={e => setContact({ ...contact, address: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
-              </label>
-              <label className="block sm:col-span-2">
-                <span className="text-sm font-medium text-hampton-navy">Tell us about your event (optional)</span>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-                  className="mt-1 w-full rounded-lg border border-hampton-mauve/30 px-3 py-2 text-hampton-navy" />
-              </label>
-            </div>
-            <div className="mt-4 space-y-2">
-              <label className="flex items-start gap-2 text-sm text-hampton-navy/80">
-                <input type="checkbox" checked={agreeRules} onChange={e => setAgreeRules(e.target.checked)} className="mt-1" />
-                <span>I understand the rental includes my own setup &amp; cleanup time, a 25% deposit holds my date with the balance due 7 days before, and a refundable <strong>$500 security hold</strong> ({formatMoney(SECURITY_DEPOSIT_CENTS)}) is placed on my card the day of the event.</span>
-              </label>
-              <label className="flex items-start gap-2 text-sm text-hampton-navy/80">
-                <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1" />
-                <span>I agree to receive booking updates from Host Hampton and to sign the Studio Rental Agreement in the next step.</span>
-              </label>
-            </div>
-          </section>
         </div>
       )}
 
@@ -489,10 +552,16 @@ export default function StudioRentalContent(props: Props) {
         <section className="bg-white rounded-2xl border border-hampton-pink/20 p-6">
           <h2 className="font-serif text-xl font-bold text-hampton-navy mb-2">Review &amp; sign your agreement</h2>
           <p className="text-hampton-navy/60 text-sm mb-4">Booking <strong>{bookingRef}</strong> — please review and sign below. We’ll move you to payment once it’s signed.</p>
-          <div className="rounded-xl overflow-hidden border border-hampton-mauve/20">
-            <iframe src={signingUrl} title="Studio Rental Agreement" className="w-full" style={{ height: 620, border: 0 }} />
+          <div id="signwell-container" className="rounded-xl overflow-hidden border border-hampton-mauve/20 min-h-[620px]" />
+          {error && <p className="text-red-600 text-sm mt-3">{error}</p>}
+          <div className="mt-4 flex items-center justify-between gap-4 text-sm">
+            <button type="button" onClick={() => openSignwell(signingUrl)} className="text-hampton-mauve underline">
+              Agreement not showing? Reload it
+            </button>
+            <button type="button" onClick={mountPayment} className="text-hampton-navy/60 underline">
+              Already signed? Continue to payment
+            </button>
           </div>
-          <button onClick={mountPayment} className="btn-primary w-full mt-5 py-3">I’ve signed — continue to payment</button>
         </section>
       )}
 
@@ -527,7 +596,7 @@ export default function StudioRentalContent(props: Props) {
                 Total {formatMoney(totalCents)} · Deposit today {formatMoney(depositCents)}
               </div>
             </div>
-            <button onClick={reserve} disabled={!canReserve || reserving}
+            <button onClick={reserve} disabled={reserving}
               className="btn-primary px-6 py-3 disabled:opacity-50 whitespace-nowrap">
               {reserving ? 'Reserving…' : 'Reserve & Sign'}
             </button>
