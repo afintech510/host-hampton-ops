@@ -42,6 +42,15 @@ const TIME_OPTIONS = (() => {
   return out
 })()
 
+function timeLabel(v: string): string {
+  return TIME_OPTIONS.find(t => t.value === v)?.label || v
+}
+function dateLabel(d: string): string {
+  if (!d) return ''
+  const [y, m, dd] = d.split('-').map(Number)
+  return new Date(y, m - 1, dd).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 type Phase = 'build' | 'sign' | 'pay' | 'done'
 
 export default function StudioRentalContent(props: Props) {
@@ -81,6 +90,8 @@ export default function StudioRentalContent(props: Props) {
   const [checkoutReady, setCheckoutReady] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [bookingRef, setBookingRef] = useState('')
+  // Authoritative charge breakdown from the checkout response (incl. card fee).
+  const [charge, setCharge] = useState<{ deposit: number; cardFee: number; total: number; balance: number } | null>(null)
 
   const stripeRef = useRef<Awaited<ReturnType<typeof loadStripe>> | null>(null)
   const elementsRef = useRef<ReturnType<NonNullable<Awaited<ReturnType<typeof loadStripe>>>['elements']> | null>(null)
@@ -122,6 +133,12 @@ export default function StudioRentalContent(props: Props) {
   const totalCents = rentalCents + addOnTotal
   const depositCents = getDepositCents(totalCents)
   const balanceDueCents = Math.max(0, totalCents - depositCents)
+
+  // Charge breakdown shown on the payment screen (server values once available).
+  const depositNow = charge?.deposit ?? depositCents
+  const cardFeeNow = charge?.cardFee ?? 0
+  const balanceNow = charge?.balance ?? balanceDueCents
+  const chargedTodayCents = depositNow + cardFeeNow
 
   const overSeated = guestCount > STUDIO_SEATED_CAPACITY
   const overStanding = guestCount > STUDIO_STANDING_CAPACITY
@@ -207,6 +224,12 @@ export default function StudioRentalContent(props: Props) {
       }
 
       setBookingRef(data.bookingRef || '')
+      setCharge({
+        deposit: data.depositCents ?? depositCents,
+        cardFee: data.cardFeeCents ?? 0,
+        total: data.totalCents ?? totalCents,
+        balance: data.balanceDueCents ?? balanceDueCents,
+      })
       clientSecretRef.current = data.clientSecret || null
       paymentIntentIdRef.current = data.paymentIntentId || null
       setReserving(false)
@@ -324,13 +347,15 @@ export default function StudioRentalContent(props: Props) {
       const Embed = (window as unknown as {
         SignWellEmbed: new (o: Record<string, unknown>) => { open: () => void }
       }).SignWellEmbed
+      // Modal mode (no containerId): SignWell controls a full-height overlay so
+      // the document renders properly. Inline container embedding left the doc
+      // body blank because the iframe couldn't resolve a height.
       const embed = new Embed({
         url,
-        containerId: 'signwell-container',
         allowDecline: false,
         events: {
           completed: () => mountPayment(),
-          error: () => setError('There was a problem loading the agreement. Please use the reload link below.'),
+          error: () => setError('There was a problem loading the agreement. Please use the button below to reopen it.'),
         },
       })
       signwellRef.current = embed
@@ -551,14 +576,11 @@ export default function StudioRentalContent(props: Props) {
       {phase === 'sign' && signingUrl && (
         <section className="bg-white rounded-2xl border border-hampton-pink/20 p-6">
           <h2 className="font-serif text-xl font-bold text-hampton-navy mb-2">Review &amp; sign your agreement</h2>
-          <p className="text-hampton-navy/60 text-sm mb-4">Booking <strong>{bookingRef}</strong> — please review and sign below. We’ll move you to payment once it’s signed.</p>
-          <div id="signwell-container" className="rounded-xl overflow-hidden border border-hampton-mauve/20 min-h-[620px]" />
+          <p className="text-hampton-navy/60 text-sm mb-5">Booking <strong>{bookingRef}</strong> — your rental agreement opens in a secure window. Review and sign it, and we’ll bring you right back to payment.</p>
+          <button type="button" onClick={() => openSignwell(signingUrl)} className="btn-primary w-full py-3">Open Agreement to Sign</button>
           {error && <p className="text-red-600 text-sm mt-3">{error}</p>}
-          <div className="mt-4 flex items-center justify-between gap-4 text-sm">
-            <button type="button" onClick={() => openSignwell(signingUrl)} className="text-hampton-mauve underline">
-              Agreement not showing? Reload it
-            </button>
-            <button type="button" onClick={mountPayment} className="text-hampton-navy/60 underline">
+          <div className="mt-4 text-center">
+            <button type="button" onClick={mountPayment} className="text-hampton-navy/60 underline text-sm">
               Already signed? Continue to payment
             </button>
           </div>
@@ -568,16 +590,51 @@ export default function StudioRentalContent(props: Props) {
       {/* Pay phase */}
       {phase === 'pay' && (
         <section className="bg-white rounded-2xl border border-hampton-pink/20 p-6">
-          <h2 className="font-serif text-xl font-bold text-hampton-navy mb-2">Pay your deposit</h2>
-          <p className="text-hampton-navy/60 text-sm mb-4">
-            A 25% deposit of <strong>{formatMoney(depositCents)}</strong> (+ 3% card fee) reserves your date. Balance {formatMoney(balanceDueCents)} due 7 days before.
-          </p>
+          <h2 className="font-serif text-xl font-bold text-hampton-navy mb-4">Review &amp; pay your deposit</h2>
+
+          {/* Booking summary */}
+          <div className="bg-hampton-ivory/50 rounded-xl border border-hampton-mauve/15 p-4 mb-5 text-sm">
+            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-3">
+              {bookingRef && <div className="sm:col-span-2"><span className="text-hampton-navy/50">Booking</span> <strong className="text-hampton-navy">{bookingRef}</strong></div>}
+              <div><span className="text-hampton-navy/50">Event</span> <span className="text-hampton-navy">{eventType}</span></div>
+              <div><span className="text-hampton-navy/50">Date</span> <span className="text-hampton-navy">{dateLabel(date)}</span></div>
+              <div><span className="text-hampton-navy/50">Time</span> <span className="text-hampton-navy">{timeLabel(startTime)} – {timeLabel(endTime)}</span></div>
+              <div><span className="text-hampton-navy/50">Guests</span> <span className="text-hampton-navy">{guestCount}{seatingNeeded ? ` · ${seatingNeeded} seated` : ''}</span></div>
+              <div className="sm:col-span-2"><span className="text-hampton-navy/50">Contact</span> <span className="text-hampton-navy">{contact.name} · {contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</span></div>
+            </div>
+
+            <div className="border-t border-hampton-mauve/15 pt-2 space-y-1">
+              {rate && (
+                <div className="flex justify-between"><span className="text-hampton-navy/70">{rate.lineItemLabel}</span><span className="text-hampton-navy">{formatMoney(rentalCents)}</span></div>
+              )}
+              {Object.keys(selected).map(id => {
+                const it = allItems.find(i => i.id === id)
+                if (!it) return null
+                const qtyLabel = it.price_type === 'per_person' ? ` × ${guestCount}` : selected[id] > 1 ? ` × ${selected[id]}` : ''
+                return (
+                  <div key={id} className="flex justify-between">
+                    <span className="text-hampton-navy/70">{it.name}{qtyLabel}</span>
+                    <span className="text-hampton-navy">{formatMoney(itemLineTotal(it, selected[id]))}</span>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="border-t border-hampton-mauve/15 mt-2 pt-2 space-y-1">
+              <div className="flex justify-between font-semibold"><span className="text-hampton-navy">Total</span><span className="text-hampton-navy">{formatMoney(charge?.total ?? totalCents)}</span></div>
+              <div className="flex justify-between"><span className="text-hampton-navy/70">Deposit today (25%)</span><span className="text-hampton-navy">{formatMoney(depositNow)}</span></div>
+              <div className="flex justify-between"><span className="text-hampton-navy/70">Card fee (3%)</span><span className="text-hampton-navy">{formatMoney(cardFeeNow)}</span></div>
+              <div className="flex justify-between font-bold border-t border-hampton-mauve/15 pt-1 mt-1"><span className="text-hampton-navy">Charged today</span><span className="text-hampton-navy">{formatMoney(chargedTodayCents)}</span></div>
+              <div className="flex justify-between text-xs text-hampton-navy/50 pt-1"><span>Balance due 7 days before event</span><span>{formatMoney(balanceNow)}</span></div>
+            </div>
+          </div>
+
           <div ref={checkoutRef} className="min-h-[120px]" />
           {!checkoutReady && <p className="text-hampton-navy/50 text-sm">Loading secure payment…</p>}
           {checkoutReady && (
             <button onClick={confirmPayment} disabled={confirming}
               className="btn-primary w-full mt-5 py-3 disabled:opacity-60">
-              {confirming ? 'Processing…' : `Pay ${formatMoney(depositCents)} Deposit`}
+              {confirming ? 'Processing…' : `Pay ${formatMoney(chargedTodayCents)}`}
             </button>
           )}
           {error && <p className="text-red-600 text-sm mt-3">{error}</p>}
