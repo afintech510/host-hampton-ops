@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   let query = supabase
     .from('bookings')
     .select('id, booking_ref, status, event_type, party_date, party_time, package_type, guest_count_approx, child_name, contact_name, contact_email, contact_phone, total_cents, balance_due_cents, payment_method_preference, approved_at, paid_in_full_at, photo_gallery_url, created_at', { count: 'exact' })
-    .in('event_type', ['kid-party', 'kids-party', 'kids_party'])
+    .in('event_type', ['kid-party', 'kids-party', 'kids_party', 'studio-rental'])
     .range((page - 1) * limit, page * limit - 1)
 
   if (past) {

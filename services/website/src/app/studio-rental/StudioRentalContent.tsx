@@ -387,6 +387,7 @@ export default function StudioRentalContent(props: Props) {
         <div className="bg-hampton-ivory rounded-2xl border border-hampton-pink/20 p-6 text-left text-sm text-hampton-navy/80 space-y-2">
           <p>• Your <strong>{formatMoney(depositCents)}</strong> deposit is paid — your date is locked.</p>
           <p>• Balance of <strong>{formatMoney(balanceDueCents)}</strong> is due 7 days before your event.</p>
+          <p>• Use the link in your email anytime to <strong>add more time or add-ons</strong> and pay your balance.</p>
           <p>• A <strong>$500 refundable security hold</strong> is placed on your card the day of your event and auto-releases within 7 days.</p>
         </div>
         <a href="/my-booking" className="btn-primary inline-block mt-8 px-8 py-3">Manage My Booking</a>
@@ -575,6 +576,7 @@ export default function StudioRentalContent(props: Props) {
       {/* Sign phase */}
       {phase === 'sign' && signingUrl && (
         <section className="bg-white rounded-2xl border border-hampton-pink/20 p-6">
+          <button type="button" onClick={() => { setError(''); setPhase('build') }} className="text-hampton-navy/60 text-sm mb-3 hover:underline">← Back to edit</button>
           <h2 className="font-serif text-xl font-bold text-hampton-navy mb-2">Review &amp; sign your agreement</h2>
           <p className="text-hampton-navy/60 text-sm mb-5">Booking <strong>{bookingRef}</strong> — your rental agreement opens in a secure window. Review and sign it, and we’ll bring you right back to payment.</p>
           <button type="button" onClick={() => openSignwell(signingUrl)} className="btn-primary w-full py-3">Open Agreement to Sign</button>
@@ -590,6 +592,7 @@ export default function StudioRentalContent(props: Props) {
       {/* Pay phase */}
       {phase === 'pay' && (
         <section className="bg-white rounded-2xl border border-hampton-pink/20 p-6">
+          <button type="button" onClick={() => { setError(''); setPhase(signingUrl ? 'sign' : 'build') }} className="text-hampton-navy/60 text-sm mb-3 hover:underline">← Back</button>
           <h2 className="font-serif text-xl font-bold text-hampton-navy mb-4">Review &amp; pay your deposit</h2>
 
           {/* Booking summary */}

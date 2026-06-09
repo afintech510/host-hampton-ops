@@ -24,6 +24,8 @@ interface PartyBookingSummary {
 interface PartyDetail extends PartyBookingSummary {
   admin_notes: string | null
   notes: string | null
+  event_type?: string | null
+  party_tags?: Record<string, unknown> | null
   approved_at: string | null
   paid_in_full_at: string | null
   child_age: number | null
@@ -548,6 +550,15 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
             )}
           </div>
 
+          {/* Studio rental time (re-prices the rental fee) */}
+          {selected.event_type === 'studio-rental' && (
+            <StudioTimeEditor
+              detail={selected as PartyDetail}
+              busy={actionLoading === 'edit_rental'}
+              onSave={(startTime, endTime) => doAction('edit_rental', { startTime, endTime })}
+            />
+          )}
+
           {/* Line items */}
           <div className="bg-white rounded-xl border p-5">
             <div className="flex items-center justify-between mb-3">
@@ -798,6 +809,41 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ─── Studio rental time editor (re-prices the rental fee) ─────── */
+function StudioTimeEditor({ detail, busy, onSave }: {
+  detail: PartyDetail
+  busy: boolean
+  onSave: (startTime: string, endTime: string) => void
+}) {
+  const tags0 = (detail.party_tags || {}) as Record<string, string>
+  const [start, setStart] = useState(tags0.rental_start_time || detail.party_time || '14:00')
+  const [end, setEnd] = useState(tags0.rental_end_time || '17:00')
+  useEffect(() => {
+    const t = (detail.party_tags || {}) as Record<string, string>
+    setStart(t.rental_start_time || detail.party_time || '14:00')
+    setEnd(t.rental_end_time || '17:00')
+  }, [detail.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="bg-white rounded-xl border p-5">
+      <h3 className="text-sm font-medium text-[#1a2744] mb-3">Studio Rental Time</h3>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs text-gray-500">Start
+          <input type="time" value={start} onChange={e => setStart(e.target.value)} className="block border rounded px-2 py-1.5 text-sm mt-0.5" />
+        </label>
+        <label className="text-xs text-gray-500">End
+          <input type="time" value={end} onChange={e => setEnd(e.target.value)} className="block border rounded px-2 py-1.5 text-sm mt-0.5" />
+        </label>
+        <button onClick={() => onSave(start, end)} disabled={busy}
+          className="text-xs bg-[#1a2744] text-white px-3 py-2 rounded font-medium disabled:opacity-50">
+          {busy ? 'Updating…' : 'Update time & re-price'}
+        </button>
+      </div>
+      <p className="text-[11px] text-gray-400 mt-2">Re-prices the rental fee (Weekend $575/3hr +$100/hr, Weekday $450/3hr +$75/hr; capped at full-day $975 / $700) and recomputes the balance.</p>
     </div>
   )
 }

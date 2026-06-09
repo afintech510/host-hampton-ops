@@ -52,6 +52,28 @@ describe('studioRentalRate — weekday ($450/3hr, +$75/hr)', () => {
   })
 })
 
+describe('studioRentalRate — full-day cap', () => {
+  it('weekend caps at $975 (full day) for long windows', () => {
+    expect(studioRentalRate(SAT, 7).rentalCents).toBe(97500)  // 575 + 4×100 = 975
+    expect(studioRentalRate(SAT, 10).rentalCents).toBe(97500) // would be 1275, capped
+    expect(studioRentalRate(SUN, 16).rentalCents).toBe(97500)
+    expect(studioRentalRate(SAT, 12).isFullDay).toBe(true)
+    expect(studioRentalRate(SAT, 12).lineItemLabel).toBe('Studio Rental — Weekend Full Day')
+  })
+  it('weekday caps at $700 (full day) for long windows', () => {
+    expect(studioRentalRate(MON, 7).rentalCents).toBe(70000)  // 450 + 4×75 = 750 → capped 700
+    expect(studioRentalRate(MON, 12).rentalCents).toBe(70000)
+    expect(studioRentalRate(FRI, 14).rentalCents).toBe(70000)
+    expect(studioRentalRate(MON, 12).isFullDay).toBe(true)
+  })
+  it('does not cap shorter windows', () => {
+    expect(studioRentalRate(SAT, 6).rentalCents).toBe(87500)  // below cap
+    expect(studioRentalRate(SAT, 6).isFullDay).toBe(false)
+    expect(studioRentalRate(MON, 6).rentalCents).toBe(67500)
+    expect(studioRentalRate(MON, 6).isFullDay).toBe(false)
+  })
+})
+
 describe('studioRentalRate — guards', () => {
   it('clamps below-minimum hours to the 3-hour block', () => {
     const r = studioRentalRate(MON, 1)
