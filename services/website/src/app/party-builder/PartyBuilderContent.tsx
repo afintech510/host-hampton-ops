@@ -2981,8 +2981,8 @@ export default function PartyBuilderContent({
                       <p className="text-sm font-medium text-hampton-navy">{li.label}</p>
                       {li.detail && <p className="text-xs text-hampton-navy/40">{li.detail}</p>}
                     </div>
-                    <span className="text-sm font-bold text-hampton-navy whitespace-nowrap">
-                      {li.amount > 0 ? fmt(li.amount) : 'Included'}
+                    <span className={`text-sm font-bold whitespace-nowrap ${li.amount < 0 ? 'text-green-700' : 'text-hampton-navy'}`}>
+                      {li.amount < 0 ? `-${fmt(-li.amount)}` : li.amount > 0 ? fmt(li.amount) : 'Included'}
                     </span>
                   </div>
                 ))}
