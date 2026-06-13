@@ -12,7 +12,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy over SSH (website only — never rebuilds shared nginx)
+      - name: Deploy over SSH (website only — scripts/deploy.sh does the ff-only pull; respects skip-worktree nginx.conf)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -23,8 +23,6 @@ jobs:
           script: |
             set -e
             cd /opt/hosthampton
-            git fetch --all --prune
-            git reset --hard origin/main
             bash scripts/deploy.sh website
             curl -fsS --max-time 10 --retry 4 --retry-delay 3 --retry-connrefused --resolve www.hosthampton.com:443:127.0.0.1 https://www.hosthampton.com/ >/dev/null \
               && echo "health OK (www.hosthampton.com)" \
