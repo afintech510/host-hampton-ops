@@ -1,0 +1,246 @@
+# Host Hampton — Ops & Agent Guide
+
+Operating and development guide for the Host Hampton party/event booking platform — the live `www.hosthampton.com`. **This repo is the FLEET HUB:** its `hampton_nginx` container and `hampton_net` Docker network are the shared edge reverse proxy / network that other projects on the same VPS attach to. Treat changes to the proxy and network as fleet-wide changes.
+
+---
+
+## 1. What this is
+
+Host Hampton is a party/event booking platform: marketing site, customer booking/party-builder flows, an admin dashboard, and the public API — all served by a single Next.js app. Customers book parties/events, pay deposits via Stripe (LIVE mode — real money), e-sign studio rental agreements (SignWell), and receive automated email/SMS reminders.
+
+There is **no CI/CD**. Production is one Hetzner VPS running Docker Compose; deploys are a manual `git pull` + rebuild on the box, driven from your laptop by `scripts/deploy.sh`.
+
+> A multi-service AI "agent stack" (orchestrator, SOC, copy, image, paid-ads, MCP servers, redis) is scaffolded in `docker-compose.yml` and `services/` but is **commented out / disabled**. Only `nginx` and `website` run in production. Do not assume those services exist when operating.
+
+---
+
+## 2. Stack
+
+- **App:** Next.js 14 (14.2.5), React 18, TypeScript, App Router (`src/app/...`), Tailwind CSS. Built as `output: 'standalone'`.
+- **Container runtime image:** `node:20-alpine`, runs `node server.js` on **port 3002**.
+- **Reverse proxy:** `nginx:alpine` (`hampton_nginx`), terminates TLS on 80/443.
+- **Database/Auth/Storage:** Supabase (Postgres), project ref `ychnlroczjhwimouecxz`.
+- **Payments:** Stripe (LIVE).
+- **Email:** Resend + Brevo. **SMS:** Twilio. **E-sign:** SignWell. **AI:** Anthropic.
+- **Tests:** Jest (`npm test` in `services/website`).
+- **Edge:** Cloudflare in front of the VPS (origin TLS via Cloudflare Origin cert mounted into nginx).
+
+---
+
+## 3. Where it runs (host, paths, domains, shared proxy)
+
+- **VPS:** Hetzner, `5.161.88.134` · SSH alias `hampton-vps` (user `root`, key `~/.ssh/id_ed25519_headless`).
+- **Repo on box:** `/opt/hosthampton` (tracks `main`).
+- **Git remote on box:** uses an SSH **deploy key** (read-only), `origin = git@github-hosthampton:afintech510/host-hampton-ops.git` via the `github-hosthampton` SSH host alias. No PAT, no token expiry.
+- **Domains:**
+  - `www.hosthampton.com` — production site (proxied to `website:3002`).
+  - `staging.hosthampton.com` — staging (same container, in tracked nginx config).
+  - `app.hosthampton.com`, `api.hosthampton.com` — dashboard / API hostnames (served by the same app; their `server` blocks live in the **server-only** nginx config on the box, not in the tracked `nginx/nginx.conf`).
+
+### The shared edge proxy & network (FLEET-CRITICAL)
+
+This repo owns the shared edge for the whole VPS:
+
+- **`hampton_nginx`** (from `docker-compose.yml` service `nginx`) is the only container publishing host ports **80 and 443**. All HTTP(S) traffic for every project on this box enters through it.
+- **`hampton_net`** (declared in `docker-compose.yml`, `driver: bridge`) is the shared Docker network. Other projects (e.g. eastern-equip-rentals, maningo, larkin, etc.) attach their containers to `hampton_net` so `hampton_nginx` can `proxy_pass` to them by container name.
+- **`nginx/nginx.conf` (tracked) only contains Host Hampton's own `www`/`staging` server blocks.** The `server` blocks and SSL mounts for the *other* domains/projects live on the box in the skip-worktree copy of `nginx.conf` plus `docker-compose.override.yml`. The tracked file is intentionally minimal so pulls never conflict.
+- Upstream is defined as `upstream website { server website:3002; }` with Docker's embedded DNS resolver (`127.0.0.11`) so upstreams re-resolve after container restarts.
+- TLS certs are mounted read-only from the host: `/etc/ssl/hosthampton:/etc/ssl/hosthampton:ro`, used as `origin.pem` / `origin.key`.
+
+**Rule of thumb:** anything that touches `nginx_*`, ports 80/443, `hampton_net`, or the `nginx` service is a fleet-wide change — it can take down *every* site on the box, not just Host Hampton.
+
+---
+
+## 4. Run locally
+
+The app lives in `services/website`.
+
+```bash
+cd services/website
+npm ci
+npm run dev          # next dev on http://localhost:3002
+npm run build        # production build (output: standalone)
+npm test             # jest
+npm run lint
+```
+
+You need a local `.env` (gitignored) with the same var **names** the container uses (see §8). At minimum Supabase + Stripe vars for most flows. Without secrets, pages render but payment/email/SMS/Supabase calls fail. There is no committed `.env.example` checked in (the gitignore allows `.env.example.template`, but none is present).
+
+---
+
+## 5. Deploy
+
+### Standard (from your laptop — needs SSH access to `hampton-vps`)
+
+```bash
+bash scripts/deploy.sh            # rebuilds the 'website' service (default)
+bash scripts/deploy.sh website    # same, explicit
+bash scripts/deploy.sh <service>  # rebuild a specific compose service
+```
+
+`scripts/deploy.sh` SSHes to `hampton-vps`, then on the box runs:
+1. `cd /opt/hosthampton`
+2. `git pull --ff-only` (via the read-only SSH deploy key)
+3. `docker compose up -d --build "${SERVICE}"`
+4. `docker compose ps` (status)
+
+Then back on your laptop it smoke-tests `https://www.hosthampton.com/` and prints the HTTP code.
+
+### Manual fallback
+
+```bash
+ssh hampton-vps
+cd /opt/hosthampton
+git pull --ff-only
+docker compose up -d --build website     # rebuild + recreate; nginx stays up
+docker compose ps
+curl -s -o /dev/null -w "%{http_code}\n" https://www.hosthampton.com/
+```
+
+### Deploy rules
+
+- **Always rebuild with `docker compose up -d --build`. Never use `docker compose restart`** — `restart` does **not** pick up `.env` changes or newly built images.
+- `NEXT_PUBLIC_*` vars are **build-time** `build.args` (e.g. `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_GA_ID`, `NEXT_PUBLIC_GADS_ID`) — they only take effect on `--build`.
+- Default deploy targets only the `website` service, so `hampton_nginx` is left running. If you must rebuild nginx, understand it affects the whole fleet (see §3).
+- Apply DB migrations **before** deploying code that depends on them (see §7).
+
+### Rollback
+
+```bash
+ssh hampton-vps 'cd /opt/hosthampton && git log --oneline -5'
+ssh hampton-vps 'cd /opt/hosthampton && git checkout <good_sha> -- . && docker compose up -d --build website'
+# or: revert the merge commit on GitHub, then re-run scripts/deploy.sh
+```
+
+---
+
+## 6. Database
+
+- **Supabase project ref:** `ychnlroczjhwimouecxz` (DB host `db.ychnlroczjhwimouecxz.supabase.co`, storage host `ychnlroczjhwimouecxz.supabase.co` — the latter is whitelisted in `next.config.js` `images.domains`).
+- **Base schema + addendum** live in `starting_plan/`:
+  - `HostHampton_Supabase_Schema.sql` (core tables, enums, triggers, RLS, seed data)
+  - `HostHampton_Supabase_Schema_Addendum_v1.2.sql`
+- **Apply base + addendum** with `scripts/db_setup.sh`:
+  ```bash
+  export DATABASE_URL='postgres://postgres:[password]@db.ychnlroczjhwimouecxz.supabase.co:5432/postgres'
+  # or: export SUPABASE_DB_HOST=... SUPABASE_DB_PASSWORD=...
+  ./scripts/db_setup.sh
+  ```
+  It validates `DATABASE_URL`/`psql`, tests the connection, then runs the base schema and addendum each in a single transaction (`ON_ERROR_STOP=1`). Re-runnable (uses `IF NOT EXISTS`).
+- **Incremental migrations:** `starting_plan/migration_*.sql` (e.g. `migration_004_website_booking.sql` … `migration_017_studio_rental.sql`). Per DEPLOY.md these are applied **manually via the Supabase MCP / SQL editor, independently of the container deploy** — `db_setup.sh` runs only base + addendum, not the numbered migrations. Apply the migration first, then deploy dependent code.
+- **Verify:** `./scripts/db_verify.sh`.
+
+---
+
+## 7. Environment & secrets
+
+- **Runtime secrets live in `/opt/hosthampton/.env` on the box (gitignored).** `docker-compose.yml` maps them into the `website` container's `environment:`.
+- **Build-time public vars** (`NEXT_PUBLIC_*`) are passed as `build.args` and baked at build time.
+- **Server-only Compose overrides** (per-host nginx SSL volume mounts, including the other fleet domains) live in **`/opt/hosthampton/docker-compose.override.yml`** (gitignored; Compose auto-merges it). Edit that file on the box when changing per-host mounts.
+- When adding a var: add it to `docker-compose.yml` (`environment:` for runtime, `build.args` for `NEXT_PUBLIC_*`) **and** to `/opt/hosthampton/.env`, then `docker compose up -d --build website`.
+
+**Variable NAMES only (never print values):**
+
+Build args: `NEXT_PUBLIC_GA_ID`, `NEXT_PUBLIC_GADS_ID`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+
+Runtime env (`website`):
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`,
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `GOOGLE_CALENDAR_ID`,
+`RESEND_API_KEY`, `RESEND_FROM_EMAIL`,
+`ADMIN_PASSWORD`, `CRON_SECRET`,
+`BREVO_API_KEY`, `BREVO_DEFAULT_LIST_ID`, `BREVO_SENDER_EMAIL`,
+`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`,
+`ANTHROPIC_API_KEY`, `PORTAL_LINK_SIGNING_SECRET`,
+`VENMO_HANDLE`, `ZELLE_PHONE`,
+`SIGNWELL_API_KEY`, `SIGNWELL_TEMPLATE_ID`, `SIGNWELL_TEST_MODE`, `SIGNWELL_SIGNER_PLACEHOLDER`
+
+`db_setup.sh` additionally reads: `DATABASE_URL` (or `SUPABASE_DB_HOST` / `SUPABASE_DB_PASSWORD` / `SUPABASE_DB_PORT` / `SUPABASE_DB_NAME` / `SUPABASE_DB_USER`).
+
+> Never commit `.env`, `*.pem`, `*.key`, or SSH keys — all are gitignored. `SIGNWELL_TEST_MODE=false` means live e-sign.
+
+---
+
+## 8. Cron / scheduled jobs
+
+There is **no in-container scheduler**. Scheduled work is driven externally by **cron-job.org**, which hits the app's cron API routes. Each route is authorized by a shared secret matching `CRON_SECRET`, sent either as the `x-cron-secret` request header **or** the `?secret=` query parameter (unauthorized → 401).
+
+Cron routes (under `services/website/src/app/api/cron/`):
+
+- `/api/cron/send-reminders` — booking/event reminder emails + SMS
+- `/api/cron/send-campaigns` — outbound campaign sends
+- `/api/cron/draft-newsletter` — newsletter drafting
+- `/api/cron/process-sequences` — email sequence processing
+- `/api/cron/event-reminders`
+- `/api/cron/booking-locks`
+
+Example trigger:
+```bash
+curl -s "https://www.hosthampton.com/api/cron/send-reminders" -H "x-cron-secret: $CRON_SECRET"
+```
+
+If reminders/campaigns stop firing, check the cron-job.org schedule and that the configured secret still matches `CRON_SECRET` in `.env`.
+
+---
+
+## 9. Day-to-day cheat sheet
+
+```bash
+# Connect
+ssh hampton-vps                                # root@5.161.88.134, key id_ed25519_headless
+
+# What's running
+ssh hampton-vps 'cd /opt/hosthampton && docker compose ps'
+
+# Logs (website)
+ssh hampton-vps 'docker logs -f --tail=200 hampton_website'
+# Logs (shared proxy — FLEET)
+ssh hampton-vps 'docker logs -f --tail=200 hampton_nginx'
+
+# Deploy
+bash scripts/deploy.sh                          # rebuild + recreate website
+
+# Health
+curl -s -o /dev/null -w "%{http_code}\n" https://www.hosthampton.com/      # expect 200
+ssh hampton-vps 'cd /opt/hosthampton && docker compose -f docker-compose.yml ps'   # all Up
+ssh hampton-vps 'docker exec hampton_website sh -c "echo \$SIGNWELL_TEMPLATE_ID"'  # env present
+
+# Rollback
+ssh hampton-vps 'cd /opt/hosthampton && git log --oneline -5'
+ssh hampton-vps 'cd /opt/hosthampton && git checkout <good_sha> -- . && docker compose up -d --build website'
+
+# Reload proxy config after editing nginx.conf ON THE BOX (it is skip-worktree)
+ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx nginx -s reload'
+```
+
+---
+
+## 10. Key files
+
+- `DEPLOY.md` — authoritative deploy runbook (deploy key, override.yml, manual deploy, rollback, infra setup).
+- `docker-compose.yml` — services (`nginx`, `website`; agent stack commented out), `hampton_net` network, env wiring.
+- `docker-compose.override.yml` — **on the box only**, gitignored; per-host nginx SSL mounts incl. other fleet domains.
+- `nginx/nginx.conf` — tracked proxy config (www/staging only); **skip-worktree on the box** (box owns the real one).
+- `scripts/deploy.sh` — laptop → VPS deploy (pull → `up -d --build` → ps → smoke test).
+- `scripts/db_setup.sh` — apply base schema + addendum to Supabase.
+- `scripts/db_verify.sh` — schema verification.
+- `scripts/signwell-check.mjs` — SignWell integration check.
+- `starting_plan/HostHampton_Supabase_Schema.sql`, `..._Addendum_v1.2.sql` — schema applied by `db_setup.sh`.
+- `starting_plan/migration_*.sql` — incremental migrations (apply manually via Supabase SQL editor).
+- `services/website/` — the Next.js app (`src/app`, `src/lib`, `Dockerfile`, `next.config.js`, `package.json`, `TESTING.md`).
+- `SESSION_LOG.md`, `PLAN.md` — running history / planning notes.
+
+---
+
+## 11. Gotchas & operational rules
+
+- **This box hosts the whole fleet.** `hampton_nginx` (ports 80/443) and `hampton_net` are shared infra. Do not rename/remove the `nginx` service, change its published ports, or delete/rename `hampton_net` — you would break every other site (eastern-equip-rentals, maningo, larkin, etc.) attached to it. Treat proxy/network edits as fleet-wide.
+- **`nginx/nginx.conf` is `git update-index --skip-worktree` on the box.** The box's real config (with the other projects' server blocks + `app`/`api` blocks) differs from the tracked minimal file. Edit the live config **on the box** and reload with `nginx -t && nginx -s reload`. To hand control back to git: `git update-index --no-skip-worktree nginx/nginx.conf`.
+- **Server-only SSL mounts live in `docker-compose.override.yml` on the box** (gitignored, auto-merged by Compose). Edit there for per-host volume mounts; don't add them to the tracked `docker-compose.yml`.
+- **Never `docker compose restart`** to deploy — always `up -d --build` (restart ignores `.env` and new images).
+- **`NEXT_PUBLIC_*` changes require a rebuild** (`--build`); they are baked at build time, not read at runtime.
+- **Stripe is LIVE** — deposits/payments are real money. **`SIGNWELL_TEST_MODE=false` is live e-sign.** Be careful testing payment/contract flows against production.
+- **Migrations are not run by deploy** — apply `starting_plan/migration_*.sql` manually in Supabase first, then deploy.
+- **Git on the box uses a read-only deploy key** via the `github-hosthampton` SSH alias (`IdentitiesOnly yes` required, since the box holds multiple repos' keys). It can pull but not push; pushes happen from your laptop/GitHub.
+- **No CI/CD, no GitHub Actions** — every production change is a manual deploy. Don't assume a pipeline will catch anything.
+- **Agent stack is disabled.** redis/orchestrator/SOC/copy/image/paid/MCP services in `docker-compose.yml` are commented out; `redis_data` and `uploads` volumes are retained for if they're re-enabled. Don't reference them as live infra.
