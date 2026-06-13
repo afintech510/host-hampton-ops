@@ -12,7 +12,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy over SSH (website only — scripts/deploy.sh does the ff-only pull; respects skip-worktree nginx.conf)
+      - name: Deploy over SSH (website only — never rebuilds shared nginx; preserves skip-worktree nginx.conf)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -23,7 +23,14 @@ jobs:
           script: |
             set -e
             cd /opt/hosthampton
-            bash scripts/deploy.sh website
+            # nginx.conf is box-owned (skip-worktree); un-skip so reset succeeds, then restore.
+            git update-index --no-skip-worktree nginx/nginx.conf 2>/dev/null || true
+            git fetch --all --prune
+            git reset --hard origin/main
+            git update-index --skip-worktree nginx/nginx.conf 2>/dev/null || true
+            docker compose up -d --build website
+            docker image prune -f
+            docker compose ps
             curl -fsS --max-time 10 --retry 4 --retry-delay 3 --retry-connrefused --resolve www.hosthampton.com:443:127.0.0.1 https://www.hosthampton.com/ >/dev/null \
               && echo "health OK (www.hosthampton.com)" \
               || echo "WARN: health check did not pass (deploy applied)"
