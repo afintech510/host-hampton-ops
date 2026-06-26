@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import Nav from '@/components/Nav'
 import Footer from '@/components/Footer'
+import BenchworksAttribution from '@/components/BenchworksAttribution'
 import CrispChat from '@/components/CrispChat'
 import GoogleAnalytics from '@/components/GoogleAnalytics'
 import { CartProvider } from '@/context/CartContext'
@@ -90,6 +91,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className="flex-1 pt-20">{children}</main>
           <div className="h-40 bg-gradient-to-b from-transparent to-[#BCCDEB]" aria-hidden="true" />
           <Footer />
+          <BenchworksAttribution />
           <CartDrawer />
         </CartProvider>
         <GoogleAnalytics />
