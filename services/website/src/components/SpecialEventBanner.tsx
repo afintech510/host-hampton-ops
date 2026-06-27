@@ -1,5 +1,8 @@
+'use client'
+
 import Image from 'next/image'
-import { Calendar, Clock, Sparkles } from 'lucide-react'
+import { Calendar, Clock, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
 
 const SERVICES = [
   { name: 'Hair Tinsel', price: '$15' },
@@ -11,6 +14,17 @@ const SERVICES = [
 const CAL_LINK = 'https://cal.com/hosthampton/summer-hair'
 
 export default function SpecialEventBanner() {
+  const [open, setOpen] = useState(false)
+  const embedRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (open && embedRef.current) {
+      setTimeout(() => {
+        embedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 350)
+    }
+  }, [open])
+
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-2">
       <div className="relative overflow-hidden rounded-2xl border-2 border-[#1e3a5f]/20 bg-white shadow-md">
@@ -73,14 +87,31 @@ export default function SpecialEventBanner() {
               All services paid in person — by appointment only
             </p>
 
-            <a
-              href={CAL_LINK}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => setOpen(!open)}
               className="btn-primary inline-flex items-center justify-center gap-2 w-fit px-8 py-3.5"
             >
               Book Your Appointment
-            </a>
+              {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Slide-down Cal.com embed */}
+        <div
+          className="overflow-hidden transition-all duration-500 ease-in-out"
+          style={{ maxHeight: open ? '700px' : '0px' }}
+        >
+          <div ref={embedRef} className="border-t-2 border-[#1e3a5f]/10 bg-hampton-ivory/50 p-4 sm:p-6">
+            <iframe
+              src={`${CAL_LINK}?embed=true&layout=month_view&hideBranding=true`}
+              width="100%"
+              height="600"
+              frameBorder="0"
+              className="rounded-xl border border-hampton-mauve/20 bg-white"
+              title="Book Summer Hair Appointment"
+              loading="lazy"
+            />
           </div>
         </div>
       </div>
