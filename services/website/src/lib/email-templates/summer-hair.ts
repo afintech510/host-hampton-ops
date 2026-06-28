@@ -12,6 +12,7 @@ interface ConfirmationData {
   services: string[]
   partySize: number
   estimatedTotal: number
+  duration?: string
 }
 
 export function summerHairConfirmationHtml(d: ConfirmationData): string {
@@ -33,7 +34,7 @@ export function summerHairConfirmationHtml(d: ConfirmationData): string {
     <p style="color:${BRAND.navy};font-size:16px;line-height:1.7;">Hi ${firstName}!</p>
     <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;">Your Summer Hair appointment is confirmed. Here are your details:</p>
     <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-      <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Time</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.timeSlot}</td></tr>
+      <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Time</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.duration || d.timeSlot}</td></tr>
       <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Party Size</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.partySize} ${d.partySize === 1 ? 'person' : 'people'}</td></tr>
     </table>
     <p style="color:${BRAND.navy};font-size:14px;font-weight:bold;margin:20px 0 8px;">Services Selected:</p>
@@ -42,7 +43,7 @@ export function summerHairConfirmationHtml(d: ConfirmationData): string {
       <p style="color:${BRAND.navy};font-size:18px;font-weight:bold;margin:0;">Estimated Total: $${d.estimatedTotal}</p>
       <p style="color:${BRAND.gray};font-size:12px;margin:6px 0 0;">Payable in person</p>
     </div>
-    <p style="color:${BRAND.gray};font-size:13px;line-height:1.6;">See you at <strong>295 Montauk Highway, Suite 7, Speonk, NY 11972</strong> on Friday, July 3rd at ${d.timeSlot}.</p>
+    <p style="color:${BRAND.gray};font-size:13px;line-height:1.6;">See you at <strong>295 Montauk Highway, Suite 7, Speonk, NY 11972</strong> on Friday, July 3rd at ${d.duration || d.timeSlot}.</p>
     <p style="color:${BRAND.gray};font-size:13px;line-height:1.6;">Questions? Call or text us at <a href="tel:6319989325" style="color:${BRAND.navy};font-weight:600;">(631) 998-9325</a>.</p>
   </div>
   <div style="background:${BRAND.footerBg};padding:20px 40px;text-align:center;">
@@ -61,6 +62,7 @@ interface AdminNotifyData {
   partySize: number
   notes?: string | null
   estimatedTotal: number
+  duration?: string
 }
 
 export function summerHairAdminNotifyHtml(d: AdminNotifyData): string {
@@ -81,7 +83,7 @@ export function summerHairAdminNotifyHtml(d: AdminNotifyData): string {
       <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Name</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.name}</td></tr>
       <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Email</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><a href="mailto:${d.email}" style="color:${BRAND.navy};">${d.email}</a></td></tr>
       <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Phone</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><a href="tel:${d.phone}" style="color:${BRAND.navy};">${d.phone}</a></td></tr>
-      <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Time</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.timeSlot}</td></tr>
+      <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Time</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.duration || d.timeSlot}</td></tr>
       <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Party Size</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.partySize} ${d.partySize === 1 ? 'person' : 'people'}</td></tr>
       ${notesRow}
     </table>

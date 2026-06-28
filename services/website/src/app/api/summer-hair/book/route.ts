@@ -17,6 +17,9 @@ const VALID_SERVICES = [
   'Glitter Freckles',
 ]
 
+const WRAP_SERVICES = ['Hair Wraps', 'Hair Wraps + Charms']
+const QUICK_SERVICES = ['Hair Tinsel', 'Hair Glitter', 'Glitter Freckles']
+
 const TIME_SLOTS = Array.from({ length: 18 }, (_, i) => {
   const totalMin = 9 * 60 + i * 20
   const h = Math.floor(totalMin / 60)
@@ -26,18 +29,59 @@ const TIME_SLOTS = Array.from({ length: 18 }, (_, i) => {
   return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`
 })
 
-export async function GET() {
+export function calcSlotsNeeded(services: string[], partySize: number): number {
+  const hasWraps = services.some(s => WRAP_SERVICES.includes(s))
+  const hasQuick = services.some(s => QUICK_SERVICES.includes(s))
+
+  if (hasWraps) {
+    // Wraps: 1 slot per person (20 min each). Quick services fit within wrap time.
+    return partySize
+  }
+  if (hasQuick) {
+    // Quick only: 4 people per 20-min slot
+    return Math.ceil(partySize / 4)
+  }
+  return 1
+}
+
+function getOccupiedSlotIndices(startIndex: number, slotsNeeded: number): number[] {
+  return Array.from({ length: slotsNeeded }, (_, i) => startIndex + i)
+}
+
+export async function GET(req: NextRequest) {
   const supabase = getSupabase()
+
+  const url = new URL(req.url)
+  const services = url.searchParams.getAll('service')
+  const partySize = parseInt(url.searchParams.get('partySize') || '1', 10)
+  const slotsNeeded = services.length > 0 ? calcSlotsNeeded(services, partySize) : 1
 
   const { data: bookings } = await supabase
     .from('summer_hair_bookings')
-    .select('time_slot')
+    .select('time_slot, slots_needed')
     .eq('status', 'confirmed')
 
-  const taken = new Set((bookings || []).map(b => b.time_slot))
-  const slots = TIME_SLOTS.map(s => ({ time: s, available: !taken.has(s) }))
+  // Build set of all occupied slot indices
+  const occupied = new Set<number>()
+  for (const b of bookings || []) {
+    const idx = TIME_SLOTS.indexOf(b.time_slot)
+    if (idx >= 0) {
+      for (const i of getOccupiedSlotIndices(idx, b.slots_needed || 1)) {
+        occupied.add(i)
+      }
+    }
+  }
 
-  return NextResponse.json({ slots })
+  // A start time is available if all N consecutive slots from it are free and within bounds
+  const slots = TIME_SLOTS.map((time, idx) => {
+    const endIdx = idx + slotsNeeded - 1
+    if (endIdx >= TIME_SLOTS.length) return { time, available: false }
+    const needed = getOccupiedSlotIndices(idx, slotsNeeded)
+    const available = needed.every(i => !occupied.has(i))
+    return { time, available }
+  })
+
+  return NextResponse.json({ slots, slotsNeeded })
 }
 
 export async function POST(req: NextRequest) {
@@ -62,18 +106,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Party size must be 1-10' }, { status: 400 })
   }
 
+  const slotsNeeded = calcSlotsNeeded(services, partySize)
+  const startIdx = TIME_SLOTS.indexOf(timeSlot)
+  const endIdx = startIdx + slotsNeeded - 1
+
+  if (endIdx >= TIME_SLOTS.length) {
+    return NextResponse.json({ error: 'Not enough time before closing for this booking' }, { status: 400 })
+  }
+
   const supabase = getSupabase()
 
-  // Check slot availability
+  // Check all needed slots are free
   const { data: existing } = await supabase
     .from('summer_hair_bookings')
-    .select('id')
-    .eq('time_slot', timeSlot)
+    .select('time_slot, slots_needed')
     .eq('status', 'confirmed')
 
-  if (existing && existing.length > 0) {
-    return NextResponse.json({ error: 'That time slot is no longer available' }, { status: 409 })
+  const occupied = new Set<number>()
+  for (const b of existing || []) {
+    const idx = TIME_SLOTS.indexOf(b.time_slot)
+    if (idx >= 0) {
+      for (const i of getOccupiedSlotIndices(idx, b.slots_needed || 1)) {
+        occupied.add(i)
+      }
+    }
   }
+
+  const neededIndices = getOccupiedSlotIndices(startIdx, slotsNeeded)
+  if (neededIndices.some(i => occupied.has(i))) {
+    return NextResponse.json({ error: 'One or more of those time slots is no longer available' }, { status: 409 })
+  }
+
+  const endTime = TIME_SLOTS[endIdx]
+  const duration = `${timeSlot} – ${endIdx + 1 < TIME_SLOTS.length ? TIME_SLOTS[endIdx + 1] : '3:00 PM'}`
 
   // Insert booking
   const { data: booking, error } = await supabase
@@ -83,6 +148,7 @@ export async function POST(req: NextRequest) {
       email,
       phone,
       time_slot: timeSlot,
+      slots_needed: slotsNeeded,
       services,
       party_size: partySize,
       notes: notes || null,
@@ -114,7 +180,6 @@ export async function POST(req: NextRequest) {
     const resend = new Resend(process.env.RESEND_API_KEY)
     const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
 
-    // Admin notification to Allie
     notifyPromises.push(
       resend.emails.send({
         from,
@@ -122,27 +187,25 @@ export async function POST(req: NextRequest) {
         subject: `Summer Hair Booking: ${name} at ${timeSlot}`,
         replyTo: email,
         html: summerHairAdminNotifyHtml({
-          name, email, phone, timeSlot, services, partySize, notes, estimatedTotal,
+          name, email, phone, timeSlot, services, partySize, notes, estimatedTotal, duration,
         }),
       })
     )
 
-    // Customer confirmation
     notifyPromises.push(
       resend.emails.send({
         from,
         to: email,
         subject: "You're booked — Summer Hair at Host Hampton!",
         html: summerHairConfirmationHtml({
-          name, timeSlot, services, partySize, estimatedTotal,
+          name, timeSlot, services, partySize, estimatedTotal, duration,
         }),
       })
     )
   }
 
-  // SMS to Allie
   const serviceList = services.join(', ')
-  const smsBody = `New Summer Hair booking!\n${name} at ${timeSlot}\n${partySize} ${partySize === 1 ? 'person' : 'people'}\nServices: ${serviceList}\nEst. total: $${estimatedTotal}\nPhone: ${phone}`
+  const smsBody = `New Summer Hair booking!\n${name} — ${duration}\n${partySize} ${partySize === 1 ? 'person' : 'people'} (${slotsNeeded} slots)\nServices: ${serviceList}\nEst. total: $${estimatedTotal}\nPhone: ${phone}`
 
   notifyPromises.push(
     sendSMS(ALLIE_PHONE, smsBody).catch(err => console.error('SMS to Allie failed (non-fatal):', err))
@@ -150,5 +213,5 @@ export async function POST(req: NextRequest) {
 
   await Promise.allSettled(notifyPromises)
 
-  return NextResponse.json({ success: true, bookingId: booking.id })
+  return NextResponse.json({ success: true, bookingId: booking.id, duration })
 }

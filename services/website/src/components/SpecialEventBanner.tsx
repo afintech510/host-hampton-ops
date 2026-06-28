@@ -12,11 +12,23 @@ const SERVICES = [
   { id: 'Glitter Freckles', label: 'Glitter Freckles', price: 10 },
 ]
 
+const WRAP_SERVICES = ['Hair Wraps', 'Hair Wraps + Charms']
+const QUICK_SERVICES = ['Hair Tinsel', 'Hair Glitter', 'Glitter Freckles']
+
+function calcSlotsNeeded(services: string[], partySize: number): number {
+  const hasWraps = services.some(s => WRAP_SERVICES.includes(s))
+  const hasQuick = services.some(s => QUICK_SERVICES.includes(s))
+  if (hasWraps) return partySize
+  if (hasQuick) return Math.ceil(partySize / 4)
+  return 1
+}
+
 interface SlotInfo { time: string; available: boolean }
 
 export default function SpecialEventBanner() {
   const [open, setOpen] = useState(false)
   const [slots, setSlots] = useState<SlotInfo[]>([])
+  const [slotsNeeded, setSlotsNeeded] = useState(1)
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState('')
   const [selectedServices, setSelectedServices] = useState<string[]>([])
@@ -27,15 +39,21 @@ export default function SpecialEventBanner() {
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [successDuration, setSuccessDuration] = useState('')
   const [error, setError] = useState('')
   const formRef = useRef<HTMLDivElement>(null)
+  const initialLoadDone = useRef(false)
 
-  const loadSlots = useCallback(async () => {
+  const loadSlots = useCallback(async (svcs: string[], size: number) => {
     setSlotsLoading(true)
     try {
-      const res = await fetch('/api/summer-hair/book')
+      const params = new URLSearchParams()
+      svcs.forEach(s => params.append('service', s))
+      params.set('partySize', String(size))
+      const res = await fetch(`/api/summer-hair/book?${params}`)
       const data = await res.json()
       setSlots(data.slots || [])
+      setSlotsNeeded(data.slotsNeeded || 1)
     } catch {
       setSlots([])
     } finally {
@@ -43,16 +61,25 @@ export default function SpecialEventBanner() {
     }
   }, [])
 
+  // Initial load when form opens
   useEffect(() => {
-    if (open && slots.length === 0) {
-      loadSlots()
+    if (open && !initialLoadDone.current) {
+      initialLoadDone.current = true
+      loadSlots(selectedServices, partySize)
     }
     if (open) {
       setTimeout(() => {
         formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 350)
     }
-  }, [open, loadSlots, slots.length])
+  }, [open, loadSlots, selectedServices, partySize])
+
+  // Re-fetch when services or party size change (after initial load)
+  useEffect(() => {
+    if (!initialLoadDone.current) return
+    setSelectedSlot('')
+    loadSlots(selectedServices, partySize)
+  }, [selectedServices, partySize, loadSlots])
 
   const toggleService = (id: string) => {
     setSelectedServices(prev => {
@@ -75,6 +102,9 @@ export default function SpecialEventBanner() {
     return sum + (svc?.price || 0)
   }, 0) * partySize
 
+  const durationMinutes = slotsNeeded * 20
+  const durationLabel = slotsNeeded === 1 ? '20 min' : `${durationMinutes} min (${slotsNeeded} slots)`
+
   const canSubmit = selectedSlot && selectedServices.length > 0 && name && email && phone
 
   const handleSubmit = async () => {
@@ -95,12 +125,13 @@ export default function SpecialEventBanner() {
         }),
       })
 
+      const data = await res.json()
       if (!res.ok) {
-        const data = await res.json()
         setError(data.error || 'Something went wrong. Please try again.')
         return
       }
 
+      setSuccessDuration(data.duration || selectedSlot)
       setSuccess(true)
     } catch {
       setError('Network error. Please try again.')
@@ -185,7 +216,7 @@ export default function SpecialEventBanner() {
         {/* Slide-down booking form */}
         <div
           className="overflow-hidden transition-all duration-500 ease-in-out"
-          style={{ maxHeight: open ? '1200px' : '0px' }}
+          style={{ maxHeight: open ? '1400px' : '0px' }}
         >
           <div ref={formRef} className="border-t-2 border-[#1e3a5f]/10 bg-hampton-ivory/50 p-5 sm:p-8">
             {success ? (
@@ -195,45 +226,17 @@ export default function SpecialEventBanner() {
                 </div>
                 <h3 className="font-serif text-2xl text-hampton-navy mb-2">You&apos;re Booked!</h3>
                 <p className="text-hampton-navy/70 text-sm max-w-md mx-auto">
-                  We sent a confirmation to <strong>{email}</strong>. See you on July 3rd at {selectedSlot}!
+                  We sent a confirmation to <strong>{email}</strong>. See you on July 3rd, {successDuration}!
                 </p>
                 <p className="text-hampton-mauve text-xs mt-3">All services are paid in person.</p>
               </div>
             ) : (
               <div className="max-w-2xl mx-auto space-y-6">
-                {/* Time Slots */}
+                {/* Step 1: Services */}
                 <div>
-                  <label className="form-label mb-3 block">Pick Your Time Slot</label>
-                  {slotsLoading ? (
-                    <div className="flex items-center gap-2 text-sm text-hampton-mauve py-4">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading available times…
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                      {slots.map((slot) => (
-                        <button
-                          key={slot.time}
-                          disabled={!slot.available}
-                          onClick={() => setSelectedSlot(slot.time)}
-                          className={`text-xs py-2.5 px-2 rounded-lg border-2 font-medium transition-all duration-200
-                            ${!slot.available
-                              ? 'border-hampton-mauve/15 bg-gray-50 text-hampton-mauve/40 cursor-not-allowed line-through'
-                              : selectedSlot === slot.time
-                                ? 'border-hampton-navy bg-hampton-navy text-white shadow-sm'
-                                : 'border-hampton-mauve/25 bg-white text-hampton-navy hover:border-hampton-navy/50'
-                            }`}
-                        >
-                          {slot.time}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Services */}
-                <div>
-                  <label className="form-label mb-3 block">What Would You Like?</label>
+                  <label className="form-label mb-3 block">
+                    1. What Would You Like?
+                  </label>
                   <div className="space-y-2">
                     {SERVICES.map((svc) => (
                       <label
@@ -266,9 +269,9 @@ export default function SpecialEventBanner() {
                   </div>
                 </div>
 
-                {/* Party Size */}
+                {/* Step 2: Party Size */}
                 <div>
-                  <label className="form-label mb-2 block">How Many People?</label>
+                  <label className="form-label mb-2 block">2. How Many People?</label>
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => setPartySize(Math.max(1, partySize - 1))}
@@ -283,43 +286,85 @@ export default function SpecialEventBanner() {
                     >
                       +
                     </button>
-                    <span className="text-xs text-hampton-mauve ml-2">
-                      {partySize === 1 ? '1 person' : `${partySize} people`}
-                    </span>
+                    {selectedServices.length > 0 && (
+                      <span className="text-xs text-hampton-mauve ml-2">
+                        ≈ {durationLabel}
+                      </span>
+                    )}
                   </div>
                 </div>
 
+                {/* Step 3: Time Slots */}
+                <div>
+                  <label className="form-label mb-3 block">
+                    3. Pick Your Start Time
+                    {selectedServices.length > 0 && slotsNeeded > 1 && (
+                      <span className="font-normal text-hampton-mauve ml-1">
+                        ({slotsNeeded} consecutive slots needed)
+                      </span>
+                    )}
+                  </label>
+                  {slotsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-hampton-mauve py-4">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading available times…
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                      {slots.map((slot) => (
+                        <button
+                          key={slot.time}
+                          disabled={!slot.available}
+                          onClick={() => setSelectedSlot(slot.time)}
+                          className={`text-xs py-2.5 px-2 rounded-lg border-2 font-medium transition-all duration-200
+                            ${!slot.available
+                              ? 'border-hampton-mauve/15 bg-gray-50 text-hampton-mauve/40 cursor-not-allowed line-through'
+                              : selectedSlot === slot.time
+                                ? 'border-hampton-navy bg-hampton-navy text-white shadow-sm'
+                                : 'border-hampton-mauve/25 bg-white text-hampton-navy hover:border-hampton-navy/50'
+                            }`}
+                        >
+                          {slot.time}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Contact Info */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="form-label">Name</label>
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={e => setName(e.target.value)}
-                      placeholder="Your name"
-                      className="form-input"
-                    />
-                  </div>
-                  <div>
-                    <label className="form-label">Email</label>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="you@email.com"
-                      className="form-input"
-                    />
-                  </div>
-                  <div>
-                    <label className="form-label">Phone</label>
-                    <input
-                      type="tel"
-                      value={phone}
-                      onChange={e => setPhone(e.target.value)}
-                      placeholder="(555) 123-4567"
-                      className="form-input"
-                    />
+                <div>
+                  <label className="form-label mb-3 block">4. Your Info</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="form-label">Name</label>
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        placeholder="Your name"
+                        className="form-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label">Email</label>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        placeholder="you@email.com"
+                        className="form-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label">Phone</label>
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={e => setPhone(e.target.value)}
+                        placeholder="(555) 123-4567"
+                        className="form-input"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -340,7 +385,7 @@ export default function SpecialEventBanner() {
                   <div className="bg-white rounded-xl border-2 border-hampton-mauve/15 p-4 text-center">
                     <p className="text-xs text-hampton-mauve uppercase tracking-wider mb-1">Estimated Total</p>
                     <p className="text-2xl font-serif font-bold text-hampton-navy">${estimatedTotal}</p>
-                    <p className="text-[10px] text-hampton-mauve mt-1">Payable in person</p>
+                    <p className="text-[10px] text-hampton-mauve mt-1">Payable in person · {durationLabel}</p>
                   </div>
                 )}
 

@@ -7,17 +7,13 @@ CREATE TABLE IF NOT EXISTS summer_hair_bookings (
   email text NOT NULL,
   phone text NOT NULL,
   time_slot text NOT NULL,
+  slots_needed integer NOT NULL DEFAULT 1,
   services jsonb NOT NULL DEFAULT '[]',
   party_size integer NOT NULL DEFAULT 1,
   notes text,
   status text NOT NULL DEFAULT 'confirmed',
   created_at timestamptz NOT NULL DEFAULT now()
 );
-
--- Only one confirmed booking per time slot
-CREATE UNIQUE INDEX IF NOT EXISTS idx_summer_hair_slot_confirmed
-  ON summer_hair_bookings (time_slot)
-  WHERE status = 'confirmed';
 
 -- RLS: service role has full access (app uses service key server-side)
 ALTER TABLE summer_hair_bookings ENABLE ROW LEVEL SECURITY;
