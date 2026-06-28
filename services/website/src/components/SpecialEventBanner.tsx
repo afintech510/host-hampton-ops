@@ -25,7 +25,10 @@ function calcSlotsNeeded(services: string[], partySize: number): number {
 
 interface SlotInfo { time: string; available: boolean }
 
+const EXPIRY_DATE = new Date('2026-07-05T23:59:59-04:00')
+
 export default function SpecialEventBanner() {
+  const [expired, setExpired] = useState(false)
   const [open, setOpen] = useState(false)
   const [slots, setSlots] = useState<SlotInfo[]>([])
   const [slotsNeeded, setSlotsNeeded] = useState(1)
@@ -43,6 +46,10 @@ export default function SpecialEventBanner() {
   const [error, setError] = useState('')
   const formRef = useRef<HTMLDivElement>(null)
   const initialLoadDone = useRef(false)
+
+  useEffect(() => {
+    if (new Date() > EXPIRY_DATE) setExpired(true)
+  }, [])
 
   const loadSlots = useCallback(async (svcs: string[], size: number) => {
     setSlotsLoading(true)
@@ -139,6 +146,8 @@ export default function SpecialEventBanner() {
       setSubmitting(false)
     }
   }
+
+  if (expired) return null
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-2">

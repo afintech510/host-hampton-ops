@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
-  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera
+  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors
 } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
@@ -19,13 +19,15 @@ import MediaTab from './MediaTab'
 import GiftCardsTab from './GiftCardsTab'
 import PartiesTab from './PartiesTab'
 import PhotosTab from './PhotosTab'
+import SummerHairTab from './SummerHairTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'financials' | 'gift-cards'
+type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'financials' | 'gift-cards' | 'summer-hair'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
+  { key: 'summer-hair', label: 'Summer Hair', Icon: Scissors,        group: 'manage' },
   { key: 'events',     label: 'Events',     Icon: Ticket,          group: 'manage' },
   { key: 'calendar',   label: 'Calendar',   Icon: Calendar,        group: 'manage' },
   { key: 'orders',     label: 'Orders',     Icon: Receipt,         group: 'manage' },
@@ -268,6 +270,9 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
           )}
           {activeTab === 'gift-cards' && (
             <GiftCardsTab key={`gc-${refreshKey}`} headers={headers} onLogout={onLogout} />
+          )}
+          {activeTab === 'summer-hair' && (
+            <SummerHairTab key={`sh-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
         </main>
       </div>
