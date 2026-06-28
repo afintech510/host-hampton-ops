@@ -1,38 +1,120 @@
 'use client'
 
 import Image from 'next/image'
-import { Calendar, Clock, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
-import { useState, useRef, useEffect } from 'react'
+import { Calendar, Clock, Sparkles, ChevronDown, ChevronUp, Check, Loader2 } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 
 const SERVICES = [
-  { name: 'Hair Tinsel', price: '$15' },
-  { name: 'Hair Wraps', price: '$35', note: 'add charms +$3' },
-  { name: 'Hair Glitter', price: '$5' },
-  { name: 'Glitter Freckles', price: '$10' },
+  { id: 'Hair Tinsel', label: 'Hair Tinsel', price: 15 },
+  { id: 'Hair Wraps', label: 'Hair Wraps', price: 35 },
+  { id: 'Hair Wraps + Charms', label: 'Hair Wraps + Charms', price: 38, indent: true },
+  { id: 'Hair Glitter', label: 'Hair Glitter', price: 5 },
+  { id: 'Glitter Freckles', label: 'Glitter Freckles', price: 10 },
 ]
 
-const CAL_LINK = 'https://cal.com/hosthampton/summer-hair'
+interface SlotInfo { time: string; available: boolean }
 
 export default function SpecialEventBanner() {
   const [open, setOpen] = useState(false)
-  const embedRef = useRef<HTMLDivElement>(null)
+  const [slots, setSlots] = useState<SlotInfo[]>([])
+  const [slotsLoading, setSlotsLoading] = useState(false)
+  const [selectedSlot, setSelectedSlot] = useState('')
+  const [selectedServices, setSelectedServices] = useState<string[]>([])
+  const [partySize, setPartySize] = useState(1)
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [notes, setNotes] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
+  const formRef = useRef<HTMLDivElement>(null)
+
+  const loadSlots = useCallback(async () => {
+    setSlotsLoading(true)
+    try {
+      const res = await fetch('/api/summer-hair/book')
+      const data = await res.json()
+      setSlots(data.slots || [])
+    } catch {
+      setSlots([])
+    } finally {
+      setSlotsLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    if (open && embedRef.current) {
+    if (open && slots.length === 0) {
+      loadSlots()
+    }
+    if (open) {
       setTimeout(() => {
-        embedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 350)
     }
-  }, [open])
+  }, [open, loadSlots, slots.length])
+
+  const toggleService = (id: string) => {
+    setSelectedServices(prev => {
+      if (id === 'Hair Wraps + Charms') {
+        const next = prev.filter(s => s !== 'Hair Wraps' && s !== 'Hair Wraps + Charms')
+        if (!prev.includes(id)) next.push(id)
+        return next
+      }
+      if (id === 'Hair Wraps') {
+        const next = prev.filter(s => s !== 'Hair Wraps' && s !== 'Hair Wraps + Charms')
+        if (!prev.includes(id)) next.push(id)
+        return next
+      }
+      return prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+    })
+  }
+
+  const estimatedTotal = selectedServices.reduce((sum, id) => {
+    const svc = SERVICES.find(s => s.id === id)
+    return sum + (svc?.price || 0)
+  }, 0) * partySize
+
+  const canSubmit = selectedSlot && selectedServices.length > 0 && name && email && phone
+
+  const handleSubmit = async () => {
+    if (!canSubmit || submitting) return
+    setSubmitting(true)
+    setError('')
+
+    try {
+      const res = await fetch('/api/summer-hair/book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name, email, phone,
+          timeSlot: selectedSlot,
+          services: selectedServices,
+          partySize,
+          notes: notes || undefined,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        setError(data.error || 'Something went wrong. Please try again.')
+        return
+      }
+
+      setSuccess(true)
+    } catch {
+      setError('Network error. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-2">
       <div className="relative overflow-hidden rounded-2xl border-2 border-[#1e3a5f]/20 bg-white shadow-md">
-        {/* Decorative top stripe */}
         <div className="h-1.5 bg-gradient-to-r from-[#B22234] via-white to-[#3C3B6E]" />
 
         <div className="flex flex-col md:flex-row">
-          {/* Flyer image */}
           <div className="relative w-full md:w-[340px] shrink-0">
             <Image
               src="/images/summer-hair-flyer.png"
@@ -44,7 +126,6 @@ export default function SpecialEventBanner() {
             />
           </div>
 
-          {/* Content */}
           <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center">
             <div className="flex items-center gap-2 mb-2">
               <Sparkles className="w-4 h-4 text-[#B22234]" />
@@ -68,9 +149,13 @@ export default function SpecialEventBanner() {
               </span>
             </div>
 
-            {/* Services grid */}
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 mb-6">
-              {SERVICES.map((s) => (
+              {[
+                { name: 'Hair Tinsel', price: '$15' },
+                { name: 'Hair Wraps', price: '$35', note: 'add charms +$3' },
+                { name: 'Hair Glitter', price: '$5' },
+                { name: 'Glitter Freckles', price: '$10' },
+              ].map((s) => (
                 <div key={s.name} className="flex items-baseline justify-between border-b border-hampton-mauve/15 pb-1.5">
                   <span className="text-sm font-medium text-hampton-navy">{s.name}</span>
                   <div className="text-right">
@@ -91,27 +176,195 @@ export default function SpecialEventBanner() {
               onClick={() => setOpen(!open)}
               className="btn-primary inline-flex items-center justify-center gap-2 w-fit px-8 py-3.5"
             >
-              Book Your Appointment
-              {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {success ? 'Booked!' : 'Book Your Appointment'}
+              {!success && (open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />)}
             </button>
           </div>
         </div>
 
-        {/* Slide-down Cal.com embed */}
+        {/* Slide-down booking form */}
         <div
           className="overflow-hidden transition-all duration-500 ease-in-out"
-          style={{ maxHeight: open ? '700px' : '0px' }}
+          style={{ maxHeight: open ? '1200px' : '0px' }}
         >
-          <div ref={embedRef} className="border-t-2 border-[#1e3a5f]/10 bg-hampton-ivory/50 p-4 sm:p-6">
-            <iframe
-              src={`${CAL_LINK}?embed=true&layout=month_view&hideBranding=true`}
-              width="100%"
-              height="600"
-              frameBorder="0"
-              className="rounded-xl border border-hampton-mauve/20 bg-white"
-              title="Book Summer Hair Appointment"
-              loading="lazy"
-            />
+          <div ref={formRef} className="border-t-2 border-[#1e3a5f]/10 bg-hampton-ivory/50 p-5 sm:p-8">
+            {success ? (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Check className="w-8 h-8 text-green-600" />
+                </div>
+                <h3 className="font-serif text-2xl text-hampton-navy mb-2">You&apos;re Booked!</h3>
+                <p className="text-hampton-navy/70 text-sm max-w-md mx-auto">
+                  We sent a confirmation to <strong>{email}</strong>. See you on July 3rd at {selectedSlot}!
+                </p>
+                <p className="text-hampton-mauve text-xs mt-3">All services are paid in person.</p>
+              </div>
+            ) : (
+              <div className="max-w-2xl mx-auto space-y-6">
+                {/* Time Slots */}
+                <div>
+                  <label className="form-label mb-3 block">Pick Your Time Slot</label>
+                  {slotsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-hampton-mauve py-4">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading available times…
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                      {slots.map((slot) => (
+                        <button
+                          key={slot.time}
+                          disabled={!slot.available}
+                          onClick={() => setSelectedSlot(slot.time)}
+                          className={`text-xs py-2.5 px-2 rounded-lg border-2 font-medium transition-all duration-200
+                            ${!slot.available
+                              ? 'border-hampton-mauve/15 bg-gray-50 text-hampton-mauve/40 cursor-not-allowed line-through'
+                              : selectedSlot === slot.time
+                                ? 'border-hampton-navy bg-hampton-navy text-white shadow-sm'
+                                : 'border-hampton-mauve/25 bg-white text-hampton-navy hover:border-hampton-navy/50'
+                            }`}
+                        >
+                          {slot.time}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Services */}
+                <div>
+                  <label className="form-label mb-3 block">What Would You Like?</label>
+                  <div className="space-y-2">
+                    {SERVICES.map((svc) => (
+                      <label
+                        key={svc.id}
+                        className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all duration-200
+                          ${svc.indent ? 'ml-6' : ''}
+                          ${selectedServices.includes(svc.id)
+                            ? 'border-hampton-navy bg-hampton-navy/5'
+                            : 'border-hampton-mauve/20 bg-white hover:border-hampton-mauve/40'
+                          }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedServices.includes(svc.id)}
+                          onChange={() => toggleService(svc.id)}
+                          className="sr-only"
+                        />
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors
+                          ${selectedServices.includes(svc.id)
+                            ? 'bg-hampton-navy border-hampton-navy'
+                            : 'border-hampton-mauve/40 bg-white'
+                          }`}
+                        >
+                          {selectedServices.includes(svc.id) && <Check className="w-3 h-3 text-white" />}
+                        </div>
+                        <span className="text-sm font-medium text-hampton-navy flex-1">{svc.label}</span>
+                        <span className="text-sm font-semibold text-[#3C3B6E]">${svc.price}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Party Size */}
+                <div>
+                  <label className="form-label mb-2 block">How Many People?</label>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setPartySize(Math.max(1, partySize - 1))}
+                      className="w-10 h-10 rounded-lg border-2 border-hampton-mauve/25 bg-white text-hampton-navy font-bold hover:border-hampton-navy/50 transition-colors"
+                    >
+                      −
+                    </button>
+                    <span className="text-lg font-semibold text-hampton-navy w-8 text-center">{partySize}</span>
+                    <button
+                      onClick={() => setPartySize(Math.min(10, partySize + 1))}
+                      className="w-10 h-10 rounded-lg border-2 border-hampton-mauve/25 bg-white text-hampton-navy font-bold hover:border-hampton-navy/50 transition-colors"
+                    >
+                      +
+                    </button>
+                    <span className="text-xs text-hampton-mauve ml-2">
+                      {partySize === 1 ? '1 person' : `${partySize} people`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Contact Info */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="form-label">Name</label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      placeholder="Your name"
+                      className="form-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Email</label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="you@email.com"
+                      className="form-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Phone</label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                      placeholder="(555) 123-4567"
+                      className="form-input"
+                    />
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="form-label">Notes <span className="font-normal text-hampton-mauve">(optional)</span></label>
+                  <input
+                    type="text"
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    placeholder="Anything we should know?"
+                    className="form-input"
+                  />
+                </div>
+
+                {/* Estimated Total & Submit */}
+                {selectedServices.length > 0 && (
+                  <div className="bg-white rounded-xl border-2 border-hampton-mauve/15 p-4 text-center">
+                    <p className="text-xs text-hampton-mauve uppercase tracking-wider mb-1">Estimated Total</p>
+                    <p className="text-2xl font-serif font-bold text-hampton-navy">${estimatedTotal}</p>
+                    <p className="text-[10px] text-hampton-mauve mt-1">Payable in person</p>
+                  </div>
+                )}
+
+                {error && (
+                  <p className="text-red-600 text-sm text-center bg-red-50 rounded-lg p-3">{error}</p>
+                )}
+
+                <button
+                  onClick={handleSubmit}
+                  disabled={!canSubmit || submitting}
+                  className={`btn-primary w-full py-4 flex items-center justify-center gap-2
+                    ${(!canSubmit || submitting) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Booking…
+                    </>
+                  ) : (
+                    'Confirm Booking'
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
