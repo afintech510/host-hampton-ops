@@ -29,7 +29,7 @@ const TIME_SLOTS = Array.from({ length: 18 }, (_, i) => {
   return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`
 })
 
-export function calcSlotsNeeded(services: string[], partySize: number): number {
+function calcSlotsNeeded(services: string[], partySize: number): number {
   const hasWraps = services.some(s => WRAP_SERVICES.includes(s))
   const hasQuick = services.some(s => QUICK_SERVICES.includes(s))
 
