@@ -205,10 +205,18 @@ export async function POST(req: NextRequest) {
   }
 
   const serviceList = services.join(', ')
-  const smsBody = `New Summer Hair booking!\n${name} — ${duration}\n${partySize} ${partySize === 1 ? 'person' : 'people'} (${slotsNeeded} slots)\nServices: ${serviceList}\nEst. total: $${estimatedTotal}\nPhone: ${phone}`
+  const firstName = name.split(' ')[0]
 
+  // SMS to admin (Allie)
+  const adminSms = `New Summer Hair booking!\n${name} — ${duration}\n${partySize} ${partySize === 1 ? 'person' : 'people'} (${slotsNeeded} slots)\nServices: ${serviceList}\nEst. total: $${estimatedTotal}\nPhone: ${phone}`
   notifyPromises.push(
-    sendSMS(ALLIE_PHONE, smsBody).catch(err => console.error('SMS to Allie failed (non-fatal):', err))
+    sendSMS(ALLIE_PHONE, adminSms).catch(err => console.error('SMS to Allie failed (non-fatal):', err))
+  )
+
+  // Confirmation SMS to client
+  const clientSms = `Hi ${firstName}! You're booked for Summer Hair at Host Hampton on July 3rd, ${duration}.\n\nServices: ${serviceList}\nEst. total: $${estimatedTotal} (pay in person)\n\nSee you there! ✨`
+  notifyPromises.push(
+    sendSMS(phone, clientSms).catch(err => console.error('SMS to client failed (non-fatal):', err))
   )
 
   await Promise.allSettled(notifyPromises)
