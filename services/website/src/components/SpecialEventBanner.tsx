@@ -225,7 +225,7 @@ export default function SpecialEventBanner() {
         {/* Slide-down booking form */}
         <div
           className="overflow-hidden transition-all duration-500 ease-in-out"
-          style={{ maxHeight: open ? '1400px' : '0px' }}
+          style={{ maxHeight: open ? '3000px' : '0px' }}
         >
           <div ref={formRef} className="border-t-2 border-[#1e3a5f]/10 bg-hampton-ivory/50 p-5 sm:p-8">
             {success ? (
