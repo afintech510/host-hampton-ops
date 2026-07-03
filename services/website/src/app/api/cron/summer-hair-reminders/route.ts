@@ -87,7 +87,10 @@ export async function GET(req: NextRequest) {
 
     const sms = `Hi ${firstName}! Reminder: your Summer Hair appointment at Host Hampton is in about 1 hour (${b.time_slot}).\n\nServices: ${serviceList}\nParty size: ${b.party_size}\n\nSee you soon! ✨`
 
-    const sid = await sendSMS(normalizePhone(b.phone), sms)
+    const normalized = normalizePhone(b.phone)
+    console.log(`summer-hair-reminder: sending to ${normalized} (raw: ${b.phone})`)
+    const sid = await sendSMS(normalized, sms)
+    console.log(`summer-hair-reminder: result for ${b.name}: sid=${sid}`)
     if (sid) {
       sent++
       sentIds.push(b.id)
@@ -102,7 +105,14 @@ export async function GET(req: NextRequest) {
       .in('id', sentIds)
   }
 
+  const debugInfo = bookings.map(b => ({
+    name: b.name,
+    phone: b.phone,
+    normalized: normalizePhone(b.phone),
+    slot: b.time_slot,
+  }))
+
   console.log(`cron:summer-hair-reminders sent ${sent} reminder(s)`)
 
-  return NextResponse.json({ sent, total: bookings.length })
+  return NextResponse.json({ sent, total: bookings.length, debug: debugInfo })
 }
