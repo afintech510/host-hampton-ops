@@ -70,6 +70,7 @@ export async function GET(req: NextRequest) {
 
   let sent = 0
   const sentIds: string[] = []
+  const errors: any[] = []
 
   for (const b of bookings) {
     const slotMinutes = slotToMinutesSinceMidnight(b.time_slot)
@@ -88,12 +89,17 @@ export async function GET(req: NextRequest) {
     const sms = `Hi ${firstName}! Reminder: your Summer Hair appointment at Host Hampton is in about 1 hour (${b.time_slot}).\n\nServices: ${serviceList}\nParty size: ${b.party_size}\n\nSee you soon! ✨`
 
     const normalized = normalizePhone(b.phone)
-    console.log(`summer-hair-reminder: sending to ${normalized} (raw: ${b.phone})`)
-    const sid = await sendSMS(normalized, sms)
-    console.log(`summer-hair-reminder: result for ${b.name}: sid=${sid}`)
-    if (sid) {
-      sent++
-      sentIds.push(b.id)
+    try {
+      const sid = await sendSMS(normalized, sms)
+      if (sid) {
+        sent++
+        sentIds.push(b.id)
+        errors.push({ name: b.name, phone: normalized, status: 'ok', sid })
+      } else {
+        errors.push({ name: b.name, phone: normalized, status: 'failed', sid: null })
+      }
+    } catch (err: any) {
+      errors.push({ name: b.name, phone: normalized, status: 'error', message: err?.message || String(err) })
     }
   }
 
@@ -114,5 +120,5 @@ export async function GET(req: NextRequest) {
 
   console.log(`cron:summer-hair-reminders sent ${sent} reminder(s)`)
 
-  return NextResponse.json({ sent, total: bookings.length, debug: debugInfo })
+  return NextResponse.json({ sent, total: bookings.length, debug: debugInfo, errors })
 }
