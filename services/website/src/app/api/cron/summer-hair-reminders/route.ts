@@ -29,25 +29,35 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const force = req.nextUrl.searchParams.get('force') === 'true'
+  const forceSlots = req.nextUrl.searchParams.get('slots')?.split(',') || []
+
   const supabase = getSupabase()
 
-  // Only run on July 3, 2026 (ET)
+  // Only run on July 3, 2026 (ET) — unless force mode
   const now = new Date()
   const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }))
   const dateStr = `${et.getFullYear()}-${String(et.getMonth() + 1).padStart(2, '0')}-${String(et.getDate()).padStart(2, '0')}`
 
-  if (dateStr !== '2026-07-03') {
+  if (!force && dateStr !== '2026-07-03') {
     return NextResponse.json({ message: 'Not event day', sent: 0 })
   }
 
   const currentMinutes = et.getHours() * 60 + et.getMinutes()
 
   // Fetch confirmed bookings that haven't had a reminder sent
-  const { data: bookings, error } = await supabase
+  let query = supabase
     .from('summer_hair_bookings')
     .select('id, name, phone, time_slot, services, party_size')
     .eq('status', 'confirmed')
-    .eq('reminder_sent', false)
+
+  if (!force) {
+    query = query.eq('reminder_sent', false)
+  } else if (forceSlots.length > 0) {
+    query = query.in('time_slot', forceSlots)
+  }
+
+  const { data: bookings, error } = await query
 
   if (error) {
     console.error('cron:summer-hair-reminders fetch error:', error)
@@ -67,8 +77,10 @@ export async function GET(req: NextRequest) {
 
     // Send reminder when we're within 60-75 min before the slot
     // (cron runs every 15 min, so this window catches each slot once)
-    const minutesUntil = slotMinutes - currentMinutes
-    if (minutesUntil > 75 || minutesUntil < 0) continue
+    if (!force) {
+      const minutesUntil = slotMinutes - currentMinutes
+      if (minutesUntil > 75 || minutesUntil < 0) continue
+    }
 
     const firstName = (b.name || 'there').split(' ')[0]
     const serviceList = (b.services || []).join(', ')
