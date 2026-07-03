@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { sendSMS } from '@/lib/twilio'
+import { sendSMS, normalizePhone } from '@/lib/twilio'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
 
     const sms = `Hi ${firstName}! Reminder: your Summer Hair appointment at Host Hampton is in about 1 hour (${b.time_slot}).\n\nServices: ${serviceList}\nParty size: ${b.party_size}\n\nSee you soon! ✨`
 
-    const sid = await sendSMS(b.phone, sms)
+    const sid = await sendSMS(normalizePhone(b.phone), sms)
     if (sid) {
       sent++
       sentIds.push(b.id)
