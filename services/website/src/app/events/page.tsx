@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { Calendar, Clock } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import EventFilters from './EventFilters'
-import SpecialEventBanner from '@/components/SpecialEventBanner'
 
 export const metadata: Metadata = {
   title: 'Events & Workshops | Host Hampton',
@@ -55,8 +54,6 @@ export default async function EventsPage() {
           Workshops, classes, and community gatherings at Host Hampton. Find your next experience below.
         </p>
       </section>
-
-      <SpecialEventBanner />
 
       <section className="py-12 max-w-6xl mx-auto px-4 sm:px-6">
         <EventFilters events={allEvents} categories={categories} />
