@@ -21,8 +21,10 @@ function formatDate(dateStr: string): string {
 function availabilityBadge(available: number, max: number) {
   if (available <= 0) return { text: 'Sold Out', color: 'bg-red-100 text-red-700' }
   const pct = available / max
-  if (pct <= 0.2) return { text: `${available} spots left`, color: 'bg-amber-100 text-amber-700' }
-  return { text: `${available} spots`, color: 'bg-green-100 text-green-700' }
+  if (pct <= 0.1) return { text: 'Almost Gone', color: 'bg-red-50 text-red-600' }
+  if (pct <= 0.3) return { text: 'Limited Spots', color: 'bg-amber-100 text-amber-700' }
+  if (pct <= 0.6) return { text: 'Selling Fast', color: 'bg-amber-50 text-amber-600' }
+  return { text: 'Spots Available', color: 'bg-green-100 text-green-700' }
 }
 
 function getEventImage(event: EventRow): string | null {

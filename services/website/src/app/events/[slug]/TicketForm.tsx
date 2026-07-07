@@ -6,7 +6,7 @@ import { useCart } from '@/context/CartContext'
 
 interface Variant { label: string; priceCents: number; seats?: number }
 interface BundleTier { minSessions: number; pricePerSessionCents: number }
-interface Session { id: string; session_date: string; session_time: string; label?: string; available_tickets: number; price_cents?: number }
+interface Session { id: string; session_date: string; session_time: string; label?: string; available_tickets: number; max_tickets?: number; price_cents?: number }
 interface EventProps {
   id: string
   slug: string
@@ -35,6 +35,15 @@ function formatSessionDate(dateStr: string): string {
     month: 'short',
     day: 'numeric',
   })
+}
+
+function availabilityLabel(available: number, max: number): string {
+  if (available <= 0) return 'Sold Out'
+  const pct = available / max
+  if (pct <= 0.1) return 'Almost Gone'
+  if (pct <= 0.3) return 'Limited Spots'
+  if (pct <= 0.6) return 'Selling Fast'
+  return 'Spots Available'
 }
 
 function getBundlePrice(sessionCount: number, tiers: BundleTier[]): number | null {
@@ -230,7 +239,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
               <option key={s.id} value={s.id} disabled={s.available_tickets <= 0}>
                 {formatSessionDate(s.session_date)} at {s.session_time}
                 {s.label ? ` — ${s.label}` : ''}
-                {s.available_tickets <= 0 ? ' — Sold Out' : ` — ${s.available_tickets} spots`}
+                {` — ${availabilityLabel(s.available_tickets, s.max_tickets || event.max_tickets)}`}
               </option>
             ))}
           </select>
@@ -274,7 +283,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
                     </div>
                   </div>
                   <span className="text-xs text-hampton-navy">
-                    {isSoldOut ? 'Sold Out' : `${s.available_tickets} spots`}
+                    {availabilityLabel(s.available_tickets, s.max_tickets || event.max_tickets)}
                   </span>
                 </label>
               )
@@ -313,7 +322,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
             >
               <Plus className="w-4 h-4" />
             </button>
-            <span className="text-xs text-hampton-navy">{maxAvail} available</span>
+            <span className="text-xs text-hampton-navy">{availabilityLabel(maxAvail, event.max_tickets)}</span>
           </div>
         </div>
       )}
