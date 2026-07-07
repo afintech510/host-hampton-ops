@@ -41,7 +41,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // Admin can update any field
   const updates: Record<string, unknown> = {}
-  const allowed = ['status', 'party_date', 'party_time', 'package_type', 'guest_count_approx', 'child_name', 'child_age', 'total_cents', 'balance_due_cents', 'admin_notes', 'notes', 'contact_name', 'contact_email', 'contact_phone', 'photo_gallery_url']
+  const allowed = ['status', 'party_date', 'party_time', 'package_type', 'guest_count_approx', 'child_name', 'child_age', 'total_cents', 'balance_due_cents', 'admin_notes', 'notes', 'contact_name', 'contact_email', 'contact_phone', 'photo_gallery_url', 'party_tags']
   for (const key of allowed) {
     if (body[key] !== undefined) updates[key] = body[key]
   }

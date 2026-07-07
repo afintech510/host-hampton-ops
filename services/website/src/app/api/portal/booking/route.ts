@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
   ])
 
   // Compute modification permissions
+  const unlocked = !!(booking.party_tags as Record<string, unknown> | null)?.modifications_unlocked
   const fullMod = isModificationAllowed(booking.party_date, 'full')
   const guestMod = isModificationAllowed(booking.party_date, 'guest_count')
 
@@ -43,10 +44,10 @@ export async function GET(req: NextRequest) {
       modifications: modificationsRes.data || [],
     },
     permissions: {
-      canEditFull: fullMod.allowed,
-      canEditGuestCount: guestMod.allowed,
-      fullReason: fullMod.reason,
-      guestCountReason: guestMod.reason,
+      canEditFull: unlocked || fullMod.allowed,
+      canEditGuestCount: unlocked || guestMod.allowed,
+      fullReason: unlocked ? undefined : fullMod.reason,
+      guestCountReason: unlocked ? undefined : guestMod.reason,
     },
   })
 }
@@ -65,7 +66,7 @@ export async function PATCH(req: NextRequest) {
 
   const { data: booking } = await supabase
     .from('bookings')
-    .select('id, party_date, status')
+    .select('id, party_date, status, party_tags')
     .eq('booking_ref', bookingRef)
     .single()
 
@@ -73,12 +74,14 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
   }
 
-  // Check if the change type is allowed
-  const changeType = body.guest_count_approx !== undefined ? 'guest_count' : 'full'
-  const permission = isModificationAllowed(booking.party_date, changeType)
-
-  if (!permission.allowed) {
-    return NextResponse.json({ error: permission.reason }, { status: 403 })
+  // Check if the change type is allowed (admin unlock bypasses date cutoffs)
+  const unlocked = !!(booking.party_tags as Record<string, unknown> | null)?.modifications_unlocked
+  if (!unlocked) {
+    const changeType = body.guest_count_approx !== undefined ? 'guest_count' : 'full'
+    const permission = isModificationAllowed(booking.party_date, changeType)
+    if (!permission.allowed) {
+      return NextResponse.json({ error: permission.reason }, { status: 403 })
+    }
   }
 
   // Only allow certain fields from customer

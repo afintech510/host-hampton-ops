@@ -713,6 +713,25 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
                 {copyToast || 'Copy Portal Link'}
               </button>
 
+              {/* Unlock toggle — lets client edit even within the lock window */}
+              <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!(selected as PartyDetail).party_tags?.modifications_unlocked}
+                  onChange={async () => {
+                    const tags = ((selected as PartyDetail).party_tags || {}) as Record<string, unknown>
+                    const newVal = !tags.modifications_unlocked
+                    await patchBooking({ party_tags: { ...tags, modifications_unlocked: newVal } })
+                  }}
+                  className="accent-[#1a2744]"
+                  disabled={!!actionLoading}
+                />
+                <div>
+                  <span className="text-sm font-medium text-[#1a2744]">Unlock for Client</span>
+                  <p className="text-xs text-gray-500">Allow client to edit even within the lock window</p>
+                </div>
+              </label>
+
               {selected.status !== 'cancelled' && selected.status !== 'completed' && (
                 <button
                   onClick={() => { if (confirm('Cancel this booking?')) doAction('cancel') }}
