@@ -111,7 +111,16 @@ export default function CoraStand() {
   ]
 
   return (
-    <div className="min-h-screen font-sans selection:bg-[#FAD058] selection:text-[#4A3F35]" style={{ backgroundColor: colors.bg }}>
+    <div
+      className="min-h-screen font-sans selection:bg-[#FAD058] selection:text-[#4A3F35]"
+      style={{
+        // Start transparent so the site's shared blue header gradient (from the
+        // body background) shows through behind the nav, then flow down into a
+        // warm sunshine yellow and settle into the page's cream toward the footer.
+        background:
+          'linear-gradient(to bottom, transparent 0px, transparent 110px, #FCE9AE 430px, #FCFAF5 760px)',
+      }}
+    >
       <style dangerouslySetInnerHTML={{ __html: `@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@600&display=swap');` }} />
 
       {/* HEADER SECTION - Recreating the Logo Badge */}
