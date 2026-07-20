@@ -4,8 +4,9 @@ import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { formatMoney } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
-import { createCalendarEvent, addMinutes, updateCalendarEvent } from '@/lib/googleCalendar'
+import { createCalendarEvent, addMinutes, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { studioRentalRate, hoursBetween } from '@/lib/studioRental'
+import { sendSMS, normalizePhone } from '@/lib/twilio'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
@@ -266,6 +267,45 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     return NextResponse.json({ ok: true, action: action === 'send_portal_link' ? 'portal_link_sent' : 'portal_url_generated', portalUrl })
+  }
+
+  // Text the customer a fresh portal link via SMS (Twilio).
+  if (action === 'send_portal_sms') {
+    if (!booking.contact_phone) {
+      return NextResponse.json({ error: 'No phone number on file for this booking' }, { status: 400 })
+    }
+
+    const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+    const { token: rawToken, hash, expiresAt } = generatePortalToken(booking.booking_ref, secret)
+    await supabase.from('portal_tokens').insert({ booking_id: id, token_hash: hash, expires_at: expiresAt.toISOString() })
+    const portalUrl = buildPortalUrl(booking.booking_ref, rawToken)
+
+    const firstName = (booking.contact_name || '').trim().split(/\s+/)[0] || 'there'
+    const smsBody = `Hi ${firstName}! Here's your Host Hampton party booking link to review details & pay your deposit: ${portalUrl} Reply STOP to opt out`
+
+    const sid = await sendSMS(normalizePhone(booking.contact_phone), smsBody)
+    if (!sid) {
+      return NextResponse.json({ error: 'Failed to send SMS — check the phone number and Twilio config' }, { status: 502 })
+    }
+
+    await supabase.from('booking_modifications').insert({
+      booking_id: id, modified_by: 'admin',
+      change_summary: `Portal link texted to ${booking.contact_phone}`,
+    })
+
+    return NextResponse.json({ ok: true, action: 'portal_sms_sent', to: booking.contact_phone })
+  }
+
+  if (action === 'delete_booking') {
+    // Hard delete — children (line items, payments, modifications, portal tokens)
+    // cascade automatically. Used to purge test/duplicate bookings.
+    const evId = booking.google_calendar_event_id as string | null
+    if (evId) await deleteCalendarEvent(evId).catch(() => {})
+
+    const { error } = await supabase.from('bookings').delete().eq('id', id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    return NextResponse.json({ ok: true, action: 'booking_deleted' })
   }
 
   if (action === 'add_line_item') {

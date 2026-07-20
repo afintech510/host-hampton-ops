@@ -192,6 +192,45 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
     setTimeout(() => setCopyToast(''), 2500)
   }
 
+  async function textPortalLink() {
+    if (!selected) return
+    if (!selected.contact_phone) {
+      setCopyToast('No phone number on file')
+      setTimeout(() => setCopyToast(''), 2500)
+      return
+    }
+    setActionLoading('send_portal_sms')
+    const res = await fetch(`/api/admin/parties/${selected.id}`, {
+      method: 'POST',
+      headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'send_portal_sms' }),
+    })
+    const data = await res.json()
+    await fetchDetail(selected.id)
+    setActionLoading('')
+    setCopyToast(res.ok ? `Link texted to ${data.to}` : (data.error || 'Failed to send text'))
+    setTimeout(() => setCopyToast(''), 3000)
+  }
+
+  async function deleteBooking() {
+    if (!selected) return
+    if (!confirm(`Permanently delete ${selected.booking_ref}? This removes the booking, its line items, payments, and history. This cannot be undone.`)) return
+    setActionLoading('delete_booking')
+    const res = await fetch(`/api/admin/parties/${selected.id}`, {
+      method: 'POST',
+      headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete_booking' }),
+    })
+    setActionLoading('')
+    if (res.ok) {
+      setSelected(null)
+      await fetchBookings()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      alert(data.error || 'Failed to delete booking')
+    }
+  }
+
   // List view
   if (!selected) {
     return (
@@ -698,6 +737,15 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
               </button>
 
               <button
+                onClick={textPortalLink}
+                disabled={!!actionLoading || !selected.contact_phone}
+                title={selected.contact_phone ? `Text link to ${selected.contact_phone}` : 'No phone number on file'}
+                className="w-full bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+              >
+                {actionLoading === 'send_portal_sms' ? 'Texting...' : '📱 Text Link to Client'}
+              </button>
+
+              <button
                 onClick={openPortal}
                 disabled={!!actionLoading}
                 className="w-full border-2 border-[#1a2744] text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-[#1a2744]/5 disabled:opacity-50"
@@ -741,6 +789,14 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
                   Cancel Booking
                 </button>
               )}
+
+              <button
+                onClick={deleteBooking}
+                disabled={!!actionLoading}
+                className="w-full border border-red-300 text-red-600 py-2 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-50"
+              >
+                {actionLoading === 'delete_booking' ? 'Deleting...' : 'Delete Booking (permanent)'}
+              </button>
             </div>
           </div>
 

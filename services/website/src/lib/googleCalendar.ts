@@ -214,3 +214,26 @@ export async function updateCalendarEvent(eventId: string, details: {
   }
   return true
 }
+
+/**
+ * Delete a calendar event. Used when a booking is hard-deleted from admin.
+ * Treats 404/410 (already gone) as success. Returns true on success.
+ */
+export async function deleteCalendarEvent(eventId: string): Promise<boolean> {
+  const calendarId = process.env.GOOGLE_CALENDAR_ID
+  const accessToken = await getGoogleAccessToken()
+  if (!calendarId || !accessToken || !eventId) return false
+
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  )
+
+  // 204 = deleted; 404/410 = already gone — both fine.
+  if (res.ok || res.status === 404 || res.status === 410) return true
+  console.error('Google Calendar delete error:', res.status, await res.text())
+  return false
+}
