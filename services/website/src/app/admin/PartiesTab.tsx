@@ -192,6 +192,19 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
     setTimeout(() => setCopyToast(''), 2500)
   }
 
+  async function sendPortalLink() {
+    // Emails AND texts the portal link to the customer in one action.
+    const data = await doAction('send_portal_link')
+    if (!data) return
+    const via: string[] = data.sentVia || []
+    setCopyToast(
+      via.length
+        ? `Portal link sent via ${via.join(' + ')}`
+        : 'Link generated but not delivered — check email/phone on file',
+    )
+    setTimeout(() => setCopyToast(''), 3000)
+  }
+
   async function textPortalLink() {
     if (!selected) return
     if (!selected.contact_phone) {
@@ -729,11 +742,11 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
               </div>
 
               <button
-                onClick={() => doAction('send_portal_link')}
+                onClick={sendPortalLink}
                 disabled={!!actionLoading}
                 className="w-full bg-[#A1B5C8] text-white py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
               >
-                {actionLoading === 'send_portal_link' ? 'Sending...' : 'Send Portal Link'}
+                {actionLoading === 'send_portal_link' ? 'Sending...' : 'Send Portal Link (Email + Text)'}
               </button>
 
               <button

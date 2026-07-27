@@ -251,22 +251,45 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await supabase.from('portal_tokens').insert({ booking_id: id, token_hash: hash, expires_at: expiresAt.toISOString() })
     const portalUrl = buildPortalUrl(booking.booking_ref, rawToken)
 
-    if (action === 'send_portal_link' && process.env.RESEND_API_KEY) {
-      const { Resend } = await import('resend')
-      const resend = new Resend(process.env.RESEND_API_KEY)
-      const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
-      await resend.emails.send({
-        from, to: booking.contact_email,
-        subject: `Your Booking Portal Link — ${booking.booking_ref}`,
-        html: partyPortalMagicLinkHtml({
-          customerName: booking.contact_name,
-          bookingRef: booking.booking_ref,
-          portalUrl,
-        }),
+    // send_portal_link delivers the link to the customer by BOTH email and SMS
+    // (sharing this single token); generate_portal_url just mints the URL.
+    if (action === 'send_portal_link') {
+      const sentVia: string[] = []
+
+      if (booking.contact_email && process.env.RESEND_API_KEY) {
+        const { Resend } = await import('resend')
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        await resend.emails.send({
+          from, to: booking.contact_email,
+          subject: `Your Booking Portal Link — ${booking.booking_ref}`,
+          html: partyPortalMagicLinkHtml({
+            customerName: booking.contact_name,
+            bookingRef: booking.booking_ref,
+            portalUrl,
+          }),
+        })
+        sentVia.push('email')
+      }
+
+      if (booking.contact_phone) {
+        const firstName = (booking.contact_name || '').trim().split(/\s+/)[0] || 'there'
+        const smsBody = `Hi ${firstName}! Here's your Host Hampton party booking link to review details & pay your deposit: ${portalUrl} Reply STOP to opt out`
+        const sid = await sendSMS(normalizePhone(booking.contact_phone), smsBody)
+        if (sid) sentVia.push('sms')
+      }
+
+      await supabase.from('booking_modifications').insert({
+        booking_id: id, modified_by: 'admin',
+        change_summary: sentVia.length
+          ? `Portal link sent to customer via ${sentVia.join(' + ')}`
+          : 'Portal link generated (no email/SMS delivery — check contact info & config)',
       })
+
+      return NextResponse.json({ ok: true, action: 'portal_link_sent', portalUrl, sentVia })
     }
 
-    return NextResponse.json({ ok: true, action: action === 'send_portal_link' ? 'portal_link_sent' : 'portal_url_generated', portalUrl })
+    return NextResponse.json({ ok: true, action: 'portal_url_generated', portalUrl })
   }
 
   // Text the customer a fresh portal link via SMS (Twilio).
