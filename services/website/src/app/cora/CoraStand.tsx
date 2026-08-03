@@ -196,7 +196,7 @@ export default function CoraStand() {
               <h2 className="text-2xl font-bold mb-1 flex items-center justify-center md:justify-start gap-2" style={{ color: colors.text }}>
                 <MapPin style={{ color: colors.mint }} /> Location
               </h2>
-              <p className="text-xl font-black" style={{ color: colors.mint }}>Our Driveway</p>
+              <p className="text-xl font-black" style={{ color: colors.mint }}>Host Hampton (out front)</p>
             </div>
           </div>
         </section>
