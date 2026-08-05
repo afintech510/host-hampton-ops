@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Heart, Calendar, MapPin, PartyPopper } from 'lucide-react'
+import { Heart, Calendar, Clock, MapPin, PartyPopper } from 'lucide-react'
+import { event } from '@/lib/gtag'
 
 // Custom SVG for the Kawaii Sun (matching the logo)
 const KawaiiSun = ({ className }: { className?: string }) => (
@@ -64,12 +65,16 @@ export default function CoraStand() {
 
   const handleLike = (id: ItemId) => {
     setLikes((prev) => ({ ...prev, [id]: prev[id] + 1 }))
+    // Track which items visitors are interested in (viewable in GA4 > Events).
+    event('cora_item_click', { event_category: 'cora', event_label: id })
   }
 
   const handleRsvp = () => {
     setRsvpStatus(true)
     setShowConfetti(true)
     setTimeout(() => setShowConfetti(false), 3000)
+    // Track RSVP button clicks (viewable in GA4 > Events).
+    event('cora_rsvp_click', { event_category: 'cora', event_label: 'count_me_in' })
   }
 
   // Color palette derived directly from the logo
@@ -194,9 +199,18 @@ export default function CoraStand() {
 
             <div>
               <h2 className="text-2xl font-bold mb-1 flex items-center justify-center md:justify-start gap-2" style={{ color: colors.text }}>
+                <Clock style={{ color: colors.orange }} /> Time
+              </h2>
+              <p className="text-xl font-black" style={{ color: colors.orange }}>10am &ndash; 1pm</p>
+            </div>
+
+            <div className="hidden md:block w-1 h-16 rounded-full" style={{ backgroundColor: colors.ribbon }}></div>
+
+            <div>
+              <h2 className="text-2xl font-bold mb-1 flex items-center justify-center md:justify-start gap-2" style={{ color: colors.text }}>
                 <MapPin style={{ color: colors.mint }} /> Location
               </h2>
-              <p className="text-xl font-black" style={{ color: colors.mint }}>Host Hampton (out front)</p>
+              <p className="text-xl font-black" style={{ color: colors.mint }}>Host Hampton</p>
             </div>
           </div>
         </section>
