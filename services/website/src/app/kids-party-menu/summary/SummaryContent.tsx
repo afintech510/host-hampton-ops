@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { calculateCardFee, calculateLineItemTotal, formatMoney, getDepositCents } from '@/lib/partyPricing'
-import type { BookingLineItem, PaymentMethod } from '@/types/booking-flow'
-import { PAYMENT_METHODS } from '@/types/booking-flow'
+import { calculateLineItemTotal, formatMoney, getDepositCents } from '@/lib/partyPricing'
+import type { BookingLineItem } from '@/types/booking-flow'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import { ArrowLeft } from 'lucide-react'
@@ -41,7 +40,6 @@ export default function SummaryContent() {
   const router = useRouter()
   const [quote, setQuote] = useState<QuoteData | null>(null)
   const [lineItems, setLineItems] = useState<BookingLineItem[]>([])
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card')
   const [guestCount, setGuestCount] = useState(10)
   const [partyDate, setPartyDate] = useState('')
   const [partyTime, setPartyTime] = useState('')
@@ -118,7 +116,6 @@ export default function SummaryContent() {
 
   const depositCents = getDepositCents()
   const subtotalCents = calculateLineItemTotal(lineItems, guestCount)
-  const cardFeeCents = paymentMethod === 'card' ? calculateCardFee(depositCents) : 0
   const balanceDueCents = Math.max(0, subtotalCents - depositCents)
 
   async function handleSubmit() {
@@ -149,7 +146,6 @@ export default function SummaryContent() {
           partyDate,
           partyTime,
           packageType: quote.themeName || 'Kids Party',
-          paymentMethod,
           notes,
           address,
         }),
@@ -200,7 +196,7 @@ export default function SummaryContent() {
           Review Your Party
         </h1>
         <p className="text-gray-500 text-center mb-10">
-          Confirm your selections, pick a date, and place your deposit.
+          Confirm your selections, pick a date, and submit your request.
         </p>
 
         <div className="grid md:grid-cols-5 gap-8">
@@ -265,15 +261,9 @@ export default function SummaryContent() {
                   <span className="font-semibold">{formatMoney(subtotalCents)}</span>
                 </div>
                 <div className="flex justify-between text-gray-500 text-sm">
-                  <span>Deposit (due now)</span>
+                  <span>Deposit to reserve (due after we confirm)</span>
                   <span>{formatMoney(depositCents)}</span>
                 </div>
-                {cardFeeCents > 0 && (
-                  <div className="flex justify-between text-gray-500 text-sm">
-                    <span>Card processing fee (3%)</span>
-                    <span>{formatMoney(cardFeeCents)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between text-gray-500 text-sm">
                   <span>Remaining balance</span>
                   <span>{formatMoney(balanceDueCents)}</span>
@@ -356,41 +346,6 @@ export default function SummaryContent() {
               />
             </div>
 
-            {/* Payment Method */}
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <h2 className="font-display text-xl text-[#1a2744] mb-4">Payment Method</h2>
-              <div className="space-y-2">
-                {PAYMENT_METHODS.map(pm => (
-                  <label
-                    key={pm.value}
-                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                      paymentMethod === pm.value
-                        ? 'border-[#1a2744] bg-[#1a2744]/5'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="paymentMethod"
-                      value={pm.value}
-                      checked={paymentMethod === pm.value}
-                      onChange={e => setPaymentMethod(e.target.value as PaymentMethod)}
-                      className="mt-0.5"
-                    />
-                    <div>
-                      <div className="text-sm font-medium text-[#1a2744]">
-                        {pm.label}
-                        {pm.feeLabel && (
-                          <span className="text-xs text-gray-400 ml-2">{pm.feeLabel}</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500">{pm.description}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-
             {/* Contact summary */}
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h2 className="font-display text-xl text-[#1a2744] mb-4">Contact</h2>
@@ -422,19 +377,11 @@ export default function SummaryContent() {
                 disabled={submitting}
                 className="w-full bg-white text-[#1a2744] font-semibold py-3 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
               >
-                {submitting
-                  ? 'Processing...'
-                  : paymentMethod === 'card'
-                    ? `Pay ${formatMoney(depositCents + cardFeeCents)} Deposit`
-                    : `Reserve — Pay ${formatMoney(depositCents)} via ${paymentMethod === 'venmo' ? 'Venmo' : paymentMethod === 'zelle' ? 'Zelle' : 'Cash'}`
-                }
+                {submitting ? 'Sending...' : 'Request This Party'}
               </button>
 
               <p className="text-white/50 text-xs mt-3">
-                {paymentMethod === 'card'
-                  ? `${formatMoney(depositCents)} deposit + ${formatMoney(cardFeeCents)} processing fee`
-                  : 'No card fee — pay directly'
-                }
+                No payment now — once we confirm your date we&apos;ll email a link to pay your {formatMoney(depositCents)} deposit.
               </p>
             </div>
           </div>

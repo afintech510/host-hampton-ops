@@ -565,7 +565,9 @@ export default function PartyBuilderContent({
   const [payError, setPayError] = useState('')
   const [checkoutReady, setCheckoutReady] = useState(false)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
-  const [depositMethod, setDepositMethod] = useState<'card' | 'venmo' | 'zelle' | 'cash'>('card')
+  // Deposit method is fixed — the public planner no longer takes payment (it
+  // submits a request); payment happens later in the portal after approval.
+  const [depositMethod] = useState<'card' | 'venmo' | 'zelle' | 'cash'>('card')
   const [depositPledgeSuccess, setDepositPledgeSuccess] = useState('')
   const [confirming, setConfirming] = useState(false)
   const checkoutRef = useRef<HTMLDivElement>(null)
@@ -1807,7 +1809,6 @@ export default function PartyBuilderContent({
 
   const hasSelections = selectedTheme || addOnCount > 0 || customItems.length > 0
   const depositCents = computeDeposit(total)
-  const depositFee = calculateCardFee(depositCents)
   const contactComplete = contact.fullName && contact.email && contact.phone
   const dateTimeSelected = calendarSelection?.date && calendarSelection?.timeSlot
 
@@ -3051,12 +3052,12 @@ export default function PartyBuilderContent({
         {/* ══ 13. Pay Deposit ══ */}
         <div id="sec-book" className="scroll-mt-20" />
 
-        {hasSelections && !depositPaid && (
+        {hasSelections && !depositPaid && (!loadedBooking || loadedBooking.status === 'awaiting_deposit') && (
           <div ref={payRef} className="scroll-mt-24 bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
             <div className="bg-gradient-to-r from-hampton-pink to-hampton-mauve px-8 py-5 text-center">
-              <h2 className="font-serif text-2xl font-black text-white tracking-tight">RESERVE YOUR DATE</h2>
+              <h2 className="font-serif text-2xl font-black text-white tracking-tight">REQUEST YOUR PARTY</h2>
               <p className="text-white/70 text-xs font-semibold tracking-[0.2em] uppercase mt-1">
-                25% Deposit &bull; Locks In Your Party
+                We Confirm Availability Within 24 Hours
               </p>
             </div>
 
@@ -3179,69 +3180,20 @@ export default function PartyBuilderContent({
                     </div>
                   </div>
 
-                  {/* Payment method picker */}
-                  <div className="mb-5">
-                    <label className="text-xs font-semibold text-hampton-navy/60 uppercase tracking-wider">How would you like to pay your deposit?</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
-                      {([
-                        { value: 'card' as const,  label: 'Card',  sub: '+3% fee · instant' },
-                        { value: 'venmo' as const, label: 'Venmo', sub: 'no fee' },
-                        { value: 'zelle' as const, label: 'Zelle', sub: 'no fee' },
-                        { value: 'cash' as const,  label: 'Cash',  sub: 'no fee' },
-                      ]).map(opt => (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => setDepositMethod(opt.value)}
-                          className={`px-3 py-3 rounded-xl border-2 text-left transition-all ${
-                            depositMethod === opt.value
-                              ? 'border-hampton-navy bg-hampton-navy/5 shadow-sm'
-                              : 'border-hampton-mauve/25 hover:border-hampton-blue'
-                          }`}
-                        >
-                          <p className="font-bold text-sm text-hampton-navy">{opt.label}</p>
-                          <p className="text-[10px] text-hampton-navy/50 mt-0.5">{opt.sub}</p>
-                        </button>
-                      ))}
+                  {/* Deposit preview — shown for transparency; no charge now */}
+                  <div className="bg-hampton-ivory/50 rounded-xl p-4 mb-5">
+                    <div className="flex justify-between text-sm text-hampton-navy/70">
+                      <span>Party total</span>
+                      <span>{fmt(total)}</span>
                     </div>
+                    <div className="flex justify-between text-sm text-hampton-navy/70">
+                      <span>Deposit to reserve (25%)</span>
+                      <span>{formatMoney(depositCents)}</span>
+                    </div>
+                    <p className="text-xs text-hampton-navy/50 mt-2">
+                      No payment today. Once we confirm your date is available, we&apos;ll email you a secure link to pay your deposit and lock it in.
+                    </p>
                   </div>
-
-                  {/* Price breakdown — card path */}
-                  {depositMethod === 'card' && (
-                    <div className="bg-hampton-ivory/50 rounded-xl p-4 mb-5">
-                      <div className="flex justify-between text-sm text-hampton-navy/70">
-                        <span>Deposit (25%)</span>
-                        <span>{formatMoney(depositCents)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm text-hampton-navy/50">
-                        <span>Processing fee (3%)</span>
-                        <span>{formatMoney(depositFee)}</span>
-                      </div>
-                      <div className="flex justify-between font-bold text-hampton-navy mt-2 pt-2 border-t border-hampton-mauve/20">
-                        <span>Total charge</span>
-                        <span>{formatMoney(depositCents + depositFee)}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Instructions — non-card path */}
-                  {depositMethod !== 'card' && (
-                    <div className="bg-hampton-blue/10 border border-hampton-blue/20 rounded-xl p-4 mb-5 text-sm text-hampton-navy/80 leading-relaxed">
-                      <p className="font-bold text-hampton-navy mb-2">Send {formatMoney(depositCents)} via {depositMethod.charAt(0).toUpperCase() + depositMethod.slice(1)}:</p>
-                      {depositMethod === 'venmo' && (
-                        <p>Contact <strong>Allie</strong> at <a href="tel:6319989325" className="underline">(631) 998-9325</a> for the Venmo handle. Reference your party with note &quot;Party Deposit&quot;.</p>
-                      )}
-                      {depositMethod === 'zelle' && (
-                        <p>Contact <strong>Allie</strong> at <a href="tel:6319989325" className="underline">(631) 998-9325</a> for the Zelle phone number. Reference your party with memo &quot;Party Deposit&quot;.</p>
-                      )}
-                      {depositMethod === 'cash' && (
-                        <p>Bring cash to Host Hampton at <strong>295 Montauk Hwy, Speonk NY</strong>, or pay day-of at the party.</p>
-                      )}
-                      <p className="text-xs text-hampton-navy/60 mt-3">
-                        Your date will be locked the moment you confirm below. Your booking moves to &quot;Approved&quot; once we receive payment.
-                      </p>
-                    </div>
-                  )}
 
                   {payError && <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 mb-4">{payError}</div>}
 
@@ -3251,16 +3203,14 @@ export default function PartyBuilderContent({
                     className="w-full bg-hampton-navy text-white font-bold py-4 px-6 rounded-full text-sm hover:bg-opacity-90 hover:shadow-[0_8px_25px_rgba(47,52,59,0.3)] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
                   >
                     {payProcessing ? (
-                      <><Loader2 size={16} className="animate-spin" /> Processing...</>
-                    ) : depositMethod === 'card' ? (
-                      <><CreditCard size={16} /> Pay {formatMoney(depositCents + depositFee)} — Book Your Party</>
+                      <><Loader2 size={16} className="animate-spin" /> Sending...</>
                     ) : (
-                      <><Wallet size={16} /> Confirm I&apos;ll Send {formatMoney(depositCents)} via {depositMethod.charAt(0).toUpperCase() + depositMethod.slice(1)}</>
+                      <><Check size={16} /> Request This Party</>
                     )}
                   </button>
 
                   <p className="text-xs text-hampton-navy/40 text-center mt-3">
-                    Your deposit is non-refundable and will be applied to your party total of {fmt(total)}.
+                    Submitting a request doesn&apos;t charge you — we&apos;ll confirm availability and email you within 24 hours.
                   </p>
                 </>
               )}
@@ -3269,7 +3219,7 @@ export default function PartyBuilderContent({
         )}
 
         {/* ══ 14. Make a Payment (post-deposit) ══ */}
-        {depositPaid && balanceRemaining > 0 && (
+        {balanceRemaining > 0 && (depositPaid || (loadedBooking && ['approved', 'deposit_paid', 'paid_in_full'].includes(loadedBooking.status))) && (
           <div data-section="make-payment" className="scroll-mt-24 bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
             <div className="bg-gradient-to-r from-hampton-navy to-hampton-navy/90 px-8 py-5 text-center">
               <h2 className="font-serif text-2xl font-black text-white tracking-tight">MAKE A PAYMENT</h2>

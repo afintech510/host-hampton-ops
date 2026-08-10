@@ -872,6 +872,35 @@ export function partyAdminNewBookingHtml(d: { bookingRef: string; customerName: 
 
 /* ── Party Approved (customer) ───────────────────────────────── */
 
+/* ── Party Request Received (customer, no payment) ───────────── */
+
+export function partyRequestReceivedHtml(d: { customerName: string; bookingRef: string; partyDate: string; partyTime: string; depositFormatted: string }): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Request Received!</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Thanks for your party request <strong>${d.bookingRef}</strong>! Our team will confirm availability for your requested date and get back to you within 24 hours.</p>
+    <div style="background:${BRAND.bodyBg};border-radius:8px;padding:20px 24px;margin:0 0 24px;">
+      <p style="color:${BRAND.navy};margin:0 0 8px;"><strong>Requested Date:</strong> ${d.partyDate}</p>
+      <p style="color:${BRAND.navy};margin:0;"><strong>Requested Time:</strong> ${d.partyTime}</p>
+    </div>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;"><strong>Nothing is booked yet and no payment is due.</strong> Once we confirm your date, we'll email you a secure link to pay your deposit (${d.depositFormatted}) and lock it in.</p>
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline("We can't wait to celebrate with you!")}
+</div>
+</body></html>`
+}
+
 export function partyApprovedHtml(d: { customerName: string; bookingRef: string; partyDate: string; partyTime: string; balanceFormatted: string; portalUrl: string }): string {
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>

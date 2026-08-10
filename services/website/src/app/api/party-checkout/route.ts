@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
-import { calculateCardFee, calculateLineItemTotal, computeCutoffDates, generatePartyRef, formatMoney, getDepositCents } from '@/lib/partyPricing'
-import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
-import { partyPaymentInstructionsHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
+import { calculateLineItemTotal, computeCutoffDates, generatePartyRef, formatMoney, getDepositCents } from '@/lib/partyPricing'
+import { partyRequestReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 
 export async function POST(req: NextRequest) {
@@ -25,12 +23,10 @@ export async function POST(req: NextRequest) {
     const partyDate = body.partyDate as string
     const partyTime = body.partyTime as string
     const packageType = body.packageType as string
-    const paymentMethod = (body.paymentMethod || 'card') as 'card' | 'cash' | 'venmo' | 'zelle'
     const notes = body.notes as string | undefined
     const marketingConsent = body.marketingConsent as boolean | undefined
-    const embedded = body.embedded as boolean | undefined
 
-    if (!lineItems?.length || !contactName || !contactEmail || !partyDate || !partyTime || !guestCount || !paymentMethod) {
+    if (!lineItems?.length || !contactName || !contactEmail || !partyDate || !partyTime || !guestCount) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
@@ -57,26 +53,19 @@ export async function POST(req: NextRequest) {
       totalCents,
       depositCents,
       packageType,
-      paymentMethod,
     }
 
-    // For non-card pledges (Venmo / Zelle / Cash), we lock the date immediately
-    // so the customer's slot can't be double-booked while we wait for payment to
-    // land. Card is handled by Stripe — date_locked is set in confirm-session
-    // and the webhook once the charge succeeds.
+    // Party REQUEST flow: we never lock a date or take payment here. The team
+    // reviews availability and approves; the date is only reserved (and a Google
+    // Calendar event created) on admin approval. This prevents a customer from
+    // paying to lock a slot the venue isn't actually available for.
     const partyTags: Record<string, unknown> = {}
     if (catchyPartyName) partyTags.catchy_party_name = catchyPartyName
-    if (paymentMethod !== 'card') {
-      partyTags.date_locked = true
-      partyTags.pledge_method = paymentMethod
-      partyTags.pledge_amount_cents = depositCents
-      partyTags.pledged_at = new Date().toISOString()
-    }
 
-    // Insert booking
+    // Insert booking as a pending request — nothing is charged or reserved yet.
     const { data: booking, error: dbError } = await supabase.from('bookings').insert({
       booking_ref: bookingRef,
-      status: paymentMethod === 'card' ? 'awaiting_deposit' : 'pending_review',
+      status: 'pending_review',
       event_type: 'kid-party',
       party_date: partyDate,
       party_time: partyTime,
@@ -94,7 +83,7 @@ export async function POST(req: NextRequest) {
       modification_cutoff: modificationCutoff,
       guest_count_cutoff: guestCountCutoff,
       quote_snapshot: quoteSnapshot,
-      payment_method_preference: paymentMethod,
+      payment_method_preference: null,
       notes: notes || null,
       party_tags: partyTags,
     }).select('id').single()
@@ -141,71 +130,7 @@ export async function POST(req: NextRequest) {
       }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
     }
 
-    // Card payment → in-page Stripe Payment Element (PaymentIntent)
-    if (paymentMethod === 'card') {
-      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
-      const cardFeeCents = calculateCardFee(depositCents)
-      const totalChargeCents = depositCents + cardFeeCents
-
-      // We bundle the deposit + 3% card fee into a single PaymentIntent.
-      // The breakdown lives in metadata so the webhook can record both pieces.
-      const intent = await stripe.paymentIntents.create({
-        amount: totalChargeCents,
-        currency: 'usd',
-        automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
-        receipt_email: contactEmail,
-        description: childName
-          ? `${childName}'s ${packageType || 'Birthday'} Party — Deposit (${bookingRef})`
-          : `Host Hampton — ${packageType || 'Party'} Deposit (${bookingRef})`,
-        statement_descriptor_suffix: 'PARTY DEPOSIT',
-        metadata: {
-          type: 'party_builder',
-          payment_type: 'deposit',
-          booking_ref: bookingRef,
-          booking_id: booking.id,
-          depositCents: String(depositCents),
-          cardFeeCents: String(cardFeeCents),
-          contactName,
-          contactEmail,
-          contactPhone: contactPhone || '',
-          packageType: packageType || '',
-          partyDate,
-          partyTime,
-          guestCount: String(guestCount),
-          childName: childName || '',
-          childAge: childAge || '',
-        },
-      })
-
-      // `embedded` is kept in the response for caller compatibility but ignored
-      // — Payment Element always renders in-page.
-      void embedded
-      void origin
-      return NextResponse.json({
-        clientSecret: intent.client_secret,
-        paymentIntentId: intent.id,
-        bookingRef,
-        bookingId: booking.id,
-        method: 'card',
-      })
-    }
-
-    // Non-card payment → skip Stripe, send instructions
-    const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
-    const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
-
-    // Store portal token
-    await supabase.from('portal_tokens').insert({
-      booking_id: booking.id,
-      token_hash: hash,
-      expires_at: expiresAt.toISOString(),
-    }).then(({ error }) => {
-      if (error) console.error('Portal token insert error (non-fatal):', error)
-    })
-
-    const portalUrl = buildPortalUrl(bookingRef, rawToken)
-
-    // Prepare line items for email
+    // Prepare line items for the admin email
     const emailLineItems = lineItems.map(item => ({
       name: item.name,
       quantity: item.quantity,
@@ -216,7 +141,13 @@ export async function POST(req: NextRequest) {
         : item.unit_price_cents * item.quantity,
     }))
 
-    // Send emails
+    const partyDateFormatted = new Date(partyDate + 'T12:00:00').toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+    })
+
+    // Notify the customer (request received — no payment, nothing booked yet) and
+    // the team (new request to review for availability). No Stripe, no portal
+    // link: the customer can only pay after we approve.
     if (process.env.RESEND_API_KEY) {
       const { Resend } = await import('resend')
       const resend = new Resend(process.env.RESEND_API_KEY)
@@ -226,21 +157,19 @@ export async function POST(req: NextRequest) {
         resend.emails.send({
           from,
           to: contactEmail,
-          subject: `Payment Instructions — ${bookingRef}`,
-          html: partyPaymentInstructionsHtml({
+          subject: `We got your party request — ${bookingRef}`,
+          html: partyRequestReceivedHtml({
             customerName: contactName,
             bookingRef,
+            partyDate: partyDateFormatted,
+            partyTime,
             depositFormatted: formatMoney(depositCents),
-            paymentMethod,
-            venmoHandle: process.env.VENMO_HANDLE,
-            zelleEmail: process.env.ZELLE_EMAIL,
-            portalUrl,
           }),
         }),
         resend.emails.send({
           from,
           to: 'hosthampton295@gmail.com',
-          subject: `New party booking: ${contactName} — ${bookingRef} (${paymentMethod})`,
+          subject: `New party REQUEST: ${contactName} — ${bookingRef}`,
           html: partyAdminNewBookingHtml({
             bookingRef,
             customerName: contactName,
@@ -252,19 +181,19 @@ export async function POST(req: NextRequest) {
             packageType: packageType || 'Kids Party',
             depositFormatted: formatMoney(depositCents),
             totalFormatted: formatMoney(totalCents),
-            paymentMethod,
+            paymentMethod: 'request',
             lineItems: emailLineItems,
             notes,
             adminUrl: `${origin}/admin?tab=parties&ref=${bookingRef}`,
           }),
         }),
       ])
-      console.log('Party booking emails sent for', bookingRef)
+      console.log('Party request emails sent for', bookingRef)
     }
 
     return NextResponse.json({
-      url: `${origin}/kids-party-menu/success?ref=${bookingRef}&method=${paymentMethod}&deposit=${depositCents}`,
-      method: paymentMethod,
+      url: `${origin}/kids-party-menu/success?ref=${bookingRef}&method=request&deposit=${depositCents}`,
+      method: 'request',
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Checkout failed'
