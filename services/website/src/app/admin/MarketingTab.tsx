@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, CheckCircle2, XCircle, Send, Eye, Archive, DollarSign, FileText, ShieldCheck, Sparkles, ListChecks, BookMarked, MessageSquare } from 'lucide-react'
+import { RefreshCw, CheckCircle2, XCircle, Send, Eye, Archive, DollarSign, FileText, ShieldCheck, Sparkles, ListChecks, BookMarked, MessageSquare, X } from 'lucide-react'
+import { ContentRenderBody, type ContentRenderRow } from '@/components/content/ContentRenderBody'
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -116,6 +117,10 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
   const [running, setRunning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewRow, setPreviewRow] = useState<(ContentRenderRow & { locale: string; status: string }) | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
   const fetchSnapshot = useCallback(async () => {
     setLoading(true)
@@ -154,6 +159,22 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
       await fetchSnapshot()
     } finally {
       setBusyId(null)
+    }
+  }
+
+  // Preview any content row (draft/pending_review/approved/published) exactly
+  // as it will render, before it's approved or published.
+  async function openPreview(id: string) {
+    setPreviewOpen(true); setPreviewLoading(true); setPreviewError(null); setPreviewRow(null)
+    try {
+      const res = await fetch(`/api/admin/marketing/preview/${id}`, { headers })
+      const data = await res.json()
+      if (!res.ok) { setPreviewError(data.error || 'Failed to load preview'); return }
+      setPreviewRow(data.content)
+    } catch {
+      setPreviewError('Failed to load preview')
+    } finally {
+      setPreviewLoading(false)
     }
   }
 
@@ -355,6 +376,14 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {row.status !== 'published' && (
+                  <button
+                    onClick={() => openPreview(row.id)}
+                    className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg text-hampton-navy hover:bg-gray-100 transition-all"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Preview
+                  </button>
+                )}
                 {(CONTENT_ACTIONS[row.status] || []).map(a => (
                   <button
                     key={a.to}
@@ -372,6 +401,37 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
           ))}
         </div>
       </section>
+
+      {/* ── Preview modal ── */}
+      {previewOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4 sm:p-8"
+          onClick={() => setPreviewOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-3xl mt-4 mb-8 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 sticky top-0 bg-white rounded-t-2xl">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-semibold text-hampton-navy">Preview</span>
+                {previewRow && <StatusBadge status={previewRow.status} />}
+                {previewRow && previewRow.locale !== 'en' && (
+                  <span className="text-[10px] uppercase text-gray-400">{previewRow.locale}</span>
+                )}
+              </div>
+              <button onClick={() => setPreviewOpen(false)} className="p-1.5 text-gray-400 hover:text-hampton-navy hover:bg-gray-100 rounded-lg">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-6 py-8">
+              {previewLoading && <p className="text-sm text-gray-400">Loading preview…</p>}
+              {previewError && <p className="text-sm text-red-600">{previewError}</p>}
+              {previewRow && <ContentRenderBody row={previewRow} locale={previewRow.locale === 'es' ? 'es' : 'en'} />}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Tasks ── */}
       <section>

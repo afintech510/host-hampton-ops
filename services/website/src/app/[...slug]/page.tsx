@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { getSupabase } from '@/lib/supabase'
 import { type Locale, localeUrl, parseLocaleSlug } from '@/lib/content/slug'
+import { ContentRenderBody } from '@/components/content/ContentRenderBody'
 
 /**
  * DB-driven content renderer for PUBLISHED website_content rows.
@@ -174,8 +175,6 @@ export default async function DynamicContentPage({ params }: { params: { slug: s
   const { row, locale, slug } = published
 
   const jsonLd = buildJsonLd(localeUrl(slug, locale), row)
-  const sections = row.structured?.sections || []
-  const faqHeading = locale === 'es' ? 'Preguntas Frecuentes' : 'Frequently Asked Questions'
 
   return (
     <main className="mx-auto max-w-3xl px-5 py-12">
@@ -188,43 +187,7 @@ export default async function DynamicContentPage({ params }: { params: { slug: s
         />
       ))}
 
-      <h1 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-6">{row.title}</h1>
-
-      {row.featured_image && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={row.featured_image} alt={row.title} className="w-full rounded-2xl mb-8" />
-      )}
-
-      {sections.length > 0 ? (
-        <div className="prose prose-lg max-w-none">
-          {sections.map((s, i) => (
-            <section key={i} className="mb-8">
-              {s.heading && <h2 className="font-serif text-2xl text-hampton-navy mb-3">{s.heading}</h2>}
-              {s.html ? (
-                <div dangerouslySetInnerHTML={{ __html: s.html }} />
-              ) : s.text ? (
-                <p className="text-gray-700 leading-relaxed whitespace-pre-line">{s.text}</p>
-              ) : null}
-            </section>
-          ))}
-        </div>
-      ) : row.body_html ? (
-        <div className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: row.body_html }} />
-      ) : null}
-
-      {row.structured?.faq && row.structured.faq.length > 0 && (
-        <section className="mt-12">
-          <h2 className="font-serif text-2xl text-hampton-navy mb-4">{faqHeading}</h2>
-          <dl className="space-y-4">
-            {row.structured.faq.map((f, i) => (
-              <div key={i}>
-                <dt className="font-semibold text-hampton-navy">{f.q}</dt>
-                <dd className="text-gray-700 mt-1">{f.a}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      )}
+      <ContentRenderBody row={row} locale={locale} />
     </main>
   )
 }
