@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // ESLint was newly added (.eslintrc.json) with pre-existing lint debt across
+  // the codebase. Keep `next build` (and the deploy build) from failing on it;
+  // lint runs separately in CI as a non-blocking report until the debt clears.
+  eslint: { ignoreDuringBuilds: true },
   images: {
     domains: ['ychnlroczjhwimouecxz.supabase.co'],
     formats: ['image/webp'],

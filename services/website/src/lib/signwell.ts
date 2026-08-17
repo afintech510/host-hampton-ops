@@ -29,8 +29,8 @@ export function isSignwellConfigured(): boolean {
  * Returns an empty set on any error (caller then sends no prefill — signing
  * still works, details just won't auto-populate).
  */
-async function getTemplateApiIds(): Promise<Set<string>> {
-  const id = process.env.SIGNWELL_TEMPLATE_ID
+async function getTemplateApiIds(templateId?: string): Promise<Set<string>> {
+  const id = templateId ?? process.env.SIGNWELL_TEMPLATE_ID
   if (!id) return new Set()
   try {
     const res = await fetch(`${API_BASE}/document_templates/${encodeURIComponent(id)}`, { headers: headers() })
@@ -110,6 +110,76 @@ export async function createEmbeddedAgreement(
         name: input.signerName,
         email: input.signerEmail,
       },
+    ],
+    template_fields,
+  }
+
+  const res = await fetch(`${API_BASE}/document_templates/documents/`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(payload),
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`SignWell create document failed (${res.status}): ${text}`)
+  }
+
+  const data = (await res.json()) as {
+    id: string
+    recipients?: { id: string; embedded_signing_url?: string }[]
+  }
+
+  const signingUrl = data.recipients?.find(r => r.embedded_signing_url)?.embedded_signing_url
+  if (!data.id || !signingUrl) {
+    throw new Error('SignWell response missing document id or embedded signing URL')
+  }
+
+  return { documentId: data.id, embeddedSigningUrl: signingUrl }
+}
+
+/**
+ * Generic embedded-signing document from ANY template. Used by the consent
+ * -release flow (src/lib/marketing/consent.ts) which points at a different
+ * template than the rental agreement. Same prefill-safety behaviour as
+ * createEmbeddedAgreement: only api_ids the template actually defines are sent.
+ */
+export interface CreateDocumentInput {
+  templateId: string
+  documentName: string
+  signerName: string
+  signerEmail: string
+  fields?: AgreementFields
+  metadata?: Record<string, string>
+  /** Recipient placeholder name in the template (default 'Client'). */
+  signerPlaceholder?: string
+}
+
+export async function createEmbeddedDocument(
+  input: CreateDocumentInput
+): Promise<CreateAgreementResult> {
+  if (!process.env.SIGNWELL_API_KEY) {
+    throw new Error('SignWell is not configured (missing SIGNWELL_API_KEY)')
+  }
+  if (!input.templateId) {
+    throw new Error('createEmbeddedDocument: templateId is required')
+  }
+
+  const placeholder = input.signerPlaceholder || process.env.SIGNWELL_SIGNER_PLACEHOLDER || 'Client'
+  const existing = await getTemplateApiIds(input.templateId)
+  const template_fields = Object.entries(input.fields ?? {})
+    .filter(([api_id]) => existing.has(api_id))
+    .map(([api_id, value]) => ({ api_id, value: String(value) }))
+
+  const payload = {
+    test_mode: testMode(),
+    template_id: input.templateId,
+    embedded_signing: true,
+    embedded_signing_notifications: true,
+    name: input.documentName,
+    metadata: input.metadata ?? {},
+    recipients: [
+      { id: '1', placeholder_name: placeholder, name: input.signerName, email: input.signerEmail },
     ],
     template_fields,
   }

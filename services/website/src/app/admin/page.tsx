@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
-  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors
+  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors, Rocket
 } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
@@ -20,10 +20,11 @@ import GiftCardsTab from './GiftCardsTab'
 import PartiesTab from './PartiesTab'
 import PhotosTab from './PhotosTab'
 import SummerHairTab from './SummerHairTab'
+import MarketingTab from './MarketingTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'financials' | 'gift-cards' | 'summer-hair'
+type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'financials' | 'gift-cards' | 'summer-hair'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
@@ -40,6 +41,7 @@ const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[]
   { key: 'contacts',   label: 'Contacts',   Icon: Users,           group: 'marketing' },
   { key: 'sequences',  label: 'Sequences',  Icon: ListOrdered,     group: 'marketing' },
   { key: 'campaigns',  label: 'Campaigns',  Icon: Megaphone,       group: 'marketing' },
+  { key: 'marketing',  label: 'Marketing',  Icon: Rocket,          group: 'marketing' },
 ]
 
 const GROUP_LABELS: Record<string, string> = {
@@ -261,6 +263,9 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
           )}
           {activeTab === 'campaigns' && (
             <CampaignsTab key={`campaigns-${refreshKey}`} headers={headers} onLogout={onLogout} />
+          )}
+          {activeTab === 'marketing' && (
+            <MarketingTab key={`marketing-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
           {activeTab === 'parties' && (
             <PartiesTab key={`parties-${refreshKey}`} headers={headers} onLogout={onLogout} />

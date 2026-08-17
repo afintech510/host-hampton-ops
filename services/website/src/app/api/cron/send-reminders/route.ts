@@ -7,7 +7,7 @@ import {
   reminderBooking7DayHtml,
   reminderBooking1DayHtml,
 } from '@/lib/email-templates/reminders'
-import { partyBalanceReminderHtml, partyAdminUnpaidDayOfHtml, partyThankYouHtml } from '@/lib/emailTemplates'
+import { partyBalanceReminderHtml, partyAdminUnpaidDayOfHtml, partyThankYouHtml, birthdayRebookHtml } from '@/lib/emailTemplates'
 import { formatMoney } from '@/lib/partyPricing'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import {
@@ -15,6 +15,7 @@ import {
   smsEventReminder2Hr,
   smsBookingReminder1Day,
   smsReviewRequest,
+  smsBirthdayRebook,
 } from '@/lib/sms-templates'
 import { sendSMS } from '@/lib/twilio'
 
@@ -96,6 +97,27 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any) 
 
   const resend = new Resend(process.env.RESEND_API_KEY)
   const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+
+  // Birthday rebooking references the booking by UUID (bookings.id), not by
+  // booking_ref like the other booking reminders — handle it up front.
+  if (reminder.reminder_type === 'birthday_rebook_email') {
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('contact_name, child_name, child_age')
+      .eq('id', reminder.reference_id)
+      .single()
+    if (!booking) return
+
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com'
+    const html = birthdayRebookHtml({
+      customerName: booking.contact_name || contact.first_name || 'there',
+      childName: booking.child_name,
+      nextAge: booking.child_age != null ? booking.child_age + 1 : null,
+      bookLink: `${siteUrl}/book`,
+    })
+    await resend.emails.send({ from, to: contact.email, subject: 'A special birthday is coming up! 🎉', html })
+    return
+  }
 
   let subject = ''
   let html = ''
@@ -231,6 +253,23 @@ async function processSmsReminder(reminder: any, contact: any, supabase: any) {
   const firstName = contact.first_name || 'there'
 
   let body = ''
+
+  // Birthday rebooking references the booking by UUID (bookings.id).
+  if (reminder.reminder_type === 'birthday_rebook_sms') {
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('child_name, child_age')
+      .eq('id', reminder.reference_id)
+      .single()
+    if (!booking) return
+    body = smsBirthdayRebook({
+      firstName,
+      childName: booking.child_name,
+      nextAge: booking.child_age != null ? booking.child_age + 1 : null,
+    })
+    if (body) await sendSMS(contact.phone, body)
+    return
+  }
 
   if (reminder.reference_type === 'event') {
     const { data: evt } = await supabase

@@ -1254,3 +1254,47 @@ export function partyThankYouHtml(d: {
 </div>
 </body></html>`
 }
+
+/* ── Birthday Rebooking (customer, ~10 months after last party) ── */
+
+/**
+ * AUTO_EXECUTE rebooking nudge: fires when a past party is 8–10 months out,
+ * inviting the family to book next year's celebration. Owner-pre-approved
+ * template — merge fields only (child name, next age, book link).
+ */
+export function birthdayRebookHtml(d: {
+  customerName: string
+  childName?: string | null
+  nextAge?: number | null
+  bookLink: string
+}): string {
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  const who = d.childName ? d.childName : 'your little one'
+  const turning = d.nextAge != null ? ` turning ${d.nextAge}` : ''
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Is it party season again?</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 20px;">
+      We had the best time celebrating with you last year — and we can hardly believe another birthday for ${who}${turning} is right around the corner!
+    </p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">
+      Our calendar for the popular party weekends fills up early. If you'd like to celebrate with us again, now's a great time to lock in your date.
+    </p>
+    <div style="text-align:center;margin-bottom:24px;">
+      <a href="${d.bookLink}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Check Availability &amp; Reserve</a>
+    </div>
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? We'd love to help plan the next one:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline("Let's celebrate again!")}
+</div>
+</body></html>`
+}

@@ -102,6 +102,26 @@ export function smsFlashSale(params: SmsFlashSaleParams): string {
   return `FLASH SALE! Host Hampton: ${offerText}. Offer ends ${deadline}. Book now: ${link} Reply STOP to opt out`
 }
 
+/* ── Marketing — Birthday Rebooking ─────────────────────────── */
+
+export interface SmsBirthdayRebookParams {
+  firstName: string
+  childName?: string | null
+  nextAge?: number | null
+}
+
+/**
+ * Birthday rebooking nudge (~10 months after last party). Promotional, so
+ * sms_opt_in=true only and STOP language required. ~150 chars with short
+ * inputs; may reach 2 segments for long names.
+ */
+export function smsBirthdayRebook(params: SmsBirthdayRebookParams): string {
+  const { firstName, childName, nextAge } = params
+  const who = childName ? `${childName}'s` : `your little one's`
+  const age = nextAge != null ? ` ${nextAge}th` : ''
+  return `Hi ${firstName}! ${who}${age} birthday is coming up 🎉 Our party dates fill fast — book with Host Hampton: hosthampton.com/book Reply STOP to opt out`
+}
+
 /* ── Transactional — Post-Event Review Request ─────────────── */
 
 export interface SmsReviewRequestParams {

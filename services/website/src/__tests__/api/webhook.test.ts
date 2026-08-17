@@ -265,7 +265,7 @@ describe('POST /api/webhook', () => {
       status: 'deposit_paid',
       contact_name: 'Sarah Jones',
       contact_email: 'sarah@example.com',
-      deposit_amount: 250,
+      deposit_amount: 25000, // stored in cents ($250)
       event_type: 'kid-party',
     }))
   })

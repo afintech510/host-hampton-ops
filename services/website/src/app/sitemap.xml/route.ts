@@ -59,6 +59,29 @@ export async function GET() {
     // Sitemap still works without dynamic events
   }
 
+  // Published DB-driven content pages (app/[...slug] renderer).
+  try {
+    const supabase = getSupabase()
+    const { data: pages } = await supabase
+      .from('website_content')
+      .select('slug, updated_at')
+      .eq('status', 'published')
+      .eq('locale', 'en')
+
+    if (pages) {
+      for (const p of pages) {
+        entries.push({
+          url: `${base}/${p.slug}`,
+          lastmod: new Date(p.updated_at).toISOString(),
+          changefreq: 'monthly',
+          priority: 0.7,
+        })
+      }
+    }
+  } catch {
+    // Sitemap still works without dynamic content pages
+  }
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${entries.map(e => `<url>

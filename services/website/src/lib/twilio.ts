@@ -45,6 +45,11 @@ interface TwilioMessageResponse {
  * Returns the Twilio message SID on success, null on error.
  */
 export async function sendSMS(to: string, body: string): Promise<string | null> {
+  // E2E: don't hit Twilio. Log and return a fake SID so flows complete.
+  if (process.env.E2E_FAKE_SENDERS === '1') {
+    console.log('[E2E_FAKE_SENDERS] sendSMS', { to, body })
+    return 'SMfake0000000000000000000000000000'
+  }
   try {
     const res = await fetch(`${twilioBase()}/Messages.json`, {
       method: 'POST',
@@ -90,6 +95,10 @@ export async function sendMMS(
   body: string,
   mediaUrls: string | string[]
 ): Promise<string | null> {
+  if (process.env.E2E_FAKE_SENDERS === '1') {
+    console.log('[E2E_FAKE_SENDERS] sendMMS', { to, body, mediaUrls })
+    return 'MMfake0000000000000000000000000000'
+  }
   try {
     const urls = Array.isArray(mediaUrls) ? mediaUrls : [mediaUrls]
     if (urls.length > 10) {

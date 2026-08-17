@@ -177,7 +177,7 @@ describe('Admin Orders API', () => {
     expect(body.orders[0].customer_name).toBe('Alice Wonder')
   })
 
-  it('maps booking amount_cents from deposit_amount * 100', async () => {
+  it('maps booking amount_cents directly from deposit_amount (stored in cents)', async () => {
     const bookingsChain = buildChain({ data: [sampleBooking], error: null })
     const ticketsChain = buildChain({ data: [], error: null })
 
@@ -192,7 +192,7 @@ describe('Admin Orders API', () => {
     const res = await GET(req)
     const booking = res.json().orders[0]
 
-    expect(booking.amount_cents).toBe(7500) // 75 * 100
+    expect(booking.amount_cents).toBe(75) // deposit_amount is already in cents
   })
 
   it('sorts results by created_at descending', async () => {

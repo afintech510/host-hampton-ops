@@ -9,7 +9,68 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Test gate ──────────────────────────────────────────────────
+  # Deploy is blocked unless this passes. Hard gate = lint + Jest +
+  # anti-gaming grep (no focused/disabled tests). Playwright E2E runs
+  # only when RUN_E2E=true and the Supabase secrets are present — it
+  # needs a reachable DB with migrations 020–023 applied.
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: services/website/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Anti-gaming — no focused/disabled tests committed
+        run: |
+          set -e
+          # Focused tests (.only) are never allowed anywhere.
+          if grep -rnE '\.only\(' src/__tests__ e2e 2>/dev/null; then
+            echo "::error::Found .only( in tests — remove focused tests."; exit 1
+          fi
+          # Static Jest skips (it.skip/describe.skip/xit/xdescribe) are not
+          # allowed in the Jest suite. (Playwright conditional test.skip(cond)
+          # in e2e/ is allowed.)
+          if grep -rnE '(describe|it|test)\.skip\(|xit\(|xdescribe\(' src/__tests__ 2>/dev/null; then
+            echo "::error::Found a static .skip in Jest tests — remove it."; exit 1
+          fi
+
+      # Non-blocking for now: ESLint was just introduced and the pre-existing
+      # codebase carries lint debt (unescaped entities, conditional hooks, …).
+      # Reports in the log without blocking deploy. Flip to a hard gate once the
+      # backlog is burned down.
+      - name: Lint (report-only)
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Jest
+        run: npm test
+
+      - name: Playwright E2E (opt-in)
+        if: ${{ vars.RUN_E2E == 'true' }}
+        env:
+          E2E_FAKE_SENDERS: '1'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+        run: |
+          npm run test:e2e:install
+          npm run test:e2e
+
+  # ── Deploy (only after tests pass) ─────────────────────────────
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Deploy over SSH (website only — never rebuilds shared nginx; preserves skip-worktree nginx.conf)

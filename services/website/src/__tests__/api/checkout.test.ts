@@ -94,7 +94,7 @@ describe('POST /api/events/checkout', () => {
     const req = {
       json: jest.fn().mockResolvedValue({
         eventId: 'nonexistent', quantity: 1,
-        customerName: 'Test', customerEmail: 'test@test.com',
+        customerName: 'Test', customerEmail: 'test@test.com', customerPhone: '555-000-0000',
       }),
       headers: { get: () => null },
     } as any
@@ -114,7 +114,7 @@ describe('POST /api/events/checkout', () => {
     const req = {
       json: jest.fn().mockResolvedValue({
         eventId: sampleEvent.id, quantity: 5,
-        customerName: 'Test', customerEmail: 'test@test.com',
+        customerName: 'Test', customerEmail: 'test@test.com', customerPhone: '555-000-0000',
       }),
       headers: { get: () => null },
     } as any
@@ -139,7 +139,7 @@ describe('POST /api/events/checkout', () => {
     const req = {
       json: jest.fn().mockResolvedValue({
         eventId: sampleFreeEvent.id, quantity: 1,
-        customerName: 'John Doe', customerEmail: 'john@example.com',
+        customerName: 'John Doe', customerEmail: 'john@example.com', customerPhone: '555-000-0000',
       }),
       headers: { get: () => null },
     } as any
@@ -203,18 +203,20 @@ describe('POST /api/events/checkout', () => {
     const req = {
       json: jest.fn().mockResolvedValue({
         eventId: sampleEvent.id, quantity: 1, variantLabel: 'Tote Bag',
-        customerName: 'Test', customerEmail: 'test@test.com',
+        customerName: 'Test', customerEmail: 'test@test.com', customerPhone: '555-000-0000',
       }),
       headers: { get: () => null },
     } as any
 
     await POST(req)
 
+    // Route also appends tax + processing-fee line items, so assert the variant
+    // line item is present rather than the sole element.
     expect(mockStripeCreate).toHaveBeenCalledWith(expect.objectContaining({
-      line_items: [expect.objectContaining({
+      line_items: expect.arrayContaining([expect.objectContaining({
         price_data: expect.objectContaining({ unit_amount: 5500 }),
         quantity: 1,
-      })],
+      })]),
     }))
   })
 
@@ -233,7 +235,7 @@ describe('POST /api/events/checkout', () => {
     const req = {
       json: jest.fn().mockResolvedValue({
         eventId: sampleSessionEvent.id, sessionId: sampleSession.id,
-        quantity: 3, customerName: 'Test', customerEmail: 'test@test.com',
+        quantity: 3, customerName: 'Test', customerEmail: 'test@test.com', customerPhone: '555-000-0000',
       }),
       headers: { get: () => null },
     } as any
@@ -257,7 +259,7 @@ describe('POST /api/events/checkout', () => {
     const req = {
       json: jest.fn().mockResolvedValue({
         eventId: sampleFreeEvent.id, quantity: 1,
-        customerName: 'John Doe', customerEmail: 'john@example.com',
+        customerName: 'John Doe', customerEmail: 'john@example.com', customerPhone: '555-000-0000',
       }),
       headers: { get: () => null },
     } as any
