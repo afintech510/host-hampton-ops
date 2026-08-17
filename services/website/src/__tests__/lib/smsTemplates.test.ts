@@ -11,6 +11,7 @@ import {
   smsMarketingEvent,
   smsMarketingJewelry,
   smsFlashSale,
+  smsReviewRequest,
 } from '@/lib/sms-templates'
 
 describe('SMS Templates', () => {
@@ -133,6 +134,24 @@ describe('SMS Templates', () => {
     it('includes STOP opt-out', () => {
       const result = smsFlashSale({ offerText: 'Deal', deadline: 'Today', link: 'test.com' })
       expect(result).toContain('STOP')
+    })
+  })
+
+  describe('smsReviewRequest', () => {
+    it('includes first name and the default review link when none is passed', () => {
+      const result = smsReviewRequest({ firstName: 'Jane' })
+      expect(result).toContain('Jane')
+      expect(result).toContain('https://search.google.com/local/writereview')
+    })
+
+    it('uses a passed-in reviewUrl (e.g. UTM-tagged) instead of the default', () => {
+      const result = smsReviewRequest({ firstName: 'Jane', reviewUrl: 'https://example.com/review?utm_source=sms' })
+      expect(result).toContain('https://example.com/review?utm_source=sms')
+      expect(result).not.toContain('placeid=')
+    })
+
+    it('includes STOP opt-out', () => {
+      expect(smsReviewRequest({ firstName: 'Jane' })).toContain('STOP')
     })
   })
 

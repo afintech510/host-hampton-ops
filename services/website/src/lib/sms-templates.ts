@@ -126,12 +126,17 @@ export function smsBirthdayRebook(params: SmsBirthdayRebookParams): string {
 
 export interface SmsReviewRequestParams {
   firstName: string
+  reviewUrl?: string
 }
+
+const DEFAULT_REVIEW_URL = 'https://search.google.com/local/writereview?placeid=ChIJv3k3iqn36IkRfD0Mkz2QWj4'
 
 /**
  * Review request sent 24 hours after an event or booking. ~180 chars (2 segments).
+ * Pass `reviewUrl` (e.g. from `lib/marketing/reviewLink.ts`) to send a UTM-tagged
+ * link; falls back to the bare placeid link if omitted.
  */
 export function smsReviewRequest(params: SmsReviewRequestParams): string {
-  const { firstName } = params
-  return `Hi ${firstName}! Hope you had an amazing time at Host Hampton! We'd love your feedback: https://search.google.com/local/writereview?placeid=ChIJv3k3iqn36IkRfD0Mkz2QWj4 Reply STOP to opt out`
+  const { firstName, reviewUrl = DEFAULT_REVIEW_URL } = params
+  return `Hi ${firstName}! Hope you had an amazing time at Host Hampton! We'd love your feedback: ${reviewUrl} Reply STOP to opt out`
 }

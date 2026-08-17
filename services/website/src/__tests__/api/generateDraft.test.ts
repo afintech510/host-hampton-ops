@@ -54,15 +54,22 @@ function makeReq(body: any) {
   return { json: jest.fn().mockResolvedValue(body), headers: { get: () => null } } as any
 }
 
-/** Supabase mock: website_content.insert(...).select().single() resolves a row. */
-function makeSupabase(opts: { insertError?: any } = {}) {
+/**
+ * Supabase mock: website_content.insert(...).select().single() resolves a row;
+ * voice_profile.select().eq('is_active', true).maybeSingle() resolves the
+ * active profile (or null/error, per opts) on a separate chain so it doesn't
+ * interfere with the website_content insert chain.
+ */
+function makeSupabase(
+  opts: { insertError?: any; voiceProfile?: any; voiceProfileError?: any } = {}
+) {
   const inserted: any[] = []
-  const chain: any = {
+  const contentChain: any = {
     insert: jest.fn((row: any) => {
       inserted.push(row)
-      return chain
+      return contentChain
     }),
-    select: jest.fn(() => chain),
+    select: jest.fn(() => contentChain),
     single: jest.fn(() =>
       Promise.resolve(
         opts.insertError
@@ -71,7 +78,32 @@ function makeSupabase(opts: { insertError?: any } = {}) {
       )
     ),
   }
-  return { supabase: { from: jest.fn(() => chain) } as any, inserted }
+  const voiceProfileChain: any = {
+    select: jest.fn(() => voiceProfileChain),
+    eq: jest.fn(() => voiceProfileChain),
+    maybeSingle: jest.fn(() =>
+      Promise.resolve(
+        opts.voiceProfileError
+          ? { data: null, error: opts.voiceProfileError }
+          : { data: opts.voiceProfile ? { profile: opts.voiceProfile } : null, error: null }
+      )
+    ),
+  }
+  return {
+    supabase: {
+      from: jest.fn((table: string) => (table === 'voice_profile' ? voiceProfileChain : contentChain)),
+    } as any,
+    inserted,
+  }
+}
+
+const SAMPLE_VOICE_PROFILE = {
+  tone_rules: ['Warm and brief.'],
+  greeting: 'Hi [First Name], thanks so much for reaching out!',
+  pricing_style: 'State a real starting number fast.',
+  dos: ['Say "we".'],
+  donts: ['Say "contact us for pricing".'],
+  exemplars: [{ context: 'First-touch', text: 'Hi [Name], thanks so much for reaching out!' }],
 }
 
 function mockAnthropicOk() {
@@ -170,5 +202,46 @@ describe('POST /api/marketing/generate-draft', () => {
     const res = await POST(makeReq({ town: 'Southampton', service: 'permanent jewelry' }))
     expect(res.status).toBe(409)
     expect(advance).not.toHaveBeenCalled()
+  })
+
+  it('folds the active voice profile into the Anthropic system prompt when present', async () => {
+    const { supabase } = makeSupabase({ voiceProfile: SAMPLE_VOICE_PROFILE })
+    mockGetSupabase.mockReturnValue(supabase)
+    mockAnthropicOk()
+
+    const res = await POST(makeReq({ town: 'Southampton', service: 'permanent jewelry' }))
+
+    expect(res.status).toBe(200)
+    const call = (global.fetch as jest.Mock).mock.calls[0]
+    const requestBody = JSON.parse(call[1].body)
+    expect(requestBody.system).toContain('OPERATOR VOICE')
+    expect(requestBody.system).toContain('Warm and brief.')
+    expect(requestBody.system).toContain('Hi [First Name], thanks so much for reaching out!')
+  })
+
+  it('falls back to the base system prompt when no voice profile row is active', async () => {
+    const { supabase } = makeSupabase({ voiceProfile: null })
+    mockGetSupabase.mockReturnValue(supabase)
+    mockAnthropicOk()
+
+    const res = await POST(makeReq({ town: 'Southampton', service: 'permanent jewelry' }))
+
+    expect(res.status).toBe(200)
+    const call = (global.fetch as jest.Mock).mock.calls[0]
+    const requestBody = JSON.parse(call[1].body)
+    expect(requestBody.system).not.toContain('OPERATOR VOICE')
+  })
+
+  it('falls back to the base system prompt when the voice_profile query errors (defensive no-op)', async () => {
+    const { supabase } = makeSupabase({ voiceProfileError: { message: 'relation does not exist' } })
+    mockGetSupabase.mockReturnValue(supabase)
+    mockAnthropicOk()
+
+    const res = await POST(makeReq({ town: 'Southampton', service: 'permanent jewelry' }))
+
+    expect(res.status).toBe(200)
+    const call = (global.fetch as jest.Mock).mock.calls[0]
+    const requestBody = JSON.parse(call[1].body)
+    expect(requestBody.system).not.toContain('OPERATOR VOICE')
   })
 })

@@ -18,6 +18,8 @@ import {
   smsBirthdayRebook,
 } from '@/lib/sms-templates'
 import { sendSMS } from '@/lib/twilio'
+import { buildReviewUrl } from '@/lib/marketing/reviewLink'
+import { writeLedger } from '@/lib/marketing/graph'
 
 export const dynamic = 'force-dynamic'
 
@@ -218,7 +220,14 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any) 
         partyDate: dateDisplay,
         photoGalleryUrl: booking.photo_gallery_url,
         childName: booking.child_name,
-        reviewUrl: 'https://search.google.com/local/writereview?placeid=ChIJv3k3iqn36IkRfD0Mkz2QWj4',
+        reviewUrl: buildReviewUrl('email'),
+      })
+      await writeLedger(supabase, {
+        entityType: 'review_request',
+        entityId: booking.id,
+        action: 'send',
+        actor: 'system',
+        meta: { channel: 'email', reminder_type: reminder.reminder_type, booking_ref: booking.booking_ref },
       })
     } else if (reminder.reminder_type === 'party_admin_unpaid_dayof') {
       // Send to admin, not to customer
@@ -301,10 +310,19 @@ async function processSmsReminder(reminder: any, contact: any, supabase: any) {
 
   // Review request (works for both events and bookings)
   if (!body && reminder.reminder_type === 'review_request_sms') {
-    body = smsReviewRequest({ firstName })
+    body = smsReviewRequest({ firstName, reviewUrl: buildReviewUrl('sms') })
   }
 
   if (body) {
     await sendSMS(contact.phone, body)
+    if (reminder.reminder_type === 'review_request_sms') {
+      await writeLedger(supabase, {
+        entityType: 'review_request',
+        entityId: reminder.reference_id,
+        action: 'send',
+        actor: 'system',
+        meta: { channel: 'sms', reference_type: reminder.reference_type },
+      })
+    }
   }
 }

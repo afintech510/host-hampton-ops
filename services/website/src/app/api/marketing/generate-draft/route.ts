@@ -66,6 +66,15 @@ interface DraftResult {
   faq: { q: string; a: string }[]
 }
 
+interface VoiceProfile {
+  tone_rules?: string[]
+  greeting?: string
+  pricing_style?: string
+  dos?: string[]
+  donts?: string[]
+  exemplars?: { context?: string; text: string }[]
+}
+
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -74,8 +83,49 @@ function slugify(s: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-async function generateDraft(town: string, service: string): Promise<{ draft: DraftResult; inputTokens: number; outputTokens: number }> {
+/**
+ * Reads the active voice_profile row so drafts sound like Allie. Defensive:
+ * if the table/row doesn't exist or the query fails for any reason, returns
+ * null and the caller falls back to the base system prompt unchanged.
+ */
+async function loadVoiceProfile(supabase: ReturnType<typeof getSupabase>): Promise<VoiceProfile | null> {
+  try {
+    const { data, error } = await supabase
+      .from('voice_profile')
+      .select('profile')
+      .eq('is_active', true)
+      .maybeSingle()
+    if (error || !data?.profile) return null
+    return data.profile as VoiceProfile
+  } catch {
+    return null
+  }
+}
+
+function voicePromptAddendum(profile: VoiceProfile): string {
+  const lines: string[] = ['', 'OPERATOR VOICE (match this — it is how Allie actually talks to customers):']
+  if (profile.tone_rules?.length) {
+    lines.push('Tone rules:')
+    profile.tone_rules.forEach(r => lines.push(`- ${r}`))
+  }
+  if (profile.greeting) lines.push(`Greeting habit: ${profile.greeting}`)
+  if (profile.pricing_style) lines.push(`Pricing style: ${profile.pricing_style}`)
+  if (profile.dos?.length) lines.push(`Do: ${profile.dos.join('; ')}`)
+  if (profile.donts?.length) lines.push(`Don't: ${profile.donts.join('; ')}`)
+  if (profile.exemplars?.length) {
+    lines.push('Exemplars of her real voice (style anchors, not content to copy verbatim):')
+    profile.exemplars.slice(0, 5).forEach(e => lines.push(`- ${e.context ? `[${e.context}] ` : ''}${e.text}`))
+  }
+  return lines.join('\n')
+}
+
+async function generateDraft(
+  town: string,
+  service: string,
+  voiceProfile: VoiceProfile | null
+): Promise<{ draft: DraftResult; inputTokens: number; outputTokens: number }> {
   const apiKey = process.env.ANTHROPIC_API_KEY as string
+  const systemPrompt = voiceProfile ? COPY_SYSTEM_PROMPT + '\n' + voicePromptAddendum(voiceProfile) : COPY_SYSTEM_PROMPT
 
   const userPrompt = `Write a local landing page for this service in this town:
 - Town: ${town}
@@ -105,7 +155,7 @@ Include 2-3 sections and 3 FAQ entries.`
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 2000,
-      system: COPY_SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     }),
   })
@@ -172,10 +222,12 @@ export async function POST(req: NextRequest) {
     throw err
   }
 
-  // 2. ACT — call Claude.
+  // 2. ACT — call Claude, with the active voice profile folded into the system
+  //    prompt when available (defensive no-op if the table/row is absent).
+  const voiceProfile = await loadVoiceProfile(supabase)
   let generated
   try {
-    generated = await generateDraft(town, service)
+    generated = await generateDraft(town, service, voiceProfile)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'draft generation failed'
     console.error('generate-draft:', msg)

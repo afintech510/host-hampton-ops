@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, CheckCircle2, XCircle, Send, Eye, Archive, DollarSign, FileText, ShieldCheck, Sparkles, ListChecks } from 'lucide-react'
+import { RefreshCw, CheckCircle2, XCircle, Send, Eye, Archive, DollarSign, FileText, ShieldCheck, Sparkles, ListChecks, BookMarked, MessageSquare } from 'lucide-react'
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -212,6 +212,42 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
     }
   }
 
+  // Seed ALWAYS_ASK directory-listing tasks (PartySlate, NAP consistency).
+  async function runDirectoryListings() {
+    setRunning('directory-listings'); setError(null); setNotice(null)
+    try {
+      const res = await fetch('/api/admin/marketing/directory-listings', { method: 'POST', headers })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Directory listing seed failed'); return }
+      setNotice(`Directory listings: ${data.created} new, ${data.skipped} existing.`)
+      await fetchSnapshot()
+    } finally {
+      setRunning(null)
+    }
+  }
+
+  // Draft a Facebook reply from pasted-in inbound text. Lands as an
+  // ALWAYS_ASK fb_reply task — copy/paste into Facebook yourself; this never
+  // calls the Facebook API.
+  async function draftFbReply() {
+    const text = window.prompt('Paste the Facebook comment/message to reply to:')?.trim()
+    if (!text) return
+    setRunning('fb-reply'); setError(null); setNotice(null)
+    try {
+      const res = await fetch('/api/admin/marketing/fb-reply', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ text }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'FB reply draft failed'); return }
+      setNotice('FB reply drafted — review it in Marketing tasks below.')
+      await fetchSnapshot()
+    } finally {
+      setRunning(null)
+    }
+  }
+
   const pct = (a: number, b: number) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0)
 
   return (
@@ -232,6 +268,20 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
             className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-hampton-navy hover:bg-gray-100 transition-all disabled:opacity-50"
           >
             <ListChecks className={`w-3.5 h-3.5 ${running === 'theme-audit' ? 'animate-pulse' : ''}`} /> Run theme audit
+          </button>
+          <button
+            onClick={runDirectoryListings}
+            disabled={running !== null}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-hampton-navy hover:bg-gray-100 transition-all disabled:opacity-50"
+          >
+            <BookMarked className={`w-3.5 h-3.5 ${running === 'directory-listings' ? 'animate-pulse' : ''}`} /> Directory listings
+          </button>
+          <button
+            onClick={draftFbReply}
+            disabled={running !== null}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-hampton-navy hover:bg-gray-100 transition-all disabled:opacity-50"
+          >
+            <MessageSquare className={`w-3.5 h-3.5 ${running === 'fb-reply' ? 'animate-pulse' : ''}`} /> Draft FB reply
           </button>
           <button onClick={fetchSnapshot} className="p-2 text-gray-500 hover:text-hampton-navy hover:bg-gray-100 rounded-lg transition-all">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
