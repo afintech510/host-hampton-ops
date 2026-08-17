@@ -27,7 +27,7 @@ export interface ContentRenderRow {
   title: string
   featured_image?: string | null
   body_html?: string | null
-  structured?: { sections?: StructuredSection[]; faq?: FaqItem[] } | null
+  structured?: { sections?: StructuredSection[]; faq?: FaqItem[]; gallery?: string[] } | null
 }
 
 /**
@@ -43,6 +43,7 @@ function displayTitle(title: string): string {
 export function ContentRenderBody({ row, locale = 'en' }: { row: ContentRenderRow; locale?: 'en' | 'es' }) {
   const sections = row.structured?.sections || []
   const faq = row.structured?.faq || []
+  const gallery = row.structured?.gallery || []
   const faqHeading = locale === 'es' ? 'Preguntas Frecuentes' : 'Frequently Asked Questions'
   const ctaText = locale === 'es' ? 'Consultar Disponibilidad' : 'Check Availability'
   // /book is the only booking flow with no locale variant — always point there.
@@ -58,6 +59,17 @@ export function ContentRenderBody({ row, locale = 'en' }: { row: ContentRenderRo
         <div className="mb-10 rounded-2xl overflow-hidden shadow-md">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={row.featured_image} alt={displayTitle(row.title)} className="w-full object-cover" />
+        </div>
+      )}
+
+      {gallery.length > 0 && (
+        <div className="mb-10 grid grid-cols-2 md:grid-cols-4 gap-3">
+          {gallery.map((src, i) => (
+            <div key={i} className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-md">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={src} alt={displayTitle(row.title)} className="w-full h-full object-cover" />
+            </div>
+          ))}
         </div>
       )}
 

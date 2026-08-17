@@ -60,6 +60,12 @@ VALUES (
         'q', '¿Cuál es el depósito de seguridad?',
         'a', 'Un depósito de seguridad reembolsable de $500 se cobra por separado antes de tu evento. Se devuelve en su totalidad después de una inspección posterior que confirme que el espacio quedó en buenas condiciones.'
       )
+    ),
+    'gallery', jsonb_build_array(
+      '/images/gallery/venue-construction-party.webp',
+      '/images/gallery/venue-painting-workshop.webp',
+      '/images/gallery/venue-craft-station.webp',
+      '/images/gallery/activity-bracelet-making.webp'
     )
   )::jsonb
 )
