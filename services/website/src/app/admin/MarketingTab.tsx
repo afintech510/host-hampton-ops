@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, CheckCircle2, XCircle, Send, Eye, Archive, DollarSign, FileText, ShieldCheck } from 'lucide-react'
+import { RefreshCw, CheckCircle2, XCircle, Send, Eye, Archive, DollarSign, FileText, ShieldCheck, Sparkles, ListChecks } from 'lucide-react'
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -113,7 +113,9 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
   const [ledger, setLedger] = useState<LedgerRow[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [running, setRunning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const fetchSnapshot = useCallback(async () => {
     setLoading(true)
@@ -173,19 +175,75 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
     }
   }
 
+  // Generate a town × service landing draft via the Claude LLM node. Lands as
+  // pending_review — it never auto-publishes.
+  async function generateDraft() {
+    const town = window.prompt('Town (e.g. Southampton):')?.trim()
+    if (!town) return
+    const service = window.prompt('Service (e.g. permanent jewelry):')?.trim()
+    if (!service) return
+    setRunning('generate'); setError(null); setNotice(null)
+    try {
+      const res = await fetch('/api/marketing/generate-draft', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ town, service }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Draft generation failed'); return }
+      setNotice(`Draft created for ${town} · ${service} — review it below.`)
+      await fetchSnapshot()
+    } finally {
+      setRunning(null)
+    }
+  }
+
+  // Seed one ALWAYS_ASK checklist task per active theme (idempotent).
+  async function runThemeAudit() {
+    setRunning('theme-audit'); setError(null); setNotice(null)
+    try {
+      const res = await fetch('/api/admin/marketing/theme-audit', { method: 'POST', headers })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Theme audit failed'); return }
+      setNotice(`Theme audit: ${data.created} new, ${data.skipped} existing.`)
+      await fetchSnapshot()
+    } finally {
+      setRunning(null)
+    }
+  }
+
   const pct = (a: number, b: number) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0)
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-500">Approval queue — nothing publishes without you.</p>
-        <button onClick={fetchSnapshot} className="p-2 text-gray-500 hover:text-hampton-navy hover:bg-gray-100 rounded-lg transition-all">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={generateDraft}
+            disabled={running !== null}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-hampton-navy hover:bg-gray-100 transition-all disabled:opacity-50"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${running === 'generate' ? 'animate-pulse' : ''}`} /> Generate draft
+          </button>
+          <button
+            onClick={runThemeAudit}
+            disabled={running !== null}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-hampton-navy hover:bg-gray-100 transition-all disabled:opacity-50"
+          >
+            <ListChecks className={`w-3.5 h-3.5 ${running === 'theme-audit' ? 'animate-pulse' : ''}`} /> Run theme audit
+          </button>
+          <button onClick={fetchSnapshot} className="p-2 text-gray-500 hover:text-hampton-navy hover:bg-gray-100 rounded-lg transition-all">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
+      )}
+      {notice && (
+        <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-xl px-4 py-3">{notice}</div>
       )}
 
       {/* ── Budget ── */}
