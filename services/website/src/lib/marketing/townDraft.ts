@@ -1,0 +1,262 @@
+/**
+ * Shared town × service draft-generation pipeline (the COPY LLM node).
+ *
+ * Extracted from app/api/marketing/generate-draft/route.ts so the admin
+ * on-demand route and the weekly-town-drafts cron can share one
+ * check-act-record implementation instead of drifting apart.
+ */
+
+import { getSupabase } from '@/lib/supabase'
+import { assertLlmBudget, recordLlmSpend, BudgetExceededError } from '@/lib/marketing/budget'
+import { advance } from '@/lib/marketing/graph'
+
+type Supa = ReturnType<typeof getSupabase>
+
+const COPY_ACTOR = 'COPY'
+
+// Haiku 4.5 — fast + cheap. If you change the model, update PRICING so
+// recordLlmSpend logs the real cost.
+const MODEL = process.env.MARKETING_DRAFT_MODEL || 'claude-haiku-4-5-20251001'
+
+// USD per 1M tokens (input / output).
+const PRICING: Record<string, { in: number; out: number }> = {
+  'claude-haiku-4-5-20251001': { in: 1, out: 5 },
+  'claude-haiku-4-5': { in: 1, out: 5 },
+}
+
+// Pre-reserved headroom checked against the monthly cap before the call. A
+// town × service landing draft is small (~1.5k in / ~2k out ≈ $0.012); reserve
+// a little extra so a call that would blow the cap is refused up front.
+const ESTIMATED_USD = 0.05
+
+const COPY_SYSTEM_PROMPT = `You are COPY, the content writing agent for Host Hampton — a boutique celebration studio in Speonk, NY run by Allie Larkin. Host Hampton serves the East End of Long Island (the Hamptons).
+
+BRAND VOICE:
+- Warm, fun, community-first. Never corporate or pushy.
+- Use "we" — not "I". Speak directly to the reader as "you".
+- Conversational but polished. Celebrate the moment. Make it feel real.
+- NEVER say: "amazing", "incredible", "game-changer", "perfect", "seamless", "effortless".
+- DO say: "beautiful", "real", "genuine", "we love", "your crew", "the good stuff".
+
+You write local SEO landing pages for a specific town + service. Be specific to the town and genuinely helpful — no keyword stuffing, no invented facts, no fake reviews or credentials.
+
+Respond ONLY with valid JSON — no markdown fences, no extra text.`
+
+export interface DraftResult {
+  title: string
+  meta_description: string
+  keywords: string[]
+  sections: { heading: string; text: string }[]
+  faq: { q: string; a: string }[]
+}
+
+export interface VoiceProfile {
+  tone_rules?: string[]
+  greeting?: string
+  pricing_style?: string
+  dos?: string[]
+  donts?: string[]
+  exemplars?: { context?: string; text: string }[]
+}
+
+export function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/**
+ * Reads the active voice_profile row so drafts sound like Allie. Defensive:
+ * if the table/row doesn't exist or the query fails for any reason, returns
+ * null and the caller falls back to the base system prompt unchanged.
+ */
+export async function loadVoiceProfile(supabase: Supa): Promise<VoiceProfile | null> {
+  try {
+    const { data, error } = await supabase
+      .from('voice_profile')
+      .select('profile')
+      .eq('is_active', true)
+      .maybeSingle()
+    if (error || !data?.profile) return null
+    return data.profile as VoiceProfile
+  } catch {
+    return null
+  }
+}
+
+function voicePromptAddendum(profile: VoiceProfile): string {
+  const lines: string[] = ['', 'OPERATOR VOICE (match this — it is how Allie actually talks to customers):']
+  if (profile.tone_rules?.length) {
+    lines.push('Tone rules:')
+    profile.tone_rules.forEach(r => lines.push(`- ${r}`))
+  }
+  if (profile.greeting) lines.push(`Greeting habit: ${profile.greeting}`)
+  if (profile.pricing_style) lines.push(`Pricing style: ${profile.pricing_style}`)
+  if (profile.dos?.length) lines.push(`Do: ${profile.dos.join('; ')}`)
+  if (profile.donts?.length) lines.push(`Don't: ${profile.donts.join('; ')}`)
+  if (profile.exemplars?.length) {
+    lines.push('Exemplars of her real voice (style anchors, not content to copy verbatim):')
+    profile.exemplars.slice(0, 5).forEach(e => lines.push(`- ${e.context ? `[${e.context}] ` : ''}${e.text}`))
+  }
+  return lines.join('\n')
+}
+
+async function callClaude(
+  town: string,
+  service: string,
+  voiceProfile: VoiceProfile | null
+): Promise<{ draft: DraftResult; inputTokens: number; outputTokens: number }> {
+  const apiKey = process.env.ANTHROPIC_API_KEY as string
+  const systemPrompt = voiceProfile ? COPY_SYSTEM_PROMPT + '\n' + voicePromptAddendum(voiceProfile) : COPY_SYSTEM_PROMPT
+
+  const userPrompt = `Write a local landing page for this service in this town:
+- Town: ${town}
+- Service: ${service}
+
+Respond with JSON exactly in this shape:
+{
+  "title": "SEO page title, ~55-60 chars, includes the town and service, ends with '| Host Hampton'",
+  "meta_description": "meta description, ~150 chars, warm and specific to the town",
+  "keywords": ["3-6 short lowercase local keyword phrases"],
+  "sections": [
+    { "heading": "short section heading", "text": "1-2 warm, specific paragraphs (plain text, no HTML)" }
+  ],
+  "faq": [
+    { "q": "a real question a ${town} customer would ask about ${service}", "a": "a helpful, honest answer" }
+  ]
+}
+Include 2-3 sections and 3 FAQ entries.`
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 2000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  })
+
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Anthropic error ${res.status}: ${body}`)
+  }
+
+  const data = (await res.json()) as {
+    content: { type: string; text: string }[]
+    usage?: { input_tokens?: number; output_tokens?: number }
+  }
+  const text = data.content?.[0]?.type === 'text' ? data.content[0].text : ''
+  const jsonMatch = text.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) throw new Error('Anthropic response did not contain JSON')
+
+  const draft = JSON.parse(jsonMatch[0]) as DraftResult
+  return {
+    draft,
+    inputTokens: data.usage?.input_tokens ?? 0,
+    outputTokens: data.usage?.output_tokens ?? 0,
+  }
+}
+
+function costUsd(model: string, inputTokens: number, outputTokens: number): number {
+  const price = PRICING[model] || PRICING['claude-haiku-4-5-20251001']
+  return (inputTokens / 1_000_000) * price.in + (outputTokens / 1_000_000) * price.out
+}
+
+export type TownDraftOutcome =
+  | { ok: true; status: 200; id: string; slug: string; locale: string; contentStatus: 'pending_review'; costUsd: number; tokens: number }
+  | { ok: false; status: number; error: string }
+
+/**
+ * Full check-act-record pipeline for one town × service draft: budget check,
+ * Claude call (with voice profile folded in when available), insert as
+ * `draft`, record real spend, then advance() to `pending_review`. NEVER
+ * publishes — pending_review is terminal here; a human approves via the
+ * Marketing tab. Mirrors app/api/marketing/generate-draft/route.ts exactly.
+ */
+export async function createTownServiceDraft(
+  supabase: Supa,
+  opts: { town: string; service: string; slug?: string; locale?: 'en' | 'es'; actor?: string }
+): Promise<TownDraftOutcome> {
+  const town = opts.town.trim()
+  const service = opts.service.trim()
+  const locale = opts.locale ?? 'en'
+  const slug = opts.slug?.trim() || `${slugify(service)}-${slugify(town)}`
+  const actor = opts.actor ?? COPY_ACTOR
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { ok: false, status: 503, error: 'ANTHROPIC_API_KEY is not configured on the server' }
+  }
+
+  try {
+    await assertLlmBudget(supabase, { estimatedUsd: ESTIMATED_USD, actor, entityType: 'website_content' })
+  } catch (err) {
+    if (err instanceof BudgetExceededError) return { ok: false, status: 402, error: err.message }
+    throw err
+  }
+
+  const voiceProfile = await loadVoiceProfile(supabase)
+  let generated
+  try {
+    generated = await callClaude(town, service, voiceProfile)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'draft generation failed'
+    console.error('createTownServiceDraft:', msg)
+    return { ok: false, status: 502, error: 'Draft generation failed' }
+  }
+
+  const { draft, inputTokens, outputTokens } = generated
+
+  const { data: row, error: insErr } = await supabase
+    .from('website_content')
+    .insert({
+      slug,
+      locale,
+      page_type: 'landing',
+      title: draft.title,
+      meta_description: draft.meta_description,
+      keywords: draft.keywords ?? [],
+      status: 'draft',
+      created_by: actor,
+      references_child_media: false,
+      structured: { sections: draft.sections ?? [], faq: draft.faq ?? [] },
+    })
+    .select('id')
+    .single()
+
+  if (insErr || !row) {
+    if ((insErr as { code?: string } | null)?.code === '23505') {
+      return { ok: false, status: 409, error: `Content already exists for slug "${slug}" (${locale}).` }
+    }
+    console.error('createTownServiceDraft insert error:', insErr?.message)
+    return { ok: false, status: 500, error: 'Failed to save draft' }
+  }
+
+  const usd = costUsd(MODEL, inputTokens, outputTokens)
+  await recordLlmSpend(supabase, {
+    usd,
+    tokens: inputTokens + outputTokens,
+    actor,
+    entityType: 'website_content',
+    entityId: row.id,
+    meta: { model: MODEL, town, service, slug, input_tokens: inputTokens, output_tokens: outputTokens },
+  })
+
+  await advance({
+    entity: 'website_content',
+    id: row.id,
+    to: 'pending_review',
+    actor: { id: actor },
+    supabase,
+    meta: { generated_by: 'llm', model: MODEL },
+  })
+
+  return { ok: true, status: 200, id: row.id, slug, locale, contentStatus: 'pending_review', costUsd: usd, tokens: inputTokens + outputTokens }
+}
