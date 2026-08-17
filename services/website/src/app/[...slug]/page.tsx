@@ -108,7 +108,10 @@ export async function generateMetadata({ params }: { params: { slug: string[] } 
   if (locales.has('en')) languages['x-default'] = localeUrl(slug, 'en')
 
   return {
-    title: row.title,
+    // `absolute` bypasses the root layout's '%s | Host Hampton' template —
+    // row.title already ends with '| Host Hampton' (the LLM prompt asks for
+    // that suffix), so applying the template again would double it up.
+    title: { absolute: row.title },
     description: row.meta_description || undefined,
     keywords: row.keywords || undefined,
     alternates: {
