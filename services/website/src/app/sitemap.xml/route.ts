@@ -59,19 +59,19 @@ export async function GET() {
     // Sitemap still works without dynamic events
   }
 
-  // Published DB-driven content pages (app/[...slug] renderer).
+  // Published DB-driven content pages (app/[...slug] renderer), both locales.
+  // Spanish is served under the /es/ path prefix.
   try {
     const supabase = getSupabase()
     const { data: pages } = await supabase
       .from('website_content')
-      .select('slug, updated_at')
+      .select('slug, locale, updated_at')
       .eq('status', 'published')
-      .eq('locale', 'en')
 
     if (pages) {
       for (const p of pages) {
         entries.push({
-          url: `${base}/${p.slug}`,
+          url: p.locale === 'es' ? `${base}/es/${p.slug}` : `${base}/${p.slug}`,
           lastmod: new Date(p.updated_at).toISOString(),
           changefreq: 'monthly',
           priority: 0.7,

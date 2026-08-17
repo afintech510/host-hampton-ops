@@ -12,6 +12,14 @@ export const metadata: Metadata = {
   title: 'Party Room Rental — Speonk NY',
   description:
     'Rent our private party studio in Speonk, NY for birthdays, showers, photo shoots, workshops, and more. Starting at $450 for 3 hours. DIY your event your way.',
+  alternates: {
+    canonical: 'https://www.hosthampton.com/party-room-rental',
+    languages: {
+      en: 'https://www.hosthampton.com/party-room-rental',
+      es: 'https://www.hosthampton.com/es/party-room-rental',
+      'x-default': 'https://www.hosthampton.com/party-room-rental',
+    },
+  },
 }
 
 const ROOM_SERVICES = [

@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { getSupabase } from '@/lib/supabase'
+import { type Locale, localeUrl, parseLocaleSlug } from '@/lib/content/slug'
 
 /**
  * DB-driven content renderer for PUBLISHED website_content rows.
@@ -10,20 +11,16 @@ import { getSupabase } from '@/lib/supabase'
  * dynamic catch-all, so existing pages (/book, /permanent-jewelry, …) are
  * never shadowed. A reserved-slug blocklist is defence-in-depth on top of that.
  *
+ * Bilingual: an `/es/<slug>` path prefix selects the Spanish (locale='es') row;
+ * everything else is English. English keeps its bare slug (/party-room-rental);
+ * Spanish lives at /es/party-room-rental. hreflang alternates link the two.
+ *
  * Only status='published' rows render; drafts / pending / archived 404. The
  * consent hard gate lives at the DB layer, so a child-media row can't reach
  * 'published' without signed releases in the first place.
  */
 
 export const dynamic = 'force-dynamic'
-
-// First path segments we must never serve from the DB, even if a row exists.
-// (Static routes already win by Next precedence; this covers reserved words
-// that have no static page, e.g. api internals.)
-const RESERVED_PREFIXES = new Set([
-  'admin', 'api', 'book', '_next', 'static',
-  'robots.txt', 'sitemap.xml', 'favicon.ico',
-])
 
 interface StructuredSection {
   heading?: string
@@ -53,9 +50,15 @@ interface ContentRow {
   updated_at: string
 }
 
-async function fetchPublished(slug: string): Promise<ContentRow | null> {
-  const first = slug.split('/')[0]
-  if (RESERVED_PREFIXES.has(first)) return null
+interface Published {
+  row: ContentRow
+  locale: Locale
+  slug: string
+}
+
+async function fetchPublished(rawSlug: string): Promise<Published | null> {
+  const { locale, slug, reserved } = parseLocaleSlug(rawSlug)
+  if (reserved || !slug) return null
 
   try {
     const supabase = getSupabase()
@@ -63,39 +66,67 @@ async function fetchPublished(slug: string): Promise<ContentRow | null> {
       .from('website_content')
       .select('slug, title, meta_description, body_html, featured_image, keywords, page_type, structured, published_at, updated_at')
       .eq('slug', slug)
-      .eq('locale', 'en')
+      .eq('locale', locale)
       .eq('status', 'published')
       .maybeSingle()
-    return (data as ContentRow) || null
+    if (!data) return null
+    return { row: data as ContentRow, locale, slug }
   } catch {
     return null
   }
 }
 
-export async function generateMetadata({ params }: { params: { slug: string[] } }): Promise<Metadata> {
-  const slug = (params.slug || []).join('/')
-  const row = await fetchPublished(slug)
-  if (!row) return {}
+/** Which locales are published for a base slug — drives hreflang alternates. */
+async function publishedLocales(slug: string): Promise<Set<Locale>> {
+  try {
+    const supabase = getSupabase()
+    const { data } = await supabase
+      .from('website_content')
+      .select('locale')
+      .eq('slug', slug)
+      .eq('status', 'published')
+    return new Set((data || []).map((r: { locale: Locale }) => r.locale))
+  } catch {
+    return new Set()
+  }
+}
 
-  const url = `https://www.hosthampton.com/${slug}`
+export async function generateMetadata({ params }: { params: { slug: string[] } }): Promise<Metadata> {
+  const rawSlug = (params.slug || []).join('/')
+  const published = await fetchPublished(rawSlug)
+  if (!published) return {}
+  const { row, locale, slug } = published
+
+  const url = localeUrl(slug, locale)
+
+  // hreflang alternates: one entry per locale actually published for this slug.
+  const locales = await publishedLocales(slug)
+  const languages: Record<string, string> = {}
+  if (locales.has('en')) languages['en'] = localeUrl(slug, 'en')
+  if (locales.has('es')) languages['es'] = localeUrl(slug, 'es')
+  if (locales.has('en')) languages['x-default'] = localeUrl(slug, 'en')
+
   return {
     title: row.title,
     description: row.meta_description || undefined,
     keywords: row.keywords || undefined,
-    alternates: { canonical: url },
+    alternates: {
+      canonical: url,
+      languages: Object.keys(languages).length ? languages : undefined,
+    },
     openGraph: {
       title: row.title,
       description: row.meta_description || undefined,
       url,
       images: row.featured_image ? [{ url: row.featured_image }] : undefined,
       type: 'website',
+      locale: locale === 'es' ? 'es_US' : 'en_US',
     },
   }
 }
 
 /** Build the JSON-LD graph: explicit structured.jsonLd wins; else derive. */
-function buildJsonLd(slug: string, row: ContentRow): unknown[] {
-  const url = `https://www.hosthampton.com/${slug}`
+function buildJsonLd(url: string, row: ContentRow): unknown[] {
   const graph: unknown[] = []
 
   const explicit = row.structured?.jsonLd
@@ -137,12 +168,14 @@ function buildJsonLd(slug: string, row: ContentRow): unknown[] {
 }
 
 export default async function DynamicContentPage({ params }: { params: { slug: string[] } }) {
-  const slug = (params.slug || []).join('/')
-  const row = await fetchPublished(slug)
-  if (!row) notFound()
+  const rawSlug = (params.slug || []).join('/')
+  const published = await fetchPublished(rawSlug)
+  if (!published) notFound()
+  const { row, locale, slug } = published
 
-  const jsonLd = buildJsonLd(slug, row)
+  const jsonLd = buildJsonLd(localeUrl(slug, locale), row)
   const sections = row.structured?.sections || []
+  const faqHeading = locale === 'es' ? 'Preguntas Frecuentes' : 'Frequently Asked Questions'
 
   return (
     <main className="mx-auto max-w-3xl px-5 py-12">
@@ -181,7 +214,7 @@ export default async function DynamicContentPage({ params }: { params: { slug: s
 
       {row.structured?.faq && row.structured.faq.length > 0 && (
         <section className="mt-12">
-          <h2 className="font-serif text-2xl text-hampton-navy mb-4">Frequently Asked Questions</h2>
+          <h2 className="font-serif text-2xl text-hampton-navy mb-4">{faqHeading}</h2>
           <dl className="space-y-4">
             {row.structured.faq.map((f, i) => (
               <div key={i}>
