@@ -32,15 +32,15 @@ VALUES (
     'sections', jsonb_build_array(
       jsonb_build_object(
         'heading', 'Tu espacio, tu evento',
-        'text', 'Alquila nuestro salón privado en Speonk y organiza tu celebración exactamente como la imaginas. Sin paquetes obligatorios ni reglas complicadas: el espacio es tuyo para decorarlo y prepararlo a tu gusto. Perfecto para cumpleaños, baby showers, despedidas de soltera, sesiones de fotos y mucho más.'
+        'text', 'Alquila nuestro salón privado en Speonk y organiza tu celebración exactamente como la imaginas. Sin paquetes obligatorios ni reglas complicadas: el espacio es tuyo para decorarlo y organizarlo a tu gusto. Perfecto para cumpleaños, baby showers, despedidas de soltera, sesiones de fotos y mucho más.'
       ),
       jsonb_build_object(
         'heading', 'Qué incluye el alquiler',
-        'text', 'Mesas, sillas, iluminación básica, WiFi, sistema de sonido Bluetooth, un área de preparación y acceso al baño están incluidos. Tú traes la comida, las decoraciones y a tus proveedores; nosotros ponemos el espacio listo para ti.'
+        'text', 'Mesas, sillas, iluminación básica, WiFi, sistema de sonido Bluetooth, un área de preparación y acceso al baño están incluidos. Tú traes la comida, las decoraciones y a tus proveedores; nosotros te proporcionamos el espacio listo para ti.'
       ),
       jsonb_build_object(
         'heading', 'Ideal para',
-        'text', 'Cumpleaños de todas las edades, baby showers, despedidas de soltera, sesiones de fotos y días de contenido, pop-ups de belleza, talleres de arte y manualidades, tiendas temporales, reuniones de equipo y capacitaciones.'
+        'text', 'Cumpleaños de todas las edades, baby showers, despedidas de soltera, sesiones de fotos y creación de contenido, pop-ups de belleza, talleres de arte y manualidades, tiendas temporales, reuniones de equipo y capacitaciones.'
       ),
       jsonb_build_object(
         'heading', 'Precios',
