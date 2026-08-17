@@ -1,8 +1,17 @@
+import Link from 'next/link'
+import { ChevronDown } from 'lucide-react'
+
 /**
  * Shared render body for a website_content row — title, featured image,
  * sections/body_html, FAQ. Used by the public DB-driven renderer
  * (app/[...slug]/page.tsx, published-only) and the admin preview modal
  * (any status), so what you approve is exactly what goes live.
+ *
+ * Styled with the site's own design tokens (section-heading, hampton-*
+ * colors, card + FAQ-accordion patterns) so LLM-drafted landing pages read
+ * as native Host Hampton pages rather than generic prose — see the static
+ * hand-built app/party-room-rental/page.tsx for the fuller version of this
+ * visual language this intentionally stays lighter-weight than.
  */
 
 interface StructuredSection {
@@ -21,50 +30,81 @@ export interface ContentRenderRow {
   structured?: { sections?: StructuredSection[]; faq?: FaqItem[] } | null
 }
 
+/**
+ * The `title` field doubles as the SEO <title> tag value, which the
+ * generate-draft LLM prompt asks to end with "| Host Hampton" (see
+ * lib/marketing/townDraft.ts). Strip that suffix for the on-page H1 — it
+ * belongs in <title>, not in the visible heading.
+ */
+function displayTitle(title: string): string {
+  return title.replace(/\s*\|\s*Host Hampton\s*$/i, '').trim()
+}
+
 export function ContentRenderBody({ row, locale = 'en' }: { row: ContentRenderRow; locale?: 'en' | 'es' }) {
   const sections = row.structured?.sections || []
   const faq = row.structured?.faq || []
   const faqHeading = locale === 'es' ? 'Preguntas Frecuentes' : 'Frequently Asked Questions'
+  const ctaText = locale === 'es' ? 'Consultar Disponibilidad' : 'Check Availability'
+  // /book is the only booking flow with no locale variant — always point there.
+  const ctaHref = '/book'
 
   return (
     <>
-      <h1 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-6">{row.title}</h1>
+      <div className="text-center mb-12">
+        <h1 className="section-heading">{displayTitle(row.title)}</h1>
+      </div>
 
       {row.featured_image && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={row.featured_image} alt={row.title} className="w-full rounded-2xl mb-8" />
+        <div className="mb-10 rounded-2xl overflow-hidden shadow-md">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={row.featured_image} alt={displayTitle(row.title)} className="w-full object-cover" />
+        </div>
       )}
 
       {sections.length > 0 ? (
-        <div className="prose prose-lg max-w-none">
+        <div className="space-y-8">
           {sections.map((s, i) => (
-            <section key={i} className="mb-8">
-              {s.heading && <h2 className="font-serif text-2xl text-hampton-navy mb-3">{s.heading}</h2>}
+            <section key={i} className="bg-white rounded-2xl border border-hampton-pink/20 p-6 sm:p-8">
+              {s.heading && (
+                <h2 className="font-serif text-xl font-bold text-hampton-navy mb-3">{s.heading}</h2>
+              )}
               {s.html ? (
-                <div dangerouslySetInnerHTML={{ __html: s.html }} />
+                <div className="prose prose-lg max-w-none text-hampton-navy" dangerouslySetInnerHTML={{ __html: s.html }} />
               ) : s.text ? (
-                <p className="text-gray-700 leading-relaxed whitespace-pre-line">{s.text}</p>
+                <p className="text-hampton-navy/80 leading-relaxed whitespace-pre-line">{s.text}</p>
               ) : null}
             </section>
           ))}
         </div>
       ) : row.body_html ? (
-        <div className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: row.body_html }} />
+        <div className="prose prose-lg max-w-none text-hampton-navy" dangerouslySetInnerHTML={{ __html: row.body_html }} />
       ) : null}
 
       {faq.length > 0 && (
-        <section className="mt-12">
-          <h2 className="font-serif text-2xl text-hampton-navy mb-4">{faqHeading}</h2>
-          <dl className="space-y-4">
+        <section className="mt-14">
+          <h2 className="section-heading text-center mb-8">{faqHeading}</h2>
+          <div className="space-y-3">
             {faq.map((f, i) => (
-              <div key={i}>
-                <dt className="font-semibold text-hampton-navy">{f.q}</dt>
-                <dd className="text-gray-700 mt-1">{f.a}</dd>
-              </div>
+              <details
+                key={i}
+                className="group rounded-xl border border-hampton-pink/20 bg-white open:border-hampton-pink/40 open:shadow-sm transition-all"
+              >
+                <summary className="flex items-center justify-between gap-4 p-5 cursor-pointer list-none font-semibold text-hampton-navy text-sm">
+                  {f.q}
+                  <ChevronDown size={16} className="shrink-0 text-hampton-mauve group-open:rotate-180 transition-transform" />
+                </summary>
+                <p className="px-5 pb-5 text-hampton-navy/70 text-sm leading-relaxed">{f.a}</p>
+              </details>
             ))}
-          </dl>
+          </div>
         </section>
       )}
+
+      <div className="mt-14 text-center">
+        <Link href={ctaHref} className="btn-primary px-10 py-4 text-base inline-block">
+          {ctaText}
+        </Link>
+      </div>
     </>
   )
 }
