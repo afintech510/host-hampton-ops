@@ -870,11 +870,11 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                 {/* Deposit info */}
                 <div className="bg-hampton-pink/10 rounded-xl px-5 py-4">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-hampton-navy">Deposit to Reserve</span>
-                    <span className="text-lg font-bold text-hampton-navy">25%</span>
+                    <span className="text-sm font-semibold text-hampton-navy">No Payment To Request</span>
+                    <span className="text-lg font-bold text-hampton-navy">$0</span>
                   </div>
                   <p className="text-xs text-hampton-navy/60 leading-relaxed">
-                    Your 25% deposit is fully applied toward your party balance. All party details — theme, date, guest count — can be modified up to 1 week before your event.
+                    Nothing is charged to request your date. Once we confirm availability, we&apos;ll email a secure link to pay your deposit — fully applied toward your party balance. All details can be modified up to 1 week before your event.
                   </p>
                 </div>
 
@@ -917,15 +917,15 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                     className="w-full bg-hampton-navy text-white font-bold py-4 px-6 rounded-full text-base hover:bg-opacity-90 hover:shadow-[0_8px_25px_rgba(47,52,59,0.3)] transition-all disabled:opacity-60 flex items-center justify-center gap-2"
                   >
                     {reserving ? (
-                      <><Loader2 size={18} className="animate-spin" /> Redirecting...</>
+                      <><Loader2 size={18} className="animate-spin" /> Sending...</>
                     ) : (
-                      'Secure Reservation — 25% Deposit'
+                      'Request This Party'
                     )}
                   </button>
                 </div>
 
                 <p className="text-center text-xs text-hampton-navy/40">
-                  Secure checkout via Stripe. Your deposit is fully refundable.
+                  No payment now — we confirm your date within 24 hours, then email a link to pay your deposit.
                 </p>
               </div>
             </div>

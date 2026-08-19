@@ -636,16 +636,16 @@ function BookingForm() {
               <button type="submit" disabled={loading}
                       className="flex-1 bg-hampton-navy text-hampton-ivory font-semibold py-4 px-8 rounded-full hover:bg-opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
                 {loading ? (
-                  <><Loader2 size={18} className="animate-spin" /> Processing...</>
+                  <><Loader2 size={18} className="animate-spin" /> Sending...</>
                 ) : (
-                  'Book Now'
+                  hasDeposit ? 'Request This Date' : 'Book Now'
                 )}
               </button>
             </div>
 
             <p className="text-center text-hampton-navy/60 text-xs">
               {hasDeposit
-                ? `Secure payment via Stripe. Your $${depositDollars} deposit is applied toward your total balance. You can change all details up to 1 week before your event.`
+                ? `No payment now — we confirm your date is available within 24 hours, then email you a secure link to pay your $${depositDollars} deposit. You can change all details up to 1 week before your event.`
                 : 'You can change all details up to 1 week before your event.'}
             </p>
           </form>
