@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
-  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors, Rocket
+  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors, Rocket, TrendingUp
 } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
@@ -15,6 +15,7 @@ import SequencesTab from './SequencesTab'
 import CampaignsTab from './CampaignsTab'
 import DashboardTab from './DashboardTab'
 import FinancialsTab from './FinancialsTab'
+import RevenueTab from './RevenueTab'
 import MediaTab from './MediaTab'
 import GiftCardsTab from './GiftCardsTab'
 import PartiesTab from './PartiesTab'
@@ -24,7 +25,7 @@ import MarketingTab from './MarketingTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'financials' | 'gift-cards' | 'summer-hair'
+type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'financials' | 'revenue' | 'gift-cards' | 'summer-hair'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
@@ -35,6 +36,7 @@ const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[]
   { key: 'parties',    label: 'Parties',    Icon: Sparkles,        group: 'manage' },
   { key: 'photos',     label: 'Photos',     Icon: Camera,          group: 'manage' },
   { key: 'financials', label: 'Financials', Icon: DollarSign,      group: 'manage' },
+  { key: 'revenue',    label: 'Revenue Report', Icon: TrendingUp,  group: 'manage' },
   { key: 'gift-cards', label: 'Gift Cards', Icon: Gift,           group: 'manage' },
   { key: 'themes',     label: 'Themes',     Icon: Palette,         group: 'content' },
   { key: 'media',      label: 'Media',      Icon: Image,           group: 'content' },
@@ -248,6 +250,9 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
           )}
           {activeTab === 'financials' && (
             <FinancialsTab key={`fin-${refreshKey}`} headers={headers} onLogout={onLogout} />
+          )}
+          {activeTab === 'revenue' && (
+            <RevenueTab key={`rev-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
           {activeTab === 'themes' && (
             <ThemesTab key={`themes-${refreshKey}`} headers={headers} onLogout={onLogout} />
