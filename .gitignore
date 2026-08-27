@@ -35,3 +35,15 @@ Thumbs.db
 
 # Server-only Compose overrides (per-host, e.g. VPS nginx SSL mounts)
 docker-compose.override.yml
+
+# ── Brevo reconciliation artifacts (contain PII — never commit) ──
+brevo-reconciliation-*.md
+brevo-missing-optins.csv
+services/website/_recon*.mjs
+services/website/_recon_out.json
+
+# ── Quo contact-import / one-off export artifacts (contain PII — never commit) ──
+quo-contacts-import.csv
+services/website/_quo_export.mjs
+services/website/_brevo*.mjs
+services/website/_count*.mjs

@@ -17,7 +17,7 @@ import {
   smsReviewRequest,
   smsBirthdayRebook,
 } from '@/lib/sms-templates'
-import { sendSMS } from '@/lib/twilio'
+import { sendSMSVia } from '@/lib/sms'
 import { buildReviewUrl } from '@/lib/marketing/reviewLink'
 import { writeLedger } from '@/lib/marketing/graph'
 
@@ -276,7 +276,8 @@ async function processSmsReminder(reminder: any, contact: any, supabase: any) {
       childName: booking.child_name,
       nextAge: booking.child_age != null ? booking.child_age + 1 : null,
     })
-    if (body) await sendSMS(contact.phone, body)
+    // Birthday rebooking is MARKETING — stays on Twilio for now (see lib/sms.ts).
+    if (body) await sendSMSVia('twilio', contact.phone, body)
     return
   }
 
@@ -314,7 +315,8 @@ async function processSmsReminder(reminder: any, contact: any, supabase: any) {
   }
 
   if (body) {
-    await sendSMS(contact.phone, body)
+    // Transactional reminders (event/booking/review) send via Quo.
+    await sendSMSVia('quo', contact.phone, body)
     if (reminder.reminder_type === 'review_request_sms') {
       await writeLedger(supabase, {
         entityType: 'review_request',

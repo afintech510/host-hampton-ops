@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
-import { sendSMS } from '@/lib/twilio'
+import { sendSMSVia } from '@/lib/sms'
 
 const BRAND = {
   headerBg: 'linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%)',
@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
   }
 
   if ((channel === 'sms' || channel === 'both') && phone) {
-    const sid = await sendSMS(phone, payLinkSms(firstName, description, amountFormatted, payUrl))
+    const sid = await sendSMSVia('quo', phone, payLinkSms(firstName, description, amountFormatted, payUrl))
     if (!sid) {
       return NextResponse.json({ error: 'SMS failed — check Twilio config' }, { status: 500 })
     }

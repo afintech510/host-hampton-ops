@@ -6,7 +6,7 @@ import { formatMoney } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { studioRentalRate, hoursBetween } from '@/lib/studioRental'
-import { sendSMS, normalizePhone } from '@/lib/twilio'
+import { sendSMSVia, normalizePhone } from '@/lib/sms'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
@@ -275,7 +275,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (booking.contact_phone) {
         const firstName = (booking.contact_name || '').trim().split(/\s+/)[0] || 'there'
         const smsBody = `Hi ${firstName}! Here's your Host Hampton party booking link to review details & pay your deposit: ${portalUrl} Reply STOP to opt out`
-        const sid = await sendSMS(normalizePhone(booking.contact_phone), smsBody)
+        const sid = await sendSMSVia('quo', normalizePhone(booking.contact_phone), smsBody)
         if (sid) sentVia.push('sms')
       }
 
@@ -306,9 +306,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const firstName = (booking.contact_name || '').trim().split(/\s+/)[0] || 'there'
     const smsBody = `Hi ${firstName}! Here's your Host Hampton party booking link to review details & pay your deposit: ${portalUrl} Reply STOP to opt out`
 
-    const sid = await sendSMS(normalizePhone(booking.contact_phone), smsBody)
+    const sid = await sendSMSVia('quo', normalizePhone(booking.contact_phone), smsBody)
     if (!sid) {
-      return NextResponse.json({ error: 'Failed to send SMS — check the phone number and Twilio config' }, { status: 502 })
+      return NextResponse.json({ error: 'Failed to send SMS — check the phone number and Quo/SMS config' }, { status: 502 })
     }
 
     await supabase.from('booking_modifications').insert({

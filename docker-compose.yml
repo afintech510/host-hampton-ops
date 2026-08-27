@@ -147,6 +147,14 @@ services:
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      # Quo SMS (formerly Grasshopper). SMS_PROVIDER selects the send path;
+      # defaults to twilio when unset. Flip to 'quo' to cut transactional SMS over.
+      - SMS_PROVIDER=${SMS_PROVIDER:-twilio}
+      - QUO_API_KEY=${QUO_API_KEY:-}
+      - QUO_PHONE_NUMBER=${QUO_PHONE_NUMBER:-}
+      - QUO_USER_ID=${QUO_USER_ID:-}
+      # Standard-Webhooks signing secret for /api/webhooks/quo (opt-out sync)
+      - QUO_WEBHOOK_SECRET=${QUO_WEBHOOK_SECRET:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - PORTAL_LINK_SIGNING_SECRET=${PORTAL_LINK_SIGNING_SECRET}
       - VENMO_HANDLE=${VENMO_HANDLE:-@hosthampton}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { sendBulkSMS } from '@/lib/twilio'
+import { sendBulkSMS } from '@/lib/sms'
 import { smsEventReminder1Day } from '@/lib/sms-templates'
 
 export const dynamic = 'force-dynamic'
@@ -88,7 +88,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: 'No messages to send', sent: 0, events: events.length })
   }
 
-  const results = await sendBulkSMS(messages)
+  // Transactional event reminders send via Quo.
+  const results = await sendBulkSMS(messages, 1000, undefined, 'quo')
   const sent = results.filter(r => r !== null).length
   const failed = results.filter(r => r === null).length
 

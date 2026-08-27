@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
-import { sendSMS, normalizePhone } from '@/lib/twilio'
+import { sendSMSVia, normalizePhone } from '@/lib/sms'
 import { summerHairConfirmationHtml, summerHairAdminNotifyHtml } from '@/lib/email-templates/summer-hair'
 
 export const dynamic = 'force-dynamic'
@@ -210,14 +210,14 @@ export async function POST(req: NextRequest) {
   // SMS to admin (Allie)
   const adminSms = `New Summer Hair booking!\n${name} — ${duration}\n${partySize} ${partySize === 1 ? 'person' : 'people'} (${slotsNeeded} slots)\nServices: ${serviceList}\nEst. total: $${estimatedTotal}\nPhone: ${phone}`
   notifyPromises.push(
-    sendSMS(ALLIE_PHONE, adminSms).catch(err => console.error('SMS to Allie failed (non-fatal):', err))
+    sendSMSVia('quo', ALLIE_PHONE, adminSms).catch(err => console.error('SMS to Allie failed (non-fatal):', err))
   )
 
   // Confirmation SMS to client
   const normalizedPhone = normalizePhone(phone)
   const clientSms = `Hi ${firstName}! You're booked for Summer Hair at Host Hampton on July 3rd, ${duration}.\n\nServices: ${serviceList}\nEst. total: $${estimatedTotal} (pay in person)\n\nSee you there! ✨`
   notifyPromises.push(
-    sendSMS(normalizedPhone, clientSms).catch(err => console.error('SMS to client failed (non-fatal):', err))
+    sendSMSVia('quo', normalizedPhone, clientSms).catch(err => console.error('SMS to client failed (non-fatal):', err))
   )
 
   await Promise.allSettled(notifyPromises)

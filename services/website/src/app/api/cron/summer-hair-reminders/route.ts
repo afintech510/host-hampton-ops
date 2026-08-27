@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { sendSMS, normalizePhone } from '@/lib/twilio'
+import { sendSMSVia, normalizePhone } from '@/lib/sms'
 
 export const dynamic = 'force-dynamic'
 
@@ -90,31 +90,14 @@ export async function GET(req: NextRequest) {
 
     const normalized = normalizePhone(b.phone)
     try {
-      const twilioSid = process.env.TWILIO_ACCOUNT_SID
-      const twilioToken = process.env.TWILIO_AUTH_TOKEN
-      const twilioFrom = process.env.TWILIO_PHONE_NUMBER
-
-      if (!twilioSid || !twilioToken || !twilioFrom) {
-        errors.push({ name: b.name, phone: normalized, status: 'env_missing', hasSid: !!twilioSid, hasToken: !!twilioToken, hasFrom: !!twilioFrom })
-        continue
-      }
-
-      const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({ From: twilioFrom, To: normalized, Body: sms }),
-      })
-
-      const data = await res.json()
-      if (res.ok && data.sid) {
+      // Transactional appointment reminder — routed via Quo (see lib/sms.ts).
+      const sid = await sendSMSVia('quo', normalized, sms)
+      if (sid) {
         sent++
         sentIds.push(b.id)
-        errors.push({ name: b.name, phone: normalized, status: 'ok', sid: data.sid })
+        errors.push({ name: b.name, phone: normalized, status: 'ok', sid })
       } else {
-        errors.push({ name: b.name, phone: normalized, status: 'twilio_error', code: data.code, message: data.message, httpStatus: res.status })
+        errors.push({ name: b.name, phone: normalized, status: 'send_failed' })
       }
     } catch (err: any) {
       errors.push({ name: b.name, phone: normalized, status: 'exception', message: err?.message || String(err) })
