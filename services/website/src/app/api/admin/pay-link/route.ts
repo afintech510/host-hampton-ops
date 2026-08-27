@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { name, email, phone, channel, amountDollars, description, category } = await req.json()
+  const { name, email, phone, channel, amountDollars, description, category, linkType } = await req.json()
 
   if (!name || !amountDollars || !description) {
     return NextResponse.json({ error: 'Name, amount, and description are required' }, { status: 400 })
@@ -71,33 +71,60 @@ export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
   const host = 'www.hosthampton.com'
 
-  // Create Stripe Checkout session
-  const session = await stripe.checkout.sessions.create({
-    payment_method_types: ['card'],
-    mode: 'payment',
-    customer_email: email || undefined,
-    line_items: [{
-      price_data: {
-        currency: 'usd',
-        product_data: { name: description },
-        unit_amount: amountCents,
-      },
-      quantity: 1,
-    }],
-    metadata: {
-      type: 'pay_link',
-      customerName: name,
-      customerEmail: email || '',
-      customerPhone: phone || '',
-      description,
-      amountCents: String(amountCents),
-      category: category || 'Room Rental',
-    },
-    success_url: `https://${host}/book/success?ref=paylink`,
-    cancel_url: `https://${host}/?cancelled=true`,
-  })
+  const metadata = {
+    type: 'pay_link',
+    customerName: name,
+    customerEmail: email || '',
+    customerPhone: phone || '',
+    description,
+    amountCents: String(amountCents),
+    category: category || 'Room Rental',
+  }
 
-  const payUrl = session.url!
+  let payUrl: string
+
+  if (linkType === 'payment_link') {
+    // Payment Links don't expire by default — good for links that need to
+    // stay valid more than 24h (Checkout Sessions cap out at 24h). Payment
+    // Links require a real Price object, so create an ephemeral Product +
+    // Price first, then the link that references it.
+    const product = await stripe.products.create({ name: description })
+    const price = await stripe.prices.create({
+      product: product.id,
+      currency: 'usd',
+      unit_amount: amountCents,
+    })
+    const paymentLink = await stripe.paymentLinks.create({
+      line_items: [{ price: price.id, quantity: 1 }],
+      metadata,
+      after_completion: {
+        type: 'redirect',
+        redirect: { url: `https://${host}/book/success?ref=paylink` },
+      },
+    })
+    payUrl = paymentLink.url
+  } else {
+    // Default: Stripe Checkout Session — expires 24h after creation, no way
+    // to extend further. Use linkType: 'payment_link' for anything that
+    // needs to stay valid longer.
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      customer_email: email || undefined,
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: { name: description },
+          unit_amount: amountCents,
+        },
+        quantity: 1,
+      }],
+      metadata,
+      success_url: `https://${host}/book/success?ref=paylink`,
+      cancel_url: `https://${host}/?cancelled=true`,
+    })
+    payUrl = session.url!
+  }
   const firstName = name.split(' ')[0] || 'there'
   const amountFormatted = `$${(amountCents / 100).toFixed(2)}`
   const results: string[] = []

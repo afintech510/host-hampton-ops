@@ -22,6 +22,7 @@ export default function PayLinkPanel({ headers, onLogout }: { headers: Record<st
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('Room Rental')
   const [channel, setChannel] = useState<'email' | 'sms' | 'both' | 'link_only'>('email')
+  const [linkType, setLinkType] = useState<'checkout_session' | 'payment_link'>('checkout_session')
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string; payUrl?: string } | null>(null)
 
@@ -44,6 +45,7 @@ export default function PayLinkPanel({ headers, onLogout }: { headers: Record<st
           amountDollars: amount,
           description: description.trim(),
           category,
+          linkType,
         }),
       })
       if (res.status === 401) { onLogout(); return }
@@ -75,6 +77,7 @@ export default function PayLinkPanel({ headers, onLogout }: { headers: Record<st
     setAmount('')
     setDescription('')
     setCategory('Room Rental')
+    setLinkType('checkout_session')
     setResult(null)
   }
 
@@ -167,6 +170,30 @@ export default function PayLinkPanel({ headers, onLogout }: { headers: Record<st
                 placeholder="+16315551234"
                 className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-blue/30"
               />
+            </div>
+          </div>
+
+          {/* Link type selector */}
+          <div className="flex items-center gap-4">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Link expires:</span>
+            <div className="flex gap-2">
+              {([
+                { key: 'checkout_session' as const, label: '24 Hours' },
+                { key: 'payment_link' as const, label: 'Never' },
+              ]).map(lt => (
+                <button
+                  key={lt.key}
+                  type="button"
+                  onClick={() => setLinkType(lt.key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    linkType === lt.key
+                      ? 'bg-hampton-navy text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {lt.label}
+                </button>
+              ))}
             </div>
           </div>
 
