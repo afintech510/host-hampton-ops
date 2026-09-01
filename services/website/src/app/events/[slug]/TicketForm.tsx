@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Minus, Plus, Loader2, ShoppingCart } from 'lucide-react'
 import { useCart } from '@/context/CartContext'
+import VenmoOption from '@/components/VenmoOption'
 
 interface Variant { label: string; priceCents: number; seats?: number }
 interface BundleTier { minSessions: number; pricePerSessionCents: number }
@@ -316,6 +317,8 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
             <p className="text-[11px] text-hampton-navy/50 text-center mt-3">
               You&rsquo;ll enter your name, email &amp; phone at checkout.
             </p>
+
+            <VenmoOption amountCents={matrixSubtotal} note={event.title} />
           </>
         )}
       </div>
@@ -632,6 +635,8 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
           Add to Cart
         </button>
       )}
+
+      {!soldOut && <VenmoOption amountCents={total} note={event.title} />}
     </form>
   )
 }

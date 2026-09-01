@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Minus, Plus, Trash2, ShoppingCart, Loader2 } from 'lucide-react'
 import { useCart } from '@/context/CartContext'
+import VenmoOption from '@/components/VenmoOption'
 
 function formatPrice(cents: number): string {
   if (cents === 0) return 'Free'
@@ -287,6 +288,14 @@ export default function CartDrawer() {
                   ? 'RSVP — Free'
                   : `Checkout — ${formatPrice(grandTotal)}`}
             </button>
+
+            {!isFreeCart && (
+              <VenmoOption
+                amountCents={subtotalCents}
+                note={items.length === 1 ? items[0].eventTitle : 'Host Hampton event tickets'}
+                compact
+              />
+            )}
           </div>
         )}
       </div>
