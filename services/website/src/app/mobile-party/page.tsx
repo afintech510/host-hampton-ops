@@ -55,6 +55,16 @@ const menuItems = [
   { emoji: '⛑️', name: 'Construction Hat Craft',    color: 'bg-orange-50  border-orange-200' },
   { emoji: '🎀', name: 'Decoden Crafts',            color: 'bg-rose-50    border-rose-200' },
   { emoji: '🐚', name: 'Seashell Decorating',       color: 'bg-cyan-50    border-cyan-200' },
+  { emoji: '🧖', name: 'Mobile Spa Party',          color: 'bg-teal-50    border-teal-200' },
+  { emoji: '🐩', name: 'Drip Paint Balloon Dogs',   color: 'bg-purple-50  border-purple-200' },
+  { emoji: '💋', name: 'Lip-Gloss Charms',          color: 'bg-rose-50    border-rose-200' },
+  { emoji: '🌸', name: 'Perfume Making',            color: 'bg-pink-50    border-pink-200' },
+  { emoji: '💇', name: 'Hair Brush Decorating',     color: 'bg-amber-50   border-amber-200' },
+  { emoji: '💄', name: 'Glam Makeup',               color: 'bg-fuchsia-50 border-fuchsia-200' },
+  { emoji: '👛', name: 'Jelly Tote Decorating',     color: 'bg-violet-50  border-violet-200' },
+  { emoji: '🪢', name: 'Beaded Braids',             color: 'bg-yellow-50  border-yellow-200' },
+  { emoji: '🎙️', name: 'Decorate-Your-Own Microphone', color: 'bg-indigo-50 border-indigo-200' },
+  { emoji: '⚔️', name: 'Pirate Sword Decorating',   color: 'bg-sky-50     border-sky-200' },
 ]
 
 const perfectFor = [
