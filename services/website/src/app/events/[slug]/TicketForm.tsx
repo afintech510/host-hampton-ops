@@ -74,6 +74,51 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
 
   const isMultiSession = event.allow_multi_session && event.has_sessions
 
+  // ── Multi-option "quantity matrix" mode ────────────────────
+  // Events with pricing options (e.g. Child / Sibling) let the customer
+  // pick a quantity for EACH option and add them all to the cart at once.
+  // Sessions events keep the legacy single-select flow.
+  const useMatrix = event.has_variants && event.variants.length > 0 && !event.has_sessions
+
+  const [variantQtys, setVariantQtys] = useState<Record<string, number>>(() => {
+    const init: Record<string, number> = {}
+    event.variants.forEach((v, i) => { init[v.label] = i === 0 ? 1 : 0 })
+    return init
+  })
+
+  const matrixQtyTotal = event.variants.reduce((s, v) => s + (variantQtys[v.label] || 0), 0)
+  const matrixSubtotal = event.variants.reduce((s, v) => s + v.priceCents * (variantQtys[v.label] || 0), 0)
+
+  function setVariantQty(label: string, next: number) {
+    if (next < 0) return
+    const others = matrixQtyTotal - (variantQtys[label] || 0)
+    if (next + others > event.available_tickets) return
+    setVariantQtys(prev => ({ ...prev, [label]: next }))
+  }
+
+  function handleAddMatrix() {
+    const rows = event.variants.filter(v => (variantQtys[v.label] || 0) > 0)
+    if (rows.length === 0) { setError('Please add at least one ticket.'); return }
+    const dateDisplay = event.event_date ? formatSessionDate(event.event_date) : ''
+    const timeDisplay = event.event_date ? (event.event_time || '') : ''
+    rows.forEach(v => {
+      addItem({
+        eventId: event.id,
+        eventTitle: event.title,
+        eventSlug: event.slug,
+        sessionId: null,
+        sessionIds: null,
+        quantity: variantQtys[v.label],
+        variantLabel: v.label,
+        unitPriceCents: v.priceCents,
+        imageUrl: event.imageUrl || null,
+        dateDisplay,
+        timeDisplay,
+      })
+    })
+    setError('')
+  }
+
   // Price calculation
   let unitPrice: number
   let total: number
@@ -181,6 +226,101 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
   // Bundle pricing info for display
   const bundleTiers = event.bundle_pricing || []
   const showBundleInfo = isMultiSession && bundleTiers.length > 0
+
+  // ── Quantity-matrix render (multi-option events) ───────────
+  if (useMatrix) {
+    const matrixTax = Math.round(matrixSubtotal * TAX_RATE)
+    const matrixCcFee = Math.round((matrixSubtotal + matrixTax) * CC_RATE)
+    const matrixTotal = matrixSubtotal + matrixTax + matrixCcFee
+    const matrixSoldOut = event.available_tickets <= 0
+    const atCapacity = matrixQtyTotal >= event.available_tickets
+
+    return (
+      <div>
+        <h3 className="font-serif text-xl text-hampton-navy mb-1">Select Tickets</h3>
+        <p className="text-hampton-navy text-sm mb-5">
+          {matrixSoldOut ? 'This event is sold out.' : 'Choose how many of each — add them all at once.'}
+        </p>
+
+        {!matrixSoldOut && (
+          <>
+            {/* Option rows with per-option quantity steppers */}
+            <div className="rounded-xl border border-hampton-pink/20 divide-y divide-hampton-pink/20 mb-4">
+              {event.variants.map((v, i) => {
+                const qty = variantQtys[v.label] || 0
+                return (
+                  <div key={i} className="flex items-center justify-between p-4">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-hampton-navy">{v.label}</p>
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0">
+                      <span className="text-sm font-semibold text-hampton-navy w-10 text-right">{formatPrice(v.priceCents)}</span>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setVariantQty(v.label, qty - 1)}
+                          className="w-8 h-8 rounded-lg border border-hampton-pink/20 flex items-center justify-center hover:bg-hampton-pink/10 transition-colors disabled:opacity-30"
+                          disabled={qty <= 0} aria-label={`Remove one ${v.label}`}>
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="text-base font-semibold text-hampton-navy w-6 text-center">{qty}</span>
+                        <button type="button" onClick={() => setVariantQty(v.label, qty + 1)}
+                          className="w-8 h-8 rounded-lg border border-hampton-pink/20 flex items-center justify-center hover:bg-hampton-pink/10 transition-colors disabled:opacity-30"
+                          disabled={atCapacity} aria-label={`Add one ${v.label}`}>
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <p className="text-xs text-hampton-navy/60 mb-4">
+              {availabilityLabel(event.available_tickets, event.max_tickets)}
+              {atCapacity && matrixQtyTotal > 0 && ' — that’s all the spots left'}
+            </p>
+
+            {/* Order summary */}
+            {matrixQtyTotal > 0 && (
+              <div className="py-3 px-4 bg-hampton-ivory rounded-xl mb-5 space-y-1.5">
+                {event.variants.filter(v => (variantQtys[v.label] || 0) > 0).map((v, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <span className="text-sm text-hampton-navy">{variantQtys[v.label]} &times; {v.label}</span>
+                    <span className="text-sm text-hampton-navy">{formatPrice(v.priceCents * variantQtys[v.label])}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between pt-1.5 border-t border-hampton-navy/10">
+                  <span className="text-xs text-hampton-mauve">Sales Tax (8.75%)</span>
+                  <span className="text-xs text-hampton-mauve">{formatPrice(matrixTax)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-hampton-mauve">Processing Fee (3%)</span>
+                  <span className="text-xs text-hampton-mauve">{formatPrice(matrixCcFee)}</span>
+                </div>
+                <div className="flex items-center justify-between pt-1.5 border-t border-hampton-navy/10">
+                  <span className="text-sm font-semibold text-hampton-navy">Total</span>
+                  <span className="text-xl font-bold text-hampton-navy">{formatPrice(matrixTotal)}</span>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <p className="text-red-600 text-sm mb-4 bg-red-50 p-3 rounded-lg">{error}</p>
+            )}
+
+            <button type="button" onClick={handleAddMatrix} disabled={matrixQtyTotal === 0}
+              className="btn-primary w-full py-4 text-center flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+              <ShoppingCart className="w-4 h-4" />
+              {matrixQtyTotal === 0 ? 'Add tickets to cart' : `Add to cart — ${formatPrice(matrixTotal)}`}
+            </button>
+
+            <p className="text-[11px] text-hampton-navy/50 text-center mt-3">
+              You&rsquo;ll enter your name, email &amp; phone at checkout.
+            </p>
+          </>
+        )}
+      </div>
+    )
+  }
 
   return (
     <form onSubmit={handleSubmit}>
