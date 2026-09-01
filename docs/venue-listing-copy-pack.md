@@ -7,8 +7,8 @@ Reusable copy for venue marketplaces, party/lead directories, and local listings
 Copy the block that matches the field label on the form. Pick the description length
 that fits the character limit.
 
-> ⚠️ **Three facts need owner confirmation before publishing.** They're tagged
-> `‹CONFIRM: …›` inline. Everything else is drawn from the live site.
+> ✅ **All facts confirmed by the owner** (food/cake policy, card fee, capacity,
+> amenities, studio rental rates). This pack is paste-ready.
 
 ---
 
@@ -163,8 +163,11 @@ Use the ones each platform offers; pick the closest matches:
 - Deposit: **25%** to reserve your date; balance due before the event
 - Card payments: a **3% processing fee applies to all card payments**
 - Guest capacity: **up to 65 guests**
-- Studio hourly rental rate (for Peerspace/This Open Space): **variable — weekday vs weekend**
-  ‹PENDING: final weekday/weekend rates — see comparable-pricing research below›
+- Studio hourly rental rate (bare-room rental, e.g. Peerspace/This Open Space):
+  - **Weekday (Mon–Thu): $125/hr, 2-hour minimum**
+  - **Weekend (Fri–Sun): $200/hr, 3-hour minimum**
+  - Rates are net to Host Hampton; marketplaces add their own service fee on top for the renter.
+  - This bare-room rate is separate from fully-hosted party packages (from $800).
 
 ---
 
