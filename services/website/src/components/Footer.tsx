@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import { Phone, Mail, MapPin, Instagram, Facebook, MessageCircle } from 'lucide-react'
+import { Phone, Mail, MapPin, Instagram, Facebook, MessageCircle, Clock } from 'lucide-react'
 
 export default function Footer() {
   return (
@@ -54,6 +54,7 @@ export default function Footer() {
           <ul className="space-y-2 text-sm text-hampton-navy/70">
             {[
               { href: '/book',              label: 'Reserve Your Date' },
+              { href: '/faq',               label: 'FAQ' },
               { href: '/contact-us',        label: 'Contact Us' },
 
               { href: '/privacy-policy',    label: 'Privacy Policy' },
@@ -95,6 +96,13 @@ export default function Footer() {
                 <Mail size={16} className="shrink-0 text-hampton-navy" />
                 hosthampton295@gmail.com
               </a>
+            </li>
+            <li className="flex gap-2">
+              <Clock size={16} className="shrink-0 mt-0.5 text-hampton-navy" />
+              <span>
+                Sat–Sun: 10am–8pm<br />
+                Mon–Fri: 12pm–7pm
+              </span>
             </li>
           </ul>
           <div className="mt-5">

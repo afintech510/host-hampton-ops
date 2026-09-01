@@ -71,8 +71,57 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
       ? 'Select a date below'
       : 'Date coming soon'
 
+  // Event JSON-LD so this shows up in Google's event listings & AI answers.
+  const eventImages: { url: string; is_primary: boolean }[] = event.images || []
+  const eventImage = event.image_url || (eventImages.find(i => i.is_primary) || eventImages[0])?.url || null
+  const startDate = event.event_date
+    ? `${event.event_date}${event.event_time ? `T${event.event_time}` : ''}`
+    : undefined
+  const eventSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'Event',
+    name: event.title,
+    description: event.short_description || event.description || `Join us for ${event.title} at Host Hampton in Speonk, NY.`,
+    ...(startDate ? { startDate } : {}),
+    ...(eventImage ? { image: [eventImage] } : {}),
+    eventStatus: 'https://schema.org/EventScheduled',
+    eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+    location: {
+      '@type': 'Place',
+      name: event.location || 'Host Hampton',
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: '295 Montauk Hwy, Suite 7',
+        addressLocality: 'Speonk',
+        addressRegion: 'NY',
+        postalCode: '11972',
+        addressCountry: 'US',
+      },
+    },
+    organizer: {
+      '@type': 'Organization',
+      name: 'Host Hampton',
+      url: 'https://www.hosthampton.com',
+    },
+    ...(typeof event.price_cents === 'number'
+      ? {
+          offers: {
+            '@type': 'Offer',
+            price: (event.price_cents / 100).toFixed(2),
+            priceCurrency: 'USD',
+            url: `https://www.hosthampton.com/events/${event.slug}`,
+            availability: 'https://schema.org/InStock',
+          },
+        }
+      : {}),
+  }
+
   return (
     <div className="min-h-screen">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(eventSchema) }}
+      />
       {/* Back link */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6">
         <Link href="/events" className="inline-flex items-center gap-1 text-hampton-navy hover:text-hampton-navy text-sm transition-colors">

@@ -35,6 +35,13 @@ export async function GET() {
     { url: `${base}/custom-accessories`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
     { url: `${base}/kids-party-menu`, lastmod: now, changefreq: 'monthly', priority: 0.9 },
     { url: `${base}/trucker-hat-bar`, lastmod: now, changefreq: 'monthly', priority: 0.7 },
+    { url: `${base}/faq`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
+    { url: `${base}/studio-rental`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
+    { url: `${base}/party-menu`, lastmod: now, changefreq: 'monthly', priority: 0.8 },
+    { url: `${base}/party-quote`, lastmod: now, changefreq: 'monthly', priority: 0.7 },
+    { url: `${base}/party-builder`, lastmod: now, changefreq: 'monthly', priority: 0.7 },
+    { url: `${base}/party-planner`, lastmod: now, changefreq: 'monthly', priority: 0.7 },
+    { url: `${base}/gift-cards`, lastmod: now, changefreq: 'monthly', priority: 0.6 },
   ]
 
   // Dynamic event pages
