@@ -931,7 +931,7 @@ function StudioTimeEditor({ detail, busy, onSave }: {
           {busy ? 'Updating…' : 'Update time & re-price'}
         </button>
       </div>
-      <p className="text-[11px] text-gray-400 mt-2">Re-prices the rental fee (Weekend $575/3hr +$100/hr, Weekday $450/3hr +$75/hr; capped at full-day $975 / $700) and recomputes the balance.</p>
+      <p className="text-[11px] text-gray-400 mt-2">Re-prices the rental fee (Weekend $600/3hr +$150/hr, Weekday $475/3hr +$100/hr; capped at full-day $975 / $700) and recomputes the balance.</p>
     </div>
   )
 }

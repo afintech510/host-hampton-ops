@@ -758,7 +758,7 @@ export function studioRentalInviteHtml(d: {
     <div style="background:${BRAND.bodyBg};border-radius:8px;padding:16px 20px;margin:0 0 24px;">
       <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:0;">
         • Seats up to 65 · standing room for 85<br>
-        • Weekend $575 / 3 hrs (+$100/hr) · Weekday $450 / 3 hrs (+$75/hr)<br>
+        • Weekend $600 / 3 hrs (+$150/hr) · Weekday $475 / 3 hrs (+$100/hr)<br>
         • 25% deposit holds your date; balance due 7 days before
       </p>
     </div>

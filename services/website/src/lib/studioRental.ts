@@ -2,8 +2,8 @@
  * Studio Rental rate engine — full-studio block rental for family events.
  *
  * Pricing (confirmed by owner):
- *   Weekend (Sat–Sun):  $575 / 3 hrs, +$100 per additional hour
- *   Weekday (Mon–Fri):  $450 / 3 hrs, +$75  per additional hour
+ *   Weekend (Sat–Sun):  $600 / 3 hrs, +$150 per additional hour
+ *   Weekday (Mon–Fri):  $475 / 3 hrs, +$100 per additional hour
  *
  * The customer's chosen window includes their own setup + cleanup time.
  * 3 hours is the minimum billable block.
@@ -15,10 +15,10 @@ export const STUDIO_STANDING_CAPACITY = 85
 export const SECURITY_DEPOSIT_CENTS = 50000 // $500 refundable CC auth hold, placed day-of
 export const DEPOSIT_RATE = 0.25 // 25% reservation deposit
 
-const WEEKEND_BASE_CENTS = 57500
-const WEEKDAY_BASE_CENTS = 45000
-const WEEKEND_ADDL_HOUR_CENTS = 10000
-const WEEKDAY_ADDL_HOUR_CENTS = 7500
+const WEEKEND_BASE_CENTS = 60000
+const WEEKDAY_BASE_CENTS = 47500
+const WEEKEND_ADDL_HOUR_CENTS = 15000
+const WEEKDAY_ADDL_HOUR_CENTS = 10000
 // Full-day caps: the fee never exceeds these no matter the window length
 // (any start time through midnight that day). Weekend $975 / Weekday $700.
 const WEEKEND_FULL_DAY_CENTS = 97500

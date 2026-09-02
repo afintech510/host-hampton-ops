@@ -221,7 +221,7 @@ export default async function Home() {
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
-            { href: '/party-room-rental',    title: 'Room Rental',           desc: 'DIY your event in our beautiful private studio. Starting at $450 for 3 hours.',                    img: '/images/gallery/venue-party-setup-5.webp' },
+            { href: '/party-room-rental',    title: 'Room Rental',           desc: 'DIY your event in our beautiful private studio. Starting at $475 for 3 hours.',                    img: '/images/gallery/venue-party-setup-5.webp' },
             { href: '/permanent-jewelry',    title: 'Permanent Jewelry',     desc: 'Custom-welded bracelets, anklets, and necklaces. Perfect for moms & daughter pairs.',              img: '/images/jewelry-gold.png' },
             { href: '/events',               title: 'Events & Classes',      desc: 'Moms in the Morning, Girls Night Out, craft workshops, and more.',                                 img: '/images/gallery/venue-painting-workshop.webp' },
             { href: '/custom-accessories',   title: 'Custom Accessories',    desc: 'Personalized canvas bags & trucker hats — perfect party favors or on-site at your event.',        img: '/images/gallery/product-pouches-1.webp' },

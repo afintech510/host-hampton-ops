@@ -13,10 +13,10 @@ const MINI_PARTY_MAX_GUESTS = 7         // + birthday child
 const LS_KEY = 'hh_quote_data'
 
 // DIY Studio Rental rates (from pricing_items / room-rental category)
-const RENTAL_WEEKDAY_3HR = 450   // $450
-const RENTAL_WEEKEND_3HR = 575   // $575
-const RENTAL_ADD_HR_WEEKDAY = 50 // $50/hr
-const RENTAL_ADD_HR_WEEKEND = 100 // $100/hr
+const RENTAL_WEEKDAY_3HR = 475   // $475
+const RENTAL_WEEKEND_3HR = 600   // $600
+const RENTAL_ADD_HR_WEEKDAY = 100 // $100/hr
+const RENTAL_ADD_HR_WEEKEND = 150 // $150/hr
 
 // Decor items that support qty (balloon products sold per unit)
 const BALLOON_QTY_ITEMS = new Set([

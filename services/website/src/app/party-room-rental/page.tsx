@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
   title: 'Party Room Rental — Speonk NY',
   description:
-    'Rent our private party studio in Speonk, NY for birthdays, showers, photo shoots, workshops, and more. Starting at $450 for 3 hours. DIY your event your way.',
+    'Rent our private party studio in Speonk, NY for birthdays, showers, photo shoots, workshops, and more. Starting at $475 for 3 hours. DIY your event your way.',
   alternates: {
     canonical: 'https://www.hosthampton.com/party-room-rental',
     languages: {
@@ -45,8 +45,8 @@ const useCases = [
 ]
 
 const pricing = [
-  { name: 'Weekday Rental', sub: 'Mon\u2013Fri', price: 450, hours: 3 },
-  { name: 'Weekend Rental', sub: 'Sat\u2013Sun', price: 575, hours: 3, popular: true },
+  { name: 'Weekday Rental', sub: 'Mon\u2013Fri', price: 475, hours: 3 },
+  { name: 'Weekend Rental', sub: 'Sat\u2013Sun', price: 600, hours: 3, popular: true },
   { name: 'Full Day Weekday', sub: 'Mon\u2013Fri', price: 700, hours: 12 },
   { name: 'Full Day Weekend', sub: 'Sat\u2013Sun', price: 975, hours: 12 },
 ]
@@ -196,7 +196,7 @@ export default async function PartyRoomRental() {
             <p className="text-hampton-navy text-sm font-semibold mb-2">Additional Details</p>
             <ul className="space-y-1.5">
               {[
-                'Additional hours available: $50/hr (weekday) or $100/hr (weekend)',
+                'Additional hours available: $100/hr (weekday) or $150/hr (weekend)',
                 'Security deposit: $500 (refundable after event)',
                 'You may bring your own decorations, catering, and vendors',
                 'Tables and chairs for up to 60 guests included',

@@ -405,8 +405,8 @@ export default function StudioRentalContent(props: Props) {
           Seats up to {STUDIO_SEATED_CAPACITY} · standing room for {STUDIO_STANDING_CAPACITY}.
         </p>
         <div className="flex flex-wrap justify-center gap-3 mt-5 text-sm">
-          <span className="bg-white border border-hampton-pink/20 rounded-full px-4 py-1.5 text-hampton-navy">Weekend · $575 / 3 hrs (+$100/hr)</span>
-          <span className="bg-white border border-hampton-pink/20 rounded-full px-4 py-1.5 text-hampton-navy">Weekday · $450 / 3 hrs (+$75/hr)</span>
+          <span className="bg-white border border-hampton-pink/20 rounded-full px-4 py-1.5 text-hampton-navy">Weekend · $600 / 3 hrs (+$150/hr)</span>
+          <span className="bg-white border border-hampton-pink/20 rounded-full px-4 py-1.5 text-hampton-navy">Weekday · $475 / 3 hrs (+$100/hr)</span>
         </div>
       </div>
 

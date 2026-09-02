@@ -31,10 +31,10 @@ const DEPOSIT_RATE = 0.25
 const computeDeposit = (totalCents: number): number =>
   Math.round((totalCents * DEPOSIT_RATE) / 100) * 100
 
-const RENTAL_WEEKDAY_3HR = 450
-const RENTAL_WEEKEND_3HR = 575
-const RENTAL_ADD_HR_WEEKDAY = 50
-const RENTAL_ADD_HR_WEEKEND = 100
+const RENTAL_WEEKDAY_3HR = 475
+const RENTAL_WEEKEND_3HR = 600
+const RENTAL_ADD_HR_WEEKDAY = 100
+const RENTAL_ADD_HR_WEEKEND = 150
 
 const BALLOON_QTY_ITEMS = new Set([
   'Balloon Garland 6 ft.',
