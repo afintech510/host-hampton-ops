@@ -78,7 +78,7 @@ export interface EventRow {
   description: string | null
   category: string
   price_cents: number
-  sale_price_cents: number | null
+  sale_discount_cents: number | null
   sale_ends_at: string | null
   has_variants: boolean
   variants: { label: string; priceCents: number }[]

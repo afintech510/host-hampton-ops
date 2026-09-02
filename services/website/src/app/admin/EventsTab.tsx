@@ -14,7 +14,7 @@ interface Event {
   image_url: string | null; images: EventImage[]; location: string; confirmed_tickets: number
   sibling_price_cents: number | null
   allow_multi_session: boolean; bundle_pricing: BundleTier[]
-  sale_price_cents: number | null; sale_ends_at: string | null
+  sale_discount_cents: number | null; sale_ends_at: string | null
 }
 
 interface EventImage {
@@ -58,7 +58,7 @@ interface EventFormData {
   hasVariants: boolean; variants: Variant[]
   hasSessions: boolean; sessions: EventSession[]
   allowMultiSession: boolean; bundlePricing: BundleTier[]
-  salePriceDollars: string; saleEndsAt: string
+  saleDiscountDollars: string; saleEndsAt: string
 }
 
 /* ─── Helpers ────────────────────────────────────────── */
@@ -74,8 +74,8 @@ function toLocalInputValue(iso: string | null): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
-function saleIsLive(e: { sale_price_cents: number | null; sale_ends_at: string | null }) {
-  return e.sale_price_cents != null && e.sale_ends_at != null && new Date(e.sale_ends_at).getTime() > Date.now()
+function saleIsLive(e: { sale_discount_cents: number | null; sale_ends_at: string | null }) {
+  return e.sale_discount_cents != null && e.sale_discount_cents > 0 && e.sale_ends_at != null && new Date(e.sale_ends_at).getTime() > Date.now()
 }
 
 const DEFAULT_LOCATION = 'Host Hampton, 295 Montauk Hwy Suite 7, Speonk NY'
@@ -172,7 +172,7 @@ export default function EventsTab({ headers, onLogout }: { headers: Record<strin
                     <h3 className="font-semibold text-hampton-navy text-sm truncate">{event.title}</h3>
                     <span className="text-[10px] sm:text-xs bg-hampton-navy/10 text-hampton-navy px-1.5 sm:px-2 py-0.5 rounded-full capitalize">{event.category}</span>
                     {event.is_featured && <span className="text-[10px] sm:text-xs bg-amber-100 text-amber-700 px-1.5 sm:px-2 py-0.5 rounded-full">Featured</span>}
-                    {saleIsLive(event) && <span className="text-[10px] sm:text-xs bg-hampton-pink/40 text-hampton-navy px-1.5 sm:px-2 py-0.5 rounded-full">On Sale</span>}
+                    {saleIsLive(event) && <span className="text-[10px] sm:text-xs bg-hampton-pink/40 text-hampton-navy px-1.5 sm:px-2 py-0.5 rounded-full">{formatPrice(event.sale_discount_cents as number)} off</span>}
                     {event.has_variants && <span className="text-[10px] sm:text-xs bg-blue-50 text-blue-600 px-1.5 sm:px-2 py-0.5 rounded-full hidden sm:inline">Options</span>}
                     {event.has_sessions && <span className="text-[10px] sm:text-xs bg-purple-50 text-purple-600 px-1.5 sm:px-2 py-0.5 rounded-full hidden sm:inline">{event.allow_multi_session ? 'Series' : 'Multi-date'}</span>}
                     {!event.is_active && <span className="text-[10px] sm:text-xs bg-gray-100 text-gray-500 px-1.5 sm:px-2 py-0.5 rounded-full">Archived</span>}
@@ -180,10 +180,10 @@ export default function EventsTab({ headers, onLogout }: { headers: Record<strin
                   <div className="flex items-center gap-2 sm:gap-4 text-xs text-hampton-mauve">
                     <span>{event.event_date ? formatDate(event.event_date) : event.has_sessions ? 'Multiple dates' : 'Date TBD'}</span>
                     <span>
-                      {saleIsLive(event) ? (
+                      {saleIsLive(event) && event.price_cents > 0 ? (
                         <>
                           <span className="line-through text-hampton-mauve/60 mr-1">{formatPrice(event.price_cents)}</span>
-                          {formatPrice(event.sale_price_cents as number)}
+                          {formatPrice(Math.max(0, event.price_cents - (event.sale_discount_cents as number)))}
                         </>
                       ) : formatPrice(event.price_cents)}
                     </span>
@@ -249,7 +249,7 @@ function EventForm({
         sessions: existingSessions || [],
         allowMultiSession: existingEvent.allow_multi_session || false,
         bundlePricing: existingEvent.bundle_pricing || [],
-        salePriceDollars: existingEvent.sale_price_cents != null ? (existingEvent.sale_price_cents / 100).toString() : '',
+        saleDiscountDollars: existingEvent.sale_discount_cents != null ? (existingEvent.sale_discount_cents / 100).toString() : '',
         saleEndsAt: toLocalInputValue(existingEvent.sale_ends_at),
       }
     }
@@ -260,7 +260,7 @@ function EventForm({
       hasVariants: false, variants: [],
       hasSessions: false, sessions: [],
       allowMultiSession: false, bundlePricing: [],
-      salePriceDollars: '', saleEndsAt: '',
+      saleDiscountDollars: '', saleEndsAt: '',
     }
   })
   const [saving, setSaving] = useState(false)
@@ -272,18 +272,18 @@ function EventForm({
     e.preventDefault()
     if (!form.title) { setError('Title is required'); return }
 
-    // Sale price is optional, but if set it needs an end time (and vice versa).
-    const hasSalePrice = form.salePriceDollars.trim() !== '' && parseFloat(form.salePriceDollars) > 0
+    // Sale discount is optional, but if set it needs an end time (and vice versa).
+    const hasSaleDiscount = form.saleDiscountDollars.trim() !== '' && parseFloat(form.saleDiscountDollars) > 0
     const hasSaleEnd = form.saleEndsAt.trim() !== ''
-    if (hasSalePrice !== hasSaleEnd) {
-      setError('A sale needs both a sale price and an end date/time (or leave both blank).')
+    if (hasSaleDiscount !== hasSaleEnd) {
+      setError('A sale needs both a discount amount and an end date/time (or leave both blank).')
       return
     }
     const saleEndsAtIso = hasSaleEnd ? new Date(form.saleEndsAt).toISOString() : null
     setSaving(true); setError('')
 
     const payload: Record<string, unknown> = {
-      salePriceCents: hasSalePrice ? Math.round(parseFloat(form.salePriceDollars) * 100) : null,
+      saleDiscountCents: hasSaleDiscount ? Math.round(parseFloat(form.saleDiscountDollars) * 100) : null,
       saleEndsAt: saleEndsAtIso,
       title: form.title,
       description: form.description || null,
@@ -408,13 +408,13 @@ function EventForm({
       {/* ── Flash Sale ── */}
       <div className="border-t border-hampton-pink/10 pt-4 mb-4">
         <p className="text-sm font-medium text-hampton-navy mb-1">
-          Flash Sale <span className="text-xs text-hampton-mauve font-normal">(optional — discounts the base price only, not per-option variants)</span>
+          Flash Sale <span className="text-xs text-hampton-mauve font-normal">(optional — takes this amount off the base price and every option)</span>
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="form-label">Sale Price ($)</label>
-            <input type="number" step="0.01" min="0" value={form.salePriceDollars}
-              onChange={e => set('salePriceDollars', e.target.value)} className="form-input" placeholder="Blank = no sale" />
+            <label className="form-label">Discount Amount ($ off)</label>
+            <input type="number" step="0.01" min="0" value={form.saleDiscountDollars}
+              onChange={e => set('saleDiscountDollars', e.target.value)} className="form-input" placeholder="e.g. 5 = $5 off each ticket" />
           </div>
           <div>
             <label className="form-label">Sale Ends</label>
@@ -422,11 +422,9 @@ function EventForm({
               onChange={e => set('saleEndsAt', e.target.value)} className="form-input" />
           </div>
         </div>
-        {form.salePriceDollars && form.priceDollars && parseFloat(form.salePriceDollars) >= parseFloat(form.priceDollars) && (
-          <p className="text-xs text-amber-600 mt-1">Heads up: the sale price isn’t lower than the base price.</p>
-        )}
         <p className="text-xs text-hampton-mauve mt-1">
-          The regular price shows crossed out, and the sale ends automatically at the time above — no code needed.
+          Comes off the base price and each option (never below $0). The regular price shows crossed out, and the sale
+          ends automatically at the time above — no code needed.
         </p>
       </div>
 

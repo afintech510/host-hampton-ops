@@ -203,7 +203,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                   slug: event.slug,
                   title: event.title,
                   price_cents: event.price_cents,
-                  sale_price_cents: event.sale_price_cents ?? null,
+                  sale_discount_cents: event.sale_discount_cents ?? null,
                   sale_ends_at: event.sale_ends_at ?? null,
                   has_variants: event.has_variants,
                   variants: event.variants || [],

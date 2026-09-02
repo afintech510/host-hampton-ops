@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Calendar, Clock } from 'lucide-react'
 import type { EventRow } from './page'
-import { isSaleActive } from '@/lib/sale'
+import { isSaleActive, saleAdjustedCents } from '@/lib/sale'
 
 function formatPrice(cents: number): string {
   if (cents === 0) return 'FREE'
@@ -36,11 +36,11 @@ function getEventImage(event: EventRow): string | null {
 }
 
 function EventCard({ event }: { event: EventRow }) {
-  // Sale applies to the base price only, so it shows on non-variant events.
-  const onSale = !event.has_variants && isSaleActive(event)
-  const priceDisplay = event.has_variants
-    ? `From ${formatPrice(Math.min(...event.variants.map(v => v.priceCents)))}`
-    : formatPrice(onSale ? (event.sale_price_cents as number) : event.price_cents)
+  // Flash sale takes a flat amount off every price (base + variants).
+  const onSale = isSaleActive(event)
+  const prefix = event.has_variants ? 'From ' : ''
+  const regularFrom = event.has_variants ? Math.min(...event.variants.map(v => v.priceCents)) : event.price_cents
+  const priceDisplay = `${prefix}${formatPrice(onSale ? saleAdjustedCents(regularFrom, event) : regularFrom)}`
 
   const badge = availabilityBadge(event.available_tickets, event.max_tickets)
   const dateDisplay = event.event_date
@@ -67,7 +67,7 @@ function EventCard({ event }: { event: EventRow }) {
           </div>
         )}
         <span className="absolute top-3 right-3 bg-white/90 text-hampton-navy font-bold px-3 py-1 rounded-full text-sm shadow-sm flex items-baseline gap-1.5">
-          {onSale && <span className="line-through font-normal text-hampton-navy/40">{formatPrice(event.price_cents)}</span>}
+          {onSale && <span className="line-through font-normal text-hampton-navy/40">{`${prefix}${formatPrice(regularFrom)}`}</span>}
           {priceDisplay}
         </span>
         {onSale && (

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Minus, Plus, Loader2, ShoppingCart, Tag } from 'lucide-react'
 import { useCart } from '@/context/CartContext'
 import VenmoOption from '@/components/VenmoOption'
-import { isSaleActive } from '@/lib/sale'
+import { isSaleActive, saleAdjustedCents } from '@/lib/sale'
 
 interface Variant { label: string; priceCents: number; seats?: number }
 interface BundleTier { minSessions: number; pricePerSessionCents: number }
@@ -14,7 +14,7 @@ interface EventProps {
   slug: string
   title: string
   price_cents: number
-  sale_price_cents?: number | null
+  sale_discount_cents?: number | null
   sale_ends_at?: string | null
   has_variants: boolean
   variants: Variant[]
@@ -69,7 +69,7 @@ function formatCountdown(ms: number): string {
 }
 
 // Live "sale ends in Xh Ym" banner. Self-hides once the window closes.
-function SaleBanner({ endsAt, regularCents, saleCents }: { endsAt: string; regularCents: number; saleCents: number }) {
+function SaleBanner({ endsAt, discountCents }: { endsAt: string; discountCents: number }) {
   const [remaining, setRemaining] = useState<number>(() => new Date(endsAt).getTime() - Date.now())
 
   useEffect(() => {
@@ -78,13 +78,12 @@ function SaleBanner({ endsAt, regularCents, saleCents }: { endsAt: string; regul
   }, [endsAt])
 
   if (remaining <= 0) return null
-  const pctOff = regularCents > 0 ? Math.round((1 - saleCents / regularCents) * 100) : 0
 
   return (
     <div className="mb-4 rounded-xl bg-hampton-pink/15 border border-hampton-pink/30 px-4 py-3 flex items-center gap-2.5">
       <Tag className="w-4 h-4 text-hampton-navy shrink-0" />
       <div className="text-sm">
-        <span className="font-semibold text-hampton-navy">Flash Sale{pctOff > 0 ? ` — ${pctOff}% off` : ''}</span>
+        <span className="font-semibold text-hampton-navy">Flash Sale{discountCents > 0 ? ` — ${formatPrice(discountCents)} off` : ''}</span>
         <span className="text-hampton-navy/70"> · {formatCountdown(remaining)}</span>
       </div>
     </div>
@@ -112,9 +111,9 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
 
   const isMultiSession = event.allow_multi_session && event.has_sessions
 
-  // Flash sale overrides the base ticket price only (variant/session prices keep their own).
+  // Flash sale: a flat amount off every price point (base + each variant/session), clamped at $0.
   const onSale = isSaleActive(event)
-  const effectiveBase = onSale ? (event.sale_price_cents as number) : event.price_cents
+  const priceOf = (cents: number) => saleAdjustedCents(cents, event)
 
   // ── Multi-option "quantity matrix" mode ────────────────────
   // Events with pricing options (e.g. Child / Sibling) let the customer
@@ -129,7 +128,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
   })
 
   const matrixQtyTotal = event.variants.reduce((s, v) => s + (variantQtys[v.label] || 0), 0)
-  const matrixSubtotal = event.variants.reduce((s, v) => s + v.priceCents * (variantQtys[v.label] || 0), 0)
+  const matrixSubtotal = event.variants.reduce((s, v) => s + priceOf(v.priceCents) * (variantQtys[v.label] || 0), 0)
 
   function setVariantQty(label: string, next: number) {
     if (next < 0) return
@@ -152,7 +151,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
         sessionIds: null,
         quantity: variantQtys[v.label],
         variantLabel: v.label,
-        unitPriceCents: v.priceCents,
+        unitPriceCents: priceOf(v.priceCents),
         imageUrl: event.imageUrl || null,
         dateDisplay,
         timeDisplay,
@@ -161,28 +160,29 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
     setError('')
   }
 
-  // Price calculation
-  let unitPrice: number
-  let total: number
+  // Price calculation — resolve the raw (pre-sale) unit price, then apply the sale.
+  let rawUnitPrice: number
+  let unitCount: number // sessions × quantity, or just quantity
 
   if (isMultiSession && selectedSessions.length > 0) {
-    unitPrice = getBundlePrice(selectedSessions.length, event.bundle_pricing || []) ?? effectiveBase
-    total = unitPrice * selectedSessions.length * quantity
+    rawUnitPrice = getBundlePrice(selectedSessions.length, event.bundle_pricing || []) ?? event.price_cents
+    unitCount = selectedSessions.length * quantity
   } else if (selectedVariant) {
-    unitPrice = selectedVariant.priceCents
-    total = unitPrice * quantity
+    rawUnitPrice = selectedVariant.priceCents
+    unitCount = quantity
   } else if (selectedSession?.price_cents != null) {
-    unitPrice = selectedSession.price_cents
-    total = unitPrice * quantity
+    rawUnitPrice = selectedSession.price_cents
+    unitCount = quantity
   } else {
-    unitPrice = effectiveBase
-    total = unitPrice * quantity
+    rawUnitPrice = event.price_cents
+    unitCount = quantity
   }
 
-  // Does the currently-selected price reflect the base (and therefore the sale)?
-  const baseIsSelected = !selectedVariant && selectedSession?.price_cents == null &&
-    !(isMultiSession && selectedSessions.length > 0 && getBundlePrice(selectedSessions.length, event.bundle_pricing || []) != null)
-  const showSale = onSale && baseIsSelected
+  const unitPrice = priceOf(rawUnitPrice)
+  const total = unitPrice * unitCount
+
+  // The sale applies to whatever price is selected, so show it whenever a sale is live and the ticket isn't free.
+  const showSale = onSale && rawUnitPrice > 0
 
   const isFree = unitPrice === 0
 
@@ -289,6 +289,10 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
           {matrixSoldOut ? 'This event is sold out.' : 'Choose how many of each — add them all at once.'}
         </p>
 
+        {onSale && event.sale_ends_at && !matrixSoldOut && (
+          <SaleBanner endsAt={event.sale_ends_at} discountCents={event.sale_discount_cents ?? 0} />
+        )}
+
         {!matrixSoldOut && (
           <>
             {/* Option rows with per-option quantity steppers */}
@@ -301,7 +305,14 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
                       <p className="text-sm font-semibold text-hampton-navy">{v.label}</p>
                     </div>
                     <div className="flex items-center gap-4 shrink-0">
-                      <span className="text-sm font-semibold text-hampton-navy w-10 text-right">{formatPrice(v.priceCents)}</span>
+                      {onSale && priceOf(v.priceCents) !== v.priceCents ? (
+                        <span className="text-sm font-semibold text-right flex items-baseline gap-1.5">
+                          <span className="line-through font-normal text-hampton-navy/40">{formatPrice(v.priceCents)}</span>
+                          <span className="text-hampton-navy">{formatPrice(priceOf(v.priceCents))}</span>
+                        </span>
+                      ) : (
+                        <span className="text-sm font-semibold text-hampton-navy w-10 text-right">{formatPrice(v.priceCents)}</span>
+                      )}
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={() => setVariantQty(v.label, qty - 1)}
                           className="w-8 h-8 rounded-lg border border-hampton-pink/20 flex items-center justify-center hover:bg-hampton-pink/10 transition-colors disabled:opacity-30"
@@ -332,7 +343,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
                 {event.variants.filter(v => (variantQtys[v.label] || 0) > 0).map((v, i) => (
                   <div key={i} className="flex items-center justify-between">
                     <span className="text-sm text-hampton-navy">{variantQtys[v.label]} &times; {v.label}</span>
-                    <span className="text-sm text-hampton-navy">{formatPrice(v.priceCents * variantQtys[v.label])}</span>
+                    <span className="text-sm text-hampton-navy">{formatPrice(priceOf(v.priceCents) * variantQtys[v.label])}</span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between pt-1.5 border-t border-hampton-navy/10">
@@ -380,7 +391,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
         {soldOut ? 'This event is sold out.' : isFree ? 'Free — reserve your spot.' : (
           showSale ? (
             <span className="inline-flex items-baseline gap-2">
-              <span className="line-through text-hampton-navy/40">{formatPrice(event.price_cents)}</span>
+              <span className="line-through text-hampton-navy/40">{formatPrice(rawUnitPrice)}</span>
               <span className="font-semibold text-hampton-navy">{formatPrice(unitPrice)}</span>
               <span className="text-hampton-navy/70">per ticket</span>
             </span>
@@ -388,8 +399,8 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
         )}
       </p>
 
-      {showSale && event.sale_ends_at && (
-        <SaleBanner endsAt={event.sale_ends_at} regularCents={event.price_cents} saleCents={unitPrice} />
+      {onSale && event.sale_ends_at && !isFree && (
+        <SaleBanner endsAt={event.sale_ends_at} discountCents={event.sale_discount_cents ?? 0} />
       )}
 
       {/* Variant selection */}
@@ -414,7 +425,14 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
                   />
                   <span className="text-sm text-hampton-navy">{v.label}</span>
                 </div>
-                <span className="text-sm font-semibold text-hampton-navy">{formatPrice(v.priceCents)}</span>
+                {onSale && priceOf(v.priceCents) !== v.priceCents ? (
+                  <span className="text-sm font-semibold flex items-baseline gap-1.5">
+                    <span className="line-through font-normal text-hampton-navy/40">{formatPrice(v.priceCents)}</span>
+                    <span className="text-hampton-navy">{formatPrice(priceOf(v.priceCents))}</span>
+                  </span>
+                ) : (
+                  <span className="text-sm font-semibold text-hampton-navy">{formatPrice(v.priceCents)}</span>
+                )}
               </label>
             ))}
           </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
-import { effectiveBasePriceCents } from '@/lib/sale'
+import { saleAdjustedCents } from '@/lib/sale'
 
 export const dynamic = 'force-dynamic'
 
@@ -93,8 +93,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Event not found: ${item.eventId}` }, { status: 404 })
     }
 
-    // Determine unit price (base honors an active flash sale; variant/session prices override)
-    let unitPriceCents = effectiveBasePriceCents(event)
+    // Determine unit price (base, variant, or session); the flash-sale discount
+    // is applied to the resolved price in each branch below.
+    let unitPriceCents = event.price_cents
     if (item.variantLabel && event.has_variants && event.variants) {
       const variant = event.variants.find((v: any) => v.label === item.variantLabel)
       if (variant) unitPriceCents = variant.priceCents
@@ -121,6 +122,8 @@ export async function POST(req: NextRequest) {
         const tier = sorted.find((t: any) => item.sessionIds!.length >= t.minSessions)
         if (tier) unitPriceCents = tier.pricePerSessionCents
       }
+
+      unitPriceCents = saleAdjustedCents(unitPriceCents, event)
 
       const itemTotal = unitPriceCents * item.sessionIds.length * item.quantity
       overallSubtotalCents += itemTotal
@@ -165,6 +168,8 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: `Not enough tickets for ${event.title}` }, { status: 400 })
         }
       }
+
+      unitPriceCents = saleAdjustedCents(unitPriceCents, event)
 
       const itemTotal = unitPriceCents * item.quantity
       overallSubtotalCents += itemTotal

@@ -6,7 +6,7 @@ import { Resend } from 'resend'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTemplates'
 import { enqueueEventReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
-import { effectiveBasePriceCents } from '@/lib/sale'
+import { saleAdjustedCents } from '@/lib/sale'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,13 +54,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Calculate bundle pricing (base honors an active flash sale; bundle tiers override)
-    let multiUnitPrice = effectiveBasePriceCents(event)
+    // Calculate bundle pricing, then take any active flash-sale discount off the per-session rate
+    let multiUnitPrice = event.price_cents
     if (event.allow_multi_session && event.bundle_pricing?.length > 0) {
       const sorted = [...event.bundle_pricing].sort((a: any, b: any) => b.minSessions - a.minSessions)
       const tier = sorted.find((t: any) => sessionIds.length >= t.minSessions)
       if (tier) multiUnitPrice = tier.pricePerSessionCents
     }
+    multiUnitPrice = saleAdjustedCents(multiUnitPrice, event)
 
     const multiTotalCents = multiUnitPrice * sessionIds.length * quantity
     const multiIsFree = multiUnitPrice === 0
@@ -235,8 +236,8 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Single-session / non-session checkout ──────────────
-  // Determine unit price (base honors an active flash sale; variant/session prices override)
-  let unitPriceCents = effectiveBasePriceCents(event)
+  // Determine unit price (base, variant, or session), then apply any flash-sale discount
+  let unitPriceCents = event.price_cents
   if (variantLabel && event.has_variants && event.variants) {
     const variant = event.variants.find((v: any) => v.label === variantLabel)
     if (variant) unitPriceCents = variant.priceCents
@@ -262,6 +263,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not enough tickets available' }, { status: 400 })
     }
   }
+
+  // Apply any active flash-sale discount to the resolved unit price
+  unitPriceCents = saleAdjustedCents(unitPriceCents, event)
 
   const totalCents = unitPriceCents * quantity
   const isFree = unitPriceCents === 0
