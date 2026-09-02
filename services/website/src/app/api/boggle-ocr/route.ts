@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 1000,
         messages: [
           {
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       const err = await res.text()
-      return NextResponse.json({ error: `Anthropic API error: ${res.status}` }, { status: 502 })
+      return NextResponse.json({ error: `Anthropic API error (${res.status}): ${err}` }, { status: 502 })
     }
 
     const data = await res.json()
