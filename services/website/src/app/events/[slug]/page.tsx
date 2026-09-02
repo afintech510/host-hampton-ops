@@ -4,6 +4,7 @@ import { Calendar, Clock, MapPin, ArrowLeft } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import TicketForm from './TicketForm'
 import ImageGallery from './ImageGallery'
+import { isSaleActive, effectiveBasePriceCents } from '@/lib/sale'
 
 export const dynamic = 'force-dynamic'
 
@@ -107,10 +108,13 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
       ? {
           offers: {
             '@type': 'Offer',
-            price: (event.price_cents / 100).toFixed(2),
+            price: (effectiveBasePriceCents(event) / 100).toFixed(2),
             priceCurrency: 'USD',
             url: `https://www.hosthampton.com/events/${event.slug}`,
             availability: 'https://schema.org/InStock',
+            ...(isSaleActive(event) && event.sale_ends_at
+              ? { priceValidUntil: new Date(event.sale_ends_at).toISOString().split('T')[0] }
+              : {}),
           },
         }
       : {}),
@@ -199,6 +203,8 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                   slug: event.slug,
                   title: event.title,
                   price_cents: event.price_cents,
+                  sale_price_cents: event.sale_price_cents ?? null,
+                  sale_ends_at: event.sale_ends_at ?? null,
                   has_variants: event.has_variants,
                   variants: event.variants || [],
                   has_sessions: event.has_sessions,

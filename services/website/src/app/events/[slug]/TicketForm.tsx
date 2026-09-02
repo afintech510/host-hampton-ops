@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
-import { Minus, Plus, Loader2, ShoppingCart } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Minus, Plus, Loader2, ShoppingCart, Tag } from 'lucide-react'
 import { useCart } from '@/context/CartContext'
 import VenmoOption from '@/components/VenmoOption'
+import { isSaleActive } from '@/lib/sale'
 
 interface Variant { label: string; priceCents: number; seats?: number }
 interface BundleTier { minSessions: number; pricePerSessionCents: number }
@@ -13,6 +14,8 @@ interface EventProps {
   slug: string
   title: string
   price_cents: number
+  sale_price_cents?: number | null
+  sale_ends_at?: string | null
   has_variants: boolean
   variants: Variant[]
   has_sessions: boolean
@@ -54,6 +57,40 @@ function getBundlePrice(sessionCount: number, tiers: BundleTier[]): number | nul
   return tier ? tier.pricePerSessionCents : null
 }
 
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return 'Ending now'
+  const totalSec = Math.floor(ms / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (h >= 1) return `${h}h ${m}m left`
+  if (m >= 1) return `${m}m ${s}s left`
+  return `${s}s left`
+}
+
+// Live "sale ends in Xh Ym" banner. Self-hides once the window closes.
+function SaleBanner({ endsAt, regularCents, saleCents }: { endsAt: string; regularCents: number; saleCents: number }) {
+  const [remaining, setRemaining] = useState<number>(() => new Date(endsAt).getTime() - Date.now())
+
+  useEffect(() => {
+    const id = setInterval(() => setRemaining(new Date(endsAt).getTime() - Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [endsAt])
+
+  if (remaining <= 0) return null
+  const pctOff = regularCents > 0 ? Math.round((1 - saleCents / regularCents) * 100) : 0
+
+  return (
+    <div className="mb-4 rounded-xl bg-hampton-pink/15 border border-hampton-pink/30 px-4 py-3 flex items-center gap-2.5">
+      <Tag className="w-4 h-4 text-hampton-navy shrink-0" />
+      <div className="text-sm">
+        <span className="font-semibold text-hampton-navy">Flash Sale{pctOff > 0 ? ` — ${pctOff}% off` : ''}</span>
+        <span className="text-hampton-navy/70"> · {formatCountdown(remaining)}</span>
+      </div>
+    </div>
+  )
+}
+
 export default function TicketForm({ event, sessions }: { event: EventProps; sessions: Session[] }) {
   const { addItem } = useCart()
   const [selectedVariant, setSelectedVariant] = useState<Variant | null>(
@@ -74,6 +111,10 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
   const [giftCardLoading, setGiftCardLoading] = useState(false)
 
   const isMultiSession = event.allow_multi_session && event.has_sessions
+
+  // Flash sale overrides the base ticket price only (variant/session prices keep their own).
+  const onSale = isSaleActive(event)
+  const effectiveBase = onSale ? (event.sale_price_cents as number) : event.price_cents
 
   // ── Multi-option "quantity matrix" mode ────────────────────
   // Events with pricing options (e.g. Child / Sibling) let the customer
@@ -125,7 +166,7 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
   let total: number
 
   if (isMultiSession && selectedSessions.length > 0) {
-    unitPrice = getBundlePrice(selectedSessions.length, event.bundle_pricing || []) ?? event.price_cents
+    unitPrice = getBundlePrice(selectedSessions.length, event.bundle_pricing || []) ?? effectiveBase
     total = unitPrice * selectedSessions.length * quantity
   } else if (selectedVariant) {
     unitPrice = selectedVariant.priceCents
@@ -134,9 +175,14 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
     unitPrice = selectedSession.price_cents
     total = unitPrice * quantity
   } else {
-    unitPrice = event.price_cents
+    unitPrice = effectiveBase
     total = unitPrice * quantity
   }
+
+  // Does the currently-selected price reflect the base (and therefore the sale)?
+  const baseIsSelected = !selectedVariant && selectedSession?.price_cents == null &&
+    !(isMultiSession && selectedSessions.length > 0 && getBundlePrice(selectedSessions.length, event.bundle_pricing || []) != null)
+  const showSale = onSale && baseIsSelected
 
   const isFree = unitPrice === 0
 
@@ -331,8 +377,20 @@ export default function TicketForm({ event, sessions }: { event: EventProps; ses
         {isFree ? 'RSVP' : 'Get Tickets'}
       </h3>
       <p className="text-hampton-navy text-sm mb-5">
-        {soldOut ? 'This event is sold out.' : isFree ? 'Free — reserve your spot.' : `${formatPrice(unitPrice)} per ticket`}
+        {soldOut ? 'This event is sold out.' : isFree ? 'Free — reserve your spot.' : (
+          showSale ? (
+            <span className="inline-flex items-baseline gap-2">
+              <span className="line-through text-hampton-navy/40">{formatPrice(event.price_cents)}</span>
+              <span className="font-semibold text-hampton-navy">{formatPrice(unitPrice)}</span>
+              <span className="text-hampton-navy/70">per ticket</span>
+            </span>
+          ) : `${formatPrice(unitPrice)} per ticket`
+        )}
       </p>
+
+      {showSale && event.sale_ends_at && (
+        <SaleBanner endsAt={event.sale_ends_at} regularCents={event.price_cents} saleCents={unitPrice} />
+      )}
 
       {/* Variant selection */}
       {event.has_variants && event.variants.length > 0 && (

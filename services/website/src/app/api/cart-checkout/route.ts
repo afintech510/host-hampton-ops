@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
+import { effectiveBasePriceCents } from '@/lib/sale'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,8 +93,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Event not found: ${item.eventId}` }, { status: 404 })
     }
 
-    // Determine unit price
-    let unitPriceCents = event.price_cents
+    // Determine unit price (base honors an active flash sale; variant/session prices override)
+    let unitPriceCents = effectiveBasePriceCents(event)
     if (item.variantLabel && event.has_variants && event.variants) {
       const variant = event.variants.find((v: any) => v.label === item.variantLabel)
       if (variant) unitPriceCents = variant.priceCents

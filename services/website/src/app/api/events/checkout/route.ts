@@ -6,6 +6,7 @@ import { Resend } from 'resend'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTemplates'
 import { enqueueEventReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
+import { effectiveBasePriceCents } from '@/lib/sale'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,8 +54,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Calculate bundle pricing
-    let multiUnitPrice = event.price_cents
+    // Calculate bundle pricing (base honors an active flash sale; bundle tiers override)
+    let multiUnitPrice = effectiveBasePriceCents(event)
     if (event.allow_multi_session && event.bundle_pricing?.length > 0) {
       const sorted = [...event.bundle_pricing].sort((a: any, b: any) => b.minSessions - a.minSessions)
       const tier = sorted.find((t: any) => sessionIds.length >= t.minSessions)
@@ -234,8 +235,8 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Single-session / non-session checkout ──────────────
-  // Determine unit price
-  let unitPriceCents = event.price_cents
+  // Determine unit price (base honors an active flash sale; variant/session prices override)
+  let unitPriceCents = effectiveBasePriceCents(event)
   if (variantLabel && event.has_variants && event.variants) {
     const variant = event.variants.find((v: any) => v.label === variantLabel)
     if (variant) unitPriceCents = variant.priceCents

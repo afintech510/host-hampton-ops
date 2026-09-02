@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Calendar, Clock } from 'lucide-react'
 import type { EventRow } from './page'
+import { isSaleActive } from '@/lib/sale'
 
 function formatPrice(cents: number): string {
   if (cents === 0) return 'FREE'
@@ -35,9 +36,11 @@ function getEventImage(event: EventRow): string | null {
 }
 
 function EventCard({ event }: { event: EventRow }) {
+  // Sale applies to the base price only, so it shows on non-variant events.
+  const onSale = !event.has_variants && isSaleActive(event)
   const priceDisplay = event.has_variants
     ? `From ${formatPrice(Math.min(...event.variants.map(v => v.priceCents)))}`
-    : formatPrice(event.price_cents)
+    : formatPrice(onSale ? (event.sale_price_cents as number) : event.price_cents)
 
   const badge = availabilityBadge(event.available_tickets, event.max_tickets)
   const dateDisplay = event.event_date
@@ -63,10 +66,16 @@ function EventCard({ event }: { event: EventRow }) {
             <Calendar className="w-12 h-12 text-hampton-navy/20" />
           </div>
         )}
-        <span className="absolute top-3 right-3 bg-white/90 text-hampton-navy font-bold px-3 py-1 rounded-full text-sm shadow-sm">
+        <span className="absolute top-3 right-3 bg-white/90 text-hampton-navy font-bold px-3 py-1 rounded-full text-sm shadow-sm flex items-baseline gap-1.5">
+          {onSale && <span className="line-through font-normal text-hampton-navy/40">{formatPrice(event.price_cents)}</span>}
           {priceDisplay}
         </span>
-        <span className="absolute top-3 left-3 bg-hampton-navy/80 text-white px-2.5 py-0.5 rounded-full text-xs capitalize">
+        {onSale && (
+          <span className="absolute top-3 left-3 bg-hampton-pink text-hampton-navy font-semibold px-2.5 py-0.5 rounded-full text-xs shadow-sm">
+            Sale
+          </span>
+        )}
+        <span className={`absolute ${onSale ? 'top-11' : 'top-3'} left-3 bg-hampton-navy/80 text-white px-2.5 py-0.5 rounded-full text-xs capitalize`}>
           {event.category}
         </span>
       </div>

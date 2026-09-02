@@ -50,6 +50,8 @@ export async function POST(req: NextRequest) {
       sibling_price_cents: body.siblingPriceCents || null,
       has_variants: body.hasVariants || false,
       variants: body.variants || [],
+      sale_price_cents: body.salePriceCents ?? null,
+      sale_ends_at: body.saleEndsAt ?? null,
       has_sessions: body.hasSessions || false,
       allow_multi_session: body.allowMultiSession || false,
       bundle_pricing: body.bundlePricing || [],

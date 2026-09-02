@@ -50,6 +50,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (body.images !== undefined) update.images = body.images
   if (body.priceCents !== undefined) update.price_cents = body.priceCents
   if (body.siblingPriceCents !== undefined) update.sibling_price_cents = body.siblingPriceCents
+  // Sale fields: null clears the sale, a value sets it. Send both together from the form.
+  if (body.salePriceCents !== undefined) update.sale_price_cents = body.salePriceCents
+  if (body.saleEndsAt !== undefined) update.sale_ends_at = body.saleEndsAt
   if (body.hasVariants !== undefined) update.has_variants = body.hasVariants
   if (body.variants !== undefined) update.variants = body.variants
   if (body.hasSessions !== undefined) update.has_sessions = body.hasSessions
