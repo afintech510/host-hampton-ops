@@ -25,7 +25,12 @@ export default function VenmoOption({
   if (!amountCents || amountCents <= 0) return null
 
   const amount = (amountCents / 100).toFixed(2)
-  const deepLink = `https://venmo.com/hosthampton?txn=pay&amount=${amount}&note=${encodeURIComponent(note)}`
+  // Use the shareable "recipients" payment-link form on the root host.
+  // The profile-path form (venmo.com/<user>) 302-redirects to
+  // account.venmo.com and drops the txn/amount/note params, so the payment
+  // never prefills. This form is a universal link: it opens the Venmo app
+  // (prefilled) on mobile and the web pay flow on desktop.
+  const deepLink = `https://venmo.com/?txn=pay&recipients=hosthampton&amount=${amount}&note=${encodeURIComponent(note)}`
   const priceLabel = formatPrice(amountCents)
 
   return (
