@@ -4,6 +4,45 @@
 **Inputs reconciled:** `fable-deep-seo-review-2026-09-04.md` (deep review), `listings-seo-session-summary-2026-09-04.md` (what shipped + owner facts), `venue-listing-copy-pack.md`, `venue-listing-agent-plan.md`, `chief-of-seo-playbook.md`, `host-hampton-growth-plan.md`, `mobile-craft-party-seo.md`
 **Method:** every claim in the deep review was re-checked against `services/website/src` **and against the live site** (HTTP + live `sitemap.xml`) on 2026-09-04. Findings are tagged CONFIRMED / ALREADY-FIXED / DISPUTED / **NEW**.
 
+> ## ✅ Update — 2026-09-04, later same day
+>
+> **P0-1 and P0-2 are resolved and A-1 has shipped to production.**
+>
+> **Pricing (P0-1) — owner ruling: what is published on `/party-room-rental` is correct.**
+> The flat blocks ($475/3hr weekday, $600/3hr weekend, $700/$975 full-day, +$100/$150 per
+> additional hour) stand, **and** "Studio by the Hour — **$75/hr**" is a genuine separate
+> product for **non-party professional use** (photography, meetings, workshops, classes,
+> cosmetics). N2 is closed: the page was never wrong, the *docs* were. Two products, not a
+> contradiction.
+> **Residual, narrow:** the $125/hr + $200/hr figures in the prior session's owner-facts, and
+> the "$100/hr photography" line in its drafted GBP services, match neither published number.
+> They were recorded as marketplace-net rates ("marketplace adds its fee"). **Before C-1/C-4,
+> confirm which number goes on GBP and Peerspace** — that is now the only open pricing question.
+>
+> **A-1 shipped** — commits `0b0bdf7`, `a38f4a9`, `9a36572`, deployed and verified live:
+> hub + **26 town pages** + **9 craft pages** + breadcrumbs + homepage Review nodes +
+> `aggregateRating` + Nav/Footer/`/mobile-party` cross-links. **Live sitemap went 30 → 67 URLs.**
+> `/cm-cheer` and `/party-add-ons` (both 307s) dropped from the sitemap — A-4 partly done.
+>
+> Two things worth recording:
+> - **Five location blurbs asserted service history that could not be verified** ("one of our
+>   most-served hometowns", "a regular stop for our mobile craft crew", "we've set up craft
+>   parties across the town", "a summer favorite", "a frequent stop") — in a file whose own
+>   header requires "public geography only — no invented business facts." Rewritten to describe
+>   travel range and capability before publishing.
+> - **The first deploy failed.** `MobilePartyForm.tsx` had been set aside as another session's
+>   file, but the town pages depend on a `prefillDetails` prop added there; the local build
+>   passed against the working tree and the clean build did not. Same for `layout.tsx`
+>   (`aggregateRating`). Both committed. **Lesson: when shipping a partially-staged tree,
+>   build from a clean checkout of the commit, not from the working tree.**
+>
+> **Towns (P0-2) — owner marked 15 of 26 as genuinely served**, and added: *"we can do any
+> party in any town. super flexible. we tailor every party to the client's requests. no two
+> parties are the same."* See §6 for the split and what it changes.
+>
+> **A-3 (`/trucker-hat-bar` rewrite) is cancelled** — owner reports the page performs well as
+> is. See §6.
+
 ---
 
 ## 0. The finding that reorders everything
@@ -180,3 +219,61 @@ Ranked by how much downstream work each unblocks. None of these are guessable fr
 3. **Ship the retitle + hat-bar + home-H1 batch (A-2, A-3, A-5)** — three small metadata/copy edits on the strongest evidence in the report, then submit the sitemap to GSC (C-2) so the baseline is captured against the *new* URL set rather than the old one.
 
 **Explicitly deferred until 30 days of GSC data exist:** the 11 speculative new pages, the town-page kill/scale criteria, and any further consolidation. You cannot apply a kill criterion measured in impressions when nothing is measuring impressions.
+
+---
+
+## 6. Owner rulings — 2026-09-04
+
+### 6a. Town pages: 15 served / 11 capability-only
+
+Owner marked the towns where a mobile party has actually been delivered in roughly the last
+12 months, and noted: *"we can do any party in any town. super flexible."*
+
+| Served — real proof exists (15) | Capability only — no delivered party yet (11) |
+|---|---|
+| Westhampton Beach, Quogue, Hampton Bays, Southampton, Bridgehampton, Sag Harbor, East Hampton, Amagansett, Sagaponack, Mattituck, Southold, Patchogue, Sayville, Smithtown, Babylon | Montauk, Riverhead, Greenport, Bay Shore, Huntington, Rockville Centre, Garden City, Long Beach, Great Neck, Manhasset, Manhattan |
+
+**Ruling: keep all 26 live; differentiate investment; let day-90 data cut.** Reasoning:
+
+- **No page is now making a false claim** — the blurbs describe travel range, not history. So
+  the 11 unserved pages are honest, just thin. There is no integrity reason to pull them.
+- **Deleting them now would be a guess.** They are live as of today; GSC will have real
+  impression data on them within 90 days. Cutting on evidence beats cutting on my judgment —
+  that is the same objection I raised to the review's autocomplete-based cut in §1d, and it
+  applies to me too.
+- **The 15 are where content spend goes (B-3).** Only those can get the thing that actually
+  de-thins a town page: a real photo, a named local review, a specific party.
+
+**Consequence — B-3 is materially weaker than planned.** Asked which crafts ran where, the
+answer was *"do what you think… no two parties are the same."* That is a true and good
+operating posture, but it means **there is no per-town specific detail to write with.**
+Without a real party, photo, or review per town, a "300–500 genuinely local words" page is
+just longer boilerplate — which is worse than short boilerplate, not better. **Revised B-3:
+do not bulk-expand town copy.** Instead, opportunistically: after each real party, capture
+one photo + one line + a review naming the town, and add it to that town's page. Three
+substantiated towns beat fifteen padded ones. Day-90 rule for all 26 stays: 0 impressions
+**and** 0 form submits → 301 into the region page.
+
+### 6b. `/trucker-hat-bar` — A-3 cancelled
+
+Owner: *"don't change this page, it's performed very well so far."* **Business performance
+beats a keyword argument — accepted, page stays as is.**
+
+Worth being precise about what each side actually knew. The A-3 case was narrow: the title
+"Atelier Brim — Bespoke Hat Bar Activations" contains no term anyone searches, on a cluster
+where autocomplete fills all ten slots (`hat bar party near me / pricing / for kids`). That
+argument was only ever about **organic search acquisition**. It said nothing about how the
+page converts traffic arriving from Instagram, referrals, repeat clients or The Bash — and
+with no GSC connected, neither the review nor I could see its search performance at all. If
+it books parties, it is doing its job through a channel the retitle would not have improved.
+
+**Zero-risk alternative, if wanted later:** leave the title, brand, URL and design untouched
+and add a keyword-bearing `<h2>` plus 3–5 FAQ entries further down the page ("How much is a
+hat bar party?", "Can you bring the hat bar to us?"). That captures the search cluster without
+touching anything currently working. **Not scheduled — offered only if there's appetite.**
+
+### 6c. Remaining open pricing question
+
+Confirm before GBP and marketplace listings (C-1, C-4): published site rates are flat blocks
+plus $75/hr professional. The prior session recorded $125/hr and $200/hr as *marketplace-net*
+rates, and drafted a GBP entry at $100/hr. **Which number goes on GBP and Peerspace?**
