@@ -7,6 +7,7 @@ import CrispChat from '@/components/CrispChat'
 import GoogleAnalytics from '@/components/GoogleAnalytics'
 import { CartProvider } from '@/context/CartContext'
 import CartDrawer from '@/components/CartDrawer'
+import { RATING } from '@/lib/reviews'
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -74,6 +75,13 @@ const localBusinessSchema = {
     'https://www.facebook.com/hosthampton',
   ],
   priceRange: '$$',
+  aggregateRating: {
+    '@type': 'AggregateRating',
+    ratingValue: RATING.ratingValue,
+    reviewCount: RATING.reviewCount,
+    bestRating: RATING.bestRating,
+    worstRating: RATING.worstRating,
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
