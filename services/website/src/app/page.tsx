@@ -1,10 +1,25 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Star, CheckCircle, Clock, Users, Sparkles, Heart, Shield } from 'lucide-react'
+import { Star, CheckCircle, Clock, Users, Sparkles, Heart, Shield, Palette } from 'lucide-react'
 import DynamicTypingSection from '@/components/DynamicTypingSection'
 import ThemeTileGrid, { ThemeData } from '@/components/ThemeTileGrid'
 import { getSupabase } from '@/lib/supabase'
+
+const HH_URL = 'https://www.hosthampton.com'
+
+const reviewSchema = [
+  { name: 'Jessica M.', stars: 5, text: 'Absolutely incredible! My daughter and all her friends had the best time. The studio was perfectly decorated and the staff was so attentive. Worth every penny!' },
+  { name: 'Sarah K.', stars: 5, text: 'Best birthday party decision I ever made. Host Hampton handled EVERYTHING. My daughter was crying tears of joy when she walked in. 10/10 would recommend!' },
+  { name: 'Amanda R.', stars: 5, text: 'The girls were in heaven! Mini manicures, face masks, robes — pure magic. The owners clearly put so much love into making it special. We’ll be back!' },
+].map(r => ({
+  '@context': 'https://schema.org',
+  '@type': 'Review',
+  itemReviewed: { '@type': 'LocalBusiness', name: 'Host Hampton', url: HH_URL },
+  author: { '@type': 'Person', name: r.name },
+  reviewRating: { '@type': 'Rating', ratingValue: r.stars, bestRating: 5, worstRating: 1 },
+  reviewBody: r.text,
+}))
 
 export const metadata: Metadata = {
   title: 'Birthday Party Venue in the Hamptons, NY',
@@ -59,6 +74,9 @@ export default async function Home() {
   }
   return (
     <>
+      {reviewSchema.map((node, i) => (
+        <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(node) }} />
+      ))}
       {/* ── HERO ─────────────────────────────────────────────── */}
       <section className="relative overflow-hidden">
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-20 md:py-28 flex flex-col md:flex-row items-center gap-12">
@@ -209,6 +227,37 @@ export default async function Home() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── MOBILE CRAFT PARTY BAND ──────────────────────────── */}
+      <section className="py-16 px-4">
+        <div className="max-w-6xl mx-auto bg-hampton-navy rounded-3xl overflow-hidden">
+          <div className="grid md:grid-cols-2 items-center">
+            <div className="p-8 md:p-12">
+              <p className="text-hampton-pink text-sm font-semibold tracking-widest uppercase mb-3 flex items-center gap-2">
+                <Palette size={16} /> Can’t Come to Us?
+              </p>
+              <h2 className="font-serif text-3xl md:text-4xl text-white leading-tight mb-4">
+                We Bring the Craft Party <span className="italic text-hampton-pink">to You</span>
+              </h2>
+              <p className="text-white/70 text-base leading-relaxed mb-6 max-w-md">
+                Canvas painting, sand art, drip-paint balloon dogs, slime and more — at your home anywhere
+                on Long Island, from East Hampton to Nassau County. Same crafts, same hosts, your place or ours.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Link href="/mobile-craft-party" className="bg-hampton-pink text-hampton-navy font-bold px-7 py-3.5 rounded-full text-sm hover:bg-opacity-90 transition-all shadow-lg text-center">
+                  Explore Mobile Craft Parties
+                </Link>
+                <Link href="/mobile-party" className="border-2 border-white/30 text-white font-semibold px-7 py-3.5 rounded-full text-sm hover:border-hampton-pink transition-all text-center">
+                  See the Full Menu
+                </Link>
+              </div>
+            </div>
+            <div className="relative h-64 md:h-full min-h-[280px]">
+              <Image src="/images/gallery/venue-craft-station.webp" alt="Mobile craft party — canvas painting and crafts" fill className="object-cover" />
+            </div>
           </div>
         </div>
       </section>

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
+import { locationsByRegion } from '@/lib/locations'
 import {
   PartyPopper, Gem, DoorOpen, Baby, Church, Heart, Zap, Calendar,
   BookOpen, Phone, FileText, Shield, RotateCcw, MapPin, Truck, HardHat, Calculator,
@@ -38,6 +39,16 @@ const sections: { title: string; links: LinkItem[] }[] = [
       { href: '/kids-party-menu', label: 'Party Quote Builder', description: 'Build a custom party quote with real-time pricing', icon: <Calculator className={iconClass} /> },
       { href: '/fundraiser', label: 'Fundraisers', description: 'Host a fundraiser event at our venue', icon: <Heart className={iconClass} /> },
       { href: '/mobile-party', label: 'Mobile Party', description: 'We bring the party to your location', icon: <Truck className={iconClass} /> },
+      { href: '/mobile-craft-party', label: 'Mobile Craft Parties', description: 'Kids arts & crafts parties at your home or our studio — all of Long Island', icon: <Palette className={iconClass} /> },
+      { href: '/arts-and-crafts-party', label: 'Arts & Crafts Party', description: 'Hands-on craft stations — canvas painting, sand art, bracelets & more', icon: <Palette className={iconClass} /> },
+      { href: '/slime-party', label: 'Slime Party', description: 'Make-your-own slime with glitter, charms & take-home containers', icon: <PartyPopper className={iconClass} /> },
+      { href: '/balloon-dog-painting-party', label: 'Balloon Dog Painting Party', description: 'Our signature drip-paint fluid-art balloon dogs', icon: <Palette className={iconClass} /> },
+      { href: '/spa-party', label: 'Kids Spa Party', description: 'Mini manicures, face masks, robes & glam', icon: <Heart className={iconClass} /> },
+      { href: '/mermaid-party', label: 'Mermaid Party', description: 'Under-the-sea crafts — seashell decorating, sand art & shimmer', icon: <PartyPopper className={iconClass} /> },
+      { href: '/squishy-party', label: 'Squishy Party', description: 'DIY squishies & satisfying sensory crafts', icon: <PartyPopper className={iconClass} /> },
+      { href: '/toddler-party', label: 'Toddler Party', description: 'Gentle sensory play & simple crafts for ages 2–4', icon: <Baby className={iconClass} /> },
+      { href: '/shower-venue', label: 'Baby & Bridal Shower Venue', description: 'Private styled shower venue on the East End', icon: <DoorOpen className={iconClass} /> },
+      { href: '/canvas-tote-activation', label: 'Canvas Tote Activation', description: 'On-site tote bar for brand & corporate events', icon: <ShoppingBag className={iconClass} /> },
       { href: '/trucker-hat-bar', label: 'Trucker Hat Bar', description: 'Atelier Brim — curated hat bar for corporate events', icon: <HardHat className={iconClass} /> },
       { href: '/custom-accessories', label: 'Custom Accessories', description: 'Personalized canvas bags and trucker hats for parties and groups', icon: <Palette className={iconClass} /> },
       { href: '/canvas-bags', label: 'Canvas Bags — Iron-On Patches', description: 'Classic tote bags and makeup bags customized with iron-on patch designs', icon: <ShoppingBag className={iconClass} /> },
@@ -120,6 +131,35 @@ export default async function SitemapPage() {
               </ul>
             </div>
           ))}
+
+          {/* Mobile craft party service areas */}
+          <div className="md:col-span-2">
+            <h2 className="font-serif text-xl text-hampton-navy mb-4 pb-2 border-b border-hampton-pink/20">
+              <span className="flex items-center gap-2">
+                <Palette className="w-5 h-5 text-hampton-navy/60" />
+                Mobile Craft Party Service Areas
+              </span>
+            </h2>
+            <div className="space-y-4">
+              {locationsByRegion().map(group => (
+                <div key={group.region}>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-hampton-navy/50 mb-2">{group.region}</p>
+                  <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {group.items.map(loc => (
+                      <li key={loc.slug}>
+                        <Link
+                          href={`/mobile-craft-party/${loc.slug}`}
+                          className="block p-2.5 rounded-xl text-sm font-medium text-hampton-navy hover:text-hampton-blue hover:bg-hampton-pink/5 transition-colors"
+                        >
+                          {loc.name}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Dynamic events section */}
           {events.length > 0 && (

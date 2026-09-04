@@ -14,6 +14,9 @@ export const metadata: Metadata = {
     'backyard party entertainment Speonk',
     'traveling party company Long Island',
     'mobile kids party Hamptons',
+    'mobile craft party Long Island',
+    'at home arts and crafts party',
+    'kids craft party near me',
   ],
   openGraph: {
     title: 'Mobile Party — We Bring the Party to You',
@@ -229,6 +232,27 @@ export default function MobilePartyPage() {
                 </p>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── At Your House or Ours + Find Your Town ── */}
+      <section className="py-16 max-w-5xl mx-auto px-4 sm:px-6">
+        <div className="bg-gradient-to-br from-hampton-blue/10 to-hampton-pink/10 rounded-3xl border border-hampton-blue/20 p-8 md:p-10 text-center">
+          <p className="section-subheading">You Pick the Place</p>
+          <h2 className="font-serif text-2xl md:text-3xl text-hampton-navy mb-3">At Your House — or Our Studio</h2>
+          <p className="text-hampton-navy/70 text-sm md:text-base max-w-2xl mx-auto mb-6 leading-relaxed">
+            Every station here can happen at your home <em>or</em> at our private celebration studio in Speonk. Doing an
+            arts &amp; crafts party — canvas painting, sand art, drip-paint balloon dogs, slime? We travel all over Long
+            Island, from East Hampton to Nassau County and into Manhattan for larger events.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <a href="/mobile-craft-party" className="bg-hampton-navy text-white font-bold px-7 py-3.5 rounded-full text-sm hover:bg-hampton-navy/90 transition-all shadow-lg">
+              Find Your Town →
+            </a>
+            <a href="/party-room-rental" className="border-2 border-hampton-navy/30 text-hampton-navy font-semibold px-7 py-3.5 rounded-full text-sm hover:border-[#c4975a] transition-all">
+              Host at Our Studio
+            </a>
           </div>
         </div>
       </section>

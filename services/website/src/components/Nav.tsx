@@ -8,10 +8,11 @@ import { Menu, X, Phone, MessageCircle } from 'lucide-react'
 import CartButton from '@/components/CartButton'
 
 const navLinks = [
-  { href: '/party-packages',    label: 'Party Packages' },
-  { href: '/party-room-rental', label: 'Room Rental' },
-  { href: '/mobile-party',      label: 'Mobile Party' },
-  { href: '/events',            label: 'Events' },
+  { href: '/party-packages',     label: 'Party Packages' },
+  { href: '/party-room-rental',  label: 'Room Rental' },
+  { href: '/mobile-party',       label: 'Mobile Party' },
+  { href: '/mobile-craft-party', label: 'Craft Parties' },
+  { href: '/events',             label: 'Events' },
 ]
 
 export default function Nav() {

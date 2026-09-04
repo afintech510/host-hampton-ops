@@ -35,6 +35,8 @@ export default function Footer() {
             {[
               { href: '/kids-party-menu',    label: 'Design Your Party' },
               { href: '/party-packages',     label: 'Kids Theme Parties' },
+              { href: '/mobile-craft-party', label: 'Mobile Craft Parties' },
+              { href: '/shower-venue',       label: 'Baby & Bridal Showers' },
               { href: '/party-room-rental',  label: 'Room Rental' },
               { href: '/permanent-jewelry',  label: 'Permanent Jewelry' },
               { href: '/events',             label: 'Events & Classes' },
