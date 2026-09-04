@@ -5,8 +5,8 @@ import { Send, CheckCircle } from 'lucide-react'
 import { trackContact } from '@/lib/gtag'
 import { captureUtm, getUtmParams } from '@/lib/utm'
 
-export default function MobilePartyForm() {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', date: '', details: '' })
+export default function MobilePartyForm({ prefillDetails = '' }: { prefillDetails?: string }) {
+  const [form, setForm] = useState({ name: '', email: '', phone: '', date: '', details: prefillDetails })
   const [consent, setConsent] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
