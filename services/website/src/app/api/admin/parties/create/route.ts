@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
     })
 
     // Generate portal token
-    const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret, 24 * 30) // 30 days
+    const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret) // default 30-day expiry
     await supabase.from('portal_tokens').insert({
       booking_id: booking.id,
       token_hash: hash,

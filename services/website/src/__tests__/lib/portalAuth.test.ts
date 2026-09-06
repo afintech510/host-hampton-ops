@@ -26,6 +26,13 @@ describe('generatePortalToken', () => {
     expect(a.hash).not.toBe(b.hash)
   })
 
+  it('defaults to a 30-day expiry', () => {
+    const result = generatePortalToken(BOOKING_REF, SECRET)
+    const days = (result.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)
+    expect(days).toBeGreaterThan(29.9)
+    expect(days).toBeLessThanOrEqual(30)
+  })
+
   it('respects custom expiry', () => {
     const result = generatePortalToken(BOOKING_REF, SECRET, 1) // 1 hour
     const diff = result.expiresAt.getTime() - Date.now()

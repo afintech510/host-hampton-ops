@@ -2,7 +2,11 @@ import crypto from 'crypto'
 
 const COOKIE_NAME = 'hh_portal'
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 // 30 days in seconds
-const TOKEN_EXPIRY_HOURS = 72
+// Magic-link lifetime. Matches COOKIE_MAX_AGE so a customer who clicks their
+// planner link on day 29 still gets in, and the session it hands out lasts as
+// long as the link itself. Every email/SMS that contains a planner link mints
+// a fresh token, so this is a floor on "how long is an old email still good".
+const TOKEN_EXPIRY_HOURS = 30 * 24 // 30 days
 
 export function generatePortalToken(
   bookingRef: string,
@@ -24,7 +28,13 @@ export function validatePortalToken(
 ): boolean {
   const token = `${bookingRef}:${rawToken}`
   const computed = crypto.createHmac('sha256', secret).update(token).digest('hex')
-  return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(storedHash))
+  try {
+    return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(storedHash))
+  } catch {
+    // timingSafeEqual throws on a length mismatch (malformed/legacy hash row) —
+    // treat that as "not this token" rather than a 500 on the auth route.
+    return false
+  }
 }
 
 export function buildPortalUrl(bookingRef: string, rawToken: string, redirect?: string): string {
