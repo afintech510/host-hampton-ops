@@ -5,7 +5,7 @@ import { locationsByRegion } from '@/lib/locations'
 import {
   PartyPopper, Gem, DoorOpen, Baby, Church, Heart, Zap, Calendar,
   BookOpen, Phone, FileText, Shield, RotateCcw, MapPin, Truck, HardHat, Calculator,
-  ShoppingBag, Palette, ClipboardList,
+  ShoppingBag, Palette, ClipboardList, Gift, HelpCircle,
 } from 'lucide-react'
 
 export const metadata: Metadata = {
@@ -33,11 +33,11 @@ const sections: { title: string; links: LinkItem[] }[] = [
       { href: '/glow-party', label: 'Kids Glow Party', description: 'Neon blacklight birthday party experience', icon: <Zap className={iconClass} /> },
       { href: '/first-birthday-parties', label: 'First Birthday Parties', description: 'Special milestone celebration packages', icon: <Baby className={iconClass} /> },
       { href: '/communion-party', label: 'Communion Party', description: 'First communion celebration packages', icon: <Church className={iconClass} /> },
-      { href: '/party-room-rental', label: 'Party Room Rental', description: 'Private studio space for your event', icon: <DoorOpen className={iconClass} /> },
-      { href: '/party-add-ons', label: 'Party Add-Ons', description: 'Extra touches to enhance any party', icon: <Heart className={iconClass} /> },
+      { href: '/party-room-rental', label: 'Party Room Rental', description: 'Private studio space for your event — 3-hour and full-day blocks', icon: <DoorOpen className={iconClass} /> },
+      { href: '/studio-rental', label: 'Hourly Studio Rental', description: 'Studio by the hour for photo shoots, meetings, workshops and classes', icon: <DoorOpen className={iconClass} /> },
       { href: '/permanent-jewelry', label: 'Permanent Jewelry', description: 'Custom-welded bracelets, anklets, and necklaces', icon: <Gem className={iconClass} /> },
-      { href: '/kids-party-menu', label: 'Party Quote Builder', description: 'Build a custom party quote with real-time pricing', icon: <Calculator className={iconClass} /> },
       { href: '/fundraiser', label: 'Fundraisers', description: 'Host a fundraiser event at our venue', icon: <Heart className={iconClass} /> },
+      { href: '/gift-cards', label: 'Gift Cards', description: 'Give a Host Hampton gift card for any party or service', icon: <Gift className={iconClass} /> },
       { href: '/mobile-party', label: 'Mobile Party', description: 'We bring the party to your location', icon: <Truck className={iconClass} /> },
       { href: '/mobile-craft-party', label: 'Mobile Craft Parties', description: 'Kids arts & crafts parties at your home or our studio — all of Long Island', icon: <Palette className={iconClass} /> },
       { href: '/arts-and-crafts-party', label: 'Arts & Crafts Party', description: 'Hands-on craft stations — canvas painting, sand art, bracelets & more', icon: <Palette className={iconClass} /> },
@@ -55,6 +55,7 @@ const sections: { title: string; links: LinkItem[] }[] = [
       { href: '/custom-accessories', label: 'Custom Accessories', description: 'Personalized canvas bags and trucker hats for parties and groups', icon: <Palette className={iconClass} /> },
       { href: '/canvas-bags', label: 'Canvas Bags — Iron-On Patches', description: 'Classic tote bags and makeup bags customized with iron-on patch designs', icon: <ShoppingBag className={iconClass} /> },
       { href: '/kids-party-menu', label: 'Kids Party Menu & Quote Builder', description: 'Full menu of themes, activities, food, and decor — build your custom quote', icon: <ClipboardList className={iconClass} /> },
+      { href: '/party-quote', label: "Children's Party Quote Builder", description: 'Build and price a children’s party quote', icon: <Calculator className={iconClass} /> },
     ],
   },
   {
@@ -62,12 +63,14 @@ const sections: { title: string; links: LinkItem[] }[] = [
     links: [
       { href: '/book', label: 'Reserve Your Date', description: 'Book any service on our calendar', icon: <Calendar className={iconClass} /> },
       { href: '/events', label: 'Events & Workshops', description: 'Upcoming classes, markets, and community events', icon: <BookOpen className={iconClass} /> },
-      { href: '/cm-cheer', label: 'CM Cheer Events', description: 'Center Moriches cheer at Host Hampton', icon: <PartyPopper className={iconClass} /> },
+      { href: '/party-planner', label: 'Party Planner', description: 'Plan your party step by step', icon: <ClipboardList className={iconClass} /> },
+      { href: '/party-builder', label: 'Party Builder', description: 'Build your party plan and see pricing as you go', icon: <Calculator className={iconClass} /> },
     ],
   },
   {
     title: 'Information',
     links: [
+      { href: '/faq', label: 'FAQ', description: 'Answers on booking, deposits, travel, ages and what’s included', icon: <HelpCircle className={iconClass} /> },
       { href: '/contact-us', label: 'Contact Us', description: 'Get in touch — we respond within 24 hours', icon: <Phone className={iconClass} /> },
 
     ],
