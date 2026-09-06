@@ -410,8 +410,8 @@ export const CRAFT_PARTIES: CraftParty[] = [
         body: 'Classic canvas painting is the calmest option and works from about age 4 up: everyone paints the same guided subject at their own pace, and it suits mixed-age groups and smaller spaces. Splatter painting is the loud, joyful one — kids fling and drip paint inside a contained setup, which is a hit with 7-to-12s and best outdoors or in a garage. Glow paint runs under blacklight with neon colors and is the one older kids and tweens ask for; it also doubles neatly with our glow party setup. Not sure? Tell us the ages and the space and we will recommend the mix.',
       },
       {
-        heading: 'Paint parties at home on the East End — no travel surcharge',
-        body: 'Most mobile paint companies on Long Island are based west of us and treat the East End as a surcharge zone — it is common to see an extra fee for anything east of Riverhead. We are based in Speonk, so the Hamptons and the forks are our home turf, not an add-on: travel is included within about 20 miles of the studio, and we go well beyond that for a modest fee. If you are in Westhampton, Southampton, Bridgehampton, Sag Harbor or East Hampton, a paint party at your house is a short drive for us.',
+        heading: 'The Hamptons are our home turf, not a surcharge zone',
+        body: 'Most mobile paint and craft companies on Long Island are based well west of here and treat the East End as a surcharge zone — it is common to see a flat extra fee for anything east of Riverhead, or for anywhere outside Nassau County. We are based in Speonk, so it works the other way around: travel is free within 20 miles of the studio, which covers Westhampton, Quogue, Hampton Bays, Southampton and Riverhead outright, and past that a modest mileage charge simply covers the drive. We have run parties and events from Manhattan to Montauk. We also never add a mandatory gratuity — some mobile party companies apply 20% on top of the price you were quoted. What we quote is what you pay.',
       },
       {
         heading: 'At your house or at our studio',
@@ -422,7 +422,7 @@ export const CRAFT_PARTIES: CraftParty[] = [
       { q: 'How much is a kids paint party?', a: 'Mobile paint parties are custom-quoted based on your group size, which paint style you pick, and your location — tell us those three things and we will send a quote, usually within 24 hours. Studio party packages start at $750.' },
       { q: 'Does the paint wash out of clothes?', a: 'We use washable, kid-safe paints and provide smocks and drop cloths, but we still recommend clothes you would not mind marking — especially for splatter painting. Glow paint is water-based and washes off skin easily.' },
       { q: 'What if we do not have space indoors?', a: 'A patio, deck, garage or backyard works great, and splatter painting is actually better outdoors. We always plan a rain backup with you ahead of time.' },
-      { q: 'Do you travel to the Hamptons and the East End?', a: 'Yes — we are based in Speonk, so the East End is our home area with no surcharge. We also travel across central Suffolk into Nassau County, and into Manhattan for larger events.' },
+      { q: 'Do you travel to the Hamptons and the East End?', a: 'Yes — we are based in Speonk, so the East End is our home area. Travel is free within 20 miles of the studio, and a modest mileage charge covers anything further. We travel across central Suffolk into Nassau County, and have run parties and events into Manhattan. We never add a mandatory gratuity.' },
     ],
     relatedSlugs: ['balloon-dog-painting-party', 'arts-and-crafts-party', 'glow-party'],
     venue: 'both',

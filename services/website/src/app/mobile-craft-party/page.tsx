@@ -3,6 +3,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { MapPin, Home, Store, Truck, Palette, ChevronDown } from 'lucide-react'
 import MobilePartyForm from '@/components/MobilePartyForm'
+import MobilePriceBlock from '@/components/MobilePriceBlock'
 import { CRAFT_STATIONS } from '@/lib/craftStations'
 import { locationsByRegion, LOCATIONS } from '@/lib/locations'
 import { CRAFT_PARTIES } from '@/lib/craftParties'
@@ -53,7 +54,7 @@ const faqs = [
   },
   {
     q: 'How far will you travel for a mobile craft party?',
-    a: 'We serve all of Long Island — from Montauk and the East End through central Suffolk into Nassau County — and we’ll come into Manhattan and the boroughs for larger events. Parties within about 20 miles of our Speonk studio have no travel fee; beyond that a modest travel fee covers the drive.',
+    a: 'We serve all of Long Island — from Montauk and the East End through central Suffolk into Nassau County — and we’ve brought parties and events into Manhattan and the boroughs too. Travel is free within 20 miles of our Speonk studio; beyond that a modest mileage charge covers the drive. We never add a mandatory gratuity — what we quote is what you pay.',
   },
   {
     q: 'What craft stations can we choose?',
@@ -252,6 +253,12 @@ export default function MobileCraftPartyHub() {
           </div>
         </div>
       </section>
+
+      {/* ── Pricing ── */}
+      <MobilePriceBlock
+        heading="Mobile Craft Party Pricing"
+        subheading="We bring everything to your door. What we quote is what you pay — no mandatory gratuity, ever."
+      />
 
       {/* ── Contact Form ── */}
       <section id="book" className="bg-gradient-to-r from-hampton-pink/20 to-hampton-ivory py-20">

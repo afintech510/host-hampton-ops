@@ -30,18 +30,31 @@ export interface Location {
   context: string
 }
 
-/** Human-readable travel note per tier. Mirrors the mobile-party FAQ policy. */
+/**
+ * Human-readable travel note per tier.
+ *
+ * OWNER RULING (2026-09-05): travel is **free within 20 miles** of the Speonk
+ * studio; beyond that a modest mileage charge applies (see
+ * `app/api/party-builder/mileage/route.ts`). There is **never a mandatory
+ * gratuity**, and parties/events have run from Manhattan to Montauk.
+ *
+ * Keep these ACCURATE — an earlier draft claimed "no travel fee anywhere", which
+ * is not true past 20 miles and would have been a false pricing claim on 26 live
+ * pages. The honest edge is still strong: rivals charge a flat surcharge for
+ * anything east of Riverhead or outside Nassau, which penalises exactly the
+ * Hamptons customers who sit inside our free radius.
+ */
 export const TRAVEL_NOTES: Record<TravelTier, string> = {
   included:
-    'You’re inside our core service area — travel is included, with no extra trip fee.',
+    'You’re inside our 20-mile radius, so travel is completely free — and we never add a mandatory gratuity.',
   eastEnd:
-    'You’re on the East End, close to our Speonk studio — a small travel fee may apply for the far end of the Forks.',
+    'Travel is free within 20 miles of our Speonk studio; a bit past that, a modest mileage charge covers the drive. No mandatory gratuity, ever.',
   western:
-    'We regularly head west across Suffolk for parties — a modest travel fee covers the drive.',
+    'We head west across Suffolk all season. Travel is free within 20 miles of the studio, with a modest mileage charge beyond it — and never a mandatory gratuity.',
   nassau:
-    'We come out to Nassau County for parties booked ahead — a travel fee applies for the longer haul.',
+    'We come out to Nassau County regularly. Travel is free within 20 miles of our Speonk studio, with a modest mileage charge for the longer run — and no mandatory gratuity.',
   nyc:
-    'We’ll bring the party into the five boroughs for larger events — ask us for a custom travel quote.',
+    'We’ve brought parties and events into the city. Ask us for a custom quote — whatever we quote is what you pay, with no mandatory gratuity added.',
 }
 
 export const LOCATIONS: Location[] = [

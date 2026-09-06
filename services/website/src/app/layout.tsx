@@ -81,12 +81,18 @@ const localBusinessSchema = {
   ],
   priceRange: '$$',
   // Half the business is mobile (a service-area business), which EventVenue has
-  // no semantics for — declare the travel radius explicitly.
-  areaServed: {
-    '@type': 'GeoCircle',
-    geoMidpoint: { '@type': 'GeoCoordinates', latitude: 40.8432, longitude: -72.6823 },
-    geoRadius: '32000', // ~20 miles, the no-travel-fee radius; we travel further on request
-  },
+  // no semantics for — so declare the served areas explicitly.
+  //
+  // This was a 20-mile GeoCircle, which badly understated reality: the owner
+  // confirmed (2026-09-05) there is NO travel fee anywhere and that parties and
+  // events have run from Manhattan to Montauk. A named-area list is both accurate
+  // and better for local SEO than a radius that stops at Riverhead.
+  areaServed: [
+    { '@type': 'AdministrativeArea', name: 'Suffolk County, NY' },
+    { '@type': 'AdministrativeArea', name: 'Nassau County, NY' },
+    { '@type': 'AdministrativeArea', name: 'Long Island, NY' },
+    { '@type': 'City', name: 'New York City, NY' },
+  ],
   aggregateRating: {
     '@type': 'AggregateRating',
     ratingValue: RATING.ratingValue,

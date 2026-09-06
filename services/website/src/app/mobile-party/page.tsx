@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Image from 'next/image'
 import { MapPin, PartyPopper, Sparkles, Heart, Truck, ChevronDown } from 'lucide-react'
 import MobilePartyForm from '@/components/MobilePartyForm'
+import MobilePriceBlock from '@/components/MobilePriceBlock'
 
 export const metadata: Metadata = {
   title: 'Mobile Party — We Bring the Party to You',
@@ -84,7 +85,7 @@ const perfectFor = [
 const faqs = [
   {
     q: 'How far will you travel?',
-    a: 'We travel throughout the Hamptons, Long Island, and surrounding areas. Parties within 20 miles of Speonk are included. Beyond that, a small travel fee may apply — just ask!',
+    a: 'We travel throughout the Hamptons and all of Long Island — we have run parties and events everywhere from Manhattan to Montauk. Travel is free within 20 miles of our Speonk studio; beyond that a modest mileage charge covers the drive. We never add a mandatory gratuity — what we quote is what you pay.',
   },
   {
     q: 'What space do I need at my location?',
@@ -290,6 +291,9 @@ export default function MobilePartyPage() {
           ))}
         </div>
       </section>
+
+      {/* ── Pricing ── */}
+      <MobilePriceBlock />
 
       {/* ── Contact Form ── */}
       <section id="book" className="bg-gradient-to-r from-hampton-pink/20 to-hampton-ivory py-20">

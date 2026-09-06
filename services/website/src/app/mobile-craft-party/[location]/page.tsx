@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { MapPin, Home, Store, Truck, Palette, ChevronDown, ArrowLeft } from 'lucide-react'
 import MobilePartyForm from '@/components/MobilePartyForm'
+import MobilePriceBlock from '@/components/MobilePriceBlock'
 import { CRAFT_STATIONS } from '@/lib/craftStations'
 import { LOCATIONS, getLocation, TRAVEL_NOTES, type Location } from '@/lib/locations'
 
@@ -206,6 +207,12 @@ export default function LocationPage({ params }: { params: { location: string } 
           </Link>
         </div>
       </section>
+
+      {/* ── Pricing ── */}
+      <MobilePriceBlock
+        heading={`Craft Party Pricing in ${loc.name}`}
+        subheading="We bring everything to your door. What we quote is what you pay — no mandatory gratuity, ever."
+      />
 
       {/* ── Contact Form ── */}
       <section id="book" className="bg-gradient-to-r from-hampton-pink/20 to-hampton-ivory py-20">

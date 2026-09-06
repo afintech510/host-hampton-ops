@@ -35,7 +35,28 @@ Long Island competitor. It was wrongly listed in the first competitor sweep. Dis
 
 ---
 
-## 2. The verdict on $750 for 10
+## 1b. DECIDED AND SHIPPED — 2026-09-05
+
+The owner set the tiers after reading the benchmark below. **Live now:**
+
+| Tier | Price | Duration | Kids | $/child |
+|---|---|---|---|---|
+| Entry | **$500** | 60 min | 8 (+birthday free) | $62.50 |
+| Signature | **$750** | 90 min | **12** (+birthday free) | $62.50 |
+
+Additional children **$35**. Travel free within 20 miles, modest mileage beyond. **No mandatory gratuity.**
+
+**This lands better than the $750-for-10 originally floated.** At 12 kids the Signature tier is
+$62.50/child instead of $75, which puts it directly against Emily's 12-child packages rather than
+above them — and against their **$849** trailer party, $750 for 90 minutes and multiple stations is
+straightforwardly the better buy. Against their **$499** in-home (60 min, one craft), our **$500 /
+60 min Entry** is now a true like-for-like match rather than a 50% premium, so the cheap comparison
+no longer loses on the number alone. The tiering did the work: the entry price competes, the
+signature price captures value.
+
+The section below is the original benchmark that informed this, kept for reference.
+
+## 2. The verdict on $750 for 10 *(original analysis — superseded by 1b)*
 
 **$750 is defensible — but it lands at the very top of the market, and it is not a "starting at"
 number.** Two things are true at once:

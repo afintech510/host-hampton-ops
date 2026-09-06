@@ -6,6 +6,12 @@ const HH_LON = -72.6925
 const ROAD_FACTOR = 1.3 // crude convert from great-circle to road distance
 const PER_MILE_CENTS = 500 // $5/mile, one-way — server-side, not disclosed to UI
 
+// Owner ruling 2026-09-05: the first 20 miles from the studio are FREE; only
+// miles beyond that are billable. Previously this charged from mile zero, which
+// contradicted the published "no travel fee within 20 miles of Speonk" promise
+// and quietly added ~$150 to an East Hampton quote and ~$425 to Manhattan.
+const FREE_RADIUS_MILES = 20
+
 export async function POST(req: NextRequest) {
   try {
     const { address } = (await req.json()) as { address?: string }
@@ -37,10 +43,11 @@ export async function POST(req: NextRequest) {
     const straightMiles = R * c
     const drivingMilesEstimate = straightMiles * ROAD_FACTOR
 
-    // Mobile Party Fee component: one-way miles × $5. No free zone, no cap,
-    // no rounding. Miles + rate stay server-side — UI only sees the dollar
-    // amount.
-    const feeCents = Math.round(drivingMilesEstimate * PER_MILE_CENTS)
+    // Mobile Party Fee component: only the miles BEYOND the free radius are
+    // billable, at $5/mile one-way. Inside the radius this is $0. No cap.
+    // Miles + rate stay server-side — the UI only ever sees the dollar amount.
+    const billableMiles = Math.max(0, drivingMilesEstimate - FREE_RADIUS_MILES)
+    const feeCents = Math.round(billableMiles * PER_MILE_CENTS)
 
     return NextResponse.json({
       feeCents,

@@ -78,8 +78,27 @@ These appear in older notes and drafts and contradict the live page. They are **
 From `/party-packages` and the glow party page: themed studio parties run **$750 (up to 8)** to
 **$1,950 (up to 20)**; e.g. glow party $950 for up to 10. Reserve with a 25% deposit.
 
-## 6. Mobile parties
+## 6. Mobile parties — PUBLISHED 2026-09-05 (B-1 closed)
 
-Custom-quoted (24-hour turnaround) — **no published anchor price yet**. See
-`mobile-pricing-analysis.md` for the competitor benchmark and the recommendation. This is item
-**B-1** and is the highest-conversion single change still outstanding.
+Owner-confirmed tiers, now live on `/mobile-party`, `/mobile-craft-party`, all craft landing pages
+and all 26 town pages. Source of truth: `services/website/src/lib/mobilePricing.ts`.
+
+| Tier | Price | Duration | Kids included |
+|---|---|---|---|
+| **Entry** | **$500** | 60 min | up to **8** |
+| **Signature** *(Most Booked)* | **$750** | 90 min | up to **12** |
+
+- **Birthday child is always free**, on top of the included count
+- **Additional children: $35 each**
+- **Travel: free within 20 miles** of the Speonk studio; a modest mileage charge beyond it
+  ($5/mile one-way on billable miles only — `app/api/party-builder/mileage/route.ts`)
+- **No mandatory gratuity** — what we quote is what the customer pays
+
+Both tiers work out to **$62.50/child** — the Signature tier buys more time and more stations, not
+a higher per-head rate. Keep that true if the numbers move.
+
+> **Travel-fee history worth remembering.** The quote builder used to charge $5/mile **from mile
+> zero**, invisibly bundled into the package price — roughly +$150 on an East Hampton quote and
+> +$425 on Manhattan — while the site promised "within 20 miles included." The free radius now
+> exists in code, so the promise and the quote finally agree. Do not publish "no travel fee
+> anywhere": it is not true past 20 miles.

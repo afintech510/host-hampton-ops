@@ -2,6 +2,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { MapPin, Home, Store, Truck, Phone, ChevronDown, ArrowRight } from 'lucide-react'
 import MobilePartyForm from '@/components/MobilePartyForm'
+import MobilePriceBlock from '@/components/MobilePriceBlock'
 import { LOCATIONS } from '@/lib/locations'
 import { type CraftParty, craftDisplayName } from '@/lib/craftParties'
 
@@ -232,6 +233,14 @@ export default function CraftPartyLanding({ data }: { data: CraftParty }) {
             ))}
           </div>
         </section>
+      )}
+
+      {/* ── Pricing (mobile-capable pages only) ── */}
+      {mobile && (
+        <MobilePriceBlock
+          heading={`${data.name} Pricing`}
+          subheading="Brought to your door. What we quote is what you pay — no mandatory gratuity, ever."
+        />
       )}
 
       {/* ── Contact Form ── */}

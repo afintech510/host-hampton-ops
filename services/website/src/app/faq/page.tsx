@@ -71,7 +71,7 @@ const faqs: FaqItem[] = [
   {
     category: 'The Studio & Mobile Parties',
     q: 'How far will you travel for a mobile party?',
-    a: 'We travel throughout the Hamptons, Long Island, and surrounding areas. Parties within 20 miles of Speonk are included; beyond that, a small travel fee may apply — just ask.',
+    a: 'We travel throughout the Hamptons and all of Long Island — we have run parties and events everywhere from Manhattan to Montauk. Travel is free within 20 miles of our Speonk studio; beyond that a modest mileage charge covers the drive. We never add a mandatory gratuity — what we quote is what you pay.',
   },
   {
     category: 'The Studio & Mobile Parties',
