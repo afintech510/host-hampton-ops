@@ -15,9 +15,46 @@ const types = [
   { name: 'Ring Stacks', price: 'Starting at $45', img: '/images/jewelry-gold.png', desc: 'Stack them up. Mix metals, mix styles.' },
 ]
 
+const jewelryFaqs = [
+  {
+    q: 'What is permanent jewelry?',
+    a: 'A chain sized to your wrist, ankle, neck or finger and micro-welded closed — no clasp. It stays on through showering, swimming and sleeping. It is not truly permanent: it can be removed any time with a small snip, and we can re-weld it later.',
+  },
+  {
+    q: 'Can you do permanent jewelry at my house or party?',
+    a: 'Yes. We bring the full welding setup to your home or venue anywhere on Long Island — the Hamptons and both forks, central Suffolk, and Nassau County. It is a favorite add-on for bridal and baby showers, bachelorettes, girls’ nights and milestone birthdays. You can also book our Speonk studio for the group instead.',
+  },
+  {
+    q: 'How much does a permanent jewelry party cost?',
+    a: 'Pieces start at $65 for bracelets, $70 anklets, $85 necklaces and $45 ring stacks, and each guest pays for their own piece. Mommy & Me bracelet pairs are $100. For groups at your location we quote based on group size and travel — ask and we will send it, usually within 24 hours.',
+  },
+  {
+    q: 'How long does each piece take?',
+    a: 'About 5–10 minutes per person once they have chosen a chain, so a group moves quickly. We will help you plan timing based on your headcount.',
+  },
+  {
+    q: 'Is the welding safe?',
+    a: 'Yes. It is a quick, low-heat micro-weld with a protective barrier between the chain and your skin — most people describe it as a tiny pinch of warmth, if they feel anything at all.',
+  },
+]
+
+const jewelryFaqSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: jewelryFaqs.map(f => ({
+    '@type': 'Question',
+    name: f.q,
+    acceptedAnswer: { '@type': 'Answer', text: f.a },
+  })),
+}
+
 export default function PermanentJewelry() {
   return (
     <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jewelryFaqSchema).replace(/</g, '\\u003c') }}
+      />
       <section className="py-20 text-center px-4">
         <h1 className="font-serif text-4xl md:text-5xl text-hampton-navy mb-4">Permanent Jewelry</h1>
         <p className="text-hampton-navy text-lg max-w-xl mx-auto mb-8">
@@ -63,13 +100,60 @@ export default function PermanentJewelry() {
         />
       </section>
 
-      <section className="bg-hampton-pink/10 py-14 text-center px-4">
-        <h2 className="section-heading mb-3">Perfect for Groups</h2>
-        <p className="text-hampton-navy max-w-lg mx-auto mb-7 text-base">
-          Mommy & Me bracelets ($100), bachelorette groups, birthday parties — permanent jewelry is the most memorable party favor you'll ever give.
-        </p>
-        <Link href="/party-add-ons" className="btn-secondary mr-4">Add to a Party Package</Link>
-        <Link href="/book?event_type=jewelry" className="btn-primary">Book a Standalone Session</Link>
+      {/* ── Parties: studio or at your home (B-4) ── */}
+      <section className="bg-hampton-pink/10 py-16 px-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-10">
+            <p className="section-subheading">Groups &amp; Parties</p>
+            <h2 className="section-heading mb-3">Permanent Jewelry Parties — at Our Studio or Your Home</h2>
+            <p className="text-hampton-navy/75 max-w-2xl mx-auto text-base leading-relaxed">
+              Mommy &amp; Me bracelets ($100), bachelorette and bridal groups, milestone birthdays, girls&apos; nights
+              and team celebrations. Everyone picks their chain, we size and weld it on the spot, and it goes home
+              on their wrist — the most memorable party favor you&apos;ll ever give.
+            </p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-6 mb-10">
+            <div className="bg-white border border-hampton-pink/20 rounded-2xl p-7">
+              <h3 className="font-semibold text-hampton-navy text-lg mb-2">At Our Speonk Studio</h3>
+              <p className="text-hampton-navy/70 text-sm leading-relaxed">
+                Book the studio for your group — a private, styled space on the East End with the welding
+                station already set up. Pairs naturally with a bridal or baby shower.
+              </p>
+            </div>
+            <div className="bg-white border border-hampton-pink/20 rounded-2xl p-7">
+              <h3 className="font-semibold text-hampton-navy text-lg mb-2">At Your Home or Venue</h3>
+              <p className="text-hampton-navy/70 text-sm leading-relaxed">
+                We bring the full welding setup to you — anywhere on Long Island, from the Hamptons and the
+                forks through central Suffolk into Nassau. Ideal for showers, bachelorettes and house parties.
+              </p>
+            </div>
+          </div>
+
+          <div className="text-center">
+            <Link href="/party-add-ons" className="btn-secondary mr-4">Add to a Party Package</Link>
+            <Link href="/book?event_type=jewelry" className="btn-primary">Book a Session</Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section className="py-16 max-w-3xl mx-auto px-4 sm:px-6">
+        <div className="text-center mb-10">
+          <p className="section-subheading">Good to Know</p>
+          <h2 className="section-heading">Permanent Jewelry FAQ</h2>
+        </div>
+        <div className="space-y-3">
+          {jewelryFaqs.map(faq => (
+            <details key={faq.q} className="group rounded-xl border border-hampton-pink/20 bg-white open:border-[#c4975a]/40 transition-all">
+              <summary className="flex items-center justify-between gap-4 p-5 cursor-pointer list-none font-semibold text-hampton-navy text-sm">
+                {faq.q}
+                <span className="shrink-0 text-hampton-navy/40 group-open:rotate-180 transition-transform">▾</span>
+              </summary>
+              <p className="px-5 pb-5 text-hampton-navy/70 text-sm leading-relaxed">{faq.a}</p>
+            </details>
+          ))}
+        </div>
       </section>
     </div>
   )

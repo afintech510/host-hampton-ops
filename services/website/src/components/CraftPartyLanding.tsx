@@ -220,6 +220,20 @@ export default function CraftPartyLanding({ data }: { data: CraftParty }) {
         </section>
       )}
 
+      {/* ── Longform detail (only on pages that have earned depth) ── */}
+      {data.longform && data.longform.length > 0 && (
+        <section className="py-16 max-w-3xl mx-auto px-4 sm:px-6">
+          <div className="space-y-8">
+            {data.longform.map(s => (
+              <div key={s.heading}>
+                <h2 className="font-serif text-2xl text-hampton-navy mb-3">{s.heading}</h2>
+                <p className="text-hampton-navy/75 text-base leading-relaxed">{s.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ── Contact Form ── */}
       <section id="book" className="bg-gradient-to-r from-hampton-pink/20 to-hampton-ivory py-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">

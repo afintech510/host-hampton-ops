@@ -43,6 +43,8 @@ const sections: { title: string; links: LinkItem[] }[] = [
       { href: '/arts-and-crafts-party', label: 'Arts & Crafts Party', description: 'Hands-on craft stations — canvas painting, sand art, bracelets & more', icon: <Palette className={iconClass} /> },
       { href: '/slime-party', label: 'Slime Party', description: 'Make-your-own slime with glitter, charms & take-home containers', icon: <PartyPopper className={iconClass} /> },
       { href: '/balloon-dog-painting-party', label: 'Balloon Dog Painting Party', description: 'Our signature drip-paint fluid-art balloon dogs', icon: <Palette className={iconClass} /> },
+      { href: '/paint-party', label: 'Kids Paint Party', description: 'Canvas, splatter, and glow paint parties — studio or at your house', icon: <Palette className={iconClass} /> },
+      { href: '/halloween-craft-party', label: 'Halloween Craft Party', description: 'Pumpkin decorating, spooky glow slime, monster crafts & trick-or-treat totes', icon: <PartyPopper className={iconClass} /> },
       { href: '/spa-party', label: 'Kids Spa Party', description: 'Mini manicures, face masks, robes & glam', icon: <Heart className={iconClass} /> },
       { href: '/mermaid-party', label: 'Mermaid Party', description: 'Under-the-sea crafts — seashell decorating, sand art & shimmer', icon: <PartyPopper className={iconClass} /> },
       { href: '/squishy-party', label: 'Squishy Party', description: 'DIY squishies & satisfying sensory crafts', icon: <PartyPopper className={iconClass} /> },
@@ -100,7 +102,7 @@ export default async function SitemapPage() {
       <section className="py-16 text-center px-4">
         <h1 className="font-serif text-4xl text-hampton-navy mb-3">Sitemap</h1>
         <p className="text-hampton-navy/70 text-base max-w-lg mx-auto">
-          A complete directory of every page on our site. Find what you're looking for below.
+          A complete directory of every page on our site. Find what you&apos;re looking for below.
         </p>
       </section>
 

@@ -47,6 +47,14 @@ export interface CraftParty {
   highlightsTitle: string
   highlights: Highlight[]
   faqs: CraftFaq[]
+  /**
+   * Optional longform sections, rendered below the craft grid.
+   *
+   * This is how a page earns depth honestly — real detail about the activity,
+   * the age split, the local angle. Use it on pages competing for a contested
+   * cluster (slime, paint) rather than padding every page with boilerplate.
+   */
+  longform?: { heading: string; body: string }[]
   /** Slugs of related craft pages to cross-link. May include 'glow-party'. */
   relatedSlugs: string[]
   venue: Venue
@@ -94,10 +102,13 @@ export const CRAFT_PARTIES: CraftParty[] = [
     name: 'Slime Party',
     eyebrow: 'Kids Craft Party · Long Island',
     h1Accent: 'Slime',
-    metaTitle: 'Kids Slime Party — Long Island Mobile & Studio | Host Hampton',
+    // Deliberately targets Hamptons / East End / Suffolk / "studio" rather than
+    // "slime party long island" — a competitor owns that head term with 60+ town
+    // pages at ~2,500 words each. We win where they have nothing.
+    metaTitle: 'Kids Slime Party — Hamptons, East End & Suffolk | Host Hampton',
     metaDescription:
-      'A gooey, glittery slime party for kids. Every guest mixes, stretches, and customizes their own slime to take home. At your house across Long Island or at our Speonk studio.',
-    keywords: ['slime party', 'kids slime party near me', 'slime birthday party Long Island', 'mobile slime party', 'DIY slime party kids'],
+      'A gooey, glittery slime party for kids in the Hamptons and across Suffolk. Every guest mixes and customizes their own slime to take home. At your house on the East End, or at our Speonk studio.',
+    keywords: ['slime party', 'kids slime party near me', 'slime party Hamptons', 'slime party East End', 'slime party Suffolk County', 'mobile slime party', 'slime party studio', 'glow slime party'],
     intro:
       'The messiest fun without the mess at home. Every guest mixes, stretches, and customizes their own slime — glitter, charms, colors, scents — and takes it home in its own container. We bring everything and handle the cleanup.',
     audience: 'Best for ages 5–13',
@@ -113,6 +124,20 @@ export const CRAFT_PARTIES: CraftParty[] = [
       { q: 'Is the slime safe and non-toxic?', a: 'Yes — we use kid-safe, non-toxic materials, and our hosts supervise every step. We can accommodate common sensitivities; just let us know when you book.' },
       { q: 'Does the slime stain or make a mess?', a: 'We come prepared with surface covers and aprons, and our activated slime is designed not to stain. We pack up and clean everything at the end.' },
       { q: 'Can we do slime at home?', a: 'Absolutely. We bring the full slime station to your home anywhere on Long Island, or you can host at our Speonk studio.' },
+    ],
+    longform: [
+      {
+        heading: 'What the kids actually make',
+        body: 'Each guest builds their own batch from scratch rather than being handed a pre-made tub. They pick a base — clear, butter, cloud or glitter — activate it themselves under a host’s guidance, then load it with mix-ins: glitter, foam beads, charms, colors and scents. The making is the activity, so it fills real time rather than being over in five minutes, and it quietly sneaks in some chemistry. Everything leaves in a sealed, labeled container.',
+      },
+      {
+        heading: 'Glow slime and tween-friendly versions',
+        body: 'For older kids and tweens, glow-in-the-dark slime under blacklight is the version they ask for — it pairs naturally with our glow party setup if you want to run both. We can also lean the whole station more grown-up with a scent-blending angle and a calmer palette, which works well for the 10-to-13 group who feel they have aged out of a "little kid" craft.',
+      },
+      {
+        heading: 'Slime parties on the East End — at home or at our studio',
+        body: 'We are based in Speonk, so the Hamptons, the South Fork and the North Fork are our home area rather than a long haul. For an at-home slime party we bring surface covers and aprons, run the whole station, and take the mess with us when we go — which is the entire point of not doing it at your kitchen table yourself. If you would rather keep slime out of the house completely, book the same party at our private Speonk studio.',
+      },
     ],
     relatedSlugs: ['squishy-party', 'arts-and-crafts-party', 'balloon-dog-painting-party'],
     venue: 'both',
@@ -177,6 +202,20 @@ export const CRAFT_PARTIES: CraftParty[] = [
       { q: 'Are the products kid-safe?', a: 'Yes — we use gentle, kid-appropriate polishes and masks. Tell us about any allergies or sensitivities when you book and we’ll adjust.' },
       { q: 'Can we add crafts to a spa party?', a: 'Definitely — lip gloss making, perfume blending, and bracelet stations pair beautifully with a spa theme. Mix and match.' },
       { q: 'Home or studio?', a: 'Both. We bring the full spa setup to your home anywhere on Long Island, or host it at our Speonk studio.' },
+    ],
+    longform: [
+      {
+        heading: 'How a spa party actually runs',
+        body: 'We set up stations rather than a queue, so nobody stands around waiting their turn. Guests rotate through mini manicures, a gentle face-mask moment, and a glam station, with robes and calm music running throughout. Our hosts do the pampering — this is not a set-it-down-and-leave setup — which is what keeps a room of eight-year-olds feeling looked after instead of restless.',
+      },
+      {
+        heading: 'Tween glam vs. younger spa',
+        body: 'For ages roughly 5–8 we keep it sweet and simple: polish, stickers, a light mask, lots of praise. For the 9–13 group we lean into glam — nail art, lip-gloss making, perfume blending, hair tinsel and a photo moment — because that age wants to feel grown up, not babied. Tell us the age split and we will set the stations accordingly; mixed-age groups are common and we plan for them.',
+      },
+      {
+        heading: 'At your house or at our Speonk studio',
+        body: 'A spa party travels well: we bring the robes, the products, the towels and the setup to your home anywhere on Long Island, from the East End through central Suffolk into Nassau. Or host it at our private studio in Speonk, already styled for it, with setup and cleanup handled. Products are gentle and kid-appropriate — tell us about any allergies or sensitivities when you book and we will adjust.',
+      },
     ],
     relatedSlugs: ['arts-and-crafts-party', 'glow-party', 'mermaid-party'],
     venue: 'both',
@@ -342,6 +381,100 @@ export const CRAFT_PARTIES: CraftParty[] = [
     venue: 'mobile',
     ctaHeading: 'Plan Your Brand Activation',
     serviceType: 'Brand / event craft activation',
+  },
+
+  // ── Paint party (B-5) — contested cluster, competitors own it with dedicated pages ──
+  {
+    slug: 'paint-party',
+    name: 'Paint Party',
+    eyebrow: 'Kids Paint Party · Long Island',
+    h1Accent: 'Paint',
+    metaTitle: 'Kids Paint Party — Long Island Canvas, Splatter & Glow | Host Hampton',
+    metaDescription:
+      'A kids paint party on Long Island — canvas painting, splatter art, and glow paint. At your house anywhere from the Hamptons to Nassau, or at our Speonk studio. Every painting goes home.',
+    keywords: ['paint party', 'kids paint party', 'paint party Long Island', 'canvas painting party kids', 'splatter paint party', 'glow paint party near me', 'mobile paint party'],
+    intro:
+      'Every kid paints something they are proud to hang up. Choose classic canvas painting, messy splatter art, or glow-in-the-dark paint under blacklight — our hosts guide each child start to finish, and every painting goes home as the party favor.',
+    audience: 'Best for ages 4–14',
+    heroImages: ['/images/gallery/card-painting-party.webp', '/images/gallery/venue-painting-workshop.webp', '/images/gallery/venue-craft-station.webp', '/images/gallery/outdoor-party-setup.webp'],
+    highlightsTitle: 'What’s Included',
+    highlights: [
+      { emoji: '🎨', title: 'Canvas, Splatter or Glow', desc: 'Pick the style — classic canvas, splatter art, or neon glow paint under blacklight.' },
+      { emoji: '🖌️', title: 'Guided Step by Step', desc: 'A host walks every child through the painting, so nobody gets stuck or left behind.' },
+      { emoji: '🧑‍🎨', title: 'All Supplies Brought In', desc: 'Canvases, easels, brushes, smocks, drop cloths and paint — we bring the studio to you.' },
+      { emoji: '🖼️', title: 'Takes Home a Finished Piece', desc: 'Every guest leaves with their own painting. No goodie bag needed.' },
+    ],
+    longform: [
+      {
+        heading: 'Canvas, splatter, or glow — which one fits your group?',
+        body: 'Classic canvas painting is the calmest option and works from about age 4 up: everyone paints the same guided subject at their own pace, and it suits mixed-age groups and smaller spaces. Splatter painting is the loud, joyful one — kids fling and drip paint inside a contained setup, which is a hit with 7-to-12s and best outdoors or in a garage. Glow paint runs under blacklight with neon colors and is the one older kids and tweens ask for; it also doubles neatly with our glow party setup. Not sure? Tell us the ages and the space and we will recommend the mix.',
+      },
+      {
+        heading: 'Paint parties at home on the East End — no travel surcharge',
+        body: 'Most mobile paint companies on Long Island are based west of us and treat the East End as a surcharge zone — it is common to see an extra fee for anything east of Riverhead. We are based in Speonk, so the Hamptons and the forks are our home turf, not an add-on: travel is included within about 20 miles of the studio, and we go well beyond that for a modest fee. If you are in Westhampton, Southampton, Bridgehampton, Sag Harbor or East Hampton, a paint party at your house is a short drive for us.',
+      },
+      {
+        heading: 'At your house or at our studio',
+        body: 'For an at-home paint party we bring drop cloths, smocks and everything else, set up on a patio, garage, kitchen or backyard, run the painting, and pack it all out — including the mess. If you would rather keep the paint out of the house entirely, book the same party at our private Speonk studio, where setup and cleanup are already handled. Same crafts, same hosts, your call on the place.',
+      },
+    ],
+    faqs: [
+      { q: 'How much is a kids paint party?', a: 'Mobile paint parties are custom-quoted based on your group size, which paint style you pick, and your location — tell us those three things and we will send a quote, usually within 24 hours. Studio party packages start at $750.' },
+      { q: 'Does the paint wash out of clothes?', a: 'We use washable, kid-safe paints and provide smocks and drop cloths, but we still recommend clothes you would not mind marking — especially for splatter painting. Glow paint is water-based and washes off skin easily.' },
+      { q: 'What if we do not have space indoors?', a: 'A patio, deck, garage or backyard works great, and splatter painting is actually better outdoors. We always plan a rain backup with you ahead of time.' },
+      { q: 'Do you travel to the Hamptons and the East End?', a: 'Yes — we are based in Speonk, so the East End is our home area with no surcharge. We also travel across central Suffolk into Nassau County, and into Manhattan for larger events.' },
+    ],
+    relatedSlugs: ['balloon-dog-painting-party', 'arts-and-crafts-party', 'glow-party'],
+    venue: 'both',
+    ctaHeading: 'Ready to Get Painting?',
+    serviceType: 'Kids paint party',
+  },
+
+  // ── Halloween (B-6) — evergreen URL, reused every year ──
+  {
+    slug: 'halloween-craft-party',
+    name: 'Halloween Craft Party',
+    eyebrow: 'Seasonal · Long Island',
+    h1Accent: 'Halloween',
+    metaTitle: 'Halloween Craft Party for Kids — Long Island | Host Hampton',
+    metaDescription:
+      'A Halloween craft party for kids on Long Island — pumpkin decorating, spooky slime, monster crafts and trick-or-treat totes. At your house or our Speonk studio. Book October dates early.',
+    keywords: ['halloween craft party', 'halloween party for kids Long Island', 'pumpkin decorating party', 'halloween craft ideas kids party', 'spooky slime party', 'halloween party Hamptons'],
+    intro:
+      'Not-too-spooky, all-hands-on Halloween fun. Pumpkin decorating, glow-in-the-dark spooky slime, monster crafts, and decorate-your-own trick-or-treat totes — costumes absolutely encouraged. We bring it to your house or host it at our Speonk studio.',
+    audience: 'Best for ages 3–12 · October dates book early',
+    heroImages: ['/images/gallery/venue-craft-station.webp', '/images/theme-slime.webp', '/images/gallery/venue-activity-setup.webp', '/images/gallery/outdoor-party-setup.webp'],
+    highlightsTitle: 'What’s Included',
+    highlights: [
+      { emoji: '🎃', title: 'Pumpkin Decorating', desc: 'No-carve decorating with paint, gems and glitter — safe for every age, and it goes home.' },
+      { emoji: '👻', title: 'Spooky Glow Slime', desc: 'Green and purple glow-in-the-dark slime, mixed by each kid and sealed to take home.' },
+      { emoji: '🧟', title: 'Monster & Mask Crafts', desc: 'Build-your-own monsters and decorate masks to wear with the costume.' },
+      { emoji: '🍬', title: 'Trick-or-Treat Totes', desc: 'Each guest customizes a candy tote they can actually use on Halloween night.' },
+    ],
+    longform: [
+      {
+        heading: 'Spooky, but not scary',
+        body: 'Everything here is pitched friendly rather than frightening — think jack-o-lanterns and googly-eyed monsters, not gore or jump scares. That makes it work for a wide age range and for the younger siblings who inevitably end up at the table. If the birthday kid wants it genuinely creepy, we can lean the decor and colors darker for an older group; just tell us when you book.',
+      },
+      {
+        heading: 'Halloween-season timing on Long Island',
+        body: 'October weekends are the tightest booking window of our year, and they fill from late September onward. If you want a Saturday or Sunday in October, reach out early — mid-week and early-October dates stay open longest. This also works for school and class parties, scout troops, and community or library events, not just birthdays. Off-season, the same crafts run beautifully as a fall harvest party.',
+      },
+      {
+        heading: 'At your house or at our studio',
+        body: 'We bring every supply to your home anywhere on Long Island — from the Hamptons and the forks through central Suffolk into Nassau — set up, run each station, and clean up the glitter and pumpkin guts before we go. Or host at our private Speonk studio and leave the mess with us entirely.',
+      },
+    ],
+    faqs: [
+      { q: 'Is it scary for younger kids?', a: 'No — we keep it friendly rather than frightening. Jack-o-lanterns, googly-eyed monsters and glow slime, with no gore or jump scares. We can make it creepier for an older group if you ask.' },
+      { q: 'Do you carve the pumpkins?', a: 'No carving — no knives around kids. We do no-carve decorating with paint, gems, glitter and stick-on features, which looks great and is safe for every age.' },
+      { q: 'When should we book an October date?', a: 'As early as you can. October weekends are our tightest window and start filling in late September. Mid-week and early-October dates stay available longest.' },
+      { q: 'Can you do this for a school or scout group?', a: 'Yes — the same setup runs well for class parties, scout troops, libraries and community events. Tell us the group size and space and we will scale the stations.' },
+    ],
+    relatedSlugs: ['slime-party', 'arts-and-crafts-party', 'glow-party'],
+    venue: 'both',
+    ctaHeading: 'Book Your Halloween Party',
+    serviceType: 'Halloween craft party for kids',
   },
 ]
 
