@@ -45,6 +45,10 @@ export const metadata: Metadata = {
   },
 }
 
+// Google Business Profile, confirmed by the owner 2026-09-05. Used as a `sameAs`
+// signal so Google reconciles the site and the GBP listing as one entity.
+const GBP_URL = 'https://maps.app.goo.gl/LFAKi3WzCNmcDsNV9'
+
 const localBusinessSchema = {
   '@context': 'https://schema.org',
   '@type': 'EventVenue',
@@ -73,8 +77,16 @@ const localBusinessSchema = {
   sameAs: [
     'https://www.instagram.com/hosthampton',
     'https://www.facebook.com/hosthampton',
+    GBP_URL,
   ],
   priceRange: '$$',
+  // Half the business is mobile (a service-area business), which EventVenue has
+  // no semantics for — declare the travel radius explicitly.
+  areaServed: {
+    '@type': 'GeoCircle',
+    geoMidpoint: { '@type': 'GeoCoordinates', latitude: 40.8432, longitude: -72.6823 },
+    geoRadius: '32000', // ~20 miles, the no-travel-fee radius; we travel further on request
+  },
   aggregateRating: {
     '@type': 'AggregateRating',
     ratingValue: RATING.ratingValue,
@@ -84,6 +96,32 @@ const localBusinessSchema = {
   },
 }
 
+// A-6: Organization anchors the brand entity (knowledge-panel consolidation) and
+// links the profiles Google uses to reconcile it. Deliberately no `WebSite` /
+// `SearchAction` — the sitelinks searchbox it targeted was retired in 2023.
+const organizationSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'Host Hampton',
+  url: 'https://www.hosthampton.com',
+  logo: 'https://www.hosthampton.com/images/host-hampton-logo_300.png',
+  telephone: '+16319989325',
+  email: 'hosthampton295@gmail.com',
+  address: {
+    '@type': 'PostalAddress',
+    streetAddress: '295 Montauk Highway, Suite 7',
+    addressLocality: 'Speonk',
+    addressRegion: 'NY',
+    postalCode: '11972',
+    addressCountry: 'US',
+  },
+  sameAs: [
+    'https://www.instagram.com/hosthampton',
+    'https://www.facebook.com/hosthampton',
+    GBP_URL,
+  ],
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -91,6 +129,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
         />
       </head>
       <body className="min-h-screen flex flex-col">

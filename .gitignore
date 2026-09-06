@@ -47,3 +47,13 @@ quo-contacts-import.csv
 services/website/_quo_export.mjs
 services/website/_brevo*.mjs
 services/website/_count*.mjs
+
+# ── Contact / outreach lists (customer PII — never commit) ──
+# These sat untracked-but-committable; one `git add -A` would have published them.
+*contacts*.csv
+contacts_real.csv
+my_contacts.csv
+hh-scraped-contacts.csv
+new-b2b-contacts.csv
+new-outreach-contacts.csv
+marketing-seed.md

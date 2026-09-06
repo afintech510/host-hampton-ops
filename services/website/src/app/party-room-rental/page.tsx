@@ -9,9 +9,9 @@ import { getSupabase } from '@/lib/supabase'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Party Room Rental — Speonk NY',
+  title: 'Party Room Rental — Long Island (Speonk, NY)',
   description:
-    'Rent our private party studio in Speonk, NY for birthdays, showers, photo shoots, workshops, and more. Starting at $475 for 3 hours. DIY your event your way.',
+    'Rent our private party studio on Long Island — Speonk, NY — for birthdays, showers, photo shoots, workshops, and more. Starting at $475 for 3 hours. DIY your event your way.',
   alternates: {
     canonical: 'https://www.hosthampton.com/party-room-rental',
     languages: {

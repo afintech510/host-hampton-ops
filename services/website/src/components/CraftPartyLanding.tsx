@@ -61,6 +61,16 @@ export default function CraftPartyLanding({ data }: { data: CraftParty }) {
     })),
   }
 
+  // A-8: breadcrumbs on every craft landing page (one edit covers all of them).
+  const breadcrumbSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: BASE },
+      { '@type': 'ListItem', position: 2, name: data.name, item: url },
+    ],
+  }
+
   const prefill = `Interested in: ${data.name}\nParty location (town): \nDate / guest count: `
   const marquee = MARQUEE_SLUGS.map(s => LOCATIONS.find(l => l.slug === s)).filter(Boolean) as typeof LOCATIONS
 
@@ -68,6 +78,7 @@ export default function CraftPartyLanding({ data }: { data: CraftParty }) {
     <div>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceSchema).replace(/</g, '\\u003c') }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema).replace(/</g, '\\u003c') }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema).replace(/</g, '\\u003c') }} />
 
       {/* ── Hero ── */}
       <section className="relative py-20 md:py-28 overflow-hidden">

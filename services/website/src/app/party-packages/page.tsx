@@ -3,8 +3,8 @@ import { getSupabase } from '@/lib/supabase'
 import PartyPackagesContent from './PartyPackagesContent'
 
 export const metadata: Metadata = {
-  title: 'Party Packages & Pricing',
-  description: 'Upscale themed birthday parties in a private Hamptons studio. Glow, Swiftie, Spa, Slime, K-Pop, Barbie and more — fully customizable, starting at $800.',
+  title: 'Kids Party Packages & Pricing — Long Island',
+  description: 'Themed kids birthday party packages on Long Island — at our Hamptons studio in Speonk or mobile at your house. Glow, Swiftie, Spa, Slime, K-Pop, Barbie and more, starting at $800.',
 }
 
 export const dynamic = 'force-dynamic'

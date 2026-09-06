@@ -10,7 +10,18 @@ const BASE = 'https://www.hosthampton.com'
 // Next metadata convention (app/sitemap.ts). The metadata convention generates
 // an optional catch-all (/sitemap.xml[[...__metadata_id__]]) that collides with
 // the existing human-readable /sitemap page route. The handler avoids that.
-export const dynamic = 'force-dynamic'
+// Cache for an hour rather than regenerating (and re-querying Supabase twice) on
+// every crawler hit. A sitemap does not need to be request-fresh.
+export const revalidate = 3600
+
+/**
+ * Stable `lastmod` for our hand-built pages.
+ *
+ * This was previously `new Date()` on every request, which told Google that every
+ * URL changed on every fetch — the fastest way to make it ignore `lastmod`
+ * entirely. Bump this date when page copy actually changes.
+ */
+const CONTENT_LAST_MODIFIED = '2026-09-05'
 
 interface Entry {
   path: string
@@ -60,17 +71,16 @@ function urlNode(e: Entry): string {
 }
 
 export async function GET() {
-  const now = new Date().toISOString()
   const entries: Entry[] = [...STATIC_ROUTES]
 
   // Mobile craft party location landing pages.
   for (const l of LOCATIONS) {
-    entries.push({ path: `/mobile-craft-party/${l.slug}`, changefreq: 'monthly', priority: 0.7, lastmod: now })
+    entries.push({ path: `/mobile-craft-party/${l.slug}`, changefreq: 'monthly', priority: 0.7, lastmod: CONTENT_LAST_MODIFIED })
   }
 
   // Craft / theme landing pages (/slime-party, /spa-party, …).
   for (const c of CRAFT_PARTIES) {
-    entries.push({ path: `/${c.slug}`, changefreq: 'monthly', priority: 0.8, lastmod: now })
+    entries.push({ path: `/${c.slug}`, changefreq: 'monthly', priority: 0.8, lastmod: CONTENT_LAST_MODIFIED })
   }
 
   // DB-driven published content pages + active events (best-effort).
@@ -87,7 +97,7 @@ export async function GET() {
         path: row.locale === 'es' ? `/es/${row.slug}` : `/${row.slug}`,
         changefreq: 'monthly',
         priority: 0.6,
-        lastmod: row.updated_at || now,
+        lastmod: row.updated_at || CONTENT_LAST_MODIFIED,
       })
     }
 
@@ -97,7 +107,7 @@ export async function GET() {
       .eq('is_active', true)
     for (const e of events || []) {
       const row = e as { slug: string; updated_at: string | null }
-      entries.push({ path: `/events/${row.slug}`, changefreq: 'weekly', priority: 0.6, lastmod: row.updated_at || now })
+      entries.push({ path: `/events/${row.slug}`, changefreq: 'weekly', priority: 0.6, lastmod: row.updated_at || CONTENT_LAST_MODIFIED })
     }
   } catch {
     // Sitemap still serves static + location entries if the DB is unreachable.

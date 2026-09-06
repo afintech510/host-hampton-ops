@@ -22,9 +22,9 @@ const reviewSchema = [
 }))
 
 export const metadata: Metadata = {
-  title: 'Birthday Party Venue in the Hamptons, NY',
+  title: 'Kids Birthday Parties on Long Island & the Hamptons',
   description:
-    'Upscale themed birthday parties in a private Hamptons studio — at prices you\u2019d pay anywhere. Hands-on hosts, fully customizable, stress-free. Reserve with a 25% deposit.',
+    'Upscale themed kids birthday parties on Long Island — at our private Hamptons studio in Speonk, or mobile at your house — at prices you\u2019d pay anywhere. Hands-on hosts, fully customizable, stress-free. Reserve with a 25% deposit.',
 }
 
 const themes = [
@@ -82,13 +82,13 @@ export default async function Home() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-20 md:py-28 flex flex-col md:flex-row items-center gap-12">
           <div className="flex-1 text-center md:text-left">
             <p className="text-hampton-pink text-sm font-semibold tracking-widest uppercase mb-4">
-              Speonk, NY • The Hamptons
+              Long Island &amp; the Hamptons • Speonk, NY
             </p>
             <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl text-hampton-navy leading-tight mb-6">
-              The Upscale Party Experience — at Prices You&apos;d Pay Anywhere
+              Kids Birthday Parties on Long Island — <span className="italic text-hampton-blue">at Our Studio or Your House</span>
             </h1>
             <p className="text-hampton-navy text-lg md:text-xl leading-relaxed mb-8 max-w-lg">
-              A Hamptons-styled private studio where our hosts guide every child through every activity. Fully customizable — scale up, scale down, make it yours.
+              Hands-on hosts guide every child through every activity — at our private Hamptons studio in Speonk, or we bring the whole party to your home. Upscale experience, at prices you&apos;d pay anywhere.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
               <Link href="/book"
