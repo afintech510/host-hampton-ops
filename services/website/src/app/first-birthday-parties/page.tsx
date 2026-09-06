@@ -6,7 +6,7 @@ import { Check, Heart, Star } from 'lucide-react'
 export const metadata: Metadata = {
   title: 'First Birthday Party Venue — Long Island & the Hamptons',
   description:
-    'Make baby\'s first birthday magical at Host Hampton in Speonk, NY. Private studio, full setup, themed decorations, and a stress-free celebration for toddlers on Long Island. Reserve with a 25% deposit.',
+    'Make baby\'s first birthday magical at Host Hampton in Speonk, NY. Private studio, full setup, themed decorations, and a stress-free celebration for toddlers on Long Island. Reserve with a $250 deposit.',
   keywords: ['first birthday party Hamptons', 'first birthday party venue Long Island', 'first birthday party Speonk NY', 'toddler birthday party venue', '1st birthday party Long Island'],
 }
 
@@ -139,7 +139,7 @@ export default function FirstBirthdayParties() {
               { q: 'How old does my child need to be?', a: 'We love first birthdays for babies as young as 6 months old. Our toddler setup is designed for babies and toddlers up to age 4.' },
               { q: 'Can I bring my own cake?', a: 'Absolutely! We include cupcakes in every package, and you\'re welcome to bring a smash cake from your favorite bakery.' },
               { q: 'What about siblings and very young guests?', a: 'Siblings of all ages are welcome. Our space is safe for babies and has activities for older kids too.' },
-              { q: 'How far in advance should I book?', a: 'Weekend dates fill up fast — especially spring and summer. We recommend booking 6–8 weeks in advance. Your 25% deposit locks the date.' },
+              { q: 'How far in advance should I book?', a: 'Weekend dates fill up fast — especially spring and summer. We recommend booking 6–8 weeks in advance. Your $250 deposit locks the date.' },
               { q: 'Can I change the date after booking?', a: 'Yes! Life with a baby is unpredictable. You can change your date up to 1 week before the party, subject to availability.' },
             ].map(f => (
               <div key={f.q} className="bg-white/60 rounded-xl p-5">
@@ -157,7 +157,7 @@ export default function FirstBirthdayParties() {
           Let's Plan the Perfect First Birthday
         </h2>
         <p className="text-hampton-navy/70 text-base mb-8 max-w-md mx-auto">
-          Reserve your date with a 25% deposit. We'll handle the rest — you enjoy every magical moment.
+          Reserve your date with a $250 deposit. We'll handle the rest — you enjoy every magical moment.
         </p>
         <Link href="/book?package=Toddler+Party&event_type=first-birthday"
               className="bg-hampton-navy text-hampton-ivory font-bold px-10 py-4 rounded-full text-base hover:bg-opacity-90 shadow-lg">

@@ -6,8 +6,41 @@ import {
   isModificationAllowed,
   formatMoney,
   generatePartyRef,
+  getDepositCents,
+  BOOKING_DEPOSIT_CENTS,
 } from '@/lib/partyPricing'
 import type { BookingLineItem } from '@/types/booking-flow'
+
+describe('getDepositCents', () => {
+  it('is a flat $250 on a typical booking', () => {
+    expect(getDepositCents(75000)).toBe(25000) // $750 party
+    expect(getDepositCents(195000)).toBe(25000) // $1,950 party
+  })
+
+  it('is $250 on the cheapest weekday rental ($475)', () => {
+    expect(getDepositCents(47500)).toBe(25000)
+  })
+
+  // The clamp is the money-critical case: without it a small booking would be
+  // asked for a deposit bigger than the job, leaving a negative balance.
+  it('never exceeds the booking total', () => {
+    expect(getDepositCents(7500)).toBe(7500) // $75 studio hour
+    expect(getDepositCents(BOOKING_DEPOSIT_CENTS)).toBe(BOOKING_DEPOSIT_CENTS)
+    expect(getDepositCents(24999)).toBe(24999)
+  })
+
+  it('leaves a non-negative balance for any total', () => {
+    for (const total of [0, 1, 7500, 24999, 25000, 47500, 195000]) {
+      expect(total - getDepositCents(total)).toBeGreaterThanOrEqual(0)
+    }
+  })
+
+  it('returns 0 for zero, negative or invalid totals', () => {
+    expect(getDepositCents(0)).toBe(0)
+    expect(getDepositCents(-100)).toBe(0)
+    expect(getDepositCents(NaN)).toBe(0)
+  })
+})
 
 describe('calculateCardFee', () => {
   it('calculates 3% fee on $99 deposit', () => {

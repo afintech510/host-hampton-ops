@@ -386,7 +386,7 @@ export default function StudioRentalContent(props: Props) {
         </p>
         <div className="bg-hampton-ivory rounded-2xl border border-hampton-pink/20 p-6 text-left text-sm text-hampton-navy/80 space-y-2">
           <p>• Your <strong>{formatMoney(depositCents)}</strong> deposit is paid — your date is locked.</p>
-          <p>• Balance of <strong>{formatMoney(balanceDueCents)}</strong> is due 7 days before your event.</p>
+          <p>• Balance of <strong>{formatMoney(balanceDueCents)}</strong> can be paid any time before your event.</p>
           <p>• Use the link in your email anytime to <strong>add more time or add-ons</strong> and pay your balance.</p>
           <p>• A <strong>$500 refundable security hold</strong> is placed on your card the day of your event and auto-releases within 7 days.</p>
         </div>
@@ -453,7 +453,7 @@ export default function StudioRentalContent(props: Props) {
             <div className="mt-4 space-y-2">
               <label className="flex items-start gap-2 text-sm text-hampton-navy/80">
                 <input ref={agreeRulesRef} type="checkbox" checked={agreeRules} onChange={e => setAgreeRules(e.target.checked)} className="mt-1" />
-                <span>I understand the rental includes my own setup &amp; cleanup time, a 25% deposit holds my date with the balance due 7 days before, and a refundable <strong>$500 security hold</strong> ({formatMoney(SECURITY_DEPOSIT_CENTS)}) is placed on my card the day of the event.</span>
+                <span>I understand the rental includes my own setup &amp; cleanup time, a <strong>$250 deposit</strong> holds my date with the balance payable any time before the event, half the deposit is non-refundable (the full deposit within 30 days of the event), and a refundable <strong>$500 security hold</strong> ({formatMoney(SECURITY_DEPOSIT_CENTS)}) is placed on my card on arrival.</span>
               </label>
               <label className="flex items-start gap-2 text-sm text-hampton-navy/80">
                 <input ref={consentRef} type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1" />
@@ -625,10 +625,10 @@ export default function StudioRentalContent(props: Props) {
 
             <div className="border-t border-hampton-mauve/15 mt-2 pt-2 space-y-1">
               <div className="flex justify-between font-semibold"><span className="text-hampton-navy">Total</span><span className="text-hampton-navy">{formatMoney(charge?.total ?? totalCents)}</span></div>
-              <div className="flex justify-between"><span className="text-hampton-navy/70">Deposit today (25%)</span><span className="text-hampton-navy">{formatMoney(depositNow)}</span></div>
+              <div className="flex justify-between"><span className="text-hampton-navy/70">Deposit today</span><span className="text-hampton-navy">{formatMoney(depositNow)}</span></div>
               <div className="flex justify-between"><span className="text-hampton-navy/70">Card fee (3%)</span><span className="text-hampton-navy">{formatMoney(cardFeeNow)}</span></div>
               <div className="flex justify-between font-bold border-t border-hampton-mauve/15 pt-1 mt-1"><span className="text-hampton-navy">Charged today</span><span className="text-hampton-navy">{formatMoney(chargedTodayCents)}</span></div>
-              <div className="flex justify-between text-xs text-hampton-navy/50 pt-1"><span>Balance due 7 days before event</span><span>{formatMoney(balanceNow)}</span></div>
+              <div className="flex justify-between text-xs text-hampton-navy/50 pt-1"><span>Balance — due any time before event</span><span>{formatMoney(balanceNow)}</span></div>
             </div>
           </div>
 

@@ -20,8 +20,9 @@ Space only. You may bring your own decor, catering and vendors — no restrictio
 | Full Day Weekend | Sat–Sun | **$975** | 12 hours |
 
 - **Additional hours:** **$100/hr** weekday · **$150/hr** weekend
-- **Security deposit:** **$500**, refundable after post-event inspection (collected separately)
-- **Reservation:** **25% non-refundable deposit** holds the date; balance due **7 days before** the event
+- **Security deposit:** **$500 refundable authorization hold**, placed on the card **on arrival** and
+  released after the event (a hold, not a charge — captured only for damage)
+- **Reservation:** flat **$250 deposit** holds the date; balance payable **any time before** the event
 - **Included:** tables & chairs for up to **60 guests**, basic lighting, WiFi, Bluetooth sound system,
   prep area, restroom access
 
@@ -72,6 +73,27 @@ These appear in older notes and drafts and contradict the live page. They are **
 **$75/hr** for hourly studio use and the block rates above for events. This unblocks C-1 and C-4.
 
 ---
+
+## 4b. Deposit, balance and cancellation — ALL bookings (owner ruling 2026-09-05)
+
+Applies to **every** booking type — themed parties, party room rentals and studio rentals. The old
+25%-of-total rate is retired everywhere (`getDepositCents()` in `lib/partyPricing.ts`).
+
+| | Policy |
+|---|---|
+| **Booking deposit** | Flat **$250**, applied toward the total. Clamped so it never exceeds the booking total. |
+| **Balance** | Payable **any time before** the event. (An internal `balance_due_date` is still computed to schedule reminder emails.) |
+| **Security hold** | **$500 authorization on arrival**, released after the event. Not a charge. |
+| **Cancel >30 days out** | Half the deposit ($125) non-refundable; the rest refunded. |
+| **Cancel within 30 days** | Full $250 deposit non-refundable. |
+| **Date change** | **Free, always** — no change fee, deposit moves with the date, subject to availability. |
+| **Card fee** | 3% on card payments, as before. |
+
+> **Cash-flow note:** flat $250 raises the up-front amount on small bookings (a $475 weekday rental
+> went $118.75 → $250, i.e. 53% of the job) and lowers it on large ones (a $1,950 party went
+> $487.50 → $250). That is the intended trade.
+
+The $500 hold is **not yet automated** — see `docs/checkin-link-feature-plan.md`.
 
 ## 5. Kids party packages (studio) — for reference
 

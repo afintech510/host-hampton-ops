@@ -44,7 +44,7 @@ const faqs: FaqItem[] = [
   {
     category: 'Booking & Deposits',
     q: 'How much is the deposit to reserve a date?',
-    a: 'A 25% deposit reserves your date. The remaining balance is due before your event. A 3% processing fee applies to card payments; you can also pay by other methods to avoid it.',
+    a: 'A $250 deposit reserves your date and is applied toward your total. The remaining balance can be paid any time before your party. Half the deposit ($125) is non-refundable if you cancel more than 30 days out; within 30 days the full deposit is non-refundable. Changing your date is always free, subject to availability. A 3% processing fee applies to card payments; you can also pay by other methods to avoid it.',
   },
   {
     category: 'Booking & Deposits',

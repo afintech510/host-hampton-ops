@@ -953,7 +953,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
           >
             Design Your Party
           </Link>
-          <p className="text-hampton-navy/40 text-xs mt-4">Reserve with a simple 25% deposit · Change details anytime</p>
+          <p className="text-hampton-navy/40 text-xs mt-4">Reserve with a simple $250 deposit · Change details anytime</p>
         </div>
       </section>
 

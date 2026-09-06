@@ -125,7 +125,7 @@ export default async function PartyMenuPage() {
           {/* Deposit note */}
           <div className="px-8 pb-6 text-center">
             <p className="text-[11px] font-bold text-hampton-pink bg-hampton-pink/10 inline-block px-4 py-1.5 rounded-full border border-hampton-pink/20">
-              25% Deposit to Reserve &bull; Fully Applied Toward Balance
+              $250 Deposit to Reserve &bull; Fully Applied Toward Balance
             </p>
           </div>
         </div>
@@ -432,7 +432,7 @@ export default async function PartyMenuPage() {
       <section className="bg-hampton-pink/20 py-14 text-center px-4">
         <h2 className="section-heading mb-3">Ready to Book?</h2>
         <p className="text-hampton-navy text-base mb-7 max-w-md mx-auto">
-          Reserve your date with a 25% deposit. We&apos;ll help you customize every detail.
+          Reserve your date with a $250 deposit. We&apos;ll help you customize every detail.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link href="/book" className="btn-primary px-10 py-4 text-base">

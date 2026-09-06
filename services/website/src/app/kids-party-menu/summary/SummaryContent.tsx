@@ -114,8 +114,11 @@ export default function SummaryContent() {
     return items
   }
 
-  const depositCents = getDepositCents()
+  // Order matters: the deposit is now a flat amount clamped to the total, so it
+  // needs the subtotal. (This previously called getDepositCents() with no
+  // argument, which returned $0 under the old 25% rate.)
   const subtotalCents = calculateLineItemTotal(lineItems, guestCount)
+  const depositCents = getDepositCents(subtotalCents)
   const balanceDueCents = Math.max(0, subtotalCents - depositCents)
 
   async function handleSubmit() {

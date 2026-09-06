@@ -27,9 +27,12 @@ const MOBILE_TIER3_SURCHARGE_CENTS = 15000 // +$150 again for 28+ guests
 const MOBILE_TIER2_GUEST_THRESHOLD = 18
 const MOBILE_TIER3_GUEST_THRESHOLD = 27
 const LS_KEY = 'hh_quote_data'
-const DEPOSIT_RATE = 0.25
+// Flat $250 booking deposit (owner ruling 2026-09-05), clamped so it can never
+// exceed the booking total. Mirrors getDepositCents() in lib/partyPricing.ts —
+// keep the two in step.
+const BOOKING_DEPOSIT_CENTS = 25000
 const computeDeposit = (totalCents: number): number =>
-  Math.round((totalCents * DEPOSIT_RATE) / 100) * 100
+  totalCents > 0 ? Math.min(BOOKING_DEPOSIT_CENTS, totalCents) : 0
 
 const RENTAL_WEEKDAY_3HR = 475
 const RENTAL_WEEKEND_3HR = 600
@@ -3002,7 +3005,7 @@ export default function PartyBuilderContent({
               {!depositPaid && (
                 <div className="mt-4 bg-hampton-pink/10 border border-hampton-pink/20 rounded-xl p-4 text-center">
                   <p className="text-sm text-hampton-navy font-medium">
-                    <span className="font-bold">{fmt(depositCents)} deposit (25%)</span> to reserve your date — fully applied toward your balance
+                    <span className="font-bold">{fmt(depositCents)} deposit</span> to reserve your date — fully applied toward your balance
                   </p>
                   <p className="text-xs text-hampton-navy/50 mt-1">
                     Remaining balance of <span className="font-bold">{fmt(Math.max(0, total - depositCents))}</span> due before event
@@ -3187,7 +3190,7 @@ export default function PartyBuilderContent({
                       <span>{fmt(total)}</span>
                     </div>
                     <div className="flex justify-between text-sm text-hampton-navy/70">
-                      <span>Deposit to reserve (25%)</span>
+                      <span>Deposit to reserve</span>
                       <span>{formatMoney(depositCents)}</span>
                     </div>
                     <p className="text-xs text-hampton-navy/50 mt-2">

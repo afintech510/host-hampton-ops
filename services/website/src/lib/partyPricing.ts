@@ -1,7 +1,17 @@
 import type { BookingLineItem, BookingPayment } from '@/types/booking-flow'
 
 const DEFAULT_CARD_FEE_RATE = 0.03
-const DEPOSIT_RATE = 0.25
+
+/**
+ * Flat booking deposit that holds a date — owner ruling 2026-09-05, replacing
+ * the previous 25%-of-total rate. Applies to ALL bookings: themed parties,
+ * party room rentals and studio rentals.
+ *
+ * Was 25%, so this raises the up-front amount on smaller bookings (a $475
+ * weekday rental went from $118.75 to $250) and lowers it on large ones
+ * (a $1,950 party went from $487.50 to $250).
+ */
+export const BOOKING_DEPOSIT_CENTS = 25000
 
 export function calculateCardFee(amountCents: number, rate = DEFAULT_CARD_FEE_RATE): number {
   return Math.round(amountCents * rate)
@@ -132,9 +142,19 @@ export function generatePartyRef(): string {
   return `HH-PTY-${code}`
 }
 
-export function getDepositCents(totalCents = 0): number {
-  // 25% of total, rounded to nearest dollar
-  return Math.round((totalCents * DEPOSIT_RATE) / 100) * 100
+/**
+ * Deposit due to hold a date: a flat $250, never more than the booking total.
+ *
+ * The clamp matters — without it a small booking (e.g. a 1-hour $75 studio
+ * slot, if that ever becomes bookable online) would ask for a deposit larger
+ * than the whole job and leave a negative balance.
+ *
+ * Callers MUST pass the total. The old signature defaulted to 0, which was
+ * harmless at 25% (0 → $0) but would silently return the full $250 here.
+ */
+export function getDepositCents(totalCents: number): number {
+  if (!Number.isFinite(totalCents) || totalCents <= 0) return 0
+  return Math.min(BOOKING_DEPOSIT_CENTS, totalCents)
 }
 
 function toDateStr(d: Date): string {

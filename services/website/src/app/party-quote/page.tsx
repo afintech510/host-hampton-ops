@@ -42,7 +42,7 @@ export default async function PartyQuotePage({
         </h1>
         <p className="text-hampton-navy/70 text-lg max-w-xl mx-auto leading-relaxed">
           Choose your theme, pick your favorites, and see your estimated total instantly.
-          When you&apos;re ready, reserve your date with a <strong>25% deposit</strong>.
+          When you&apos;re ready, reserve your date with a <strong>$250 deposit</strong>.
         </p>
         <div className="flex justify-center gap-3 mt-5 text-xs">
           <Link href="/party-menu" className="text-hampton-navy/50 underline underline-offset-2 hover:text-hampton-navy transition-colors">

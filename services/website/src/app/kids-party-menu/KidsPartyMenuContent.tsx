@@ -720,7 +720,7 @@ export default function KidsPartyMenuContent({
 
           <div className="mt-6 text-center">
             <p className="text-[11px] font-bold text-hampton-pink bg-hampton-pink/10 inline-block px-4 py-1.5 rounded-full border border-hampton-pink/20">
-              25% Deposit to Reserve &bull; Fully Applied Toward Balance
+              $250 Deposit to Reserve &bull; Fully Applied Toward Balance
             </p>
           </div>
 

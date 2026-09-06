@@ -25,9 +25,9 @@ export default function TermsOfService() {
 
         <h2 className="font-semibold text-lg mt-6">2. Bookings &amp; Payments</h2>
         <p>
-          A non-refundable deposit is required to reserve your party date. The deposit amount varies by
-          service type and is applied toward your total event balance. Dates are not held without a deposit.
-          Remaining balance is due no later than 7 days before the event.
+          A <strong>$250 deposit</strong> is required to reserve your date and is applied toward your total
+          event balance. Dates are not held without a deposit. The remaining balance may be paid any time
+          before your event, and must be settled no later than the day of the event.
         </p>
         <p>
           All payments are processed securely through Stripe. By making a payment, you agree to
@@ -41,23 +41,25 @@ export default function TermsOfService() {
           <li>Parents/guardians are responsible for supervising children at all times</li>
           <li>Host Hampton is not responsible for personal items left at the venue</li>
           <li>Any damage to the studio or equipment beyond normal wear will be assessed and billed accordingly</li>
-          <li>Room-only rentals require a $500 refundable security deposit, returned within 5 business days if the space is left in its original condition</li>
+          <li>Room and studio rentals require a <strong>$500 refundable security hold</strong>, authorized on your card on arrival and released after the event if the space is left in its original condition. This is an authorization hold, not a charge — it is only captured if there is damage or excessive cleaning</li>
         </ul>
 
         <h2 className="font-semibold text-lg mt-6">4. Rescheduling</h2>
         <p>
-          You may reschedule your event up to 7 days before the party date, subject to availability.
-          Rescheduling within 7 days of the event may result in forfeiture of the deposit. Theme, add-ons,
-          dietary preferences, and guest count may be adjusted up to 7 days before the party date. Changes
-          within 7 days are subject to availability and may incur additional charges.
+          <strong>There is no date-change fee.</strong> You may move your event to another date at any time,
+          subject to availability, and your deposit moves with it. Theme, add-ons, dietary preferences, and
+          guest count may be adjusted up to 7 days before the party date; changes within 7 days are subject
+          to availability and may incur additional charges.
         </p>
 
         <h2 className="font-semibold text-lg mt-6">5. Cancellations &amp; Refunds</h2>
         <p>
-          Cancellations made more than 14 days before the event date will receive a credit toward a future
-          booking. Cancellations within 14 days of the event are subject to deposit forfeiture. No-shows
-          forfeit the full deposit. Event ticket purchases are non-refundable unless the event is cancelled
-          by Host Hampton.
+          If you cancel <strong>more than 30 days</strong> before your event date, half of the $250 deposit
+          ($125) is non-refundable and the remainder is refunded. If you cancel <strong>within 30 days</strong>
+          of your event date, the full $250 deposit is non-refundable. Any balance you have paid beyond the
+          deposit is refunded in either case. No-shows forfeit the full deposit. Remember that changing your
+          date carries no fee — if your plans shift, rescheduling costs you nothing. Event ticket purchases
+          are non-refundable unless the event is cancelled by Host Hampton.
         </p>
 
         <h2 className="font-semibold text-lg mt-6">6. Text Messaging Terms &amp; Conditions</h2>

@@ -6,7 +6,7 @@ import type { PricingItem } from '@/components/QuoteBuilder/types'
 export const metadata: Metadata = {
   title: "Host Hampton Party Plan — Speonk NY",
   description:
-    'Your custom Host Hampton Party Plan — review details, add options, pick a date, and pay 25% down to reserve.',
+    'Your custom Host Hampton Party Plan — review details, add options, pick a date, and pay $250 down to reserve.',
   openGraph: {
     title: "Host Hampton Party Plan",
     description: 'Review, customize, and reserve your party in one place.',

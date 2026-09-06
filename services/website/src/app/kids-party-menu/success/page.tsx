@@ -37,7 +37,7 @@ function SuccessContent() {
             <li>We confirm your requested date is available within 24 hours</li>
             <li>You&apos;ll receive an email — once confirmed, it includes a secure link to pay your {depositFormatted} deposit and lock in your date</li>
             <li>Use your booking portal to view details, make changes, and submit payments</li>
-            <li>Remaining balance is due the day before your event</li>
+            <li>Remaining balance can be paid any time before your event</li>
           </ol>
         </div>
 

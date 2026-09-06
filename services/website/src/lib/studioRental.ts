@@ -13,7 +13,9 @@ export const STUDIO_MIN_HOURS = 3
 export const STUDIO_SEATED_CAPACITY = 65
 export const STUDIO_STANDING_CAPACITY = 85
 export const SECURITY_DEPOSIT_CENTS = 50000 // $500 refundable CC auth hold, placed day-of
-export const DEPOSIT_RATE = 0.25 // 25% reservation deposit
+// Booking deposit is a flat $250 for every booking type — see
+// BOOKING_DEPOSIT_CENTS / getDepositCents() in lib/partyPricing.ts. The old
+// 25% DEPOSIT_RATE that lived here is gone; do not reintroduce a rate.
 
 const WEEKEND_BASE_CENTS = 60000
 const WEEKDAY_BASE_CENTS = 47500

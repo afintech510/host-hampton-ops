@@ -9,7 +9,7 @@ import type { PricingItem } from '@/components/QuoteBuilder/types'
 export const metadata: Metadata = {
   title: 'Rent the Studio — Host Hampton | Speonk, NY',
   description:
-    'Reserve our private Hamptons studio for your baby shower, first birthday, or holiday party. Seats up to 65 (85 standing). Pick your date, build your add-ons, sign, and reserve with a 25% deposit — all online.',
+    'Reserve our private Hamptons studio for your baby shower, first birthday, or holiday party. Seats up to 65 (85 standing). Pick your date, build your add-ons, sign, and reserve with a $250 deposit — all online.',
   openGraph: {
     title: 'Rent the Studio — Host Hampton',
     description: 'Pick your date, build your add-ons, sign, and reserve in one place.',

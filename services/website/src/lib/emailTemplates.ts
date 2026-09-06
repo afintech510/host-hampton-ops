@@ -390,7 +390,7 @@ export function leadConfirmHtml(d: {
       ${dateRow}
       ${guestRow}
     </table>
-    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Ready to secure your date? Reserve with a 25% deposit:</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Ready to secure your date? Reserve with a $250 deposit:</p>
     <div style="text-align:center;margin-bottom:24px;">
       <a href="${d.bookLink}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Check Availability &amp; Reserve</a>
     </div>
@@ -479,7 +479,7 @@ export function bookingConfirmationHtml(d: BookingConfirmationData): string {
       ${d.isRoomRental ? `<ol style="margin:0;padding-left:20px;color:${BRAND.gray};line-height:2;font-size:14px;">
         <li>We'll reach out <strong>within 24 hours</strong> to confirm your rental details</li>
         <li>We'll go over any setup needs, vendor access, or special requirements</li>
-        <li>A $500 refundable security deposit is collected separately before your event</li>
+        <li>A $500 refundable security hold is authorized on your card when you arrive, and released after the event</li>
         <li>Remaining balance is due <strong>${d.balanceDueDate}</strong></li>
       </ol>` : `<ol style="margin:0;padding-left:20px;color:${BRAND.gray};line-height:2;font-size:14px;">
         <li>We'll reach out <strong>within 24 hours</strong> to confirm your booking details</li>
@@ -759,7 +759,7 @@ export function studioRentalInviteHtml(d: {
       <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:0;">
         • Seats up to 65 · standing room for 85<br>
         • Weekend $600 / 3 hrs (+$150/hr) · Weekday $475 / 3 hrs (+$100/hr)<br>
-        • 25% deposit holds your date; balance due 7 days before
+        • $250 deposit holds your date; balance payable any time before your event
       </p>
     </div>
     ${payButton(d.studioUrl, 'Start Your Booking')}
@@ -816,8 +816,8 @@ export function studioRentalConfirmationHtml(d: {
     <div style="background:${BRAND.bodyBg};border-radius:8px;padding:16px 20px;margin:0 0 24px;">
       <p style="color:${BRAND.navy};font-size:14px;margin:0 0 6px;"><strong>A few things to know:</strong></p>
       <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:0;">
-        • Your balance is due <strong>${d.balanceDueDate}</strong> (7 days before your event).<br>
-        • A <strong>$500 refundable security hold</strong> is placed on your card the day of your event and auto-releases within 7 days if there's no damage.<br>
+        • Your balance can be paid any time before your event — we'll remind you around <strong>${d.balanceDueDate}</strong>.<br>
+        • A <strong>$500 refundable security hold</strong> is authorized on your card when you arrive and released after the event if there's no damage. It's a hold, not a charge.<br>
         • Your rental window includes your own setup and cleanup time.
       </p>
     </div>
@@ -1108,7 +1108,7 @@ export function partyQuoteSentHtml(d: {
   </div>
   <div style="padding:36px 40px;">
     <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
-    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">We've put together your custom party plan! Review the details below — you can add or remove options, then pay your 25% deposit (${d.depositFormatted}) to lock it in. We can't wait to celebrate with you.</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">We've put together your custom party plan! Review the details below — you can add or remove options, then pay your $250 deposit (${d.depositFormatted}) to lock it in. We can't wait to celebrate with you.</p>
     <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
       ${childLine}
       <tr><td style="padding:6px 0;color:${BRAND.gray};width:130px;">Package</td><td style="padding:6px 0;color:${BRAND.navy};">${d.packageType}</td></tr>
@@ -1130,7 +1130,7 @@ export function partyQuoteSentHtml(d: {
     ${notesLine}
     ${payButton(d.builderUrl, 'View & Customize Your Party Plan')}
     <p style="font-size:13px;color:${BRAND.gray};line-height:1.7;margin:0 0 20px;text-align:center;">
-      Use the link above to customize your add-ons and pay your 25% deposit to lock it in.
+      Use the link above to customize your add-ons and pay your $250 deposit to lock it in.
     </p>
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
