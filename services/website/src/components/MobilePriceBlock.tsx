@@ -1,5 +1,5 @@
-import { Check, Gift, MapPin, ShieldCheck } from 'lucide-react'
-import { MOBILE_TIERS, EXTRA_CHILD_PRICE, FREE_TRAVEL_MILES } from '@/lib/mobilePricing'
+import { Check, Gift, MapPin, ShieldCheck, CalendarCheck } from 'lucide-react'
+import { MOBILE_TIERS, EXTRA_CHILD_PRICE, FREE_TRAVEL_MILES, MIN_GUESTS, DEPOSIT } from '@/lib/mobilePricing'
 
 /**
  * The published mobile-party price anchor (plan item B-1).
@@ -66,7 +66,7 @@ export default function MobilePriceBlock({
         </div>
 
         {/* Trust / fine print — the part competitors can't match */}
-        <div className="mt-8 grid sm:grid-cols-3 gap-3">
+        <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="flex items-start gap-2.5 bg-hampton-pink/10 rounded-xl p-4">
             <Gift size={17} className="shrink-0 mt-0.5 text-hampton-navy/60" />
             <p className="text-hampton-navy/75 text-sm leading-relaxed">
@@ -84,6 +84,12 @@ export default function MobilePriceBlock({
             <ShieldCheck size={17} className="shrink-0 mt-0.5 text-hampton-navy/60" />
             <p className="text-hampton-navy/75 text-sm leading-relaxed">
               <strong>No mandatory gratuity.</strong> What we quote is what you pay.
+            </p>
+          </div>
+          <div className="flex items-start gap-2.5 bg-hampton-pink/10 rounded-xl p-4">
+            <CalendarCheck size={17} className="shrink-0 mt-0.5 text-hampton-navy/60" />
+            <p className="text-hampton-navy/75 text-sm leading-relaxed">
+              <strong>A ${DEPOSIT} deposit holds your date.</strong> {MIN_GUESTS} guest minimum.
             </p>
           </div>
         </div>

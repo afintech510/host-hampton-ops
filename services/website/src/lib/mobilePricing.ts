@@ -51,15 +51,22 @@ export const MOBILE_TIERS: MobileTier[] = [
     tagline: 'Our most-booked mobile party',
     popular: true,
     includes: [
-      'Multiple craft stations, mixed and matched to the age group',
+      'Hair tinsel for every guest',
+      'Glitter tattoos',
+      'Your choice of craft station',
       'A dedicated host running every station',
       'All supplies, aprons and surface covers brought in',
       'A finished keepsake for every child',
-      'Themed decor touches for the party space',
       'Full setup and cleanup — we leave it as we found it',
     ],
   },
 ]
+
+/** Fewest guests we'll run a mobile party for. */
+export const MIN_GUESTS = 6
+
+/** Flat deposit that holds a mobile party date (studio uses 25% instead). */
+export const DEPOSIT = 250
 
 /** Per additional child beyond the included count. */
 export const EXTRA_CHILD_PRICE = 35

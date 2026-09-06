@@ -83,13 +83,17 @@ From `/party-packages` and the glow party page: themed studio parties run **$750
 Owner-confirmed tiers, now live on `/mobile-party`, `/mobile-craft-party`, all craft landing pages
 and all 26 town pages. Source of truth: `services/website/src/lib/mobilePricing.ts`.
 
-| Tier | Price | Duration | Kids included |
-|---|---|---|---|
-| **Entry** | **$500** | 60 min | up to **8** |
-| **Signature** *(Most Booked)* | **$750** | 90 min | up to **12** |
+| Tier | Price | Duration | Kids included | Includes |
+|---|---|---|---|---|
+| **Entry** | **$500** | 60 min | up to **8** | One craft station of your choice |
+| **Signature** *(Most Booked)* | **$750** | 90 min | up to **12** | **Hair tinsel + glitter tattoos + choice of craft** |
+
+Both tiers also include a dedicated host, all supplies, a keepsake per child, and full setup/cleanup.
 
 - **Birthday child is always free**, on top of the included count
 - **Additional children: $35 each**
+- **Minimum 6 guests**
+- **Deposit: flat $250** to hold the date (note: studio bookings use 25% instead — different rule)
 - **Travel: free within 20 miles** of the Speonk studio; a modest mileage charge beyond it
   ($5/mile one-way on billable miles only — `app/api/party-builder/mileage/route.ts`)
 - **No mandatory gratuity** — what we quote is what the customer pays
