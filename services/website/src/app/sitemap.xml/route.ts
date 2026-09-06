@@ -10,9 +10,13 @@ const BASE = 'https://www.hosthampton.com'
 // Next metadata convention (app/sitemap.ts). The metadata convention generates
 // an optional catch-all (/sitemap.xml[[...__metadata_id__]]) that collides with
 // the existing human-readable /sitemap page route. The handler avoids that.
-// Cache for an hour rather than regenerating (and re-querying Supabase twice) on
-// every crawler hit. A sitemap does not need to be request-fresh.
-export const revalidate = 3600
+// Must render per-request: this route reads events + published content from
+// Supabase, and those credentials do not exist at build time. Prerendering it
+// (via `revalidate`) silently dropped every DB-driven URL from the sitemap —
+// the try/catch below swallows the failure, so it fails quiet, not loud.
+// Crawler load is handled by the Cache-Control header at the bottom instead,
+// and the `lastmod` churn that actually hurt us is fixed by the constant below.
+export const dynamic = 'force-dynamic'
 
 /**
  * Stable `lastmod` for our hand-built pages.
