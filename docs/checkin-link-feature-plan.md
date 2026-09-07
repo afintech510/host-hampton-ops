@@ -140,6 +140,45 @@ the admin UI should surface any `held_external` hold as an open item until someo
 If reconciliation across two processors turns out to be a nuisance in practice, the simplification is
 to make Stripe the only path and keep the POS purely for ad-hoc in-person sales.
 
+## 5c. Deployment notes — Phase 1 (PR #3, branch `worktree/grand-sparrow`)
+
+**Env var to set on the box** (`.env`, see [[secrets-and-data]]):
+
+```
+SIGNWELL_CHECKIN_TEMPLATE_ID=07f9832a-65dd-493a-bb17-c11b10b9fca4
+```
+
+Owner-supplied 2026-09-07, from
+`https://www.signwell.com/app/template_builder/07f9832a-65dd-493a-bb17-c11b10b9fca4`.
+This is deliberately **separate** from `SIGNWELL_TEMPLATE_ID`, which stays pointed at the Studio
+Rental Agreement — the check-in route reads its own var so the two documents never get confused.
+Reuses the existing `SIGNWELL_API_KEY`. The ID is a template identifier, not a credential, but it is
+useless without the API key.
+
+**⚠ Pre-flight before running `migration_031_checkin_link.sql`.** Section 3 DROPs and rebuilds
+`scheduled_reminders_reminder_type_check` from **migration 023's list**, and per
+[[starting-plan-sql-is-stale]] the live DB has been hand-edited since. This exact class of failure
+already bit this migration once — an earlier draft rebuilt `contact_interactions_type_check` from
+the stale schema file and failed with 23514 because live rows used values the file did not list
+(that section was removed, see §5 of the SQL).
+
+Every `reminder_type` the *application code* writes is covered by the new list — that was checked.
+The residual risk is **legacy values present in the live table that the code no longer writes**.
+So read the live constraint first:
+
+```sql
+SELECT pg_get_constraintdef(oid)
+FROM pg_constraint
+WHERE conname = 'scheduled_reminders_reminder_type_check';
+
+-- and, belt and braces, what values actually exist:
+SELECT DISTINCT reminder_type FROM public.scheduled_reminders ORDER BY 1;
+```
+
+Merge anything those return that the migration's list omits, **then** run it. If you skip this, the
+rebuild either fails outright with 23514, or succeeds and silently breaks future inserts of the
+dropped type — which is the precise bug migration 023 was written to fix.
+
 ## 6. Sequencing
 
 Now that nothing is blocked, this can go in one pass, but staging it still de-risks the payments part:
