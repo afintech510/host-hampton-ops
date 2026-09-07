@@ -22,6 +22,11 @@ interface PartyBookingSummary {
 }
 
 interface PartyDetail extends PartyBookingSummary {
+  checkin_status?: string | null
+  checkin_started_at?: string | null
+  checkin_completed_at?: string | null
+  checkin_agreement_signed_at?: string | null
+  checkin_agreement_pdf_url?: string | null
   admin_notes: string | null
   notes: string | null
   event_type?: string | null
@@ -43,6 +48,16 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   paid_in_full: { label: 'Paid in Full', color: 'bg-emerald-100 text-emerald-800' },
   completed: { label: 'Completed', color: 'bg-purple-100 text-purple-800' },
   cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800' },
+}
+
+const CHECKIN_STATUS: Record<string, { label: string; color: string }> = {
+  pending: { label: 'Not started', color: 'bg-gray-100 text-gray-700' },
+  started: { label: 'Details in', color: 'bg-amber-100 text-amber-800' },
+  complete: { label: 'Complete', color: 'bg-green-100 text-green-800' },
+}
+
+function checkinBadge(status: string | null | undefined) {
+  return CHECKIN_STATUS[status || 'pending'] ?? CHECKIN_STATUS.pending
 }
 
 const STATUS_FILTERS = ['all', 'pending_review', 'deposit_paid', 'approved', 'modifications_locked', 'paid_in_full', 'completed', 'cancelled']
@@ -222,6 +237,26 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
     await fetchDetail(selected.id)
     setActionLoading('')
     setCopyToast(res.ok ? `Link texted to ${data.to}` : (data.error || 'Failed to send text'))
+    setTimeout(() => setCopyToast(''), 3000)
+  }
+
+  async function sendCheckinLink() {
+    if (!selected) return
+    if (!selected.contact_phone) {
+      setCopyToast('No phone number on file')
+      setTimeout(() => setCopyToast(''), 2500)
+      return
+    }
+    setActionLoading('send_checkin_link')
+    const res = await fetch(`/api/admin/parties/${selected.id}`, {
+      method: 'POST',
+      headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'send_checkin_link' }),
+    })
+    const data = await res.json()
+    await fetchDetail(selected.id)
+    setActionLoading('')
+    setCopyToast(res.ok ? `Check-in link texted to ${data.to}` : (data.error || 'Failed to send check-in link'))
     setTimeout(() => setCopyToast(''), 3000)
   }
 
@@ -773,6 +808,50 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
               >
                 {copyToast || 'Copy Portal Link'}
               </button>
+
+              {/* ── Pre-arrival check-in ─────────────────────── */}
+              <div className="p-3 bg-gray-50 rounded-lg space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-[#1a2744]">Check-In</span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${checkinBadge(selected.checkin_status).color}`}>
+                    {checkinBadge(selected.checkin_status).label}
+                  </span>
+                </div>
+
+                <ul className="text-xs text-[#1a2744]/70 space-y-0.5">
+                  <li>{selected.checkin_started_at ? '✓' : '○'} Details &amp; marketing opt-in</li>
+                  <li>{selected.checkin_agreement_signed_at ? '✓' : '○'} Agreement &amp; waiver signed</li>
+                </ul>
+
+                {selected.checkin_agreement_pdf_url ? (
+                  <a
+                    href={selected.checkin_agreement_pdf_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-xs text-blue-700 underline"
+                  >
+                    View signed agreement (PDF)
+                  </a>
+                ) : null}
+
+                <button
+                  onClick={sendCheckinLink}
+                  disabled={!!actionLoading || !selected.contact_phone}
+                  title={selected.contact_phone ? `Text check-in link to ${selected.contact_phone}` : 'No phone number on file'}
+                  className="w-full bg-[#1a2744] text-white py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                  {actionLoading === 'send_checkin_link'
+                    ? 'Texting...'
+                    : selected.checkin_status === 'complete'
+                      ? '📱 Resend Check-In Link'
+                      : '📱 Send Check-In Link'}
+                </button>
+
+                <p className="text-[11px] text-[#1a2744]/50">
+                  Also texts automatically 36 hours before and at 6am on the day. Both stop once
+                  check-in is complete.
+                </p>
+              </div>
 
               {/* Unlock toggle — lets client edit even within the lock window */}
               <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">

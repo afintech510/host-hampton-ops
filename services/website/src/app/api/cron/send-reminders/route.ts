@@ -20,6 +20,8 @@ import {
 import { sendSMSVia } from '@/lib/sms'
 import { buildReviewUrl } from '@/lib/marketing/reviewLink'
 import { writeLedger } from '@/lib/marketing/graph'
+import { sendCheckinLinkSms, hasExplicitSmsOptOut } from '@/lib/checkinLink'
+import { isCheckinReminderType } from '@/lib/checkinReminders'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,7 +72,18 @@ export async function GET(req: NextRequest) {
       if (reminder.channel === 'email') {
         await processEmailReminder(reminder, contact, supabase)
       } else if (reminder.channel === 'sms') {
-        if (!contact.sms_opt_in || !contact.phone) {
+        // The check-in link is TRANSACTIONAL — it is about a party the customer
+        // has already booked and paid a deposit on, so it is not gated on the
+        // marketing sms_opt_in flag (most customers never tick that box, and
+        // gating on it would silently disable the feature for them). A real
+        // STOP is still honoured, via hasExplicitSmsOptOut.
+        const isTransactionalCheckin = isCheckinReminderType(reminder.reminder_type)
+
+        const blocked = isTransactionalCheckin
+          ? !contact.phone || await hasExplicitSmsOptOut(reminder.contact_id)
+          : !contact.sms_opt_in || !contact.phone
+
+        if (blocked) {
           // Contact opted out or no phone — cancel
           await supabase.from('scheduled_reminders').update({ status: 'cancelled' }).eq('id', reminder.id)
           continue
@@ -262,6 +275,30 @@ async function processSmsReminder(reminder: any, contact: any, supabase: any) {
   const firstName = contact.first_name || 'there'
 
   let body = ''
+
+  // Pre-arrival check-in link. Mints a FRESH token per send so the customer can
+  // use whichever text they still have, and skips entirely if check-in is
+  // already done (belt and braces — completion also cancels these rows).
+  if (isCheckinReminderType(reminder.reminder_type)) {
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('id, booking_ref, contact_name, contact_phone, checkin_status, status')
+      .eq('booking_ref', reminder.reference_id)
+      .single()
+
+    if (!booking) return
+    if (booking.checkin_status === 'complete') return
+    if (booking.status === 'cancelled') return
+
+    const result = await sendCheckinLinkSms({
+      id: booking.id,
+      contact_name: booking.contact_name,
+      // Prefer the number on the booking; fall back to the contact record.
+      contact_phone: booking.contact_phone || contact.phone,
+    })
+    if (!result.sent) console.warn('cron:checkin link not sent:', booking.booking_ref, result.reason)
+    return
+  }
 
   // Birthday rebooking references the booking by UUID (bookings.id).
   if (reminder.reminder_type === 'birthday_rebook_sms') {
