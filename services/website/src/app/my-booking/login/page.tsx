@@ -32,7 +32,10 @@ function LoginContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F6F1EB] flex items-center justify-center px-4">
+    <div
+      className="min-h-screen flex items-center justify-center px-4 py-16"
+      style={{ background: 'linear-gradient(to bottom, #BCCDEB 0%, #dae6f0 220px, #F7F2E8 420px)' }}
+    >
       <div className="bg-white rounded-2xl shadow-lg max-w-md w-full p-8 md:p-10">
         <h1 className="font-display text-2xl text-[#1a2744] text-center mb-2">
           My Booking
@@ -125,7 +128,14 @@ function LoginContent() {
 
 export default function PortalLoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#F6F1EB]" />}>
+    <Suspense
+      fallback={
+        <div
+          className="min-h-screen"
+          style={{ background: 'linear-gradient(to bottom, #BCCDEB 0%, #dae6f0 220px, #F7F2E8 420px)' }}
+        />
+      }
+    >
       <LoginContent />
     </Suspense>
   )
