@@ -78,12 +78,17 @@ integrated and embeds inline, choosing it costs almost no extra build effort.
 | **API** | `POST /api/checkin/[token]` (save details + consent), `POST /api/checkin/[token]/setup-intent` (card), `POST /api/admin/bookings/[id]/security-hold` (place/capture/release — admin only). |
 | **Consent** | Route the marketing opt-in through `lib/consent.ts` so it lands in the same ledger the marketing graph reads. Do not store a loose boolean. |
 | **Agreement** | Two options — embed **SignWell** (already integrated for studio rentals, `app/api/studio-rental/signwell-webhook`), or an in-page waiver with a typed signature + timestamp + IP. SignWell is stronger evidence and already wired; in-page is faster and cheaper. **Owner decision needed.** |
-| **Send** | Trigger options: cron (X hours before event), admin button, or automatically on booking confirmation. Recommend **admin button first** — zero automation risk while the flow is proven, then add cron. |
-| **Admin** | Surface check-in status per booking, plus buttons to resend the link and to capture or release the hold. |
+| **Send** | Reuse the existing `scheduled_reminders` table + `app/api/cron/send-reminders` — **no new cron needed**. On booking, insert two rows: `checkin_link_36hr` (party start − 36h) and `checkin_link_dayof` (6:00am local on the party date), `channel: 'sms'`. Plus an admin "Send check-in link" button for on-demand. Skip/cancel both rows once `checkin_status = 'complete'`. Mind the local-vs-UTC conversion — `lib/reminders.ts` already parses party times, follow that pattern rather than inventing a second one. |
+| **Admin** | Surface check-in status per booking, plus buttons to send/resend the link and to place, capture or release the $500 hold. Any staff may do all of it. Also needs a way to record a hold taken on the **GoDaddy POS** (§5b) and to flag it as still outstanding until released. |
 
 ## 4. Edge cases to handle
 
 - **Link opened after the event** → expire it, show a friendly message.
+- **Reminder fires after check-in is already done** → both scheduled sends must be cancelled or
+  skipped on completion, or customers get texted about something they finished.
+- **6am send on a party already checked in at 36h** → same suppression rule covers it.
+- **Party time changes after the rows are scheduled** → reschedule both reminder rows, or they fire
+  at the wrong time. Date changes are free now, so this will happen.
 - **Card declines the $500 auth** on arrival → staff needs a clear failure state and a retry path.
 - **Customer never fills it in** → the party still has to run; this cannot become a hard gate on the day.
 - **Multiple submissions / shared link** → last-write-wins, and never expose booking details before
@@ -102,12 +107,38 @@ integrated and embeds inline, choosing it costs almost no extra build effort.
 - ✅ **Refund policy** confirmed: half the $250 deposit non-refundable >30 days out, full deposit
   within 30 days, no date-change fee.
 
-**Still open (do not build past these without an answer):**
-1. **When does the link send** — on booking confirmation, X hours before the event, or
-   admin-triggered? *(Recommend: admin button first, then a cron once proven.)*
-2. **Is check-in required** before the party, or best-effort? *(Recommend best-effort — it must
-   never block a party that is physically happening.)*
-3. **Who can capture the $500** — any staff, or owner only?
+**Settled 2026-09-06 (second round) — nothing is open now:**
+- ✅ **Send schedule:** an **admin button** (send on demand) **plus** two automatic sends —
+  **36 hours before** the party, and again at **6:00am on the day**. Both suppressed once check-in
+  is complete, so nobody gets nagged after they have already done it.
+- ✅ **Best effort** — check-in never blocks a party. No hard gate on the day.
+- ✅ **Any staff** can place, capture or release the $500 hold.
+- ✅ **A GoDaddy POS terminal is available on site** as an alternative way to take the hold — see §5b.
+
+### 5b. Two processors: Stripe vs the GoDaddy POS
+
+Worth being explicit, because this is the one place the design can quietly go wrong: **the GoDaddy
+POS is a different payment processor from Stripe.** Deposits and balances run through Stripe. A hold
+placed on the GoDaddy terminal lives entirely outside this application — we cannot see it, release
+it, or reconcile it automatically, and it lands in a separate dashboard and payout.
+
+**Recommended split:**
+
+- **Stripe is the default path.** The card saved at check-in is held with a manual-capture
+  PaymentIntent. Staff place, capture and release it from admin with one click, and every state
+  change is recorded on the booking. This is the whole point of collecting the card up front.
+- **The GoDaddy POS is a documented manual fallback** — for a walk-in with no check-in on file, or
+  when the saved card declines on arrival. Admin records it by setting
+  `security_deposit_status = 'held_external'` with a free-text note (terminal reference, amount,
+  who took it).
+
+**The fallback's honest limitation:** a POS hold must also be **voided on the terminal** by staff.
+Our app can flag that it is outstanding, but it cannot release it. If that manual step is missed the
+customer's money stays tied up, which is exactly the kind of thing that produces an angry review. So
+the admin UI should surface any `held_external` hold as an open item until someone marks it released.
+
+If reconciliation across two processors turns out to be a nuisance in practice, the simplification is
+to make Stripe the only path and keep the POS purely for ad-hoc in-person sales.
 
 ## 6. Sequencing
 
