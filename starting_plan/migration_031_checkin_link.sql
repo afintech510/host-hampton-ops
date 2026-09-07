@@ -10,7 +10,10 @@
 -- NO card / Stripe columns here — that is Phase 2 by design.
 --
 -- Marketing opt-in is deliberately NOT stored on bookings. It is written
--- through lib/consent.ts into the consent ledger. Do not add a boolean here.
+-- through lib/contacts.ts upsertContact(), which sets email_opt_in/sms_opt_in
+-- with timestamps and source attribution on the contact record. Do not add a
+-- boolean here. (Note: lib/marketing/consent.ts is a different thing — it
+-- handles signed MEDIA releases, not marketing opt-in.)
 -- ══════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════════
