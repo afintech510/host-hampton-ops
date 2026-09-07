@@ -1,10 +1,14 @@
 -- ══════════════════════════════════════════════════════════════
 -- Migration 031: Pre-Arrival Check-In Link (Phase 1)
 -- Run in Supabase SQL Editor — MANUAL, not applied automatically.
+-- Safe to re-run. APPLIED TO PRODUCTION 2026-09-07.
 --
 -- Adds:
 --   1. checkin_tokens       — hashed, expiring magic-link tokens (mirrors portal_tokens)
 --   2. bookings.checkin_*   — check-in state + collected address + SignWell doc refs
+--   3. the two check-in reminder types on scheduled_reminders
+--   4. a partial unique index deduping them
+--   5. nothing — see the note at the bottom of this file
 --
 -- Phase 1 scope: contact details, marketing consent, SignWell agreement.
 -- NO card / Stripe columns here — that is Phase 2 by design.
@@ -41,8 +45,19 @@ CREATE INDEX IF NOT EXISTS idx_ct_token_hash ON public.checkin_tokens(token_hash
 
 ALTER TABLE public.checkin_tokens ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Service role full access" ON public.checkin_tokens
-  FOR ALL USING (true) WITH CHECK (true);
+-- CREATE POLICY has no IF NOT EXISTS, so guard it to keep this file re-runnable.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'checkin_tokens'
+      AND policyname = 'Service role full access'
+  ) THEN
+    CREATE POLICY "Service role full access" ON public.checkin_tokens
+      FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
 -- ═══════════════════════════════════════════════════════════════
 -- 2. Extend bookings
@@ -137,34 +152,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_checkin_link_reminder
   WHERE reminder_type IN ('checkin_link_36hr', 'checkin_link_dayof');
 
 -- ═══════════════════════════════════════════════════════════════
--- 5. Fix: allow 'sms_unsubscribed' in contact_interactions
+-- 5. (REMOVED) contact_interactions type CHECK
 -- ═══════════════════════════════════════════════════════════════
--- PRE-EXISTING BUG, fixed here because the check-in flow depends on it.
+-- An earlier draft of this migration rebuilt contact_interactions_type_check
+-- to add 'sms_unsubscribed', on the theory that the STOP handlers' audit-row
+-- inserts were silently failing the constraint.
 --
--- The STOP handlers (app/api/webhooks/twilio, app/api/webhooks/quo) insert a
--- contact_interactions row with type='sms_unsubscribed'. That value is not in
--- the table's CHECK constraint, and the insert's error is never checked — so
--- every SMS opt-out since those handlers shipped has silently failed to write
--- its audit row. (The sms_opt_in flag itself IS set correctly, so opt-outs
--- were still honoured; only the audit trail was lost.)
+-- That was rebuilt from starting_plan/HostHampton_Supabase_Schema.sql, which
+-- is STALE. The live table has been altered since: the app also writes
+-- 'sms_received' and 'sequence_email_sent', neither of which appears in that
+-- file, and those rows exist. Rebuilding from the stale list therefore failed
+-- with 23514 (existing rows violate it) and, had it succeeded, would have
+-- outlawed values in active use.
 --
--- The check-in link is transactional and therefore does NOT gate on the
--- marketing sms_opt_in flag, so it needs a trustworthy record of real STOPs.
--- Also adds 'email_unsubscribed' for symmetry with the Brevo webhook.
-
-ALTER TABLE public.contact_interactions
-  DROP CONSTRAINT IF EXISTS contact_interactions_type_check;
-
-ALTER TABLE public.contact_interactions
-  ADD CONSTRAINT contact_interactions_type_check
-    CHECK (type = ANY (ARRAY[
-      'email_sent', 'email_opened', 'email_clicked',
-      'sms_sent', 'sms_replied',
-      'ig_dm', 'fb_dm',
-      'phone_call', 'in_person',
-      'booking_inquiry', 'booking_confirmed',
-      'review_requested', 'review_left',
-      'ad_click', 'form_submission', 'other',
-      -- NEW: opt-out audit rows the webhook handlers already try to write
-      'sms_unsubscribed', 'email_unsubscribed'
-    ]::text[]));
+-- It is also not needed here. hasExplicitSmsOptOut() in lib/checkinLink.ts
+-- checks sms_opt_in=false AND sms_opt_in_at IS NOT NULL first, which detects a
+-- real STOP without reading the audit row at all. The audit-row lookup is a
+-- secondary signal only.
+--
+-- Whether the constraint genuinely rejects 'sms_unsubscribed' is unverified
+-- against production. To find out, run:
+--
+--   SELECT type, count(*) FROM public.contact_interactions GROUP BY type ORDER BY 2 DESC;
+--   SELECT pg_get_constraintdef(oid) FROM pg_constraint
+--     WHERE conname = 'contact_interactions_type_check';
+--
+-- If 'sms_unsubscribed' is absent from the constraint, fix it in its own
+-- migration built from the LIVE definition, not from the schema file.

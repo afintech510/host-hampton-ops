@@ -120,10 +120,11 @@ export async function hasExplicitSmsOptOut(contactId: string): Promise<boolean> 
     // ticked the marketing box has sms_opt_in_at NULL and is NOT opted out.
     if (contact.sms_opt_in === false && contact.sms_opt_in_at) return true
 
-    // Signal 2: an explicit opt-out audit row. Historically these inserts
-    // failed a CHECK constraint (fixed in migration 031), so this catches
-    // opt-outs going forward and cannot be relied on for older ones — hence
-    // signal 1 above.
+    // Signal 2: an explicit opt-out audit row, written by the STOP handlers.
+    // Treated as a secondary signal because it is not confirmed that these
+    // inserts actually land — contact_interactions has a type CHECK and the
+    // handlers never check the insert's error. Signal 1 above is the one that
+    // does not depend on it.
     const { data: optOut } = await supabase
       .from('contact_interactions')
       .select('id')
