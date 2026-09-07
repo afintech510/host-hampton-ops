@@ -161,6 +161,11 @@ services:
       - ZELLE_PHONE=${ZELLE_PHONE}
       - SIGNWELL_API_KEY=${SIGNWELL_API_KEY}
       - SIGNWELL_TEMPLATE_ID=${SIGNWELL_TEMPLATE_ID}
+      # Separate template for the pre-arrival check-in (rental agreement +
+      # liability waiver). Distinct from SIGNWELL_TEMPLATE_ID above, which is
+      # the studio rental agreement. Without this mapping the var never reaches
+      # the container and /checkin reports the agreement as unavailable.
+      - SIGNWELL_CHECKIN_TEMPLATE_ID=${SIGNWELL_CHECKIN_TEMPLATE_ID}
       - SIGNWELL_TEST_MODE=${SIGNWELL_TEST_MODE:-false}
       - SIGNWELL_SIGNER_PLACEHOLDER=${SIGNWELL_SIGNER_PLACEHOLDER:-Client}
     networks:

@@ -7,6 +7,8 @@ import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml,
 import { createCalendarEvent, addMinutes, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { studioRentalRate, hoursBetween } from '@/lib/studioRental'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
+import { sendCheckinLinkSms } from '@/lib/checkinLink'
+import { enqueueCheckinReminders, cancelCheckinReminders } from '@/lib/checkinReminders'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
@@ -62,6 +64,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     change_summary: 'Admin edit: ' + Object.keys(updates).filter(k => k !== 'updated_at').join(', '),
     new_data: updates,
   })
+
+  // Date changes are free, so they happen often. Both check-in texts are
+  // scheduled off the party start, so they have to move with it — otherwise a
+  // rescheduled party texts its customer on the old date.
+  if (updates.party_date !== undefined || updates.party_time !== undefined) {
+    const { data: fresh } = await supabase
+      .from('bookings')
+      .select('booking_ref, contact_email, party_date, party_time, checkin_status')
+      .eq('id', id)
+      .single()
+
+    // Nothing to reschedule once check-in is done.
+    if (fresh && fresh.checkin_status !== 'complete') {
+      await enqueueCheckinReminders({
+        bookingRef: fresh.booking_ref,
+        contactEmail: fresh.contact_email,
+        partyDate: fresh.party_date,
+        partyTime: fresh.party_time,
+      })
+    }
+  }
 
   return NextResponse.json({ ok: true })
 }
@@ -173,6 +196,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await supabase.from('booking_modifications').insert({
       booking_id: id, modified_by: 'admin', change_summary: 'Booking cancelled by admin',
     })
+
+    // Don't text a cancelled party's customer asking them to check in.
+    await cancelCheckinReminders(booking.booking_ref)
 
     return NextResponse.json({ ok: true, action: 'cancelled' })
   }
@@ -317,6 +343,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
 
     return NextResponse.json({ ok: true, action: 'portal_sms_sent', to: booking.contact_phone })
+  }
+
+  // Text the customer their pre-arrival check-in link. Any staff may do this.
+  if (action === 'send_checkin_link') {
+    if (!booking.contact_phone) {
+      return NextResponse.json({ error: 'No phone number on file for this booking' }, { status: 400 })
+    }
+
+    let result
+    try {
+      result = await sendCheckinLinkSms(booking)
+    } catch (err) {
+      console.error('admin:send_checkin_link error:', err)
+      return NextResponse.json({ error: 'Could not generate the check-in link' }, { status: 500 })
+    }
+
+    if (!result.sent) {
+      return NextResponse.json(
+        { error: `Failed to send check-in link — ${result.reason}` },
+        { status: 502 },
+      )
+    }
+
+    // Make sure the automatic sends exist too. A booking created before this
+    // feature shipped has no reminder rows; this backfills them on first send.
+    await enqueueCheckinReminders({
+      bookingRef: booking.booking_ref,
+      contactEmail: booking.contact_email,
+      partyDate: booking.party_date,
+      partyTime: booking.party_time,
+    })
+
+    await supabase.from('booking_modifications').insert({
+      booking_id: id, modified_by: 'admin',
+      change_summary: `Check-in link texted to ${booking.contact_phone}`,
+    })
+
+    return NextResponse.json({ ok: true, action: 'checkin_link_sent', to: booking.contact_phone })
   }
 
   if (action === 'delete_booking') {

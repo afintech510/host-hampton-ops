@@ -1,16 +1,10 @@
 import { getSupabase } from '@/lib/supabase'
+import { enqueueCheckinReminders } from '@/lib/checkinReminders'
 
-/** Parse "7:00 PM" or "19:00" into hours/minutes */
-function parseTime(timeStr: string): { hours: number; minutes: number } | null {
-  const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i)
-  if (!match) return null
-  let hours = parseInt(match[1])
-  const minutes = parseInt(match[2])
-  const period = match[3]?.toUpperCase()
-  if (period === 'PM' && hours < 12) hours += 12
-  if (period === 'AM' && hours === 12) hours = 0
-  return { hours, minutes }
-}
+// Time parsing / timezone conversion lives in lib/partyTime.ts so the check-in
+// scheduler can share it without a circular import. Re-exported here because
+// this module was its original home.
+export { parseTime, etToUtc, PARTY_TZ } from '@/lib/partyTime'
 
 /**
  * Enqueue reminders for an event ticket purchase.
@@ -352,6 +346,22 @@ export async function enqueuePartyReminders({
       await supabase.from('scheduled_reminders').insert(reminders)
       console.log(`Enqueued ${reminders.length} party reminders for ${bookingRef}`)
     }
+
+    // Pre-arrival check-in texts (36hr + 6am day-of). Scheduled here because
+    // this is the one function every confirmed party booking passes through.
+    // Needs party_time, which this function isn't given — read it back.
+    const { data: bk } = await supabase
+      .from('bookings')
+      .select('party_time')
+      .eq('booking_ref', bookingRef)
+      .single()
+
+    await enqueueCheckinReminders({
+      bookingRef,
+      contactEmail,
+      partyDate,
+      partyTime: bk?.party_time ?? null,
+    })
   } catch (err) {
     console.error('enqueuePartyReminders error (non-fatal):', err)
   }
