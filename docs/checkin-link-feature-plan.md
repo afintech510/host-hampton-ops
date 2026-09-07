@@ -23,25 +23,51 @@ One tokenised link per booking, texted to the client before their event. The pag
 On completion: booking flips to "checked in", card is stored, agreement is on file, and staff see a
 green light in admin.
 
-## 2. The two hard dependencies
+## 2. Dependencies — ALL RESOLVED 2026-09-06
 
-**A. SMS delivery is not currently guaranteed.** `lib/sms.ts` routes through `SMS_PROVIDER`
-(Twilio default, Quo available), and **A2P 10DLC registration is still pending** — see
-[[quo-sms-integration]]. Until A2P is approved, automated application-to-person texts to US numbers
-are liable to be filtered or blocked. **Decide:** wait for A2P, or send the link by email first with
-SMS added later. Email works today via Resend.
+**A. SMS is unblocked.** ✅ A2P 10DLC registration is **complete and approved**. Send through
+`sendSMS()` in `lib/sms.ts`, which routes on the `SMS_PROVIDER` env var; transactional traffic is
+pinned to **Quo**, marketing stays on Twilio. Use `sendSMSVia('quo', …)` if the check-in link must
+be provider-explicit regardless of the global default. Note MMS always goes via Twilio (Quo has no
+media support) — not relevant here, this is a plain text link.
 
-**B. Stripe authorization holds expire in about 7 days.** You cannot place the $500 hold when the
-link is filled in if that is three weeks before the party. The correct shape is two steps:
+**B. Card-on-file is approved.** ✅ Owner confirmed "allow save card". So the two-step shape:
 
 - **At check-in time:** `SetupIntent` → save the card as a reusable payment method (no charge, no hold).
 - **On/just before arrival:** create a `PaymentIntent` with `capture_method: 'manual'` for $500
   against the saved card. That is the actual hold. Capture it only if there is damage; otherwise
   cancel it and the hold drops off.
 
-This also matches what the site now tells customers ("authorized on your card when you arrive").
-Note there is currently **no** programmatic auth code anywhere — `security_deposit_status` is only
-ever written as `'none'`.
+This is required rather than optional, because **Stripe authorization holds expire in about 7 days** —
+you cannot place the hold when the form is filled in three weeks before the party. It also matches
+what the site now tells customers ("authorized on your card when you arrive"). Note there is
+currently **no** programmatic auth code anywhere — `security_deposit_status` is only ever written
+as `'none'`.
+
+**C. Signature method: use SignWell, embedded.** ✅ See §2b.
+
+### 2b. SignWell vs. an in-page waiver
+
+`lib/signwell.ts` is already a working **embedded** signing client — it creates a document from a
+dashboard template and returns a signing URL that renders **inside an iframe on our own page**, with
+a completion webhook (`app/api/studio-rental/signwell-webhook`). So this is not a redirect away to a
+third-party site.
+
+| | SignWell (already built) | In-page waiver (would be built) |
+|---|---|---|
+| What it is | A DocuSign competitor — same category, cheaper | Rolling our own minimal version of DocuSign |
+| Legal evidence | Certificate of completion + tamper-evident audit trail (identity, timestamp, IP), executed PDF stored | Valid under ESIGN/UETA if logged well, but *we* must produce and defend the evidence |
+| Document versioning | Handled by the template | We must snapshot the exact text version each signer saw |
+| UX | Embedded iframe — stays on our page | Fully inline, marginally faster |
+| Dev effort | Low — reuse what exists | Higher — build, store, version, and audit it ourselves |
+| Cost | Per-document / plan | Free |
+
+**Recommendation — hybrid, and it is the cheap option:** our check-in page collects the contact
+details, marketing consent and card; the **rental agreement and liability waiver go through the
+embedded SignWell template**. A liability waiver is precisely the document where an audit trail
+earns its keep — if a parent later disputes signing it, "here is the signed PDF and its certificate"
+ends the conversation, whereas home-grown logs invite an argument. Since SignWell is already
+integrated and embeds inline, choosing it costs almost no extra build effort.
 
 ## 3. Build outline
 
@@ -67,18 +93,30 @@ ever written as `'none'`.
 - **PCI** — card data must go through Stripe Elements only; never touches our server or DB.
 - **Existing bookings** taken before this exists have no token — backfill or leave manual.
 
-## 5. Decisions needed before building
+## 5. Decisions
 
-1. **SMS now or email now?** (blocked on A2P — see 2A)
-2. **SignWell embed, or in-page waiver?**
-3. **When does the link send** — on booking, X hours before, or admin-triggered?
-4. **Is check-in required** before the party, or best-effort?
-5. **Who can capture the $500** — any staff, or owner only?
+**Settled 2026-09-06:**
+- ✅ **SMS by text is fine** — A2P approved; send via Quo (transactional).
+- ✅ **Save the card** — SetupIntent at check-in, manual-capture hold on arrival.
+- ✅ **SignWell, embedded** for the agreement + waiver (§2b).
+- ✅ **Refund policy** confirmed: half the $250 deposit non-refundable >30 days out, full deposit
+  within 30 days, no date-change fee.
 
-## 6. Sequencing suggestion
+**Still open (do not build past these without an answer):**
+1. **When does the link send** — on booking confirmation, X hours before the event, or
+   admin-triggered? *(Recommend: admin button first, then a cron once proven.)*
+2. **Is check-in required** before the party, or best-effort? *(Recommend best-effort — it must
+   never block a party that is physically happening.)*
+3. **Who can capture the $500** — any staff, or owner only?
 
-Phase 1 — the page + details + consent + agreement, link sent **by email**, admin-triggered.
-Phase 2 — add the Stripe SetupIntent + manual-capture hold and the admin capture/release controls.
-Phase 3 — add SMS once A2P clears, and automate the send on a schedule.
+## 6. Sequencing
+
+Now that nothing is blocked, this can go in one pass, but staging it still de-risks the payments part:
+
+Phase 1 — check-in page + contact details + marketing consent + embedded SignWell agreement, link
+sent by **SMS** (admin-triggered).
+Phase 2 — Stripe SetupIntent (save card) + the $500 manual-capture hold, plus admin capture/release
+controls and the `security_deposit_status` transitions.
+Phase 3 — automate the send on a schedule, and add reminders for anyone who has not checked in.
 
 Phase 1 delivers most of the value (details, consent, signed waiver) with none of the payments risk.
