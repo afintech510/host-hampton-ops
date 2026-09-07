@@ -292,7 +292,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, action: 'portal_url_generated', portalUrl })
   }
 
-  // Text the customer a fresh portal link via SMS (Twilio).
+  // Text the customer a fresh portal link. Transactional → Quo.
   if (action === 'send_portal_sms') {
     if (!booking.contact_phone) {
       return NextResponse.json({ error: 'No phone number on file for this booking' }, { status: 400 })
