@@ -3395,8 +3395,8 @@ export default function PartyBuilderContent({
 
                   {addPayMethod !== 'card' && addPayAmount && (
                     <div className="bg-hampton-blue/10 border border-hampton-blue/20 rounded-xl p-3 text-xs text-hampton-navy/70 leading-relaxed">
-                      {addPayMethod === 'venmo' && <>Send {fmt(Math.round(parseFloat(addPayAmount || '0') * 100))} via Venmo — contact <strong>Allie at <a href="tel:6319989325" className="underline">(631) 998-9325</a></strong> for the handle. Confirm below and we&apos;ll match it up.</>}
-                      {addPayMethod === 'zelle' && <>Send {fmt(Math.round(parseFloat(addPayAmount || '0') * 100))} via Zelle — contact <strong>Allie at <a href="tel:6319989325" className="underline">(631) 998-9325</a></strong> for the phone number. Confirm below and we&apos;ll match it up.</>}
+                      {addPayMethod === 'venmo' && <>Send {fmt(Math.round(parseFloat(addPayAmount || '0') * 100))} on Venmo to <strong><a href={`https://venmo.com/?txn=pay&recipients=hosthampton&amount=${(Math.round(parseFloat(addPayAmount || '0') * 100) / 100).toFixed(2)}&note=${encodeURIComponent(loadedBooking?.booking_ref ? `Host Hampton ${loadedBooking.booking_ref}` : 'Host Hampton party')}`} target="_blank" rel="noopener noreferrer" className="underline">@HostHampton</a></strong> (Venmo phone <strong>631-599-2469</strong>). Put your booking ref{loadedBooking?.booking_ref ? <> <strong>{loadedBooking.booking_ref}</strong></> : null} in the note, then confirm below and we&apos;ll match it up.</>}
+                      {addPayMethod === 'zelle' && <>Send {fmt(Math.round(parseFloat(addPayAmount || '0') * 100))} via Zelle to <strong>631-599-2469</strong> (Host Hampton). Put your booking ref{loadedBooking?.booking_ref ? <> <strong>{loadedBooking.booking_ref}</strong></> : null} in the memo, then confirm below and we&apos;ll match it up.</>}
                       {addPayMethod === 'cash' && <>Bring {fmt(Math.round(parseFloat(addPayAmount || '0') * 100))} in cash to your party or the studio. Confirm below.</>}
                     </div>
                   )}
