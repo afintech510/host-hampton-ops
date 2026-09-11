@@ -182,7 +182,16 @@ turned on.
 `QUO_WEBHOOK_SECRET` became security-relevant in Phase 2: `/api/webhooks/quo`
 now **fails closed** (401 on a bad or missing signature) because an inbound SMS
 can approve a draft and trigger a customer-facing send. Leaving the var unset
-disables verification entirely — set it in the Quo webhook config and on the box.
+disables verification entirely.
+
+The live subscription is Quo webhook `WHc7b78b376fd743ab9bfc10365f5d241f` on
+phone `PNYQcWcAEd` (+1 631-998-9325), event `message.received`, pointing at
+`https://www.hosthampton.com/api/webhooks/quo`. Its signing key IS
+`QUO_WEBHOOK_SECRET` on the box. **If that webhook is ever deleted and recreated
+in Quo, the new key must be copied to the box or every inbound SMS starts
+401ing** — including customer STOP requests. List it with
+`curl -s https://api.quo.com/v1/webhooks -H "Authorization: $QUO_API_KEY"` (raw
+key, no `Bearer`).
 
 "Nothing reaches a customer without a human" is enforced structurally, not by
 convention: `inquiry_draft` is an entity in `lib/marketing/graph.ts` whose
