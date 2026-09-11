@@ -82,6 +82,13 @@ export const AUTO_IGNORE_DOMAINS: readonly string[] = [
   'cron-job.org',
   'intuit.com',
   'quickbooks.com',
+  // Added 2026-09-11 after the first real poll: pure receipt and bulk-sender
+  // domains. No customer will ever write to us from one, so they should never
+  // reach the model at all.
+  'paypal.com',
+  'shopifyemail.com',
+  'mailchimpapp.com',
+  'cleancloudapp.com',
 ]
 
 /** Local-parts that are never a person, whatever the domain. */

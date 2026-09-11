@@ -275,3 +275,14 @@ describe('the Anthropic request shape', () => {
     expect(sent.model).toBe('claude-haiku-4-5')
   })
 })
+
+describe('auto-ignore additions from the first real poll (2026-09-11)', () => {
+  it.each([
+    'service@paypal.com',
+    'store+73809658096@m.shopifyemail.com',
+    'saturdaycandyco@214971226.mailchimpapp.com',
+    'spin-sudz-37099@cleancloudapp.com',
+  ])('ignores the bulk/receipt sender %s without a model call', addr => {
+    expect(autoIgnoreReason(addr)).toBeTruthy()
+  })
+})
