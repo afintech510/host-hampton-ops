@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { upsertContact } from '@/lib/contacts'
 import { recordInboundEvent } from '@/lib/agent/events'
 import {
   applyHandledLabel,
@@ -78,38 +77,26 @@ async function writeState(supabase: Supa, patch: Record<string, unknown>): Promi
 
 /* ── Ingestion ──────────────────────────────────────────────────────── */
 
-/**
- * The contact behind an inbound message, created if we have not seen them.
- *
- * Only for real inbound mail from a human: `autoIgnoreReason` has already
- * excluded receipts and platform senders, so this does not fill the address
- * book (and Brevo, and Quo, via contactSync) with robots.
- */
 /** Display name out of `"Jess Rivera" <jess@…>`, falling back to the local part. */
 function displayName(msg: GmailMessage): string {
   return (msg.from.match(/^\s*"?([^"<]+?)"?\s*</)?.[1] || msg.fromEmail.split('@')[0] || '').trim()
 }
 
-async function contactFor(msg: GmailMessage): Promise<string | null> {
-  if (msg.direction === 'out') return null
-  if (autoIgnoreReason(msg.fromEmail, msg.subject)) return null
-
-  const supabase = getSupabase()
-  const { data: existing } = await supabase
-    .from('contacts')
-    .select('id')
-    .eq('email', msg.fromEmail)
-    .maybeSingle()
-  if (existing?.id) return String(existing.id)
-
-  return upsertContact({
-    name: displayName(msg),
-    email: msg.fromEmail,
-    phone: null,
-    sourceDetail: 'gmail-inbound',
-    serviceInterests: ['general'],
-    marketingConsent: false,
-  })
+/**
+ * Link to an EXISTING contact. Ingestion never creates one.
+ *
+ * It used to, for any sender the auto-ignore list did not recognise — which in
+ * one real poll meant 52 new contacts for Abercrombie, Royal Caribbean,
+ * Priceline and friends. A marketing sender is only KNOWN to be marketing once
+ * triage has read it, so ingestion cannot tell and must not guess. The
+ * dispatcher creates the contact after triage says the message is worth
+ * answering, which is also when the plan's "every contact exists in Supabase,
+ * Brevo and Quo" rule starts to matter.
+ */
+async function existingContactFor(supabase: Supa, msg: GmailMessage): Promise<string | null> {
+  if (!msg.fromEmail) return null
+  const { data } = await supabase.from('contacts').select('id').eq('email', msg.fromEmail).maybeSingle()
+  return data?.id ? String(data.id) : null
 }
 
 /**
@@ -152,14 +139,7 @@ async function ingestOne(supabase: Supa, id: string, labelId: string | null, for
   const ignore = msg.direction === 'out' ? 'outbound — voice corpus, stands the agent down on this thread' : autoIgnoreReason(msg.fromEmail, msg.subject)
   const needsAction = !forceHandled && !ignore
 
-  // The backfill is a CORPUS pull, and contactSync mirrors every new contact
-  // into Brevo and Quo. Creating one per sender across twelve months would
-  // push a year of strangers into both address books — a large, outward-facing
-  // side effect nobody asked for. It links to contacts that already exist and
-  // creates none.
-  const contactId = forceHandled
-    ? ((await supabase.from('contacts').select('id').eq('email', msg.fromEmail).maybeSingle()).data?.id ?? null)
-    : await contactFor(msg)
+  const contactId = await existingContactFor(supabase, msg)
   const bookingId = await bookingFor(supabase, contactId)
 
   const eventId = await recordInboundEvent({

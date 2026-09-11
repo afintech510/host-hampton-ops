@@ -6,6 +6,7 @@ import { agentEnabled, dailyUsdCap, isBusinessHours, NUDGE_AFTER_MS } from '@/li
 import { handleReviewerReply } from '@/lib/agent/reviewLoop'
 import { triageMessage } from '@/lib/agent/triage'
 import { notifyOwnerSms } from '@/lib/ownerNotify'
+import { upsertContact } from '@/lib/contacts'
 import { writeLedger } from '@/lib/marketing/graph'
 
 export const dynamic = 'force-dynamic'
@@ -363,7 +364,29 @@ export async function GET(req: NextRequest) {
         continue
       }
 
-      const outcome = await draftForInquiry({ supabase, event })
+      // Only NOW is this worth a place in the address book. Ingestion links to
+      // contacts that already exist but creates none, because a newsletter
+      // sender is only known to be one after triage reads it. This is also the
+      // plan's contact-sync rule (§1): every contact the agent touches must
+      // exist in Supabase, Brevo and Quo, which upsertContact handles.
+      const gmailEvent = event
+      if (!gmailEvent.contact_id && gmailEvent.from_address) {
+        const p = (gmailEvent.parsed ?? {}) as { name?: string }
+        const newContactId = await upsertContact({
+          name: p.name || gmailEvent.from_address.split('@')[0],
+          email: gmailEvent.from_address,
+          phone: null,
+          sourceDetail: 'gmail-inbound',
+          serviceInterests: ['general'],
+          marketingConsent: false,
+        }).catch(() => null)
+        if (newContactId) {
+          gmailEvent.contact_id = newContactId
+          await supabase.from('ingested_messages').update({ contact_id: newContactId }).eq('id', gmailEvent.id)
+        }
+      }
+
+      const outcome = await draftForInquiry({ supabase, event: gmailEvent })
       if (outcome.ok) {
         drafted++
         await finishEvent(supabase, event.id, 'handled', {
