@@ -193,8 +193,19 @@ describe('applyExtractedFields', () => {
     party_tags: Record<string, unknown> | null
   }
 
-  function makeSupabase(row: PlanRow | null, updateError: { message: string } | null = null) {
+  /**
+   * @param raced Simulate the guarded UPDATE matching no rows — i.e. somebody
+   *   filled the field in between our read and our write. The real query says
+   *   so by returning an empty `data` from `.select('id')`, not by erroring.
+   */
+  function makeSupabase(
+    row: PlanRow | null,
+    updateError: { message: string } | null = null,
+    raced = false,
+  ) {
     const updates: Record<string, unknown>[] = []
+    /** Columns the write was guarded on, so a test can assert the guard exists. */
+    const guards: string[] = []
     const from = jest.fn((table: string) => {
       const ops: string[] = []
       let patch: Record<string, unknown> | null = null
@@ -203,7 +214,10 @@ describe('applyExtractedFields', () => {
           if (table === 'marketing_ledger') return Promise.resolve({ data: null, error: null }).then(res, rej)
           if (ops.includes('update')) {
             if (patch) updates.push(patch)
-            return Promise.resolve({ data: null, error: updateError }).then(res, rej)
+            // `applyExtractedFields` now reads the UPDATE's returned rows to tell
+            // "I wrote it" from "somebody got there first".
+            const data = updateError ? null : raced ? [] : [{ id: 'b1' }]
+            return Promise.resolve({ data, error: updateError }).then(res, rej)
           }
           return Promise.resolve({ data: row, error: row ? null : { message: 'not found' } }).then(res, rej)
         },
@@ -211,10 +225,11 @@ describe('applyExtractedFields', () => {
       for (const m of ['select', 'eq', 'limit', 'maybeSingle', 'single', 'insert']) {
         chain[m] = () => { ops.push(m); return chain }
       }
+      chain.is = (col: string) => { ops.push('is'); if (ops.includes('update')) guards.push(col); return chain }
       chain.update = (p: Record<string, unknown>) => { ops.push('update'); patch = p; return chain }
       return chain
     })
-    return { supabase: { from } as never, updates }
+    return { supabase: { from } as never, updates, guards }
   }
 
   const BLANK: PlanRow = {
@@ -295,6 +310,31 @@ describe('applyExtractedFields', () => {
     })
     expect(res.updated).toEqual([])
     expect(res.error).toBe('constraint violation')
+  })
+
+  // The blank-check reads the row and the UPDATE writes it; between the two,
+  // Adam can type the date into the admin form. Rule 1 says the human's value
+  // wins, and before this the write was unconditional — it re-checked the copy
+  // it had already read, which cannot see a change made after the read.
+  it('guards the write on the columns it read as blank', async () => {
+    const { supabase, guards } = makeSupabase(BLANK)
+    await applyExtractedFields({
+      supabase,
+      bookingId: 'bk-1',
+      fields: { party_date: '2026-03-14', guest_count: 12 },
+    })
+    expect(guards.sort()).toEqual(['guest_count_approx', 'party_date'])
+  })
+
+  it('writes nothing and says so when someone filled the field first', async () => {
+    const { supabase } = makeSupabase(BLANK, null, true)
+    const res = await applyExtractedFields({
+      supabase, bookingId: 'bk-1', fields: { party_date: '2026-03-14' },
+    })
+    // A dropped extraction costs one more "what date works?"; a clobbered one
+    // quotes against a day nobody agreed to.
+    expect(res.updated).toEqual([])
+    expect(res.error).toMatch(/changed while extracting/)
   })
 
   it('reports a missing plan instead of throwing', async () => {

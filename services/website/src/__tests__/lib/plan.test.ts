@@ -37,6 +37,8 @@ function makeSupabase(opts: SupaOpts = {}) {
   const inserted: { table: string; row: any }[] = []
   const updated: { table: string; row: any }[] = []
   const deleted: string[] = []
+  /** Every `or=` expression `findOpenPlan` built, so a test can inspect it. */
+  const orFilters: string[] = []
   let lookupIdx = 0
 
   function resolve(table: string, ops: [string, ...unknown[]][]) {
@@ -67,6 +69,7 @@ function makeSupabase(opts: SupaOpts = {}) {
     for (const m of ['select', 'eq', 'in', 'or', 'gte', 'order', 'limit', 'single', 'maybeSingle']) {
       chain[m] = jest.fn((...args: unknown[]) => {
         ops.push([m, ...args])
+        if (m === 'or' && typeof args[0] === 'string') orFilters.push(args[0])
         return chain
       })
     }
@@ -90,6 +93,7 @@ function makeSupabase(opts: SupaOpts = {}) {
 
   return {
     supabase: { from } as any,
+    orFilters,
     inserted,
     updated,
     deleted,
@@ -477,5 +481,66 @@ describe('ensureLeadPlan — enriching the plan it reused', () => {
     const s = makeSupabase({ planLookups: [{ data: [{ ...base, party_type: 'mobile_party', notes: null }] }] })
     await ensureLeadPlan({ supabase: s.supabase, contactEmail: 'jess@example.com', eventType: 'mobile party' })
     expect(s.bookingUpdates()).toHaveLength(0)
+  })
+})
+
+/**
+ * `findOpenPlan` builds a PostgREST `or()` expression out of the email and phone
+ * a stranger typed into a form. Two things were wrong with doing that by string
+ * concatenation, and both were confirmed against the live PostgREST on
+ * 2026-09-11 rather than reasoned about.
+ */
+describe('matching a contact to their open plan', () => {
+  it('quotes handles so a crafted value cannot add a disjunct', async () => {
+    const { supabase, orFilters } = makeSupabase()
+
+    // Live probe: this value as an unquoted email turned
+    // `or=(contact_email.eq.<value>)` into a second, attacker-chosen condition
+    // and returned two real production bookings. `findOpenPlan` would have
+    // handed one back as "this person's open plan", and `enrichPlan` writes the
+    // new inquiry's name, notes and tags onto whatever plan it is given — i.e.
+    // onto a stranger's booking, which then feeds that stranger's next draft.
+    await ensureLeadPlan({
+      supabase,
+      contactEmail: 'x@y.com,contact_phone.eq.6314008080',
+      contactName: 'Mallory',
+    })
+
+    expect(orFilters.length).toBeGreaterThan(0)
+    for (const f of orFilters) {
+      // The payload survives only inside quotes, as a value.
+      expect(f).toContain('contact_email.eq."x@y.com,contact_phone.eq.6314008080"')
+      // Exactly one condition: the comma is data, not a separator.
+      expect(f.split('",').length).toBe(1)
+    }
+  })
+
+  it('matches the same number however it was typed', async () => {
+    // Phase 2 creates a `lead` plan for an unknown texter with an E.164 number;
+    // that same person then fills in the web form typing 631-555-1234. Every
+    // other module normalises before comparing — this one compared raw strings,
+    // so the open plan was missed and the lead got a SECOND plan, which earns
+    // its own draft and its own text to Adam's phone.
+    const { supabase, orFilters } = makeSupabase()
+    await ensureLeadPlan({ supabase, contactPhone: '631-555-1234', contactName: 'Jo' })
+
+    const filter = orFilters[0]
+    expect(filter).toContain('contact_phone.eq."+16315551234"')
+    expect(filter).toContain('contact_phone.eq."6315551234"')
+    expect(filter).toContain('contact_phone.eq."631-555-1234"')
+    expect(filter).toContain('contact_phone.eq."(631) 555-1234"')
+  })
+
+  it('reuses the plan created when the same person texted in', async () => {
+    const { supabase, bookingInserts } = makeSupabase({
+      planLookups: [
+        { data: [{ id: 'plan-sms', booking_ref: 'HH-PTY-AAA', contact_phone: '+16315551234', party_tags: {} }] },
+      ],
+    })
+    const res = await ensureLeadPlan({ supabase, contactPhone: '(631) 555-1234', contactName: 'Jo' })
+
+    expect(res.reused).toBe(true)
+    expect(res.bookingId).toBe('plan-sms')
+    expect(bookingInserts()).toHaveLength(0)
   })
 })

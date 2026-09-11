@@ -129,6 +129,14 @@ export interface PricingCatalog {
   guestRules: GuestRules
   /** False when any part of this came from the compiled fallback. */
   fromDb: boolean
+  /**
+   * Catalog keys whose row EXISTS but whose price was overridden by the compiled
+   * fallback (see `cents`). Empty on a healthy read. Non-empty means the page is
+   * showing a number that is not what the table says — which is exactly the
+   * state worth being able to see, because a per-field fallback renders
+   * plausibly either way.
+   */
+  fallbackFields: string[]
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -240,6 +248,7 @@ export const FALLBACK_CATALOG: PricingCatalog = {
   studioRates: FALLBACK_STUDIO_RATES,
   guestRules: FALLBACK_GUEST_RULES,
   fromDb: false,
+  fallbackFields: [],
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -270,10 +279,22 @@ function metaStrings(row: CatalogRow, field: string): string[] | null {
  * is 0 is only trusted when 0 is meaningful (a policy/label row); for a rate we
  * would rather show last month's number than free studio hire.
  */
-function cents(row: CatalogRow | undefined, fallback: number): number {
+function cents(row: CatalogRow | undefined, fallback: number, overridden?: string[]): number {
   if (!row) return fallback
   const n = Number(row.price_cents)
-  return Number.isFinite(n) && n > 0 ? n : fallback
+  if (Number.isFinite(n) && n > 0) return n
+  // A row that EXISTS and prices at 0 is ambiguous, and the ambiguity is not
+  // resolvable here: `studio_weekend_base = 0` is certainly a broken row, but
+  // `mini_party_discount = 0`, `theme_extra_guest = 0` or `mobile_extra_child = 0`
+  // are all things Adam could legitimately mean ("we don't charge that any
+  // more"), and this function silently restores the old number in every case.
+  // Preserving that behaviour on purpose — quietly re-introducing a $200
+  // discount is bad, but silently making a studio rental free is worse, and
+  // which of the two a given key deserves is Adam's call, not this module's.
+  // What it must not do is stay invisible, so the override is recorded: it is
+  // reported by `fallbackFields` and it stops the result being cached.
+  overridden?.push(keyOf(row) || row.name)
+  return fallback
 }
 
 /**
@@ -288,6 +309,8 @@ export function catalogFromRows(rows: CatalogRow[]): PricingCatalog {
     if (k && !byKey.has(k)) byKey.set(k, row)
   }
   const get = (k: string) => byKey.get(k)
+  // Keys whose existing row priced at 0 and was overridden by the constant.
+  const overridden: string[] = []
 
   // ── Published tiers. A tier is only usable with a price AND an includes
   // list, so a half-written row falls back rather than rendering a blank card.
@@ -316,7 +339,7 @@ export function catalogFromRows(rows: CatalogRow[]): PricingCatalog {
   }
 
   const bands: MobileBands = {
-    baseCents: cents(get('mobile_planner_base'), FALLBACK_MOBILE_BANDS.baseCents),
+    baseCents: cents(get('mobile_planner_base'), FALLBACK_MOBILE_BANDS.baseCents, overridden),
     tier2SurchargeCents: cents(get('mobile_planner_tier2'), FALLBACK_MOBILE_BANDS.tier2SurchargeCents),
     tier3SurchargeCents: cents(get('mobile_planner_tier3'), FALLBACK_MOBILE_BANDS.tier3SurchargeCents),
     tier2GuestThreshold:
@@ -327,25 +350,25 @@ export function catalogFromRows(rows: CatalogRow[]): PricingCatalog {
 
   const mobilePolicy: MobilePolicy = {
     minGuests: metaNum(get('mobile_min_guests'), 'value') ?? FALLBACK_MOBILE_POLICY.minGuests,
-    extraChildCents: cents(get('mobile_extra_child'), FALLBACK_MOBILE_POLICY.extraChildCents),
+    extraChildCents: cents(get('mobile_extra_child'), FALLBACK_MOBILE_POLICY.extraChildCents, overridden),
     freeTravelMiles: metaNum(get('mobile_free_travel_miles'), 'value') ?? FALLBACK_MOBILE_POLICY.freeTravelMiles,
   }
 
   const studioRates: StudioRates = {
-    weekendBaseCents: cents(get('studio_weekend_base'), FALLBACK_STUDIO_RATES.weekendBaseCents),
-    weekdayBaseCents: cents(get('studio_weekday_base'), FALLBACK_STUDIO_RATES.weekdayBaseCents),
-    weekendAddlHourCents: cents(get('studio_weekend_addl_hour'), FALLBACK_STUDIO_RATES.weekendAddlHourCents),
-    weekdayAddlHourCents: cents(get('studio_weekday_addl_hour'), FALLBACK_STUDIO_RATES.weekdayAddlHourCents),
-    weekendFullDayCents: cents(get('studio_weekend_full_day'), FALLBACK_STUDIO_RATES.weekendFullDayCents),
-    weekdayFullDayCents: cents(get('studio_weekday_full_day'), FALLBACK_STUDIO_RATES.weekdayFullDayCents),
+    weekendBaseCents: cents(get('studio_weekend_base'), FALLBACK_STUDIO_RATES.weekendBaseCents, overridden),
+    weekdayBaseCents: cents(get('studio_weekday_base'), FALLBACK_STUDIO_RATES.weekdayBaseCents, overridden),
+    weekendAddlHourCents: cents(get('studio_weekend_addl_hour'), FALLBACK_STUDIO_RATES.weekendAddlHourCents, overridden),
+    weekdayAddlHourCents: cents(get('studio_weekday_addl_hour'), FALLBACK_STUDIO_RATES.weekdayAddlHourCents, overridden),
+    weekendFullDayCents: cents(get('studio_weekend_full_day'), FALLBACK_STUDIO_RATES.weekendFullDayCents, overridden),
+    weekdayFullDayCents: cents(get('studio_weekday_full_day'), FALLBACK_STUDIO_RATES.weekdayFullDayCents, overridden),
     minHours: metaNum(get('studio_min_hours'), 'value') ?? FALLBACK_STUDIO_RATES.minHours,
-    securityDepositCents: cents(get('studio_security_hold'), FALLBACK_STUDIO_RATES.securityDepositCents),
+    securityDepositCents: cents(get('studio_security_hold'), FALLBACK_STUDIO_RATES.securityDepositCents, overridden),
   }
 
   const guestRules: GuestRules = {
     includedGuests: metaNum(get('theme_included_guests'), 'value') ?? FALLBACK_GUEST_RULES.includedGuests,
-    extraGuestCents: cents(get('theme_extra_guest'), FALLBACK_GUEST_RULES.extraGuestCents),
-    miniPartyDiscountCents: cents(get('mini_party_discount'), FALLBACK_GUEST_RULES.miniPartyDiscountCents),
+    extraGuestCents: cents(get('theme_extra_guest'), FALLBACK_GUEST_RULES.extraGuestCents, overridden),
+    miniPartyDiscountCents: cents(get('mini_party_discount'), FALLBACK_GUEST_RULES.miniPartyDiscountCents, overridden),
     miniPartyMaxGuests: metaNum(get('mini_party_max_guests'), 'value') ?? FALLBACK_GUEST_RULES.miniPartyMaxGuests,
   }
 
@@ -376,7 +399,10 @@ export function catalogFromRows(rows: CatalogRow[]): PricingCatalog {
   ]
   const fromDb = REQUIRED_KEYS.every(k => byKey.has(k)) && stationRows.length > 0
 
-  return { mobileTiers: tiers, mobileBands: bands, mobilePolicy, mobileStations, studioRates, guestRules, fromDb }
+  return {
+    mobileTiers: tiers, mobileBands: bands, mobilePolicy, mobileStations,
+    studioRates, guestRules, fromDb, fallbackFields: overridden,
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -423,7 +449,17 @@ export async function loadPricingCatalog(supabase?: Supa): Promise<PricingCatalo
     const catalog = catalogFromRows((data ?? []) as CatalogRow[])
     // Only cache a real read. Caching a fallback would hold the wrong prices
     // for a minute after the DB comes back.
-    if (catalog.fromDb) cache = { at: Date.now(), catalog }
+    //
+    // `fromDb` alone was not enough to make that true: it asks whether every
+    // required KEY was present, so a row that exists and prices at 0 left
+    // `fromDb` true while `cents()` quietly served the compiled constant — a
+    // fallback, cached for 60s, contradicting the rule this comment states.
+    // Both conditions now have to hold.
+    if (catalog.fromDb && catalog.fallbackFields.length === 0) {
+      cache = { at: Date.now(), catalog }
+    } else if (catalog.fallbackFields.length) {
+      console.error('loadPricingCatalog: rows priced at 0 overridden by fallback:', catalog.fallbackFields.join(', '))
+    }
     return catalog
   } catch (err) {
     console.error('loadPricingCatalog threw (using fallback):', err)

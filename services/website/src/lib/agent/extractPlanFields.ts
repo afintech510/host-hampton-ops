@@ -500,10 +500,39 @@ export async function applyExtractedFields(args: {
 
   if (!updated.length) return { updated: [] }
 
-  const { error: updErr } = await supabase.from('bookings').update(patch).eq('id', bookingId)
+  // The blankness check above reads the row; this writes it. Between the two
+  // there is a window in which Adam can type the date into the admin form, and
+  // an unconditional UPDATE would overwrite the human's value with the model's —
+  // the one outcome this module's rule 1 exists to prevent. So the guard is
+  // re-stated as part of the write: each scalar column we intend to fill must
+  // STILL be null when the update lands, exactly the way `linkFirstTouchEvent`
+  // guards its fill-once column one file over.
+  //
+  // If it loses the race the update matches no rows and we report nothing
+  // updated, which is the right way round: a dropped extraction costs one more
+  // "what date works?", while a clobbered one quotes against a day nobody agreed
+  // to. `party_tags` cannot be guarded this way (it is a read-modify-write on a
+  // JSONB blob) and is left as it was.
+  // Guard only the columns we read as NULL. `blank()` also treats '' as fillable,
+  // and `.is(col, null)` would not match an empty string — guarding those would
+  // turn a legitimate fill into a silent no-op, so they keep the old behaviour.
+  let write = supabase.from('bookings').update(patch).eq('id', bookingId)
+  const guard = (col: 'contact_name' | 'party_date' | 'party_time' | 'guest_count_approx', was: unknown) => {
+    if (patch[col] !== undefined && was == null) write = write.is(col, null)
+  }
+  guard('contact_name', row.contact_name)
+  guard('party_date', row.party_date)
+  guard('party_time', row.party_time)
+  guard('guest_count_approx', row.guest_count_approx)
+
+  const { data: written, error: updErr } = await write.select('id')
   if (updErr) {
     console.error('applyExtractedFields update error:', updErr.message)
     return { updated: [], error: updErr.message }
+  }
+  if (!(written ?? []).length) {
+    // Someone filled these in while we were thinking. Their value stands.
+    return { updated: [], error: 'plan changed while extracting — nothing written' }
   }
 
   await writeLedger(supabase, {

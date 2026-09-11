@@ -81,6 +81,7 @@ interface PipelineCounts {
   all: number
   allTypes: number
   truncated: boolean
+  error?: string | null
 }
 
 export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout: () => void }) {
@@ -373,6 +374,21 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
             />
           </div>
         </div>
+
+        {/*
+          The count scan stops at COUNT_SCAN_LIMIT rows and the route says so in
+          `counts.truncated`, but nothing rendered it — so every chip above read
+          like a total no matter how many rows were actually counted. A number
+          that is silently a floor is worse than one labelled as a floor, which
+          is the whole reason the route reports the flag.
+        */}
+        {(counts?.truncated || counts?.error) && (
+          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {counts?.error
+              ? `Stage counts unavailable (${counts.error}) — the list below is still complete.`
+              : 'Showing counts for the most recent rows only; the totals above are a floor, not a full count.'}
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">

@@ -290,3 +290,55 @@ describe('pricingCatalog', () => {
     })
   })
 })
+
+/**
+ * "A fallback is never cached" was the documented rule, and `fromDb` was the
+ * thing enforcing it. `fromDb` asks whether every required KEY is present — not
+ * whether every VALUE came from the DB — so a row that exists and prices at 0
+ * left `fromDb` true while `cents()` quietly served the compiled constant. That
+ * is a fallback, cached for 60 seconds, which is exactly what the rule forbids.
+ */
+describe('a row that exists but prices at zero', () => {
+  beforeEach(() => clearPricingCatalogCache())
+
+  /** Local copy: the one in `loadPricingCatalog` is scoped to that describe. */
+  function supaReturning(result: { data: unknown; error: unknown }) {
+    const chain: Record<string, unknown> = {
+      then: (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
+        Promise.resolve(result).then(res, rej),
+    }
+    for (const m of ['select', 'eq', 'in', 'order']) chain[m] = () => chain
+    return { from: () => chain } as never
+  }
+
+  function withZeroed(key: string): CatalogRow[] {
+    return seededRows().map(r =>
+      (r.metadata as { catalog_key?: string })?.catalog_key === key ? { ...r, price_cents: 0 } : r,
+    )
+  }
+
+  it('is reported, not silently swallowed', async () => {
+    const c = await loadPricingCatalog(supaReturning({ data: withZeroed('studio_weekend_base'), error: null }))
+    // Behaviour preserved on purpose: a $0 studio rental is a refund, so the
+    // old number still wins. What changes is that you can now see it happened.
+    expect(c.studioRates.weekendBaseCents).toBe(60000)
+    expect(c.fallbackFields).toContain('studio_weekend_base')
+  })
+
+  it('is NOT cached, so fixing the row takes effect immediately', async () => {
+    const bad = supaReturning({ data: withZeroed('studio_weekend_base'), error: null })
+    await loadPricingCatalog(bad)
+
+    // Before this, `fromDb` was true and the overridden value was cached for a
+    // minute — so Adam correcting the row saw no change and would reasonably
+    // conclude the container was not reading Supabase at all.
+    const fixed = await loadPricingCatalog(supaReturning({ data: seededRows(), error: null }))
+    expect(fixed.fallbackFields).toEqual([])
+    expect(fixed.fromDb).toBe(true)
+  })
+
+  it('a healthy read reports no overridden fields', async () => {
+    const c = await loadPricingCatalog(supaReturning({ data: seededRows(), error: null }))
+    expect(c.fallbackFields).toEqual([])
+  })
+})

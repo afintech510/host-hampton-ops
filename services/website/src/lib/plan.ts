@@ -373,6 +373,61 @@ const OPEN_PLAN_COLUMNS =
 /** Discriminates "no open plan" from "the lookup did not work". */
 type PlanLookup = { ok: true; plan: OpenPlanRow | null } | { ok: false }
 
+/**
+ * Quote a value for a PostgREST `or()` expression.
+ *
+ * The values here are typed by a stranger into a web form, and `or()` is a
+ * STRUCTURED expression whose separator is a comma — so an unquoted value is an
+ * injection point, not merely an escaping nicety. Confirmed against the live
+ * PostgREST on 2026-09-11: a `contact_email` of
+ *
+ *     x@y.com,contact_phone.eq.6314008080
+ *
+ * turned `or=(contact_email.eq.<value>)` into a second, attacker-chosen
+ * disjunct and returned two real production bookings that the intended filter
+ * does not match. `findOpenPlan` would have handed one of them back as "this
+ * person's open plan", and `enrichPlan` writes the new inquiry's name, notes and
+ * tags onto whatever it is given — i.e. onto a stranger's booking, which then
+ * feeds that stranger's next draft.
+ *
+ * Double quotes are PostgREST's own quoting; `"` and `\` inside the value are
+ * backslash-escaped. Verified that the payload above returns no rows once
+ * quoted.
+ */
+function orValue(v: string): string {
+  return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+/**
+ * The stored spellings of a phone number worth matching against.
+ *
+ * `lib/plan.ts` was the one module that compared phone numbers as raw strings.
+ * Everywhere else — `quo.ts`, `sendApproved.ts`, `reviewers.ts`, `ownerNotify.ts`
+ * — runs `normalizePhone()` first, so the same person is `+16315551234` when
+ * they text us (Phase 2 creates a `lead` plan for an unknown number) and
+ * `631-555-1234` when they later type it into a form. Matching on the raw string
+ * therefore fails to reuse the open plan, and a second plan is a second draft
+ * and a second text to Adam's phone — the exact failure the SAFETY NOTE at the
+ * top of this file exists to prevent, arriving through a different door.
+ *
+ * 41 of the 44 production `bookings` rows hold a non-E.164 phone, so matching
+ * has to cover the legacy spellings rather than assume a normalised column.
+ */
+export function phoneMatchVariants(phone: string | null): string[] {
+  if (!phone) return []
+  const digits = phone.replace(/\D/g, '')
+  const ten = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+  const variants = new Set<string>([phone])
+  if (ten.length === 10) {
+    variants.add(`+1${ten}`)
+    variants.add(`1${ten}`)
+    variants.add(ten)
+    variants.add(`${ten.slice(0, 3)}-${ten.slice(3, 6)}-${ten.slice(6)}`)
+    variants.add(`(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`)
+  }
+  return Array.from(variants)
+}
+
 async function findOpenPlan(
   supabase: Supa,
   q: { email: string | null; phone: string | null; partyDate: string | null },
@@ -381,8 +436,8 @@ async function findOpenPlan(
   // first texted (phone only) and then filled in the web form (email + phone)
   // is one person and must land on one plan.
   const handles: string[] = []
-  if (q.email) handles.push(`contact_email.eq.${q.email}`)
-  if (q.phone) handles.push(`contact_phone.eq.${q.phone}`)
+  if (q.email) handles.push(`contact_email.eq.${orValue(q.email)}`)
+  for (const v of phoneMatchVariants(q.phone)) handles.push(`contact_phone.eq.${orValue(v)}`)
   if (!handles.length) return { ok: true, plan: null }
 
   const since = new Date(Date.now() - PLAN_REUSE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString()
