@@ -51,18 +51,23 @@ function draftRow(overrides: Record<string, unknown> = {}) {
  * Minimal supabase double. `byCode` answers a review_code lookup; `open`
  * answers the "list open drafts" query.
  */
-function makeSupabase(opts: { byCode?: any; open?: any[] } = {}) {
-  const from = jest.fn(() => {
+function makeSupabase(opts: { byCode?: any; open?: any[]; ledger?: any[] } = {}) {
+  const from = jest.fn((table: string) => {
     const ops: string[] = []
     const chain: any = {
       then: (res: any, rej: any) => {
-        const value = ops.includes('maybeSingle')
-          ? { data: opts.byCode ?? null, error: null }
-          : { data: opts.open ?? [], error: null }
+        // marketing_ledger answers the "did we already ask for confirmation?"
+        // lookup; empty means we have not asked.
+        const value =
+          table === 'marketing_ledger'
+            ? { data: opts.ledger ?? [], error: null }
+            : ops.includes('maybeSingle')
+              ? { data: opts.byCode ?? null, error: null }
+              : { data: opts.open ?? [], error: null }
         return Promise.resolve(value).then(res, rej)
       },
     }
-    for (const m of ['select', 'eq', 'in', 'order', 'limit', 'update', 'maybeSingle', 'is', 'lt']) {
+    for (const m of ['select', 'eq', 'in', 'order', 'limit', 'update', 'maybeSingle', 'is', 'lt', 'not', 'gte', 'contains']) {
       chain[m] = jest.fn((...args: unknown[]) => {
         ops.push(m)
         return chain
@@ -357,5 +362,63 @@ describe('handleReviewerReply', () => {
     expect(res.outcome).toBe('error')
     expect(mockSendApprovedDraft).not.toHaveBeenCalled()
     expect(mockSendSMSViaQuo).toHaveBeenCalledWith(REVIEWER, expect.stringContaining('Nothing was sent to the customer'))
+  })
+})
+
+describe('handleReviewerReply — an approval naming an out-of-context draft', () => {
+  const originalEnv = process.env
+  beforeEach(() => {
+    jest.clearAllMocks()
+    process.env = { ...originalEnv, REVIEWER_PHONES: REVIEWER, OWNER_NOTIFY_EMAIL: 'owner@example.com' }
+    mockAdvance.mockResolvedValue({ from: 'sent_for_review', to: 'approved' })
+    mockWriteLedger.mockResolvedValue(undefined)
+    mockSendSMSViaQuo.mockResolvedValue('QUO1')
+    mockSendApprovedDraft.mockResolvedValue({
+      ok: true, closed: true, emailSent: true, smsSent: true, errors: [],
+      recipient: { name: 'Jess', email: 'jess@example.com', phone: null },
+    })
+  })
+  afterAll(() => { process.env = originalEnv })
+
+  // A typo ('0913' for '0313') that lands on another real open draft would send
+  // a real quote to the wrong real customer, and there is no undo on that.
+  const other = draftRow({ id: 'draft-9', review_code: 'HH-2026-0913' })
+  const lastTexted = [draftRow({ id: 'draft-1' })]
+
+  it('asks once instead of sending, when nothing has been confirmed yet', async () => {
+    const supabase = makeSupabase({ byCode: other, open: lastTexted, ledger: [] })
+
+    const res = await handleReviewerReply({ supabase, from: REVIEWER, text: 'SEND HH-2026-0913' })
+
+    expect(res.outcome).toBe('needs_confirmation')
+    expect(mockSendApprovedDraft).not.toHaveBeenCalled()
+    expect(mockAdvance).not.toHaveBeenCalled()
+    expect(res.reply).toContain('HH-2026-0913')
+    expect(mockSendSMSViaQuo).toHaveBeenCalledWith(REVIEWER, expect.stringContaining('again to confirm'))
+  })
+
+  it('goes through on the second SEND, once the prompt is on record', async () => {
+    const supabase = makeSupabase({ byCode: other, open: lastTexted, ledger: [{ id: 'ledger-1' }] })
+
+    const res = await handleReviewerReply({ supabase, from: REVIEWER, text: 'SEND HH-2026-0913' })
+
+    expect(res.outcome).toBe('approved_and_sent')
+    expect(mockSendApprovedDraft).toHaveBeenCalled()
+  })
+
+  it('does not ask when the code IS the draft we last texted', async () => {
+    const supabase = makeSupabase({ byCode: draftRow(), open: lastTexted, ledger: [] })
+
+    const res = await handleReviewerReply({ supabase, from: REVIEWER, text: 'SEND HH-2026-0042' })
+
+    expect(res.outcome).toBe('approved_and_sent')
+  })
+
+  it('never asks for a CANCEL — dropping the wrong draft is recoverable', async () => {
+    const supabase = makeSupabase({ byCode: other, open: lastTexted, ledger: [] })
+
+    const res = await handleReviewerReply({ supabase, from: REVIEWER, text: 'CANCEL HH-2026-0913' })
+
+    expect(res.outcome).toBe('cancelled')
   })
 })

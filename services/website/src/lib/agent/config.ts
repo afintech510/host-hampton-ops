@@ -81,11 +81,15 @@ export function reviewLinkSecret(): string {
  * a working day and "business hours" means "awake", not "Mon–Fri".
  */
 export function isBusinessHours(now: Date = new Date()): boolean {
+  // hourCycle 'h23' explicitly. `hour12: false` alone leaves en-US on the h24
+  // cycle, where midnight formats as "24" — harmless for a 9–20 window (24 is
+  // outside it either way) but exactly the kind of thing that becomes a 1am
+  // text the day someone widens the range.
   const hour = Number(
     new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York',
       hour: 'numeric',
-      hour12: false,
+      hourCycle: 'h23',
     }).format(now),
   )
   return Number.isFinite(hour) && hour >= 9 && hour < 20

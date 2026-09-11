@@ -187,6 +187,44 @@ async function sendEmail(
   }
 }
 
+/* ── Per-channel claim ──────────────────────────────────────────────── */
+
+/**
+ * Take exclusive ownership of one channel by stamping its `customer_*_sent_at`
+ * BEFORE the send, conditional on it still being null.
+ *
+ * Postgres serialises the two writers, so exactly one concurrent caller gets a
+ * row back and the other is told to stand down. Stamping after the send — as
+ * this module originally did — left a window the width of a Resend round-trip
+ * in which two callers both saw "not sent yet" and both sent.
+ *
+ * Returns true when THIS caller won the channel.
+ */
+async function claimChannel(supabase: Supa, draftId: string, column: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('inquiry_drafts')
+    .update({ [column]: new Date().toISOString() })
+    .eq('id', draftId)
+    .is(column, null)
+    .select('id')
+  if (error) {
+    console.error(`sendApproved claim ${column} failed:`, error.message)
+    return false
+  }
+  return (data ?? []).length === 1
+}
+
+/**
+ * Give a claimed channel back after a failed send, so a retry can have it.
+ * If the process dies between claim and release the channel stays claimed and
+ * the draft sits visibly unfinished in Admin → Inbox — the safe direction, since
+ * the alternative is a customer receiving the same message twice.
+ */
+async function releaseChannel(supabase: Supa, draftId: string, column: string): Promise<void> {
+  const { error } = await supabase.from('inquiry_drafts').update({ [column]: null }).eq('id', draftId)
+  if (error) console.error(`sendApproved release ${column} failed:`, error.message)
+}
+
 /* ── The node ───────────────────────────────────────────────────────── */
 
 export interface SendApprovedInput {
@@ -258,17 +296,29 @@ export async function sendApprovedDraft(input: SendApprovedInput): Promise<SendR
   let smsSent = false
   let emailMessageId: string | null = null
   let smsMessageId: string | null = null
+  /** Channels that can never complete — no address, not a transient failure. */
+  let emailImpossible = false
+  let smsImpossible = false
 
   // ── Email. Skipped when this channel already landed (retry safety).
   if (wantEmail && (isTest || !draft.customer_email_sent_at)) {
     if (!recipient.email) {
       errors.push('no email address for this draft')
+      emailImpossible = true
+    } else if (!isTest && !(await claimChannel(supabase, draftId, 'customer_email_sent_at'))) {
+      // Another caller is mid-send on this channel. Reading the stamp is not
+      // enough on its own: it used to be written AFTER the send, so an admin
+      // double-click (or a reaped-then-reclaimed reviewer event overlapping the
+      // original run) could put two identical emails in a customer's inbox.
+      errors.push('email: already being sent by another run')
     } else {
       const res = await sendEmail(recipient.email, isTest ? `[TEST] ${subject}` : subject, emailBody, recipient.name)
       if (res.id || !res.error) {
         emailSent = true
         emailMessageId = res.id
       } else {
+        // Hand the channel back so a retry can have it.
+        if (!isTest) await releaseChannel(supabase, draftId, 'customer_email_sent_at')
         errors.push(`email: ${res.error}`)
       }
     }
@@ -278,12 +328,16 @@ export async function sendApprovedDraft(input: SendApprovedInput): Promise<SendR
   if (wantSms && (isTest || !draft.customer_sms_sent_at)) {
     if (!recipient.phone) {
       errors.push('no phone number for this draft')
+      smsImpossible = true
+    } else if (!isTest && !(await claimChannel(supabase, draftId, 'customer_sms_sent_at'))) {
+      errors.push('sms: already being sent by another run')
     } else {
       const id = await sendSMSViaQuo(recipient.phone, isTest ? `[TEST] ${smsBody}` : smsBody)
       if (id) {
         smsSent = true
         smsMessageId = id
       } else {
+        if (!isTest) await releaseChannel(supabase, draftId, 'customer_sms_sent_at')
         errors.push('sms: Quo rejected the message (see logs)')
       }
     }
@@ -307,21 +361,20 @@ export async function sendApprovedDraft(input: SendApprovedInput): Promise<SendR
   const now = new Date().toISOString()
   const alreadyEmailed = !!draft.customer_email_sent_at
   const alreadyTexted = !!draft.customer_sms_sent_at
-  const emailDone = !wantEmail || alreadyEmailed || emailSent
-  const smsDone = !wantSms || alreadyTexted || smsSent
+  // `*Impossible` means "this channel has no address, and never will from this
+  // draft" — a permanent condition, not a transient one. Without counting it as
+  // done, a both-channel draft for a phone-only contact texted the customer and
+  // then sat in 'approved' forever: the nudge only watches 'sent_for_review', so
+  // nobody was ever told. It now closes as 'sent' with the reason in send_error.
+  const emailDone = !wantEmail || alreadyEmailed || emailSent || emailImpossible
+  const smsDone = !wantSms || alreadyTexted || smsSent || smsImpossible
   const anythingLanded = emailSent || smsSent || alreadyEmailed || alreadyTexted
 
-  // Stamp each channel that landed, whether or not the whole send succeeded —
-  // this is what makes a retry safe.
+  // The sent_at stamps were written by claimChannel before the send; only the
+  // provider message ids are left to record.
   const stamp: Record<string, unknown> = {}
-  if (emailSent) {
-    stamp.customer_email_sent_at = now
-    stamp.customer_email_message_id = emailMessageId
-  }
-  if (smsSent) {
-    stamp.customer_sms_sent_at = now
-    stamp.customer_sms_message_id = smsMessageId
-  }
+  if (emailSent) stamp.customer_email_message_id = emailMessageId
+  if (smsSent) stamp.customer_sms_message_id = smsMessageId
   stamp.send_error = errors.length ? errors.join('; ') : null
   await supabase.from('inquiry_drafts').update(stamp).eq('id', draftId)
 

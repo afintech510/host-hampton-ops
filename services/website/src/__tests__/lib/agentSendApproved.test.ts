@@ -55,6 +55,8 @@ function makeSupabase(opts: {
   contact?: Record<string, unknown> | null
   booking?: Record<string, unknown> | null
   event?: Record<string, unknown> | null
+  /** false = every compare-and-swap channel claim loses (another run owns it). */
+  claimWins?: boolean
 } = {}) {
   const updates: { table: string; patch: Record<string, unknown> }[] = []
 
@@ -65,7 +67,11 @@ function makeSupabase(opts: {
         const upd = ops.find(o => o[0] === 'update')
         if (upd) {
           updates.push({ table, patch: upd[1] as Record<string, unknown> })
-          return Promise.resolve({ data: [{ id: 'x' }], error: null }).then(res, rej)
+          // A `.is(col, null)` on an update is a compare-and-swap claim; zero
+          // rows back means another writer already holds it.
+          const isClaim = ops.some(o => o[0] === 'is')
+          const won = !isClaim || opts.claimWins !== false
+          return Promise.resolve({ data: won ? [{ id: 'x' }] : [], error: null }).then(res, rej)
         }
         const row =
           table === 'inquiry_drafts' ? (opts.draft === undefined ? baseDraft() : opts.draft)
@@ -76,7 +82,8 @@ function makeSupabase(opts: {
         return Promise.resolve({ data: row, error: null }).then(res, rej)
       },
     }
-    for (const m of ['select', 'eq', 'update', 'maybeSingle', 'single', 'limit']) {
+    // `is` is how sendApproved compare-and-swap claims a channel before sending.
+    for (const m of ['select', 'eq', 'is', 'in', 'update', 'maybeSingle', 'single', 'limit']) {
       chain[m] = jest.fn((...args: unknown[]) => {
         ops.push([m, ...args])
         return chain
@@ -163,10 +170,14 @@ describe('sendApprovedDraft', () => {
     )
     expect(mockSendSMSViaQuo).toHaveBeenCalledWith('+16315550123', expect.stringContaining('Allie'))
 
-    const stamp = updates.find(u => u.table === 'inquiry_drafts')?.patch
-    expect(stamp).toMatchObject({ customer_email_message_id: 're_1', customer_sms_message_id: 'QUO_1' })
-    expect(stamp?.customer_email_sent_at).toBeTruthy()
-    expect(stamp?.customer_sms_sent_at).toBeTruthy()
+    // Each channel is CLAIMED (sent_at stamped) before its send and the provider
+    // id recorded after, so the stamps arrive across several updates.
+    const patches = updates.filter(u => u.table === 'inquiry_drafts').map(u => u.patch)
+    expect(patches.some(p => p.customer_email_sent_at)).toBe(true)
+    expect(patches.some(p => p.customer_sms_sent_at)).toBe(true)
+    expect(patches).toContainEqual(
+      expect.objectContaining({ customer_email_message_id: 're_1', customer_sms_message_id: 'QUO_1' }),
+    )
 
     expect(mockAdvance).toHaveBeenCalledWith(
       expect.objectContaining({ entity: 'inquiry_draft', to: 'sent', from: 'approved', actor: ACTOR }),
@@ -196,20 +207,39 @@ describe('sendApprovedDraft', () => {
     expect(res).toMatchObject({ ok: false, emailSent: false, smsSent: true, closed: false })
     expect(res.errors.join(' ')).toContain('domain not verified')
     expect(mockAdvance).not.toHaveBeenCalled()
+    const patches = updates.filter(u => u.table === 'inquiry_drafts').map(u => u.patch)
     // The SMS that DID land is stamped, so a retry will not re-text.
-    const stamp = updates.find(u => u.table === 'inquiry_drafts')?.patch
-    expect(stamp?.customer_sms_sent_at).toBeTruthy()
-    expect(stamp?.customer_email_sent_at).toBeUndefined()
-    expect(stamp?.send_error).toContain('domain not verified')
+    expect(patches.some(p => p.customer_sms_sent_at)).toBe(true)
+    // The email channel was claimed, then RELEASED back to null when Resend
+    // rejected it — so the retry can have it.
+    expect(patches).toContainEqual({ customer_email_sent_at: null })
+    expect(patches.some(p => String(p.send_error ?? '').includes('domain not verified'))).toBe(true)
   })
 
-  it('records a missing handle as an error rather than silently skipping a channel', async () => {
+  it('closes the draft when a channel is impossible rather than stranding it at approved', async () => {
+    // A phone-only contact on a channel='both' draft. The text lands; the email
+    // never can. Before this, the draft sat in 'approved' forever and silently:
+    // the nudge only watches 'sent_for_review', so nobody was ever told.
     const { supabase } = makeSupabase({ contact: { email: null, phone: '6315550123', first_name: 'Jess', last_name: null } })
 
     const res = await sendApprovedDraft({ supabase, draftId: 'draft-1', actor: ACTOR })
 
     expect(res.errors).toContain('no email address for this draft')
+    expect(res.smsSent).toBe(true)
+    expect(res.closed).toBe(true)
+  })
+
+  it('stands down when another run already claimed a channel', async () => {
+    // The claim is a compare-and-swap: the loser gets zero rows back. Without it
+    // an admin double-click put two identical emails in a customer's inbox.
+    const { supabase } = makeSupabase({ contact: CONTACT, claimWins: false })
+
+    const res = await sendApprovedDraft({ supabase, draftId: 'draft-1', actor: ACTOR })
+
+    expect(mockResendSend).not.toHaveBeenCalled()
+    expect(mockSendSMSViaQuo).not.toHaveBeenCalled()
     expect(res.closed).toBe(false)
+    expect(res.errors.join(' ')).toContain('already being sent')
   })
 
   it('a TEST send goes to the reviewer and writes nothing', async () => {

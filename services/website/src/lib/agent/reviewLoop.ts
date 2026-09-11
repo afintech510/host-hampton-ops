@@ -24,7 +24,7 @@ import { ownerEmail } from '@/lib/ownerNotify'
 import { sendSMSViaQuo } from '@/lib/quo'
 import { advance, writeLedger } from '@/lib/marketing/graph'
 import { redraftForReviewer } from './draftInquiry'
-import { sendApprovedDraft } from './sendApproved'
+import { sendApprovedDraft, resolveRecipient, SEND_COLUMNS, type SendableDraft } from './sendApproved'
 import { isReviewerPhone } from './reviewers'
 
 export { isReviewerPhone }
@@ -57,12 +57,18 @@ const APPROVE_PHRASES = new Set([
   'SEND THIS',
   'APPROVE',
   'APPROVED',
+  'APPROVE IT',
   'OK SEND',
+  'OK SEND IT',
   'YES SEND',
+  'YES SEND IT',
   'SEND PLEASE',
   'PLEASE SEND',
   'GO',
   'SEND IT OUT',
+  'SEND NOW',
+  'SEND IT NOW',
+  'LOOKS GOOD SEND',
 ])
 
 const CANCEL_PHRASES = new Set([
@@ -82,13 +88,49 @@ const CANCEL_PHRASES = new Set([
 const TEST_PHRASES = new Set(['TEST', 'TEST IT', 'TEST SEND', 'PREVIEW'])
 
 /**
+ * Words that may precede a bare 4-digit draft tail. A trailing number is only a
+ * short code when the reviewer was giving a COMMAND.
+ *
+ * Without this, "make the price 1200" parsed as command "make the price" +
+ * short code "1200": the number — the entire point of the instruction — was
+ * deleted from the note, and the loop then replied "I can't find a draft
+ * matching 1200" instead of revising. Prices, guest counts, times and years all
+ * end in digits, so that was a routine way to lose a reviewer's instruction.
+ */
+const SHORT_CODE_COMMANDS =
+  /^(?:SEND(?:\s+IT)?|APPROVE[D]?|OK|YES|GO|CANCEL|IGNORE|STOP|NO|DROP|DISMISS|KILL|SKIP|TEST|PREVIEW|DRAFT)$/i
+
+/**
+ * Drop the part of a reply that the phone quoted back rather than the part the
+ * human typed.
+ *
+ * An iPhone inline reply carries the whole original SMS, and the agent's own
+ * review text contains "Reply SEND, CANCEL, or say what to change" — several
+ * command words. Parsing the quote would at best waste a model call re-drafting
+ * against our own boilerplate; a "contains" parser would have approved on it.
+ */
+function unquoted(text: string): string {
+  const kept = text
+    .split(/\r?\n/)
+    .filter(l => !/^\s*>/.test(l) && !/^\s*On .+ wrote:\s*$/i.test(l))
+    .join('\n')
+    .trim()
+  return kept || text
+}
+
+/**
  * Read a reviewer's text. Intent is decided by EXACT phrase match on what is
- * left after the draft code is removed — not by "contains SEND".
+ * left after the quoted original and the draft code are removed — not by
+ * "contains SEND".
  *
  * That distinction is the whole safety of the parser. "Don't send this yet",
  * "send it after you fix the date" and "can we send tomorrow?" all contain
  * SEND; none of them are approvals, and all of them fall through to `revise`,
  * where a human sees the result before anything moves.
+ *
+ * The draft CODE is still read from the full text including the quote — it is
+ * only an identifier, and a quoted code is the reviewer telling us which draft
+ * they are looking at. Only the INTENT is restricted to words they typed.
  */
 export function parseReviewerReply(raw: string): ParsedReply {
   const text = (raw || '').trim()
@@ -99,12 +141,14 @@ export function parseReviewerReply(raw: string): ParsedReply {
   const full = text.match(/\bHH[\s-]?(\d{4})[\s-]?(\d{4})\b/i)
   if (full) code = `HH-${full[1]}-${full[2]}`
 
-  let stripped = code ? text.replace(/\bHH[\s-]?\d{4}[\s-]?\d{4}\b/i, ' ') : text
+  const typed = unquoted(text)
+  let stripped = code ? typed.replace(/\bHH[\s-]?\d{4}[\s-]?\d{4}\b/gi, ' ') : typed
 
-  // 'APPROVE 0042' / 'STOP 0042' — a bare 4-digit tail identifying the draft.
+  // 'APPROVE 0042' / 'STOP 0042' — a bare 4-digit tail identifying the draft,
+  // but only after an actual command word (see SHORT_CODE_COMMANDS).
   if (!code) {
-    const short = stripped.match(/^([A-Za-z][A-Za-z\s]*?)\s+#?(\d{4})\s*$/)
-    if (short) {
+    const short = stripped.match(/^([A-Za-z][A-Za-z\s']*?)\s+#?(\d{4})\s*$/)
+    if (short && SHORT_CODE_COMMANDS.test(short[1].trim())) {
       shortCode = short[2]
       stripped = short[1]
     }
@@ -112,9 +156,11 @@ export function parseReviewerReply(raw: string): ParsedReply {
 
   const note = stripped.replace(/\s+/g, ' ').trim()
   // Normalise for phrase matching only: the note keeps the reviewer's own words.
+  // Trailing junk (punctuation, a thumbs-up emoji) is stripped so "Send it 👍"
+  // is the approval the reviewer plainly meant, not a wasted re-draft.
   const key = note
     .toUpperCase()
-    .replace(/[.!?,;:]+$/g, '')
+    .replace(/[^A-Z0-9]+$/, '')
     .replace(/^(?:PLS|PLEASE)\s+/, '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -123,8 +169,10 @@ export function parseReviewerReply(raw: string): ParsedReply {
   if (CANCEL_PHRASES.has(key)) return { intent: 'cancel', code, shortCode, note }
   if (TEST_PHRASES.has(key)) return { intent: 'test', code, shortCode, note }
 
-  // 'EDIT: make it warmer' → the instruction is everything after the colon.
-  const edit = note.match(/^(?:EDIT|CHANGE|REVISE|FIX)\s*:?\s*(.+)$/i)
+  // 'EDIT: make it warmer' → the instruction is everything after the colon. The
+  // colon is REQUIRED: without it, "change the guest count to 30" had "change"
+  // stripped and reached the draft node as the fragment "the guest count to 30".
+  const edit = note.match(/^(?:EDIT|CHANGE|REVISE|FIX)\s*:\s*(.+)$/i)
   return { intent: 'revise', code, shortCode, note: edit ? edit[1].trim() : note }
 }
 
@@ -141,10 +189,33 @@ export interface OpenDraft {
 const OPEN_COLUMNS = 'id, review_code, status, party_type, created_at'
 
 export type Resolution =
-  | { kind: 'one'; draft: OpenDraft }
+  | {
+      kind: 'one'
+      draft: OpenDraft
+      /**
+       * The reviewer named a code that is NOT the draft we most recently texted
+       * them. A verified reviewer typing a valid code is intent — but a typo
+       * ('0913' for '0313') that happens to hit another open draft would send a
+       * real quote to the wrong real customer, and there is no undo on that.
+       * `approve` asks for one confirmation in this case; nothing else does.
+       */
+      outOfContext?: boolean
+    }
   | { kind: 'none' }
   | { kind: 'ambiguous'; drafts: OpenDraft[] }
   | { kind: 'unknown_code'; code: string }
+
+/** The draft most recently texted to the reviewers — their working context. */
+async function mostRecentlyTexted(supabase: Supa): Promise<string | null> {
+  const { data } = await supabase
+    .from('inquiry_drafts')
+    .select('id')
+    .in('status', OPEN_STATUSES)
+    .not('sent_for_review_at', 'is', null)
+    .order('sent_for_review_at', { ascending: false })
+    .limit(1)
+  return ((data ?? [])[0] as { id: string } | undefined)?.id ?? null
+}
 
 /**
  * Which draft does this reply refer to? Never guesses between two candidates —
@@ -158,7 +229,9 @@ export async function resolveDraft(supabase: Supa, parsed: ParsedReply): Promise
       .eq('review_code', parsed.code)
       .maybeSingle()
     if (!data) return { kind: 'unknown_code', code: parsed.code }
-    return { kind: 'one', draft: data as unknown as OpenDraft }
+    const draft = data as unknown as OpenDraft
+    const top = await mostRecentlyTexted(supabase)
+    return { kind: 'one', draft, outOfContext: !!top && top !== draft.id }
   }
 
   const { data } = await supabase
@@ -205,6 +278,7 @@ export interface ReviewReplyResult {
     | 'no_open_draft'
     | 'ambiguous'
     | 'unknown_code'
+    | 'needs_confirmation'
     | 'approved_and_sent'
     | 'approved_send_failed'
     | 'cancelled'
@@ -212,6 +286,45 @@ export interface ReviewReplyResult {
     | 'tested'
     | 'error'
   error?: string
+}
+
+/** Ledger job name for the out-of-context approval confirmation prompt. */
+const CONFIRM_JOB = 'approve_confirm_prompt'
+/** How long a confirmation prompt stays good for. */
+const CONFIRM_WINDOW_MS = 15 * 60 * 1000
+
+/**
+ * Did we already ask this reviewer to confirm this draft, recently?
+ *
+ * The prompt is remembered as a `marketing_ledger` note rather than a new
+ * column: it is audit-worthy in its own right ("we asked, they confirmed") and
+ * it needs no migration.
+ */
+async function hasPendingConfirm(supabase: Supa, draftId: string, from: string): Promise<boolean> {
+  const since = new Date(Date.now() - CONFIRM_WINDOW_MS).toISOString()
+  const { data } = await supabase
+    .from('marketing_ledger')
+    .select('id')
+    .eq('entity_type', DRAFT_ENTITY)
+    .eq('entity_id', draftId)
+    .eq('action', 'note')
+    .gte('created_at', since)
+    .contains('meta', { job: CONFIRM_JOB, reviewer: from })
+    .limit(1)
+  return (data ?? []).length > 0
+}
+
+/** "Jess R (jess@example.com)" — enough for a human to catch a wrong draft. */
+async function describeRecipient(supabase: Supa, draftId: string): Promise<string> {
+  try {
+    const { data } = await supabase.from('inquiry_drafts').select(SEND_COLUMNS).eq('id', draftId).maybeSingle()
+    if (!data) return 'an unknown contact'
+    const r = await resolveRecipient(supabase, data as unknown as SendableDraft)
+    const handle = r.email || r.phone
+    return [r.name, handle ? `(${handle})` : null].filter(Boolean).join(' ') || 'an unknown contact'
+  } catch {
+    return 'an unknown contact'
+  }
 }
 
 /** Reply to the reviewer on the same thread. Never throws. */
@@ -266,6 +379,34 @@ export async function handleReviewerReply(input: ReviewReplyInput): Promise<Revi
 
   const draft = resolution.draft
   const actor = { id: `REVIEWER:${from}`, isAdmin: true }
+
+  // ── One confirmation when an approval names a draft that is not the one we
+  // last texted. See Resolution.outOfContext. Only `approve` asks: cancel, test
+  // and revise are all recoverable, and a send is not.
+  if (parsed.intent === 'approve' && resolution.outOfContext && draft.status !== 'sent') {
+    if (!(await hasPendingConfirm(supabase, draft.id, from))) {
+      const who = await describeRecipient(supabase, draft.id)
+      await writeLedger(supabase, {
+        entityType: DRAFT_ENTITY,
+        entityId: draft.id,
+        action: 'note',
+        actor: actor.id,
+        meta: { job: CONFIRM_JOB, review_code: draft.review_code, reviewer: from },
+      })
+      const reply =
+        `Just checking — ${draft.review_code} is not the draft I last sent you. ` +
+        `It goes to ${who}. Reply SEND ${draft.review_code} again to confirm.`
+      await replyToReviewer(from, reply)
+      return {
+        handled: true,
+        intent: 'approve',
+        draftId: draft.id,
+        reviewCode: draft.review_code,
+        outcome: 'needs_confirmation',
+        reply,
+      }
+    }
+  }
 
   // A named code can point at a draft that is already closed out. Say so plainly
   // instead of letting advance() throw a graph error at them.
