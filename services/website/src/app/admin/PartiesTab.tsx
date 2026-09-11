@@ -84,7 +84,20 @@ interface PipelineCounts {
   error?: string | null
 }
 
-export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout: () => void }) {
+export default function PartiesTab({
+  headers,
+  onOpenInbox,
+}: {
+  headers: HeadersInit
+  onLogout: () => void
+  /**
+   * Jump to the Inbox tab, focused on a review code. "HH-…-0208 is already open
+   * for this plan, handle that one first" used to be a dead end — it named the
+   * draft and gave you no way to reach it. Optional so the tab still renders if
+   * a caller does not pass it.
+   */
+  onOpenInbox?: (reviewCode: string) => void
+}) {
   const [bookings, setBookings] = useState<PartyBookingSummary[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -110,7 +123,7 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   const [discountAmount, setDiscountAmount] = useState('')
   const [showDiscount, setShowDiscount] = useState(false)
   const [agentNote, setAgentNote] = useState('')
-  const [agentResult, setAgentResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [agentResult, setAgentResult] = useState<{ ok: boolean; message: string; reviewCode?: string | null } | null>(null)
 
   // New Party Plan form state
   const [showNewForm, setShowNewForm] = useState(false)
@@ -238,7 +251,11 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
         message: `${data.reviewCode} drafted — texted to ${data.reviewersTexted} reviewer${data.reviewersTexted === 1 ? '' : 's'}. Approve it in Inbox or by SMS.`,
       })
     } else {
-      setAgentResult({ ok: false, message: data.error || 'Could not draft a reply' })
+      setAgentResult({
+        ok: false,
+        message: data.error || 'Could not draft a reply',
+        reviewCode: data.reviewCode ?? null,
+      })
     }
     await fetchDetail(selected.id)
   }
@@ -896,6 +913,20 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
                 {agentResult && (
                   <p className={`text-xs ${agentResult.ok ? 'text-green-700' : 'text-amber-700'}`}>
                     {agentResult.message}
+                    {/* The way out of the dead end: the refusal names a draft,
+                        so make the name the way to reach it. */}
+                    {agentResult.reviewCode && onOpenInbox && (
+                      <>
+                        {' '}
+                        <button
+                          type="button"
+                          onClick={() => onOpenInbox(agentResult.reviewCode!)}
+                          className="underline font-semibold text-[#1a2744] hover:text-hampton-blue"
+                        >
+                          Open {agentResult.reviewCode} in Inbox →
+                        </button>
+                      </>
+                    )}
                   </p>
                 )}
                 <p className="text-[11px] text-[#1a2744]/50">

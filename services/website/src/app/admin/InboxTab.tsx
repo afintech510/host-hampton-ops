@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   RefreshCw, CheckCircle2, XCircle, Pencil, Inbox, MessageSquare, Mail, Sparkles, AlertTriangle, X, Send,
 } from 'lucide-react'
@@ -79,7 +79,18 @@ function leadLabel(e: EventRow): string {
 
 /* ── Component ─────────────────────────────────────────── */
 
-export default function InboxTab({ headers, onLogout }: { headers: Record<string, string>; onLogout: () => void }) {
+export default function InboxTab({
+  headers,
+  onLogout,
+  focusReviewCode,
+  onFocusHandled,
+}: {
+  headers: Record<string, string>
+  onLogout: () => void
+  /** A review code to scroll to and highlight, set by another tab linking here. */
+  focusReviewCode?: string | null
+  onFocusHandled?: () => void
+}) {
   const [events, setEvents] = useState<EventRow[]>([])
   const [drafts, setDrafts] = useState<DraftRow[]>([])
   const [ledger, setLedger] = useState<LedgerRow[]>([])
@@ -160,6 +171,19 @@ export default function InboxTab({ headers, onLogout }: { headers: Record<string
   }
 
   const openDrafts = drafts.filter(d => !['sent', 'cancelled'].includes(d.status))
+
+  /**
+   * Scroll the linked-to draft into view once the drafts have actually loaded —
+   * the element does not exist on the render where `focusReviewCode` arrives.
+   * `onFocusHandled` clears it so a later visit to this tab does not re-scroll.
+   */
+  const focusRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!focusReviewCode || loading) return
+    focusRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const t = setTimeout(() => onFocusHandled?.(), 4000)
+    return () => clearTimeout(t)
+  }, [focusReviewCode, loading, onFocusHandled])
   const closedDrafts = drafts.filter(d => ['sent', 'cancelled'].includes(d.status))
 
   return (
@@ -197,8 +221,16 @@ export default function InboxTab({ headers, onLogout }: { headers: Record<string
         </h3>
         <div className="space-y-2">
           {openDrafts.length === 0 && <p className="text-sm text-gray-400">No drafts waiting.</p>}
-          {openDrafts.map(d => (
-            <div key={d.id} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+          {openDrafts.map(d => {
+            const isFocused = !!focusReviewCode && d.review_code === focusReviewCode
+            return (
+            <div
+              key={d.id}
+              ref={isFocused ? focusRef : undefined}
+              className={`bg-white rounded-xl border p-4 space-y-3 transition-colors ${
+                isFocused ? 'border-hampton-blue ring-2 ring-hampton-blue/40' : 'border-gray-200'
+              }`}
+            >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-xs font-semibold text-hampton-navy">{d.review_code}</span>
                 <StatusBadge status={d.status} />
@@ -282,7 +314,8 @@ export default function InboxTab({ headers, onLogout }: { headers: Record<string
                 )}
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       </section>
 

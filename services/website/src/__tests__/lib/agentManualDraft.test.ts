@@ -135,6 +135,43 @@ describe('draftForBookingByHand', () => {
       expect(mockDraftForInquiry).not.toHaveBeenCalled()
     })
 
+    it('returns the review code as a FIELD, not only inside the message', async () => {
+      // The admin UI links to the draft it is telling you to handle. It can
+      // only do that if the code is structured data — scraping it back out of
+      // the prose would break the moment the wording changed.
+      const supabase = makeSupabase({
+        liveDrafts: [{ id: 'd0', review_code: 'HH-2026-0208', status: 'sent_for_review' }],
+      })
+
+      const res = await draftForBookingByHand({ supabase, bookingId: 'bk-1' })
+
+      expect(res).toMatchObject({ ok: false, reason: 'live_draft', reviewCode: 'HH-2026-0208' })
+    })
+
+    it('carries a null review code rather than the string "null"', async () => {
+      // A draft with no code still refuses; the UI must get null so it renders
+      // no link, instead of a link labelled "Open null in Inbox".
+      const supabase = makeSupabase({
+        liveDrafts: [{ id: 'd0', review_code: null, status: 'drafting' }],
+      })
+
+      const res = await draftForBookingByHand({ supabase, bookingId: 'bk-1' })
+
+      expect(res).toMatchObject({ ok: false, reason: 'live_draft', reviewCode: null })
+    })
+
+    it('attributes the draft request to the actor it was given', async () => {
+      // Plan §11.1 — the whole point of per-user login. A named admin must
+      // reach the event as `admin:<email>`, not the anonymous 'ADMIN'.
+      await draftForBookingByHand({
+        supabase: makeSupabase(),
+        bookingId: 'bk-1',
+        actor: 'admin:allie@example.com',
+      })
+
+      expect(mockDraftForInquiry.mock.calls[0][0].actor).toBe('admin:allie@example.com')
+    })
+
     it('refuses when it CANNOT TELL whether a draft exists', async () => {
       const supabase = makeSupabase({ liveDraftError: { message: 'timeout' } })
 

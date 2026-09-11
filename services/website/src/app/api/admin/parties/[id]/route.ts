@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { formatMoney } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
@@ -115,11 +115,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const result = await draftForBookingByHand({
       supabase,
       bookingId: id,
-      actor: 'ADMIN',
+      // Plan §11.1: `admin:<email>` when a session names the human, and the
+      // historical anonymous 'ADMIN' on the shared password. This is the actor
+      // the event and the ledger carry, so "who asked the agent to draft this"
+      // is answerable once both admins sign in per-person.
+      actor: adminActorId(req),
       note: typeof body.note === 'string' ? body.note : null,
     })
     if (!result.ok) {
-      return NextResponse.json({ error: result.error, reason: result.reason }, { status: result.status })
+      return NextResponse.json(
+        { error: result.error, reason: result.reason, reviewCode: result.reviewCode ?? null },
+        { status: result.status },
+      )
     }
     return NextResponse.json({
       ok: true,

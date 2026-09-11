@@ -118,8 +118,8 @@ record itself is always mirrored.
 ## 2. Data model changes
 
 Migrations are applied by hand (`/root/pg.sh` on the box; the service-role key
-cannot do DDL). Numbers 029–031 were taken; **032, 033, 034, 035, 036, 037 and 038
-are written and applied** and the next free number is **039**.
+cannot do DDL). Numbers 029–031 were taken; **032, 033, 034, 035, 036, 037, 038
+and 039 are written and applied** and the next free number is **040**.
 
 > Renumbered three times on 2026-09-11, every time because a later phase
 > shipped first and migrations are kept in the order they are actually applied:
@@ -143,7 +143,13 @@ are written and applied** and the next free number is **039**.
 >   shipped first — but also because it was the prerequisite §11.1 names and
 >   the one Phase 5 §17 independently arrived at: two phases blocked on one
 >   small table.
-> - the learning loop is therefore **039**.
+> - **039** = the admin seed 038 was missing. 038 created the table but seeded
+>   ONE row, `adam@easternbuilding.supply`. Per-user attribution needs the
+>   second person to be able to sign in — with one account every approval still
+>   lands as the anonymous `'ADMIN'` or as Adam, which is the exact problem
+>   §11.1 exists to solve. A data-only migration for 036's reason: a seed run by
+>   hand is not reproducible.
+> - the learning loop is therefore **040**.
 
 ### 032 — inbound events + gmail sync state + contact sync + deposit default (WRITTEN 2026-09-10)
 File: `starting_plan/migration_032_agent_inbound_and_contact_sync.sql`.
@@ -288,7 +294,29 @@ repo has already had secrets scrubbed out of it once. Rows seed UNCLAIMED
 touch `password_hash`, so re-applying the file can never wipe a password
 someone has since set.
 
-### 039 — learning loop
+### 039 — admin_users seed: the second admin (WRITTEN + APPLIED 2026-09-11)
+
+File: `starting_plan/migration_039_admin_users_seed.sql`. Data only.
+
+038 shipped the table and seeded a single row,
+`adam@easternbuilding.supply` — so the feature could not yet do the thing it
+was built for. **Allie had no account.** Per-person attribution in
+`marketing_ledger` requires the second person to be able to sign in; with one
+row, every approval Allie made would still have been the anonymous `'ADMIN'`
+(or, worse, indistinguishable from Adam's). This seeds the two addresses per-user
+login was specified for — `hosthampton295@gmail.com` (Allie) and
+`adam@benchworksai.com` (Adam) — unclaimed, on 038's terms.
+
+`adam@easternbuilding.supply` is deliberately left active: it is a real address
+of Adam's and deactivating a working admin account is his call, not a
+migration's. Note it is also the **test-lead** address, so a `bookings` row and
+an `admin_users` row can share it — unrelated tables, neither reads the other.
+
+Re-run verified: 2 updates, 0 inserts, `password_hash` untouched by the
+`ON CONFLICT DO UPDATE`, so re-applying after Allie sets a password cannot lock
+her out.
+
+### 040 — learning loop
 - New `agent_learnings (id, kind CHECK('style','rule','fact','pricing'), text, source_draft_id, source_event_id, confidence, is_active, created_by, created_at)`.
   The draft prompt loads active rows. Reviewer corrections become rows here
   (Phase 6), and Adam/Allie can add rules directly from the admin Inbox tab.

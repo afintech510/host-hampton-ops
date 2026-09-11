@@ -59,7 +59,10 @@ export interface ManualDraftBooking extends InquiryBooking {
 
 export type ManualDraftResult =
   | { ok: true; status: 200; eventId: string; draftId: string; reviewCode: string; draftStatus: string; reviewersTexted: number }
-  | { ok: false; status: number; error: string; eventId?: string; reason?: 'live_draft' | 'claimed_elsewhere' | 'disabled' | 'unreachable' }
+  // `reviewCode` rides along on a `live_draft` refusal so the admin UI can link
+  // to the draft it is telling you to handle instead of leaving you to go and
+  // find it. The message already named the code; only the UI could not use it.
+  | { ok: false; status: number; error: string; eventId?: string; reviewCode?: string | null; reason?: 'live_draft' | 'claimed_elsewhere' | 'disabled' | 'unreachable' }
 
 /**
  * Enqueue an event for this plan and draft a reply for it.
@@ -122,6 +125,7 @@ export async function draftForBookingByHand(args: {
       ok: false,
       status: 409,
       error: `${row.review_code ?? 'A draft'} is already open for this plan (${row.status}). Handle that one first.`,
+      reviewCode: row.review_code ?? null,
       reason: 'live_draft',
     }
   }

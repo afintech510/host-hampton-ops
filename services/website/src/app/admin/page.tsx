@@ -254,6 +254,13 @@ function AdminDashboard({
 }: { token: string | null; displayName: string | null; onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
+  /**
+   * A review code the Inbox should open focused on, set when another tab sends
+   * you there — today only Parties' "that draft is already open" refusal.
+   * Cleared by InboxTab once it has highlighted it, so it does not re-focus on
+   * every later visit to the tab.
+   */
+  const [inboxFocus, setInboxFocus] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Two doors, one header object. On the shared-password path `token` is the
@@ -392,7 +399,13 @@ function AdminDashboard({
             <DashboardTab key={`dash-${refreshKey}`} headers={headers} onLogout={onLogout} onNavigate={setActiveTab} />
           )}
           {activeTab === 'inbox' && (
-            <InboxTab key={`inbox-${refreshKey}`} headers={headers} onLogout={onLogout} />
+            <InboxTab
+              key={`inbox-${refreshKey}`}
+              headers={headers}
+              onLogout={onLogout}
+              focusReviewCode={inboxFocus}
+              onFocusHandled={() => setInboxFocus(null)}
+            />
           )}
           {activeTab === 'events' && (
             <EventsTab key={`events-${refreshKey}`} headers={headers} onLogout={onLogout} />
@@ -428,7 +441,16 @@ function AdminDashboard({
             <MarketingTab key={`marketing-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
           {activeTab === 'parties' && (
-            <PartiesTab key={`parties-${refreshKey}`} headers={headers} onLogout={onLogout} />
+            <PartiesTab
+              key={`parties-${refreshKey}`}
+              headers={headers}
+              onLogout={onLogout}
+              onOpenInbox={code => {
+                setInboxFocus(code)
+                setActiveTab('inbox')
+                setSidebarOpen(false)
+              }}
+            />
           )}
           {activeTab === 'photos' && (
             <PhotosTab key={`photos-${refreshKey}`} headers={headers} onLogout={onLogout} />
