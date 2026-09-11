@@ -21,13 +21,14 @@ import { getSupabase } from '@/lib/supabase'
 
 type Supa = ReturnType<typeof getSupabase>
 
-export type EntityType = 'marketing_task' | 'website_content' | 'consent_release'
+export type EntityType = 'marketing_task' | 'website_content' | 'consent_release' | 'inquiry_draft'
 
 /** Physical table backing each logical entity. */
 const TABLE: Record<EntityType, string> = {
   marketing_task: 'marketing_tasks',
   website_content: 'website_content',
   consent_release: 'consent_releases',
+  inquiry_draft: 'inquiry_drafts',
 }
 
 /**
@@ -57,6 +58,20 @@ export const TRANSITIONS: Record<EntityType, Record<string, string[]>> = {
     signed: ['revoked'],
     revoked: [],
   },
+  /**
+   * The booking agent's draft. `sent` is the only state a CUSTOMER can observe,
+   * which is why it is terminal and gated: see GATED below.
+   */
+  inquiry_draft: {
+    drafted: ['sent_for_review', 'approved', 'cancelled'],
+    sent_for_review: ['revision_requested', 'approved', 'cancelled'],
+    revision_requested: ['sent_for_review', 'approved', 'cancelled'],
+    // approved → sent_for_review: an edit un-approves, because the approval was
+    // for the old words.
+    approved: ['sent', 'cancelled', 'sent_for_review'],
+    sent: [],
+    cancelled: ['drafted'], // a dismissed lead can be re-opened by hand
+  },
 }
 
 /**
@@ -68,6 +83,16 @@ const GATED: Record<EntityType, Set<string>> = {
   marketing_task: new Set(['approved']),
   website_content: new Set(['approved', 'published']),
   consent_release: new Set([]), // consent state is driven by SignWell, not admins
+  /**
+   * THE hard guardrail of the whole booking agent, expressed as a graph edge:
+   * nothing reaches a customer without a human. `approved` requires a human
+   * (the exact approval phrase from a number in REVIEWER_PHONES, or an
+   * authenticated admin in the Inbox tab) and `sent` — the actual Resend/Quo
+   * send — is gated too, so no cron, sweep or LLM path can ever reach it on its
+   * own. `isAdmin` is the proof-of-human flag; lib/agent/reviewLoop.ts only
+   * sets it after verifying the sender's phone number.
+   */
+  inquiry_draft: new Set(['approved', 'sent']),
 }
 
 export interface Actor {

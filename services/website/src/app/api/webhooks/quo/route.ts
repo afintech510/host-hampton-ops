@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getSupabase } from '@/lib/supabase'
+import { upsertContactByPhone } from '@/lib/contacts'
+import { recordInboundEvent } from '@/lib/agent/events'
+// Deliberately lib/agent/reviewers, NOT lib/agent/reviewLoop: this route must
+// not be able to reach the customer-send path, even transitively.
+import { isReviewerPhone } from '@/lib/agent/reviewers'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,23 +13,29 @@ export const dynamic = 'force-dynamic'
  * Quo (OpenPhone) inbound webhook.
  *
  * Subscribe this URL to the `message.received` event in Quo (Settings → API/
- * Webhooks, or POST /v1/webhooks). Its job is to keep our SMS opt-in state in
- * sync when a customer replies — Quo handles the carrier-level STOP compliance
- * reply itself, exactly like Twilio did.
+ * Webhooks, or POST /v1/webhooks).
  *
  * Payload (Quo/OpenPhone event envelope):
  *   { type: 'message.received', data: { object: { from, to, text|body, direction, id } } }
  *
- * Signature: if QUO_WEBHOOK_SECRET is set we verify the Standard-Webhooks
- * signature. On mismatch we log and STILL process opt-outs — a dropped STOP
- * would leave a customer marked opted-in (a compliance problem) and the only
- * actions here are opt-out + logging, both low-risk. Configure the secret to
- * turn on verification logging.
+ * Two jobs:
+ *   1. Keep SMS opt-in state in sync when a customer texts STOP (carrier
+ *      compliance; Quo sends the carrier-level reply itself, as Twilio did).
+ *   2. Put every inbound message into `ingested_messages` so the booking agent
+ *      can see it — reviewer approvals on one side, customer inquiries on the
+ *      other. The dispatcher (/api/cron/agent-dispatch) does the routing.
+ *
+ * FAIL CLOSED (plan §4.1, changed in Phase 2): an inbound SMS can now trigger an
+ * LLM call and a customer-facing send, so an unsigned or wrongly-signed request
+ * is REJECTED with 401 rather than logged-and-processed. It used to fail open
+ * because the only actions here were opt-out and logging. Verification is still
+ * skipped entirely when QUO_WEBHOOK_SECRET is unset, which is the documented
+ * "not configured yet" state — set the secret and this endpoint is authenticated.
  */
 
 function verifySignature(req: NextRequest, rawBody: string): boolean | null {
   const secret = process.env.QUO_WEBHOOK_SECRET
-  if (!secret) return null // verification disabled
+  if (!secret) return null // verification disabled (secret not configured)
 
   const id = req.headers.get('webhook-id') || ''
   const timestamp = req.headers.get('webhook-timestamp') || ''
@@ -64,8 +75,10 @@ export async function POST(req: NextRequest) {
 
   const verified = verifySignature(req, rawBody)
   if (verified === false) {
-    // Fail-open for compliance (see file header) — log and continue.
-    console.warn('quo:webhook signature verification FAILED — processing anyway')
+    // FAIL CLOSED. A forged inbound SMS could otherwise impersonate a reviewer
+    // phone and approve a draft.
+    console.error('quo:webhook signature verification FAILED — rejecting')
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
   let event: any
@@ -79,16 +92,18 @@ export async function POST(req: NextRequest) {
   const msg = event?.data?.object || {}
   const direction: string = msg?.direction || ''
 
-  // Only inbound messages matter for opt-in sync.
+  // Only inbound messages matter.
   if (type !== 'message.received' && direction !== 'incoming') {
     console.log(`quo:webhook ignored type=${type} direction=${direction}`)
     return NextResponse.json({ received: true })
   }
 
   const from: string = msg?.from || ''
+  const to: string = Array.isArray(msg?.to) ? msg.to[0] || '' : msg?.to || ''
   const text: string = (msg?.text ?? msg?.body ?? '').toString()
   const body = text.trim().toUpperCase()
   const messageId: string = msg?.id || ''
+  const threadId: string = msg?.conversationId || msg?.threadId || ''
 
   console.log(`quo:webhook from=${from} body="${body}" id=${messageId}`)
 
@@ -98,45 +113,84 @@ export async function POST(req: NextRequest) {
   const normalizedPhone = from.replace(/^\+1/, '').replace(/\D/g, '')
   const contactMatch = `phone.eq.${normalizedPhone},phone.eq.+1${normalizedPhone},phone.eq.${from}`
 
-  if (['STOP', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'].includes(body)) {
-    const { data: contact } = await supabase
-      .from('contacts')
-      .select('id')
-      .or(contactMatch)
-      .single()
+  const isStop = ['STOP', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'].includes(body)
 
-    if (contact) {
-      await supabase.from('contacts').update({ sms_opt_in: false }).eq('id', contact.id)
+  // ── Find the contact, creating one for an unknown texter.
+  // Unknown numbers used to be dropped on the floor: no contact, no record, no
+  // notification. Now they become a real contact (mirrored to Brevo and Quo by
+  // contactSync) so the agent can answer them.
+  let contactId: string | null = null
+  const { data: contact } = await supabase.from('contacts').select('id').or(contactMatch).maybeSingle()
+  contactId = contact?.id ?? null
+
+  if (!contactId && !isStop) {
+    // Don't manufacture a contact just to record an opt-out from a number we
+    // have never heard of — there is nothing to opt out of.
+    contactId = await upsertContactByPhone({
+      phone: from,
+      sourceDetail: 'quo-inbound-sms',
+      serviceInterests: ['general'],
+    })
+  }
+
+  // ── Opt-out handling, unchanged (carrier compliance).
+  if (isStop) {
+    if (contactId) {
+      await supabase.from('contacts').update({ sms_opt_in: false }).eq('id', contactId)
       await supabase
         .from('scheduled_reminders')
         .update({ status: 'cancelled' })
-        .eq('contact_id', contact.id)
+        .eq('contact_id', contactId)
         .eq('channel', 'sms')
         .eq('status', 'pending')
       await supabase.from('contact_interactions').insert({
-        contact_id: contact.id,
+        contact_id: contactId,
         type: 'sms_unsubscribed',
         metadata: { phone: from, message_id: messageId, provider: 'quo' },
       })
       console.log(`quo:webhook SMS opt-out for ${from}`)
     }
-    return NextResponse.json({ received: true, action: 'opt_out' })
-  }
-
-  // Log other inbound messages against a known contact.
-  const { data: contact } = await supabase
-    .from('contacts')
-    .select('id')
-    .or(contactMatch)
-    .single()
-
-  if (contact) {
+    // A reviewer texting a bare STOP/CANCEL is also a review command ("drop that
+    // draft"), so the message is still recorded below and the dispatcher acts on
+    // it. The opt-out above is harmless for reviewers: reviewer SMS goes out
+    // through sendSMSViaQuo directly and does not consult sms_opt_in.
+  } else if (contactId) {
     await supabase.from('contact_interactions').insert({
-      contact_id: contact.id,
+      contact_id: contactId,
       type: 'sms_received',
       metadata: { phone: from, body: text, message_id: messageId, provider: 'quo' },
     })
   }
 
-  return NextResponse.json({ received: true })
+  // ── Record the event for the agent. `external_id = 'quo:<id>'` against the
+  // UNIQUE column is the dedupe: Quo retries a webhook it thinks failed, and a
+  // redelivered approval must not send the customer a second message.
+  const reviewer = isReviewerPhone(from)
+  const eventId = await recordInboundEvent({
+    supabase,
+    route: 'quo-webhook',
+    source: 'quo',
+    externalId: messageId ? `quo:${messageId}` : undefined,
+    contactId,
+    fromAddress: from,
+    toAddress: to || null,
+    body: text,
+    subject: null,
+    threadId: threadId || null,
+    classification: reviewer ? 'reviewer_reply' : 'sms_inbound',
+    parsed: {
+      provider: 'quo',
+      message_id: messageId || null,
+      thread_id: threadId || null,
+      reviewer,
+      stop: isStop,
+    },
+  })
+
+  return NextResponse.json({
+    received: true,
+    ...(isStop ? { action: 'opt_out' } : {}),
+    eventId,
+    reviewer,
+  })
 }

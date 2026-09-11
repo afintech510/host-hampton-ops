@@ -40,6 +40,8 @@ export interface RecordInboundEventInput {
   body?: string | null
   /** Structured form payload the draft node reads (name, date, guests, …). */
   parsed?: Record<string, unknown>
+  /** Provider conversation id (Quo conversation, Gmail thread) — groups a thread. */
+  threadId?: string | null
   direction?: 'in' | 'out'
   /**
    * false → the row is recorded as `ignored`: kept as history, never drafted
@@ -79,6 +81,7 @@ export async function recordInboundEvent(input: RecordInboundEventInput): Promis
         sent_at: new Date().toISOString(),
         subject: input.subject ?? null,
         body: input.body ?? null,
+        thread_id: input.threadId ?? null,
         parsed: { route: input.route, ...(input.parsed ?? {}) },
         contact_id: input.contactId ?? null,
         booking_id: input.bookingId ?? null,

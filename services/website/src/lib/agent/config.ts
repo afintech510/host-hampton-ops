@@ -65,6 +65,27 @@ export function reviewLinkSecret(): string {
   )
 }
 
+/**
+ * Is it a reasonable hour to text a human? Used by the Phase-2 review nudge so a
+ * draft that lands at 11pm does not buzz a phone at 1am.
+ *
+ * 9am–8pm America/New_York, every day — this is a party business, so Saturday is
+ * a working day and "business hours" means "awake", not "Mon–Fri".
+ */
+export function isBusinessHours(now: Date = new Date()): boolean {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: 'numeric',
+      hour12: false,
+    }).format(now),
+  )
+  return Number.isFinite(hour) && hour >= 9 && hour < 20
+}
+
+/** How long a draft may sit in sent_for_review before the single nudge SMS. */
+export const NUDGE_AFTER_MS = 2 * 60 * 60 * 1000
+
 export function siteUrl(): string {
   return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, '') || 'https://www.hosthampton.com'
 }

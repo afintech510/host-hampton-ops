@@ -25,6 +25,11 @@ jest.mock('@/lib/agent/draftInquiry', () => ({
 const mockFinishEvent = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/agent/events', () => ({ finishEvent: (...args: any[]) => mockFinishEvent(...args) }))
 
+const mockHandleReviewerReply = jest.fn()
+jest.mock('@/lib/agent/reviewLoop', () => ({
+  handleReviewerReply: (...args: any[]) => mockHandleReviewerReply(...args),
+}))
+
 const mockNotifyOwnerSms = jest.fn().mockResolvedValue(1)
 jest.mock('@/lib/ownerNotify', () => ({ notifyOwnerSms: (...args: any[]) => mockNotifyOwnerSms(...args) }))
 
@@ -143,6 +148,7 @@ describe('GET /api/cron/agent-dispatch', () => {
     jest.clearAllMocks()
     process.env = { ...originalEnv, CRON_SECRET, AGENT_ENABLED: '1' }
     mockDraftForInquiry.mockResolvedValue({ ok: true, status: 200, draftId: 'draft-1', reviewCode: 'HH-2026-0001' })
+    mockHandleReviewerReply.mockResolvedValue({ handled: false, outcome: 'not_a_reviewer' })
   })
   afterAll(() => { process.env = originalEnv })
 
@@ -230,11 +236,11 @@ describe('GET /api/cron/agent-dispatch', () => {
     expect(res.body.results[0].outcome).toBe('stale')
   })
 
-  it('parks a source Phase 1 cannot answer (Quo/Gmail) without drafting', async () => {
+  it('parks a source nothing can answer yet (Gmail is Phase 3) without drafting', async () => {
     const { supabase } = makeSupabase({
       candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
       claimable: ['e1'],
-      eventRows: { e1: websiteFormEvent('e1', { source: 'quo' }) },
+      eventRows: { e1: websiteFormEvent('e1', { source: 'gmail' }) },
     })
     mockGetSupabase.mockReturnValue(supabase)
 
@@ -255,6 +261,48 @@ describe('GET /api/cron/agent-dispatch', () => {
 
     expect(mockDraftForInquiry).toHaveBeenCalledWith(expect.objectContaining({ booking: expect.objectContaining({ id: 'b1' }) }))
     expect(res.body.drafted).toBe(1)
+  })
+
+  it('routes an inbound SMS through the review loop and never through the draft node', async () => {
+    const { supabase } = makeSupabase({
+      candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
+      claimable: ['e1'],
+      eventRows: { e1: websiteFormEvent('e1', { source: 'quo', from_address: '+16314008080', body: 'SEND' }) },
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+    mockHandleReviewerReply.mockResolvedValue({
+      handled: true,
+      intent: 'approve',
+      draftId: 'draft-9',
+      reviewCode: 'HH-2026-0042',
+      outcome: 'approved_and_sent',
+    })
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(mockHandleReviewerReply).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '+16314008080', text: 'SEND', eventId: 'e1' }),
+    )
+    expect(mockDraftForInquiry).not.toHaveBeenCalled()
+    expect(res.body.results[0]).toMatchObject({ outcome: 'reviewer_approved_and_sent', draftId: 'draft-9' })
+  })
+
+  it('parks a CUSTOMER text — not a reviewer, so nothing is drafted or sent', async () => {
+    const { supabase } = makeSupabase({
+      candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
+      claimable: ['e1'],
+      eventRows: { e1: websiteFormEvent('e1', { source: 'quo', from_address: '+15165550000', body: 'SEND' }) },
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+    // handleReviewerReply refuses on the phone number alone.
+    mockHandleReviewerReply.mockResolvedValue({ handled: false, outcome: 'not_a_reviewer' })
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(mockDraftForInquiry).not.toHaveBeenCalled()
+    expect(res.body.drafted).toBe(0)
+    expect(res.body.results[0].outcome).toBe('sms_awaiting_triage')
+    expect(mockFinishEvent).toHaveBeenCalledWith(expect.anything(), 'e1', 'ignored', expect.anything())
   })
 
   it('does NOT sweep a booking that already has a draft (a dismissed draft must not come back)', async () => {

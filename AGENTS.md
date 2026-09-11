@@ -176,8 +176,19 @@ Runtime env (`website`):
 
 The agent never sends to a customer without an explicit human approval, never
 sends customer email through Gmail (Resend for email, Quo for SMS), and its
-migrations (028, 032, 033) must be applied by hand before `AGENT_ENABLED` is
+migrations (028, 032, 033, 034) must be applied by hand before `AGENT_ENABLED` is
 turned on.
+
+`QUO_WEBHOOK_SECRET` became security-relevant in Phase 2: `/api/webhooks/quo`
+now **fails closed** (401 on a bad or missing signature) because an inbound SMS
+can approve a draft and trigger a customer-facing send. Leaving the var unset
+disables verification entirely — set it in the Quo webhook config and on the box.
+
+"Nothing reaches a customer without a human" is enforced structurally, not by
+convention: `inquiry_draft` is an entity in `lib/marketing/graph.ts` whose
+`approved` and `sent` transitions are GATED, so they require an actor flagged
+`isAdmin` — which only an authenticated admin request or a sender verified
+against `REVIEWER_PHONES` ever gets.
 
 ---
 

@@ -61,6 +61,76 @@ describe('graph transition tables', () => {
     expect(isGatedTransition('website_content', 'pending_review')).toBe(false)
     expect(isGatedTransition('marketing_task', 'approved')).toBe(true)
   })
+
+  it('gates the booking agent draft so nothing reaches a customer without a human', () => {
+    // The hard guardrail as a graph edge: both approval and the send itself.
+    expect(isGatedTransition('inquiry_draft', 'approved')).toBe(true)
+    expect(isGatedTransition('inquiry_draft', 'sent')).toBe(true)
+    // Drafting and revising are the agent's own business.
+    expect(isGatedTransition('inquiry_draft', 'sent_for_review')).toBe(false)
+    expect(isGatedTransition('inquiry_draft', 'revision_requested')).toBe(false)
+    expect(isGatedTransition('inquiry_draft', 'cancelled')).toBe(false)
+  })
+
+  it('only lets a draft reach "sent" from "approved"', () => {
+    expect(isLegalTransition('inquiry_draft', 'approved', 'sent')).toBe(true)
+    expect(isLegalTransition('inquiry_draft', 'sent_for_review', 'sent')).toBe(false)
+    expect(isLegalTransition('inquiry_draft', 'drafted', 'sent')).toBe(false)
+    expect(isLegalTransition('inquiry_draft', 'revision_requested', 'sent')).toBe(false)
+    // And 'sent' is terminal — no un-sending.
+    expect(isLegalTransition('inquiry_draft', 'sent', 'cancelled')).toBe(false)
+  })
+})
+
+describe('advance() on an inquiry_draft', () => {
+  it('refuses to send without an admin/verified-reviewer actor', async () => {
+    const { supabase, updates } = makeSupabase({ inquiry_drafts: { status: 'approved' } })
+
+    await expect(
+      advance({ entity: 'inquiry_draft', id: 'd1', to: 'sent', actor: { id: 'cron' }, supabase })
+    ).rejects.toThrow(TransitionNotAuthorizedError)
+
+    expect(updates.inquiry_drafts).toBeUndefined()
+  })
+
+  it('refuses to approve without one either — cron can never approve its own draft', async () => {
+    const { supabase } = makeSupabase({ inquiry_drafts: { status: 'sent_for_review' } })
+
+    await expect(
+      advance({ entity: 'inquiry_draft', id: 'd1', to: 'approved', actor: { id: 'AGENT' }, supabase })
+    ).rejects.toThrow(TransitionNotAuthorizedError)
+  })
+
+  it('allows the send for a verified reviewer and writes one ledger row', async () => {
+    const { supabase, ledgerInserts, updates } = makeSupabase({ inquiry_drafts: { status: 'approved' } })
+
+    const res = await advance({
+      entity: 'inquiry_draft',
+      id: 'd1',
+      to: 'sent',
+      actor: { id: 'REVIEWER:+16314008080', isAdmin: true },
+      supabase,
+    })
+
+    expect(res).toEqual({ from: 'approved', to: 'sent' })
+    expect(updates.inquiry_drafts?.[0]).toMatchObject({ status: 'sent' })
+    expect(ledgerInserts).toHaveLength(1)
+    expect(ledgerInserts[0]).toMatchObject({
+      entity_type: 'inquiry_draft',
+      action: 'transition',
+      actor: 'REVIEWER:+16314008080',
+      from_status: 'approved',
+      to_status: 'sent',
+    })
+  })
+
+  it('rejects skipping review entirely', async () => {
+    const { supabase } = makeSupabase({ inquiry_drafts: { status: 'sent_for_review' } })
+
+    await expect(
+      advance({ entity: 'inquiry_draft', id: 'd1', to: 'sent', actor: { id: 'admin', isAdmin: true }, supabase })
+    ).rejects.toThrow(IllegalTransitionError)
+  })
 })
 
 describe('advance()', () => {

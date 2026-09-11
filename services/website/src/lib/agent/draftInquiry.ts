@@ -415,6 +415,41 @@ async function callClaude(
   }
 }
 
+/* ── Reviewer SMS ───────────────────────────────────────────────────── */
+
+/**
+ * The text a reviewer actually receives. One format for a first draft and for a
+ * revision, so the thread reads consistently.
+ *
+ * STOP is deliberately NOT advertised as a command even though the parser
+ * accepts it: a bare STOP also trips the carrier-compliance opt-out branch in
+ * /api/webhooks/quo (which must stay exactly as it is). CANCEL does the same job
+ * with no side effect.
+ */
+export function reviewerSmsBody(opts: {
+  reviewCode: string
+  partyType: string
+  path: 'info_gather' | 'quote'
+  summary: string
+  missing: string[]
+  smsDraft: string
+  previewToken: string
+  revision?: boolean
+}): string {
+  const previewUrl = opts.previewToken ? buildReviewUrl(opts.previewToken, siteUrl()) : `${siteUrl()}/admin`
+  const missingLine = opts.missing.length ? `Missing: ${describeMissing(opts.missing).join(', ')}\n` : ''
+  const head = opts.revision ? 'revised draft ready' : `${opts.path === 'quote' ? 'quote' : 'info-gather'} draft ready`
+  return (
+    `[${opts.reviewCode} · ${opts.partyType.replace(/_/g, ' ')}] ${head}\n` +
+    `${opts.summary}\n` +
+    missingLine +
+    `SMS: ${opts.smsDraft.slice(0, 320)}\n` +
+    `Review: ${previewUrl}\n` +
+    `Reply SEND to send it, CANCEL to drop it, TEST to see it as the customer would, or just say what to change. ` +
+    `(Nothing has gone to the customer.)`
+  )
+}
+
 /* ── The node ───────────────────────────────────────────────────────── */
 
 export interface DraftForInquiryInput {
@@ -562,6 +597,9 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
     draft_kind: evaluation.path,
     channel: 'both',
     status: draftStatus,
+    // The 2-hour nudge clock (migration 034). Only a draft that actually went
+    // out for review has one.
+    sent_for_review_at: draftStatus === 'sent_for_review' ? new Date().toISOString() : null,
     missing_fields: evaluation.missing,
     subject: draft.emailSubject,
     email_draft: emailDraft,
@@ -647,18 +685,17 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
   // ── Reviewer SMS (Quo → REVIEWER_PHONES). Never to the customer.
   let reviewersTexted = 0
   if (draftStatus === 'sent_for_review') {
-    const previewUrl = previewToken ? buildReviewUrl(previewToken, siteUrl()) : `${siteUrl()}/admin`
-    const missingLine = evaluation.missing.length
-      ? `Missing: ${describeMissing(evaluation.missing).join(', ')}\n`
-      : ''
-    const body =
-      `[${reviewCode} · ${evaluation.partyType.replace(/_/g, ' ')}] ${evaluation.path === 'quote' ? 'quote' : 'info-gather'} draft ready\n` +
-      `${draft.summaryForReviewer}\n` +
-      missingLine +
-      `SMS: ${smsDraft.slice(0, 320)}\n` +
-      `Review: ${previewUrl}\n` +
-      `Approve in Admin → Inbox. (Nothing has been sent to the customer.)`
-    reviewersTexted = await notifyOwnerSms(body)
+    reviewersTexted = await notifyOwnerSms(
+      reviewerSmsBody({
+        reviewCode,
+        partyType: evaluation.partyType,
+        path: evaluation.path,
+        summary: draft.summaryForReviewer,
+        missing: evaluation.missing,
+        smsDraft,
+        previewToken,
+      }),
+    )
   }
 
   // ── Customer send: STUBBED in Phase 1. This is the only place a customer
@@ -684,4 +721,193 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
     costUsd: usd,
     tokens: inputTokens + outputTokens,
   }
+}
+
+/* ── Revision (Phase 2) ─────────────────────────────────────────────── */
+
+export interface RedraftResult {
+  ok: boolean
+  status: number
+  error?: string
+  reviewCode?: string
+  reviewersTexted?: number
+  costUsd?: number
+}
+
+/**
+ * Re-draft an existing draft from a reviewer's free-text note, IN PLACE.
+ *
+ * In place matters: the review_code and the preview token are what the reviewer
+ * has in their SMS thread, so a revision must keep both and update the body
+ * underneath them. A new row would mean a new code and a dead link mid-thread.
+ *
+ * The note is the reviewer's own words and is appended to `revisions`, which is
+ * the raw material the Phase 6 learning loop distils.
+ */
+export async function redraftForReviewer(args: {
+  supabase: Supa
+  draftId: string
+  note: string
+  actor?: string
+}): Promise<RedraftResult> {
+  const { supabase, draftId, note } = args
+  const actor = args.actor ?? AGENT_ACTOR
+
+  const { data: row, error: readErr } = await supabase
+    .from('inquiry_drafts')
+    .select('id, review_code, status, booking_id, inbound_event_id, contact_id, revisions, party_type, contact_path')
+    .eq('id', draftId)
+    .maybeSingle()
+  if (readErr || !row) return { ok: false, status: 404, error: 'Draft not found' }
+  if (['sent', 'cancelled'].includes(row.status as string)) {
+    return { ok: false, status: 409, error: `Cannot revise a draft that is "${row.status}"` }
+  }
+
+  // Rebuild the inquiry context from whatever the draft is anchored to.
+  let inquiry: InquiryBooking | null = null
+  let bookingRef: string | null = null
+  if (row.booking_id) {
+    const { data } = await supabase
+      .from('bookings')
+      .select(
+        'booking_ref, event_type, package_type, notes, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, guest_count_approx, child_name, child_age',
+      )
+      .eq('id', row.booking_id)
+      .maybeSingle()
+    if (data) {
+      inquiry = data as unknown as InquiryBooking
+      bookingRef = (data as { booking_ref?: string | null }).booking_ref ?? null
+    }
+  }
+  if (!inquiry && row.inbound_event_id) {
+    const { data } = await supabase
+      .from('ingested_messages')
+      .select('parsed, subject, body')
+      .eq('id', row.inbound_event_id)
+      .maybeSingle()
+    if (data) inquiry = inquiryFromEvent(data as Pick<InboundEvent, 'parsed' | 'subject' | 'body'>)
+  }
+  if (!inquiry) return { ok: false, status: 422, error: 'Draft has no booking or event to re-draft from' }
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { ok: false, status: 503, error: 'ANTHROPIC_API_KEY is not configured on the server' }
+  }
+
+  try {
+    await assertLlmBudget(supabase, { estimatedUsd: ESTIMATED_USD, actor, entityType: DRAFT_ENTITY })
+  } catch (err) {
+    if (err instanceof BudgetExceededError) return { ok: false, status: 402, error: err.message }
+    throw err
+  }
+
+  const evaluation = evaluateInquiry(inquiry)
+  const [voiceProfile, learnings, firstTouch] = await Promise.all([
+    loadVoiceProfile(supabase),
+    loadLearnings(supabase),
+    isFirstTouch(supabase, { bookingId: row.booking_id as string | null, contactId: row.contact_id as string | null }),
+  ])
+  const systemPrompt =
+    SYSTEM_PROMPT +
+    (voiceProfile ? '\n' + voicePromptAddendum(voiceProfile) : '') +
+    learningsPromptAddendum(learnings)
+  const model = draftModel()
+
+  let draft: InquiryDraftOutput
+  let inputTokens = 0
+  let outputTokens = 0
+  let guardrailError: string | null = null
+  try {
+    const res = await callClaude(
+      systemPrompt,
+      buildUserPrompt(inquiry, evaluation, {
+        isFirstTouch: firstTouch,
+        bookingRef,
+        // The reviewer's note is an INSTRUCTION FROM THE OWNER, unlike the
+        // inquiry body — it is the one piece of free text in this prompt that is
+        // trusted, and it comes from a verified reviewer phone.
+        correction: `the owner reviewed your draft and asked for this change: "${note.slice(0, 600)}"`,
+      }),
+      model,
+    )
+    draft = res.draft
+    inputTokens += res.inputTokens
+    outputTokens += res.outputTokens
+
+    if (evaluation.path === 'info_gather' && (containsMoney(draft.emailDraft) || containsMoney(draft.smsDraft))) {
+      guardrailError = 'pricing_in_info_gather: revision included a dollar amount on an info-gather draft'
+    }
+  } catch (err) {
+    console.error('redraftForReviewer:', err instanceof Error ? err.message : err)
+    return { ok: false, status: 502, error: 'Re-draft generation failed' }
+  }
+
+  const emailDraft = applySignatureRule(draft.emailDraft, { isFirstTouch: firstTouch, channel: 'email' })
+  const smsDraft = applySignatureRule(draft.smsDraft, { isFirstTouch: firstTouch, channel: 'sms' })
+  const revisions = Array.isArray(row.revisions) ? row.revisions : []
+  const now = new Date().toISOString()
+
+  // Mint a fresh preview token so the revision SMS carries a link that works.
+  // Rotating it also retires the link to the superseded text, which is the
+  // behaviour you want if an old SMS is ever forwarded.
+  const secret = reviewLinkSecret()
+  const minted = secret ? generateReviewToken(row.review_code as string, secret) : null
+
+  const { error: updErr } = await supabase
+    .from('inquiry_drafts')
+    .update({
+      status: 'sent_for_review',
+      subject: draft.emailSubject,
+      ...(minted ? { preview_token_hash: minted.hash } : {}),
+      email_draft: emailDraft,
+      sms_draft: smsDraft,
+      reviewer_note: note.slice(0, 2000),
+      error: guardrailError,
+      sent_for_review_at: now,
+      // A revision restarts the 2-hour nudge clock and re-arms the nudge.
+      nudged_at: null,
+      revisions: [
+        ...revisions,
+        { at: now, actor: 'reviewer', note },
+        { at: now, actor: 'agent', note: `revision (${model})`, email_draft: emailDraft, sms_draft: smsDraft },
+      ],
+    })
+    .eq('id', draftId)
+  if (updErr) {
+    console.error('redraftForReviewer update error:', updErr.message)
+    return { ok: false, status: 500, error: 'Failed to save the revision' }
+  }
+
+  const usd = costUsd(model, inputTokens, outputTokens)
+  await recordLlmSpend(supabase, {
+    usd,
+    tokens: inputTokens + outputTokens,
+    actor,
+    entityType: DRAFT_ENTITY,
+    entityId: draftId,
+    meta: { model, job: 'redraft', input_tokens: inputTokens, output_tokens: outputTokens },
+  })
+  await writeLedger(supabase, {
+    entityType: DRAFT_ENTITY,
+    entityId: draftId,
+    action: 'transition',
+    actor,
+    fromStatus: row.status as string,
+    toStatus: 'sent_for_review',
+    meta: { job: 'redraft', review_code: row.review_code, note, guardrail_error: guardrailError },
+  })
+
+  const reviewersTexted = await notifyOwnerSms(
+    reviewerSmsBody({
+      reviewCode: row.review_code as string,
+      partyType: evaluation.partyType,
+      path: evaluation.path,
+      summary: draft.summaryForReviewer,
+      missing: evaluation.missing,
+      smsDraft,
+      previewToken: minted?.token ?? '',
+      revision: true,
+    }),
+  )
+
+  return { ok: true, status: 200, reviewCode: row.review_code as string, reviewersTexted, costUsd: usd }
 }

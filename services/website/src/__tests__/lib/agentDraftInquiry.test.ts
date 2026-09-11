@@ -200,7 +200,11 @@ describe('draftForInquiry', () => {
     const sms = mockNotifyOwnerSms.mock.calls[0][0] as string
     expect(sms).toContain(outcome.reviewCode)
     expect(sms).toContain('https://www.hosthampton.com/review/')
-    expect(sms).toContain('Nothing has been sent to the customer.')
+    expect(sms).toContain('Nothing has gone to the customer.')
+    // The reply commands the Phase 2 review loop understands.
+    expect(sms).toContain('Reply SEND')
+    expect(sms).toContain('CANCEL')
+    expect(sms).toContain('TEST')
 
     // Spend recorded against the real token counts.
     expect(recordLlmSpend).toHaveBeenCalledWith(

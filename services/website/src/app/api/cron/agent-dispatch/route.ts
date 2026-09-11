@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { draftForInquiry, AGENT_ACTOR, DRAFT_ENTITY } from '@/lib/agent/draftInquiry'
 import { finishEvent, type InboundEvent } from '@/lib/agent/events'
-import { agentEnabled, dailyUsdCap } from '@/lib/agent/config'
+import { agentEnabled, dailyUsdCap, isBusinessHours, NUDGE_AFTER_MS } from '@/lib/agent/config'
+import { handleReviewerReply } from '@/lib/agent/reviewLoop'
 import { notifyOwnerSms } from '@/lib/ownerNotify'
 import { writeLedger } from '@/lib/marketing/graph'
 
@@ -168,6 +169,63 @@ async function bookingsWithAnyDraft(supabase: Supa, ids: string[]): Promise<Set<
   return new Set((data ?? []).map(r => String((r as { booking_id: string | null }).booking_id)))
 }
 
+/**
+ * One nudge SMS per draft that has sat in `sent_for_review` for two hours, and
+ * only during waking hours.
+ *
+ * "At most one per draft" is enforced by `nudged_at`: it is stamped in the same
+ * statement that the partial index filters on, so two overlapping cron runs
+ * cannot both send. A revision resets it to null (see redraftForReviewer) —
+ * that is deliberate, the new text deserves its own two-hour clock.
+ */
+async function nudgeStaleReviews(supabase: Supa): Promise<number> {
+  if (!isBusinessHours()) return 0
+
+  const cutoff = new Date(Date.now() - NUDGE_AFTER_MS).toISOString()
+  const { data, error } = await supabase
+    .from('inquiry_drafts')
+    .select('id, review_code, party_type, contact_path, sms_draft, sent_for_review_at')
+    .eq('status', 'sent_for_review')
+    .is('nudged_at', null)
+    .lt('sent_for_review_at', cutoff)
+    .order('sent_for_review_at', { ascending: true })
+    .limit(3)
+
+  if (error) {
+    console.error('cron:agent-dispatch nudge query error:', error.message)
+    return 0
+  }
+
+  let sent = 0
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    // Claim the nudge before sending it: the compare-and-swap on nudged_at IS
+    // NULL means only one runner can ever win this row.
+    const { data: claimedRows, error: claimErr } = await supabase
+      .from('inquiry_drafts')
+      .update({ nudged_at: new Date().toISOString() })
+      .eq('id', row.id as string)
+      .is('nudged_at', null)
+      .select('id')
+    if (claimErr || (claimedRows ?? []).length !== 1) continue
+
+    const hours = Math.round((Date.now() - new Date(row.sent_for_review_at as string).getTime()) / 3_600_000)
+    await notifyOwnerSms(
+      `[${row.review_code}] still waiting — drafted ${hours}h ago for a ${String(row.party_type).replace(/_/g, ' ')} ` +
+        `${row.contact_path === 'quote' ? 'quote' : 'info-gather'} and nobody has replied. ` +
+        `Reply SEND, CANCEL, or say what to change. This is the only reminder.`,
+    )
+    await writeLedger(supabase, {
+      entityType: DRAFT_ENTITY,
+      entityId: row.id as string,
+      action: 'note',
+      actor: AGENT_ACTOR,
+      meta: { job: 'review_nudge', review_code: row.review_code, waited_hours: hours },
+    })
+    sent++
+  }
+  return sent
+}
+
 export async function GET(req: NextRequest) {
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -215,10 +273,37 @@ export async function GET(req: NextRequest) {
       continue
     }
 
-    // Phase 1 only knows how to answer website forms. Quo/Gmail events are
-    // parked (not deleted) until their phases land.
+    // ── Inbound SMS (Phase 2). A reviewer's text drives the review loop; a
+    // customer's text is recorded and parked, because deciding whether an
+    // arbitrary message needs an answer is triage, which is Phase 3. It shows up
+    // in Admin → Inbox with a "Draft now" button in the meantime.
+    if (event.source === 'quo') {
+      const review = await handleReviewerReply({
+        supabase,
+        from: event.from_address || '',
+        text: event.body || '',
+        eventId: event.id,
+      })
+      if (review.handled) {
+        await finishEvent(supabase, event.id, 'handled', {
+          draftId: review.draftId ?? null,
+          classification: `reviewer_${review.intent ?? 'reply'}`,
+          error: review.error ?? null,
+        })
+        results.push({ kind: 'event', id: event.id, outcome: `reviewer_${review.outcome}`, draftId: review.draftId })
+      } else {
+        await finishEvent(supabase, event.id, 'ignored', {
+          classification: 'sms_inbound',
+          error: 'inbound customer SMS: triage lands in Phase 3. Use Draft now in Admin → Inbox.',
+        })
+        results.push({ kind: 'event', id: event.id, outcome: 'sms_awaiting_triage' })
+      }
+      continue
+    }
+
+    // Gmail events are parked (not deleted) until Phase 3 lands.
     if (event.source !== 'website_form') {
-      await finishEvent(supabase, event.id, 'ignored', { error: `source '${event.source}' not handled in Phase 1` })
+      await finishEvent(supabase, event.id, 'ignored', { error: `source '${event.source}' not handled yet` })
       results.push({ kind: 'event', id: event.id, outcome: 'unsupported_source' })
       continue
     }
@@ -294,13 +379,17 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  console.log(`cron:agent-dispatch drafted ${drafted}`, results)
+  // ── 3. Nudge: drafts sitting unreviewed for 2 business hours ────────
+  const nudged = await nudgeStaleReviews(supabase)
+
+  console.log(`cron:agent-dispatch drafted ${drafted} nudged ${nudged}`, results)
 
   return NextResponse.json({
     enabled: true,
     claimed: results.filter(r => r.kind === 'event' && r.outcome !== 'already_claimed').length,
     reaped,
     drafted,
+    nudged,
     spentUsd: spent,
     capUsd: cap,
     results,

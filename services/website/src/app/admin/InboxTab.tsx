@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  RefreshCw, CheckCircle2, XCircle, Pencil, Inbox, MessageSquare, Mail, Sparkles, AlertTriangle, X,
+  RefreshCw, CheckCircle2, XCircle, Pencil, Inbox, MessageSquare, Mail, Sparkles, AlertTriangle, X, Send,
 } from 'lucide-react'
 
 /* ── Types ─────────────────────────────────────────────── */
@@ -127,13 +127,19 @@ export default function InboxTab({ headers, onLogout }: { headers: Record<string
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Action failed'); return false }
+      const channels = [data.emailSent ? 'email' : null, data.smsSent ? 'text' : null].filter(Boolean).join(' + ')
       setNotice(
         action === 'approve'
-          ? 'Approved. Nothing was sent — the real send lands in Phase 2.'
+          ? 'Approved. Nothing was sent yet — use "Send to customer".'
           : action === 'draft'
             ? `Drafted ${data.reviewCode || ''} — review it below.`
-            : 'Done.',
+            : action === 'send'
+              ? `Sent to ${data.recipient?.email || data.recipient?.phone || 'the customer'} (${channels || 'nothing went out'}).`
+              : action === 'test'
+                ? `Test copy sent to you (${channels || 'nothing went out'}). The customer still has nothing.`
+                : 'Done.',
       )
+      if (Array.isArray(data.errors) && data.errors.length) setError(data.errors.join('; '))
       await fetchSnapshot()
       return true
     } finally {
@@ -246,12 +252,34 @@ export default function InboxTab({ headers, onLogout }: { headers: Record<string
                 </button>
                 <button
                   disabled={busyId === d.id}
+                  onClick={() => act(d.id, 'test')}
+                  title="Send this to the owner's own email and phone, exactly as the customer would see it"
+                  className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg text-hampton-navy hover:bg-gray-100 transition-all disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" /> Test to me
+                </button>
+                <button
+                  disabled={busyId === d.id}
                   onClick={() => act(d.id, 'dismiss')}
                   className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-all disabled:opacity-50"
                 >
                   <XCircle className="w-3.5 h-3.5" /> Dismiss
                 </button>
-                <span className="ml-auto text-[11px] text-gray-400">Approving does not send (Phase 2).</span>
+                {d.status === 'approved' ? (
+                  <button
+                    disabled={busyId === d.id}
+                    onClick={() => {
+                      if (confirm(`Send ${d.review_code} to the customer now? This cannot be undone.`)) {
+                        act(d.id, 'send')
+                      }
+                    }}
+                    className="ml-auto flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-hampton-navy text-white hover:opacity-90 transition-all disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" /> Send to customer
+                  </button>
+                ) : (
+                  <span className="ml-auto text-[11px] text-gray-400">Approve first — sending is a separate step.</span>
+                )}
               </div>
             </div>
           ))}

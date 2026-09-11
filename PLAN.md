@@ -91,12 +91,12 @@
 ## Phase 3C: Booking Agent ← CURRENT (plan: `docs/booking-agent-plan.md`)
 
 - [x] Phase 0 — `inquiry_drafts` schema (migration_028), classifier + required-info gate (`lib/inquiryDrafts.ts`, 24 tests)
-- [x] Phase 1 — lead trigger → Claude draft → SMS to reviewers (stub send); `lib/agent/{config,events,voice,reviewLink,draftInquiry}.ts`, `/api/cron/agent-dispatch`, `/review/[token]`, admin Inbox tab + `/api/admin/agent`; migrations 032 + 033. **Code done 2026-09-11; needs migrations applied, env set and a deploy before it can run.**
-- [ ] Phase 2 — SMS review loop (SEND / EDIT / TEST / STOP) + real send via Resend + Quo; Quo webhook fail-closed, unknown senders become leads
+- [x] Phase 1 — lead trigger → Claude draft → SMS to reviewers (stub send); `lib/agent/{config,events,voice,reviewLink,draftInquiry}.ts`, `/api/cron/agent-dispatch`, `/review/[token]`, admin Inbox tab + `/api/admin/agent`; migrations 032 + 033. **Live 2026-09-11** (reviewed and fixed in 912111c: sweep re-draft loop, claim reaper, budget re-queue, money guardrail).
+- [x] Phase 2 — SMS review loop (SEND / EDIT / TEST / CANCEL) + real send via Resend + Quo; Quo webhook fail-closed + dedupe + unknown senders become contacts; `lib/agent/{reviewers,reviewLoop,sendApproved}.ts`, `inquiry_draft` as a GATED graph entity, 2h business-hours nudge, admin Send/Test; migration_034. **Deployed 2026-09-11.**
 - [ ] Phase 3 — permanent Gmail ingestion (own OAuth refresh token, `/api/cron/gmail-sync`) + triage (ignore marketing/vendor)
-- [ ] Phase 4 — every lead is a Party Plan (`bookings.status='lead'`, `party_type`), one planner for theme/mobile/studio, pricing single-sourced in `pricing_items`; migration_034
+- [ ] Phase 4 — every lead is a Party Plan (`bookings.status='lead'`, `party_type`), one planner for theme/mobile/studio, pricing single-sourced in `pricing_items`; migration_035
 - [ ] Phase 5 — `/plan/[ref]/summary` DB-rendered invoice page (locked template design) + extracted `PayPanel` with embedded Stripe; "Email me this"; persisted pay links
-- [ ] Phase 6 — learning loop: reviewer-edit capture, weekly distill into `agent_learnings` + voice profile v2; migration_035
+- [ ] Phase 6 — learning loop: reviewer-edit capture, weekly distill into `agent_learnings` + voice profile v2; migration_036
 
 ## Phase 4: Campaign Automation
 

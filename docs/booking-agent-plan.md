@@ -118,14 +118,18 @@ record itself is always mirrored.
 ## 2. Data model changes
 
 Migrations are applied by hand in the Supabase SQL editor (repo convention).
-Numbers 029–031 were taken; **032 and 033 are now written** and the next free
-number is **034**.
+Numbers 029–031 were taken; **032, 033 and 034 are written and applied** and the
+next free number is **035**.
 
-> Renumbered 2026-09-11: the "drafts for any channel" changes originally parked
-> in 034 had to ship with Phase 1 (most lead forms create no `bookings` row, so
-> `inquiry_drafts.booking_id NOT NULL` blocked the whole phase). They are now
-> migration **033**; party-plan-as-lead moved to **034** and the learning-loop
-> tables to **035**.
+> Renumbered twice on 2026-09-11, both times because a later phase shipped
+> first and migrations are kept in the order they are actually applied:
+>
+> - **033** = "drafts for any channel". Originally parked in 034, but it had to
+>   ship with Phase 1: most lead forms create no `bookings` row, so
+>   `inquiry_drafts.booking_id NOT NULL` blocked the whole phase.
+> - **034** = "agent review loop" (Phase 2 bookkeeping: nudge clock, approver,
+>   per-channel send ids).
+> - party-plan-as-lead is therefore **035** and the learning loop **036**.
 
 ### 032 — inbound events + gmail sync state + contact sync + deposit default (WRITTEN 2026-09-10)
 File: `starting_plan/migration_032_agent_inbound_and_contact_sync.sql`.
@@ -156,7 +160,22 @@ File: `starting_plan/migration_033_agent_drafts_any_channel.sql`.
 - No claim function: the dispatcher claims each event with a compare-and-swap
   `UPDATE … WHERE id=? AND status='new' RETURNING`, which is atomic per row.
 
-### 034 — party plan as lead
+### 034 — agent review loop (WRITTEN + APPLIED 2026-09-11)
+File: `starting_plan/migration_034_agent_review_loop.sql`. Phase 2's
+bookkeeping; the 028 status machine already had every state the loop needs.
+- `inquiry_drafts.sent_for_review_at` — the 2-hour nudge clock. Not `created_at`
+  (a revision restarts the clock) and not `updated_at` (the 028 trigger bumps it
+  on every write).
+- `nudged_at` — non-null means "already nudged, never again". The nudge is
+  claimed with a compare-and-swap on `nudged_at IS NULL`, so two overlapping
+  cron runs cannot both send.
+- `approved_by` — *who* approved (E.164 reviewer phone, or `admin:ui`);
+  `approved_phrase` from 028 already recorded *what* they said.
+- `send_error`, `customer_email_message_id`, `customer_sms_message_id` — paired
+  with 028's `customer_*_sent_at`, these make the send idempotent per channel, so
+  a half-failed send can be retried without messaging anyone twice.
+
+### 035 — party plan as lead
 - `bookings.status` gets a real CHECK constraint with the set that
   `PartiesTab.tsx:42-51` already uses **plus** `lead` and `quoted`:
   `lead → quoted → awaiting_deposit/pending_review → deposit_paid → approved → modifications_locked → paid_in_full → completed | cancelled`.
@@ -177,7 +196,7 @@ File: `starting_plan/migration_033_agent_drafts_any_channel.sql`.
 - New `booking_pay_links (id, booking_id, purpose CHECK('deposit','balance','custom'), amount_cents, fee_cents, stripe_payment_link_id, stripe_price_id, url, created_by, created_at, voided_at)` — closes the gap that today's pay links are untraceable.
 - `booking_payments.payment_method` CHECK → add `'check','other'` (admin dropdown already offers them).
 
-### 035 — learning loop
+### 036 — learning loop
 - New `agent_learnings (id, kind CHECK('style','rule','fact','pricing'), text, source_draft_id, source_event_id, confidence, is_active, created_by, created_at)`.
   The draft prompt loads active rows. Reviewer corrections become rows here
   (Phase 6), and Adam/Allie can add rules directly from the admin Inbox tab.
@@ -231,7 +250,7 @@ Send to the customer stays stubbed ("would send") until Phase 2.
 Exit criteria: a test lead through `/mobile-party` produces one draft row, one
 SMS to each reviewer, and a working preview link; nothing sent to the customer.
 
-### Phase 2 — SMS review loop + real send
+### Phase 2 — SMS review loop + real send — **BUILT + DEPLOYED 2026-09-11**
 
 1. Harden `/api/webhooks/quo`: **fail closed** when `QUO_WEBHOOK_SECRET` is
    set and the signature does not match; dedupe on `message_id`
@@ -445,7 +464,7 @@ Cron-job.org additions: `agent-dispatch` (2 min), `gmail-sync` (3 min),
 | 1 Lead trigger → draft → reviewer SMS | mig 028 + 032, `REVIEWER_PHONES` | 2 sessions |
 | 2 SMS review loop + real send | Phase 1, `QUO_WEBHOOK_SECRET` | 2 sessions |
 | 3 Gmail ingestion + triage | Adam's OAuth consent | 2 sessions |
-| 4 Plan = lead, unified pricing/planner | mig 034 | 3 sessions (the planner file is large) |
+| 4 Plan = lead, unified pricing/planner | mig 035 | 3 sessions (the planner file is large) |
 | 5 Summary/Invoice page + PayPanel | Phase 4 | 3 sessions |
 | 6 Learning loop | Phases 2, 3 | 1–2 sessions |
 
@@ -528,3 +547,56 @@ Phases 4–5 can run in parallel with 3.
 - Admin **Inbox** tab + `/api/admin/agent` — events, drafts, Approve / Edit /
   Dismiss / Draft-now. Approve marks `approved` and sends nothing (Phase 2).
 - Tests: `agentDraftInquiry` (11), `agentDispatch` (11), `agentReviewLink` (7).
+
+## 10. Phase 2 as built (2026-09-11)
+
+- **`/api/webhooks/quo` fails closed.** A present-but-wrong (or missing-header)
+  Standard-Webhooks signature is now `401`, not a warning — an inbound SMS can
+  trigger an LLM call and a customer-facing send, so a forged request could
+  otherwise impersonate a reviewer phone and approve a draft. Verification is
+  still skipped entirely when `QUO_WEBHOOK_SECRET` is unset, which is the
+  documented "not configured" state. Every inbound message is written to
+  `ingested_messages` (`source='quo'`, `external_id='quo:<id>'` — the UNIQUE
+  column is the dedupe, so a Quo redelivery cannot send a second message), and
+  an unknown number becomes a real contact via `upsertContactByPhone` instead of
+  being dropped. STOP handling is byte-for-byte unchanged.
+- **`lib/agent/reviewers.ts`** — `isReviewerPhone()` lives in its own module so
+  the webhook can classify a sender without importing the send path. The
+  guardrail is enforced by the module graph, not only by discipline.
+- **`lib/agent/reviewLoop.ts`** — identity by phone number only, checked before
+  a single word of the message is read. Intent is an EXACT phrase match on what
+  remains after the draft code is stripped, which is why "don't send this yet",
+  "send it after you fix the date" and "can we send tomorrow?" are all revisions
+  rather than approvals. Draft resolution: explicit `HH-YYYY-NNNN` (or a bare
+  4-digit tail) → that draft; otherwise the single open draft; otherwise it asks,
+  listing the codes, because guessing would send a stranger's quote to the wrong
+  customer.
+- **`lib/agent/sendApproved.ts`** — the only module that messages a customer. No
+  LLM: the bytes that go out are the bytes a human approved. Resend + Quo, never
+  Gmail. Idempotent per channel via `customer_*_sent_at` + the new message-id
+  columns, so a half-failed send retries safely. A partial failure stays
+  `approved` and is never reported as sent. Booking `lead → quoted` only once a
+  quote has actually landed.
+- **`inquiry_draft` is a first-class graph entity** (`lib/marketing/graph.ts`).
+  Both `approved` and `sent` are GATED, so the hard guardrail is now a property
+  of the transition table: no cron, sweep or LLM path can reach a customer,
+  because none of them can set `isAdmin`. `sent` is terminal; the only edge into
+  it is from `approved`.
+- **`redraftForReviewer()`** revises a draft IN PLACE, keeping `review_code` (the
+  reviewer's SMS thread) while rotating the preview token so the revision SMS
+  carries a live link and the superseded text's link dies.
+- **The 2-hour nudge** runs in the dispatcher, 9am–8pm America/New_York (every
+  day — Saturday is a working day here), claimed with a compare-and-swap on
+  `nudged_at IS NULL` so overlapping cron runs can't double-send. One per draft,
+  ever; a revision re-arms it for the new text.
+- **Admin Inbox** gained "Send to customer" (only on an `approved` draft, behind
+  a confirm) and "Test to me". Approve and send stay two separate actions, and
+  editing an approved draft un-approves it — the approval was for the old words.
+- Tests: `agentReviewLoop` (27), `agentSendApproved` (15), plus Quo-webhook and
+  graph-gate coverage. 510 total, the one failure being pre-existing WIP.
+
+**Phase 2 boundary worth knowing:** an inbound SMS from a number that is *not* a
+reviewer is recorded, given a contact, and parked as `ignored` with a note — it
+does not produce a draft. Deciding whether an arbitrary message needs an answer
+is triage, which is Phase 3. Until then it appears in Admin → Inbox with a
+"Draft now" button.

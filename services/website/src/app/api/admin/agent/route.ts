@@ -4,8 +4,9 @@ import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { draftForInquiry, DRAFT_ENTITY } from '@/lib/agent/draftInquiry'
 import { finishEvent, type InboundEvent } from '@/lib/agent/events'
 import { agentEnabled, draftModel } from '@/lib/agent/config'
-import { reviewerPhones } from '@/lib/ownerNotify'
-import { writeLedger } from '@/lib/marketing/graph'
+import { ownerEmail, reviewerPhones } from '@/lib/ownerNotify'
+import { advance, writeLedger } from '@/lib/marketing/graph'
+import { sendApprovedDraft } from '@/lib/agent/sendApproved'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,10 +16,12 @@ export const dynamic = 'force-dynamic'
  * GET  → inbound events + drafts + recent agent activity.
  * POST → approve / dismiss / edit a draft, or draft an event by hand.
  *
- * Phase 1 boundary: "approve" marks the draft approved and stops. It does NOT
- * send anything to the customer — the deterministic send is Phase 2
- * (lib/agent/sendApproved.ts) and it is the only thing that will ever move a
- * draft from 'approved' to 'sent'.
+ * Approving and sending are deliberately TWO actions, here as over SMS:
+ * "approve" marks the draft approved and stops; "send" runs the deterministic
+ * send (lib/agent/sendApproved.ts), which is the only code that can move a draft
+ * to 'sent'. Both go through advance() in lib/marketing/graph.ts, where
+ * 'approved' and 'sent' are GATED and therefore require the authenticated admin
+ * actor this route has already established.
  */
 
 const DRAFT_COLUMNS =
@@ -63,7 +66,7 @@ export async function GET(req: NextRequest) {
 }
 
 interface ActionBody {
-  action: 'approve' | 'dismiss' | 'edit' | 'draft'
+  action: 'approve' | 'dismiss' | 'edit' | 'draft' | 'send' | 'test'
   id?: string
   emailDraft?: string
   smsDraft?: string
@@ -110,30 +113,76 @@ export async function POST(req: NextRequest) {
 
   const from = draft.status as string
   const revisions = Array.isArray(draft.revisions) ? draft.revisions : []
+  // An authenticated admin request IS the human gate for this surface.
+  const actor = { id: 'ADMIN', isAdmin: true }
   let patch: Record<string, unknown>
   let to: string
 
+  // ── Transitions that go through the graph (approve / dismiss / send).
+  if (body.action === 'approve' || body.action === 'dismiss') {
+    const target = body.action === 'approve' ? 'approved' : 'cancelled'
+    try {
+      await advance({
+        supabase,
+        entity: 'inquiry_draft',
+        id: body.id,
+        to: target,
+        from,
+        actor,
+        patch:
+          target === 'approved'
+            ? {
+                approved_at: new Date().toISOString(),
+                approved_phrase: 'admin-ui:approve',
+                approved_by: 'admin:ui',
+              }
+            : { reviewer_note: body.note ?? null },
+        meta: { review_code: draft.review_code, via: 'admin_inbox', action: body.action },
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'transition failed'
+      return NextResponse.json({ error: msg }, { status: 409 })
+    }
+    return NextResponse.json({
+      ok: true,
+      id: body.id,
+      status: target,
+      // Approving still sends nothing. "send" is a separate, explicit action.
+      sentToCustomer: false,
+    })
+  }
+
+  if (body.action === 'send' || body.action === 'test') {
+    const isTest = body.action === 'test'
+    if (!isTest && from !== 'approved') {
+      return NextResponse.json(
+        { error: `Approve the draft before sending it (it is "${from}")` },
+        { status: 409 },
+      )
+    }
+    const result = await sendApprovedDraft({
+      supabase,
+      draftId: body.id,
+      actor,
+      ...(isTest ? { testTo: { email: ownerEmail(), phone: reviewerPhones()[0] ?? null } } : {}),
+    })
+    return NextResponse.json(
+      {
+        ok: result.ok,
+        id: body.id,
+        status: result.closed ? 'sent' : from,
+        test: isTest,
+        emailSent: result.emailSent,
+        smsSent: result.smsSent,
+        sentToCustomer: !isTest && (result.emailSent || result.smsSent),
+        recipient: result.recipient,
+        errors: result.errors,
+      },
+      { status: result.ok ? 200 : 502 },
+    )
+  }
+
   switch (body.action) {
-    case 'approve': {
-      if (!['sent_for_review', 'revision_requested', 'drafted'].includes(from)) {
-        return NextResponse.json({ error: `Cannot approve a draft that is "${from}"` }, { status: 409 })
-      }
-      to = 'approved'
-      patch = {
-        status: to,
-        approved_at: new Date().toISOString(),
-        approved_phrase: 'admin-ui:approve',
-      }
-      break
-    }
-    case 'dismiss': {
-      if (from === 'sent') {
-        return NextResponse.json({ error: 'Cannot dismiss a draft that was already sent' }, { status: 409 })
-      }
-      to = 'cancelled'
-      patch = { status: to, reviewer_note: body.note ?? null }
-      break
-    }
     case 'edit': {
       if (from === 'sent' || from === 'cancelled') {
         return NextResponse.json({ error: `Cannot edit a draft that is "${from}"` }, { status: 409 })
@@ -148,6 +197,13 @@ export async function POST(req: NextRequest) {
         reviewer_note: body.note ?? null,
         // The guardrail hold is cleared by a human taking ownership of the text.
         error: null,
+        // Editing an already-approved draft un-approves it: the approval was for
+        // the old words. And the edited text gets a fresh 2-hour nudge clock.
+        approved_at: null,
+        approved_by: null,
+        approved_phrase: null,
+        sent_for_review_at: new Date().toISOString(),
+        nudged_at: null,
         ...(body.subject ? { subject: body.subject } : {}),
         revisions: [
           ...revisions,
@@ -186,7 +242,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     id: body.id,
     status: to,
-    // Phase 1 is explicit about this so nobody assumes approve == sent.
+    // Explicit so nobody reads an edit as a send.
     sentToCustomer: false,
   })
 }
