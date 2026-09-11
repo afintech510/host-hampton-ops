@@ -356,6 +356,26 @@ describe('guardrail helpers', () => {
     expect(containsMoney('no pricing here at all')).toBe(false)
   })
 
+  it('containsMoney catches prices with no dollar sign', () => {
+    // These all slipped through the first implementation.
+    expect(containsMoney('575 for three hours')).toBe(true)
+    expect(containsMoney('the rate is 575')).toBe(true)
+    expect(containsMoney('5 hundred to hold the date')).toBe(true)
+    expect(containsMoney('five hundred to hold the date')).toBe(true)
+    expect(containsMoney('the deposit is 250')).toBe(true)
+    expect(containsMoney('1,200 total')).toBe(true)
+    expect(containsMoney('it runs about 45 per guest')).toBe(true)
+  })
+
+  it('containsMoney leaves ordinary info-gather language alone', () => {
+    expect(containsMoney('Could you let me know how many guests? We had 18 last time.')).toBe(false)
+    expect(containsMoney('Does 2pm on October 3 work, for about 12 kids ages 7-9?')).toBe(false)
+    expect(containsMoney('We are at 31 Mill Road, Speonk NY 11972')).toBe(false)
+    expect(containsMoney('Text me back on 631-998-9325 any time')).toBe(false)
+    expect(containsMoney('We have been doing this since 2019')).toBe(false)
+    expect(containsMoney('a 3 hour window works best')).toBe(false)
+  })
+
   it('applySignatureRule always leaves Allie named', () => {
     expect(applySignatureRule('Thanks so much!', { isFirstTouch: true, channel: 'email' })).toContain('Allie')
     expect(applySignatureRule('Thanks so much!', { isFirstTouch: false, channel: 'sms' })).toContain('Allie')
@@ -367,6 +387,19 @@ describe('guardrail helpers', () => {
     const later = applySignatureRule(withIntro, { isFirstTouch: false, channel: 'sms' })
     expect(later).not.toContain('Allie from Host Hampton')
     expect(later).toContain('Allie')
+  })
+
+  it('applySignatureRule does not leave a mangled sentence behind', () => {
+    // The intro is a clause, not a whole sentence: stripping the phrase alone
+    // used to yield "and I'd love to help with your slime party."
+    const out = applySignatureRule("I'm Allie from Host Hampton and I'd love to help with your slime party.", {
+      isFirstTouch: false,
+      channel: 'email',
+    })
+    expect(out).not.toMatch(/^\s*(?:and|but|so)\b/i)
+    expect(out).not.toMatch(/^\s*[,;:—-]/)
+    expect(out).toMatch(/^I'd love to help/)
+    expect(out).toContain('Allie')
   })
 })
 

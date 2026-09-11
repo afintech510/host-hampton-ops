@@ -55,10 +55,16 @@ interface SupaOpts {
   ledgerCosts?: number[]
   /** Rows for the "did we already warn about the cap" query. */
   capNotices?: unknown[]
+  /** Ids the reaper finds stuck in 'claimed'. */
+  reapable?: string[]
+  /** booking_ids that already have an inquiry_drafts row of any status. */
+  bookingsWithDrafts?: string[]
 }
 
 function makeSupabase(opts: SupaOpts = {}) {
   const claimed: string[] = []
+  const requeued: string[] = []
+  const reaped: string[] = []
 
   function resolve(table: string, ops: [string, ...unknown[]][]) {
     const op = (name: string) => ops.find(o => o[0] === name)
@@ -68,10 +74,25 @@ function makeSupabase(opts: SupaOpts = {}) {
       return { data: (opts.ledgerCosts ?? []).map(cost_usd => ({ cost_usd })), error: null }
     }
 
+    if (table === 'inquiry_drafts') {
+      return { data: (opts.bookingsWithDrafts ?? []).map(booking_id => ({ booking_id })), error: null }
+    }
+
     if (table === 'ingested_messages') {
       if (op('update')) {
+        // The reaper is the only update that filters on claimed_at, not on id.
+        if (op('lt')) {
+          reaped.push(...(opts.reapable ?? []))
+          return { data: (opts.reapable ?? []).map(id => ({ id })), error: null }
+        }
         const idOp = ops.find(o => o[0] === 'eq' && o[1] === 'id')
         const id = idOp?.[2] as string
+        const patch = op('update')?.[1] as Record<string, unknown> | undefined
+        // A claim sets status='claimed'; a budget requeue sets it back to 'new'.
+        if (patch?.status === 'new') {
+          requeued.push(id)
+          return { data: [{ id }], error: null }
+        }
         const canClaim = (opts.claimable ?? []).includes(id)
         if (canClaim) claimed.push(id)
         return { data: canClaim ? [opts.eventRows?.[id] ?? { id }] : [], error: null }
@@ -88,7 +109,7 @@ function makeSupabase(opts: SupaOpts = {}) {
     const chain: any = {
       then: (res: any, rej: any) => Promise.resolve(resolve(table, ops)).then(res, rej),
     }
-    for (const m of ['select', 'eq', 'in', 'not', 'gte', 'order', 'limit', 'update', 'insert', 'contains', 'single', 'maybeSingle']) {
+    for (const m of ['select', 'eq', 'in', 'not', 'gte', 'lt', 'order', 'limit', 'update', 'insert', 'contains', 'single', 'maybeSingle']) {
       chain[m] = jest.fn((...args: unknown[]) => {
         ops.push([m, ...args])
         return chain
@@ -97,7 +118,7 @@ function makeSupabase(opts: SupaOpts = {}) {
     return chain
   })
 
-  return { supabase: { from } as any, claimed }
+  return { supabase: { from } as any, claimed, requeued, reaped }
 }
 
 function websiteFormEvent(id: string, overrides: Record<string, unknown> = {}) {
@@ -234,6 +255,48 @@ describe('GET /api/cron/agent-dispatch', () => {
 
     expect(mockDraftForInquiry).toHaveBeenCalledWith(expect.objectContaining({ booking: expect.objectContaining({ id: 'b1' }) }))
     expect(res.body.drafted).toBe(1)
+  })
+
+  it('does NOT sweep a booking that already has a draft (a dismissed draft must not come back)', async () => {
+    const { supabase } = makeSupabase({
+      candidates: [],
+      bookings: [{ id: 'b1', booking_ref: 'HH-2026-8242', status: 'pending_review' }],
+      bookingsWithDrafts: ['b1'], // Adam dismissed it → status 'cancelled'
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(mockDraftForInquiry).not.toHaveBeenCalled()
+    expect(res.body.drafted).toBe(0)
+    expect(res.body.results[0]).toMatchObject({ id: 'b1', outcome: 'already_drafted' })
+  })
+
+  it('returns abandoned claims to the queue before looking for work', async () => {
+    const { supabase, reaped } = makeSupabase({ candidates: [], reapable: ['stuck-1', 'stuck-2'] })
+    mockGetSupabase.mockReturnValue(supabase)
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(reaped).toEqual(['stuck-1', 'stuck-2'])
+    expect(res.body.reaped).toBe(2)
+  })
+
+  it('re-queues an event rather than failing it when the monthly budget refuses the call', async () => {
+    const { supabase, requeued } = makeSupabase({
+      candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
+      claimable: ['e1'],
+      eventRows: { e1: websiteFormEvent('e1') },
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+    mockDraftForInquiry.mockResolvedValue({ ok: false, status: 402, error: 'llm budget exceeded' })
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(requeued).toEqual(['e1'])
+    // Crucially NOT finishEvent(..., 'error'): that would drop the lead for good.
+    expect(mockFinishEvent).not.toHaveBeenCalled()
+    expect(res.body.results[0]).toMatchObject({ id: 'e1', outcome: 'requeued_budget' })
   })
 
   it('stops and texts the reviewers once when the daily cap is hit', async () => {

@@ -103,9 +103,83 @@ export type DraftOutcome =
 
 /* ── Guardrail helpers (exported for tests) ─────────────────────────── */
 
-/** Any dollar figure at all. Info-gather drafts must contain none. */
+/**
+ * Words that turn a nearby bare number into a price. "Our rate is 575" has no
+ * dollar sign but is exactly the thing an info-gather draft may not say.
+ */
+const MONEY_WORD =
+  /(?:deposit|price|pricing|priced|rate|rates|cost|costs|charge|charges|fee|fees|total|quote|quoted|budget|per\s+guest|per\s+person|per\s+head|per\s+hour|per\s+kid|per\s+child|starting\s+at|starts\s+at|runs\s+about|comes\s+(?:out\s+)?to)/i
+
+/**
+ * Units that make a bare number plainly NOT money — guest counts, ages, times,
+ * durations. Matched against the text immediately following the number.
+ */
+const NON_MONEY_UNIT =
+  /^[\s-]*(?:guests?|people|persons?|kids?|children|child|adults?|hours?|hrs?|hr|minutes?|mins?|am|pm|a\.m\.|p\.m\.|o'?clock|st|nd|rd|th|years?\s*old|year[\s-]olds?|yrs?|yo|%|percent|pm\b|:)/i
+
+/** "five hundred", "5 hundred", "2 grand" — a price with the digits spelled out. */
+const SPELLED_AMOUNT =
+  /\b(?:a|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|\d{1,3})[\s-](?:hundred|thousand|grand)\b/i
+
+/**
+ * Digit runs that are structurally not prices — phone numbers, dates, times,
+ * zips, street numbers. Masked out before the bare-number scan so it cannot
+ * trip on them. Order matters: longest patterns first.
+ */
+const NOT_A_PRICE: RegExp[] = [
+  /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}/g, // 631-998-9325, (631) 998 9325
+  /\b\d{1,5}\s+[A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)*\s+(?:St|Street|Rd|Road|Ave|Avenue|Ln|Lane|Dr|Drive|Way|Hwy|Highway|Blvd|Terrace|Court|Ct)\b/g,
+  /\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/g, // NY 11972
+  /\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/g, // 10/3, 10-3-2026
+  /\b\d{1,2}:\d{2}\s*(?:[ap]\.?m\.?)?\b/gi, // 2:30pm
+]
+
+/**
+ * Does this text state a money amount? Info-gather drafts must contain none
+ * (docs/inquiry-response-flow.md §4.7).
+ *
+ * Deliberately over-sensitive: a false positive parks the draft for Adam to
+ * edit (mildly annoying), a false negative texts him a rule-breaking draft as
+ * if it were fine. Three detectors, widest last:
+ *   1. an explicit currency marker ($250, "250 dollars");
+ *   2. a spelled-out amount ("five hundred");
+ *   3. a bare number that either sits next to a money word ("rate is 575") or
+ *      is a 3–5 digit figure with no non-money unit attached at all
+ *      ("575 for three hours").
+ */
 export function containsMoney(text: string): boolean {
-  return /\$\s?\d/.test(text) || /\b\d[\d,]*(?:\.\d{2})?\s*(?:dollars|usd)\b/i.test(text)
+  const raw = text || ''
+
+  // 1. Explicit currency.
+  if (/\$\s?\d/.test(raw)) return true
+  if (/\b\d[\d,]*(?:\.\d{2})?\s*(?:dollars?|usd|bucks)\b/i.test(raw)) return true
+
+  // 2. Spelled-out amounts.
+  if (SPELLED_AMOUNT.test(raw)) return true
+
+  // 3. Bare numbers in a pricing context, over text with phone numbers, dates,
+  //    times and addresses masked out.
+  const s = NOT_A_PRICE.reduce((acc, re) => acc.replace(re, ' '), raw)
+
+  const NUMBER = /\b\d[\d,]*(?:\.\d{1,2})?\b/g
+  let m: RegExpExecArray | null
+  while ((m = NUMBER.exec(s)) !== null) {
+    const token = m[0]
+    const after = s.slice(m.index + token.length)
+    if (NON_MONEY_UNIT.test(after)) continue
+
+    const before = s.slice(Math.max(0, m.index - 30), m.index)
+    if (MONEY_WORD.test(before) || MONEY_WORD.test(after.slice(0, 30))) return true
+
+    // A bare 3–5 digit figure with no unit at all is a price far more often
+    // than it is anything else. Years are the one common exception left.
+    const digits = token.replace(/[^\d]/g, '')
+    if (digits.length >= 3 && digits.length <= 5 && !/^(?:19|20)\d{2}$/.test(digits)) {
+      return true
+    }
+  }
+
+  return false
 }
 
 const INTRO_RE = /(?:this is|i'?m|i am|it'?s)\s+allie\s+(?:from|with|at|here at)\s+host\s*hampton[.,!—-]*\s*/gi
@@ -124,8 +198,15 @@ export function applySignatureRule(
 
   if (!opts.isFirstTouch) {
     out = out.replace(INTRO_RE, '').trim()
+    // Stripping a phrase mid-sentence leaves wreckage: "I'm Allie from Host
+    // Hampton and I'd love to help" becomes "and I'd love to help". Tidy the
+    // seam rather than shipping a sentence that starts with a conjunction.
+    out = out.replace(/(^|\n)[\s]*(?:and|but|so|plus|also)\s+/gi, '$1')
+    out = out.replace(/(^|\n)[\s]*[,;:—-]+\s*/g, '$1')
+    out = out.replace(/(^|\n\n)([a-z])/g, (_all, lead: string, ch: string) => lead + ch.toUpperCase())
     // A stripped intro can leave a dangling greeting line like "Hi Jess!\n\n"
     out = out.replace(/\n{3,}/g, '\n\n')
+    out = out.trim()
   }
 
   if (!/\ballie\b/i.test(out)) {
@@ -205,6 +286,16 @@ export async function isFirstTouch(
         .eq('status', 'sent')
         .limit(1)
       if (data && data.length > 0) return false
+
+      // Anything Allie sent this contact by hand counts too — once Gmail
+      // ingestion lands (Phase 3) her own replies are in here as direction='out'.
+      const { data: outbound } = await supabase
+        .from('ingested_messages')
+        .select('id')
+        .eq('contact_id', ids.contactId)
+        .eq('direction', 'out')
+        .limit(1)
+      if (outbound && outbound.length > 0) return false
     }
 
     return true

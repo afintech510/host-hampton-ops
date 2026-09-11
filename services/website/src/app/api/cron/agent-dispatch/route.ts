@@ -48,6 +48,12 @@ const SWEEP_BATCH = 5
 const MAX_EVENT_AGE_MS = 24 * 60 * 60 * 1000
 /** How far back the booking sweep looks. */
 const SWEEP_WINDOW_MS = 14 * 24 * 60 * 60 * 1000
+/**
+ * An event claimed longer ago than this is assumed abandoned — the container
+ * was rebuilt or the request timed out mid-draft — and is returned to 'new'.
+ * Without this a crash between claim and draft parks a lead forever.
+ */
+const CLAIM_REAP_MS = 15 * 60 * 1000
 
 const EVENT_COLUMNS =
   'id, source, external_id, direction, from_address, to_address, subject, body, parsed, contact_id, booking_id, status, classification, created_at'
@@ -116,6 +122,52 @@ async function claimEvent(supabase: Supa, id: string): Promise<InboundEvent | nu
   return rows.length === 1 ? rows[0] : null
 }
 
+/**
+ * Return abandoned claims to the queue. Safe to run every time: it only touches
+ * rows still in 'claimed' whose claimed_at is older than CLAIM_REAP_MS, and the
+ * work it re-enables is itself idempotent (the partial unique index on
+ * inquiry_drafts(inbound_event_id) means a re-drafted event can only ever have
+ * one live draft).
+ */
+async function reapStaleClaims(supabase: Supa): Promise<number> {
+  const cutoff = new Date(Date.now() - CLAIM_REAP_MS).toISOString()
+  const { data, error } = await supabase
+    .from('ingested_messages')
+    .update({ status: 'new', claimed_at: null })
+    .eq('status', 'claimed')
+    .lt('claimed_at', cutoff)
+    .select('id')
+  if (error) {
+    console.error('cron:agent-dispatch reap error:', error.message)
+    return 0
+  }
+  const n = (data ?? []).length
+  if (n > 0) console.warn(`cron:agent-dispatch reaped ${n} abandoned claim(s)`)
+  return n
+}
+
+/**
+ * Booking ids in `ids` that already have an inquiry_drafts row of ANY status.
+ *
+ * The sweep must skip these. The per-booking live-draft check inside
+ * draftForInquiry deliberately ignores 'sent' and 'cancelled' rows so a
+ * re-opened booking can be drafted again — but on its own that means a draft
+ * Adam DISMISSES is re-created (and re-texted) by the next sweep two minutes
+ * later, forever, until the daily cap stops it. One draft attempt per booking
+ * from the sweep; a deliberate re-draft is the Inbox tab's "Draft now" button.
+ */
+async function bookingsWithAnyDraft(supabase: Supa, ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set()
+  const { data, error } = await supabase.from('inquiry_drafts').select('booking_id').in('booking_id', ids)
+  if (error) {
+    // Unknown → skip the whole sweep rather than risk re-texting. The event
+    // path is the primary trigger; the sweep is belt and braces.
+    console.error('cron:agent-dispatch sweep draft-lookup error:', error.message)
+    return new Set(ids)
+  }
+  return new Set((data ?? []).map(r => String((r as { booking_id: string | null }).booking_id)))
+}
+
 export async function GET(req: NextRequest) {
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -136,6 +188,9 @@ export async function GET(req: NextRequest) {
 
   const results: { kind: 'event' | 'booking'; id: string; outcome: string; draftId?: string; error?: string }[] = []
   let drafted = 0
+
+  // ── 0. Return abandoned claims to the queue ─────────────────────────
+  const reaped = await reapStaleClaims(supabase)
 
   // ── 1. New inbound events ───────────────────────────────────────────
   const { data: candidates, error: candErr } = await supabase
@@ -177,11 +232,19 @@ export async function GET(req: NextRequest) {
       } else if (outcome.skipped) {
         await finishEvent(supabase, event.id, 'handled', { error: outcome.error })
         results.push({ kind: 'event', id: event.id, outcome: 'skipped', error: outcome.error })
+      } else if (outcome.status === 402) {
+        // Budget refusal is about US, not about this lead. Put it back in the
+        // queue (marking it 'error' would silently drop the lead for good) and
+        // stop the batch rather than fail every remaining item.
+        await supabase
+          .from('ingested_messages')
+          .update({ status: 'new', claimed_at: null, error: outcome.error })
+          .eq('id', event.id)
+        results.push({ kind: 'event', id: event.id, outcome: 'requeued_budget', error: outcome.error })
+        break
       } else {
         await finishEvent(supabase, event.id, 'error', { error: outcome.error })
         results.push({ kind: 'event', id: event.id, outcome: 'error', error: outcome.error })
-        // Budget refusal: stop the batch rather than fail every remaining item.
-        if (outcome.status === 402) break
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'dispatch failed'
@@ -203,7 +266,14 @@ export async function GET(req: NextRequest) {
 
   if (bookErr) console.error('cron:agent-dispatch sweep error:', bookErr.message)
 
-  for (const booking of (bookings ?? []) as Record<string, unknown>[]) {
+  const sweepRows = (bookings ?? []) as Record<string, unknown>[]
+  const alreadyDrafted = await bookingsWithAnyDraft(supabase, sweepRows.map(b => String(b.id)))
+
+  for (const booking of sweepRows) {
+    if (alreadyDrafted.has(String(booking.id))) {
+      results.push({ kind: 'booking', id: String(booking.id), outcome: 'already_drafted' })
+      continue
+    }
     try {
       const outcome = await draftForInquiry({
         supabase,
@@ -229,6 +299,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     enabled: true,
     claimed: results.filter(r => r.kind === 'event' && r.outcome !== 'already_claimed').length,
+    reaped,
     drafted,
     spentUsd: spent,
     capUsd: cap,
