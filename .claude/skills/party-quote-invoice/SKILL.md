@@ -22,6 +22,33 @@ Not for the live website's own booking flow (`/studio-rental`, `/party-quote`,
 documents sent directly to a specific client, matching the existing pattern in
 `invoices/`.
 
+## FIRST: does this plan already exist in the DB?
+
+As of 2026-09-11 (Phase 5) the site renders this same document from the
+database. **If the party has a `bookings` row, use the summary page — do not
+hand-build a file.**
+
+```
+https://www.hosthampton.com/plan/<booking_ref>/summary
+```
+
+It reproduces this template section for section, reads the line items, prices
+and policy copy straight from Supabase, and assigns the next invoice number
+itself from `invoice_number_seq` on first render. A hand-built file for a plan
+that already exists means two documents with two invoice numbers for one party,
+which is exactly what the sequence exists to prevent.
+
+So check first — by `booking_ref`, or by the client's email/phone in `bookings`.
+If there is a row, send the URL (the customer reaches it through a portal link,
+which the admin Parties tab already mints). If there is genuinely no row — a
+one-off with no plan, a vendor, a quote for someone who never came through the
+site — then build a file the old way, below.
+
+Copy, prices and policies for the DB-rendered page live in `plan_content`
+(migration 037) and `pricing_items` (migration 036), **not in this file**.
+Editing the wording below no longer changes what the live page says; edit the
+table. This file stays authoritative for hand-built one-offs.
+
 ## The locked template
 
 **Always start from `invoices/_template.html`.** Copy it to a new file, then
@@ -65,7 +92,14 @@ byte-for-byte identical across every quote so the brand is consistent.
 
 ## Invoice numbering
 
-Grep existing quotes for the running sequence and increment:
+**Hand-built files only.** A plan in the DB gets its number from
+`next_invoice_number()` on first render of its summary page, and the sequence
+starts at `444124-000116` — where the files below leave off. The two share one
+run, so a hand-built file for a plan that has a row will collide with it. Check
+`bookings.invoice_number` before assigning anything by hand.
+
+For a genuine one-off with no plan row, grep existing quotes for the running
+sequence and increment:
 
 ```
 grep -o "Invoice #.*<strong>[^<]*" invoices/*.html

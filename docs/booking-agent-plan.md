@@ -118,8 +118,8 @@ record itself is always mirrored.
 ## 2. Data model changes
 
 Migrations are applied by hand (`/root/pg.sh` on the box; the service-role key
-cannot do DDL). Numbers 029–031 were taken; **032, 033, 034, 035 and 036 are
-written and applied** and the next free number is **037**.
+cannot do DDL). Numbers 029–031 were taken; **032, 033, 034, 035, 036 and 037
+are written and applied** and the next free number is **038**.
 
 > Renumbered three times on 2026-09-11, every time because a later phase
 > shipped first and migrations are kept in the order they are actually applied:
@@ -134,7 +134,11 @@ written and applied** and the next free number is **037**.
 >   `pricing_items` already had every column it needed. It takes a number
 >   anyway because seed data has to be reproducible, which a hand-run script is
 >   not.
-> - the learning loop is therefore **037**.
+> - **037** = `plan_content`, Phase 5's invoice prose. The plan offered a TS
+>   constant file as the cheaper first step; it is a table for the same reason
+>   036 is — copy is edited more often than a price, and a constant would have
+>   had to be migrated here later anyway for the same seed work.
+> - the learning loop is therefore **038**.
 
 ### 032 — inbound events + gmail sync state + contact sync + deposit default (WRITTEN 2026-09-10)
 File: `starting_plan/migration_032_agent_inbound_and_contact_sync.sql`.
@@ -246,7 +250,25 @@ INSERTs only absent ones; the INSERT's `NOT EXISTS` reads the pre-statement
 snapshot so it cannot race the UPDATE in its own CTE. Re-run verified: second
 run inserted 0.
 
-### 037 — learning loop
+### 037 — plan_content (WRITTEN + APPLIED 2026-09-11)
+
+File: `starting_plan/migration_037_plan_content.sql`. Phase 5 item 1. One small
+table plus 22 seeded rows; the copy is lifted verbatim from SKILL.md so the
+DB-rendered invoice and the hand-built files say the same thing during the
+changeover.
+
+- `plan_content (party_type, slot, body, sort_order, is_active)` with a UNIQUE
+  index on `(party_type, slot, sort_order)` — that triple is the row's identity
+  and what makes the seed idempotent (re-run verified: 22 updates, 0 inserts).
+- `slot` ∈ `whats_included | good_to_know | policy | deposit_note |
+  deposit_label | addons_intro | balance_note`; `party_type` takes the four real
+  values plus `'all'` for shared copy.
+- Resolution is "own rows, else `'all'`", NOT a merge: a party type that defines
+  `good_to_know` replaces the shared paragraph rather than appending, because two
+  "good to know" paragraphs on one invoice reads as an editing mistake.
+- RLS service_role only, as 028/031/032.
+
+### 038 — learning loop
 - New `agent_learnings (id, kind CHECK('style','rule','fact','pricing'), text, source_draft_id, source_event_id, confidence, is_active, created_by, created_at)`.
   The draft prompt loads active rows. Reviewer corrections become rows here
   (Phase 6), and Adam/Allie can add rules directly from the admin Inbox tab.
@@ -1560,3 +1582,177 @@ and the same standard applies to the catalog.
 Adam asked (2026-09-11) to be emailed what is established and what is still
 needed, to fill in and return — sent the same day. The interim is what he chose:
 the published tiers stay, and nothing is seeded until the grid comes back.
+
+---
+
+## 16. Phase 4 review findings (2026-09-11)
+
+An adversarial pass over Phase 4 items 1–6 as ONE surface — items 1–3 from one
+session, 4–6 from another — on the theory that the seams between two sessions'
+work are the weak point. That turned out to be right twice.
+
+**The structural guardrails held.** All eight writers (the seven intake routes
+plus `party-checkout`) still create the plan BEFORE `recordInboundEvent()` and
+pass `bookingId` in, then call `linkFirstTouchEvent()` afterwards. The
+double-draft loop `manualDraft.ts` was suspected of cannot form: its precheck
+excludes exactly `(sent,cancelled)`, which matches the partial unique indexes
+from 028/033 byte for byte, and the dispatcher's `bookingsWithAnyDraft()`
+matches a draft in ANY status — so a legitimately re-draftable plan (all its
+drafts sent or cancelled) is still invisible to the sweep, and the only way to
+draft it again is a human pressing the button.
+
+Six things around them were wrong (commit `59ae228`).
+
+1. **`findOpenPlan` built a PostgREST `or()` out of raw customer input.** The
+   one with teeth, and confirmed against the live PostgREST rather than reasoned
+   about. `or()` is a structured expression whose separator is a comma, so a
+   `contact_email` of `x@y.com,contact_phone.eq.6314008080` is not an escaping
+   nicety — it adds a second, attacker-chosen disjunct. The live probe returned
+   **two real production bookings** the intended filter does not match.
+   `findOpenPlan` would have handed one back as "this person's open plan", and
+   `enrichPlan` writes the new inquiry's name, notes and tags onto whatever plan
+   it is given — i.e. onto a stranger's booking, which then feeds that
+   stranger's next draft. Values are PostgREST-quoted now; the same payload
+   returns nothing.
+
+   Worth recording how nearly this was mis-reported: an unencoded `curl` probe
+   made `(631) 555-1234` look like a 400, i.e. "ordinary phone formats break the
+   lookup". With the URL encoded the way supabase-js actually sends it, that
+   half evaporates. The injection half survived encoding, which is what makes it
+   real. *Probe the way the client actually calls, or you will report the
+   artefact instead of the bug.*
+
+2. **Phone matching was raw string equality.** Every other module normalises
+   first — `quo.ts`, `sendApproved.ts`, `reviewers.ts`, `ownerNotify.ts` all run
+   `normalizePhone()` — and `lib/plan.ts` was the one that did not. So the
+   person who texts us (Phase 2 gives an unknown number a `lead` plan with
+   `+1631…`) and then fills in the web form typing `631-555-1234` missed their
+   own open plan and got a SECOND one, which earns its own draft and its own
+   text to Adam. 41 of the 44 production `bookings` rows hold a non-E.164 phone,
+   so this was live, not theoretical. Matched on generated variants rather than
+   migrating the column, so the legacy spellings keep working and no data moves.
+
+3. **The third prompt-injection door, in the structured half as predicted.**
+   §14 flattened `contact_name` and `requested_date_text` and stated the general
+   rule; applying that rule to the *rest* of the prompt finds the
+   `Classifier confidence:` line. Two branches of `classifyPartyType` quote a
+   booking field back verbatim — `package_type='…'` — and `package_type` is free
+   text from the `party-checkout` and `party-builder/save` request bodies. It is
+   neither inside the fence nor in the bullet list that §14 taught to flatten,
+   and it reads as our own sentence because we wrote the sentence. Flattened at
+   the interpolation.
+
+4. **The fence did not stop the data closing it.** `f1221af` wrapped the body in
+   a `their_message` tag and interpolated it verbatim, so a body containing the
+   literal closing tag ends the block early and everything after it is trusted
+   prose again — the exact escape fencing was added to prevent, one level down.
+   The delimiter is neutralised now rather than the message dropped.
+
+5. **`applyExtractedFields` wrote unguarded after its own blankness read.** Rule
+   1 of that module is "a human's value wins", but re-checking the copy it had
+   already read cannot see a change made *after* the read — so Adam typing the
+   date in while the model was thinking could still be overwritten. The write is
+   now guarded on the columns it found null, the fill-once shape
+   `linkFirstTouchEvent` uses one file over. Losing that race writes nothing and
+   says so: a dropped extraction costs one more "what date works?", a clobbered
+   one quotes against a day nobody agreed to.
+
+6. **"A fallback is never cached" was not true.** `pricingCatalog.fromDb` asks
+   whether every required KEY is present, not whether every VALUE came from the
+   DB — so a row that exists and prices at 0 left `fromDb` true while `cents()`
+   quietly served the compiled constant, and that got cached for 60s. This one
+   defeats hard-won rule 6 (*verify a DB-backed value by CHANGING it*): Adam
+   corrects the row, reloads, sees no change, and reasonably concludes the
+   container is not reading Supabase at all.
+
+Also: the admin pipeline's count scan reports `truncated` and `error` honestly
+and `PartiesTab` rendered neither, so a floor read like a total. Now surfaced.
+
+### Named, not resolved — a business question
+
+`cents()` falls back whenever `price_cents <= 0`. For `studio_weekend_base` a 0
+is certainly a broken row. For `mini_party_discount`, `theme_extra_guest`,
+`mobile_extra_child` and `studio_security_hold`, 0 is a perfectly reasonable
+thing for Adam to mean — *"we don't charge that any more"* — and the module
+silently restores the old number in every one of those cases. Which keys deserve
+which reading is a pricing decision, not a module's call, so **behaviour is
+preserved** and the override merely stops being invisible: it is reported in
+`catalog.fallbackFields` and it now prevents caching.
+
+### The general rule, third time it has earned itself
+
+**A field is hostile because of who can WRITE it, not because of which block it
+is printed in.** §14 learned it as "fencing one field does not fence the
+prompt"; findings 3 and 4 are the same rule applied to a sentence we wrote
+ourselves and to a delimiter we assumed was ours. When auditing a prompt, walk
+every interpolation and ask who can write that value — not which ones look like
+user input.
+
+## 17. Phase 5 as built (2026-09-11) — the summary page, not the pay path
+
+Phase 5 is sized at ~3 sessions. This session shipped the first coherent slice:
+**the invoice renders read-only from the DB.** The pay path is deliberately
+absent, and that is the point — a page that charges a card without recording the
+payment, or a "Send to client" that bypasses review, is far worse than a smaller
+finished thing.
+
+### What shipped
+
+- **`/plan/[ref]/summary`** — a server component reproducing
+  `invoices/_template.html` section for section: locked header with the services
+  bar, client/event grid, featured + line items with descriptions and Optional
+  tags, Total and Balance Due, the deposit callout OUTSIDE `.totals-section`,
+  What's Included (studio only), good-to-know/policies per `party_type`, the
+  payment block, the mobile menu appendix, locked footer. The CSS is copied into
+  `invoice.css` scoped under `.hh-invoice` rather than imported, because
+  `invoices/` is untracked and must not become a build dependency — and scoping
+  stops it restyling the app shell.
+- **`lib/planInvoice.ts`** — the view model, kept out of the component so the
+  arithmetic is testable. It RECOMPUTES the total from the line items instead of
+  trusting `bookings.total_cents`, for the same reason `buildPlanSnapshot`
+  spreads `quoteData` first: an invoice whose rows do not add up to its own
+  total is the one error a client always catches. Optional items are rendered
+  with their tag and excluded from the total.
+- **The studio rule, in one place.** `depositIsSeparate` is true only for
+  `studio_rental`: Balance Due is the FULL total because the $250 is held
+  against damage, not a part payment. The $500 day-of card hold is a third thing
+  again, sourced from catalog key `studio_security_hold` and rendered as a note,
+  never as a charge.
+- **`lib/invoiceNumber.ts`** — issued on FIRST RENDER, so a lead that never gets
+  quoted burns nothing. Idempotent three ways: an existing number short-circuits
+  (the refresh case), otherwise `next_invoice_number()` is written back guarded
+  on `invoice_number IS NULL`, and a lost guard re-reads and returns the
+  winner's number. A lost race burns a sequence value, which is a cosmetic gap;
+  the alternative is one booking carrying two invoice numbers, which an
+  accountant cannot reconcile.
+- **`plan_content` + `lib/planContent.ts`** (migration 037) — the invoice's
+  prose out of SKILL.md and into the DB, with a compiled fallback for the same
+  reason the pricing catalog has one. Missing policy copy is not cosmetic: the
+  setup/cleanup and sweep-clean bullets are what we point at when a room is left
+  dirty. Only a complete read is cached — §16 finding 6, applied in advance.
+- **The mobile menu appendix** is the 26 migration-036 `mobile-station` rows,
+  priceless by construction (the view model's station type has no price field at
+  all, so a price cannot be rendered by accident), minus anything already billed
+  on this booking so it reads as "more you could add".
+- **Access** is the `hh_portal` cookie naming THIS ref. `/api/portal/auth` will
+  redirect here, matched against the ref it just authenticated rather than added
+  to the static allowlist — so the path is dynamic and the redirector stays
+  closed.
+
+### What is NOT built, and why
+
+- **Items 2-4 — `PayPanel`, "Email me this", admin "Send to client",
+  `booking_pay_links` persistence, the `payment_link` webhook match.** These are
+  one body of work: the panel is only safe once the webhook records what it
+  charges. Half of it is worse than none of it.
+- **Native admin viewing.** Admin auth today is a shared password in
+  `localStorage` (`adminAuth.ts` checks a Bearer header), so a server component
+  cannot recognise an admin without either a session cookie that does not exist
+  or a secret in the URL, which is worse than the problem. **Plan §11.1 already
+  names the fix and already blocks Phase 4.5 on it** — `admin_users` and a real
+  per-person session. Until then an admin opens a plan through its portal link,
+  which the Parties tab already mints. This is now the same prerequisite twice,
+  which is a decent argument for building it next.
+- **PDF** — option (a) as instructed: the link plus inline HTML, no attachment,
+  no puppeteer. The page carries the template's `@media print` rules, so "Save
+  as PDF" in the browser produces the same document.

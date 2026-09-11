@@ -60,7 +60,15 @@ export async function GET(req: NextRequest) {
   // Set cookie and redirect to portal (or custom redirect)
   const redirectTo = req.nextUrl.searchParams.get('redirect')
   const allowedRedirects = ['/my-booking', '/party-builder', '/party-planner']
-  const destination = redirectTo && allowedRedirects.includes(redirectTo) ? redirectTo : '/party-planner'
+  // The Phase 5 invoice page is per-plan, so it cannot be a fixed entry in the
+  // allowlist. It is matched against the ref THIS request just authenticated
+  // rather than against any ref, which keeps the allowlist's guarantee intact:
+  // a redirect can only ever land on the plan the token was good for, so this
+  // stays closed as a redirector even though the path is dynamic.
+  const summaryForThisRef = `/plan/${ref}/summary`
+  const isAllowed =
+    !!redirectTo && (allowedRedirects.includes(redirectTo) || redirectTo === summaryForThisRef)
+  const destination = isAllowed ? (redirectTo as string) : '/party-planner'
   const response = NextResponse.redirect(new URL(destination, publicOrigin))
   response.headers.set('Set-Cookie', setPortalCookieHeader(ref, secret, isLocal))
 
