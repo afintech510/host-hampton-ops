@@ -304,8 +304,18 @@ describe('draftForInquiry', () => {
     expect(outcome.draftStatus).toBe('drafted')
     expect(inserted[0].status).toBe('drafted')
     expect(String(inserted[0].error)).toContain('pricing_in_info_gather')
-    // A rule-breaking draft is never presented for approval.
-    expect(mockNotifyOwnerSms).not.toHaveBeenCalled()
+
+    // A rule-breaking draft is never presented FOR APPROVAL — but it is no
+    // longer silent. Parking used to text nobody, and the 2-hour nudge only
+    // watches `sent_for_review`, so a held draft was never mentioned again by
+    // anything. That is how a real lead (Eleonore, 2026-09-11) sat unanswered:
+    // to Adam, a held draft and no lead at all looked identical.
+    const alert = mockNotifyOwnerSms.mock.calls[0][0] as string
+    expect(alert).toMatch(/DRAFT HELD/)
+    expect(alert).toContain('pricing_in_info_gather')
+    // No approve-by-reflex affordance, and the offending text is not quoted.
+    expect(alert).not.toMatch(/Reply SEND/)
+    expect(alert).not.toContain('$575')
   })
 
   it('skips when a live draft already exists for the event (no model call)', async () => {

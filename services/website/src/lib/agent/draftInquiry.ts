@@ -140,6 +140,17 @@ const NOT_A_PRICE: RegExp[] = [
   /\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/g, // NY 11972
   /\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/g, // 10/3, 10-3-2026
   /\b\d{1,2}:\d{2}\s*(?:[ap]\.?m\.?)?\b/gi, // 2:30pm
+  // Month-name dates, INCLUDING the alternatives a lead usually offers:
+  // "Oct 10 or 11", "October 10-11", "Dec 3rd or 4th". This one was missing and
+  // it cost a real lead (Eleonore, 2026-09-11). "for Oct 10" alone was already
+  // safe — 2 digits is under the bare-figure threshold — but the trailing
+  // "or 11" was left unmasked, and "To put pricing together for Oct 10 or 11"
+  // puts a MONEY_WORD within 30 characters of it. That sentence is close to the
+  // ideal info-gather reply, so the guardrail was most likely to misfire on
+  // exactly the drafts it should have passed.
+  /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*(?:or|and|to|through|[-–/])\s*\d{1,2}(?:st|nd|rd|th)?)*/gi,
+  // "the 10th or 11th", "the 14th" — a day-of-month with no month named.
+  /\bthe\s+\d{1,2}(?:st|nd|rd|th)(?:\s*(?:or|and|to|through|[-–/])\s*\d{1,2}(?:st|nd|rd|th)?)*/gi,
 ]
 
 /**
@@ -800,6 +811,41 @@ export function reviewerSmsBody(opts: {
   )
 }
 
+/**
+ * The text for a draft that was PARKED by a guardrail.
+ *
+ * Parking used to be silent: `draftStatus === 'drafted'` skipped the reviewer
+ * SMS, and the 2-hour nudge only ever watches `sent_for_review`, so nothing in
+ * the system would ever mention the draft again. A real lead (Eleonore,
+ * 2026-09-11) sat unanswered because of it, and Adam only found out by noticing
+ * the absence of a text — which is the worst possible detector, because silence
+ * is exactly what "no lead came in" looks like.
+ *
+ * Deliberately NOT `reviewerSmsBody`. That one ends with "Reply SEND to send
+ * it", and a parked draft is precisely the one a reviewer should not approve by
+ * reflex from a phone — the whole reason it was parked is that a human needs to
+ * read WHY first. So this names the reason, links the read-only preview, and
+ * points at the admin Inbox, which is the surface built for handling it.
+ * `resolveDraft` still accepts the code if Adam deliberately types it.
+ */
+export function parkedSmsBody(opts: {
+  reviewCode: string
+  partyType: string
+  reason: string
+  summary: string
+  previewToken: string
+}): string {
+  const previewUrl = opts.previewToken ? buildReviewUrl(opts.previewToken, siteUrl()) : `${siteUrl()}/admin`
+  return (
+    `[${opts.reviewCode} · ${opts.partyType.replace(/_/g, ' ')}] ⚠ DRAFT HELD — needs you\n` +
+    `${opts.summary}\n` +
+    `Held because: ${opts.reason}\n` +
+    `Read it: ${previewUrl}\n` +
+    `It was NOT sent for approval and nothing has gone to the customer. ` +
+    `Open Admin → Inbox to edit or release it.`
+  )
+}
+
 /* ── The node ───────────────────────────────────────────────────────── */
 
 export interface DraftForInquiryInput {
@@ -1130,6 +1176,12 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
   })
 
   // ── Reviewer SMS (Quo → REVIEWER_PHONES). Never to the customer.
+  //
+  // BOTH outcomes text now. A parked draft used to text nobody and be watched by
+  // nothing (the nudge only looks at `sent_for_review`), so a guardrail hit read
+  // to Adam exactly like no lead arriving — which is how a real inquiry sat
+  // unanswered. Whether the park was right or wrong, the lead is real and
+  // somebody has to know it is waiting.
   let reviewersTexted = 0
   if (draftStatus === 'sent_for_review') {
     reviewersTexted = await notifyOwnerSms(
@@ -1140,6 +1192,16 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
         summary: draft.summaryForReviewer,
         missing: evaluation.missing,
         smsDraft,
+        previewToken,
+      }),
+    )
+  } else if (guardrailError) {
+    reviewersTexted = await notifyOwnerSms(
+      parkedSmsBody({
+        reviewCode,
+        partyType: evaluation.partyType,
+        reason: guardrailError,
+        summary: draft.summaryForReviewer,
         previewToken,
       }),
     )

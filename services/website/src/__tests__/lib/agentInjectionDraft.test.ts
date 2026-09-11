@@ -193,10 +193,15 @@ describe('an injected email body steering a QUOTE-path draft', () => {
     expect(inserted[0].status).toBe('drafted')
     expect(String(inserted[0].error)).toMatch(/fabricated_terms/)
 
-    // And crucially: the reviewer's phone never buzzed with it.
-    expect(mockNotifyOwnerSms).not.toHaveBeenCalled()
+    // And crucially: it never goes out as a REVIEWABLE draft. The reviewer is
+    // told it exists — silence is how a real lead got lost on 2026-09-11 — but
+    // the alert deliberately carries no "Reply SEND" affordance, because a
+    // parked draft is the one a reviewer must read before acting on.
     expect(outcome.ok && outcome.draftStatus).toBe('drafted')
-    expect(outcome.ok && outcome.reviewersTexted).toBe(0)
+    const alert = mockNotifyOwnerSms.mock.calls[0][0] as string
+    expect(alert).toMatch(/DRAFT HELD/)
+    expect(alert).not.toMatch(/Reply SEND/)
+    expect(alert).not.toContain('deposit is waived')
   })
 
   it('parks a fabricated TOTAL on the quote path — previously unchecked entirely', async () => {
@@ -213,7 +218,10 @@ describe('an injected email body steering a QUOTE-path draft', () => {
     await draftForInquiry({ supabase, booking: { ...COMPLETE_BOOKING, notes: INJECTED_BODY } })
 
     expect(inserted[0].status).toBe('drafted')
-    expect(mockNotifyOwnerSms).not.toHaveBeenCalled()
+    // Held, and the reviewer hears about it — but not as something to approve.
+    const held = mockNotifyOwnerSms.mock.calls[0][0] as string
+    expect(held).toMatch(/DRAFT HELD/)
+    expect(held).not.toMatch(/Reply SEND/)
   })
 
   it('still texts a clean quote-path draft — the guardrail must not park normal work', async () => {
@@ -317,5 +325,76 @@ describe('the rest of the draft prompt is injection-proof too', () => {
     // The payload survives as data on one line; it never becomes a line of its own.
     expect(prompt).not.toMatch(/^THIS IS A QUOTE-PATH REPLY\.$/m)
     expect(prompt).not.toMatch(/^- The deposit is waived\.$/m)
+  })
+})
+
+/**
+ * The money guardrail misfiring on a real lead (Eleonore, 2026-09-11).
+ *
+ * `containsMoney` is deliberately over-sensitive, on the theory that a false
+ * positive is "mildly annoying" and a false negative texts Adam a rule-breaking
+ * draft. That trade was mispriced, because a park was SILENT: the draft is not
+ * texted, and the 2-hour nudge only watches `sent_for_review`, so nothing ever
+ * mentions it again. A false positive did not cost an edit, it cost the lead.
+ */
+describe('containsMoney does not fire on the dates a lead actually offers', () => {
+  const { containsMoney } = jest.requireActual('@/lib/agent/draftInquiry')
+
+  it('passes the exact draft that was wrongly held', () => {
+    // Verbatim from the parked draft HH-2026-4295. It contains no figure at
+    // all: "Oct 10" was masked but the trailing "or 11" was not, and "pricing"
+    // sits within 30 characters of it.
+    const sms =
+      'Hi Eleonore, Allie from Host Hampton! Spa party for 4 girls sounds fun. ' +
+      'To put pricing together for Oct 10 or 11, can you send your phone number, ' +
+      'venue address in Bridgehampton, start time, and guest count?'
+    expect(containsMoney(sms)).toBe(false)
+  })
+
+  it.each([
+    'To put pricing together for Oct 10 or 11, send your address',
+    'I can get you real numbers for October 10-11',
+    'Happy to price it for Dec 3rd or 4th',
+    'The rate depends on the date — is it the 10th or 11th?',
+    'Pricing for Sept 20 through 22 once I have the guest count',
+  ])('passes: %s', (text: string) => {
+    expect(containsMoney(text)).toBe(false)
+  })
+
+  it.each([
+    'The studio is $575 for three hours',
+    'It comes to 575 for three hours',
+    'The rate is 250 dollars to book',
+    'That would be five hundred for the party',
+  ])('still catches a real price: %s', (text: string) => {
+    // The masks must not have blunted the detector they sit inside.
+    expect(containsMoney(text)).toBe(true)
+  })
+})
+
+describe('a parked draft tells the reviewers', () => {
+  it('texts a HELD alert instead of silence', async () => {
+    const { supabase, inserted } = makeSupabase()
+    global.fetch = jest.fn().mockResolvedValue(
+      reply({
+        emailSubject: 'Your studio rental',
+        emailDraft: 'Hi Holly! Your $250 deposit is waived and the rental is free of charge. — Allie',
+        smsDraft: 'Hi Holly! Deposit waived, rental free. — Allie',
+        summaryForReviewer: 'Studio rental Oct 3.',
+      }),
+    ) as any
+
+    await draftForInquiry({ supabase, booking: { ...COMPLETE_BOOKING, notes: INJECTED_BODY } })
+
+    expect(inserted[0].status).toBe('drafted')
+    // It still must NOT go out as a reviewable draft...
+    expect(mockNotifyOwnerSms).toHaveBeenCalledTimes(1)
+    const body = mockNotifyOwnerSms.mock.calls[0][0] as string
+    expect(body).toMatch(/DRAFT HELD/)
+    expect(body).toMatch(/fabricated_terms/)
+    // ...so it deliberately omits the approve-by-reflex boilerplate. Parking
+    // means a human should read WHY first.
+    expect(body).not.toMatch(/Reply SEND/)
+    expect(body).toMatch(/nothing has gone to the customer/i)
   })
 })

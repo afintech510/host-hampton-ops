@@ -127,7 +127,13 @@ function makeSupabase(opts: SupaOpts = {}) {
     const chain: any = {
       then: (res: any, rej: any) => Promise.resolve(resolve(table, ops)).then(res, rej),
     }
-    for (const m of ['select', 'eq', 'in', 'not', 'gte', 'lt', 'order', 'limit', 'update', 'insert', 'contains', 'single', 'maybeSingle']) {
+    // `is` matters and its absence was invisible for a long time: the only
+    // caller is the 2-hour nudge, which `isBusinessHours()` gates to 9am-8pm
+    // America/New_York. So this whole suite passed when run in the morning and
+    // failed 16 tests in the afternoon — a test suite whose result depends on
+    // the wall clock, which is worse than a failing one because it teaches you
+    // to distrust the run rather than the code.
+    for (const m of ['select', 'eq', 'is', 'in', 'not', 'gte', 'lt', 'order', 'limit', 'update', 'insert', 'contains', 'single', 'maybeSingle']) {
       chain[m] = jest.fn((...args: unknown[]) => {
         ops.push([m, ...args])
         return chain
