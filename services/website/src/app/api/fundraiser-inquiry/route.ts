@@ -4,7 +4,7 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
-import { ensureLeadPlan } from '@/lib/plan'
+import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
 import { Resend } from 'resend'
 import {
   fundraiserInquiryAutoReplyHtml,
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
   })
 
   // Booking agent: one inbound event per inquiry (non-fatal, never blocks).
-  await recordInboundEvent({
+  const firstEventId = await recordInboundEvent({
     route: 'fundraiser-inquiry',
     bookingId: plan.bookingId,
     contactId,
@@ -127,6 +127,11 @@ export async function POST(req: NextRequest) {
       sourcePage: 'fundraiser',
     },
   })
+
+  // Provenance: the plan is created before the event (the sweep depends on
+  // that order), so first_touch_event_id can only be stamped now. Fill-once
+  // and never fatal — see linkFirstTouchEvent in lib/plan.ts.
+  await linkFirstTouchEvent(plan.bookingId, firstEventId)
 
   // Send emails via Resend
   if (process.env.RESEND_API_KEY) {

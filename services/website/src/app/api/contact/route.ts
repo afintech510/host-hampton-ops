@@ -5,7 +5,7 @@ import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { getSupabase } from '@/lib/supabase'
 import { recordInboundEvent } from '@/lib/agent/events'
-import { ensureLeadPlan } from '@/lib/plan'
+import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   })
 
   // Booking agent: one inbound event per message (non-fatal, never blocks).
-  await recordInboundEvent({
+  const firstEventId = await recordInboundEvent({
     route: 'contact',
     bookingId: plan.bookingId,
     contactId,
@@ -79,6 +79,11 @@ export async function POST(req: NextRequest) {
     classification: 'lead',
     parsed: { name, email, phone: phone || null, details: message, sourcePage: 'contact-us' },
   })
+
+  // Provenance: the plan is created before the event (the sweep depends on
+  // that order), so first_touch_event_id can only be stamped now. Fill-once
+  // and never fatal — see linkFirstTouchEvent in lib/plan.ts.
+  await linkFirstTouchEvent(plan.bookingId, firstEventId)
 
   // Send admin notification
   if (process.env.RESEND_API_KEY) {

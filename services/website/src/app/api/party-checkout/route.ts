@@ -5,7 +5,7 @@ import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { computeCutoffDates, generatePartyRef, formatMoney } from '@/lib/partyPricing'
-import { buildPlanSnapshot, planTotals, writeLineItems } from '@/lib/plan'
+import { buildPlanSnapshot, planTotals, writeLineItems, linkFirstTouchEvent } from '@/lib/plan'
 import { partyRequestReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
     // Booking agent: this request is also a lead. The booking row is the plan,
     // so the event carries booking_id and the dispatcher's booking sweep will
     // see the same draft (one live draft per booking, never two).
-    await recordInboundEvent({
+    const firstEventId = await recordInboundEvent({
       route: 'party-checkout',
       contactId,
       bookingId: booking.id,
@@ -143,6 +143,10 @@ export async function POST(req: NextRequest) {
         bookingRef,
       },
     })
+
+    // first_touch_event_id can only be stamped once the event exists; the
+    // booking is inserted first on purpose. Fill-once, never fatal.
+    await linkFirstTouchEvent(booking.id, firstEventId)
 
     // Prepare line items for the admin email
     const emailLineItems = lineItems.map(item => ({

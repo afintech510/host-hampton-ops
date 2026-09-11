@@ -24,6 +24,12 @@
  * stamps it on the draft, which is what makes the sweep skip the row it already
  * handled through the event path. Create the plan after the event and every lead
  * gets drafted twice.
+ *
+ * That ordering is also why `first_touch_event_id` needs a SECOND write:
+ * the event does not exist yet when the plan is inserted. `linkFirstTouchEvent()`
+ * closes the loop after `recordInboundEvent()` returns an id. It is deliberately
+ * a separate, fill-once, never-fatal call rather than a reordering — see its own
+ * note below.
  */
 
 import { getSupabase } from '@/lib/supabase'
@@ -302,6 +308,48 @@ export async function ensureLeadPlan(input: EnsureLeadPlanInput): Promise<Ensure
   } catch (err) {
     console.error('ensureLeadPlan error (non-fatal):', err)
     return { ...NOT_CREATED, partyType }
+  }
+}
+
+/**
+ * Stamp the event that first touched this plan, after the event exists.
+ *
+ * `bookings.first_touch_event_id` was added by migration 035 and, until now,
+ * written by nobody: `ensureLeadPlan()` runs BEFORE `recordInboundEvent()` (it
+ * must — see the safety note at the top of this file) so there is no event id
+ * to insert. Reordering the two calls would fix the column and reintroduce the
+ * double-text, which is a far worse trade.
+ *
+ * FILL-ONCE. It records the *first* touch, so a returning lead that reuses an
+ * open plan must not overwrite it with today's event — hence the
+ * `is('first_touch_event_id', null)` guard, which also makes a concurrent
+ * second call a no-op rather than a race.
+ *
+ * NEVER throws: this is provenance, not the lead. A form submission that
+ * succeeded must not fail because a bookkeeping column did not get set.
+ */
+export async function linkFirstTouchEvent(
+  bookingId: string | null | undefined,
+  eventId: string | null | undefined,
+  supabase?: Supa,
+): Promise<boolean> {
+  if (!bookingId || !eventId) return false
+  try {
+    const db = supabase ?? getSupabase()
+    const { data, error } = await db
+      .from('bookings')
+      .update({ first_touch_event_id: eventId })
+      .eq('id', bookingId)
+      .is('first_touch_event_id', null)
+      .select('id')
+    if (error) {
+      console.error('linkFirstTouchEvent error (non-fatal):', error.message)
+      return false
+    }
+    return (data ?? []).length === 1
+  } catch (err) {
+    console.error('linkFirstTouchEvent error (non-fatal):', err)
+    return false
   }
 }
 

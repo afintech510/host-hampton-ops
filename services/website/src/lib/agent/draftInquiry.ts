@@ -36,6 +36,7 @@ import {
   extractPlanFields,
   applyExtractedFields,
   isExtractable,
+  flattenToOneLine,
 } from './extractPlanFields'
 import type { InboundEvent } from './events'
 
@@ -541,6 +542,22 @@ function buildUserPrompt(
   opts: { isFirstTouch: boolean; bookingRef?: string | null; correction?: string },
 ): string {
   const missingLabels = describeMissing(evaluation.missing)
+
+  // Second line of defence for the STRUCTURED half of this prompt.
+  //
+  // `f1221af` fenced the customer's message body, which is the obvious hostile
+  // field. These bullets are not fenced — they are our own prose, and the model
+  // is meant to trust them — yet several of their values are customer-written:
+  // a form types `contact_name`, and since item 6 an emailed reply can set it
+  // (and the free-text date) through extraction. A newline in any of them
+  // forges a section header inside the trusted half of the prompt.
+  //
+  // Extraction already flattens what it writes; this catches everything else,
+  // including the pre-existing form and admin paths, so the guarantee is a
+  // property of the prompt rather than of every writer remembering.
+  const oneLine = (v: unknown): string =>
+    typeof v === 'string' ? flattenToOneLine(v).slice(0, 200) : String(v)
+
   const known = Object.entries({
     name: inquiry.contact_name,
     email: inquiry.contact_email,
@@ -553,7 +570,7 @@ function buildUserPrompt(
     'child age': inquiry.child_age,
   })
     .filter(([, v]) => v != null && v !== '')
-    .map(([k, v]) => `- ${k}: ${v}`)
+    .map(([k, v]) => `- ${k}: ${oneLine(v)}`)
     .join('\n')
 
   // Their free text is the one genuinely hostile field in this prompt, and
@@ -577,7 +594,11 @@ ${theirMessage}
   // which Saturday works?".
   const requestedDateText = (() => {
     const v = (inquiry.party_tags as { requested_date_text?: unknown } | null)?.requested_date_text
-    return typeof v === 'string' && v.trim() !== '' ? v.trim() : null
+    if (typeof v !== 'string') return null
+    // Flattened for the same reason as the bullets above: this one is
+    // interpolated straight into the missing-fields instructions.
+    const flat = flattenToOneLine(v).slice(0, 200)
+    return flat === '' ? null : flat
   })()
   const dateHint =
     requestedDateText && evaluation.missing.includes('party_date')

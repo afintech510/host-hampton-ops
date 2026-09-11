@@ -5,7 +5,7 @@ import { savedQuoteHtml } from '@/lib/emailTemplates'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
-import { ensureLeadPlan } from '@/lib/plan'
+import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
 
 export const dynamic = 'force-dynamic'
 
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
   })
 
   // Booking agent: a saved quote is a warm lead (non-fatal, never blocks).
-  await recordInboundEvent({
+  const firstEventId = await recordInboundEvent({
     route: 'quote-save',
     bookingId: plan.bookingId,
     contactId,
@@ -129,6 +129,11 @@ export async function POST(req: NextRequest) {
       sourcePage: sourcePage || 'kids-party-menu',
     },
   })
+
+  // Provenance: the plan is created before the event (the sweep depends on
+  // that order), so first_touch_event_id can only be stamped now. Fill-once
+  // and never fatal — see linkFirstTouchEvent in lib/plan.ts.
+  await linkFirstTouchEvent(plan.bookingId, firstEventId)
 
   // Send email with saved quote link
   if (process.env.RESEND_API_KEY) {
