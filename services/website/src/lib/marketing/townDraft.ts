@@ -9,6 +9,12 @@
 import { getSupabase } from '@/lib/supabase'
 import { assertLlmBudget, recordLlmSpend, BudgetExceededError } from '@/lib/marketing/budget'
 import { advance } from '@/lib/marketing/graph'
+import { loadVoiceProfile, voicePromptAddendum, type VoiceProfile } from '@/lib/agent/voice'
+
+// The voice profile now lives in lib/agent/voice.ts (one copy, shared with the
+// booking agent). Re-exported here so existing importers keep working.
+export { loadVoiceProfile, voicePromptAddendum }
+export type { VoiceProfile }
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -50,57 +56,12 @@ export interface DraftResult {
   faq: { q: string; a: string }[]
 }
 
-export interface VoiceProfile {
-  tone_rules?: string[]
-  greeting?: string
-  pricing_style?: string
-  dos?: string[]
-  donts?: string[]
-  exemplars?: { context?: string; text: string }[]
-}
-
 export function slugify(s: string): string {
   return s
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-}
-
-/**
- * Reads the active voice_profile row so drafts sound like Allie. Defensive:
- * if the table/row doesn't exist or the query fails for any reason, returns
- * null and the caller falls back to the base system prompt unchanged.
- */
-export async function loadVoiceProfile(supabase: Supa): Promise<VoiceProfile | null> {
-  try {
-    const { data, error } = await supabase
-      .from('voice_profile')
-      .select('profile')
-      .eq('is_active', true)
-      .maybeSingle()
-    if (error || !data?.profile) return null
-    return data.profile as VoiceProfile
-  } catch {
-    return null
-  }
-}
-
-function voicePromptAddendum(profile: VoiceProfile): string {
-  const lines: string[] = ['', 'OPERATOR VOICE (match this — it is how Allie actually talks to customers):']
-  if (profile.tone_rules?.length) {
-    lines.push('Tone rules:')
-    profile.tone_rules.forEach(r => lines.push(`- ${r}`))
-  }
-  if (profile.greeting) lines.push(`Greeting habit: ${profile.greeting}`)
-  if (profile.pricing_style) lines.push(`Pricing style: ${profile.pricing_style}`)
-  if (profile.dos?.length) lines.push(`Do: ${profile.dos.join('; ')}`)
-  if (profile.donts?.length) lines.push(`Don't: ${profile.donts.join('; ')}`)
-  if (profile.exemplars?.length) {
-    lines.push('Exemplars of her real voice (style anchors, not content to copy verbatim):')
-    profile.exemplars.slice(0, 5).forEach(e => lines.push(`- ${e.context ? `[${e.context}] ` : ''}${e.text}`))
-  }
-  return lines.join('\n')
 }
 
 async function callClaude(

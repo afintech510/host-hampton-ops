@@ -4,6 +4,7 @@ import { Resend } from 'resend'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { getSupabase } from '@/lib/supabase'
+import { recordInboundEvent } from '@/lib/agent/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,6 +54,17 @@ export async function POST(req: NextRequest) {
       console.error('Interaction insert error (non-fatal):', err)
     }
   }
+
+  // Booking agent: one inbound event per message (non-fatal, never blocks).
+  await recordInboundEvent({
+    route: 'contact',
+    contactId,
+    fromAddress: email,
+    subject: `Contact form — ${name}`,
+    body: message,
+    classification: 'lead',
+    parsed: { name, email, phone: phone || null, details: message, sourcePage: 'contact-us' },
+  })
 
   // Send admin notification
   if (process.env.RESEND_API_KEY) {

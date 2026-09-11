@@ -3,6 +3,7 @@ import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { assertLlmBudget, recordLlmSpend, BudgetExceededError } from '@/lib/marketing/budget'
 import { writeLedger } from '@/lib/marketing/graph'
+import { loadVoiceProfile, voicePromptAddendum, type VoiceProfile } from '@/lib/agent/voice'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,44 +40,6 @@ const FB_REPLY_SYSTEM_PROMPT = `You are COPY, drafting a reply to a Facebook com
 Write ONE short, warm reply in Allie's voice — never corporate, never pushy. Answer the question directly. If pricing is asked, give a real starting number with "depending on...". If you don't know a specific fact (exact date availability, a name), say so honestly rather than inventing it.
 
 Respond ONLY with valid JSON — no markdown fences, no extra text.`
-
-interface VoiceProfile {
-  tone_rules?: string[]
-  greeting?: string
-  pricing_style?: string
-  dos?: string[]
-  donts?: string[]
-  exemplars?: { context?: string; text: string }[]
-}
-
-async function loadVoiceProfile(supabase: ReturnType<typeof getSupabase>): Promise<VoiceProfile | null> {
-  try {
-    const { data, error } = await supabase
-      .from('voice_profile')
-      .select('profile')
-      .eq('is_active', true)
-      .maybeSingle()
-    if (error || !data?.profile) return null
-    return data.profile as VoiceProfile
-  } catch {
-    return null
-  }
-}
-
-function voicePromptAddendum(profile: VoiceProfile): string {
-  const lines: string[] = ['', 'OPERATOR VOICE (match this — it is how Allie actually talks to customers):']
-  if (profile.tone_rules?.length) {
-    lines.push('Tone rules:')
-    profile.tone_rules.forEach(r => lines.push(`- ${r}`))
-  }
-  if (profile.greeting) lines.push(`Greeting habit: ${profile.greeting}`)
-  if (profile.pricing_style) lines.push(`Pricing style: ${profile.pricing_style}`)
-  if (profile.exemplars?.length) {
-    lines.push('Exemplars of her real voice (style anchors, not content to copy verbatim):')
-    profile.exemplars.slice(0, 5).forEach(e => lines.push(`- ${e.context ? `[${e.context}] ` : ''}${e.text}`))
-  }
-  return lines.join('\n')
-}
 
 async function draftReply(
   inboundText: string,

@@ -91,12 +91,12 @@
 ## Phase 3C: Booking Agent ← CURRENT (plan: `docs/booking-agent-plan.md`)
 
 - [x] Phase 0 — `inquiry_drafts` schema (migration_028), classifier + required-info gate (`lib/inquiryDrafts.ts`, 24 tests)
-- [ ] Phase 1 — lead trigger → Claude draft → SMS to reviewers (stub send); `/api/cron/agent-dispatch`, `/review/[token]`, admin Inbox tab; migration_032
+- [x] Phase 1 — lead trigger → Claude draft → SMS to reviewers (stub send); `lib/agent/{config,events,voice,reviewLink,draftInquiry}.ts`, `/api/cron/agent-dispatch`, `/review/[token]`, admin Inbox tab + `/api/admin/agent`; migrations 032 + 033. **Code done 2026-09-11; needs migrations applied, env set and a deploy before it can run.**
 - [ ] Phase 2 — SMS review loop (SEND / EDIT / TEST / STOP) + real send via Resend + Quo; Quo webhook fail-closed, unknown senders become leads
 - [ ] Phase 3 — permanent Gmail ingestion (own OAuth refresh token, `/api/cron/gmail-sync`) + triage (ignore marketing/vendor)
-- [ ] Phase 4 — every lead is a Party Plan (`bookings.status='lead'`, `party_type`), one planner for theme/mobile/studio, pricing single-sourced in `pricing_items`; migration_033
+- [ ] Phase 4 — every lead is a Party Plan (`bookings.status='lead'`, `party_type`), one planner for theme/mobile/studio, pricing single-sourced in `pricing_items`; migration_034
 - [ ] Phase 5 — `/plan/[ref]/summary` DB-rendered invoice page (locked template design) + extracted `PayPanel` with embedded Stripe; "Email me this"; persisted pay links
-- [ ] Phase 6 — learning loop: reviewer-edit capture, weekly distill into `agent_learnings` + voice profile v2; migration_034
+- [ ] Phase 6 — learning loop: reviewer-edit capture, weekly distill into `agent_learnings` + voice profile v2; migration_035
 
 ## Phase 4: Campaign Automation
 

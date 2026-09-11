@@ -118,7 +118,14 @@ record itself is always mirrored.
 ## 2. Data model changes
 
 Migrations are applied by hand in the Supabase SQL editor (repo convention).
-Numbers 029–031 are taken; the next free number is **032**.
+Numbers 029–031 were taken; **032 and 033 are now written** and the next free
+number is **034**.
+
+> Renumbered 2026-09-11: the "drafts for any channel" changes originally parked
+> in 034 had to ship with Phase 1 (most lead forms create no `bookings` row, so
+> `inquiry_drafts.booking_id NOT NULL` blocked the whole phase). They are now
+> migration **033**; party-plan-as-lead moved to **034** and the learning-loop
+> tables to **035**.
 
 ### 032 — inbound events + gmail sync state + contact sync + deposit default (WRITTEN 2026-09-10)
 File: `starting_plan/migration_032_agent_inbound_and_contact_sync.sql`.
@@ -138,7 +145,18 @@ email-less contacts, and fixes `bookings.deposit_amount` default to 25000.
   (`entity_type='agent_run'`), each LLM call one `llm_call` row (already the
   pattern in `townDraft.ts`).
 
-### 033 — party plan as lead
+### 033 — drafts for any channel (WRITTEN 2026-09-11)
+File: `starting_plan/migration_033_agent_drafts_any_channel.sql`.
+- `inquiry_drafts.booking_id` → nullable; add `contact_id`, `inbound_event_id`,
+  `channel` CHECK `('email','sms','both')`, `draft_kind` CHECK
+  `('info_gather','quote','reply','follow_up')`, `subject`, `reviewer_note`.
+- CHECK that a draft is anchored to at least one of booking / contact / event.
+- Partial unique index on `inbound_event_id` for live drafts (the per-booking
+  one from 028 stays), which is the DB half of dispatcher idempotency.
+- No claim function: the dispatcher claims each event with a compare-and-swap
+  `UPDATE … WHERE id=? AND status='new' RETURNING`, which is atomic per row.
+
+### 034 — party plan as lead
 - `bookings.status` gets a real CHECK constraint with the set that
   `PartiesTab.tsx:42-51` already uses **plus** `lead` and `quoted`:
   `lead → quoted → awaiting_deposit/pending_review → deposit_paid → approved → modifications_locked → paid_in_full → completed | cancelled`.
@@ -159,13 +177,7 @@ email-less contacts, and fixes `bookings.deposit_amount` default to 25000.
 - New `booking_pay_links (id, booking_id, purpose CHECK('deposit','balance','custom'), amount_cents, fee_cents, stripe_payment_link_id, stripe_price_id, url, created_by, created_at, voided_at)` — closes the gap that today's pay links are untraceable.
 - `booking_payments.payment_method` CHECK → add `'check','other'` (admin dropdown already offers them).
 
-### 034 — drafts for any channel + learning
-- `inquiry_drafts.booking_id` → nullable (a reply to a vendor or a general
-  question has no plan); add `contact_id`, `inbound_event_id`, `channel TEXT`
-  CHECK `('email','sms','both')`, `draft_kind TEXT` CHECK
-  `('info_gather','quote','reply','follow_up')`, `subject TEXT`, `reviewer_note TEXT`.
-- Keep the partial unique index on live drafts per booking; add one per
-  `inbound_event_id`.
+### 035 — learning loop
 - New `agent_learnings (id, kind CHECK('style','rule','fact','pricing'), text, source_draft_id, source_event_id, confidence, is_active, created_by, created_at)`.
   The draft prompt loads active rows. Reviewer corrections become rows here
   (Phase 6), and Adam/Allie can add rules directly from the admin Inbox tab.
@@ -179,16 +191,17 @@ email-less contacts, and fixes `bookings.deposit_amount` default to 25000.
 Smallest useful slice first. Each phase ships behind env flags so production
 stays exactly as it is until the flag is on.
 
-### Phase 1 — Lead trigger → draft → SMS to reviewers (this is the "act faster on leads" win)
+### Phase 1 — Lead trigger → draft → SMS to reviewers — **BUILT 2026-09-11, not yet deployed**
 
 Goal: within ~5 minutes of any new website lead, Allie's and Adam's phones get
 a text with the classification, the missing fields, and the proposed reply.
 Send to the customer stays stubbed ("would send") until Phase 2.
 
-1. Apply migrations 028 and 032. Add env: `REVIEWER_PHONES` (Adam's cell,
-   already wired for lead SMS), `OWNER_NOTIFY_EMAIL`, `AGENT_ENABLED=false`,
+1. Apply migrations 028, 032 **and 033**. Add env: `REVIEWER_PHONES` (Adam's
+   cell, already wired for lead SMS), `OWNER_NOTIFY_EMAIL`, `AGENT_ENABLED=false`,
    `AGENT_DRAFT_MODEL` (default `claude-sonnet-5`; Haiku is fine for triage,
-   not for customer-facing drafts).
+   not for customer-facing drafts), `AGENT_DAILY_USD_CAP`,
+   `REVIEW_LINK_SIGNING_SECRET`.
 2. `lib/agent/events.ts` — `recordInboundEvent()` used by every intake route
    (one-line addition per route, same place `upsertContact` is called).
    `source='website_form'`, `external_id = '<route>:<contact_interaction id>'`.
@@ -432,7 +445,7 @@ Cron-job.org additions: `agent-dispatch` (2 min), `gmail-sync` (3 min),
 | 1 Lead trigger → draft → reviewer SMS | mig 028 + 032, `REVIEWER_PHONES` | 2 sessions |
 | 2 SMS review loop + real send | Phase 1, `QUO_WEBHOOK_SECRET` | 2 sessions |
 | 3 Gmail ingestion + triage | Adam's OAuth consent | 2 sessions |
-| 4 Plan = lead, unified pricing/planner | mig 033 | 3 sessions (the planner file is large) |
+| 4 Plan = lead, unified pricing/planner | mig 034 | 3 sessions (the planner file is large) |
 | 5 Summary/Invoice page + PayPanel | Phase 4 | 3 sessions |
 | 6 Learning loop | Phases 2, 3 | 1–2 sessions |
 
@@ -487,3 +500,31 @@ Phases 4–5 can run in parallel with 3.
 - `bookings.deposit_amount` documented as cents everywhere; migration 032
   fixes the DB default (250 → 25000) and normalises any dollar-valued rows.
 - `starting_plan/migration_032_agent_inbound_and_contact_sync.sql`.
+
+## 9. Phase 1 as built (2026-09-11)
+
+- `lib/agent/config.ts` — every agent env name in one place (`AGENT_ENABLED`,
+  `AGENT_DRAFT_MODEL`, `AGENT_TRIAGE_MODEL`, `AGENT_DAILY_USD_CAP`,
+  `REVIEW_LINK_SIGNING_SECRET`) plus per-model pricing for the ledger.
+- `lib/agent/events.ts` — `recordInboundEvent()` / `finishEvent()`. Wired into
+  lead, contact, mobile-party-inquiry, quote/save, fundraiser, trucker,
+  canvas-bag, party-checkout (with `booking_id`) and signup (recorded as
+  `ignored`: a signup sheet is not an inquiry).
+- `lib/agent/voice.ts` — the one copy of `loadVoiceProfile` /
+  `voicePromptAddendum` (townDraft.ts and fb-reply now import it; the fb-reply
+  copy had already lost `dos`/`donts`) plus `loadLearnings()`, which fails soft
+  until migration 035.
+- `lib/agent/reviewLink.ts` — HMAC preview tokens and the `HH-YYYY-NNNN` code.
+- `lib/agent/draftInquiry.ts` — the node. Budget check → Claude → guardrails →
+  `inquiry_drafts` row → reviewer SMS. Customer send is a `console.log` stub.
+  Two guardrails are enforced in code, not left to the model: an info-gather
+  draft containing a dollar amount gets one corrective retry and is then parked
+  as `drafted` with an error instead of being texted for approval; the Allie
+  intro is kept on a first message and stripped on later ones.
+- `/api/cron/agent-dispatch` — CRON_SECRET, `AGENT_ENABLED`, daily USD cap with
+  a once-a-day reviewer text, compare-and-swap event claim, a 24h staleness
+  window so switching the flag on never floods the queue, plus the booking sweep.
+- `/review/[token]` — public read-only draft preview (404 on a bad token).
+- Admin **Inbox** tab + `/api/admin/agent` — events, drafts, Approve / Edit /
+  Dismiss / Draft-now. Approve marks `approved` and sends nothing (Phase 2).
+- Tests: `agentDraftInquiry` (11), `agentDispatch` (11), `agentReviewLink` (7).

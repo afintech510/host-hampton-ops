@@ -152,12 +152,32 @@ Runtime env (`website`):
 `BREVO_API_KEY`, `BREVO_DEFAULT_LIST_ID`, `BREVO_SENDER_EMAIL`,
 `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`,
 `ANTHROPIC_API_KEY`, `PORTAL_LINK_SIGNING_SECRET`,
+`SMS_PROVIDER`, `QUO_API_KEY`, `QUO_PHONE_NUMBER`, `QUO_USER_ID`, `QUO_WEBHOOK_SECRET`,
+`OWNER_NOTIFY_EMAIL`, `REVIEWER_PHONES`,
+`AGENT_ENABLED`, `AGENT_DRAFT_MODEL`, `AGENT_TRIAGE_MODEL`, `AGENT_DAILY_USD_CAP`, `REVIEW_LINK_SIGNING_SECRET`,
 `VENMO_HANDLE`, `ZELLE_PHONE`,
 `SIGNWELL_API_KEY`, `SIGNWELL_TEMPLATE_ID`, `SIGNWELL_TEST_MODE`, `SIGNWELL_SIGNER_PLACEHOLDER`
 
 `db_setup.sh` additionally reads: `DATABASE_URL` (or `SUPABASE_DB_HOST` / `SUPABASE_DB_PASSWORD` / `SUPABASE_DB_PORT` / `SUPABASE_DB_NAME` / `SUPABASE_DB_USER`).
 
 > Never commit `.env`, `*.pem`, `*.key`, or SSH keys — all are gitignored. `SIGNWELL_TEST_MODE=false` means live e-sign.
+
+**Booking agent env (see `docs/booking-agent-plan.md`):**
+
+| Var | Meaning |
+|---|---|
+| `AGENT_ENABLED` | Kill switch for `/api/cron/agent-dispatch`. `false`/unset = the agent claims nothing, spends nothing, sends nothing. Inbound events are still recorded. |
+| `AGENT_DRAFT_MODEL` | Claude model for customer-facing drafts. Default `claude-sonnet-5`. |
+| `AGENT_TRIAGE_MODEL` | Model for Phase-3 email triage. Default Haiku 4.5. |
+| `AGENT_DAILY_USD_CAP` | Hard daily ceiling (USD) on agent LLM spend. Default 5. On hit, the dispatcher stops and texts `REVIEWER_PHONES` once per day. |
+| `REVIEWER_PHONES` | Comma-separated E.164 list that receives draft-review SMS. Empty = no SMS. |
+| `OWNER_NOTIFY_EMAIL` | Where owner notification emails go. Default `hosthampton295@gmail.com`. |
+| `REVIEW_LINK_SIGNING_SECRET` | HMAC secret for `/review/<token>` draft previews. Falls back to `PORTAL_LINK_SIGNING_SECRET`. |
+
+The agent never sends to a customer without an explicit human approval, never
+sends customer email through Gmail (Resend for email, Quo for SMS), and its
+migrations (028, 032, 033) must be applied by hand before `AGENT_ENABLED` is
+turned on.
 
 ---
 
@@ -173,6 +193,7 @@ Cron routes (under `services/website/src/app/api/cron/`):
 - `/api/cron/process-sequences` — email sequence processing
 - `/api/cron/event-reminders`
 - `/api/cron/booking-locks`
+- `/api/cron/agent-dispatch` — booking agent: claims new inbound events, drafts replies, texts the reviewers. Every 2 minutes. No-op unless `AGENT_ENABLED` is true.
 
 Example trigger:
 ```bash

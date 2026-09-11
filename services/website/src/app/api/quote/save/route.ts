@@ -4,6 +4,7 @@ import { Resend } from 'resend'
 import { savedQuoteHtml } from '@/lib/emailTemplates'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
+import { recordInboundEvent } from '@/lib/agent/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -86,6 +87,26 @@ export async function POST(req: NextRequest) {
       console.error('Interaction insert error (non-fatal):', err)
     }
   }
+
+  // Booking agent: a saved quote is a warm lead (non-fatal, never blocks).
+  await recordInboundEvent({
+    route: 'quote-save',
+    contactId,
+    fromAddress: email,
+    subject: `Saved party quote — ${name}`,
+    body: summary || null,
+    classification: 'lead',
+    parsed: {
+      name,
+      email,
+      phone: phone || null,
+      eventType: 'kids birthday party',
+      date: partyDate || null,
+      time: partyTime || null,
+      notes: summary || null,
+      sourcePage: sourcePage || 'kids-party-menu',
+    },
+  })
 
   // Send email with saved quote link
   if (process.env.RESEND_API_KEY) {

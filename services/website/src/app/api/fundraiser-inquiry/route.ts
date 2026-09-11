@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
+import { recordInboundEvent } from '@/lib/agent/events'
 import { Resend } from 'resend'
 import {
   fundraiserInquiryAutoReplyHtml,
@@ -91,6 +92,25 @@ export async function POST(req: NextRequest) {
       console.error('Interaction insert error:', interactionErr)
     }
   }
+
+  // Booking agent: one inbound event per inquiry (non-fatal, never blocks).
+  await recordInboundEvent({
+    route: 'fundraiser-inquiry',
+    contactId,
+    fromAddress: email,
+    subject: `Fundraiser inquiry — ${organizationName}`,
+    body: message || null,
+    classification: 'lead',
+    parsed: {
+      name: contactName,
+      email,
+      phone: phone || null,
+      eventType: 'fundraiser',
+      guests: estimatedQuantity || null,
+      notes: [`Organization: ${organizationName}`, organizationType, message].filter(Boolean).join('\n'),
+      sourcePage: 'fundraiser',
+    },
+  })
 
   // Send emails via Resend
   if (process.env.RESEND_API_KEY) {

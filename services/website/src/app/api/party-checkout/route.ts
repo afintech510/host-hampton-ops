@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
+import { recordInboundEvent } from '@/lib/agent/events'
 import { calculateLineItemTotal, computeCutoffDates, generatePartyRef, formatMoney, getDepositCents } from '@/lib/partyPricing'
 import { partyRequestReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
@@ -130,6 +131,33 @@ export async function POST(req: NextRequest) {
         bookingRef,
       }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
     }
+
+    // Booking agent: this request is also a lead. The booking row is the plan,
+    // so the event carries booking_id and the dispatcher's booking sweep will
+    // see the same draft (one live draft per booking, never two).
+    await recordInboundEvent({
+      route: 'party-checkout',
+      contactId,
+      bookingId: booking.id,
+      fromAddress: contactEmail,
+      subject: `Party request ${bookingRef} — ${contactName}`,
+      body: notes || null,
+      classification: 'lead',
+      parsed: {
+        name: contactName,
+        email: contactEmail,
+        phone: contactPhone || null,
+        eventType: 'kid-party',
+        packageType: packageType || null,
+        date: partyDate,
+        time: partyTime,
+        guests: guestCount,
+        childName: childName || null,
+        childAge: childAge || null,
+        notes: notes || null,
+        bookingRef,
+      },
+    })
 
     // Prepare line items for the admin email
     const emailLineItems = lineItems.map(item => ({

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
+import { recordInboundEvent } from '@/lib/agent/events'
 import { Resend } from 'resend'
 
 function generateCouponCode(): string {
@@ -56,6 +57,24 @@ export async function POST(req: NextRequest) {
       console.error('Coupon insert error:', couponErr)
       // Non-fatal — still send the email with the code
     }
+
+    // Booking agent: recorded as history only. A signup-sheet entry is not an
+    // inquiry, so needsAction=false parks it as `ignored` — the agent must
+    // never draft a party reply to someone who just wanted the 10% code.
+    await recordInboundEvent({
+      route: 'signup',
+      contactId,
+      fromAddress: trimmed.email,
+      subject: `Signup sheet — ${trimmed.firstName} ${trimmed.lastName}`,
+      needsAction: false,
+      classification: 'signup',
+      parsed: {
+        name: `${trimmed.firstName} ${trimmed.lastName}`,
+        email: trimmed.email,
+        phone: trimmed.phone,
+        sourcePage: 'signup_sheet_10pct',
+      },
+    })
 
     // 3. Send welcome email with coupon via Resend
     if (process.env.RESEND_API_KEY) {

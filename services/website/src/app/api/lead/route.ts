@@ -4,6 +4,7 @@ import { Resend } from 'resend'
 import { leadNotifyHtml, leadConfirmHtml } from '@/lib/emailTemplates'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
+import { recordInboundEvent } from '@/lib/agent/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,6 +99,28 @@ export async function POST(req: NextRequest) {
       console.error('Interaction insert error (non-fatal):', dbErr)
     }
   }
+
+  // Booking agent: one inbound event per lead (non-fatal, never blocks).
+  await recordInboundEvent({
+    route: 'lead',
+    contactId,
+    fromAddress: email,
+    subject: `Lead: ${eventType} — ${fullName}`,
+    body: notes || null,
+    classification: 'lead',
+    parsed: {
+      name: fullName,
+      email,
+      phone,
+      eventType,
+      date: preferredDate || null,
+      time: timeOfDay || null,
+      guests: guestCount || null,
+      childAge: childAge || null,
+      notes: [partyTheme ? `Theme: ${partyTheme}` : null, notes].filter(Boolean).join('\n') || null,
+      sourcePage: sourcePage || 'party-packages',
+    },
+  })
 
   // Send emails via Resend
   if (process.env.RESEND_API_KEY) {

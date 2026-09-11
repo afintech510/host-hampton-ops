@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { getSupabase } from '@/lib/supabase'
+import { recordInboundEvent } from '@/lib/agent/events'
 import { Resend } from 'resend'
 
 export const dynamic = 'force-dynamic'
@@ -67,9 +68,30 @@ export async function POST(req: NextRequest) {
         },
       })
     } catch (err) {
-      console.error('Interaction insert error (non-fatal):', err)
+      console.error('Canvas bag interaction insert error (non-fatal):', err)
     }
   }
+
+  // Booking agent: one inbound event per inquiry (non-fatal, never blocks).
+  await recordInboundEvent({
+    route: 'canvas-bag-inquiry',
+    contactId,
+    fromAddress: email,
+    subject: `Canvas bag inquiry — ${name}`,
+    body: patchIdea || null,
+    classification: 'lead',
+    parsed: {
+      name,
+      email,
+      phone: phone || null,
+      eventType: occasion || 'canvas bags',
+      guests: Number(quantity) || null,
+      notes: [`Product: ${product}`, colorPreference ? `Color: ${colorPreference}` : null, patchIdea]
+        .filter(Boolean)
+        .join('\n'),
+      sourcePage: 'canvas-bags',
+    },
+  })
 
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY)

@@ -4,6 +4,7 @@ import { Resend } from 'resend'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { getSupabase } from '@/lib/supabase'
+import { recordInboundEvent } from '@/lib/agent/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,6 +51,25 @@ export async function POST(req: NextRequest) {
       console.error('Interaction insert error (non-fatal):', err)
     }
   }
+
+  // Booking agent: one inbound event per lead (non-fatal, never blocks).
+  await recordInboundEvent({
+    route: 'mobile-party-inquiry',
+    contactId,
+    fromAddress: email,
+    subject: `Mobile party inquiry — ${name}`,
+    body: details || null,
+    classification: 'lead',
+    parsed: {
+      name,
+      email,
+      phone: phone || null,
+      eventType: 'mobile party',
+      date: date || null,
+      details,
+      sourcePage: 'mobile-party',
+    },
+  })
 
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY)

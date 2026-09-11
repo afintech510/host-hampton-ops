@@ -161,7 +161,18 @@ services:
       - OWNER_NOTIFY_EMAIL=${OWNER_NOTIFY_EMAIL:-hosthampton295@gmail.com}
       - REVIEWER_PHONES=${REVIEWER_PHONES:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Booking agent (lib/agent/*, /api/cron/agent-dispatch). AGENT_ENABLED is
+      # the kill switch: with it off the dispatcher claims nothing, spends
+      # nothing and sends nothing, while inbound events are still recorded.
+      # AGENT_DAILY_USD_CAP is a hard daily ceiling on agent LLM spend.
+      - AGENT_ENABLED=${AGENT_ENABLED:-false}
+      - AGENT_DRAFT_MODEL=${AGENT_DRAFT_MODEL:-claude-sonnet-5}
+      - AGENT_TRIAGE_MODEL=${AGENT_TRIAGE_MODEL:-claude-haiku-4-5-20251001}
+      - AGENT_DAILY_USD_CAP=${AGENT_DAILY_USD_CAP:-5}
       - PORTAL_LINK_SIGNING_SECRET=${PORTAL_LINK_SIGNING_SECRET}
+      # HMAC secret for /review/<token> draft previews. Falls back to
+      # PORTAL_LINK_SIGNING_SECRET when unset.
+      - REVIEW_LINK_SIGNING_SECRET=${REVIEW_LINK_SIGNING_SECRET:-}
       - VENMO_HANDLE=${VENMO_HANDLE:-@hosthampton}
       - ZELLE_PHONE=${ZELLE_PHONE}
       - SIGNWELL_API_KEY=${SIGNWELL_API_KEY}

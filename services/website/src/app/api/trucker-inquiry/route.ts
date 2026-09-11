@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { getSupabase } from '@/lib/supabase'
+import { recordInboundEvent } from '@/lib/agent/events'
 import { Resend } from 'resend'
 
 export const dynamic = 'force-dynamic'
@@ -64,6 +65,26 @@ export async function POST(req: NextRequest) {
       console.error('Interaction insert error (non-fatal):', err)
     }
   }
+
+  // Booking agent: one inbound event per inquiry (non-fatal, never blocks).
+  await recordInboundEvent({
+    route: 'trucker-inquiry',
+    contactId,
+    fromAddress: email,
+    subject: `Trucker hat bar inquiry — ${company || name}`,
+    body: vision || null,
+    classification: 'lead',
+    parsed: {
+      name,
+      email,
+      phone: phone || null,
+      eventType: eventType || 'trucker hat bar',
+      date: date || null,
+      guests: guests || null,
+      notes: [company ? `Company: ${company}` : null, vision].filter(Boolean).join('\n') || null,
+      sourcePage: 'trucker-hat-bar',
+    },
+  })
 
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY)

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
-  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors, Rocket, TrendingUp
+  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors, Rocket, TrendingUp, Inbox
 } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
@@ -22,13 +22,15 @@ import PartiesTab from './PartiesTab'
 import PhotosTab from './PhotosTab'
 import SummerHairTab from './SummerHairTab'
 import MarketingTab from './MarketingTab'
+import InboxTab from './InboxTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'financials' | 'revenue' | 'gift-cards' | 'summer-hair'
+type TabKey = 'dashboard' | 'inbox' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'financials' | 'revenue' | 'gift-cards' | 'summer-hair'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
+  { key: 'inbox',      label: 'Inbox',      Icon: Inbox,           group: 'overview' },
   { key: 'summer-hair', label: 'Summer Hair', Icon: Scissors,        group: 'manage' },
   { key: 'events',     label: 'Events',     Icon: Ticket,          group: 'manage' },
   { key: 'calendar',   label: 'Calendar',   Icon: Calendar,        group: 'manage' },
@@ -238,6 +240,9 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
         <main className="animate-slide-in">
           {activeTab === 'dashboard' && (
             <DashboardTab key={`dash-${refreshKey}`} headers={headers} onLogout={onLogout} onNavigate={setActiveTab} />
+          )}
+          {activeTab === 'inbox' && (
+            <InboxTab key={`inbox-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
           {activeTab === 'events' && (
             <EventsTab key={`events-${refreshKey}`} headers={headers} onLogout={onLogout} />
