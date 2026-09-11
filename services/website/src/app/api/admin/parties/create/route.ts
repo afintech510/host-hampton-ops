@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { upsertContact } from '@/lib/contacts'
-import { calculateLineItemTotal, computeCutoffDates, generatePartyRef, formatMoney, getDepositCents } from '@/lib/partyPricing'
+import { computeCutoffDates, generatePartyRef, formatMoney } from '@/lib/partyPricing'
+import { buildPlanSnapshot, planTotals, writeLineItems } from '@/lib/plan'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { partyQuoteSentHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
@@ -59,9 +60,6 @@ export async function POST(req: NextRequest) {
     const origin = `${proto}://${host}`
     const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
     const guests = guestCount || 10
-    const totalCents = lineItems.length ? calculateLineItemTotal(lineItems, guests) : 0
-    const depositCents = getDepositCents(totalCents)
-    const balanceDueCents = Math.max(0, totalCents - depositCents)
     const cutoffs = partyDate ? computeCutoffDates(partyDate) : null
     const bookingRef = generatePartyRef()
 
@@ -71,10 +69,9 @@ export async function POST(req: NextRequest) {
       created_at: new Date().toISOString(),
     }
 
-    const snapshot = {
-      lineItems, guestCount: guests, totalCents, depositCents,
-      packageType: packageType || null,
-    }
+    const snapshot = buildPlanSnapshot({ lineItems, guestCount: guests, packageType })
+    const { total_cents: totalCents, deposit_amount: depositCents, balance_due_cents: balanceDueCents } =
+      planTotals(snapshot)
 
     const { data: booking, error: dbErr } = await supabase.from('bookings').insert({
       booking_ref: bookingRef,
@@ -94,6 +91,8 @@ export async function POST(req: NextRequest) {
       card_fee_rate: 0.03,
       modification_cutoff: cutoffs?.modificationCutoff || null,
       guest_count_cutoff: cutoffs?.guestCountCutoff || null,
+      party_type: 'in_studio_theme',
+      source: 'admin',
       quote_snapshot: snapshot,
       payment_method_preference: 'card',
       notes: notes || null,
@@ -105,20 +104,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: dbErr?.message || 'Failed to create booking' }, { status: 500 })
     }
 
-    if (lineItems.length) {
-      const rows = lineItems.map((item, idx) => ({
-        booking_id: booking.id,
-        pricing_item_id: item.pricing_item_id || null,
-        name: item.name,
-        category: item.category,
-        quantity: item.quantity,
-        unit_price_cents: item.unit_price_cents,
-        price_type: item.price_type,
-        guest_multiplied: item.guest_multiplied,
-        sort_order: idx,
-      }))
-      await supabase.from('booking_line_items').insert(rows)
-    }
+    await writeLineItems(supabase, booking.id, lineItems)
 
     // Log creation
     await supabase.from('booking_modifications').insert({

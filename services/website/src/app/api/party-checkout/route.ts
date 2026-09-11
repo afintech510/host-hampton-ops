@@ -4,7 +4,8 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
-import { calculateLineItemTotal, computeCutoffDates, generatePartyRef, formatMoney, getDepositCents } from '@/lib/partyPricing'
+import { computeCutoffDates, generatePartyRef, formatMoney } from '@/lib/partyPricing'
+import { buildPlanSnapshot, planTotals, writeLineItems } from '@/lib/plan'
 import { partyRequestReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 
@@ -39,23 +40,19 @@ export async function POST(req: NextRequest) {
     const proto = forwardedProto || (isLocal ? 'http' : 'https')
     const origin = `${proto}://${host}`
     const bookingRef = generatePartyRef()
-    const totalCents = calculateLineItemTotal(lineItems, guestCount)
-    const depositCents = getDepositCents(totalCents)
-    const balanceDueCents = Math.max(0, totalCents - depositCents)
     const { modificationCutoff, guestCountCutoff } = computeCutoffDates(partyDate)
 
     // Merge structured selection data (sent from the planner) so /load can
-    // fully restore the form. Falls back to a minimal snapshot for legacy
-    // callers that don't send quoteData.
-    const incomingQuoteData = (body.quoteData as Record<string, unknown> | undefined) || {}
-    const quoteSnapshot = {
-      ...incomingQuoteData,
+    // fully restore the form. buildPlanSnapshot recomputes the totals from the
+    // line items, so a stale client-side total in quoteData cannot be persisted.
+    const quoteSnapshot = buildPlanSnapshot({
       lineItems,
       guestCount,
-      totalCents,
-      depositCents,
       packageType,
-    }
+      extra: (body.quoteData as Record<string, unknown> | undefined) || {},
+    })
+    const { total_cents: totalCents, deposit_amount: depositCents, balance_due_cents: balanceDueCents } =
+      planTotals(quoteSnapshot)
 
     // Party REQUEST flow: we never lock a date or take payment here. The team
     // reviews availability and approves; the date is only reserved (and a Google
@@ -84,6 +81,8 @@ export async function POST(req: NextRequest) {
       card_fee_rate: 0.03,
       modification_cutoff: modificationCutoff,
       guest_count_cutoff: guestCountCutoff,
+      party_type: 'in_studio_theme',
+      source: 'website_form',
       quote_snapshot: quoteSnapshot,
       payment_method_preference: null,
       notes: notes || null,
@@ -95,21 +94,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Booking failed' }, { status: 500 })
     }
 
-    // Insert line items
-    const lineItemRows = lineItems.map((item, idx) => ({
-      booking_id: booking.id,
-      pricing_item_id: item.pricing_item_id || null,
-      name: item.name,
-      category: item.category,
-      quantity: item.quantity,
-      unit_price_cents: item.unit_price_cents,
-      price_type: item.price_type,
-      guest_multiplied: item.guest_multiplied,
-      sort_order: idx,
-    }))
-
-    const { error: liError } = await supabase.from('booking_line_items').insert(lineItemRows)
-    if (liError) console.error('Line items insert error (non-fatal):', liError)
+    await writeLineItems(supabase, booking.id, lineItems)
 
     // Upsert contact (non-fatal)
     const contactId = await upsertContact({

@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
-import { calculateLineItemTotal, computeCutoffDates, generatePartyRef, formatMoney, getDepositCents } from '@/lib/partyPricing'
+import { computeCutoffDates, generatePartyRef, formatMoney } from '@/lib/partyPricing'
+import { buildPlanSnapshot, planTotals, writeLineItems } from '@/lib/plan'
 import { generatePortalToken, buildPortalUrl, getPortalBookingRef } from '@/lib/portalAuth'
 import { partyQuoteSentHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
@@ -78,9 +79,10 @@ export async function POST(req: NextRequest) {
     const proto = forwardedProto || (isLocal ? 'http' : 'https')
     const origin = `${proto}://${host}`
     const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
-    const totalCents = lineItems?.length ? calculateLineItemTotal(lineItems, guestCount || 10) : 0
-    const depositCents = getDepositCents(totalCents)
-    const balanceDueCents = Math.max(0, totalCents - depositCents)
+    // buildPlanSnapshot owns the arithmetic for all three plan writers.
+    const planSnapshot = buildPlanSnapshot({ lineItems, guestCount, packageType, extra: quoteData })
+    const { total_cents: totalCents, deposit_amount: depositCents, balance_due_cents: balanceDueCents } =
+      planTotals(planSnapshot)
 
     // Check if updating an existing booking via portal cookie
     const cookieHeader = req.headers.get('cookie')
@@ -94,23 +96,10 @@ export async function POST(req: NextRequest) {
     // line items raises the balance by the delta only (not a fresh 25% assumption).
     let finalBalanceDueCents = balanceDueCents
 
-    const insertLineItems = async (bId: string) => {
-      if (!lineItems?.length) return
-      const rows = lineItems.map((item, idx) => ({
-        booking_id: bId,
-        pricing_item_id: item.pricing_item_id || null,
-        name: item.name,
-        category: item.category,
-        quantity: item.quantity,
-        unit_price_cents: item.unit_price_cents,
-        price_type: item.price_type,
-        guest_multiplied: item.guest_multiplied,
-        sort_order: idx,
-      }))
-      await supabase.from('booking_line_items').insert(rows)
-    }
-
-    const snapshotData = quoteData ? { ...quoteData, lineItems, guestCount, totalCents, depositCents } : null
+    // Kept null when the planner sent no structured selections: the client
+    // treats a non-null quote_snapshot as "restore this", and an empty one
+    // would wipe a returning customer's form instead of leaving the defaults.
+    const snapshotData = quoteData ? planSnapshot : null
     const parsedChildAge = childAge != null && childAge !== ''
       ? (typeof childAge === 'number' ? childAge : parseInt(childAge, 10))
       : null
@@ -146,6 +135,8 @@ export async function POST(req: NextRequest) {
         quote_snapshot: snapshotData,
         payment_method_preference: 'card',
         notes: notes || null,
+        party_type: 'in_studio_theme',
+        source: 'website_form',
         party_tags: buildPartyTags(null),
       }).select('id').single()
 
@@ -154,7 +145,7 @@ export async function POST(req: NextRequest) {
         throw new Error('Failed to create booking')
       }
 
-      await insertLineItems(booking.id)
+      await writeLineItems(supabase, booking.id, lineItems ?? [])
       return booking.id
     }
 
@@ -214,8 +205,7 @@ export async function POST(req: NextRequest) {
 
         // Replace line items
         if (lineItems?.length) {
-          await supabase.from('booking_line_items').delete().eq('booking_id', bookingId)
-          await insertLineItems(bookingId)
+          await writeLineItems(supabase, bookingId, lineItems, { replace: true })
         }
 
         // Log modification

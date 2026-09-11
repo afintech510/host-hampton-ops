@@ -5,6 +5,7 @@ import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { getSupabase } from '@/lib/supabase'
 import { recordInboundEvent } from '@/lib/agent/events'
+import { ensureLeadPlan } from '@/lib/plan'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,10 +53,25 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Booking agent: every lead is a Party Plan. The plan is created BEFORE the
+  // event so its id rides along on the event — see the safety note in lib/plan.ts,
+  // without it the dispatcher's booking sweep drafts this lead a second time.
+  const plan = await ensureLeadPlan({
+    contactName: name,
+    contactEmail: email,
+    contactPhone: phone || null,
+    partyDate: date || null,
+    notes: details || null,
+    eventType: 'mobile party',
+    source: 'website_form',
+    tags: { source_page: 'mobile-party' },
+  })
+
   // Booking agent: one inbound event per lead (non-fatal, never blocks).
   await recordInboundEvent({
     route: 'mobile-party-inquiry',
     contactId,
+    bookingId: plan.bookingId,
     fromAddress: email,
     subject: `Mobile party inquiry — ${name}`,
     body: details || null,

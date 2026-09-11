@@ -118,8 +118,8 @@ record itself is always mirrored.
 ## 2. Data model changes
 
 Migrations are applied by hand in the Supabase SQL editor (repo convention).
-Numbers 029–031 were taken; **032, 033 and 034 are written and applied** and the
-next free number is **035**.
+Numbers 029–031 were taken; **032, 033, 034 and 035 are written and applied**
+and the next free number is **036**.
 
 > Renumbered twice on 2026-09-11, both times because a later phase shipped
 > first and migrations are kept in the order they are actually applied:
@@ -175,7 +175,29 @@ bookkeeping; the 028 status machine already had every state the loop needs.
   with 028's `customer_*_sent_at`, these make the send idempotent per channel, so
   a half-failed send can be retried without messaging anyone twice.
 
-### 035 — party plan as lead
+### 035 — party plan as lead (WRITTEN + APPLIED 2026-09-11)
+File: `starting_plan/migration_035_party_plan_as_lead.sql`. Applied as written
+below, plus two things the live schema forced that this plan had not accounted
+for:
+
+- **`party_date`, `party_time` and `contact_name` were also `NOT NULL`**, not
+  just `contact_email`. A "do you do mobile parties?" lead has none of them, so
+  a lead row was not merely awkward to store — it was rejected outright. All
+  four are now nullable, guarded by `bookings_scheduled_fields_check`, which
+  re-imposes date + time + name for every status past `lead`/`quoted`. The
+  relaxation is scoped to the front of the pipeline; calendar sync, reminders
+  and the portal are exactly as safe as before.
+- **`confirmed` had to stay in the status CHECK.** `api/checkout` writes it and
+  two live rows use it; the set in `PartiesTab.tsx` alone would have failed the
+  constraint on creation.
+
+The `party_type` backfill ran over all 41 existing rows (28 in_studio_theme,
+6 studio_rental, 6 unknown, 1 mobile_party; 0 left null). `invoice_number_seq`
+is parked so the first number it issues is `444124-000116` — the hand-built
+files in `invoices/` run up to `444124-000115`. Numbers are assigned on first
+invoice render (Phase 5), not at insert, so a lead that never quotes does not
+burn one. The migration is idempotent and was verified by re-running it.
+
 - `bookings.status` gets a real CHECK constraint with the set that
   `PartiesTab.tsx:42-51` already uses **plus** `lead` and `quoted`:
   `lead → quoted → awaiting_deposit/pending_review → deposit_paid → approved → modifications_locked → paid_in_full → completed | cancelled`.
@@ -329,6 +351,36 @@ a marketing newsletter is silently ignored, a party inquiry produces a draft
 and reviewer SMS.
 
 ### Phase 4 — Every lead is a plan, one planner for all three products
+
+**Items 1–3 BUILT + DEPLOYED 2026-09-11** (migration 035, `lib/plan.ts`, the
+seven intake routes, the three snapshot writers, 34 tests). Items 4–6 — pricing
+into `pricing_items`, the planner product switch, the admin pipeline view and
+the draft node's extract-and-re-evaluate step — are **not started**.
+
+What items 1–3 turned into, and the one thing that nearly went wrong:
+
+- `lib/plan.ts` holds `buildPlanSnapshot()`, `planTotals()`, `writeLineItems()`
+  and `ensureLeadPlan()`. The snapshot builder spreads the caller's `quoteData`
+  **first** so the recomputed totals always win — the planner's passthrough
+  previously let a stale client-side total be persisted verbatim.
+- **The flood that didn't happen.** `/api/cron/agent-dispatch` sweeps
+  `bookings` in `('pending_review','lead')` over a 14-day window and drafts for
+  any with no draft. Making every lead a plan directly enlarges that sweep, and
+  the only thing between it and a second text per lead is `bookingsWithAnyDraft()`
+  matching on `inquiry_drafts.booking_id`. So each route creates the plan
+  **before** `recordInboundEvent()` and passes `bookingId` in; the draft node
+  reads `event.booking_id` and stamps it on the draft, which is what makes the
+  sweep skip a lead the event path already handled. Reversing those two calls
+  re-introduces the double-text. There is a standing note at the top of
+  `lib/plan.ts` saying so.
+- `findOpenPlan()` returns a discriminated `{ok:true, plan} | {ok:false}`
+  rather than a bare `null`. A failed lookup is not "no match": treating it as
+  one creates a duplicate plan, which then earns its own draft and its own SMS.
+  Same decided-no vs could-not-decide rule as the draft and triage nodes. A test
+  caught this — the first implementation had the comment but not the behaviour.
+- Free-text dates (`"mid-March"`) are kept in `party_tags.requested_date_text`
+  rather than failing the insert; `coerceIsoDate()` is deliberately strict and
+  rejects `2026-02-30` instead of letting `Date` roll it into March.
 
 1. Intake routes without a booking (`lead`, `contact`, `mobile-party-inquiry`,
    `quote/save`, `fundraiser-inquiry`, `trucker-inquiry`, `canvas-bag-inquiry`)

@@ -5,6 +5,7 @@ import { savedQuoteHtml } from '@/lib/emailTemplates'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
+import { ensureLeadPlan } from '@/lib/plan'
 
 export const dynamic = 'force-dynamic'
 
@@ -88,9 +89,30 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Booking agent: every lead is a Party Plan. The plan is created BEFORE the
+  // event so its id rides along on the event — see the safety note in lib/plan.ts,
+  // without it the dispatcher's booking sweep drafts this lead a second time.
+  const plan = await ensureLeadPlan({
+    contactName: name,
+    contactEmail: email,
+    contactPhone: phone || null,
+    partyDate: partyDate || null,
+    partyTime: partyTime || null,
+    guestCount: Number(quoteData?.guestCount) || null,
+    notes: summary || null,
+    eventType: 'kids birthday party',
+    source: 'website_form',
+    // A saved quote is the one intake form that carries real selections, so it
+    // writes booking_line_items instead of only the base64 URL it used to.
+    lineItems: Array.isArray(quoteData?.lineItems) ? quoteData.lineItems : [],
+    snapshotExtra: quoteData,
+    tags: { source_page: sourcePage || 'kids-party-menu' },
+  })
+
   // Booking agent: a saved quote is a warm lead (non-fatal, never blocks).
   await recordInboundEvent({
     route: 'quote-save',
+    bookingId: plan.bookingId,
     contactId,
     fromAddress: email,
     subject: `Saved party quote — ${name}`,

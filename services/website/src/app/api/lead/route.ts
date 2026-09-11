@@ -5,6 +5,7 @@ import { leadNotifyHtml, leadConfirmHtml } from '@/lib/emailTemplates'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
+import { ensureLeadPlan } from '@/lib/plan'
 
 export const dynamic = 'force-dynamic'
 
@@ -100,9 +101,27 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Booking agent: every lead is a Party Plan. The plan is created BEFORE the
+  // event so its id rides along on the event — see the safety note in lib/plan.ts,
+  // without it the dispatcher's booking sweep drafts this lead a second time.
+  const plan = await ensureLeadPlan({
+    contactName: fullName,
+    contactEmail: email,
+    contactPhone: phone || null,
+    partyDate: preferredDate || null,
+    partyTime: timeOfDay || null,
+    guestCount: Number(guestCount) || null,
+    childAge: Number(childAge) || null,
+    notes: [partyTheme ? `Theme: ${partyTheme}` : null, notes].filter(Boolean).join('\n') || null,
+    eventType: eventType || null,
+    source: 'website_form',
+    tags: { source_page: sourcePage || 'party-packages', ...(partyTheme ? { party_theme: partyTheme } : {}) },
+  })
+
   // Booking agent: one inbound event per lead (non-fatal, never blocks).
   await recordInboundEvent({
     route: 'lead',
+    bookingId: plan.bookingId,
     contactId,
     fromAddress: email,
     subject: `Lead: ${eventType} — ${fullName}`,
