@@ -1438,3 +1438,98 @@ is not the lead, and a form submission that succeeded must not fail because a
 bookkeeping column did not get set. Wired into all seven intake routes plus
 `party-checkout`, and verified in production — a test lead's column now joins to
 its `website_form` event.
+
+---
+
+## 15. Mobile pricing rework (Adam, 2026-09-11) — SPEC, NOT BUILT
+
+Adam's direction, verbatim in substance: *"pricing for the mobile parties needs
+to be reworked. i dont think we should show pricing automatically. I would say
+maybe we state pricing starts at $850 for 10 guests. its something we want to
+price based on location, etc. use a table for base pricing for the party and
+than craft stations and activities can be added each with pricing for 10, 15,
+20, 25 guests, etc."*
+
+This came out of Phase 4 item 4, which consolidated the mobile prices and
+thereby made it visible that the planner and the marketing pages disagreed. The
+answer is not "pick one" — it is a different pricing model.
+
+### 15.1 The live gap, which is the urgent part
+
+| | Per child | Where |
+|---|---|---|
+| Published today | **$62.50** ($500 / 8 kids, $750 / 12) | `/mobile-party`, `/mobile-craft-party`, 26 town pages |
+| Planner charges today | **$40/child at 10** ($400 base up to 18 guests) | `/party-planner`, `/party-builder` |
+| Adam's target | **$85** ($850 / 10 guests) | — |
+
+So the site publishes a firm price roughly **26% below** where Adam wants to be,
+and the planner is lower still. Every mobile booking taken through either
+surface today is underpriced against his intent. **Closing that gap is more
+urgent than building the new table**, and pulling the firm tier cards does both
+at once — which is exactly what "I don't think we should show pricing
+automatically" asks for.
+
+### 15.2 Target model
+
+1. **No published rate card.** Mobile pricing depends on location and on which
+   stations are chosen, so a firm number on a marketing page is wrong more often
+   than it is right. Replace the two tier cards with a single "starts at" anchor
+   (Adam's figure was `$850 for 10 guests`, offered tentatively) plus the
+   existing trust fine print, and route to an enquiry rather than a price.
+   - Keep an anchor of SOME kind. The reason the tiers exist is in §0 and still
+     holds: every competitor publishes a starting price and we published none,
+     which lost price-shoppers before we could explain the value. "From $X"
+     keeps that and stops quoting a number we cannot honour.
+2. **Base price as a table, by guest band.** Not a flat base with surcharges
+   (today's `mobile_planner_*` bands) but a real table: 10 / 15 / 20 / 25 /
+   … guests → base price.
+3. **Stations and activities priced per guest band.** Each `mobile-station` row
+   gains a price at each band, so "Slime for 20" is a lookup rather than a
+   judgement. Today all 26 station rows are `price_cents = 0`,
+   `price_label = 'Ask'` — deliberately, because `/mobile-party` has never
+   carried per-station pricing and every figure in past mobile invoices was
+   quoted by hand. This is the table that replaces that hand-quoting.
+4. **Location affects the price.** Today there is a free radius
+   (`mobile_free_travel_miles` = 20) and a vague "modest mileage charge beyond
+   it". Needs to become a real rule — banded mileage, or a per-zone
+   multiplier — since Adam names location as a primary driver.
+
+### 15.3 Implementation path
+
+The substrate from migration 036 is already the right shape; this is mostly
+data plus one loader change.
+
+- `pricing_items.metadata` is JSONB, so a band grid fits without DDL:
+  `metadata.bands = { "10": 85000, "15": 120000, … }` on each `mobile-station`
+  row and on new `mobile-base` rows. **No migration DDL needed** — it is a data
+  migration plus a `lib/pricingCatalog.ts` reader (`bandPriceFor(row, guests)`,
+  interpolating or rounding UP to the next band, which is a decision Adam has
+  to make: a 12-guest party pays the 15 band or a pro-rated figure).
+- `mobileBaseCentsFor()` in `lib/pricingCatalog.ts` currently applies the
+  cumulative band surcharges. It becomes a table lookup. One function, one
+  call site (`PartyBuilderContent`), already isolated by item 4.
+- `MobilePriceBlock` drops the two tier cards for the "from" anchor. It already
+  reads the catalog, so this is a render change, not a data-plumbing change.
+- The `published_tier` rows either go inactive or become the single anchor row.
+- The invoice's mobile menu appendix (Phase 5) renders stations with NO price
+  regardless, so it is unaffected either way.
+
+### 15.4 BLOCKED ON — numbers only Adam has
+
+Nothing here can be built without these, and **no part of it may be guessed**:
+inventing a price is the one thing the draft node's hard rules forbid outright,
+and the same standard applies to the catalog.
+
+1. The base table: price at 10 / 15 / 20 / 25 (and the top band — does it cap,
+   or continue?).
+2. Whether `$850 for 10 guests` is the real starting figure and whether it is
+   the base alone or base + one station.
+3. Station prices at each band — or at minimum the handful actually sold often
+   (slime, hair tinsel, canvas bag bar, manicures, spa), with the rest staying
+   `Ask`.
+4. The location rule: bands of miles → fee, or zones.
+5. Whether a 12-guest party pays the 15-guest band or a pro-rated figure.
+6. Whether the published anchor stays at all, or mobile goes enquiry-only.
+
+Until (1) and (2) land, the honest interim is to **stop publishing the firm
+$500/$750 tiers**, because they are the one thing actively costing money.
