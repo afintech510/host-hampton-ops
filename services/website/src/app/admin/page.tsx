@@ -57,31 +57,122 @@ const GROUP_LABELS: Record<string, string> = {
 
 /* ─── Login Gate ────────────────────────────────────── */
 
+/**
+ * Two ways in, deliberately (plan §11.1, migration 038):
+ *
+ *  1. **Email + personal password** → `/api/admin/auth/login`, which sets the
+ *     HttpOnly `hh_admin` session cookie. This is the one that gives the ledger
+ *     a real name: approvals land as `admin:allie@…` instead of `'ADMIN'`.
+ *     There is no token in localStorage on this path — the cookie is HttpOnly
+ *     precisely so a stray XSS cannot read it the way it could read the old one.
+ *
+ *  2. **The shared password**, exactly as before, kept in localStorage and sent
+ *     as a Bearer header. This is the lockout guard and it is not going away:
+ *     this change must never be the reason Adam cannot get into the panel he
+ *     runs the business from. If `admin_users` is empty, unreachable, or the
+ *     migration has not been applied, door 2 still opens.
+ *
+ * First sign-in on a seeded-but-unclaimed row also needs the shared password as
+ * proof — see the login route for why (/admin is a public URL).
+ */
 export default function AdminPage() {
+  const [mode, setMode] = useState<'person' | 'shared'>('person')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [sharedPassword, setSharedPassword] = useState('')
+  const [needsClaim, setNeedsClaim] = useState(false)
   const [token, setToken] = useState<string | null>(null)
+  const [displayName, setDisplayName] = useState<string | null>(null)
+  const [signedIn, setSignedIn] = useState(false)
+  const [checking, setChecking] = useState(true)
+  const [busy, setBusy] = useState(false)
   const [loginError, setLoginError] = useState('')
 
   useEffect(() => {
-    const saved = localStorage.getItem('hh_admin_token')
-    if (saved) setToken(saved)
+    let cancelled = false
+    // The session cookie is HttpOnly, so the page cannot read it and has to ask.
+    fetch('/api/admin/auth/session')
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return
+        if (data?.authenticated) {
+          setSignedIn(true)
+          setDisplayName(data.displayName ?? data.email ?? null)
+        } else {
+          const saved = localStorage.getItem('hh_admin_token')
+          if (saved) { setToken(saved); setSignedIn(true) }
+        }
+      })
+      .catch(() => {
+        // A failed session probe must not block the shared-password door.
+        if (cancelled) return
+        const saved = localStorage.getItem('hh_admin_token')
+        if (saved) { setToken(saved); setSignedIn(true) }
+      })
+      .finally(() => { if (!cancelled) setChecking(false) })
+    return () => { cancelled = true }
   }, [])
 
-  function handleLogin(e: React.FormEvent) {
+  async function handlePersonLogin(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setLoginError('')
+    try {
+      const res = await fetch('/api/admin/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, sharedPassword: sharedPassword || undefined }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setLoginError(data?.error || 'Sign-in failed')
+        if (data?.needsClaim) setNeedsClaim(true)
+        return
+      }
+      setSignedIn(true)
+      setDisplayName(data.displayName ?? data.email ?? null)
+      setPassword('')
+      setSharedPassword('')
+    } catch {
+      setLoginError('Could not reach the server')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleSharedLogin(e: React.FormEvent) {
     e.preventDefault()
     localStorage.setItem('hh_admin_token', password)
     setToken(password)
+    setSignedIn(true)
     setLoginError('')
   }
 
-  if (!token) {
+  async function handleLogout() {
+    localStorage.removeItem('hh_admin_token')
+    setToken(null)
+    setSignedIn(false)
+    setDisplayName(null)
+    setPassword('')
+    try { await fetch('/api/admin/auth/logout', { method: 'POST' }) } catch { /* cookie may already be gone */ }
+  }
+
+  // Don't flash the login form at someone who already has a valid session.
+  if (checking) {
+    return <div className="min-h-screen bg-[#1a2030]" />
+  }
+
+  if (!signedIn) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#1a2030] via-[#2F343B] to-[#1a2030] flex items-center justify-center px-4">
         <div className="absolute inset-0 opacity-20" style={{
           backgroundImage: 'radial-gradient(circle at 25% 25%, #8FA8BF 1px, transparent 1px), radial-gradient(circle at 75% 75%, #C7A36B 1px, transparent 1px)',
           backgroundSize: '60px 60px'
         }} />
-        <form onSubmit={handleLogin} className="relative bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 p-8 w-full max-w-sm shadow-2xl">
+        <form
+          onSubmit={mode === 'person' ? handlePersonLogin : handleSharedLogin}
+          className="relative bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 p-8 w-full max-w-sm shadow-2xl"
+        >
           <div className="flex flex-col items-center gap-3 mb-8">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-hampton-blue to-hampton-pink flex items-center justify-center shadow-lg">
               <Sparkles className="w-7 h-7 text-white" />
@@ -89,15 +180,56 @@ export default function AdminPage() {
             <h1 className="font-serif text-2xl text-white tracking-tight">Host Hampton</h1>
             <p className="text-white/50 text-sm">Admin Dashboard</p>
           </div>
+
+          {mode === 'person' && (
+            <input
+              type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="you@hosthampton.com"
+              autoComplete="username"
+              className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-hampton-blue/50 focus:border-transparent transition-all mb-3"
+              autoFocus
+            />
+          )}
+
           <input
             type="password" value={password} onChange={e => setPassword(e.target.value)}
-            placeholder="Enter admin password"
-            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-hampton-blue/50 focus:border-transparent transition-all mb-4"
-            autoFocus
+            placeholder={mode === 'person' ? 'Your password' : 'Shared admin password'}
+            autoComplete={mode === 'person' ? 'current-password' : 'off'}
+            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-hampton-blue/50 focus:border-transparent transition-all mb-3"
+            autoFocus={mode === 'shared'}
           />
+
+          {mode === 'person' && needsClaim && (
+            <>
+              <p className="text-white/50 text-xs mb-2 leading-relaxed">
+                First time signing in? Enter the shared admin password to claim your
+                account — the password above then becomes yours.
+              </p>
+              <input
+                type="password" value={sharedPassword} onChange={e => setSharedPassword(e.target.value)}
+                placeholder="Shared admin password (first time only)"
+                autoComplete="off"
+                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-hampton-blue/50 focus:border-transparent transition-all mb-3"
+              />
+            </>
+          )}
+
           {loginError && <p className="text-red-400 text-sm mb-3">{loginError}</p>}
-          <button type="submit" className="w-full py-3 rounded-xl bg-gradient-to-r from-hampton-blue to-[#7a9ab5] text-white font-semibold text-sm tracking-wider uppercase hover:opacity-90 transition-all shadow-lg">
-            Sign In
+
+          <button
+            type="submit" disabled={busy}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-hampton-blue to-[#7a9ab5] text-white font-semibold text-sm tracking-wider uppercase hover:opacity-90 transition-all shadow-lg disabled:opacity-50"
+          >
+            {busy ? 'Signing in…' : 'Sign In'}
+          </button>
+
+          {/* The lockout guard, always reachable. See the comment on AdminPage. */}
+          <button
+            type="button"
+            onClick={() => { setMode(mode === 'person' ? 'shared' : 'person'); setLoginError(''); setPassword('') }}
+            className="w-full mt-4 text-xs text-white/40 hover:text-white/70 transition-colors"
+          >
+            {mode === 'person' ? 'Use the shared admin password instead' : '← Sign in with your email'}
           </button>
         </form>
       </div>
@@ -107,19 +239,33 @@ export default function AdminPage() {
   return (
     <AdminDashboard
       token={token}
-      onLogout={() => { localStorage.removeItem('hh_admin_token'); setToken(null) }}
+      displayName={displayName}
+      onLogout={handleLogout}
     />
   )
 }
 
 /* ─── Dashboard Shell (Sidebar + Content) ───────────── */
 
-function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
+function AdminDashboard({
+  token,
+  displayName,
+  onLogout,
+}: { token: string | null; displayName: string | null; onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  // Two doors, one header object. On the shared-password path `token` is the
+  // password and goes out as the Bearer header the ~56 admin routes already
+  // expect. On the per-person path there is NO token — the HttpOnly `hh_admin`
+  // cookie rides along on these same-origin fetches and `isAdminAuthorized`
+  // accepts it. Sending `Bearer null` instead of omitting the header would be a
+  // failed auth attempt on every request, hence the conditional.
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
 
   const activeTabObj = TABS.find(t => t.key === activeTab)!
 
@@ -198,6 +344,10 @@ function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => vo
             <ArrowLeft className="w-3.5 h-3.5" />
             Back to site
           </a>
+          {/* Who the ledger will record for anything approved from here. */}
+          <p className="text-white/30 text-xs mb-2 truncate" title={displayName ?? undefined}>
+            {displayName ? `Signed in as ${displayName}` : 'Shared admin password'}
+          </p>
           <button
             onClick={onLogout}
             className="flex items-center gap-2 text-white/40 hover:text-red-400 text-xs transition-colors w-full"

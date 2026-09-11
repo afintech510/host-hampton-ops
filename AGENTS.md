@@ -148,7 +148,7 @@ Runtime env (`website`):
 `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`,
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `GOOGLE_CALENDAR_ID`,
 `RESEND_API_KEY`, `RESEND_FROM_EMAIL`,
-`ADMIN_PASSWORD`, `CRON_SECRET`,
+`ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET` (optional), `CRON_SECRET`,
 `BREVO_API_KEY`, `BREVO_DEFAULT_LIST_ID`, `BREVO_SENDER_EMAIL`,
 `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`,
 `ANTHROPIC_API_KEY`, `PORTAL_LINK_SIGNING_SECRET`,
@@ -174,6 +174,8 @@ Runtime env (`website`):
 | `REVIEWER_PHONES` | Comma-separated E.164 list that receives draft-review SMS. Empty = no SMS. |
 | `OWNER_NOTIFY_EMAIL` | Where owner notification emails go. Default `hosthampton295@gmail.com`. |
 | `REVIEW_LINK_SIGNING_SECRET` | HMAC secret for `/review/<token>` draft previews. Falls back to `PORTAL_LINK_SIGNING_SECRET`. |
+| `ADMIN_PASSWORD` | Unchanged and still a full admin login, forever — it is the lockout guard for the per-user login below. Sent as `authorization: Bearer $ADMIN_PASSWORD`. **Cron routes use `x-cron-secret`, not Bearer.** |
+| `ADMIN_SESSION_SECRET` | **Optional.** HMAC secret for the `hh_admin` per-user admin session cookie (migration 038, plan §18). Falls back to `PORTAL_LINK_SIGNING_SECRET`, so it does not need to be set — it exists so admin sessions can be revoked independently. **Rotating it signs every admin out immediately**, which is the only instant revocation there is: the cookie carries its own 7-day expiry and is verified without a DB read, so deactivating a row in `admin_users` stops the next login rather than a live session. |
 | `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | Phase-3 Gmail ingestion (`lib/gmail.ts`, `/api/cron/gmail-sync`). A **separate OAuth grant** from `GOOGLE_*`, scoped `gmail.readonly` + `gmail.modify` only. Unset is supported: the route reports `configured:false` and does nothing. |
 | `GMAIL_USER` | Mailbox to ingest. Default `hosthampton295@gmail.com`. |
 | `GMAIL_HANDLED_LABEL` | Gmail label applied by the **dispatcher** once a message has actually produced a draft. Default `HH-Agent/Handled`. |

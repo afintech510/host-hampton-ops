@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { draftForInquiry, DRAFT_ENTITY } from '@/lib/agent/draftInquiry'
 import { finishEvent, type InboundEvent } from '@/lib/agent/events'
 import { agentEnabled, draftModel } from '@/lib/agent/config'
@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const outcome = await draftForInquiry({ supabase, event: event as unknown as InboundEvent, actor: 'ADMIN' })
+    const outcome = await draftForInquiry({ supabase, event: event as unknown as InboundEvent, actor: adminActorId(req) })
     if (!outcome.ok) return NextResponse.json({ error: outcome.error }, { status: outcome.status })
 
     await finishEvent(supabase, body.id, 'handled', { draftId: outcome.draftId, classification: 'lead' })
@@ -141,7 +141,12 @@ export async function POST(req: NextRequest) {
   const from = draft.status as string
   const revisions = Array.isArray(draft.revisions) ? draft.revisions : []
   // An authenticated admin request IS the human gate for this surface.
-  const actor = { id: 'ADMIN', isAdmin: true }
+  // `isAdmin` is unchanged and unconditional — this route is already behind
+  // isAdminAuthorized. What migration 038 adds is the NAME: a signed session
+  // names the person (`admin:allie@…`), and the shared password still falls
+  // back to the historical anonymous 'ADMIN'. Plan §11.1: the ledger has to be
+  // able to say who approved a message to a customer.
+  const actor = { id: adminActorId(req), isAdmin: true }
   let patch: Record<string, unknown>
   let to: string
 
@@ -161,7 +166,7 @@ export async function POST(req: NextRequest) {
             ? {
                 approved_at: new Date().toISOString(),
                 approved_phrase: 'admin-ui:approve',
-                approved_by: 'admin:ui',
+                approved_by: adminActorId(req),
               }
             : { reviewer_note: body.note ?? null },
         meta: { review_code: draft.review_code, via: 'admin_inbox', action: body.action },
@@ -259,7 +264,7 @@ export async function POST(req: NextRequest) {
     entityType: DRAFT_ENTITY,
     entityId: body.id,
     action: 'transition',
-    actor: 'ADMIN',
+    actor: actor.id,
     fromStatus: from,
     toStatus: to,
     meta: { review_code: draft.review_code, via: 'admin_inbox', action: body.action },

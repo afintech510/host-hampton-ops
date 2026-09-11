@@ -18,14 +18,17 @@
  * against the ref being authenticated rather than added to the static allowlist,
  * so it cannot become an open redirect.
  *
- * Admin viewing is NOT yet native, and deliberately so. Admin auth today is a
- * shared password in `localStorage` (`adminAuth.ts` checks a Bearer header), so
- * a server component has no way to recognise an admin without either a session
- * cookie that does not exist or a secret in the URL, which is worse than the
- * problem. Plan §11.1 already names the fix — `admin_users` and a real per-person
- * session — and it blocks the audit trail as well as this page. Until then an
- * admin opens the plan through its portal link, which the Parties tab already
- * mints.
+ * Admin viewing IS native as of migration 038 — this is the thing this comment
+ * used to say it was waiting for. The fix plan §11.1 named (`admin_users` and a
+ * real per-person session) shipped, and the session is a signed HttpOnly cookie
+ * rather than a Bearer header in `localStorage`, which is exactly the difference
+ * that matters here: a server component can read a cookie. So an admin session
+ * opens any plan directly, with a banner saying so, and nobody has to go through
+ * the customer's portal link to look at an invoice.
+ *
+ * The admin cookie is NOT scoped to a ref, unlike the customer's, because an
+ * admin is entitled to every plan. That asymmetry is the whole of the access
+ * rule here and is worth not "tidying" later.
  *
  * ── What this page deliberately does NOT do ────────────────────────────────
  *
@@ -42,6 +45,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef } from '@/lib/portalAuth'
+import { adminSessionSecret, getAdminEmailFromCookie } from '@/lib/adminAuth'
 import { loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
 import { ensureInvoiceNumber } from '@/lib/invoiceNumber'
 import './invoice.css'
@@ -360,10 +364,22 @@ export default async function PlanSummaryPage({ params }: { params: Promise<{ re
     .map(c => `${c.name}=${c.value}`)
     .join('; ')
 
-  // The cookie must name THIS plan. A portal session for another booking is not
-  // a session for this one — that is the whole point of scoping it to the ref.
+  // Two ways to be allowed in here.
+  //
+  // 1. The CUSTOMER's portal cookie, which must name THIS plan. A portal session
+  //    for another booking is not a session for this one — that is the whole
+  //    point of scoping it to the ref.
+  // 2. An ADMIN session cookie (migration 038), which is not scoped to a ref
+  //    because an admin is entitled to every plan. This is what the header
+  //    comment above was waiting for: `hh_admin` is a signed HttpOnly cookie, so
+  //    unlike the old Bearer-in-localStorage a server component CAN see it, and
+  //    Adam and Allie stop having to open a plan through its customer link.
+  //
+  // Verification is pure HMAC + a clock read, so it adds no query to the render.
   const authedRef = getPortalBookingRef(cookieHeader, secret)
-  if (!authedRef || authedRef !== ref) notFound()
+  const adminEmail = getAdminEmailFromCookie(cookieHeader, adminSessionSecret())
+  const isAdminView = adminEmail !== null
+  if (!isAdminView && (!authedRef || authedRef !== ref)) notFound()
 
   const supabase = getSupabase()
   const result = await loadPlanInvoice(ref, supabase)
@@ -383,6 +399,12 @@ export default async function PlanSummaryPage({ params }: { params: Promise<{ re
         <Link className="action" href={`/party-planner?ref=${encodeURIComponent(ref)}`}>
           Edit plan
         </Link>
+        {/* `no-print` so a "Save as PDF" for the client never carries it. */}
+        {isAdminView && (
+          <span className="action" style={{ cursor: 'default' }}>
+            Admin view · {adminEmail} · {ref}
+          </span>
+        )}
       </div>
       <InvoiceBody invoice={invoice} ref_={ref} />
     </div>

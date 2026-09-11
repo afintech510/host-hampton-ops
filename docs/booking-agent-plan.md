@@ -118,8 +118,8 @@ record itself is always mirrored.
 ## 2. Data model changes
 
 Migrations are applied by hand (`/root/pg.sh` on the box; the service-role key
-cannot do DDL). Numbers 029–031 were taken; **032, 033, 034, 035, 036 and 037
-are written and applied** and the next free number is **038**.
+cannot do DDL). Numbers 029–031 were taken; **032, 033, 034, 035, 036, 037 and 038
+are written and applied** and the next free number is **039**.
 
 > Renumbered three times on 2026-09-11, every time because a later phase
 > shipped first and migrations are kept in the order they are actually applied:
@@ -138,7 +138,12 @@ are written and applied** and the next free number is **038**.
 >   constant file as the cheaper first step; it is a table for the same reason
 >   036 is — copy is edited more often than a price, and a constant would have
 >   had to be migrated here later anyway for the same seed work.
-> - the learning loop is therefore **038**.
+> - **038** = `admin_users`, per-person admin login. Numbered fourth in a row
+>   ahead of the learning loop for the same reason as the other three — it
+>   shipped first — but also because it was the prerequisite §11.1 names and
+>   the one Phase 5 §17 independently arrived at: two phases blocked on one
+>   small table.
+> - the learning loop is therefore **039**.
 
 ### 032 — inbound events + gmail sync state + contact sync + deposit default (WRITTEN 2026-09-10)
 File: `starting_plan/migration_032_agent_inbound_and_contact_sync.sql`.
@@ -268,7 +273,22 @@ changeover.
   "good to know" paragraphs on one invoice reads as an editing mistake.
 - RLS service_role only, as 028/031/032.
 
-### 038 — learning loop
+### 038 — admin_users (WRITTEN + APPLIED 2026-09-11)
+
+File: `starting_plan/migration_038_admin_users.sql`. See §19 for the build.
+`admin_users (id, email UNIQUE, password_hash, display_name, is_active,
+created_at, last_login_at)`, RLS service_role only as 028/031/032/037, plus a
+partial index on `(email) WHERE is_active`.
+
+The one thing worth carrying forward: **the migration contains no password
+hash.** A hash committed to the repo is a credential in git history, and this
+repo has already had secrets scrubbed out of it once. Rows seed UNCLAIMED
+(`password_hash IS NULL`) and the hash is set by first login. Re-run verified:
+1 update, 0 inserts, and the `ON CONFLICT DO UPDATE` deliberately does not
+touch `password_hash`, so re-applying the file can never wipe a password
+someone has since set.
+
+### 039 — learning loop
 - New `agent_learnings (id, kind CHECK('style','rule','fact','pricing'), text, source_draft_id, source_event_id, confidence, is_active, created_by, created_at)`.
   The draft prompt loads active rows. Reviewer corrections become rows here
   (Phase 6), and Adam/Allie can add rules directly from the admin Inbox tab.
@@ -1753,6 +1773,8 @@ finished thing.
   per-person session. Until then an admin opens a plan through its portal link,
   which the Parties tab already mints. This is now the same prerequisite twice,
   which is a decent argument for building it next.
+  **RESOLVED the same day — see §18.** It was built next, for exactly this
+  reason, and the page is natively admin-viewable now.
 - **PDF** — option (a) as instructed: the link plus inline HTML, no attachment,
   no puppeteer. The page carries the template's `@media print` rules, so "Save
   as PDF" in the browser produces the same document.
@@ -1823,3 +1845,121 @@ the code.**
 Fixed and redeployed at `cc09115`. The lead was re-drafted as `HH-2026-0208`,
 which passed the corrected guardrail cleanly — and still says "Oct 10 (or 11)",
 the exact phrasing that had held it.
+---
+
+## 19. Per-user admin login as built (2026-09-11) — migration 038
+
+The "decent argument for building it next" at the end of §17 was taken. This is
+the §11.1 prerequisite, and it was chosen over continuing Phase 5 because it was
+the blocker on **two** phases at once: Phase 4.5 cannot be trustworthy while
+every approval logs as the anonymous `'ADMIN'`, and Phase 5's summary page
+cannot be admin-viewed while admin auth is a Bearer header in `localStorage`.
+
+### The shape of the change
+
+`lib/adminAuth.ts` went from 10 lines to a real session module, **additively**.
+That word is the whole design:
+
+- **The shared-password Bearer path is untouched.** ~56 admin API routes call
+  `isAdminAuthorized(req)` and every one of them still works unchanged, because
+  the signature and its meaning are unchanged. The shared password remains a
+  valid login forever. That is not laziness, it is the lockout guard: this
+  change must never be the reason Adam cannot get into the panel he runs the
+  business from, and the login form keeps a permanent, always-reachable "use
+  the shared admin password instead" door for the same reason.
+- **A signed session cookie was ADDED.** `hh_admin`, HttpOnly, SameSite=Lax,
+  Secure, on the same HMAC pattern as `portalAuth.ts` rather than a session
+  library. Value is `<email>:<issuedAtMs>:<sig>` over
+  `adminsession:<email>:<issuedAtMs>`. The `adminsession:` prefix is
+  load-bearing: it is why a portal cookie's signature can never be replayed as
+  an admin cookie even though the two share a signing secret
+  (`ADMIN_SESSION_SECRET`, falling back to `PORTAL_LINK_SIGNING_SECRET` — the
+  precedent `REVIEW_LINK_SIGNING_SECRET` already set, and the reason this
+  shipped without a new env var having to reach a running container).
+
+### The guardrail this was closest to, and why it still holds
+
+`approved` and `sent` are GATED edges reachable only with `actor.isAdmin`, so a
+change to what "an authenticated admin" means is the most dangerous kind of
+change in this codebase. The rule kept: **an authenticated identity must not
+widen who can set `isAdmin`.**
+
+There are exactly two ways to pass `isAdminAuthorized`: the shared password,
+which already granted full admin, or a cookie this server signed, which is only
+ever minted after `/api/admin/auth/login` verifies a password. **A session adds
+a NAME to an admin; it does not add an admin.** `isAdmin: true` at the three
+call sites is as unconditional as it was before — only `actor.id` changed, from
+`'ADMIN'` / `'admin'` to `adminActorId(req)`, which is `admin:<email>` when a
+session says who it is and the historical anonymous value otherwise.
+
+`/review/[token]` is untouched and stays read-only. A preview token is not a
+credential and mints no cookie.
+
+### Three decisions worth not re-deriving
+
+1. **No password hash in the migration.** A hash in the repo is a credential in
+   git history. Rows seed unclaimed; first login sets the hash.
+2. **Claiming requires the shared password.** /admin is a public URL. Without
+   that proof, anyone who guessed `allie@…` could claim her account before she
+   did — and then every approval she ever made would be theirs. Requiring the
+   shared password means claiming widens nobody's access: whoever can do it
+   could already sign in as the shared admin. The login route's 401 therefore
+   returns `needsClaim` on EVERY failure rather than only the real ones, because
+   an accurate answer is an admin-email enumeration oracle on a public endpoint.
+3. **scrypt, not bcrypt.** `package.json` had no KDF at all. Node's built-in
+   `crypto.scryptSync` is a real memory-hard KDF, needs no dependency, and adds
+   no native module to the Docker build. Stored as
+   `scrypt$N$r$p$salt$hash` so the work factor can be raised later without
+   invalidating existing hashes.
+
+### What the cookie deliberately does NOT do
+
+Verification is pure HMAC plus a clock read — no DB query — which is what keeps
+`isAdminAuthorized` synchronous and therefore keeps its signature. The cost:
+**deactivating a user does not kill a live cookie**, it only stops the next
+login. So the TTL *is* the revocation window, which is why it is 7 days and not
+the customer portal's 30. `/api/admin/auth/session` does check `is_active`
+against the table, so a deactivated admin loses the panel UI on their next page
+load; to revoke instantly, rotate `ADMIN_SESSION_SECRET`.
+
+Expiry lives inside the signed payload, not only in `Max-Age`, because `Max-Age`
+is a client-side hint a client can ignore. A future-dated `issuedAt` is rejected
+too.
+
+### CSRF, which the header path never had
+
+A cookie authorizes mutations that previously required a header, so it inherits
+a risk the header path did not have. `SameSite=Lax` is the real defence; on top
+of it the cookie path checks `Sec-Fetch-Site` (falling back to `Origin` vs
+`Host`) and refuses cross-site requests. Worth the belt-and-braces on a gate
+whose downstream effect is "message a customer".
+
+### The summary page, finally
+
+`/plan/[ref]/summary` accepts either the customer's ref-scoped `hh_portal`
+cookie or an admin session. The admin cookie is **not** scoped to a ref, because
+an admin is entitled to every plan — that asymmetry is the whole access rule and
+is worth not "tidying" later. An admin view renders a `no-print` banner naming
+the viewer, so a client's "Save as PDF" never carries it.
+
+### Not done
+
+- **The 7-day TTL on `/review/[token]`** (§11.1's other ask). It lives in
+  `lib/marketing/reviewLink.ts`, which is uncommitted WIP belonging to another
+  session along with the one pre-existing failing test. Touching it would have
+  meant committing someone else's half-finished work.
+- **Allie's row.** Only Adam is seeded — her address was not known here. One
+  line: `INSERT INTO admin_users (email, display_name) VALUES ('…', 'Allie');`
+  and she claims it with the shared password on first sign-in.
+- **A password-change UI.** Claiming sets a password; changing it later is a SQL
+  `UPDATE … SET password_hash = NULL` to re-open the claim. Fine for two people.
+
+### Tests
+
+823 total, up from 782. 47 written, 41 net — the six-test `adminAuth.test.ts`
+was rewritten rather than added to, and its original five assertions about the
+shared-password Bearer path are all still there, deliberately, because
+"unchanged" is the claim this change most needs to keep proving.
+
+The pre-existing `smsReviewRequest ... default review link` failure is the
+uncommitted-WIP one and is untouched: 822 pass, 1 fails, exactly as inherited.
