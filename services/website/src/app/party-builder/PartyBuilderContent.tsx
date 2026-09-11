@@ -708,7 +708,13 @@ export default function PartyBuilderContent({
         }
       }
       try {
-        const res = await fetch('/api/party-builder/load')
+        // `?ref=` is the lead workspace's "Open planner" link (plan §11.6). The
+        // load route honours it only for an authenticated admin; for anyone
+        // else it is discarded server-side and their own plan comes back, so
+        // appending it here is safe regardless of who is holding the URL.
+        const planRef =
+          typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('ref') : null
+        const res = await fetch(`/api/party-builder/load${planRef ? `?ref=${encodeURIComponent(planRef)}` : ''}`)
         if (!res.ok) { setBookingLoading(false); return }
         const data = await res.json()
         if (cancelled) return
@@ -811,10 +817,21 @@ export default function PartyBuilderContent({
           if (b.guest_count_approx) setGuestCount(b.guest_count_approx)
         }
 
-        // Restore party location
+        // Restore party location — which product this plan is for.
+        //
+        // `party_tags.location_type` is what the PLANNER itself writes, so it
+        // wins: it is the customer's or Allie's own last choice in this tool.
+        // `bookings.party_type` (migration 035) is the agent's classification
+        // and is the only signal a lead that has never been through the planner
+        // has. Without the second branch, an agent-classified `mobile_party`
+        // opened from the lead workspace booted into studio mode and priced the
+        // wrong product — which is exactly the trip the "Open planner" link
+        // makes routine.
         if (b.party_tags?.location_type) {
           setLocationType(b.party_tags.location_type === 'mobile' ? 'mobile' : 'host_hampton')
           if (b.party_tags.location_address) setMobileAddress(b.party_tags.location_address)
+        } else if (b.party_type === 'mobile_party') {
+          setLocationType('mobile')
         }
 
         // Restore preferences + character request + included-with-package selectors

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
-import { draftForInquiry, DRAFT_ENTITY } from '@/lib/agent/draftInquiry'
+import { draftForInquiry, redraftForReviewer, DRAFT_ENTITY } from '@/lib/agent/draftInquiry'
+import { tonePresetNote } from '@/lib/agent/tonePresets'
 import { finishEvent, type InboundEvent } from '@/lib/agent/events'
-import { agentEnabled, draftModel } from '@/lib/agent/config'
+import { agentEnabled, draftModel, reviewLinkSecret } from '@/lib/agent/config'
+import { generateReviewToken } from '@/lib/agent/reviewLink'
 import { ownerEmail, reviewerPhones } from '@/lib/ownerNotify'
 import { advance, writeLedger } from '@/lib/marketing/graph'
 import { sendApprovedDraft } from '@/lib/agent/sendApproved'
@@ -72,12 +74,50 @@ export async function GET(req: NextRequest) {
 }
 
 interface ActionBody {
-  action: 'approve' | 'dismiss' | 'edit' | 'draft' | 'send' | 'test'
+  action: 'approve' | 'dismiss' | 'edit' | 'draft' | 'send' | 'test' | 'revise'
   id?: string
   emailDraft?: string
   smsDraft?: string
   subject?: string
   note?: string
+  /** Tone chip ids (lib/agent/tonePresets.ts), for `revise`. */
+  toneIds?: string[]
+}
+
+/**
+ * The reviewer's instruction is capped before it reaches the prompt. The model
+ * call slices to 600 anyway; this is the cap on what gets STORED in
+ * `reviewer_note` and echoed back into `revisions[]`.
+ */
+const MAX_NOTE_CHARS = 2000
+
+/**
+ * Turn a chat-composer submission into the single `note` string that
+ * `redraftForReviewer()` takes — the same parameter an SMS instruction lands in.
+ *
+ * ── The fencing question this function exists to answer ──────────────────
+ *
+ * `reviewer_note` is interpolated into the draft prompt as a TRUSTED owner
+ * instruction ("the owner reviewed your draft and asked for this change"). The
+ * composer is a BRAND-NEW writer of that field, and the rule is that a field is
+ * hostile because of who can WRITE it, not which block it prints in. So: who
+ * can write it here? Only a request that passed `isAdminAuthorized` — the
+ * shared password or a session cookie this server signed. That is the same
+ * trust level as `REVIEWER_PHONES` on the SMS path, which is what licenses the
+ * field staying trusted. Nothing a CUSTOMER types can reach it: the chips are
+ * authored constants (an unknown id is dropped, never echoed as free text), and
+ * the free-text box is behind the admin gate.
+ *
+ * If that ever changes — if a customer-visible surface gains a "ask for a
+ * change" box — this is the function that has to grow a fence, and the prompt
+ * in draftInquiry.ts has to stop calling the note trusted.
+ */
+function composeReviseNote(body: ActionBody): string {
+  const chips = (Array.isArray(body.toneIds) ? body.toneIds : [])
+    .map(id => tonePresetNote(String(id)))
+    .filter((n): n is string => !!n)
+  const typed = (body.note ?? '').trim()
+  return [...chips, typed].filter(Boolean).join(' ').slice(0, MAX_NOTE_CHARS)
 }
 
 export async function POST(req: NextRequest) {
@@ -149,6 +189,8 @@ export async function POST(req: NextRequest) {
   const actor = { id: adminActorId(req), isAdmin: true }
   let patch: Record<string, unknown>
   let to: string
+  /** Set by `edit`, which rotates the preview token — see below. */
+  let mintedPreviewPath: string | null = null
 
   // ── Transitions that go through the graph (approve / dismiss / send).
   if (body.action === 'approve' || body.action === 'dismiss') {
@@ -180,6 +222,61 @@ export async function POST(req: NextRequest) {
       id: body.id,
       status: target,
       // Approving still sends nothing. "send" is a separate, explicit action.
+      sentToCustomer: false,
+    })
+  }
+
+  // ── REVISE: the chat composer. Plan §11.3.
+  //
+  // This calls the SAME `redraftForReviewer()` the SMS loop calls, with the
+  // same "record the note before spending a model call on it" ordering. One
+  // re-draft path, two surfaces — an instruction typed here and one texted in
+  // land in the same `revisions[]` and pass the same guardrails. A parallel
+  // implementation here is how the two would drift until only one of them was
+  // still checking for fabricated terms.
+  if (body.action === 'revise') {
+    if (!agentEnabled()) {
+      return NextResponse.json({ error: 'AGENT_ENABLED is off — turn it on to re-draft' }, { status: 409 })
+    }
+    const note = composeReviseNote(body)
+    if (!note) {
+      return NextResponse.json({ error: 'Say what to change, or tap a tone chip' }, { status: 400 })
+    }
+    if (from === 'sent' || from === 'cancelled') {
+      return NextResponse.json({ error: `Cannot revise a draft that is "${from}"` }, { status: 409 })
+    }
+
+    await advance({
+      supabase,
+      entity: 'inquiry_draft',
+      id: body.id,
+      to: 'revision_requested',
+      from,
+      actor,
+      patch: { reviewer_note: note },
+      meta: { via: 'admin_lead', job: 'review_loop', note, tone_ids: body.toneIds ?? [] },
+    }).catch(err => {
+      // Already 'revision_requested' is a legal no-op. An illegal transition is
+      // worth seeing in the log but is not worth losing the note over.
+      console.warn('admin revise transition:', err instanceof Error ? err.message : err)
+    })
+
+    const res = await redraftForReviewer({ supabase, draftId: body.id, note, actor: actor.id })
+    if (!res.ok) {
+      return NextResponse.json(
+        // The note is already saved above, so say so — a failure that looks
+        // like it lost the instruction is what sends someone off to retype it.
+        { error: `${res.error}. Your note is saved on the draft.`, noteSaved: true },
+        { status: res.status },
+      )
+    }
+    return NextResponse.json({
+      ok: true,
+      id: body.id,
+      status: 'sent_for_review',
+      reviewCode: res.reviewCode,
+      reviewersTexted: res.reviewersTexted,
+      costUsd: res.costUsd,
       sentToCustomer: false,
     })
   }
@@ -222,8 +319,19 @@ export async function POST(req: NextRequest) {
       const emailDraft = body.emailDraft ?? draft.email_draft
       const smsDraft = body.smsDraft ?? draft.sms_draft
       to = 'sent_for_review'
+      // Rotate the preview token, for the same two reasons a re-draft does:
+      // the old link now shows superseded text, and — since the TTL is measured
+      // from `sent_for_review_at` — reusing the old token here would silently
+      // grant it another seven days every time someone fixed a typo.
+      const secret = reviewLinkSecret()
+      const minted = secret ? generateReviewToken(draft.review_code as string, secret) : null
+      // The old link is now dead, so the caller is HANDED the replacement
+      // rather than left to discover a 404 later. A guardrail that retires
+      // something has to say that it retired it.
+      mintedPreviewPath = minted ? `/review/${encodeURIComponent(minted.token)}` : null
       patch = {
         status: to,
+        ...(minted ? { preview_token_hash: minted.hash } : {}),
         email_draft: emailDraft,
         sms_draft: smsDraft,
         reviewer_note: body.note ?? null,
@@ -276,5 +384,6 @@ export async function POST(req: NextRequest) {
     status: to,
     // Explicit so nobody reads an edit as a send.
     sentToCustomer: false,
+    ...(mintedPreviewPath ? { previewPath: mintedPreviewPath } : {}),
   })
 }

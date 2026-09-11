@@ -1991,3 +1991,215 @@ shared-password Bearer path are all still there, deliberately, because
 
 The pre-existing `smsReviewRequest ... default review link` failure is the
 uncommitted-WIP one and is untouched: 822 pass, 1 fails, exactly as inherited.
+
+
+## 20. Phase 4.5 as built (2026-09-11) — the Lead Thread Workspace
+
+Adam's ask, §11. `/admin/lead/[ref]` is now the place a lead is worked from
+first touch to deposit, instead of three tabs and a phone. It resolves a booking
+ref, a review code from a reviewer SMS, or a draft UUID, because Allie arrives
+holding a different identifier depending on where she came from and making her
+know which one would defeat the point of a single lead page.
+
+**No migration.** Nothing here needed DDL: the timeline is a read-side assembly,
+the tone chips are a TS constant, and the token TTL is derived from a timestamp
+that already existed. **040 stays free for the Phase 6 learning loop.** Worth
+saying out loud, because "this phase gets a migration" was the assumption going
+in and it turned out to be wrong for a good reason.
+
+### The decision the rest of the phase hangs off: no sixth table
+
+`lib/agent/threadTimeline.ts` builds `TimelineItem[]` from five sources that
+already exist and are already written by something else:
+
+| Source | Contributes |
+|---|---|
+| `ingested_messages` | the real conversation — forms, SMS, Gmail |
+| `inquiry_drafts.revisions[]` | every draft version and the note that caused it |
+| `marketing_ledger` | transitions, sends, LLM cost, nudges, plan edits |
+| `booking_payments` | deposit paid, balance paid |
+| `contact_interactions` | calls, opt-outs, portal messages |
+
+A "thread" table would have been easier to query and would have been the one row
+nobody could explain the provenance of — written by the UI, agreeing with the
+ledger only as long as somebody remembered to keep it in step. As a read-side
+assembly there is no third state: if the timeline is wrong, the underlying table
+is wrong, and fixing the table fixes the timeline. The module has no writes at
+all, not even a ledger note.
+
+Three things in it are not obvious, and each is a bug avoided:
+
+- **Messages sort by `sent_at`, not `created_at`.** The 12-month Gmail backfill
+  ingested 2024 email today; ordering by ingestion time would have put a
+  two-year-old message at the top of a live thread. Same trap as the `sent_at`
+  fix in the Phase 3 review.
+- **An absent anchor SKIPS its query.** PostgREST reads a missing filter as "all
+  rows", so a lead with no `contact_id` would have rendered every payment in the
+  business. Tested by asserting which tables were queried, not by inspecting the
+  output — the output looks identical either way on a small fixture.
+- **v1 is not the row's current bodies.** `inquiry_drafts.email_draft` holds the
+  LATEST text. Using it as v1 once `revisions[]` is non-empty would make every
+  v1→v2 diff read as "nothing changed". A note-only revision entry renders as
+  the INSTRUCTION rather than as a version, which is what makes the version
+  after it explicable.
+
+A source that fails to load is REPORTED, in the API payload and on both pages.
+An absence reads exactly like "nothing happened", and that is the shape the held
+draft that notified nobody had.
+
+### One re-draft path, not two
+
+The composer posts `action: 'revise'` to the existing `/api/admin/agent`. It
+calls **`redraftForReviewer()`** — the same function `handleReviewerReply` calls
+— with the same "record the note through `advance()` before spending a model
+call on it" ordering. An instruction typed in the browser and one texted from a
+reviewer phone land in the same `revisions[]` and pass the same guardrails. A
+second implementation here is precisely how one of the two surfaces ends up
+being the one that stopped checking `containsFabricatedTerms`.
+
+When the re-draft itself fails, the response says the note was saved. A failure
+that reads as if it lost the instruction is what sends someone off to retype it.
+
+### The fencing question the composer forced (rule 5, again)
+
+`inquiry_drafts.reviewer_note` is interpolated into the draft prompt as a
+**trusted owner instruction** — "the owner reviewed your draft and asked for
+this change". The composer is a **brand-new writer of that field**, and the rule
+is that a field is hostile because of who can WRITE it, not which block it
+prints in. So: who can write it here? Only a request that passed
+`isAdminAuthorized` — the shared password, or a session cookie this server
+signed. That is the same trust level as `REVIEWER_PHONES` on the SMS path, which
+is what licenses the field staying trusted.
+
+The tone chips are the part that could have quietly broken that. They are
+**authored constants**, and `tonePresetNote()` returns `null` for an id it does
+not recognise rather than falling back to the id itself — otherwise the chip
+list would have been a free-text channel into a trusted prompt slot, opened by a
+client that merely posts a string. `match my last message` also deliberately
+does NOT splice a customer's words into the prompt: it points the model at our
+own last outbound draft, which it already has in context.
+
+If a customer-visible surface ever gains an "ask for a change" box,
+`composeReviseNote()` is the function that has to grow a fence and
+`draftInquiry.ts` has to stop calling the note trusted.
+
+### The chips
+
+`warmer` · `shorter` · **`mom-to-mom`** · `less salesy` ·
+`more specific on logistics` · `match my last message`.
+
+`mom-to-mom` is the one Adam named himself and it is the point of the feature,
+not a nice-to-have: Allie is a mother talking to mothers and the agent's default
+register is a business's. If she reaches for it every time, that is a standing
+voice rule, and Phase 6 should learn it from the `reviewer` revisions it leaves
+behind rather than staying a per-draft nudge forever.
+
+### 160/320, done properly
+
+`lib/smsSegments.ts`. 160 is the GSM-03.38 number; **one** character outside
+that alphabet flips the whole message to UCS-2 and the limit drops to 70. Our
+drafts are full of curly apostrophes, because that is what a model writes for
+"kid's" — so `length / 160` would have told Allie a 150-character message was
+one segment while the carrier split and billed it as three. Concatenation costs
+too (6 septets of UDH per segment), which is why the second real boundary is 306
+and not 320. The UI still labels the familiar marks; the segment COUNT is the
+carrier's.
+
+### The preview-link TTL, and the extension nobody would have noticed
+
+§11.1 asked for a 7-day TTL. The token carries no timestamp and changing its
+shape would invalidate every live link, so age comes from the draft row —
+`sent_for_review_at ?? created_at` — which works because the token is minted
+exactly when that timestamp is written.
+
+That was true on two of the three mint paths. The admin `edit` action bumped
+`sent_for_review_at` (for the nudge clock) **without** re-minting, so a
+six-day-old forwardable link would have been handed another seven days every
+time somebody fixed a typo. `edit` now rotates the token as well — which it
+should have done anyway, since the old link otherwise shows superseded text.
+Because rotating retires a live link, the route **hands back** the replacement
+path rather than leaving a 404 to be discovered later: a guardrail that stops
+something has to say that it stopped it.
+
+An expired link is a **404**, exactly like a wrong one. A page that says "this
+link expired" has confirmed the draft exists to whoever was forwarded it. An
+unknown or unparseable mint time counts as **expired** — a row with no usable
+timestamp is not evidence that a link is fresh, and that is the safe direction
+to fail.
+
+### `/review/[token]` gained a view and no powers
+
+It gained the timeline (the same `loadLeadTimeline()`), the countdown, and one
+**"Open in Host Hampton →"** deep link. It gained no approve, no send and no
+edit, and it never will: a bearer token in a URL is forwardable, and an SMS
+screenshot in a group chat is a working credential for whoever receives it. The
+deep link is the entire mechanism by which this page can lead to an action — it
+sends you somewhere that checks who you are.
+
+### Accept
+
+`Approve & send` names the recipient in the confirm dialog. "Send to the
+customer?" is a dialog people click through; "Send to Jess (jess@…)?" is one
+they read. It runs approve and send as two calls, by hand rather than through
+the shared helper, for one reason: a failed approve must not be followed by a
+send, and the generic helper reports its own success, which would have said
+"approved" and then sent anyway.
+
+Nothing on this page auto-sends. The header states whether the session names a
+human or is the shared login, because on the shared password every approval in
+the ledger still reads `'ADMIN'` and that is worth knowing before you press the
+button, not after.
+
+### The plan panel writes a whitelist
+
+`PATCH /api/admin/lead/[ref]` will write twelve `bookings` columns and no
+others. Excluded on purpose: every money column and `status`. Totals are derived
+from the catalog and the line items by `lib/plan.ts`, and the pipeline stage
+moves through `advance()`; a text field on a panel that could set either would
+make this route a second, unguarded writer of the two things the ledger exists
+to explain.
+
+A plan edit marks any open draft **stale** — as a ledger `note`, not a status
+change, so the draft stays approvable and the human decides. It is surfaced in
+the panel AND in the thread, because a quote that silently stops matching the
+plan is worse than no quote.
+
+### Phase 4's leftover planner switch — half of it, and which half
+
+**Shipped:** `/api/party-builder/load?ref=` loads any plan for an authenticated
+admin, which is what makes the panel's "Open planner" link work. The admin check
+runs **first**, not as a fallback: for a portal-authenticated customer the `ref`
+never reaches the query, so it is not an enumeration oracle — they get their own
+plan back. And the planner now falls back to `bookings.party_type` when
+`party_tags.location_type` is absent; without that, an agent-classified
+`mobile_party` opened from the workspace booted into studio mode and priced the
+wrong product, which the new link makes a routine trip.
+
+**Not shipped: the real product selector.** The planner has no studio-rental
+mode at all — no `isRental`, no rental state, only
+`locationType: 'host_hampton' | 'mobile'`. Making it a three-product tool is a
+feature build inside a 3,748-line component, and it lands squarely on the mobile
+pricing surfaces Adam is reworking (§15). Left until his numbers land. **Nothing
+in this phase changed a mobile number.**
+
+### Tests
+
+870 total, up from 826; 44 new. The inherited `smsReviewRequest ... default
+review link` failure is untouched: 869 pass, 1 fails, exactly as before.
+
+The ones worth knowing about assert a guardrail rather than a feature: that
+`revise` calls the same `redraftForReviewer` rather than a mock of a parallel
+path; that the actor reaching it is `admin:<email>` from the **real**
+`adminActorId` against a real signed cookie — `adminAuth` is `requireActual`'d
+so the test cannot pass by mocking away the thing it claims to prove; that the
+note is recorded before the model call, by invocation order; that an unknown
+chip id is dropped; that an absent anchor issues no query; and that an
+unparseable mint time reads as expired.
+
+### Not done
+
+- **`Send quote`** from the plan panel (a `quote`-kind draft for this plan).
+  `manualDraft.ts` is the machinery and the panel links to the invoice instead.
+- **Line-item editing** in the panel. It renders them and links to the planner,
+  which is the one place that already writes them correctly.
+- The planner's three-way product selector, above.

@@ -610,7 +610,19 @@ export default function PartiesTab({
                       onClick={() => fetchDetail(b.id)}
                       className="border-b hover:bg-gray-50 cursor-pointer"
                     >
-                      <td className="py-3 pr-4 font-mono text-xs">{b.booking_ref}</td>
+                      <td className="py-3 pr-4 font-mono text-xs">
+                        {/* Into the lead workspace (plan §11). stopPropagation
+                            so the row's own detail-drawer click does not also
+                            fire and leave a drawer open behind the navigation. */}
+                        <a
+                          href={`/admin/lead/${encodeURIComponent(b.booking_ref)}`}
+                          onClick={e => e.stopPropagation()}
+                          className="text-hampton-navy underline decoration-dotted"
+                          title="Open the lead thread"
+                        >
+                          {b.booking_ref}
+                        </a>
+                      </td>
                       <td className="py-3 pr-4">
                         {b.contact_name}
                         {b.child_name && <span className="text-gray-400 text-xs ml-1">({b.child_name})</span>}

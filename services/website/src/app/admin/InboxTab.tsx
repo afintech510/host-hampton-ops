@@ -232,7 +232,15 @@ export default function InboxTab({
               }`}
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs font-semibold text-hampton-navy">{d.review_code}</span>
+                {/* The review code resolves in the lead workspace too, so this
+                    is the way into the full thread from the Inbox. */}
+                <a
+                  href={`/admin/lead/${encodeURIComponent(d.review_code)}`}
+                  className="font-mono text-xs font-semibold text-hampton-navy underline decoration-dotted"
+                  title="Open the lead thread"
+                >
+                  {d.review_code}
+                </a>
                 <StatusBadge status={d.status} />
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                   {d.party_type.replace(/_/g, ' ')}

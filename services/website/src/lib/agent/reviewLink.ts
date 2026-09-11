@@ -51,6 +51,47 @@ export function validateReviewToken(token: string, secret: string, storedHash: s
   }
 }
 
+/* ── Expiry (plan §11.1) ────────────────────────────────────────────────── */
+
+/**
+ * How long a preview link stays good for.
+ *
+ * A preview token is a bearer credential in a URL, so it is forwardable: an SMS
+ * screenshot in a group chat is a working link for whoever receives it. Until
+ * now those links never expired. Seven days matches the admin session TTL and
+ * is well past the useful life of a draft — a draft nobody has acted on in a
+ * week is not being reviewed, it is being forgotten, and the fix for that is a
+ * nudge, not an immortal link.
+ *
+ * The token itself carries no timestamp (changing its shape would invalidate
+ * every live link), so age is taken from the DRAFT ROW — which works because
+ * the token is minted exactly when that timestamp is written, on all three
+ * paths that mint one: the first draft (`created_at`), a re-draft, and an admin
+ * edit (both `sent_for_review_at`). If a fourth mint site ever appears without
+ * touching `sent_for_review_at`, it will hand out a link that is born expired,
+ * which is the safe direction to fail.
+ */
+export const REVIEW_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+/** When the link minted at `mintedAt` stops working, or null if unknown. */
+export function reviewTokenExpiresAt(mintedAt: string | null | undefined): Date | null {
+  if (!mintedAt) return null
+  const t = new Date(mintedAt).getTime()
+  if (!Number.isFinite(t)) return null
+  return new Date(t + REVIEW_TOKEN_TTL_MS)
+}
+
+/**
+ * Has this link expired? An UNKNOWN mint time counts as expired: a row with no
+ * usable timestamp is not evidence that the link is fresh, and the whole point
+ * of the TTL is that a forwarded link stops working.
+ */
+export function isReviewTokenExpired(mintedAt: string | null | undefined, now: Date = new Date()): boolean {
+  const expiresAt = reviewTokenExpiresAt(mintedAt)
+  if (!expiresAt) return true
+  return now.getTime() >= expiresAt.getTime()
+}
+
 export function buildReviewUrl(token: string, baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/review/${encodeURIComponent(token)}`
 }
