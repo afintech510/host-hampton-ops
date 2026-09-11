@@ -4,6 +4,21 @@ import { MapPin, PartyPopper, Sparkles, Heart, Truck, ChevronDown } from 'lucide
 import MobilePartyForm from '@/components/MobilePartyForm'
 import MobilePriceBlock from '@/components/MobilePriceBlock'
 
+/**
+ * ISR, because the prices on this page are DB rows now (migration 036).
+ *
+ * Without it the page is prerendered at BUILD time, where `SUPABASE_URL` is not
+ * available — the Docker build only receives NEXT_PUBLIC_* build args, runtime
+ * secrets arrive in the container's environment. `loadPricingCatalog()` would
+ * therefore return its compiled fallback and bake it into static HTML, and a
+ * price Adam edited in `pricing_items` would not appear until the next deploy.
+ * With revalidate the page is regenerated on the server, where the env exists.
+ *
+ * An hour is the right window: mobile pricing changes a few times a year, and
+ * an SEO landing page should not pay for a query per visitor.
+ */
+export const revalidate = 3600
+
 export const metadata: Metadata = {
   title: 'Mobile Party — We Bring the Party to You',
   description:

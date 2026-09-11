@@ -7,6 +7,7 @@ import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import { loadStripe } from '@stripe/stripe-js'
 import { formatMoney, calculateCardFee, getCategoryLockState, type LockCategory } from '@/lib/partyPricing'
+import { FALLBACK_CATALOG, mobileBaseCentsFor, type PricingCatalog } from '@/lib/pricingCatalog'
 import MyPartiesModal from './MyPartiesModal'
 import ChangesModal from './ChangesModal'
 import SendMessageModal from './SendMessageModal'
@@ -14,30 +15,21 @@ import { diffPlanSnapshots } from './planDiff'
 
 /* ── constants ─────────────────────────────────────── */
 
-const INCLUDED_GUESTS = 10
-const EXTRA_GUEST_CENTS = 3500
-const MINI_PARTY_DISCOUNT_CENTS = 20000
-const MINI_PARTY_MAX_GUESTS = 6
+// The guest rules, the mobile guest bands and the studio rate card used to be
+// literals here. They now come from `pricing_items` via the `catalog` prop
+// (migration 036) so the planner, the marketing pages and the checkout routes
+// cannot drift apart — which they had: the planner charged a $400 mobile base
+// while /mobile-party advertised $500, and nothing compared the two because
+// they were never in the same place. See lib/pricingCatalog.ts.
 
-// Mobile Party pricing tiers — flat base by guest-count band, plus travel
-// fee from the mileage API. Activities priced per-activity-per-person.
-const MOBILE_BASE_CENTS = 40000          // $400 for up to 18 guests
-const MOBILE_TIER2_SURCHARGE_CENTS = 15000 // +$150 for 19–27 guests
-const MOBILE_TIER3_SURCHARGE_CENTS = 15000 // +$150 again for 28+ guests
-const MOBILE_TIER2_GUEST_THRESHOLD = 18
-const MOBILE_TIER3_GUEST_THRESHOLD = 27
 const LS_KEY = 'hh_quote_data'
 // Flat $250 booking deposit (owner ruling 2026-09-05), clamped so it can never
 // exceed the booking total. Mirrors getDepositCents() in lib/partyPricing.ts —
-// keep the two in step.
+// keep the two in step. Deliberately NOT in the catalog: it is one number for
+// every party type and lib/partyPricing.ts is its home.
 const BOOKING_DEPOSIT_CENTS = 25000
 const computeDeposit = (totalCents: number): number =>
   totalCents > 0 ? Math.min(BOOKING_DEPOSIT_CENTS, totalCents) : 0
-
-const RENTAL_WEEKDAY_3HR = 475
-const RENTAL_WEEKEND_3HR = 600
-const RENTAL_ADD_HR_WEEKDAY = 100
-const RENTAL_ADD_HR_WEEKEND = 150
 
 const BALLOON_QTY_ITEMS = new Set([
   'Balloon Garland 6 ft.',
@@ -303,13 +295,39 @@ interface Props {
   savedQuote?: string | null
   checkoutStatus?: string | null
   checkoutSessionId?: string | null
+  /**
+   * Prices from `pricing_items` (migration 036), loaded by the server page.
+   * Optional, defaulting to `FALLBACK_CATALOG` — which holds exactly the
+   * numbers that were literals in this file before 036, so an un-migrated
+   * caller prices identically instead of pricing at zero.
+   */
+  catalog?: PricingCatalog
 }
 
 export default function PartyBuilderContent({
   themes, premiumActivities, standardActivities,
   food, desserts, beverages, decor, entertainment, partyAddOns, savedQuote,
-  checkoutStatus, checkoutSessionId,
+  checkoutStatus, checkoutSessionId, catalog,
 }: Props) {
+  /* ── catalog-backed pricing (was the constant block at the top of this file) ── */
+  const cat = catalog ?? FALLBACK_CATALOG
+  const INCLUDED_GUESTS = cat.guestRules.includedGuests
+  const EXTRA_GUEST_CENTS = cat.guestRules.extraGuestCents
+  const MINI_PARTY_DISCOUNT_CENTS = cat.guestRules.miniPartyDiscountCents
+  const MINI_PARTY_MAX_GUESTS = cat.guestRules.miniPartyMaxGuests
+  // Mobile Party bands — flat base by guest-count band, plus the travel fee
+  // from the mileage API. Stations are priced per-station-per-person.
+  const MOBILE_BASE_CENTS = cat.mobileBands.baseCents
+  const MOBILE_TIER2_SURCHARGE_CENTS = cat.mobileBands.tier2SurchargeCents
+  const MOBILE_TIER3_SURCHARGE_CENTS = cat.mobileBands.tier3SurchargeCents
+  const MOBILE_TIER2_GUEST_THRESHOLD = cat.mobileBands.tier2GuestThreshold
+  const MOBILE_TIER3_GUEST_THRESHOLD = cat.mobileBands.tier3GuestThreshold
+  // The rental comparison card shows whole dollars.
+  const RENTAL_WEEKDAY_3HR = Math.round(cat.studioRates.weekdayBaseCents / 100)
+  const RENTAL_WEEKEND_3HR = Math.round(cat.studioRates.weekendBaseCents / 100)
+  const RENTAL_ADD_HR_WEEKDAY = Math.round(cat.studioRates.weekdayAddlHourCents / 100)
+  const RENTAL_ADD_HR_WEEKEND = Math.round(cat.studioRates.weekendAddlHourCents / 100)
+
   const restored = useMemo(() => parseQuoteParam(savedQuote), [savedQuote])
 
   /* ── selection state ── */
@@ -899,11 +917,10 @@ export default function PartyBuilderContent({
   // already opaque to the customer (no miles/rate disclosure).
   const mobilePackageBaseCents = useMemo(() => {
     if (!isMobile) return 0
-    let base = MOBILE_BASE_CENTS
-    if (effectiveGuestCount > MOBILE_TIER2_GUEST_THRESHOLD) base += MOBILE_TIER2_SURCHARGE_CENTS
-    if (effectiveGuestCount > MOBILE_TIER3_GUEST_THRESHOLD) base += MOBILE_TIER3_SURCHARGE_CENTS
-    return base
-  }, [isMobile, effectiveGuestCount])
+    // One implementation of the band ladder, shared with the catalog so the
+    // planner and anything else that prices a mobile party cannot disagree.
+    return mobileBaseCentsFor(cat.mobileBands, effectiveGuestCount)
+  }, [isMobile, effectiveGuestCount, cat.mobileBands])
 
   const mobileTravelFeeCents = isMobile ? (mileage?.feeCents ?? 0) : 0
   const mobilePackageCents = mobilePackageBaseCents + mobileTravelFeeCents
@@ -1121,11 +1138,13 @@ export default function PartyBuilderContent({
       // Mobile Party: one composite "Mobile Party Package" line covering the
       // base fee + travel. Activities billed per-person, every activity. No
       // theme/food/drinks/desserts/decor lines.
+      // This label is persisted on the line item and therefore ends up on the
+      // customer's invoice, so it has to name the band the price came from.
       const tierLabel = effectiveGuestCount > MOBILE_TIER3_GUEST_THRESHOLD
-        ? ' (28+ guests)'
+        ? ` (${MOBILE_TIER3_GUEST_THRESHOLD + 1}+ guests)`
         : effectiveGuestCount > MOBILE_TIER2_GUEST_THRESHOLD
-          ? ' (19–27 guests)'
-          : ' (up to 18 guests)'
+          ? ` (${MOBILE_TIER2_GUEST_THRESHOLD + 1}–${MOBILE_TIER3_GUEST_THRESHOLD} guests)`
+          : ` (up to ${MOBILE_TIER2_GUEST_THRESHOLD} guests)`
       lineItems.push({
         name: `Mobile Party Package${tierLabel}`,
         category: 'mobile-package',
@@ -1331,8 +1350,8 @@ export default function PartyBuilderContent({
   function buildSummary(): string {
     const lines: string[] = []
     if (themeItem) lines.push(`Theme: ${themeItem.name} (${fmt(themeItem.price_cents)})`)
-    if (isMiniParty) lines.push(`Mini Party: -$200 · 1.5 hours · max ${MINI_PARTY_MAX_GUESTS} guests`)
-    lines.push(`Guests: ${effectiveGuestCount}${extraGuests > 0 ? ` (${extraGuests} additional @ $35 each)` : ''}`)
+    if (isMiniParty) lines.push(`Mini Party: -${fmt(MINI_PARTY_DISCOUNT_CENTS)} · 1.5 hours · max ${MINI_PARTY_MAX_GUESTS} guests`)
+    lines.push(`Guests: ${effectiveGuestCount}${extraGuests > 0 ? ` (${extraGuests} additional @ ${fmt(EXTRA_GUEST_CENTS)} each)` : ''}`)
     const section = (label: string, ids: Set<string>, qtyMap?: Map<string, number>) => {
       if (ids.size === 0) return
       const names = Array.from(ids).map(id => {
@@ -1719,7 +1738,7 @@ export default function PartyBuilderContent({
       items.push({ key: 'theme', label: themeItem.name, detail: isMiniParty ? 'Mini Party' : 'Theme Package', amount: price, itemId: themeItem.id })
     }
     if (extraGuests > 0) {
-      items.push({ key: 'extra-guests', label: `Additional Guests (${extraGuests})`, detail: '@ $35 each', amount: extraGuests * EXTRA_GUEST_CENTS })
+      items.push({ key: 'extra-guests', label: `Additional Guests (${extraGuests})`, detail: `@ ${fmt(EXTRA_GUEST_CENTS)} each`, amount: extraGuests * EXTRA_GUEST_CENTS })
     }
     const addSection = (label: string, ids: Set<string>, qtyKind?: 'food' | 'decor', qtyMap?: Map<string, number>) => {
       for (const id of Array.from(ids)) {
@@ -2449,9 +2468,12 @@ export default function PartyBuilderContent({
             </div>
             <div className="p-6 sm:p-8 space-y-4">
               <div className="bg-hampton-ivory/50 rounded-xl p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between"><span className="text-hampton-navy/60">Base (up to 18 guests)</span><span className="font-semibold text-hampton-navy">{fmt(MOBILE_BASE_CENTS)}</span></div>
-                <div className="flex justify-between text-xs text-hampton-navy/50"><span>19–27 guests</span><span>+{fmt(MOBILE_TIER2_SURCHARGE_CENTS)}</span></div>
-                <div className="flex justify-between text-xs text-hampton-navy/50"><span>28+ guests</span><span>+{fmt(MOBILE_TIER3_SURCHARGE_CENTS)} more</span></div>
+                {/* Band labels derive from the thresholds so a change in
+                    `pricing_items` cannot leave the copy contradicting the
+                    number the customer is actually charged. */}
+                <div className="flex justify-between"><span className="text-hampton-navy/60">Base (up to {MOBILE_TIER2_GUEST_THRESHOLD} guests)</span><span className="font-semibold text-hampton-navy">{fmt(MOBILE_BASE_CENTS)}</span></div>
+                <div className="flex justify-between text-xs text-hampton-navy/50"><span>{MOBILE_TIER2_GUEST_THRESHOLD + 1}–{MOBILE_TIER3_GUEST_THRESHOLD} guests</span><span>+{fmt(MOBILE_TIER2_SURCHARGE_CENTS)}</span></div>
+                <div className="flex justify-between text-xs text-hampton-navy/50"><span>{MOBILE_TIER3_GUEST_THRESHOLD + 1}+ guests</span><span>+{fmt(MOBILE_TIER3_SURCHARGE_CENTS)} more</span></div>
                 {mobileTravelFeeCents > 0 && (
                   <div className="flex justify-between pt-1.5 mt-1.5 border-t border-hampton-mauve/20">
                     <span className="text-hampton-navy/60">Mobile Party Fee</span>
@@ -2480,7 +2502,7 @@ export default function PartyBuilderContent({
             <p className="text-xs text-hampton-navy/70 leading-relaxed font-medium">
               Every package includes 2 hours of private studio time, a dedicated party host, full themed decorations,
               activities &amp; entertainment, pizza or bagels, cupcakes for all guests, treat cart, digital EVITE, and complete cleanup.
-              10 guests + Birthday Star included. Additional guests $35 each.
+              {INCLUDED_GUESTS} guests + Birthday Star included. Additional guests {fmt(EXTRA_GUEST_CENTS)} each.
             </p>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
@@ -2624,7 +2646,7 @@ export default function PartyBuilderContent({
                   {isMiniParty && <span className="ml-2 text-xs text-hampton-pink font-bold">(Mini Party max {MINI_PARTY_MAX_GUESTS})</span>}
                 </p>
                 {extraGuests > 0 && (
-                  <p className="text-xs text-hampton-navy/50 mt-0.5">{extraGuests} additional @ $35 each = {fmt(extraGuests * EXTRA_GUEST_CENTS)}</p>
+                  <p className="text-xs text-hampton-navy/50 mt-0.5">{extraGuests} additional @ {fmt(EXTRA_GUEST_CENTS)} each = {fmt(extraGuests * EXTRA_GUEST_CENTS)}</p>
                 )}
               </div>
             </div>
@@ -2642,7 +2664,7 @@ export default function PartyBuilderContent({
           </div>
           {effectiveGuestCount <= INCLUDED_GUESTS && (
             <p className="text-xs text-hampton-blue mt-3 font-medium">
-              {isMiniParty ? `Mini Party: up to ${MINI_PARTY_MAX_GUESTS} guests + birthday child · 1.5 hours · $200 off.` : `Up to ${INCLUDED_GUESTS} guests are included with every theme party.`}
+              {isMiniParty ? `Mini Party: up to ${MINI_PARTY_MAX_GUESTS} guests + birthday child · 1.5 hours · ${fmt(MINI_PARTY_DISCOUNT_CENTS)} off.` : `Up to ${INCLUDED_GUESTS} guests are included with every theme party.`}
             </p>
           )}
         </div>

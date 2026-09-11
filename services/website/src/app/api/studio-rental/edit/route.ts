@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef } from '@/lib/portalAuth'
 import { calculateLineItemTotal, formatMoney } from '@/lib/partyPricing'
-import { studioRentalRate, hoursBetween, STUDIO_MIN_HOURS, STUDIO_STANDING_CAPACITY } from '@/lib/studioRental'
+import { studioRentalRateWith, hoursBetween, STUDIO_STANDING_CAPACITY } from '@/lib/studioRental'
+import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { updateCalendarEvent, createCalendarEvent } from '@/lib/googleCalendar'
 import type { BookingLineItem } from '@/types/booking-flow'
 
@@ -65,10 +66,11 @@ export async function POST(req: NextRequest) {
 
     const partyDate = booking.party_date as string
     const hours = hoursBetween(startTime, endTime)
-    if (hours < STUDIO_MIN_HOURS) {
-      return NextResponse.json({ error: `Minimum rental is ${STUDIO_MIN_HOURS} hours.` }, { status: 400 })
+    const { studioRates } = await loadPricingCatalog()
+    if (hours < studioRates.minHours) {
+      return NextResponse.json({ error: `Minimum rental is ${studioRates.minHours} hours.` }, { status: 400 })
     }
-    const rate = studioRentalRate(partyDate, hours)
+    const rate = studioRentalRateWith(studioRates, partyDate, hours)
 
     // Rebuild full line-item set: rental first, then add-ons.
     const rentalLine: IncomingLineItem = {

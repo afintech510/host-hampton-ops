@@ -7,24 +7,30 @@
  *
  * The customer's chosen window includes their own setup + cleanup time.
  * 3 hours is the minimum billable block.
+ *
+ * As of migration 036 those figures live in `pricing_items`
+ * (category `studio-rental-rate`) and are loaded by `lib/pricingCatalog.ts`.
+ * The arithmetic stayed here and stayed SYNCHRONOUS: the studio-rental page
+ * re-prices as the customer drags the end time, so it cannot await a query per
+ * keystroke. Callers that have a catalog pass its rates to
+ * `studioRentalRateWith()`; `studioRentalRate()` is the same function bound to
+ * the compiled fallback rates, which is why every pre-036 call site still
+ * computes the right number.
  */
 
-export const STUDIO_MIN_HOURS = 3
+import { FALLBACK_STUDIO_RATES, type StudioRates } from '@/lib/pricingCatalog'
+
+export type { StudioRates }
+
+export const STUDIO_MIN_HOURS = FALLBACK_STUDIO_RATES.minHours
+// Physical facts about the room, not prices — these stay in code.
 export const STUDIO_SEATED_CAPACITY = 65
 export const STUDIO_STANDING_CAPACITY = 85
-export const SECURITY_DEPOSIT_CENTS = 50000 // $500 refundable CC auth hold, placed day-of
+/** $500 refundable CC auth hold, placed day-of. Catalog key `studio_security_hold`. */
+export const SECURITY_DEPOSIT_CENTS = FALLBACK_STUDIO_RATES.securityDepositCents
 // Booking deposit is a flat $250 for every booking type — see
 // BOOKING_DEPOSIT_CENTS / getDepositCents() in lib/partyPricing.ts. The old
 // 25% DEPOSIT_RATE that lived here is gone; do not reintroduce a rate.
-
-const WEEKEND_BASE_CENTS = 60000
-const WEEKDAY_BASE_CENTS = 47500
-const WEEKEND_ADDL_HOUR_CENTS = 15000
-const WEEKDAY_ADDL_HOUR_CENTS = 10000
-// Full-day caps: the fee never exceeds these no matter the window length
-// (any start time through midnight that day). Weekend $975 / Weekday $700.
-const WEEKEND_FULL_DAY_CENTS = 97500
-const WEEKDAY_FULL_DAY_CENTS = 70000
 
 export interface StudioRate {
   isWeekend: boolean
@@ -45,17 +51,24 @@ export function isWeekendDate(dateStr: string): boolean {
 }
 
 /**
- * Compute the rental fee for a studio booking.
+ * Compute the rental fee from an explicit rate card.
+ *
+ * This is the real implementation; `studioRentalRate()` below is it bound to
+ * the fallback rates. Server code that has already loaded the catalog should
+ * call this so a price Adam changes in `pricing_items` actually takes effect.
+ *
+ * @param rates       from `loadPricingCatalog().studioRates`
  * @param dateStr     'YYYY-MM-DD'
- * @param totalHours  full reserved window in hours (clamped to the 3-hr minimum)
+ * @param totalHours  full reserved window in hours (clamped to the minimum)
  */
-export function studioRentalRate(dateStr: string, totalHours: number): StudioRate {
+export function studioRentalRateWith(rates: StudioRates, dateStr: string, totalHours: number): StudioRate {
   const isWeekend = isWeekendDate(dateStr)
-  const hours = Math.max(STUDIO_MIN_HOURS, Math.round(totalHours))
-  const baseCents = isWeekend ? WEEKEND_BASE_CENTS : WEEKDAY_BASE_CENTS
-  const addlHours = hours - STUDIO_MIN_HOURS
-  const addlHourRate = isWeekend ? WEEKEND_ADDL_HOUR_CENTS : WEEKDAY_ADDL_HOUR_CENTS
-  const fullDayCents = isWeekend ? WEEKEND_FULL_DAY_CENTS : WEEKDAY_FULL_DAY_CENTS
+  const minHours = rates.minHours > 0 ? rates.minHours : FALLBACK_STUDIO_RATES.minHours
+  const hours = Math.max(minHours, Math.round(totalHours))
+  const baseCents = isWeekend ? rates.weekendBaseCents : rates.weekdayBaseCents
+  const addlHours = hours - minHours
+  const addlHourRate = isWeekend ? rates.weekendAddlHourCents : rates.weekdayAddlHourCents
+  const fullDayCents = isWeekend ? rates.weekendFullDayCents : rates.weekdayFullDayCents
 
   const uncappedCents = baseCents + addlHours * addlHourRate
   const rentalCents = Math.min(uncappedCents, fullDayCents)
@@ -73,6 +86,18 @@ export function studioRentalRate(dateStr: string, totalHours: number): StudioRat
       ? `Studio Rental — ${isWeekend ? 'Weekend' : 'Weekday'} Full Day`
       : `Studio Rental — ${isWeekend ? 'Weekend' : 'Weekday'} ${hours} hr${hours === 1 ? '' : 's'}`,
   }
+}
+
+/**
+ * The pre-036 signature, unchanged, bound to the compiled fallback rates.
+ *
+ * Kept because a client component prices interactively and a marketing page
+ * prices without a DB round trip; both need a synchronous call with no catalog
+ * in hand. It returns today's published prices, so a caller that has not been
+ * migrated is stale-at-worst, never wrong-by-default.
+ */
+export function studioRentalRate(dateStr: string, totalHours: number): StudioRate {
+  return studioRentalRateWith(FALLBACK_STUDIO_RATES, dateStr, totalHours)
 }
 
 /**

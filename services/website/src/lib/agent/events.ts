@@ -135,6 +135,38 @@ export interface InboundEvent {
   created_at: string
 }
 
+export const EVENT_COLUMNS =
+  'id, source, external_id, direction, from_address, to_address, subject, body, parsed, contact_id, ' +
+  'booking_id, status, classification, classification_meta, created_at'
+
+/**
+ * Claim one event for processing: a compare-and-swap that sets
+ * `status='claimed'` only while the row is still `'new'`, returning the row to
+ * whichever caller won. Postgres serialises the two writers, so exactly one
+ * gets it back and the other sees zero rows — the same guarantee as
+ * `SELECT … FOR UPDATE SKIP LOCKED` without a DB function.
+ *
+ * THIS IS THE ONLY WAY AN EVENT MAY BE PICKED UP. It lives here rather than in
+ * the dispatcher because the admin "Draft with agent" button enqueues an event
+ * by hand (Phase 4 item 5) and has to take it through the identical path — two
+ * claim implementations would be two chances for the cron and a button press to
+ * both draft the same lead and text the reviewer twice.
+ */
+export async function claimInboundEvent(supabase: Supa, id: string): Promise<InboundEvent | null> {
+  const { data, error } = await supabase
+    .from('ingested_messages')
+    .update({ status: 'claimed', claimed_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'new')
+    .select(EVENT_COLUMNS)
+  if (error) {
+    console.error('claimInboundEvent error:', error.message)
+    return null
+  }
+  const rows = (data ?? []) as unknown as InboundEvent[]
+  return rows.length === 1 ? rows[0] : null
+}
+
 export type EventOutcome = 'handled' | 'ignored' | 'error'
 
 /**

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { draftForInquiry, AGENT_ACTOR, DRAFT_ENTITY } from '@/lib/agent/draftInquiry'
-import { finishEvent, type InboundEvent } from '@/lib/agent/events'
+import { finishEvent, claimInboundEvent, type InboundEvent } from '@/lib/agent/events'
 import { agentEnabled, dailyUsdCap, isBusinessHours, NUDGE_AFTER_MS } from '@/lib/agent/config'
 import { handleReviewerReply } from '@/lib/agent/reviewLoop'
 import { triageMessage } from '@/lib/agent/triage'
@@ -70,9 +70,6 @@ function attemptsOf(event: InboundEvent): number {
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-const EVENT_COLUMNS =
-  'id, source, external_id, direction, from_address, to_address, subject, body, parsed, contact_id, booking_id, status, classification, classification_meta, created_at'
-
 const BOOKING_COLUMNS =
   'id, booking_ref, status, event_type, package_type, notes, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, guest_count_approx, child_name, child_age, created_at'
 
@@ -116,25 +113,6 @@ async function noticeCapOnce(supabase: Supa, spent: number, cap: number): Promis
     actor: AGENT_ACTOR,
     meta: { job: 'agent_daily_cap', spent, cap },
   })
-}
-
-/**
- * Compare-and-swap claim. Returns the row when THIS caller won it, null when
- * another runner (or a human) already moved it out of 'new'.
- */
-async function claimEvent(supabase: Supa, id: string): Promise<InboundEvent | null> {
-  const { data, error } = await supabase
-    .from('ingested_messages')
-    .update({ status: 'claimed', claimed_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('status', 'new')
-    .select(EVENT_COLUMNS)
-  if (error) {
-    console.error('cron:agent-dispatch claim error:', error.message)
-    return null
-  }
-  const rows = (data ?? []) as unknown as InboundEvent[]
-  return rows.length === 1 ? rows[0] : null
 }
 
 /**
@@ -275,7 +253,7 @@ export async function GET(req: NextRequest) {
   if (candErr) console.error('cron:agent-dispatch fetch error:', candErr.message)
 
   for (const candidate of candidates ?? []) {
-    const event = await claimEvent(supabase, candidate.id as string)
+    const event = await claimInboundEvent(supabase, candidate.id as string)
     if (!event) {
       results.push({ kind: 'event', id: candidate.id as string, outcome: 'already_claimed' })
       continue
@@ -410,7 +388,20 @@ export async function GET(req: NextRequest) {
       continue
     }
 
-    if (event.source !== 'website_form') {
+    // ── A hand-enqueued event (admin “Draft reply with agent”, Phase 4 item 5).
+    // It is normally claimed and drafted inside the button's own request; this
+    // branch exists for the case where that request died between the insert and
+    // the claim. Without it the event would fall through to 'unsupported_source'
+    // and the lead would be silently dropped — a crash is not a decision.
+    // A 'system' event with no booking has nothing to draft from, so it is
+    // parked rather than guessed at.
+    if (event.source === 'system') {
+      if (!event.booking_id) {
+        await finishEvent(supabase, event.id, 'ignored', { error: 'system event with no booking_id' })
+        results.push({ kind: 'event', id: event.id, outcome: 'system_no_booking' })
+        continue
+      }
+    } else if (event.source !== 'website_form') {
       await finishEvent(supabase, event.id, 'ignored', { error: `source '${event.source}' not handled yet` })
       results.push({ kind: 'event', id: event.id, outcome: 'unsupported_source' })
       continue

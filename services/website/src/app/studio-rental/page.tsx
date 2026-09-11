@@ -5,6 +5,7 @@ import { getPortalBookingRef } from '@/lib/portalAuth'
 import StudioRentalContent from './StudioRentalContent'
 import StudioManageContent, { type ManageBooking } from './StudioManageContent'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
+import { loadPricingCatalog } from '@/lib/pricingCatalog'
 
 export const metadata: Metadata = {
   title: 'Rent the Studio — Host Hampton | Speonk, NY',
@@ -20,6 +21,9 @@ export const dynamic = 'force-dynamic'
 
 export default async function StudioRentalPage() {
   const supabase = getSupabase()
+
+  // The rate card is data now (migration 036); both modes price from it.
+  const { studioRates } = await loadPricingCatalog(supabase)
 
   // Load the studio add-on menu (used by both new-booking and manage modes).
   let items: PricingItem[] = []
@@ -86,7 +90,7 @@ export default async function StudioRentalPage() {
   }
 
   if (manageBooking) {
-    return <StudioManageContent booking={manageBooking} menu={menu} />
+    return <StudioManageContent booking={manageBooking} menu={menu} rates={studioRates} />
   }
 
   return (
@@ -96,6 +100,7 @@ export default async function StudioRentalPage() {
       food={menu.food}
       desserts={menu.desserts}
       beverages={menu.beverages}
+      rates={studioRates}
     />
   )
 }

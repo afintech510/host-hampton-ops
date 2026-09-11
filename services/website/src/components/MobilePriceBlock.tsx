@@ -1,5 +1,6 @@
 import { Check, Gift, MapPin, ShieldCheck, CalendarCheck } from 'lucide-react'
-import { MOBILE_TIERS, EXTRA_CHILD_PRICE, FREE_TRAVEL_MILES, MIN_GUESTS, DEPOSIT } from '@/lib/mobilePricing'
+import { loadPricingCatalog } from '@/lib/pricingCatalog'
+import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 
 /**
  * The published mobile-party price anchor (plan item B-1).
@@ -11,14 +12,24 @@ import { MOBILE_TIERS, EXTRA_CHILD_PRICE, FREE_TRAVEL_MILES, MIN_GUESTS, DEPOSIT
  *
  * The fine print carries the two things rivals can't say — no mandatory gratuity
  * (The Slime Machine adds 20%) and a genuinely free local radius.
+ *
+ * Every number here comes from `pricing_items` via `loadPricingCatalog()`
+ * (migration 036). This is a server component, and all four of its callers
+ * (/mobile-party, /mobile-craft-party, the 26 town pages, CraftPartyLanding)
+ * are server components too, so the await costs one cached query per minute
+ * rather than one per page.
  */
-export default function MobilePriceBlock({
+export default async function MobilePriceBlock({
   heading = 'Mobile Party Pricing',
   subheading = 'Straightforward pricing, brought to your door. What we quote is what you pay.',
 }: {
   heading?: string
   subheading?: string
 }) {
+  const { mobileTiers, mobilePolicy } = await loadPricingCatalog()
+  const extraChildPrice = Math.round(mobilePolicy.extraChildCents / 100)
+  const depositDollars = Math.round(BOOKING_DEPOSIT_CENTS / 100)
+
   return (
     <section className="py-16 px-4">
       <div className="max-w-5xl mx-auto">
@@ -29,7 +40,7 @@ export default function MobilePriceBlock({
         </div>
 
         <div className="grid sm:grid-cols-2 gap-6">
-          {MOBILE_TIERS.map(tier => (
+          {mobileTiers.map(tier => (
             <div
               key={tier.name}
               className={`relative bg-white rounded-2xl p-7 border transition-shadow hover:shadow-md ${
@@ -70,13 +81,13 @@ export default function MobilePriceBlock({
           <div className="flex items-start gap-2.5 bg-hampton-pink/10 rounded-xl p-4">
             <Gift size={17} className="shrink-0 mt-0.5 text-hampton-navy/60" />
             <p className="text-hampton-navy/75 text-sm leading-relaxed">
-              <strong>Birthday child is always free</strong> — additional kids ${EXTRA_CHILD_PRICE} each.
+              <strong>Birthday child is always free</strong> — additional kids ${extraChildPrice} each.
             </p>
           </div>
           <div className="flex items-start gap-2.5 bg-hampton-pink/10 rounded-xl p-4">
             <MapPin size={17} className="shrink-0 mt-0.5 text-hampton-navy/60" />
             <p className="text-hampton-navy/75 text-sm leading-relaxed">
-              <strong>Free travel within {FREE_TRAVEL_MILES} miles</strong> of our Speonk studio; a modest
+              <strong>Free travel within {mobilePolicy.freeTravelMiles} miles</strong> of our Speonk studio; a modest
               mileage charge beyond it.
             </p>
           </div>
@@ -89,7 +100,7 @@ export default function MobilePriceBlock({
           <div className="flex items-start gap-2.5 bg-hampton-pink/10 rounded-xl p-4">
             <CalendarCheck size={17} className="shrink-0 mt-0.5 text-hampton-navy/60" />
             <p className="text-hampton-navy/75 text-sm leading-relaxed">
-              <strong>A ${DEPOSIT} deposit holds your date.</strong> {MIN_GUESTS} guest minimum.
+              <strong>A ${depositDollars} deposit holds your date.</strong> {mobilePolicy.minGuests} guest minimum.
             </p>
           </div>
         </div>

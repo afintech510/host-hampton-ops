@@ -31,15 +31,20 @@ import {
 import { notifyOwnerSms, reviewerPhones } from '@/lib/ownerNotify'
 import { loadVoiceProfile, voicePromptAddendum, loadLearnings, learningsPromptAddendum } from './voice'
 import { generateReviewCode, generateReviewToken, buildReviewUrl } from './reviewLink'
-import { costUsd, draftModel, reviewLinkSecret, siteUrl } from './config'
+import { costUsd, draftModel, reviewLinkSecret, siteUrl, AGENT_ACTOR, DRAFT_ENTITY } from './config'
+import {
+  extractPlanFields,
+  applyExtractedFields,
+  isExtractable,
+} from './extractPlanFields'
 import type { InboundEvent } from './events'
 
 type Supa = ReturnType<typeof getSupabase>
 
-export const AGENT_ACTOR = 'AGENT'
-
-/** Ledger/budget entity name for a draft. */
-export const DRAFT_ENTITY = 'inquiry_draft'
+// Re-exported from './config', where they live so the agent's nodes can share
+// them without importing this module back. Kept here because a dozen call
+// sites import them from draftInquiry.
+export { AGENT_ACTOR, DRAFT_ENTITY }
 
 /**
  * Pre-reserved headroom checked against the monthly cap before the call. A
@@ -95,6 +100,8 @@ export type DraftOutcome =
       path: 'info_gather' | 'quote'
       partyType: string
       missing: string[]
+      /** Plan fields the inbound reply filled in before this draft (item 6). */
+      extractedFields: string[]
       reviewersTexted: number
       costUsd: number
       tokens: number
@@ -400,6 +407,75 @@ export function inquiryFromEvent(event: Pick<InboundEvent, 'parsed' | 'subject' 
   }
 }
 
+/* ── The plan is the fuller picture ─────────────────────────────────── */
+
+/** The `bookings` columns the draft node reads as an `InquiryBooking`. */
+export const PLAN_COLUMNS =
+  'id, booking_ref, event_type, package_type, notes, party_tags, contact_name, contact_email, ' +
+  'contact_phone, party_date, party_time, guest_count_approx, child_name, child_age'
+
+/**
+ * Merge a plan with the current message's own fields.
+ *
+ * THE PLAN WINS per field. It has been enriched by every touch so far — and
+ * `enrichPlan` only ever fills blanks, so a value on it was either given by the
+ * customer or typed by Adam. The event fills the gaps the plan still has.
+ *
+ * This is the fix at the heart of item 6. Before it, the dispatcher's event
+ * path built the inquiry from `event.parsed` ALONE even when the event carried
+ * a `booking_id`, so a customer who had already given us their date on a
+ * previous touch got asked for it again — the plan held the answer and nothing
+ * read it. `evaluateRequiredInfo()` now runs against everything we know.
+ *
+ * Notes concatenate rather than pick a winner, oldest first, because both are
+ * evidence and the newest message should read as the latest thing said.
+ */
+export function mergeInquiry(plan: InquiryBooking, fromEvent: InquiryBooking): InquiryBooking {
+  const pick = <K extends keyof InquiryBooking>(k: K): InquiryBooking[K] => {
+    const a = plan[k]
+    if (a != null && !(typeof a === 'string' && a.trim() === '')) return a
+    return fromEvent[k]
+  }
+
+  const notes = [plan.notes, fromEvent.notes]
+    .map(n => (typeof n === 'string' ? n.trim() : ''))
+    .filter(Boolean)
+  // The same body reaches here twice when an event's text was already appended
+  // to the plan's notes by enrichPlan; don't show the model a duplicate.
+  const uniqueNotes = notes.filter((n, i) => !notes.slice(0, i).some(prev => prev.includes(n)))
+
+  return {
+    event_type: pick('event_type'),
+    package_type: pick('package_type'),
+    notes: uniqueNotes.join('\n\n---\n') || null,
+    party_tags: { ...(fromEvent.party_tags ?? {}), ...(plan.party_tags ?? {}) },
+    contact_name: pick('contact_name'),
+    contact_email: pick('contact_email'),
+    contact_phone: pick('contact_phone'),
+    party_date: pick('party_date'),
+    party_time: pick('party_time'),
+    guest_count_approx:
+      Number(plan.guest_count_approx) > 0 ? plan.guest_count_approx : fromEvent.guest_count_approx,
+    child_name: pick('child_name'),
+    child_age: plan.child_age ?? fromEvent.child_age,
+  }
+}
+
+/** Read a plan row as an `InquiryBooking`, or null if it cannot be read. */
+async function loadPlan(
+  supabase: Supa,
+  bookingId: string,
+): Promise<(InquiryBooking & { booking_ref?: string | null }) | null> {
+  const { data, error } = await supabase.from('bookings').select(PLAN_COLUMNS).eq('id', bookingId).maybeSingle()
+  if (error || !data) {
+    // Non-fatal: drafting from the event alone is worse than drafting from
+    // both, but far better than not drafting at all.
+    if (error) console.error('draftForInquiry loadPlan error (non-fatal):', error.message)
+    return null
+  }
+  return data as unknown as InquiryBooking & { booking_ref?: string | null }
+}
+
 /* ── Thread state ───────────────────────────────────────────────────── */
 
 /**
@@ -494,11 +570,25 @@ function buildUserPrompt(
 ${theirMessage}
 </their_message>\n`
     : ''
+  // A date the customer gave in words we could not parse ("mid-March", "the
+  // 14th or the 21st"). It is kept in party_tags rather than dropped, and this
+  // is the payoff: the draft narrows it down instead of asking from scratch,
+  // which is the difference between "what date?" and "you mentioned mid-March —
+  // which Saturday works?".
+  const requestedDateText = (() => {
+    const v = (inquiry.party_tags as { requested_date_text?: unknown } | null)?.requested_date_text
+    return typeof v === 'string' && v.trim() !== '' ? v.trim() : null
+  })()
+  const dateHint =
+    requestedDateText && evaluation.missing.includes('party_date')
+      ? `
+- They have already said the date is around "${requestedDateText}" — acknowledge that and ask them to pin it to one day, rather than asking as if they had said nothing.`
+      : ''
 
   const pathBlock =
     evaluation.path === 'info_gather'
       ? `THIS IS AN INFO-GATHER FIRST CONTACT.
-- We are missing: ${missingLabels.join(', ')}.
+- We are missing: ${missingLabels.join(', ')}.${dateHint}
 - Ask for exactly those, warmly and in one short paragraph or a short list.
 - ABSOLUTELY NO PRICING. No dollar amounts, no "starting at", no deposit figure, no fee. Not one number with a currency attached. If they asked about cost, say you'll put real numbers together as soon as you have those details.`
       : `THIS IS A QUOTE-PATH REPLY. Everything required is known.
@@ -693,7 +783,19 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
   }
 
   const bookingId = booking?.id ?? event?.booking_id ?? null
-  const inquiry: InquiryBooking = booking ?? inquiryFromEvent(event!)
+
+  // ── Read the plan, not just the message (item 6). When an event carries a
+  // booking_id — which every website form now sets — the plan is the
+  // accumulated answer to "what does this customer want", and the event is just
+  // the newest thing they said. Evaluating the message alone is what made the
+  // agent ask a returning customer for a date they had already given us.
+  let plan: (InquiryBooking & { booking_ref?: string | null }) | null = booking ?? null
+  if (!plan && bookingId) plan = await loadPlan(supabase, bookingId)
+
+  const fromEvent = event ? inquiryFromEvent(event) : null
+  let inquiry: InquiryBooking =
+    plan && fromEvent ? mergeInquiry(plan, fromEvent) : (plan ?? fromEvent!)
+  const bookingRef = plan?.booking_ref ?? null
 
   // Resolve a contact so the draft is addressable even without a plan row.
   let contactId = event?.contact_id ?? null
@@ -731,10 +833,68 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
     }
   }
 
-  const evaluation = evaluateInquiry(inquiry)
+  let evaluation = evaluateInquiry(inquiry)
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return { ok: false, status: 503, error: 'ANTHROPIC_API_KEY is not configured on the server' }
+  }
+
+  // ── Extract-and-re-evaluate (item 6, second half) ────────────────────
+  // The customer answered in prose. Read the answer, write it onto the plan,
+  // and re-run the gate — otherwise the next draft asks the same three
+  // questions and the loop never closes.
+  //
+  // Gated to free-text channels: a website form's fields already arrived
+  // structured in `parsed` and were written to the plan by `ensureLeadPlan`, so
+  // extracting from its body would spend a Haiku call per lead to learn
+  // nothing. Email, SMS and the admin's phone-call note are where prose lives.
+  //
+  // An extraction FAILURE changes nothing and does not stop the draft: we ask
+  // again with what we have. That is the difference between "the message said
+  // nothing" and "we could not read it", and only the first is a conclusion.
+  let extractedFields: string[] = []
+  const extractionEligible =
+    !!bookingId &&
+    !!event &&
+    event.source !== 'website_form' &&
+    !!(event.body || '').trim() &&
+    evaluation.missing.some(isExtractable)
+
+  if (extractionEligible) {
+    const extracted = await extractPlanFields({
+      supabase,
+      plan: inquiry,
+      partyType: evaluation.partyType,
+      message: event!.body || '',
+      missing: evaluation.missing,
+      actor,
+      bookingId,
+    })
+
+    if (!extracted.ok) {
+      console.warn(`draftForInquiry: extraction unavailable (${extracted.error}) — drafting from what we have`)
+    } else if (Object.keys(extracted.fields).length || extracted.requestedDateText) {
+      const applied = await applyExtractedFields({
+        supabase,
+        bookingId: bookingId!,
+        fields: extracted.fields,
+        requestedDateText: extracted.requestedDateText,
+        actor,
+        sourceEventId: event!.id,
+      })
+      extractedFields = applied.updated
+
+      if (applied.updated.length) {
+        // Re-read rather than patching our in-memory copy: applyExtractedFields
+        // fills blanks only, checked against the row as it is NOW, so the row
+        // is the only honest answer to what the plan actually holds.
+        const refreshed = await loadPlan(supabase, bookingId!)
+        if (refreshed) {
+          inquiry = fromEvent ? mergeInquiry(refreshed, fromEvent) : refreshed
+          evaluation = evaluateInquiry(inquiry)
+        }
+      }
+    }
   }
 
   try {
@@ -768,7 +928,7 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
   try {
     const first = await callClaude(
       systemPrompt,
-      buildUserPrompt(inquiry, evaluation, { isFirstTouch: firstTouch, bookingRef: booking?.booking_ref }),
+      buildUserPrompt(inquiry, evaluation, { isFirstTouch: firstTouch, bookingRef }),
       model,
     )
     draft = first.draft
@@ -783,7 +943,7 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
         systemPrompt,
         buildUserPrompt(inquiry, evaluation, {
           isFirstTouch: firstTouch,
-          bookingRef: booking?.booking_ref,
+          bookingRef,
           correction: 'it contained a dollar amount on an info-gather first contact, which is never allowed',
         }),
         model,
@@ -924,6 +1084,9 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
       missing_fields: evaluation.missing,
       guardrail_error: guardrailError,
       first_touch: firstTouch,
+      // Which blanks this customer's own reply filled in (item 6). The plan's
+      // history has to say why it stopped asking for a date.
+      extracted_fields: extractedFields,
     },
   })
 
@@ -962,6 +1125,7 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
     path: evaluation.path,
     partyType: evaluation.partyType,
     missing: evaluation.missing,
+    extractedFields,
     reviewersTexted,
     costUsd: usd,
     tokens: inputTokens + outputTokens,
@@ -1009,29 +1173,29 @@ export async function redraftForReviewer(args: {
   }
 
   // Rebuild the inquiry context from whatever the draft is anchored to.
-  let inquiry: InquiryBooking | null = null
+  //
+  // Both halves, merged, for the same reason the first draft does it (item 6):
+  // the plan holds everything we have learned and the event holds what they
+  // actually said. Reading only the plan loses the message the reviewer is
+  // revising a reply to; reading only the event loses the date the customer
+  // gave us last week.
+  let plan: (InquiryBooking & { booking_ref?: string | null }) | null = null
   let bookingRef: string | null = null
   if (row.booking_id) {
-    const { data } = await supabase
-      .from('bookings')
-      .select(
-        'booking_ref, event_type, package_type, notes, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, guest_count_approx, child_name, child_age',
-      )
-      .eq('id', row.booking_id)
-      .maybeSingle()
-    if (data) {
-      inquiry = data as unknown as InquiryBooking
-      bookingRef = (data as { booking_ref?: string | null }).booking_ref ?? null
-    }
+    plan = await loadPlan(supabase, row.booking_id as string)
+    bookingRef = plan?.booking_ref ?? null
   }
-  if (!inquiry && row.inbound_event_id) {
+  let fromEvent: InquiryBooking | null = null
+  if (row.inbound_event_id) {
     const { data } = await supabase
       .from('ingested_messages')
       .select('parsed, subject, body')
       .eq('id', row.inbound_event_id)
       .maybeSingle()
-    if (data) inquiry = inquiryFromEvent(data as Pick<InboundEvent, 'parsed' | 'subject' | 'body'>)
+    if (data) fromEvent = inquiryFromEvent(data as Pick<InboundEvent, 'parsed' | 'subject' | 'body'>)
   }
+  const inquiry: InquiryBooking | null =
+    plan && fromEvent ? mergeInquiry(plan, fromEvent) : (plan ?? fromEvent)
   if (!inquiry) return { ok: false, status: 422, error: 'Draft has no booking or event to re-draft from' }
 
   if (!process.env.ANTHROPIC_API_KEY) {

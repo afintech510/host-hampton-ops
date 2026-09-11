@@ -5,8 +5,9 @@ import { loadStripe } from '@stripe/stripe-js'
 import { Clock, Users, Plus, Minus, Check, CalendarDays } from 'lucide-react'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 import {
-  studioRentalRate, hoursBetween, STUDIO_MIN_HOURS, STUDIO_SEATED_CAPACITY, STUDIO_STANDING_CAPACITY,
+  studioRentalRateWith, hoursBetween, STUDIO_SEATED_CAPACITY, STUDIO_STANDING_CAPACITY,
 } from '@/lib/studioRental'
+import { FALLBACK_STUDIO_RATES, type StudioRates } from '@/lib/pricingCatalog'
 import { formatMoney, calculateCardFee } from '@/lib/partyPricing'
 
 export interface ManageBooking {
@@ -48,7 +49,13 @@ function dateLabel(d: string): string {
   return new Date(y, m - 1, dd).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-export default function StudioManageContent({ booking, menu }: { booking: ManageBooking; menu: Menu }) {
+export default function StudioManageContent(
+  { booking, menu, rates: ratesProp }: { booking: ManageBooking; menu: Menu; rates?: StudioRates },
+) {
+  // See StudioRentalContent: the rate card arrives as a prop because this
+  // component re-prices interactively as the customer edits the time window.
+  const rates = ratesProp ?? FALLBACK_STUDIO_RATES
+  const minHours = rates.minHours
   const groups = useMemo(() => ([
     { key: 'decor', label: 'Decor', items: menu.decor },
     { key: 'services', label: 'Services', items: menu.services },
@@ -87,8 +94,8 @@ export default function StudioManageContent({ booking, menu }: { booking: Manage
   const [serverBalance, setServerBalance] = useState(booking.balanceDueCents)
 
   // ── live preview pricing ──
-  const hours = useMemo(() => Math.max(STUDIO_MIN_HOURS, hoursBetween(startTime, endTime)), [startTime, endTime])
-  const rate = useMemo(() => studioRentalRate(booking.partyDate, hours), [booking.partyDate, hours])
+  const hours = useMemo(() => Math.max(minHours, hoursBetween(startTime, endTime)), [minHours, startTime, endTime])
+  const rate = useMemo(() => studioRentalRateWith(rates, booking.partyDate, hours), [rates, booking.partyDate, hours])
   const itemTotal = useCallback((it: PricingItem, qty: number) => it.price_type === 'per_person' ? it.price_cents * guestCount : it.price_cents * qty, [guestCount])
   const addOnTotal = useMemo(() => {
     let s = 0
@@ -110,7 +117,7 @@ export default function StudioManageContent({ booking, menu }: { booking: Manage
   const dirty = editKey !== (savedKey || initialKey)
 
   const overStanding = guestCount > STUDIO_STANDING_CAPACITY
-  const timeValid = hoursBetween(startTime, endTime) >= STUDIO_MIN_HOURS
+  const timeValid = hoursBetween(startTime, endTime) >= minHours
 
   function toggle(it: PricingItem) {
     setSelected(prev => { const n = { ...prev }; if (n[it.id] != null) delete n[it.id]; else n[it.id] = 1; return n })
@@ -256,7 +263,7 @@ export default function StudioManageContent({ booking, menu }: { booking: Manage
           </label>
         </div>
         <div className="mt-3 text-sm">
-          {!timeValid && <span className="text-red-600">Minimum rental is {STUDIO_MIN_HOURS} hours.</span>}
+          {!timeValid && <span className="text-red-600">Minimum rental is {minHours} hours.</span>}
           {timeValid && <span className="text-hampton-navy"><strong>{rate.isWeekend ? 'Weekend' : 'Weekday'} · {hours} hrs</strong> → rental {formatMoney(rate.rentalCents)}</span>}
           {overStanding && <span className="text-red-600 ml-3">Over {STUDIO_STANDING_CAPACITY}-guest capacity.</span>}
         </div>

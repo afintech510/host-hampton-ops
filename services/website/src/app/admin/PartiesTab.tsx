@@ -2,11 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { formatMoney } from '@/lib/partyPricing'
+import { PIPELINE_STAGES, PARTY_TYPES, PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
 
 interface PartyBookingSummary {
   id: string
   booking_ref: string
   status: string
+  /** Migration 035. The consistent product field — `event_type` never was. */
+  party_type: string | null
+  source: string | null
   party_date: string
   party_time: string
   package_type: string
@@ -40,6 +44,8 @@ interface PartyDetail extends PartyBookingSummary {
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  lead: { label: 'Lead', color: 'bg-slate-100 text-slate-700' },
+  quoted: { label: 'Quoted', color: 'bg-indigo-100 text-indigo-800' },
   awaiting_deposit: { label: 'Awaiting Deposit', color: 'bg-yellow-100 text-yellow-800' },
   pending_review: { label: 'Pending Review', color: 'bg-blue-100 text-blue-800' },
   deposit_paid: { label: 'Deposit Paid', color: 'bg-blue-100 text-blue-800' },
@@ -60,13 +66,29 @@ function checkinBadge(status: string | null | undefined) {
   return CHECKIN_STATUS[status || 'pending'] ?? CHECKIN_STATUS.pending
 }
 
-const STATUS_FILTERS = ['all', 'pending_review', 'deposit_paid', 'approved', 'modifications_locked', 'paid_in_full', 'completed', 'cancelled']
+/**
+ * The stages and labels come from lib/pipelineStages.ts, which the API route
+ * reads too — a second copy here is how the UI and the API end up disagreeing
+ * about what the pipeline is.
+ */
+const PIPELINE: readonly string[] = PIPELINE_STAGES
+const PARTY_TYPE_FILTERS: readonly string[] = ['all', ...PARTY_TYPES]
+
+interface PipelineCounts {
+  byStatus: Record<string, number>
+  byPartyType: Record<string, number>
+  all: number
+  allTypes: number
+  truncated: boolean
+}
 
 export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout: () => void }) {
   const [bookings, setBookings] = useState<PartyBookingSummary[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('all')
+  const [partyTypeFilter, setPartyTypeFilter] = useState('all')
+  const [counts, setCounts] = useState<PipelineCounts | null>(null)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<PartyDetail | null>(null)
   const [actionLoading, setActionLoading] = useState('')
@@ -82,6 +104,8 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   const [discountName, setDiscountName] = useState('')
   const [discountAmount, setDiscountAmount] = useState('')
   const [showDiscount, setShowDiscount] = useState(false)
+  const [agentNote, setAgentNote] = useState('')
+  const [agentResult, setAgentResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   // New Party Plan form state
   const [showNewForm, setShowNewForm] = useState(false)
@@ -93,7 +117,7 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   const [creating, setCreating] = useState(false)
   const [createResult, setCreateResult] = useState<{ ok: boolean; bookingRef?: string; builderUrl?: string; error?: string } | null>(null)
 
-  useEffect(() => { fetchBookings() }, [statusFilter, page])
+  useEffect(() => { fetchBookings() }, [statusFilter, partyTypeFilter, page])
 
   async function createPartyPlan() {
     if (!newForm.contactName || !newForm.contactEmail) {
@@ -143,16 +167,21 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
     setLoading(true)
     const params = new URLSearchParams({ page: String(page) })
     if (statusFilter !== 'all') params.set('status', statusFilter)
+    if (partyTypeFilter !== 'all') params.set('party_type', partyTypeFilter)
     const res = await fetch(`/api/admin/parties?${params}`, { headers })
     const data = await res.json()
     setBookings(data.bookings || [])
     setTotal(data.total || 0)
+    setCounts(data.counts ?? null)
     setLoading(false)
   }
 
   async function fetchDetail(id: string) {
     const res = await fetch(`/api/admin/parties/${id}`, { headers })
     const data = await res.json()
+    // Scoped to one plan — carrying "HH-2026-0313 drafted" onto the next plan
+    // would read as if that one had been drafted too.
+    if (id !== selected?.id) { setAgentNote(''); setAgentResult(null) }
     setSelected(data)
   }
 
@@ -183,6 +212,29 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
     await fetchBookings()
     setActionLoading('')
     return data
+  }
+
+  async function draftWithAgent() {
+    if (!selected) return
+    setActionLoading('draft_with_agent')
+    setAgentResult(null)
+    const res = await fetch(`/api/admin/parties/${selected.id}`, {
+      method: 'POST',
+      headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'draft_with_agent', note: agentNote || undefined }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setActionLoading('')
+    if (res.ok) {
+      setAgentNote('')
+      setAgentResult({
+        ok: true,
+        message: `${data.reviewCode} drafted — texted to ${data.reviewersTexted} reviewer${data.reviewersTexted === 1 ? '' : 's'}. Approve it in Inbox or by SMS.`,
+      })
+    } else {
+      setAgentResult({ ok: false, message: data.error || 'Could not draft a reply' })
+    }
+    await fetchDetail(selected.id)
   }
 
   async function openPortal() {
@@ -283,19 +335,55 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   if (!selected) {
     return (
       <div>
+        {/* ── Pipeline ─────────────────────────────────────────────────
+            Every stage is shown even at zero: the point of the view is to see
+            where leads are piling up, and a stage that vanishes when empty is
+            exactly the one you stop checking. Counts ignore the status filter
+            so the header still reads as a whole pipeline from inside a stage. */}
+        <div className="mb-5 -mx-1 overflow-x-auto">
+          <div className="flex items-stretch gap-1 px-1 min-w-max">
+            <PipelineChip
+              label="All"
+              count={counts?.all ?? total}
+              active={statusFilter === 'all'}
+              onClick={() => { setStatusFilter('all'); setPage(1) }}
+            />
+            {PIPELINE.map((stage, i) => (
+              <div key={stage} className="flex items-stretch gap-1">
+                <span className="self-center text-gray-300 text-xs select-none">{i === 0 ? '' : '›'}</span>
+                <PipelineChip
+                  label={STATUS_LABELS[stage]?.label || stage}
+                  count={counts?.byStatus[stage] ?? 0}
+                  active={statusFilter === stage}
+                  onClick={() => { setStatusFilter(stage); setPage(1) }}
+                />
+              </div>
+            ))}
+            <span className="self-center text-gray-300 text-xs px-1 select-none">|</span>
+            <PipelineChip
+              label="Cancelled"
+              count={counts?.byStatus.cancelled ?? 0}
+              active={statusFilter === 'cancelled'}
+              onClick={() => { setStatusFilter('cancelled'); setPage(1) }}
+            />
+          </div>
+        </div>
+
         <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
-          <div className="flex items-center gap-3 flex-wrap">
-            {STATUS_FILTERS.map(s => {
-              const info = STATUS_LABELS[s] || { label: s === 'all' ? 'All' : s, color: 'bg-gray-100 text-gray-700' }
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-400 uppercase tracking-wide mr-1">Type</span>
+            {PARTY_TYPE_FILTERS.map(t => {
+              const n = t === 'all' ? counts?.allTypes : counts?.byPartyType[t]
               return (
                 <button
-                  key={s}
-                  onClick={() => { setStatusFilter(s); setPage(1) }}
+                  key={t}
+                  onClick={() => { setPartyTypeFilter(t); setPage(1) }}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    statusFilter === s ? 'bg-[#1a2744] text-white' : info.color + ' hover:opacity-80'
+                    partyTypeFilter === t ? 'bg-[#1a2744] text-white' : 'bg-gray-100 text-gray-700 hover:opacity-80'
                   }`}
                 >
-                  {s === 'all' ? 'All' : info.label}
+                  {t === 'all' ? 'All' : PARTY_TYPE_LABELS[t]}
+                  {n != null && <span className="ml-1.5 opacity-60">{n}</span>}
                 </button>
               )
             })}
@@ -467,6 +555,7 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
                   <th className="pb-2 pr-4">Ref</th>
                   <th className="pb-2 pr-4">Customer</th>
                   <th className="pb-2 pr-4">Date</th>
+                  <th className="pb-2 pr-4">Type</th>
                   <th className="pb-2 pr-4">Theme</th>
                   <th className="pb-2 pr-4">Guests</th>
                   <th className="pb-2 pr-4">Total</th>
@@ -489,6 +578,12 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
                         {b.child_name && <span className="text-gray-400 text-xs ml-1">({b.child_name})</span>}
                       </td>
                       <td className="py-3 pr-4">{b.party_date || '—'}</td>
+                      <td className="py-3 pr-4">
+                        <span className="text-xs text-gray-600">{PARTY_TYPE_LABELS[b.party_type || 'unknown']}</span>
+                        {b.source && b.source !== 'website_form' && (
+                          <span className="ml-1.5 text-[10px] text-gray-400 uppercase">{b.source}</span>
+                        )}
+                      </td>
                       <td className="py-3 pr-4">{b.package_type || '—'}</td>
                       <td className="py-3 pr-4 text-center">{b.guest_count_approx || '—'}</td>
                       <td className="py-3 pr-4">{formatMoney(b.total_cents || 0)}</td>
@@ -749,6 +844,43 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
           <div className="bg-white rounded-xl border p-5">
             <h3 className="text-sm font-medium text-[#1a2744] mb-3">Actions</h3>
             <div className="space-y-2">
+              {/* ── Draft reply with agent ─────────────────────────────
+                  The path for a lead the agent never heard about: a phone call,
+                  or a plan typed into the New Party form. It enqueues an inbound
+                  event and drafts for it, so the reply still goes to the
+                  reviewers for approval — this button cannot reach a customer.
+                  Disabled while in flight, which is the client-side half of the
+                  double-click guard; the server has three more. */}
+              <div className="p-3 bg-[#1a2744]/5 rounded-lg space-y-2">
+                <textarea
+                  value={agentNote}
+                  onChange={e => setAgentNote(e.target.value)}
+                  placeholder="What did they ask for? (optional — e.g. notes from a phone call)"
+                  rows={2}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={draftWithAgent}
+                  disabled={!!actionLoading}
+                  title={
+                    selected.contact_email || selected.contact_phone
+                      ? 'Drafts a reply and texts it to the reviewers for approval'
+                      : 'Add an email or phone to this plan first'
+                  }
+                  className="w-full bg-[#1a2744] text-white py-2 rounded-lg text-sm font-medium hover:bg-[#2a3754] disabled:opacity-50"
+                >
+                  {actionLoading === 'draft_with_agent' ? 'Drafting…' : '✍️ Draft reply with agent'}
+                </button>
+                {agentResult && (
+                  <p className={`text-xs ${agentResult.ok ? 'text-green-700' : 'text-amber-700'}`}>
+                    {agentResult.message}
+                  </p>
+                )}
+                <p className="text-[11px] text-[#1a2744]/50">
+                  Goes to the reviewers for approval. Nothing reaches the customer from here.
+                </p>
+              </div>
+
               {(selected.status === 'pending_review' || selected.status === 'deposit_paid') && (
                 <button
                   onClick={() => doAction('approve')}
@@ -977,6 +1109,29 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
         </div>
       </div>
     </div>
+  )
+}
+
+/* ─── Pipeline stage chip ──────────────────────────────────────── */
+function PipelineChip({ label, count, active, onClick }: {
+  label: string; count: number; active: boolean; onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors border ${
+        active
+          ? 'bg-[#1a2744] text-white border-[#1a2744]'
+          : count > 0
+            ? 'bg-white text-[#1a2744] border-gray-200 hover:border-[#A1B5C8]'
+            // A zero stage stays visible but recedes, so the eye lands on where
+            // work is actually sitting.
+            : 'bg-white text-gray-400 border-gray-100 hover:border-gray-200'
+      }`}
+    >
+      {label}
+      <span className={`ml-1.5 font-bold ${active ? '' : count > 0 ? 'text-[#A1B5C8]' : 'text-gray-300'}`}>{count}</span>
+    </button>
   )
 }
 

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { getSupabase } from '@/lib/supabase'
 import PartyBuilderContent from './PartyBuilderContent'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
+import { loadPricingCatalog } from '@/lib/pricingCatalog'
 
 export const metadata: Metadata = {
   title: "Host Hampton Party Plan — Speonk NY",
@@ -36,6 +37,9 @@ export default async function PartyBuilderPage({
 
   const byCategory = (cat: string) => items.filter(i => i.category === cat)
 
+  // Guest rules, mobile bands and the studio rate card (migration 036).
+  const catalog = await loadPricingCatalog()
+
   return (
     <PartyBuilderContent
       themes={byCategory('party-theme')}
@@ -50,6 +54,7 @@ export default async function PartyBuilderPage({
       savedQuote={searchParams.q ?? null}
       checkoutStatus={searchParams.status ?? null}
       checkoutSessionId={searchParams.session_id ?? null}
+      catalog={catalog}
     />
   )
 }

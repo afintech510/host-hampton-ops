@@ -5,13 +5,12 @@ import { loadStripe } from '@stripe/stripe-js'
 import { Check, Clock, Users, CalendarDays, ChevronDown, Minus, Plus } from 'lucide-react'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 import {
-  studioRentalRate,
+  studioRentalRateWith,
   hoursBetween,
-  STUDIO_MIN_HOURS,
   STUDIO_SEATED_CAPACITY,
   STUDIO_STANDING_CAPACITY,
-  SECURITY_DEPOSIT_CENTS,
 } from '@/lib/studioRental'
+import { FALLBACK_STUDIO_RATES, type StudioRates } from '@/lib/pricingCatalog'
 import { formatMoney, getDepositCents } from '@/lib/partyPricing'
 
 interface Props {
@@ -20,6 +19,14 @@ interface Props {
   food: PricingItem[]
   desserts: PricingItem[]
   beverages: PricingItem[]
+  /**
+   * Rate card from `pricing_items`, loaded by the server page (migration 036).
+   * Passed as a prop rather than fetched here because this component re-prices
+   * on every change to the time window — it cannot await a query per keystroke.
+   * Optional so the fallback rates (= the pre-036 published prices) apply if a
+   * caller has not been updated.
+   */
+  rates?: StudioRates
 }
 
 const EVENT_TYPES = [
@@ -54,6 +61,8 @@ function dateLabel(d: string): string {
 type Phase = 'build' | 'sign' | 'pay' | 'done'
 
 export default function StudioRentalContent(props: Props) {
+  const rates = props.rates ?? FALLBACK_STUDIO_RATES
+  const minHours = rates.minHours
   const addOnGroups = useMemo(() => ([
     { key: 'decor', label: 'Decor', items: props.decor },
     { key: 'services', label: 'Services', items: props.services },
@@ -111,8 +120,8 @@ export default function StudioRentalContent(props: Props) {
   const signwellRef = useRef<{ open: () => void } | null>(null)
 
   // ── Derived pricing ─────────────────────────────────────────
-  const hours = useMemo(() => Math.max(STUDIO_MIN_HOURS, hoursBetween(startTime, endTime)), [startTime, endTime])
-  const rate = useMemo(() => (date ? studioRentalRate(date, hours) : null), [date, hours])
+  const hours = useMemo(() => Math.max(minHours, hoursBetween(startTime, endTime)), [minHours, startTime, endTime])
+  const rate = useMemo(() => (date ? studioRentalRateWith(rates, date, hours) : null), [rates, date, hours])
 
   const itemUnit = useCallback((item: PricingItem) => item.price_cents, [])
   const itemLineTotal = useCallback((item: PricingItem, qty: number) => {
@@ -142,7 +151,7 @@ export default function StudioRentalContent(props: Props) {
 
   const overSeated = guestCount > STUDIO_SEATED_CAPACITY
   const overStanding = guestCount > STUDIO_STANDING_CAPACITY
-  const timeValid = hoursBetween(startTime, endTime) >= STUDIO_MIN_HOURS
+  const timeValid = hoursBetween(startTime, endTime) >= minHours
 
   // ── Add-on handlers ─────────────────────────────────────────
   function toggle(item: PricingItem) {
@@ -453,7 +462,7 @@ export default function StudioRentalContent(props: Props) {
             <div className="mt-4 space-y-2">
               <label className="flex items-start gap-2 text-sm text-hampton-navy/80">
                 <input ref={agreeRulesRef} type="checkbox" checked={agreeRules} onChange={e => setAgreeRules(e.target.checked)} className="mt-1" />
-                <span>I understand the rental includes my own setup &amp; cleanup time, a <strong>$250 deposit</strong> holds my date with the balance payable any time before the event, half the deposit is non-refundable (the full deposit within 30 days of the event), and a refundable <strong>$500 security hold</strong> ({formatMoney(SECURITY_DEPOSIT_CENTS)}) is placed on my card on arrival.</span>
+                <span>I understand the rental includes my own setup &amp; cleanup time, a <strong>$250 deposit</strong> holds my date with the balance payable any time before the event, half the deposit is non-refundable (the full deposit within 30 days of the event), and a refundable <strong>$500 security hold</strong> ({formatMoney(rates.securityDepositCents)}) is placed on my card on arrival.</span>
               </label>
               <label className="flex items-start gap-2 text-sm text-hampton-navy/80">
                 <input ref={consentRef} type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1" />
@@ -502,7 +511,7 @@ export default function StudioRentalContent(props: Props) {
               </label>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-              {!timeValid && <span className="text-red-600">Minimum rental is {STUDIO_MIN_HOURS} hours.</span>}
+              {!timeValid && <span className="text-red-600">Minimum rental is {minHours} hours.</span>}
               {timeValid && rate && (
                 <span className="text-hampton-navy">
                   <strong>{rate.isWeekend ? 'Weekend' : 'Weekday'} · {hours} hrs</strong> → rental {formatMoney(rentalCents)}

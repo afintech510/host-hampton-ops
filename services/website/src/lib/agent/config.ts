@@ -16,6 +16,15 @@
  */
 
 /** Default model for customer-facing drafts. Haiku is fine for triage, not for this. */
+/**
+ * Ledger actor and entity name for everything the agent does. They live here,
+ * not in draftInquiry.ts, because the nodes that need them (triage, extraction)
+ * are also imported BY the draft node — putting them in a leaf module keeps the
+ * agent's import graph acyclic.
+ */
+export const AGENT_ACTOR = 'AGENT'
+export const DRAFT_ENTITY = 'inquiry_draft'
+
 export const DEFAULT_DRAFT_MODEL = 'claude-sonnet-5'
 
 /**

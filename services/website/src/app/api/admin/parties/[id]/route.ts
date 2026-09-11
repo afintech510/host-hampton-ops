@@ -5,7 +5,9 @@ import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { formatMoney } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
-import { studioRentalRate, hoursBetween } from '@/lib/studioRental'
+import { studioRentalRateWith, hoursBetween } from '@/lib/studioRental'
+import { loadPricingCatalog } from '@/lib/pricingCatalog'
+import { draftForBookingByHand } from '@/lib/agent/manualDraft'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
 import { sendCheckinLinkSms } from '@/lib/checkinLink'
 import { enqueueCheckinReminders, cancelCheckinReminders } from '@/lib/checkinReminders'
@@ -101,6 +103,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!booking) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
+
+  // ── "Draft reply with agent" (Phase 4 item 5) ─────────────────────────
+  // The button that covers a phone lead: it enqueues an inbound event for this
+  // plan and takes it through the SAME claim path as any other event, so the
+  // cron and a button press can never both draft it. See lib/agent/manualDraft.ts
+  // for the three layers that stop a double-click becoming two texts. This is
+  // an admin-authenticated route, but drafting still only reaches `sent_for_review`
+  // — the 'approved' and 'sent' edges stay gated exactly as before.
+  if (action === 'draft_with_agent') {
+    const result = await draftForBookingByHand({
+      supabase,
+      bookingId: id,
+      actor: 'ADMIN',
+      note: typeof body.note === 'string' ? body.note : null,
+    })
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error, reason: result.reason }, { status: result.status })
+    }
+    return NextResponse.json({
+      ok: true,
+      reviewCode: result.reviewCode,
+      draftId: result.draftId,
+      draftStatus: result.draftStatus,
+      reviewersTexted: result.reviewersTexted,
+      // Nothing has reached the customer; this only texted the reviewers.
+      sentToCustomer: false,
+    })
+  }
 
   if (action === 'approve') {
     await supabase.from('bookings').update({
@@ -464,8 +494,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const endTime = body.endTime as string
     if (!startTime || !endTime) return NextResponse.json({ error: 'startTime and endTime required' }, { status: 400 })
     const hours = hoursBetween(startTime, endTime)
-    if (hours < 3) return NextResponse.json({ error: 'Minimum rental is 3 hours' }, { status: 400 })
-    const rate = studioRentalRate(booking.party_date as string, hours)
+    const { studioRates } = await loadPricingCatalog()
+    if (hours < studioRates.minHours) {
+      return NextResponse.json({ error: `Minimum rental is ${studioRates.minHours} hours` }, { status: 400 })
+    }
+    const rate = studioRentalRateWith(studioRates, booking.party_date as string, hours)
 
     // Update (or create) the rental line item.
     const { data: rentalLi } = await supabase

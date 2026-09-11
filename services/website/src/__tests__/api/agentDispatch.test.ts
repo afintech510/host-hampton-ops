@@ -23,7 +23,15 @@ jest.mock('@/lib/agent/draftInquiry', () => ({
 }))
 
 const mockFinishEvent = jest.fn().mockResolvedValue(undefined)
-jest.mock('@/lib/agent/events', () => ({ finishEvent: (...args: any[]) => mockFinishEvent(...args) }))
+// `claimInboundEvent` stays REAL. The compare-and-swap it performs is the thing
+// under test in "does not draft twice when another runner already claimed the
+// event" — mocking it out would leave that assertion testing the mock. It moved
+// from the route into lib/agent/events so the admin "Draft with agent" button
+// can take the identical path (Phase 4 item 5); only `finishEvent` is stubbed.
+jest.mock('@/lib/agent/events', () => ({
+  ...jest.requireActual('@/lib/agent/events'),
+  finishEvent: (...args: any[]) => mockFinishEvent(...args),
+}))
 
 const mockTriageMessage = jest.fn()
 jest.mock('@/lib/agent/triage', () => ({

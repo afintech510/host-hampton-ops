@@ -117,19 +117,24 @@ record itself is always mirrored.
 
 ## 2. Data model changes
 
-Migrations are applied by hand in the Supabase SQL editor (repo convention).
-Numbers 029–031 were taken; **032, 033, 034 and 035 are written and applied**
-and the next free number is **036**.
+Migrations are applied by hand (`/root/pg.sh` on the box; the service-role key
+cannot do DDL). Numbers 029–031 were taken; **032, 033, 034, 035 and 036 are
+written and applied** and the next free number is **037**.
 
-> Renumbered twice on 2026-09-11, both times because a later phase shipped
-> first and migrations are kept in the order they are actually applied:
+> Renumbered three times on 2026-09-11, every time because a later phase
+> shipped first and migrations are kept in the order they are actually applied:
 >
 > - **033** = "drafts for any channel". Originally parked in 034, but it had to
 >   ship with Phase 1: most lead forms create no `bookings` row, so
 >   `inquiry_drafts.booking_id NOT NULL` blocked the whole phase.
 > - **034** = "agent review loop" (Phase 2 bookkeeping: nudge clock, approver,
 >   per-channel send ids).
-> - party-plan-as-lead is therefore **035** and the learning loop **036**.
+> - **035** = party-plan-as-lead.
+> - **036** = the pricing catalog seed (Phase 4 item 4). DATA ONLY, no DDL —
+>   `pricing_items` already had every column it needed. It takes a number
+>   anyway because seed data has to be reproducible, which a hand-run script is
+>   not.
+> - the learning loop is therefore **037**.
 
 ### 032 — inbound events + gmail sync state + contact sync + deposit default (WRITTEN 2026-09-10)
 File: `starting_plan/migration_032_agent_inbound_and_contact_sync.sql`.
@@ -218,7 +223,30 @@ burn one. The migration is idempotent and was verified by re-running it.
 - New `booking_pay_links (id, booking_id, purpose CHECK('deposit','balance','custom'), amount_cents, fee_cents, stripe_payment_link_id, stripe_price_id, url, created_by, created_at, voided_at)` — closes the gap that today's pay links are untraceable.
 - `booking_payments.payment_method` CHECK → add `'check','other'` (admin dropdown already offers them).
 
-### 036 — learning loop
+### 036 — pricing catalog seed (WRITTEN + APPLIED 2026-09-11)
+File: `starting_plan/migration_036_pricing_catalog.sql`. Phase 4 item 4. No
+DDL: four new `pricing_items` categories, 46 rows.
+
+- `mobile-package` (8) — the two published tiers with their `includes` lists,
+  the planner's three guest bands, and the three policy numbers (minimum
+  guests, extra child, free travel radius).
+- `studio-rental-rate` (8) — weekend/weekday base, additional hour and full-day
+  cap, plus the minimum block and the $500 refundable security hold.
+- `guest-overage` (4) — included guests, per-extra-guest, the mini-party
+  discount (stored as a POSITIVE magnitude; the loader negates it, because a
+  negative `price_cents` in a price catalog reads as a data error at a glance)
+  and the mini-party guest ceiling.
+- `mobile-station` (26) — the curated list from SKILL.md, `price_cents = 0`
+  with `price_label = 'Ask'`, for Phase 5's invoice menu appendix.
+
+Rows are identified by `metadata->>'catalog_key'`, never by name: the name is
+display copy Adam may re-word, the key is the contract. `pricing_items` has no
+unique constraint on `(category, name)`, so each block UPDATEs matching rows and
+INSERTs only absent ones; the INSERT's `NOT EXISTS` reads the pre-statement
+snapshot so it cannot race the UPDATE in its own CTE. Re-run verified: second
+run inserted 0.
+
+### 037 — learning loop
 - New `agent_learnings (id, kind CHECK('style','rule','fact','pricing'), text, source_draft_id, source_event_id, confidence, is_active, created_by, created_at)`.
   The draft prompt loads active rows. Reviewer corrections become rows here
   (Phase 6), and Adam/Allie can add rules directly from the admin Inbox tab.
@@ -353,9 +381,11 @@ and reviewer SMS.
 ### Phase 4 — Every lead is a plan, one planner for all three products
 
 **Items 1–3 BUILT + DEPLOYED 2026-09-11** (migration 035, `lib/plan.ts`, the
-seven intake routes, the three snapshot writers, 34 tests). Items 4–6 — pricing
-into `pricing_items`, the planner product switch, the admin pipeline view and
-the draft node's extract-and-re-evaluate step — are **not started**.
+seven intake routes, the three snapshot writers, 34 tests). **Items 4, 5 and 6
+BUILT + DEPLOYED 2026-09-11** — see §13. The planner *product switch* (loading
+any plan by ref and making the existing studio/mobile sections a real product
+selector) is the one piece of the original item 4/5 wording still open; it is
+tracked in Phase 4.5's plan panel, which is where it actually gets used.
 
 What items 1–3 turned into, and the one thing that nearly went wrong:
 
@@ -1173,3 +1203,188 @@ drafts, `HH-2026-0976` and `HH-2026-1872`, were confirmed untouched throughout.
 - `redraftForReviewer()` records a guardrail hit and still texts the revision.
   That is the right trade (the reviewer asked for a change), but it means the
   foreign-contact park is one-sided.
+---
+
+## 14. Phase 4 items 4-6 as built (2026-09-11)
+
+### Item 4 — pricing single source (`lib/pricingCatalog.ts` + migration 036)
+
+Three constant blocks became `pricing_items` rows: `lib/mobilePricing.ts`
+(deleted), the rate table inside `lib/studioRental.ts`, and the inline block at
+`PartyBuilderContent.tsx:17-40`.
+
+**What the move exposed.** The planner charged a **$400** mobile base while
+`/mobile-party` advertised **$500**, and the planner's own guest bands
+(19–27 → +$150, 28+ → +$150 again) had no counterpart in the published anchor
+at all. Neither is wrong — they are two products, a build-it-yourself mobile
+party and a fixed tier — but nothing in the codebase said so, because the two
+numbers had never been in the same file. They are now both `mobile-package`
+rows, distinguished by `metadata.kind` (`published_tier` vs `planner_band`), so
+the next person to change one can see the other. **This is a business question
+for Adam, not a bug that was fixed.**
+
+**Two design rules the module is built on.**
+
+1. **The fallback is the old constant, never zero.** Every value has a compiled
+   default equal to what shipped before 036. An unapplied migration, a deleted
+   row or an unreachable Supabase therefore renders *exactly today's prices*.
+   A stale price is a business annoyance; a $0 studio rental is a refund.
+   `catalog.fromDb` distinguishes the two, and the tests assert parity against
+   the pre-036 constants directly rather than assuming it.
+2. **Computation stays pure and synchronous.** `studioRentalRateWith(rates, …)`
+   takes the rate card as an argument; `studioRentalRate(…)` is that function
+   bound to the fallback, so every pre-036 call site still computes the right
+   number. This matters because `StudioRentalContent` and `PartyBuilderContent`
+   re-price as the customer drags a time or a guest count — they cannot await a
+   query per keystroke. Server components load the catalog once and pass it
+   down as a prop.
+
+**Wired through:** `MobilePriceBlock` (now an async server component; all four
+callers already were), `studio-rental/page.tsx` → both client components,
+`api/studio-rental/checkout`, `api/studio-rental/edit`,
+`api/admin/parties/[id]` (`edit_rental`), and both planner pages.
+
+**ISR was required, and the reason is non-obvious.** `/mobile-party`,
+`/mobile-craft-party` and the 26 town pages prerender at BUILD time, where
+`SUPABASE_URL` does not exist — the Docker build only receives `NEXT_PUBLIC_*`
+build args. They would have baked the compiled fallback into static HTML, and a
+price edited in `pricing_items` would not have appeared until the next deploy.
+`export const revalidate = 3600` on those three page files fixes it; verified in
+`.next/prerender-manifest.json`, not assumed.
+
+Hardcoded price copy inside the planner was derived too — "@ $35 each",
+"-$200", the band labels, and the **line-item name** `Mobile Party Package
+(19–27 guests)`. That last one persists onto a customer's invoice, so a
+threshold changed in the DB would otherwise leave the invoice naming a band the
+price did not come from.
+
+### Item 5 — admin pipeline view (`PartiesTab.tsx`, `api/admin/parties`)
+
+A pipeline header (`lead → quoted → … → completed`, with `cancelled` hanging
+off the end as an exit rather than a stage), live counts per stage, and a
+`party_type` filter. Stages and labels live in `lib/pipelineStages.ts` — a leaf
+module, because `PartiesTab` is a client component (so it cannot import
+`lib/plan.ts` and drag the Supabase client into the browser bundle) and a
+Next.js route file may not export a non-handler, which is a build error rather
+than a warning.
+
+**The bug this found.** The route filtered
+`event_type IN ('kid-party','kids-party','kids_party','studio-rental')`, which
+showed **32 of the 41 party rows in production**. Nine were invisible: four
+`room-rental` studio bookings, three whose `event_type` is the label
+`'Kids Birthday Party'`, and both mobile leads — because `ensureLeadPlan`
+deliberately keeps the form's own words in `event_type`. A pipeline view whose
+entire purpose is "no lead gets lost" cannot be built on an allowlist of
+spellings, so it now EXCLUDES the one non-party form type
+(`vendor_registration`) and filters on `party_type`, the column migration 035
+added and backfilled for exactly this reason. Anything new is visible by
+default; the failure mode is "an extra row to triage", not "an invisible lead".
+
+Counts come from one scan and are scoped asymmetrically on purpose: stage counts
+follow the party-type filter, party-type counts do not. A chip reading 0 merely
+because it is not the selected chip is worse than no number at all.
+
+**"Draft reply with agent"** (`lib/agent/manualDraft.ts`) covers the phone lead
+and the hand-typed plan. It enqueues a real `ingested_messages` event
+(`source='system'`) rather than calling the draft node directly, because the
+event IS the audit record and half the idempotency key. Four layers stop a
+double-click becoming two texts to Adam's phone:
+
+1. a live-draft precheck, so the ordinary double-click is a 409 and leaves no
+   junk event behind — and a precheck that *errors* also refuses, because "I
+   could not tell" is not "there is none";
+2. `claimInboundEvent()`, **the same compare-and-swap the dispatcher uses**,
+   lifted out of the cron route into `lib/agent/events.ts` so there is one
+   implementation rather than two chances to disagree;
+3. the DB's partial unique indexes on `inquiry_drafts(booking_id)` and
+   `(inbound_event_id)`, which `draftForInquiry` already turns into `skipped`;
+4. the button disabling itself while in flight.
+
+The dispatcher learned to draft for a `source='system'` event carrying a
+`booking_id`, so a request that dies between the insert and the claim is picked
+up two minutes later instead of the lead being silently lost. A `system` event
+with no booking is parked rather than guessed at.
+
+### Item 6 — the draft node reads the plan, and replies write back to it
+
+**Half one was a live bug with a visible symptom.** `draftForInquiry` built the
+inquiry from `event.parsed` ALONE even when the event carried a `booking_id` —
+which every website form has set since item 1 — so `evaluateRequiredInfo()` ran
+against the newest message instead of everything we knew, and a customer who
+had already given us their date got asked for it again. `mergeInquiry(plan,
+fromEvent)` fixes it: **the plan wins per field** (its values were either given
+by the customer or typed by Adam, since `enrichPlan` only ever fills blanks),
+the event fills the gaps, and notes concatenate oldest-first and de-duplicate
+(`enrichPlan` has usually already appended the event's body to the plan's
+notes, so the model was about to be shown the same message twice). Applied to
+`redraftForReviewer` too.
+
+**Half two closes the loop.** `lib/agent/extractPlanFields.ts` reads a prose
+reply for the fields we are missing, writes them onto the plan, and the gate is
+re-run before the draft is written — otherwise the agent asks for the same
+three things forever, because the answer sits in an `ingested_messages` body and
+nothing transcribes it.
+
+Four rules, each load-bearing:
+
+- **It may only fill fields reported MISSING.** `allowed` is passed in and
+  enforced *in code after the model answers*, not merely requested in the
+  prompt. A reply cannot move a date Adam set or a guest count the customer
+  confirmed last week. Re-negotiating a known field is a `booking_admin`
+  conversation for a human; the blast radius here is strictly "a blank becomes
+  filled". `applyExtractedFields` re-checks blankness against the row as it is
+  *now*, not the copy the caller read, so Adam typing the date in while the
+  model was thinking wins.
+- **`contact_email` and `contact_phone` are not extractable at all.** We
+  already have whichever handle the reply arrived on; taking the *other* one out
+  of a message body is how a quote gets emailed to an address a stranger typed.
+- **The message is untrusted data.** Schema-enforced output with no money,
+  status or recipient field, and every value re-validated locally.
+  `coerceIsoDate` is the strict parser from `lib/plan.ts`, so `2026-02-30` is
+  rejected rather than rolled into March; a guest count outside 1–200 is a
+  misread headcount, not a booking. A guessed date is worse than a blank one — a
+  blank keeps the agent asking, a wrong one makes it stop asking and quote
+  against a day nobody agreed to.
+- **A failure is not a verdict.** `{ok:false}` means "could not extract", which
+  is different from "the message said nothing": the draft proceeds with what we
+  have and asks again, and nothing is written. Fourth place this rule has
+  earned itself, after the draft node, triage and `findOpenPlan`.
+
+Extraction is **gated to free-text channels** (`source !== 'website_form'`): a
+form's fields already arrive structured in `parsed` and `ensureLeadPlan` wrote
+them, so extracting from its body would spend a Haiku call per lead to learn
+nothing. It runs on `AGENT_TRIAGE_MODEL` and **passes no
+`output_config.effort`** — Haiku 4.5 rejects the whole request with a 400, which
+is how the first production Gmail run failed every message. The draft node's
+call is not portable here.
+
+A vague date now pays off rather than being discarded: "mid-March" is kept in
+`party_tags.requested_date_text` and the prompt tells the draft to narrow it
+down ("you mentioned mid-March — which Saturday works?") instead of asking as if
+the customer had said nothing.
+
+### One refactor worth knowing about
+
+`AGENT_ACTOR` and `DRAFT_ENTITY` moved from `draftInquiry.ts` into
+`lib/agent/config.ts` (and are re-exported from `draftInquiry`, so the dozen
+existing import sites are untouched). The draft node now imports the extraction
+node, and the extraction node needs those two constants — leaving them where
+they were would have made the agent's import graph cyclic. `triage.ts` takes
+them from `config` now too.
+
+### Tests
+
+77 new (703 total; the one failure is still the pre-existing `smsReviewRequest`
+WIP): `pricingCatalog` (17 — including parity with every pre-036 constant and
+"a broken table renders today's prices, never zero"), `agentManualDraft` (11 —
+one per guard layer, because a passing test on one says nothing about the
+others), `agentExtractPlanFields` (21 — weighted towards what it must refuse to
+write), `agentDraftPlanAware` (19 — `mergeInquiry`, the re-ask bug, and the five
+cases where extraction must NOT spend a call), `adminPartiesPipeline` (9 —
+locking the allowlist regression down).
+
+`agentDispatch.test.ts` needed one change: it mocked `@/lib/agent/events`
+wholesale, so moving the claim there made `claimInboundEvent` undefined. The
+mock now keeps it REAL via `requireActual` — the compare-and-swap is the thing
+under test in "does not draft twice when another runner already claimed the
+event", and mocking it out would have left that assertion testing the mock.

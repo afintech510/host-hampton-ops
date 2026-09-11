@@ -4,7 +4,8 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { calculateCardFee, calculateLineItemTotal, computeCutoffDates, formatMoney, getDepositCents } from '@/lib/partyPricing'
-import { studioRentalRate, hoursBetween, STUDIO_STANDING_CAPACITY, SECURITY_DEPOSIT_CENTS } from '@/lib/studioRental'
+import { studioRentalRateWith, hoursBetween, STUDIO_STANDING_CAPACITY } from '@/lib/studioRental'
+import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { createEmbeddedAgreement, isSignwellConfigured } from '@/lib/signwell'
 import type { BookingLineItem } from '@/types/booking-flow'
 
@@ -66,7 +67,10 @@ export async function POST(req: NextRequest) {
     }
 
     const hours = hoursBetween(startTime, endTime)
-    const rate = studioRentalRate(partyDate, hours)
+    // Rates from `pricing_items` (migration 036), not a compiled constant — this
+    // is the figure the customer is actually charged, so it must be the live one.
+    const { studioRates } = await loadPricingCatalog()
+    const rate = studioRentalRateWith(studioRates, partyDate, hours)
 
     // Full line-item set: rental fee first, then the customer's add-ons.
     const rentalLineItem: IncomingLineItem = {
@@ -105,7 +109,7 @@ export async function POST(req: NextRequest) {
       address: contactAddress || null,
       seating_needed: seatingNeeded,
       balance_due_date: balanceDueDate,
-      security_deposit_cents: SECURITY_DEPOSIT_CENTS,
+      security_deposit_cents: studioRates.securityDepositCents,
     }
 
     const quoteSnapshot = {
@@ -208,7 +212,7 @@ export async function POST(req: NextRequest) {
             headcount: guestCount,
             rental_fee: formatMoney(rate.rentalCents),
             addons: formatMoney(addOnTotalCents),
-            security_deposit: formatMoney(SECURITY_DEPOSIT_CENTS),
+            security_deposit: formatMoney(studioRates.securityDepositCents),
             deposit_due: formatMoney(depositCents),
             balance_due: formatMoney(balanceDueCents),
             total_due: formatMoney(totalCents),

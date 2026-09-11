@@ -28,8 +28,7 @@
 import { getSupabase } from '@/lib/supabase'
 import { assertLlmBudget, recordLlmSpend, BudgetExceededError } from '@/lib/marketing/budget'
 import { writeLedger } from '@/lib/marketing/graph'
-import { costUsd, triageModel } from './config'
-import { AGENT_ACTOR, DRAFT_ENTITY } from './draftInquiry'
+import { costUsd, triageModel, AGENT_ACTOR, DRAFT_ENTITY } from './config'
 import { gmailUser } from '@/lib/gmail'
 
 type Supa = ReturnType<typeof getSupabase>
