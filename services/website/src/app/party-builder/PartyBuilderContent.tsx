@@ -1415,6 +1415,8 @@ export default function PartyBuilderContent({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          // Keep re-saves on the plan already open instead of forking a new one.
+          bookingRef: loadedBooking?.booking_ref,
           lineItems: getLineItems(),
           contactName: contact.fullName,
           contactEmail: contact.email,

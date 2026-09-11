@@ -5,7 +5,12 @@ import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { computeCutoffDates, generatePartyRef, formatMoney } from '@/lib/partyPricing'
 import { buildPlanSnapshot, planTotals, writeLineItems } from '@/lib/plan'
-import { generatePortalToken, buildPortalUrl, getPortalBookingRef } from '@/lib/portalAuth'
+import {
+  generatePortalToken,
+  buildPortalUrl,
+  getPortalBookingRef,
+  setPortalCookieHeader,
+} from '@/lib/portalAuth'
 import { partyQuoteSentHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 
@@ -47,6 +52,7 @@ export async function POST(req: NextRequest) {
       locationType,
       locationAddress,
       sendEmail = true,
+      bookingRef: clientBookingRef,
     } = body as {
       lineItems: BookingLineItem[]
       contactName: string
@@ -66,6 +72,7 @@ export async function POST(req: NextRequest) {
       marketingConsent?: boolean
       quoteData?: Record<string, unknown>
       sendEmail?: boolean // admin can save silently without notifying customer
+      bookingRef?: string // the plan the planner already has open, if any
     }
 
     if (!contactName || !contactEmail) {
@@ -84,9 +91,62 @@ export async function POST(req: NextRequest) {
     const { total_cents: totalCents, deposit_amount: depositCents, balance_due_cents: balanceDueCents } =
       planTotals(planSnapshot)
 
-    // Check if updating an existing booking via portal cookie
+    const normalizedEmail = contactEmail.toLowerCase().trim()
+
+    // Which plan is this save editing? A customer should end up with ONE plan
+    // they keep refining, not a new one per save. Three signals, in order of
+    // trust:
+    //   1. the portal cookie (set below on every save, so save #2 in the same
+    //      browser lands on the plan save #1 created),
+    //   2. the ref the planner already has open — only honored when the plan on
+    //      file carries the same email, so a guessed ref can't hijack a booking,
+    //   3. an unpaid plan for the same email and date — catches the cross-device
+    //      and cleared-cookie cases, which is how one customer ended up with
+    //      four copies of the same October party.
     const cookieHeader = req.headers.get('cookie')
-    const existingRef = getPortalBookingRef(cookieHeader, portalSecret)
+    let existingRef = getPortalBookingRef(cookieHeader, portalSecret)
+
+    const refBelongsToCustomer = async (ref: string): Promise<boolean> => {
+      const { data } = await supabase
+        .from('bookings')
+        .select('contact_email')
+        .eq('booking_ref', ref)
+        .single()
+      return !!data && (data.contact_email || '').toLowerCase().trim() === normalizedEmail
+    }
+
+    if (!existingRef && clientBookingRef && (await refBelongsToCustomer(clientBookingRef))) {
+      existingRef = clientBookingRef
+    }
+
+    if (!existingRef) {
+      // Newest unpaid, uncancelled plan for this email whose date doesn't
+      // conflict — a plan with no date yet is still the one being built.
+      const { data: priorPlans } = await supabase
+        .from('bookings')
+        .select('id, booking_ref, party_date')
+        .eq('contact_email', normalizedEmail)
+        .eq('event_type', 'kid-party')
+        .not('status', 'in', '(cancelled,completed)')
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      for (const plan of priorPlans || []) {
+        const datesAgree = !plan.party_date || !partyDate || plan.party_date === partyDate
+        if (!datesAgree) continue
+
+        // Never fold a new save into a plan money has already landed on —
+        // that plan is a real booking, not a draft.
+        const { count } = await supabase
+          .from('booking_payments')
+          .select('id', { count: 'exact', head: true })
+          .eq('booking_id', plan.id)
+        if (count && count > 0) continue
+
+        existingRef = plan.booking_ref
+        break
+      }
+    }
 
     let bookingRef: string
     let bookingId: string
@@ -124,7 +184,8 @@ export async function POST(req: NextRequest) {
         child_name: childName || null,
         child_age: parsedChildAge,
         contact_name: contactName,
-        contact_email: contactEmail,
+        // Stored normalized so the same-customer lookup above matches reliably.
+        contact_email: normalizedEmail,
         contact_phone: contactPhone || null,
         deposit_amount: depositCents,
         total_cents: totalCents,
@@ -180,7 +241,7 @@ export async function POST(req: NextRequest) {
 
         const updateData: Record<string, unknown> = {
           contact_name: contactName,
-          contact_email: contactEmail,
+          contact_email: normalizedEmail,
           contact_phone: contactPhone || null,
           child_name: childName || null,
           child_age: parsedChildAge,
@@ -362,7 +423,7 @@ export async function POST(req: NextRequest) {
       emailDiagnostic = 'RESEND_API_KEY not configured'
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
       bookingRef,
       bookingId,
@@ -370,6 +431,13 @@ export async function POST(req: NextRequest) {
       emailSent,
       emailDiagnostic,
     })
+
+    // Bind this browser to the plan. Previously only /api/portal/auth set this,
+    // so a first-time visitor's second save arrived with no cookie and forked a
+    // brand-new plan.
+    response.headers.set('Set-Cookie', setPortalCookieHeader(bookingRef, portalSecret, isLocal))
+
+    return response
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Save failed'
     console.error('Party builder save error:', message)
