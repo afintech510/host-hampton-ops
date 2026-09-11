@@ -600,3 +600,54 @@ reviewer is recorded, given a contact, and parked as `ignored` with a note — i
 does not produce a draft. Deciding whether an arbitrary message needs an answer
 is triage, which is Phase 3. Until then it appears in Admin → Inbox with a
 "Draft now" button.
+
+### Phase 2 — verified in production (2026-09-11)
+
+Ran against `www.hosthampton.com` with `AGENT_ENABLED=true`:
+
+1. Website lead → event → draft `HH-2026-0313` (mobile party, info-gather, no
+   pricing, signed Allie, asking for exactly the three missing fields) →
+   reviewer SMS. $0.011, 2389 in / 670 out.
+2. Quo webhook **fails closed**: a wrong signature → 401, missing signature
+   headers → 401, a valid Standard-Webhooks signature → 200 with
+   `reviewer: true` for `+16314008080`.
+3. Reviewer texts `SEND HH-2026-0313` → `approved` → real Resend email + real
+   Quo SMS → `sent`. Ledger shows the whole chain: `llm_call`, the draft note,
+   `sent_for_review → approved` by `REVIEWER:+16314008080` with
+   `approved_phrase` verbatim, `approved → sent`, and a `send` row with both
+   channel ids.
+4. **A stranger texting `SEND HH-2026-0976`** (a real open draft's code, from a
+   number not in `REVIEWER_PHONES`) changed nothing: the draft stayed
+   `sent_for_review`, nothing was sent, the event was parked
+   `sms_awaiting_triage`, and the number became a contact instead of being
+   dropped.
+
+Not yet exercised in production: the 2-hour nudge (needs a draft to actually sit
+for two hours; covered by unit tests).
+
+### Two things production taught us, worth not re-learning
+
+- **`content[0]` is not the text block.** Current Claude models run adaptive
+  thinking by default, so the first content block is `thinking`, and since
+  `display` defaults to `omitted` its text is empty. The draft node read
+  `content[0]` and therefore failed on *every* lead with "Anthropic response did
+  not contain JSON" the moment the flag went on. It now finds the first block of
+  `type === 'text'`, asks the API to enforce the output shape via
+  `output_config.format` + `json_schema`, and allows 8000 `max_tokens` because
+  thinking tokens are charged against that ceiling.
+- **A transient failure must not be terminal.** That broken deploy's first cron
+  run claimed every waiting lead and marked each `status='error'`, permanently.
+  A 5xx now re-queues with a bounded attempt counter in
+  `classification_meta.agent_attempts`.
+
+### Config facts discovered on 2026-09-11
+
+- **The Quo webhook had never existed.** `GET /v1/webhooks` returned
+  `{"data":[]}`, so `/api/webhooks/quo` had never been called in production and
+  STOP opt-outs had never been processed through Quo. Now webhook
+  `WHc7b78b376fd743ab9bfc10365f5d241f` on phone `PNYQcWcAEd`, subscribed to
+  `message.received`. `QUO_WEBHOOK_SECRET` on the box is its signing key — and
+  because the route now fails closed, recreating the webhook in Quo without
+  copying the new key to the box stops all inbound SMS.
+- `MODEL_PRICING` had Sonnet 5 at $3/$15 (Sonnet 4.6's rates) and Opus 5 at
+  $15/$75; corrected to $2/$10 and $5/$25.
