@@ -152,7 +152,14 @@ async function ingestOne(supabase: Supa, id: string, labelId: string | null, for
   const ignore = msg.direction === 'out' ? 'outbound — voice corpus, stands the agent down on this thread' : autoIgnoreReason(msg.fromEmail, msg.subject)
   const needsAction = !forceHandled && !ignore
 
-  const contactId = await contactFor(msg)
+  // The backfill is a CORPUS pull, and contactSync mirrors every new contact
+  // into Brevo and Quo. Creating one per sender across twelve months would
+  // push a year of strangers into both address books — a large, outward-facing
+  // side effect nobody asked for. It links to contacts that already exist and
+  // creates none.
+  const contactId = forceHandled
+    ? ((await supabase.from('contacts').select('id').eq('email', msg.fromEmail).maybeSingle()).data?.id ?? null)
+    : await contactFor(msg)
   const bookingId = await bookingFor(supabase, contactId)
 
   const eventId = await recordInboundEvent({
