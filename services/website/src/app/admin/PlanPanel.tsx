@@ -48,12 +48,26 @@ export interface PlanLineItem {
   guest_multiplied: boolean
 }
 
+export interface PlanEvaluation {
+  path: 'quote' | 'info_gather'
+  partyType: string
+  needsHuman: boolean
+  missing: string[]
+  missingLabels: string[]
+  /** False when the plan has neither an email nor a phone — nothing to send to. */
+  reachable: boolean
+}
+
 interface Props {
   booking: PlanBooking | null
   lineItems: PlanLineItem[]
+  evaluation: PlanEvaluation | null
+  /** True when a draft is already open on this lead — the quote button defers to it. */
+  openDraftCode: string | null
   headers: Record<string, string>
   refPath: string
   onSaved: (staleDraftIds: string[]) => void
+  onDrafted: () => void
 }
 
 /** The pipeline header — the progression Adam likes, lit rather than inferred. */
@@ -103,14 +117,26 @@ const TEXT_FIELDS: Array<[keyof PlanBooking, string, 'text' | 'date' | 'time' | 
   ['admin_notes', 'Admin notes', 'area'],
 ]
 
-export default function PlanPanel({ booking, lineItems, headers, refPath, onSaved }: Props) {
+export default function PlanPanel({
+  booking,
+  lineItems,
+  evaluation,
+  openDraftCode,
+  headers,
+  refPath,
+  onSaved,
+  onDrafted,
+}: Props) {
   const [draftFields, setDraftFields] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [quoteBusy, setQuoteBusy] = useState(false)
+  const [quoteMsg, setQuoteMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     setDraftFields({})
     setMsg(null)
+    setQuoteMsg(null)
   }, [booking?.id])
 
   if (!booking) {
@@ -154,6 +180,60 @@ export default function PlanPanel({ booking, lineItems, headers, refPath, onSave
       setMsg(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * "Send quote" (plan §11.6) — a priced quote still goes through review.
+   *
+   * It calls the EXISTING `draft_with_agent` action rather than a new endpoint.
+   * That action already carries the three layers that stop a double-click
+   * becoming two texts to a customer (a live-draft precheck, the same
+   * compare-and-swap claim the cron uses, and the DB's partial unique indexes),
+   * and duplicating it here would mean maintaining those three layers twice —
+   * which is how one copy ends up being the one nobody remembered to guard.
+   *
+   * The button therefore drafts; it does not send. Whether the result is a
+   * QUOTE or an info-gather reply is the gate's call, not the button's, which
+   * is why the label says which one is about to happen.
+   */
+  async function draftQuote() {
+    if (!booking) return
+    const willQuote = evaluation?.path === 'quote'
+    const ok = window.confirm(
+      willQuote
+        ? `Draft a priced quote for ${booking.contact_name || booking.booking_ref}?\n\nIt goes to review first — nothing reaches the customer until you approve it.`
+        : `This plan is still missing ${(evaluation?.missingLabels ?? []).join(', ') || 'some details'}, so the agent will ask for those rather than price it.\n\nDraft that reply?`,
+    )
+    if (!ok) return
+
+    setQuoteBusy(true)
+    setQuoteMsg(null)
+    try {
+      const res = await fetch(`/api/admin/parties/${encodeURIComponent(booking.id)}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'draft_with_agent',
+          note: willQuote ? 'Send the priced quote for this plan.' : null,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setQuoteMsg({ tone: 'error', text: data?.error || 'Could not draft' })
+        return
+      }
+      setQuoteMsg({
+        tone: 'ok',
+        text: `${data.reviewCode} drafted as a ${data.draftStatus === 'drafted' ? 'held' : ''} ${
+          willQuote ? 'quote' : 'reply'
+        } — it is in the thread above. Nothing has gone to the customer.`.replace(/\s+/g, ' '),
+      })
+      onDrafted()
+    } catch (err) {
+      setQuoteMsg({ tone: 'error', text: err instanceof Error ? err.message : 'Could not draft' })
+    } finally {
+      setQuoteBusy(false)
     }
   }
 
@@ -241,6 +321,64 @@ export default function PlanPanel({ booking, lineItems, headers, refPath, onSave
           {booking.invoice_number ? ` · invoice ${booking.invoice_number}` : ''}
         </div>
       </div>
+
+      {/* ── Quote readiness + Send quote (plan §11.6) ── */}
+      {evaluation && (
+        <div className="border-t border-gray-100 pt-3 space-y-2">
+          {!evaluation.reachable ? (
+            <p className="text-[12px] bg-red-50 border border-red-200 text-red-700 rounded-lg px-2.5 py-2">
+              No email or phone on this plan — add one above before drafting anything.
+            </p>
+          ) : evaluation.path === 'quote' ? (
+            <p className="text-[12px] bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-2.5 py-2">
+              Ready to quote — everything the gate needs is here.
+            </p>
+          ) : (
+            <p className="text-[12px] bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-2.5 py-2">
+              {evaluation.needsHuman
+                ? 'The party type is unclear, so this will not be auto-quoted — set the product above.'
+                : `Still missing: ${evaluation.missingLabels.join(' · ')}. A draft now would ask for those, not price it.`}
+            </p>
+          )}
+
+          {openDraftCode ? (
+            // Deferring to the open draft rather than offering a button that
+            // would only 409 — the refusal is more useful before the click.
+            <p className="text-[12px] text-gray-500">
+              {openDraftCode} is already open on this lead. Work that one in the thread, or dismiss it first.
+            </p>
+          ) : (
+            <button
+              disabled={quoteBusy || !evaluation.reachable || dirty}
+              onClick={draftQuote}
+              title={dirty ? 'Save the plan first — otherwise the draft quotes the old details' : undefined}
+              className="w-full px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-40"
+            >
+              {quoteBusy
+                ? 'Drafting…'
+                : dirty
+                  ? 'Save the plan first'
+                  : evaluation.path === 'quote'
+                    ? 'Send quote →'
+                    : 'Draft a reply asking for the rest →'}
+            </button>
+          )}
+          {quoteMsg && (
+            <p
+              className={`text-[12px] rounded-lg px-2.5 py-2 ${
+                quoteMsg.tone === 'ok'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  : 'bg-red-50 border border-red-200 text-red-700'
+              }`}
+            >
+              {quoteMsg.text}
+            </p>
+          )}
+          <p className="text-[10px] text-gray-400">
+            Drafting only reaches review. Nothing reaches the customer until you approve it in the thread.
+          </p>
+        </div>
+      )}
 
       <div className="border-t border-gray-100 pt-3 flex flex-col gap-2">
         <a

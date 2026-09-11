@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { TimelineItem } from '@/lib/agent/threadTimeline'
 import LeadThread, { type LeadDraft } from '@/app/admin/LeadThread'
-import PlanPanel, { PipelineHeader, type PlanBooking, type PlanLineItem } from '@/app/admin/PlanPanel'
+import PlanPanel, {
+  PipelineHeader,
+  type PlanBooking,
+  type PlanEvaluation,
+  type PlanLineItem,
+} from '@/app/admin/PlanPanel'
 
 /**
  * `/admin/lead/[ref]` — the Lead Thread Workspace (plan §11).
@@ -30,6 +35,7 @@ interface LeadPayload {
   booking: PlanBooking | null
   drafts: LeadDraft[]
   activeDraftId: string | null
+  evaluation: PlanEvaluation | null
   lineItems: PlanLineItem[]
   timeline: TimelineItem[]
   errors: string[]
@@ -181,6 +187,13 @@ export default function LeadWorkspacePage({ params }: { params: { ref: string } 
             <PlanPanel
               booking={data.booking}
               lineItems={data.lineItems}
+              evaluation={data.evaluation}
+              // The quote button defers to an open draft rather than offering a
+              // click that could only 409.
+              openDraftCode={
+                data.drafts.find(d => d.id === data.activeDraftId)?.review_code ?? null
+              }
+              onDrafted={() => void load()}
               headers={headers}
               refPath={`/api/admin/lead/${encodeURIComponent(ref)}`}
               onSaved={ids => {

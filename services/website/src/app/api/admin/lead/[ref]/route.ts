@@ -5,6 +5,7 @@ import { loadLeadTimeline } from '@/lib/agent/threadTimeline'
 import { writeLedger } from '@/lib/marketing/graph'
 import { coerceIsoDate } from '@/lib/plan'
 import { isPartyType } from '@/lib/pipelineStages'
+import { describeMissing, evaluateInquiry, type InquiryBooking } from '@/lib/inquiryDrafts'
 
 export const dynamic = 'force-dynamic'
 
@@ -81,6 +82,27 @@ async function resolveLead(supabase: ReturnType<typeof getSupabase>, ref: string
   return null
 }
 
+/**
+ * The quote-readiness of a plan, in the words the panel shows.
+ *
+ * `reachable` is separate from `missing` because it is a different kind of
+ * problem: a plan with no email and no phone cannot be drafted AT ALL, and
+ * `draftForBookingByHand` refuses it with a 422. Saying "missing contact email"
+ * alongside eight other fields would bury the one that blocks the button.
+ */
+function evaluationFor(booking: Record<string, unknown>) {
+  const evaluation = evaluateInquiry(booking as unknown as InquiryBooking)
+  return {
+    path: evaluation.path,
+    partyType: evaluation.partyType,
+    confidence: evaluation.confidence,
+    needsHuman: evaluation.needsHuman,
+    missing: evaluation.missing,
+    missingLabels: describeMissing(evaluation.missing),
+    reachable: !!(booking.contact_email || booking.contact_phone),
+  }
+}
+
 export async function GET(req: NextRequest, { params }: { params: { ref: string } }) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
   const supabase = getSupabase()
@@ -125,6 +147,17 @@ export async function GET(req: NextRequest, { params }: { params: { ref: string 
   return NextResponse.json({
     ref,
     booking,
+    // Can this plan actually be QUOTED, or would drafting now only ask for the
+    // missing pieces? Computed with the SAME `evaluateInquiry()` the draft node
+    // runs, so the panel cannot promise a quote the gate will refuse to write.
+    //
+    // It can still differ from what the draft node concludes, and deliberately
+    // is not hidden: the node evaluates the plan MERGED with the inbound message
+    // (Phase 4 item 6), so a date the customer gave in an email but that nobody
+    // has written onto the plan will show as missing here and be found there.
+    // Erring toward "not ready" is the useful direction — it points at a field
+    // worth filling in rather than at a quote worth trusting.
+    evaluation: booking ? evaluationFor(booking) : null,
     drafts: draftRows,
     // The one the composer acts on by default: the newest still-open draft.
     activeDraftId: openDrafts[0] ? String(openDrafts[0].id) : null,
