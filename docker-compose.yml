@@ -173,6 +173,17 @@ services:
       # HMAC secret for /review/<token> draft previews. Falls back to
       # PORTAL_LINK_SIGNING_SECRET when unset.
       - REVIEW_LINK_SIGNING_SECRET=${REVIEW_LINK_SIGNING_SECRET:-}
+      # Gmail ingestion (lib/gmail.ts, /api/cron/gmail-sync). A SEPARATE OAuth
+      # grant from GOOGLE_* above: this one is gmail.readonly + gmail.modify on
+      # hosthampton295@gmail.com and has NO send scope, so it cannot email a
+      # customer. GOOGLE_REFRESH_TOKEN is calendar-only and must never be
+      # re-consented for Gmail — it powers live availability.
+      # Unset is a supported state: /api/cron/gmail-sync reports configured:false.
+      - GMAIL_CLIENT_ID=${GMAIL_CLIENT_ID:-}
+      - GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET:-}
+      - GMAIL_REFRESH_TOKEN=${GMAIL_REFRESH_TOKEN:-}
+      - GMAIL_USER=${GMAIL_USER:-hosthampton295@gmail.com}
+      - GMAIL_HANDLED_LABEL=${GMAIL_HANDLED_LABEL:-HH-Agent/Handled}
       - VENMO_HANDLE=${VENMO_HANDLE:-@hosthampton}
       - ZELLE_PHONE=${ZELLE_PHONE}
       - SIGNWELL_API_KEY=${SIGNWELL_API_KEY}

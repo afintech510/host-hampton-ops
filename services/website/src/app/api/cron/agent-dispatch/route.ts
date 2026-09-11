@@ -4,6 +4,7 @@ import { draftForInquiry, AGENT_ACTOR, DRAFT_ENTITY } from '@/lib/agent/draftInq
 import { finishEvent, type InboundEvent } from '@/lib/agent/events'
 import { agentEnabled, dailyUsdCap, isBusinessHours, NUDGE_AFTER_MS } from '@/lib/agent/config'
 import { handleReviewerReply } from '@/lib/agent/reviewLoop'
+import { triageMessage } from '@/lib/agent/triage'
 import { notifyOwnerSms } from '@/lib/ownerNotify'
 import { writeLedger } from '@/lib/marketing/graph'
 
@@ -312,7 +313,48 @@ export async function GET(req: NextRequest) {
       continue
     }
 
-    // Gmail events are parked (not deleted) until Phase 3 lands.
+    // ── Gmail (Phase 3). Unlike a website form, an email is not known to be an
+    // inquiry, so it is triaged first: most of this mailbox is receipts and
+    // newsletters, and only lead / customer_reply / booking_admin may cost a
+    // Sonnet draft and a text to a human.
+    if (event.source === 'gmail') {
+      const triage = await triageMessage({
+        supabase,
+        from: event.from_address || '',
+        subject: event.subject,
+        body: event.body,
+        threadId: (event.parsed as { thread_id?: string } | null)?.thread_id ?? null,
+        sentAt: (event.parsed as { sent_at?: string } | null)?.sent_at ?? event.created_at,
+        eventId: event.id,
+      })
+
+      if (!triage.needsAction) {
+        await finishEvent(supabase, event.id, 'ignored', {
+          classification: triage.category,
+          error: triage.reason,
+        })
+        results.push({ kind: 'event', id: event.id, outcome: `triaged_${triage.category}` })
+        continue
+      }
+
+      const outcome = await draftForInquiry({ supabase, event })
+      if (outcome.ok) {
+        drafted++
+        await finishEvent(supabase, event.id, 'handled', {
+          draftId: outcome.draftId,
+          classification: triage.category,
+        })
+        results.push({ kind: 'event', id: event.id, outcome: 'drafted', draftId: outcome.draftId })
+      } else if (outcome.skipped) {
+        await finishEvent(supabase, event.id, 'handled', { classification: triage.category, error: outcome.error })
+        results.push({ kind: 'event', id: event.id, outcome: 'skipped', error: outcome.error })
+      } else {
+        await finishEvent(supabase, event.id, 'error', { classification: triage.category, error: outcome.error })
+        results.push({ kind: 'event', id: event.id, outcome: 'error', error: outcome.error })
+      }
+      continue
+    }
+
     if (event.source !== 'website_form') {
       await finishEvent(supabase, event.id, 'ignored', { error: `source '${event.source}' not handled yet` })
       results.push({ kind: 'event', id: event.id, outcome: 'unsupported_source' })

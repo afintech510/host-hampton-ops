@@ -280,7 +280,7 @@ SMS to each reviewer, and a working preview link; nothing sent to the customer.
 Exit criteria: full loop on a real lead with the reviewer texting `EDIT`, then
 `TEST`, then `SEND`, with the customer receiving both channels once.
 
-### Phase 3 — Permanent Gmail ingestion (no Claude connector)
+### Phase 3 — Permanent Gmail ingestion (no Claude connector) — **BUILT 2026-09-11**
 
 Why not the connector: it is bound to whichever Google account Adam is signed
 into in claude.ai, it is interactive-only, and the standing rule forbids
@@ -841,3 +841,87 @@ rather than replacing it, verify the Slack signing secret fail-closed exactly as
 allowlist so the guardrail shape is unchanged. It would supersede the timeline
 and chat-composer halves of §11, leaving the web workspace to own the plan panel,
 invoice and planner — which Slack cannot render.
+
+
+## 11. Phase 2 review findings (2026-09-11)
+
+An adversarial pass over Phase 2, before Phase 3 was written. The hard guardrail
+held — every path into `sendApprovedDraft` goes through the reviewer phone check
+or an admin-authenticated route, `isAdmin: true` is never set by cron or an LLM
+path, and `approved`/`sent` are GATED edges. Five things around it were wrong
+(commit `361c57d`):
+
+1. **A trailing number was eaten as a draft code.** `"make the price 1200"`
+   parsed as command `"make the price"` + short code `"1200"`: the number was
+   deleted from the note and the loop answered *"I can't find a draft matching
+   1200"* instead of revising. Prices, guest counts, times and years all end in
+   digits. A trailing 4-digit group is now a short code only after an actual
+   command word (`SHORT_CODE_COMMANDS`).
+2. **A quoted reply was parsed as intent.** An iPhone inline reply carries the
+   whole original SMS back, and our own review text contains "Reply SEND,
+   CANCEL, or say what to change". It did not approve — the exact-phrase parser
+   held — but it became a *revision against our own boilerplate*. Intent is now
+   read only from lines the human typed; the code is still read from the quote,
+   because a code is an identifier, not an instruction.
+3. **The send had a double-send window.** `customer_*_sent_at` was stamped AFTER
+   the send. Each channel is now claimed with a compare-and-swap before sending
+   and released on failure. A process that dies mid-send leaves the channel
+   claimed and the draft visibly unfinished — the right direction, since the
+   alternative is the same quote arriving twice.
+4. **An impossible channel stranded a draft.** `channel='both'` for a phone-only
+   contact texted the customer and then sat in `approved` forever: the nudge only
+   watches `sent_for_review`, so nobody was ever told. A missing address is
+   permanent, not transient, and now closes the draft with the reason in
+   `send_error`.
+5. **An out-of-context approval confirms once** (Adam's call). If the named code
+   is not the draft we last texted, the agent replies with who it goes to and
+   waits for a second SEND, recorded in the ledger with a 15-minute window. Only
+   approvals ask; cancel, test and revise are recoverable.
+
+Also: `isBusinessHours` pins `hourCycle: 'h23'`. `hour12: false` leaves en-US on
+the h24 cycle, where midnight formats as `"24"` — harmless for a 9–20 window, and
+exactly what becomes a 1am text the day someone widens it.
+
+Verified in production the same way Phase 2 was: two test leads under Adam's own
+handles, a signed synthetic Standard-Webhooks request, `SEND` → confirmation with
+nothing sent, second `SEND` → both channels delivered, with the whole chain in
+`marketing_ledger` including the new `approve_confirm_prompt` row. The real open
+customer draft HH-2026-0976 was never touched.
+
+Left alone as deliberate: `resolveDraft` still accepts a code for a draft in any
+status (the reviewer is verified and typed a code they were texted), and the
+nudge's theoretical flood ceiling (3 per run, one per draft ever) is bounded by
+the number of open drafts, which is bounded by the business.
+
+## 12. Phase 3 as built (2026-09-11)
+
+- **`lib/gmail.ts`** — raw `fetch` like `googleCalendar.ts`. Token refresh with a
+  process-lifetime cache, `history.list` from the stored checkpoint,
+  `messages.get`, `messages.modify` for the label. There is no send function and
+  there must never be one: the grant is `gmail.readonly` + `gmail.modify`, so the
+  guardrail is a property of the token, not of the code. Body extraction prefers
+  `text/plain`, falls back to de-tagged HTML, and strips quoted history and the
+  RFC `-- ` signature — which is both a prompt-quality and an injection-surface
+  win.
+- **`/api/cron/gmail-sync`** (3 min, job 8429172) — resumes from
+  `gmail_sync_state.history_id`; a 404 (Gmail keeps ~a week of history) or a
+  first run falls back to `newer_than:2d`, never an unbounded mailbox read. The
+  checkpoint only advances when the whole batch read cleanly, so a failure
+  re-reads rather than skipping. **Outbound mail is ingested too**
+  (`direction='out'`, recorded `ignored`): it is the Phase 6 voice corpus and it
+  is what stands the agent down on a thread a human already answered.
+  `?backfill=1&pageToken=…` is the bounded 12-month pull, written `handled`.
+- **`lib/agent/triage.ts`** — three layers, cheapest first. `autoIgnoreReason()`
+  is free and deterministic: the site's own `noReply@mail.hosthampton.com` (the
+  one whose absence would double-draft every website lead), the seeded platform
+  list, any `no-reply` local part, and our own outbound mail. Then the stand-down
+  check. Only then Haiku, schema-enforced to an enum + boolean + one line.
+  **`needsAction` is gated on the category in code**, so an email body that talks
+  the model into `needsAction: true` on a `marketing` message still cannot reach
+  a customer — tested.
+- **Dispatcher** routes `source='gmail'` through triage first; only
+  `lead | customer_reply | booking_admin` may cost a Sonnet draft and a text.
+- No migration: 032 already created `gmail_sync_state` and allows
+  `source='gmail'`. The next free number is still **035**.
+- Tests: `gmail` (24), `agentTriage` (17), plus the dispatcher's Gmail paths. 586
+  total, the one failure being the pre-existing WIP.

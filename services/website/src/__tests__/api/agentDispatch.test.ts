@@ -25,6 +25,11 @@ jest.mock('@/lib/agent/draftInquiry', () => ({
 const mockFinishEvent = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/agent/events', () => ({ finishEvent: (...args: any[]) => mockFinishEvent(...args) }))
 
+const mockTriageMessage = jest.fn()
+jest.mock('@/lib/agent/triage', () => ({
+  triageMessage: (...args: any[]) => mockTriageMessage(...args),
+}))
+
 const mockHandleReviewerReply = jest.fn()
 jest.mock('@/lib/agent/reviewLoop', () => ({
   handleReviewerReply: (...args: any[]) => mockHandleReviewerReply(...args),
@@ -149,6 +154,7 @@ describe('GET /api/cron/agent-dispatch', () => {
     process.env = { ...originalEnv, CRON_SECRET, AGENT_ENABLED: '1' }
     mockDraftForInquiry.mockResolvedValue({ ok: true, status: 200, draftId: 'draft-1', reviewCode: 'HH-2026-0001' })
     mockHandleReviewerReply.mockResolvedValue({ handled: false, outcome: 'not_a_reviewer' })
+    mockTriageMessage.mockResolvedValue({ category: 'marketing', needsAction: false, reason: 'newsletter' })
   })
   afterAll(() => { process.env = originalEnv })
 
@@ -236,11 +242,47 @@ describe('GET /api/cron/agent-dispatch', () => {
     expect(res.body.results[0].outcome).toBe('stale')
   })
 
-  it('parks a source nothing can answer yet (Gmail is Phase 3) without drafting', async () => {
+  it('triages a Gmail event and drops it when nothing needs an answer', async () => {
+    // Most of this mailbox is receipts and newsletters. They must cost a Haiku
+    // call at most — never a Sonnet draft and a text to a human.
     const { supabase } = makeSupabase({
       candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
       claimable: ['e1'],
       eventRows: { e1: websiteFormEvent('e1', { source: 'gmail' }) },
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+    mockTriageMessage.mockResolvedValue({ category: 'marketing', needsAction: false, reason: 'newsletter' })
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(mockTriageMessage).toHaveBeenCalled()
+    expect(mockDraftForInquiry).not.toHaveBeenCalled()
+    expect(res.body.results[0].outcome).toBe('triaged_marketing')
+    expect(mockFinishEvent).toHaveBeenCalledWith(expect.anything(), 'e1', 'ignored', expect.anything())
+  })
+
+  it('drafts for a Gmail event that triage says is a real lead', async () => {
+    const { supabase } = makeSupabase({
+      candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
+      claimable: ['e1'],
+      eventRows: { e1: websiteFormEvent('e1', { source: 'gmail' }) },
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+    mockTriageMessage.mockResolvedValue({ category: 'lead', needsAction: true, reason: 'asking about a party' })
+    mockDraftForInquiry.mockResolvedValue({ ok: true, status: 200, draftId: 'd9' })
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(mockDraftForInquiry).toHaveBeenCalled()
+    expect(res.body.drafted).toBe(1)
+    expect(res.body.results[0].outcome).toBe('drafted')
+  })
+
+  it('still parks a source nothing can answer yet', async () => {
+    const { supabase } = makeSupabase({
+      candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
+      claimable: ['e1'],
+      eventRows: { e1: websiteFormEvent('e1', { source: 'grasshopper' }) },
     })
     mockGetSupabase.mockReturnValue(supabase)
 
@@ -296,6 +338,7 @@ describe('GET /api/cron/agent-dispatch', () => {
     mockGetSupabase.mockReturnValue(supabase)
     // handleReviewerReply refuses on the phone number alone.
     mockHandleReviewerReply.mockResolvedValue({ handled: false, outcome: 'not_a_reviewer' })
+    mockTriageMessage.mockResolvedValue({ category: 'marketing', needsAction: false, reason: 'newsletter' })
 
     const res = await GET(makeReq(CRON_SECRET))
 

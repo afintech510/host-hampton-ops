@@ -155,6 +155,7 @@ Runtime env (`website`):
 `SMS_PROVIDER`, `QUO_API_KEY`, `QUO_PHONE_NUMBER`, `QUO_USER_ID`, `QUO_WEBHOOK_SECRET`,
 `OWNER_NOTIFY_EMAIL`, `REVIEWER_PHONES`,
 `AGENT_ENABLED`, `AGENT_DRAFT_MODEL`, `AGENT_TRIAGE_MODEL`, `AGENT_DAILY_USD_CAP`, `REVIEW_LINK_SIGNING_SECRET`,
+`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `GMAIL_USER`, `GMAIL_HANDLED_LABEL`,
 `VENMO_HANDLE`, `ZELLE_PHONE`,
 `SIGNWELL_API_KEY`, `SIGNWELL_TEMPLATE_ID`, `SIGNWELL_TEST_MODE`, `SIGNWELL_SIGNER_PLACEHOLDER`
 
@@ -173,11 +174,22 @@ Runtime env (`website`):
 | `REVIEWER_PHONES` | Comma-separated E.164 list that receives draft-review SMS. Empty = no SMS. |
 | `OWNER_NOTIFY_EMAIL` | Where owner notification emails go. Default `hosthampton295@gmail.com`. |
 | `REVIEW_LINK_SIGNING_SECRET` | HMAC secret for `/review/<token>` draft previews. Falls back to `PORTAL_LINK_SIGNING_SECRET`. |
+| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | Phase-3 Gmail ingestion (`lib/gmail.ts`, `/api/cron/gmail-sync`). A **separate OAuth grant** from `GOOGLE_*`, scoped `gmail.readonly` + `gmail.modify` only. Unset is supported: the route reports `configured:false` and does nothing. |
+| `GMAIL_USER` | Mailbox to ingest. Default `hosthampton295@gmail.com`. |
+| `GMAIL_HANDLED_LABEL` | Gmail label applied to processed mail. Default `HH-Agent/Handled`. |
 
 The agent never sends to a customer without an explicit human approval, never
 sends customer email through Gmail (Resend for email, Quo for SMS), and its
 migrations (028, 032, 033, 034) must be applied by hand before `AGENT_ENABLED` is
 turned on.
+
+**Never re-consent `GOOGLE_REFRESH_TOKEN` for Gmail.** That grant is
+calendar-only and powers live availability on the booking pages; re-running
+consent on it for a different scope set invalidates the calendar access. Gmail
+has its own client and its own token, minted by `scripts/gmail_consent.mjs`,
+which refuses to print a token unless the mailbox matches `GMAIL_USER`. The
+Gmail grant has no send scope, so it is structurally incapable of emailing a
+customer — that is the guardrail, not a policy.
 
 `QUO_WEBHOOK_SECRET` became security-relevant in Phase 2: `/api/webhooks/quo`
 now **fails closed** (401 on a bad or missing signature) because an inbound SMS
@@ -214,6 +226,7 @@ Cron routes (under `services/website/src/app/api/cron/`):
 - `/api/cron/event-reminders`
 - `/api/cron/booking-locks`
 - `/api/cron/agent-dispatch` — booking agent: claims new inbound events, drafts replies, texts the reviewers. Every 2 minutes. No-op unless `AGENT_ENABLED` is true.
+- `/api/cron/gmail-sync` — pulls new mail from `GMAIL_USER` into `ingested_messages` and applies the handled label. Every 3 minutes. No-op unless the `GMAIL_*` env is set. Read + label only; it has no send scope. `?backfill=1&pageToken=…` runs the bounded 12-month historical pull by hand (writes rows as `handled`, so it never triggers a draft).
 
 Example trigger:
 ```bash
