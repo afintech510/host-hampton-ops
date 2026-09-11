@@ -1,3 +1,4 @@
+import { ownerEmail } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest) {
         // Admin notification
         resend.emails.send({
           from,
-          to: 'hosthampton295@gmail.com',
+          to: ownerEmail(),
           subject: `New Signup: ${trimmed.firstName} ${trimmed.lastName}`,
           replyTo: trimmed.email,
           html: adminNotificationHtml(trimmed, couponCode),

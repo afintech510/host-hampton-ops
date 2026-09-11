@@ -1,3 +1,4 @@
+import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { upsertContact } from '@/lib/contacts'
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
       // Admin notification
       resend.emails.send({
         from,
-        to: 'hosthampton295@gmail.com',
+        to: ownerEmail(),
         subject: `Contact form: ${name}`,
         replyTo: email,
         html: `<p><strong>${name}</strong> (${email}) sent a message via the Contact Us page:</p><blockquote style="border-left:3px solid #E8C7CB;padding:12px 16px;margin:16px 0;color:#555;">${message.replace(/\n/g, '<br>')}</blockquote><p><a href="mailto:${email}">Reply to ${name}</a></p>`,
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
         </div>`,
       }),
     ])
+    await notifyOwnerSms(leadSmsLine({ kind: 'contact form message', name, phone, email, extra: String(message).slice(0, 160) }))
   }
 
   return NextResponse.json({ success: true })

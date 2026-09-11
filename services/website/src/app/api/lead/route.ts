@@ -1,3 +1,4 @@
+import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { leadNotifyHtml, leadConfirmHtml } from '@/lib/emailTemplates'
@@ -124,7 +125,7 @@ export async function POST(req: NextRequest) {
       // Admin notification
       {
         from,
-        to: 'hosthampton295@gmail.com',
+        to: ownerEmail(),
         subject: `New lead: ${eventType} — ${fullName}`,
         html: leadNotifyHtml({
           fullName,
@@ -165,6 +166,10 @@ export async function POST(req: NextRequest) {
     })
 
     await Promise.allSettled(emails.map(e => resend.emails.send(e)))
+    await notifyOwnerSms(leadSmsLine({
+      kind: `lead (${eventType})`, name: fullName, phone, email,
+      date: preferredDate, guests: guestCount, extra: partyTheme || null,
+    }))
   } else {
     console.warn('RESEND_API_KEY not set — skipping lead notification email')
   }

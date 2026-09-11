@@ -1,3 +1,4 @@
+import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
@@ -78,7 +79,7 @@ export async function POST(req: NextRequest) {
     await Promise.allSettled([
       resend.emails.send({
         from,
-        to: 'hosthampton295@gmail.com',
+        to: ownerEmail(),
         subject: `Canvas Bag Inquiry — ${name} (${product} x${Number(quantity)})`,
         replyTo: email,
         html: `<div style="font-family:sans-serif;max-width:560px;color:#2F343B;">
@@ -118,6 +119,7 @@ export async function POST(req: NextRequest) {
         </div>`,
       }),
     ])
+    await notifyOwnerSms(leadSmsLine({ kind: 'canvas bag inquiry', name, phone, email, extra: `${product} x${Number(quantity)}` }))
   }
 
   return NextResponse.json({ success: true })

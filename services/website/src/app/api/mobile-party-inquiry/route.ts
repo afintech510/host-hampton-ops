@@ -1,3 +1,4 @@
+import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { upsertContact } from '@/lib/contacts'
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
       // Admin notification
       resend.emails.send({
         from,
-        to: 'hosthampton295@gmail.com',
+        to: ownerEmail(),
         subject: `🎉 Mobile Party Inquiry — ${name}`,
         replyTo: email,
         html: `
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest) {
 </div>`,
       }),
     ])
+    await notifyOwnerSms(leadSmsLine({ kind: 'MOBILE party inquiry', name, phone, email, date, extra: String(details).slice(0, 160) }))
   }
 
   return NextResponse.json({ success: true })

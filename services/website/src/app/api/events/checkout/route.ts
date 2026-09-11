@@ -1,3 +1,4 @@
+import { ownerEmail } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest) {
             }),
           }),
           resend.emails.send({
-            from, to: 'hosthampton295@gmail.com',
+            from, to: ownerEmail(),
             subject: `New RSVP: ${customerName} — ${event.title} (${sessionsData.length} sessions)`,
             html: ticketPurchaseNotifyHtml({
               ticketRef: groupRef, customerName, customerEmail, customerPhone,
@@ -353,7 +354,7 @@ export async function POST(req: NextRequest) {
           }),
         }),
         resend.emails.send({
-          from, to: 'hosthampton295@gmail.com',
+          from, to: ownerEmail(),
           subject: `New RSVP: ${customerName} — ${event.title} (${ticketRef})`,
           html: ticketPurchaseNotifyHtml({
             ticketRef, customerName, customerEmail, customerPhone,
@@ -476,7 +477,7 @@ export async function POST(req: NextRequest) {
           }),
         }),
         resend.emails.send({
-          from, to: 'hosthampton295@gmail.com',
+          from, to: ownerEmail(),
           subject: `New ticket (gift card): ${customerName} — ${event.title} (${ticketRef})`,
           html: ticketPurchaseNotifyHtml({
             ticketRef, customerName, customerEmail, customerPhone,

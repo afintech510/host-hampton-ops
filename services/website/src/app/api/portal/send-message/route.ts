@@ -1,3 +1,4 @@
+import { ownerEmail, notifyOwnerSms } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef } from '@/lib/portalAuth'
@@ -83,12 +84,13 @@ export async function POST(req: NextRequest) {
 
     await resend.emails.send({
       from,
-      to: 'hosthampton295@gmail.com',
+      to: ownerEmail(),
       replyTo: booking.contact_email || undefined,
       subject: `Customer message: ${booking.contact_name || booking.booking_ref} — ${booking.booking_ref}`,
       html,
     }).catch(err => console.error('send-message email error (non-fatal):', err))
   }
+  await notifyOwnerSms(`Portal message from ${booking.contact_name || 'customer'} (${booking.booking_ref}): ${message.slice(0, 200)}`)
 
   return NextResponse.json({ ok: true })
 }

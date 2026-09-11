@@ -155,6 +155,11 @@ services:
       - QUO_USER_ID=${QUO_USER_ID:-}
       # Standard-Webhooks signing secret for /api/webhooks/quo (opt-out sync)
       - QUO_WEBHOOK_SECRET=${QUO_WEBHOOK_SECRET:-}
+      # Owner notifications (lib/ownerNotify.ts). REVIEWER_PHONES is a comma-
+      # separated E.164 list that receives lead/booking-agent SMS via Quo;
+      # empty = no owner SMS.
+      - OWNER_NOTIFY_EMAIL=${OWNER_NOTIFY_EMAIL:-hosthampton295@gmail.com}
+      - REVIEWER_PHONES=${REVIEWER_PHONES:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - PORTAL_LINK_SIGNING_SECRET=${PORTAL_LINK_SIGNING_SECRET}
       - VENMO_HANDLE=${VENMO_HANDLE:-@hosthampton}

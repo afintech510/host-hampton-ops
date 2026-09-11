@@ -89,6 +89,7 @@ export interface PartyBooking {
   contact_name: string
   contact_email: string
   contact_phone?: string | null
+  /** Deposit in CENTS (25000 = $250), despite the column name lacking a _cents suffix. */
   deposit_amount: number
   total_cents: number
   balance_due_cents: number

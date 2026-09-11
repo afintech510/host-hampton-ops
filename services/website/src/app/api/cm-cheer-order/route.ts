@@ -1,3 +1,4 @@
+import { ownerEmail } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { upsertContact } from '@/lib/contacts'
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
       // Admin notification
       resend.emails.send({
         from,
-        to: 'hosthampton295@gmail.com',
+        to: ownerEmail(),
         subject: `📦 CM Cheer Order ${order.order_ref} — ${athleteName}`,
         replyTo: email,
         html: `

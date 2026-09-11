@@ -1,3 +1,4 @@
+import { ownerEmail } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
@@ -201,7 +202,7 @@ export async function POST(req: NextRequest) {
             }),
           }),
           resend.emails.send({
-            from, to: 'hosthampton295@gmail.com',
+            from, to: ownerEmail(),
             subject: `Studio rental booked: ${bkRow.contact_name} — ${bookingRef}`,
             html: partyAdminNewBookingHtml({
               bookingRef,
@@ -390,7 +391,7 @@ export async function POST(req: NextRequest) {
             }),
           }),
           resend.emails.send({
-            from, to: 'hosthampton295@gmail.com',
+            from, to: ownerEmail(),
             subject: `Deposit paid: ${bkRow.contact_name} — ${bookingRef}`,
             html: partyAdminNewBookingHtml({
               bookingRef,
@@ -606,7 +607,7 @@ export async function POST(req: NextRequest) {
             }),
           }),
           resend.emails.send({
-            from, to: 'hosthampton295@gmail.com',
+            from, to: ownerEmail(),
             subject: `New ticket: ${m.customerName} — ${evt.title} (${ticketRef})`,
             html: ticketPurchaseNotifyHtml({
               ticketRef, customerName: m.customerName, customerEmail: m.customerEmail,
@@ -757,7 +758,7 @@ export async function POST(req: NextRequest) {
             }),
           }),
           resend.emails.send({
-            from, to: 'hosthampton295@gmail.com',
+            from, to: ownerEmail(),
             subject: `New ticket: ${m.customerName} — ${evt.title} (${sessionIds.length} sessions, ${groupRef})`,
             html: ticketPurchaseNotifyHtml({
               ticketRef: groupRef, customerName: m.customerName,
@@ -1002,7 +1003,7 @@ export async function POST(req: NextRequest) {
             }),
           }),
           resend.emails.send({
-            from, to: 'hosthampton295@gmail.com',
+            from, to: ownerEmail(),
             subject: `New cart order: ${m.customerName} — ${eventTitles.join(', ')} (${cartRef})`,
             html: ticketPurchaseNotifyHtml({
               ticketRef: cartRef,
@@ -1146,7 +1147,7 @@ export async function POST(req: NextRequest) {
           }),
           resend.emails.send({
             from,
-            to: 'hosthampton295@gmail.com',
+            to: ownerEmail(),
             subject: `New vendor: ${m.businessName} (${m.contactName}) — ${vendorRef}`,
             html: ownerHtml,
           }),
@@ -1309,7 +1310,7 @@ export async function POST(req: NextRequest) {
             }),
             resend.emails.send({
               from,
-              to: 'hosthampton295@gmail.com',
+              to: ownerEmail(),
               subject: `New party booking: ${m.contactName} — ${bookingRef}`,
               html: partyAdminNewBookingHtml({
                 bookingRef,
@@ -1550,7 +1551,7 @@ export async function POST(req: NextRequest) {
           }),
           // Owner notification
           resend.emails.send({
-            from, to: 'hosthampton295@gmail.com',
+            from, to: ownerEmail(),
             subject: `New gift card: ${m.purchaserName} → ${m.recipientName} (${amountFormatted})`,
             html: giftCardNotifyHtml({
               code,
@@ -1778,7 +1779,7 @@ export async function POST(req: NextRequest) {
         }),
         resend.emails.send({
           from,
-          to: 'hosthampton295@gmail.com',
+          to: ownerEmail(),
           subject: `New booking: ${m.contactName} — ${partyDate} at ${m.partyTime} (${bookingRef})`,
           html: ownerHtml,
         }),

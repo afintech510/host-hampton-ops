@@ -1,3 +1,4 @@
+import { ownerEmail } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
@@ -260,7 +261,7 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any) 
 
       // Override recipient to admin
       if (subject && html) {
-        await resend.emails.send({ from, to: 'hosthampton295@gmail.com', subject, html })
+        await resend.emails.send({ from, to: ownerEmail(), subject, html })
         return // Don't send to customer
       }
     }

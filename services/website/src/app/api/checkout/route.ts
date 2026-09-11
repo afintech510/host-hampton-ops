@@ -1,3 +1,4 @@
+import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
@@ -190,7 +191,7 @@ export async function POST(req: NextRequest) {
         }),
         resend.emails.send({
           from,
-          to: 'hosthampton295@gmail.com',
+          to: ownerEmail(),
           subject: `New party REQUEST: ${contactName} — ${bookingRef}`,
           html: partyAdminNewBookingHtml({
             bookingRef,
@@ -212,6 +213,10 @@ export async function POST(req: NextRequest) {
       ])
       console.log('Party request emails sent for', bookingRef)
     }
+    await notifyOwnerSms(leadSmsLine({
+      kind: `party REQUEST ${bookingRef} (${packageName || eventType || 'party'})`, name: contactName,
+      phone: contactPhone, email: contactEmail, date: `${partyDate} ${partyTime || ''}`.trim(), guests: guestCount,
+    }))
 
     void utm
     return NextResponse.json({ url: `https://${host}/book/success?request=1&ref=${bookingRef}` })

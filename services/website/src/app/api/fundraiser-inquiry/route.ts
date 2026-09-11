@@ -1,3 +1,4 @@
+import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
       }),
       resend.emails.send({
         from,
-        to: 'hosthampton295@gmail.com',
+        to: ownerEmail(),
         subject: `New fundraiser lead: ${organizationName} — ${contactName}`,
         html: fundraiserInquiryNotifyHtml({
           contactName,
@@ -123,6 +124,7 @@ export async function POST(req: NextRequest) {
         }),
       }),
     ])
+    await notifyOwnerSms(leadSmsLine({ kind: 'fundraiser lead', name: `${contactName} (${organizationName})`, phone, email, extra: estimatedQuantity ? `qty ${estimatedQuantity}` : null }))
   } else {
     console.warn('RESEND_API_KEY not set — skipping fundraiser inquiry emails')
   }

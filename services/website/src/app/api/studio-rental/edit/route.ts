@@ -1,3 +1,4 @@
+import { ownerEmail } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef } from '@/lib/portalAuth'
@@ -168,7 +169,7 @@ export async function POST(req: NextRequest) {
         const resend = new Resend(process.env.RESEND_API_KEY)
         const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
         await resend.emails.send({
-          from, to: 'hosthampton295@gmail.com',
+          from, to: ownerEmail(),
           subject: `⏱ Studio time changed: ${booking.contact_name} — ${bookingRef}`,
           html: `<p><strong>${booking.contact_name}</strong> (${bookingRef}) changed their studio time to <strong>${to12hr(startTime)}–${to12hr(endTime)}</strong> on ${partyDate} (${rate.hours} hrs).</p><p>New total ${formatMoney(totalCents)}, balance ${formatMoney(balanceCents)}. The calendar block was updated — please confirm there's no overlap.</p>`,
         }).catch(err => console.error('Studio time-change email error (non-fatal):', err))

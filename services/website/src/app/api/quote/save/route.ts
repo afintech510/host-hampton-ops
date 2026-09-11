@@ -1,3 +1,4 @@
+import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { savedQuoteHtml } from '@/lib/emailTemplates'
@@ -110,11 +111,12 @@ export async function POST(req: NextRequest) {
       // Also notify owner
       resend.emails.send({
         from,
-        to: 'hosthampton295@gmail.com',
+        to: ownerEmail(),
         subject: `Saved quote: ${name}${slotDisplay ? ` — ${slotDisplay}` : ''}`,
         html: `<p><strong>${name}</strong> (${email}, ${phone || 'no phone'}) saved a party quote.</p>${adminDateLine}<pre>${summary || 'No summary'}</pre><p><a href="${quoteLink}">View their quote</a></p>`,
       }),
     ])
+    await notifyOwnerSms(leadSmsLine({ kind: 'saved party quote', name, phone, email, date: slotDisplay, extra: summary ? String(summary).slice(0, 120) : null }))
   }
 
   return NextResponse.json({ success: true, quoteLink })

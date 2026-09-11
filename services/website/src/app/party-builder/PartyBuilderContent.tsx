@@ -1512,6 +1512,14 @@ export default function PartyBuilderContent({
         return
       }
 
+      // /api/party-checkout is the REQUEST flow: nothing is charged and no
+      // date is locked until the team approves. It answers with a success URL
+      // (method: 'request'). Only a future paid flow would return clientSecret.
+      if (data.method === 'request' || (!data.clientSecret && data.url)) {
+        window.location.href = data.url
+        return
+      }
+
       if (depositMethod === 'card') {
         if (data.clientSecret) {
           const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
@@ -1544,15 +1552,17 @@ export default function PartyBuilderContent({
               paymentElementRef.current = paymentElement
             }
           }, 50)
-        } else if (data.url) {
-          window.location.href = data.url
+        } else {
+          setPayError('Unexpected response from the server. Please try again.')
+          setPayProcessing(false)
         }
       } else {
-        // Non-card pledge — date is locked server-side; show inline confirmation.
-        // Customer also gets payment-instructions email via the existing flow.
+        // Non-card pledge for a booking that already has an approved date.
+        // (Not reachable from the request flow above — a request never locks
+        // a date, so we must not tell the customer it did.)
         const methodLabel = depositMethod.charAt(0).toUpperCase() + depositMethod.slice(1)
         setDepositPledgeSuccess(
-          `Got it! Your date is locked. Send your ${formatMoney(depositCents)} deposit via ${methodLabel} using the instructions above — we'll email you a copy too. Once we confirm payment, your booking moves to "Approved."`
+          `Got it! Send your ${formatMoney(depositCents)} deposit via ${methodLabel} using the instructions above — we'll email you a copy too. Once we confirm payment, your booking moves to "Approved."`
         )
         setPayProcessing(false)
       }

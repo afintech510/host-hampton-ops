@@ -1,4 +1,5 @@
 import { getSupabase } from '@/lib/supabase'
+import { syncContactExternally } from '@/lib/contactSync'
 
 // Valid service_type enum values in the database
 const SERVICE_TYPE_MAP: Record<string, string> = {
@@ -95,13 +96,107 @@ export async function upsertContact({
 
     const { data: contact } = await supabase
       .from('contacts')
-      .select('id')
+      .select('id, email_opt_in, quo_contact_id')
       .eq('email', email)
       .single()
 
-    return contact?.id ?? null
+    const contactId: string | null = contact?.id ?? null
+
+    // Mirror to Brevo + Quo so every list stays in sync (non-fatal, awaited so
+    // serverless-style routes don't drop the work when the response returns).
+    if (contactId) {
+      await syncContactExternally({
+        contactId,
+        email,
+        phone: phone || null,
+        firstName: nameParts[0],
+        lastName: nameParts.length > 1 ? nameParts.slice(1).join(' ') : null,
+        emailOptIn: !!(marketingConsent || contact?.email_opt_in),
+        existingQuoId: contact?.quo_contact_id ?? null,
+      }).catch(err => console.error('contact sync error (non-fatal):', err))
+    }
+
+    return contactId
   } catch (err) {
     console.error('upsertContact error (non-fatal):', err)
+    return null
+  }
+}
+
+interface UpsertByPhoneParams {
+  phone: string
+  name?: string | null
+  sourceDetail: string
+  serviceInterests?: string[]
+}
+
+/**
+ * Find-or-create a contact that only has a phone number (an unknown texter).
+ * If a contact already owns this phone (with or without an email) it is
+ * reused; otherwise a phone-only lead row is created and mirrored to Quo.
+ * Returns the contact id, or null on error.
+ */
+export async function upsertContactByPhone({
+  phone,
+  name,
+  sourceDetail,
+  serviceInterests = ['general'],
+}: UpsertByPhoneParams): Promise<string | null> {
+  try {
+    const supabase = getSupabase()
+    const { data: existing } = await supabase
+      .from('contacts')
+      .select('id, email, first_name, last_name, email_opt_in, quo_contact_id')
+      .eq('phone', phone)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (existing?.id) {
+      if (!existing.quo_contact_id) {
+        await syncContactExternally({
+          contactId: existing.id,
+          email: existing.email,
+          phone,
+          firstName: existing.first_name,
+          lastName: existing.last_name,
+          emailOptIn: !!existing.email_opt_in,
+        }).catch(() => undefined)
+      }
+      return existing.id
+    }
+
+    const nameParts = (name || '').trim().split(/\s+/).filter(Boolean)
+    const { data: created, error } = await supabase
+      .from('contacts')
+      .insert({
+        email: null,
+        phone,
+        first_name: nameParts[0] || null,
+        last_name: nameParts.length > 1 ? nameParts.slice(1).join(' ') : null,
+        status: 'lead',
+        source: 'direct',
+        source_detail: sourceDetail,
+        service_interests: normalizeServiceInterests(serviceInterests),
+      })
+      .select('id')
+      .single()
+
+    if (error || !created) {
+      console.error('upsertContactByPhone insert error:', error)
+      return null
+    }
+
+    await syncContactExternally({
+      contactId: created.id,
+      phone,
+      firstName: nameParts[0] || null,
+      lastName: nameParts.length > 1 ? nameParts.slice(1).join(' ') : null,
+    }).catch(() => undefined)
+
+    return created.id
+  } catch (err) {
+    console.error('upsertContactByPhone error (non-fatal):', err)
     return null
   }
 }

@@ -36,7 +36,9 @@ CREATE TABLE bookings (
   contact_phone             TEXT,
 
   deposit_amount            INT NOT NULL DEFAULT 250,
-    -- in cents? No — store as dollars (250 = $250)
+    -- CENTS. Every writer/reader in the app treats this as cents (25000 = $250).
+    -- The original comment said "dollars" and the default of 250 was wrong;
+    -- migration_032 changes the default to 25000 and documents the column.
 
   stripe_payment_intent_id  TEXT,
   stripe_session_id         TEXT,

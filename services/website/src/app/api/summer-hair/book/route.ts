@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
+import { notifyOwnerSms } from '@/lib/ownerNotify'
 import { summerHairConfirmationHtml, summerHairAdminNotifyHtml } from '@/lib/email-templates/summer-hair'
 
 export const dynamic = 'force-dynamic'
 
 const ALLIE_EMAIL = 'allie@hosthampton.com'
-const ALLIE_PHONE = '+16315992469'
 
 const VALID_SERVICES = [
   'Hair Tinsel',
@@ -207,10 +207,10 @@ export async function POST(req: NextRequest) {
   const serviceList = services.join(', ')
   const firstName = name.split(' ')[0]
 
-  // SMS to admin (Allie)
+  // SMS to the reviewers (REVIEWER_PHONES)
   const adminSms = `New Summer Hair booking!\n${name} — ${duration}\n${partySize} ${partySize === 1 ? 'person' : 'people'} (${slotsNeeded} slots)\nServices: ${serviceList}\nEst. total: $${estimatedTotal}\nPhone: ${phone}`
   notifyPromises.push(
-    sendSMSVia('quo', ALLIE_PHONE, adminSms).catch(err => console.error('SMS to Allie failed (non-fatal):', err))
+    notifyOwnerSms(adminSms).catch(err => console.error('SMS to reviewers failed (non-fatal):', err))
   )
 
   // Confirmation SMS to client

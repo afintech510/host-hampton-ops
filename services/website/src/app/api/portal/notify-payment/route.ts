@@ -1,3 +1,4 @@
+import { ownerEmail, notifyOwnerSms } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef } from '@/lib/portalAuth'
@@ -73,11 +74,12 @@ export async function POST(req: NextRequest) {
 
     await resend.emails.send({
       from,
-      to: 'hosthampton295@gmail.com',
+      to: ownerEmail(),
       subject: `${methodLabel} payment pledged: ${formatMoney(amountCents)} — ${booking.booking_ref}`,
       html,
     }).catch(err => console.error('Notify-payment email error:', err))
   }
+  await notifyOwnerSms(`${method} payment pledged: ${formatMoney(amountCents)} from ${booking.contact_name} (${booking.booking_ref}). Record it in admin once received.`)
 
   return NextResponse.json({ ok: true })
 }

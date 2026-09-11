@@ -80,6 +80,66 @@ export async function sendSMSViaQuo(to: string, body: string): Promise<string | 
   }
 }
 
+export interface QuoContactInput {
+  firstName?: string | null
+  lastName?: string | null
+  email?: string | null
+  phone?: string | null
+  /** Our contacts.id — stored as Quo externalId so re-syncs update, not duplicate. */
+  externalId: string
+  company?: string | null
+}
+
+/**
+ * Create or update a Quo contact so every number the agent texts is a named
+ * contact in the Host Hampton inbox (Quo is OpenPhone-API compatible:
+ * POST /v1/contacts, PATCH /v1/contacts/{id}).
+ *
+ * Returns the Quo contact id, or null on error / when Quo isn't configured.
+ * Non-fatal by design — callers must not block on this.
+ */
+export async function upsertQuoContact(
+  input: QuoContactInput,
+  existingQuoId?: string | null,
+): Promise<string | null> {
+  if (!process.env.QUO_API_KEY) return null
+  if (process.env.E2E_FAKE_SENDERS === '1') return 'QUOfakecontact'
+  if (!input.phone && !input.email) return null
+
+  const defaultFields: Record<string, unknown> = {
+    firstName: input.firstName || undefined,
+    lastName: input.lastName || undefined,
+    company: input.company || undefined,
+  }
+  if (input.email) defaultFields.emails = [{ name: 'primary', value: input.email }]
+  if (input.phone) defaultFields.phoneNumbers = [{ name: 'primary', value: normalizePhone(input.phone) }]
+
+  const payload: Record<string, unknown> = {
+    defaultFields,
+    source: 'hosthampton.com',
+    externalId: input.externalId,
+  }
+
+  try {
+    const url = existingQuoId ? `${QUO_BASE}/contacts/${existingQuoId}` : `${QUO_BASE}/contacts`
+    const res = await fetch(url, {
+      method: existingQuoId ? 'PATCH' : 'POST',
+      headers: { Authorization: quoAuthHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      console.error('quo:upsertContact error:', res.status, text)
+      return null
+    }
+    const data = (await res.json()) as { data?: { id?: string }; id?: string }
+    return data.data?.id ?? data.id ?? null
+  } catch (err) {
+    console.error('quo:upsertContact exception:', err)
+    return null
+  }
+}
+
 /**
  * Send SMS messages to multiple contacts in sequence via Quo.
  *

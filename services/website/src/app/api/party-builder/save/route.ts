@@ -1,3 +1,4 @@
+import { ownerEmail } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
@@ -324,7 +325,7 @@ export async function POST(req: NextRequest) {
         emailJobs.push(
           resend.emails.send({
             from,
-            to: 'hosthampton295@gmail.com',
+            to: ownerEmail(),
             subject: `Quote sent: ${contactName} — ${bookingRef}`,
             html: partyAdminNewBookingHtml({
               bookingRef,
