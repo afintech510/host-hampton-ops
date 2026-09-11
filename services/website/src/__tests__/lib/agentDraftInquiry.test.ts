@@ -117,6 +117,29 @@ function anthropicReply(body: Record<string, unknown>, tokens = { input_tokens: 
   }
 }
 
+/**
+ * What current models ACTUALLY return: adaptive thinking is on by default, so a
+ * `thinking` block comes first, and because `display` defaults to 'omitted' its
+ * text is empty. Reading content[0] broke every draft in production with
+ * "Anthropic response did not contain JSON".
+ */
+function anthropicReplyWithThinking(
+  body: Record<string, unknown>,
+  tokens = { input_tokens: 2000, output_tokens: 1000 },
+) {
+  return {
+    ok: true,
+    json: async () => ({
+      content: [
+        { type: 'thinking', thinking: '', text: '' },
+        { type: 'text', text: JSON.stringify(body) },
+      ],
+      stop_reason: 'end_turn',
+      usage: tokens,
+    }),
+  }
+}
+
 const EVENT = {
   id: 'event-uuid-1',
   source: 'website_form',
@@ -348,6 +371,62 @@ describe('draftForInquiry', () => {
     expect(inserted[0]).toMatchObject({ booking_id: 'booking-1', party_type: 'studio_rental', contact_path: 'quote' })
     // The quote path may state the deposit — the money guardrail is info-gather only.
     expect(String(inserted[0].email_draft)).toContain('$250')
+  })
+})
+
+describe('the Anthropic response shape', () => {
+  const originalEnv = process.env
+  const originalFetch = global.fetch
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    process.env = {
+      ...originalEnv,
+      ANTHROPIC_API_KEY: 'sk-test',
+      REVIEW_LINK_SIGNING_SECRET: 'review-secret',
+      NEXT_PUBLIC_SITE_URL: 'https://www.hosthampton.com',
+    }
+    ;(assertLlmBudget as jest.Mock).mockResolvedValue({ ok: true, spent: 0, cap: 25, remaining: 25 })
+  })
+  afterEach(() => { global.fetch = originalFetch })
+  afterAll(() => { process.env = originalEnv })
+
+  it('reads the first TEXT block, not content[0] — a leading thinking block is normal', async () => {
+    const { supabase } = makeSupabase()
+    global.fetch = jest.fn().mockResolvedValue(anthropicReplyWithThinking(INFO_GATHER_REPLY)) as any
+
+    const outcome = await draftForInquiry({ supabase, event: EVENT as any })
+
+    expect(outcome.ok).toBe(true)
+    if (outcome.ok) expect(outcome.draftStatus).toBe('sent_for_review')
+  })
+
+  it('asks the API to enforce the JSON shape rather than requesting it politely', async () => {
+    const { supabase } = makeSupabase()
+    global.fetch = jest.fn().mockResolvedValue(anthropicReply(INFO_GATHER_REPLY)) as any
+
+    await draftForInquiry({ supabase, event: EVENT as any })
+
+    const req = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)
+    expect(req.output_config.format.type).toBe('json_schema')
+    expect(req.output_config.format.schema.required).toEqual(
+      expect.arrayContaining(['emailSubject', 'emailDraft', 'smsDraft', 'summaryForReviewer']),
+    )
+    // Room for thinking tokens as well as the answer.
+    expect(req.max_tokens).toBeGreaterThanOrEqual(4000)
+  })
+
+  it('fails with a diagnosable message when there is no text block at all', async () => {
+    const { supabase } = makeSupabase()
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ content: [{ type: 'thinking', text: '' }], stop_reason: 'max_tokens', usage: {} }),
+    }) as any
+
+    const outcome = await draftForInquiry({ supabase, event: EVENT as any })
+
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.status).toBe(502)
   })
 })
 

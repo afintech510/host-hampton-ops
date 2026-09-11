@@ -18,10 +18,18 @@
 /** Default model for customer-facing drafts. Haiku is fine for triage, not for this. */
 export const DEFAULT_DRAFT_MODEL = 'claude-sonnet-5'
 
-/** USD per 1M tokens (input / output), per model id. */
+/**
+ * USD per 1M tokens (input / output), per model id.
+ *
+ * Corrected 2026-09-11: Sonnet 5 was listed at 3/15 (those are Sonnet 4.6's
+ * rates) and Opus 5 at 15/75, so the ledger over-billed every draft by ~50%
+ * and the daily cap tripped early. Note thinking tokens bill as output.
+ */
 export const MODEL_PRICING: Record<string, { in: number; out: number }> = {
-  'claude-sonnet-5': { in: 3, out: 15 },
-  'claude-opus-5': { in: 15, out: 75 },
+  'claude-sonnet-5': { in: 2, out: 10 },
+  'claude-sonnet-4-6': { in: 3, out: 15 },
+  'claude-opus-5': { in: 5, out: 25 },
+  'claude-fable-5-1': { in: 10, out: 50 },
   'claude-haiku-4-5-20251001': { in: 1, out: 5 },
   'claude-haiku-4-5': { in: 1, out: 5 },
 }

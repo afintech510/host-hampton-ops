@@ -365,6 +365,31 @@ Respond with JSON exactly in this shape:
 }`
 }
 
+/**
+ * The draft shape, as a schema the API enforces (`output_config.format`) rather
+ * than a request in the prompt. Before this, the node asked for JSON politely
+ * and threw "response did not contain JSON" whenever the model added a word of
+ * preamble.
+ */
+const DRAFT_SCHEMA = {
+  type: 'object',
+  properties: {
+    emailSubject: { type: 'string' },
+    emailDraft: { type: 'string' },
+    smsDraft: { type: 'string' },
+    summaryForReviewer: { type: 'string' },
+  },
+  required: ['emailSubject', 'emailDraft', 'smsDraft', 'summaryForReviewer'],
+  additionalProperties: false,
+} as const
+
+/**
+ * Enough room for adaptive thinking AND the answer. Thinking tokens count
+ * against max_tokens and are billed as output, so the old 1500 could be spent
+ * entirely on reasoning, leaving no text block at all.
+ */
+const MAX_TOKENS = 8000
+
 async function callClaude(
   systemPrompt: string,
   userPrompt: string,
@@ -379,8 +404,16 @@ async function callClaude(
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1500,
+      max_tokens: MAX_TOKENS,
       system: systemPrompt,
+      // Schema-enforced output. Also keeps the prompt-injection surface small:
+      // whatever the inbound text says, the response can only be these 4 strings.
+      output_config: {
+        format: { type: 'json_schema', schema: DRAFT_SCHEMA },
+        // A 150-word reply does not need 'high'. This is the cost lever that
+        // keeps a day of leads inside AGENT_DAILY_USD_CAP.
+        effort: 'medium',
+      },
       messages: [{ role: 'user', content: userPrompt }],
     }),
   })
@@ -391,11 +424,26 @@ async function callClaude(
   }
 
   const data = (await res.json()) as {
-    content: { type: string; text: string }[]
+    content: { type: string; text?: string }[]
+    stop_reason?: string
     usage?: { input_tokens?: number; output_tokens?: number }
   }
-  const text = data.content?.[0]?.type === 'text' ? data.content[0].text : ''
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
+
+  // Find the first TEXT block. Current models (Sonnet 5 included) run adaptive
+  // thinking by default, so content[0] is usually a `thinking` block — and with
+  // the default display:'omitted' its text is empty. Indexing [0] blindly was
+  // why every draft failed with "did not contain JSON".
+  const text = (data.content ?? []).find(b => b.type === 'text')?.text ?? ''
+
+  if (!text) {
+    const kinds = (data.content ?? []).map(b => b.type).join(',') || 'none'
+    throw new Error(
+      `Anthropic returned no text block (stop_reason=${data.stop_reason ?? 'unknown'}, blocks=${kinds})`,
+    )
+  }
+
+  // With a schema the body IS the JSON; the regex is a belt-and-braces fallback.
+  const jsonMatch = text.trim().startsWith('{') ? [text.trim()] : text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error('Anthropic response did not contain JSON')
 
   const parsed = JSON.parse(jsonMatch[0]) as Partial<InquiryDraftOutput>
