@@ -55,9 +55,20 @@ const SWEEP_WINDOW_MS = 14 * 24 * 60 * 60 * 1000
  * Without this a crash between claim and draft parks a lead forever.
  */
 const CLAIM_REAP_MS = 15 * 60 * 1000
+/**
+ * How many times a single event may fail drafting before we give up on it. The
+ * counter lives in `classification_meta.agent_attempts` (no migration needed).
+ */
+const MAX_DRAFT_ATTEMPTS = 3
+
+/** Draft attempts already spent on this event. */
+function attemptsOf(event: InboundEvent): number {
+  const n = Number((event.classification_meta as { agent_attempts?: unknown } | null)?.agent_attempts)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
 
 const EVENT_COLUMNS =
-  'id, source, external_id, direction, from_address, to_address, subject, body, parsed, contact_id, booking_id, status, classification, created_at'
+  'id, source, external_id, direction, from_address, to_address, subject, body, parsed, contact_id, booking_id, status, classification, classification_meta, created_at'
 
 const BOOKING_COLUMNS =
   'id, booking_ref, status, event_type, package_type, notes, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, guest_count_approx, child_name, child_age, created_at'
@@ -320,13 +331,30 @@ export async function GET(req: NextRequest) {
       } else if (outcome.status === 402) {
         // Budget refusal is about US, not about this lead. Put it back in the
         // queue (marking it 'error' would silently drop the lead for good) and
-        // stop the batch rather than fail every remaining item.
+        // stop the batch rather than fail every remaining item. No attempt is
+        // burned — nothing was wrong with the event.
         await supabase
           .from('ingested_messages')
           .update({ status: 'new', claimed_at: null, error: outcome.error })
           .eq('id', event.id)
         results.push({ kind: 'event', id: event.id, outcome: 'requeued_budget', error: outcome.error })
         break
+      } else if (outcome.status >= 500 && attemptsOf(event) + 1 < MAX_DRAFT_ATTEMPTS) {
+        // A transient upstream failure (Anthropic 5xx, a bad response shape,
+        // our own bug) must not cost us the lead. A real one did: the Phase 2
+        // deploy shipped a broken Claude call, and the first cron run marked
+        // every waiting lead 'error' permanently. Re-queue, bounded.
+        const attempts = attemptsOf(event) + 1
+        await supabase
+          .from('ingested_messages')
+          .update({
+            status: 'new',
+            claimed_at: null,
+            error: `${outcome.error} (attempt ${attempts}/${MAX_DRAFT_ATTEMPTS})`,
+            classification_meta: { ...(event.classification_meta ?? {}), agent_attempts: attempts },
+          })
+          .eq('id', event.id)
+        results.push({ kind: 'event', id: event.id, outcome: 'requeued_retry', error: outcome.error })
       } else {
         await finishEvent(supabase, event.id, 'error', { error: outcome.error })
         results.push({ kind: 'event', id: event.id, outcome: 'error', error: outcome.error })

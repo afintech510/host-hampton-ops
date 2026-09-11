@@ -122,6 +122,8 @@ export interface InboundEvent {
   booking_id: string | null
   status: string
   classification: string | null
+  /** Dispatcher bookkeeping, e.g. { agent_attempts: 2 }. */
+  classification_meta: Record<string, unknown> | null
   created_at: string
 }
 

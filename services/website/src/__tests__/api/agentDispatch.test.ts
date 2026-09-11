@@ -330,6 +330,38 @@ describe('GET /api/cron/agent-dispatch', () => {
     expect(res.body.reaped).toBe(2)
   })
 
+  it('re-queues a transient draft failure with a bounded attempt count', async () => {
+    const { supabase, requeued } = makeSupabase({
+      candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
+      claimable: ['e1'],
+      eventRows: { e1: websiteFormEvent('e1') },
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+    mockDraftForInquiry.mockResolvedValue({ ok: false, status: 502, error: 'Draft generation failed' })
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(requeued).toEqual(['e1'])
+    expect(mockFinishEvent).not.toHaveBeenCalled()
+    expect(res.body.results[0].outcome).toBe('requeued_retry')
+  })
+
+  it('gives up on an event that has already failed the maximum number of times', async () => {
+    const { supabase, requeued } = makeSupabase({
+      candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
+      claimable: ['e1'],
+      eventRows: { e1: websiteFormEvent('e1', { classification_meta: { agent_attempts: 2 } }) },
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+    mockDraftForInquiry.mockResolvedValue({ ok: false, status: 502, error: 'Draft generation failed' })
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(requeued).toEqual([])
+    expect(mockFinishEvent).toHaveBeenCalledWith(expect.anything(), 'e1', 'error', expect.anything())
+    expect(res.body.results[0].outcome).toBe('error')
+  })
+
   it('re-queues an event rather than failing it when the monthly budget refuses the call', async () => {
     const { supabase, requeued } = makeSupabase({
       candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
