@@ -1756,3 +1756,70 @@ finished thing.
 - **PDF** — option (a) as instructed: the link plus inline HTML, no attachment,
   no puppeteer. The page carries the template's `@media print` rules, so "Save
   as PDF" in the browser produces the same document.
+
+## 18. The lead that produced no text (2026-09-11)
+
+A real mobile-party lead — Eleonore, Bridgehampton, spa party, 14:56 — created
+its plan and its event correctly and then went quiet. Adam noticed because his
+phone *didn't* buzz. Two bugs, and the second is the one to remember.
+
+**1. `containsMoney()` held a draft containing no figure at all.** `NOT_A_PRICE`
+masks numeric dates (`10/3`) but had no month-name pattern, so in
+
+> "To put pricing together for Oct 10 or 11, can you send..."
+
+`Oct 10` survived only because two digits are under the bare-figure threshold,
+and the trailing **`or 11` was left bare** with the MONEY_WORD `pricing` 26
+characters in front of it. Detector 3 fired. That sentence is close to the ideal
+info-gather reply, and *every* lead offering two candidate dates ("the 10th or
+11th") would have hit it — so the guardrail was most likely to misfire on
+precisely the drafts it should have passed. Month-name dates and bare
+day-of-month alternatives are masked now.
+
+**2. Parking a draft told nobody, and nothing ever would.** `draftStatus =
+'drafted'` skipped the reviewer SMS, and the 2-hour nudge selects
+`status = 'sent_for_review'` only — so a held draft was never mentioned again by
+any part of the system. To Adam, *a held draft and no lead arriving are the same
+observation*.
+
+That is **Phase 2 finding 4 recurring almost exactly**: an impossible channel
+stranded a draft at `approved` and nobody was told, because the nudge only
+watches one status. Same shape, same cause, different status. It is also the
+fifth outing for *distinguish "decided no" from "could not decide"* — except the
+sharper statement here is:
+
+> **A guardrail that stops something must also say that it stopped it.**
+> Silence is not a safe default, because silence is what success looks like.
+> Anything that can hold work needs a path to a human, and the nudge is not it —
+> the nudge only watches the happy state.
+
+Both outcomes now text. The held alert is deliberately **not** `reviewerSmsBody`:
+that one ends *"Reply SEND to send it"*, and `drafted → approved` is a legal edge
+in `graph.ts`, so sending the usual body would invite approving by reflex the one
+draft a human is meant to READ first. `parkedSmsBody()` names the reason, links
+the read-only preview, points at Admin → Inbox, and quotes none of the offending
+text.
+
+### The false-positive trade was mispriced
+
+`containsMoney`'s own comment said it is "deliberately over-sensitive: a false
+positive parks the draft for Adam to edit (mildly annoying), a false negative
+texts him a rule-breaking draft". That reasoning was sound and the conclusion was
+wrong, because it assumed Adam *finds out about the park*. While parking was
+silent, a false positive did not cost an edit — it cost the lead. **Check what
+the cheap side of a trade actually costs before leaning on it; an
+over-sensitive detector is only cheap if its output is visible.**
+
+### A test suite that depended on the time of day
+
+Found while verifying the fix: `agentDispatch.test.ts`'s Supabase mock had no
+`.is()`. Its only caller is the nudge, which `isBusinessHours()` gates to
+9am–8pm America/New_York — so the suite passed in the morning and failed 16
+tests in the afternoon. This is why earlier runs in this plan report 734/735 and
+770/771: those were morning numbers. **A result that depends on the wall clock is
+worse than a failing one, because it teaches you to distrust the run instead of
+the code.**
+
+Fixed and redeployed at `cc09115`. The lead was re-drafted as `HH-2026-0208`,
+which passed the corrected guardrail cleanly — and still says "Oct 10 (or 11)",
+the exact phrasing that had held it.
