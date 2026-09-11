@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { createEmbeddedDocument } from '@/lib/signwell'
-import { resolveCheckinToken, CHECKIN_DOC_TYPE } from '@/lib/checkinLink'
+import { resolveCheckinToken, requiresRentalAgreement, CHECKIN_DOC_TYPE } from '@/lib/checkinLink'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,6 +29,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
 
   if (booking.checkin_agreement_signed_at) {
     return NextResponse.json({ alreadySigned: true, signingUrl: null })
+  }
+
+  // Theme/mobile parties don't carry a rental agreement at all — the UI
+  // shouldn't even show this step, but guard server-side too.
+  if (!requiresRentalAgreement(booking)) {
+    return NextResponse.json({ notRequired: true, signingUrl: null })
   }
 
   const templateId = process.env.SIGNWELL_CHECKIN_TEMPLATE_ID

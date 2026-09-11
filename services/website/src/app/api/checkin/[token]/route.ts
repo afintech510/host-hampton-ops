@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
-import { resolveCheckinToken } from '@/lib/checkinLink'
+import { resolveCheckinToken, requiresRentalAgreement } from '@/lib/checkinLink'
 import { cancelCheckinReminders } from '@/lib/checkinReminders'
 
 export const dynamic = 'force-dynamic'
@@ -26,6 +26,7 @@ function publicBookingView(booking: Record<string, unknown>) {
     childName: booking.child_name,
     checkinStatus: booking.checkin_status ?? 'pending',
     agreementSignedAt: booking.checkin_agreement_signed_at ?? null,
+    requiresAgreement: requiresRentalAgreement(booking),
     contact: {
       name: booking.contact_name ?? '',
       email: booking.contact_email ?? '',
@@ -108,9 +109,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
   await recordCheckinConsent({ name, email, phone, bookingId, bookingRef, marketingConsent, booking })
 
-  // If the agreement was already signed on an earlier visit, this submission
-  // completes the check-in and the pending texts should stop.
-  if (booking.checkin_agreement_signed_at) {
+  // Complete the check-in (and stop the pending texts) once there's nothing
+  // left to collect: either the agreement was already signed on an earlier
+  // visit, or this booking doesn't require one at all (theme/mobile parties —
+  // only room rentals carry the liability waiver).
+  if (booking.checkin_agreement_signed_at || !requiresRentalAgreement(booking)) {
     await supabase.from('bookings').update({
       checkin_status: 'complete',
       checkin_completed_at: new Date().toISOString(),

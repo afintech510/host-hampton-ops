@@ -15,7 +15,12 @@ const mockGetSupabase = jest.fn()
 jest.mock('@/lib/supabase', () => ({ getSupabase: () => mockGetSupabase() }))
 
 const mockResolve = jest.fn()
-jest.mock('@/lib/checkinLink', () => ({ resolveCheckinToken: (t: string) => mockResolve(t) }))
+jest.mock('@/lib/checkinLink', () => ({
+  resolveCheckinToken: (t: string) => mockResolve(t),
+  // Real implementation — these tests rely on its actual event_type gating
+  // (kid-party doesn't require an agreement; studio/room rentals do).
+  requiresRentalAgreement: jest.requireActual('@/lib/checkinLink').requiresRentalAgreement,
+}))
 
 const mockUpsertContact = jest.fn()
 jest.mock('@/lib/contacts', () => ({ upsertContact: (a: any) => mockUpsertContact(a) }))
@@ -215,12 +220,26 @@ describe('POST /api/checkin/[token]', () => {
     expect(mockCancel).toHaveBeenCalledWith('HH-2026-0042')
   })
 
-  it('does not suppress the texts when the agreement is still unsigned', async () => {
-    mockResolve.mockResolvedValue({ ok: true, booking: BOOKING })
+  it('does not suppress the texts when a room rental agreement is still unsigned', async () => {
+    mockResolve.mockResolvedValue({ ok: true, booking: { ...BOOKING, event_type: 'room-rental' } })
     mockGetSupabase.mockReturnValue(makeSupabase().supabase)
 
     await POST(makeReq({ name: 'Jane Doe', email: 'jane@example.com' }), { params })
     expect(mockCancel).not.toHaveBeenCalled()
+  })
+
+  it('completes immediately for theme parties, which never require an agreement', async () => {
+    // BOOKING.event_type is 'kid-party' — no signature needed, so check-in
+    // should complete as soon as details are saved.
+    mockResolve.mockResolvedValue({ ok: true, booking: BOOKING })
+    const { supabase, updates } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+
+    await POST(makeReq({ name: 'Jane Doe', email: 'jane@example.com' }), { params })
+
+    const completion = updates.find(u => u.table === 'bookings' && u.payload.checkin_status === 'complete')
+    expect(completion).toBeTruthy()
+    expect(mockCancel).toHaveBeenCalledWith('HH-2026-0042')
   })
 
   it('still saves details when consent recording fails', async () => {

@@ -6,7 +6,9 @@ import { useState, useCallback } from 'react'
  * Pre-arrival check-in form.
  *
  * Two steps: contact details + marketing opt-in, then the SignWell rental
- * agreement / liability waiver in their embedded modal.
+ * agreement / liability waiver in their embedded modal. Step 2 only applies
+ * to room/studio rentals (requiresAgreement) — theme and mobile parties
+ * complete check-in as soon as step 1 is saved.
  *
  * Phase 1 collects NO payment information. The $500 authorization hold is
  * Phase 2 and will use Stripe Elements — card data must reach Stripe directly
@@ -33,6 +35,9 @@ interface Props {
   childName: string | null
   checkinStatus: string
   agreementSigned: boolean
+  /** Only room/studio rentals carry the liability waiver — theme & mobile
+   *  parties skip step 2 entirely and complete as soon as details are saved. */
+  requiresAgreement: boolean
   initial: Details
 }
 
@@ -45,7 +50,7 @@ function formatPartyDate(date: string | null): string | null {
 }
 
 export default function CheckinForm({
-  token, bookingRef, partyDate, partyTime, childName, checkinStatus, agreementSigned, initial,
+  token, bookingRef, partyDate, partyTime, childName, checkinStatus, agreementSigned, requiresAgreement, initial,
 }: Props) {
   const [details, setDetails] = useState<Details>(initial)
   const [marketingConsent, setMarketingConsent] = useState(false)
@@ -146,7 +151,7 @@ export default function CheckinForm({
 
   const prettyDate = formatPartyDate(partyDate)
 
-  if (signed && detailsSaved) {
+  if ((signed || !requiresAgreement) && detailsSaved) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-24 text-center">
         <h1 className="font-serif text-3xl font-bold text-hampton-navy mb-3">You&apos;re all set! 🎉</h1>
@@ -154,10 +159,12 @@ export default function CheckinForm({
           Check-in is complete for <strong>{bookingRef}</strong>. We&apos;ll see you
           {prettyDate ? <> on <strong>{prettyDate}</strong></> : ' soon'}!
         </p>
-        <p className="text-sm text-hampton-navy/60">
-          A copy of your signed agreement has been emailed to you. A refundable $500 security hold is
-          authorized on your card when you arrive.
-        </p>
+        {requiresAgreement ? (
+          <p className="text-sm text-hampton-navy/60">
+            A copy of your signed agreement has been emailed to you. A refundable $500 security hold is
+            authorized on your card when you arrive.
+          </p>
+        ) : null}
       </div>
     )
   }
@@ -218,7 +225,8 @@ export default function CheckinForm({
         </button>
       </form>
 
-      {/* ── Step 2: agreement ───────────────────────────────── */}
+      {/* ── Step 2: agreement — room/studio rentals only ─────── */}
+      {requiresAgreement ? (
       <div className="bg-hampton-ivory rounded-2xl border border-hampton-pink/20 p-6">
         <h2 className="font-serif text-xl font-bold text-hampton-navy mb-2">
           2. Rental agreement &amp; liability waiver
@@ -254,6 +262,7 @@ export default function CheckinForm({
           </>
         )}
       </div>
+      ) : null}
 
       <p className="text-xs text-hampton-navy/50 text-center mt-6">
         Can&apos;t finish now? No problem — your party goes ahead either way, and we can complete this

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { resolveCheckinToken } from '@/lib/checkinLink'
+import { resolveCheckinToken, requiresRentalAgreement } from '@/lib/checkinLink'
 import CheckinForm from './CheckinForm'
 
 export const dynamic = 'force-dynamic'
@@ -54,6 +54,7 @@ export default async function CheckinPage({ params }: { params: Promise<{ token:
       childName={b.child_name ? String(b.child_name) : null}
       checkinStatus={String(b.checkin_status ?? 'pending')}
       agreementSigned={!!b.checkin_agreement_signed_at}
+      requiresAgreement={requiresRentalAgreement(b)}
       initial={{
         name: String(b.contact_name ?? ''),
         email: String(b.contact_email ?? ''),

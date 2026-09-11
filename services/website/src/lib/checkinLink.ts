@@ -7,6 +7,32 @@ import {
   hashCheckinToken,
   isExpiredForParty,
 } from '@/lib/checkinAuth'
+import { classifyPartyType, type InquiryBooking } from '@/lib/inquiryDrafts'
+
+/** The event_type slugs actually written by the booking-creation routes
+ *  (party-builder/save, admin/parties/create, party-checkout, studio-rental
+ *  checkout). Checked before falling back to the free-text classifier below,
+ *  since these are the values on the vast majority of real rows. */
+const ROOM_RENTAL_EVENT_TYPES = new Set(['studio-rental', 'room-rental'])
+const NO_AGREEMENT_EVENT_TYPES = new Set(['kid-party', 'kids-party', 'mobile'])
+
+/**
+ * Only room/studio rentals carry the rental agreement & liability waiver —
+ * in-studio theme parties and mobile parties don't need one. Defaults to
+ * requiring it when the type can't be confidently classified: a customer
+ * signing an unnecessary waiver is a minor annoyance, a room-rental customer
+ * who never signs one is a real liability gap.
+ */
+export function requiresRentalAgreement(booking: InquiryBooking): boolean {
+  const et = (booking.event_type || '').toLowerCase().trim()
+  if (ROOM_RENTAL_EVENT_TYPES.has(et)) return true
+  if (NO_AGREEMENT_EVENT_TYPES.has(et)) return false
+
+  // Legacy/free-text event_type (e.g. "Kids Birthday Party") — fall back to
+  // the same keyword classifier used for inquiry drafting.
+  const { partyType } = classifyPartyType(booking)
+  return partyType !== 'in_studio_theme' && partyType !== 'mobile_party'
+}
 
 /**
  * Minting and texting the pre-arrival check-in link.
