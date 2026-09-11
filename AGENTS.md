@@ -176,7 +176,8 @@ Runtime env (`website`):
 | `REVIEW_LINK_SIGNING_SECRET` | HMAC secret for `/review/<token>` draft previews. Falls back to `PORTAL_LINK_SIGNING_SECRET`. |
 | `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | Phase-3 Gmail ingestion (`lib/gmail.ts`, `/api/cron/gmail-sync`). A **separate OAuth grant** from `GOOGLE_*`, scoped `gmail.readonly` + `gmail.modify` only. Unset is supported: the route reports `configured:false` and does nothing. |
 | `GMAIL_USER` | Mailbox to ingest. Default `hosthampton295@gmail.com`. |
-| `GMAIL_HANDLED_LABEL` | Gmail label applied to processed mail. Default `HH-Agent/Handled`. |
+| `GMAIL_HANDLED_LABEL` | Gmail label applied by the **dispatcher** once a message has actually produced a draft. Default `HH-Agent/Handled`. |
+| `GMAIL_SEEN_LABEL` | Gmail label applied by **ingestion** to every message it reads, including auto-ignored newsletters. Default `HH-Agent/Seen`. The two are separate because "the agent read this" and "the agent acted on this" are different claims, and one label on everything made a mailbox of Abercrombie promos look handled. |
 
 The agent never sends to a customer without an explicit human approval, never
 sends customer email through Gmail (Resend for email, Quo for SMS), and its

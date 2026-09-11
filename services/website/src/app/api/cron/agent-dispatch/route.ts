@@ -7,6 +7,7 @@ import { handleReviewerReply } from '@/lib/agent/reviewLoop'
 import { triageMessage } from '@/lib/agent/triage'
 import { notifyOwnerSms } from '@/lib/ownerNotify'
 import { upsertContact } from '@/lib/contacts'
+import { markHandled } from '@/lib/gmail'
 import { writeLedger } from '@/lib/marketing/graph'
 
 export const dynamic = 'force-dynamic'
@@ -389,6 +390,11 @@ export async function GET(req: NextRequest) {
       const outcome = await draftForInquiry({ supabase, event: gmailEvent })
       if (outcome.ok) {
         drafted++
+        // NOW the message has been handled — a human has a draft waiting on it.
+        // Ingestion only stamps HH-Agent/Seen, so the Handled label in Adam's
+        // mailbox means the agent acted, not merely that it read.
+        const gmailId = (gmailEvent.parsed as { gmail_id?: string } | null)?.gmail_id
+        if (gmailId) await markHandled(gmailId).catch(() => false)
         await finishEvent(supabase, event.id, 'handled', {
           draftId: outcome.draftId,
           classification: triage.category,

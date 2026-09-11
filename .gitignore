@@ -30,6 +30,8 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/settings.local.json
+.claude/loops/
+.claude/ralph-loop.local.md
 .mcp.json
 *.swp
 
@@ -57,3 +59,7 @@ hh-scraped-contacts.csv
 new-b2b-contacts.csv
 new-outreach-contacts.csv
 marketing-seed.md
+
+# Google OAuth client downloads (contain client_secret)
+client_secret_*.json
+*.apps.googleusercontent.com.json

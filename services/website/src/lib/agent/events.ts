@@ -44,6 +44,14 @@ export interface RecordInboundEventInput {
   threadId?: string | null
   direction?: 'in' | 'out'
   /**
+   * When the MESSAGE was sent, if the channel tells us (Gmail's Date header).
+   * Defaults to now, which is right for a form submission — the submission is
+   * the message — and wrong for anything with its own timestamp. The stand-down
+   * check compares these, so an ingestion-time value on backfilled mail makes a
+   * year-old reply look newer than today's inbound question.
+   */
+  sentAt?: string | null
+  /**
    * false → the row is recorded as `ignored`: kept as history, never drafted
    * for. Newsletter signups and the site's own notification mail go here.
    */
@@ -78,7 +86,7 @@ export async function recordInboundEvent(input: RecordInboundEventInput): Promis
         direction: input.direction ?? 'in',
         from_address: input.fromAddress ?? null,
         to_address: input.toAddress ?? null,
-        sent_at: new Date().toISOString(),
+        sent_at: input.sentAt || new Date().toISOString(),
         subject: input.subject ?? null,
         body: input.body ?? null,
         thread_id: input.threadId ?? null,

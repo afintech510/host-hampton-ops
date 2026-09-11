@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { recordInboundEvent } from '@/lib/agent/events'
 import {
-  applyHandledLabel,
-  ensureHandledLabel,
+  applyLabel,
+  ensureSeenLabel,
   gmailConfigured,
   gmailUser,
   getMessage,
@@ -13,6 +13,7 @@ import {
   type GmailMessage,
 } from '@/lib/gmail'
 import { autoIgnoreReason } from '@/lib/agent/triage'
+import { notifyOwnerSms } from '@/lib/ownerNotify'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,23 +49,40 @@ type Supa = ReturnType<typeof getSupabase>
 const POLL_BATCH = 25
 /** Messages per backfill request, so one call cannot run for minutes. */
 const BACKFILL_BATCH = 60
+/**
+ * How many consecutive polls may fail on the same batch before the checkpoint
+ * is forced past it.
+ *
+ * The checkpoint deliberately does not advance when a message fails to ingest,
+ * so nothing is silently skipped. On its own that is a trap: a message that
+ * fails DETERMINISTICALLY (a body that breaks a parser, a row the DB keeps
+ * rejecting) stalls the mailbox forever — and because `history.list` keeps
+ * returning from the same fixed `startHistoryId` while new mail piles up behind
+ * the POLL_BATCH slice, the backlog grows without bound and no new mail is ever
+ * read again. Three failed runs is ~9 minutes of retrying, which covers any
+ * transient fault; after that the poison ids are recorded, the reviewers are
+ * texted, and the mailbox keeps moving.
+ */
+const MAX_FAIL_STREAK = 3
 
 /* ── Sync state ─────────────────────────────────────────────────────── */
 
 interface SyncState {
   history_id: string | null
   last_full_sync_at: string | null
+  fail_streak: number
 }
 
 async function readState(supabase: Supa): Promise<SyncState> {
   const { data } = await supabase
     .from('gmail_sync_state')
-    .select('history_id, last_full_sync_at')
+    .select('history_id, last_full_sync_at, fail_streak')
     .eq('id', 1)
     .maybeSingle()
   return {
     history_id: (data?.history_id as string) ?? null,
     last_full_sync_at: (data?.last_full_sync_at as string) ?? null,
+    fail_streak: Number(data?.fail_streak ?? 0) || 0,
   }
 }
 
@@ -155,6 +173,13 @@ async function ingestOne(supabase: Supa, id: string, labelId: string | null, for
     body: msg.body || null,
     threadId: msg.threadId || null,
     direction: msg.direction,
+    // The message's OWN date, not the moment we read it. `sent_at` is what the
+    // stand-down check compares ("did a human reply after this came in?") and
+    // what the admin Inbox sorts by, so ingestion time is the wrong answer
+    // twice over: the 12-month backfill stamped a year of mail with today, and
+    // every one of those 119 outbound rows then looked newer than any inbound
+    // message on its thread.
+    sentAt: msg.sentAt,
     needsAction,
     classification: ignore ? 'auto_ignored' : null,
     parsed: {
@@ -172,9 +197,11 @@ async function ingestOne(supabase: Supa, id: string, labelId: string | null, for
     },
   })
 
-  // Label it whatever happened — including on a duplicate, which just means a
-  // previous run recorded it but did not get as far as the label.
-  if (labelId) await applyHandledLabel(msg.id, labelId)
+  // The SEEN label, whatever happened — including on a duplicate, which just
+  // means a previous run recorded it but did not get as far as the label. SEEN
+  // claims only that the message is in `ingested_messages`. The HANDLED label
+  // is the dispatcher's to apply, once a message has actually produced a draft.
+  if (labelId) await applyLabel(msg.id, labelId)
 
   if (!eventId) return { id, outcome: 'duplicate' }
   return { id, outcome: ignore || forceHandled ? 'ignored' : 'recorded', reason: ignore ?? undefined }
@@ -231,7 +258,7 @@ export async function GET(req: NextRequest) {
   }
 
   const state = await readState(supabase)
-  const labelId = await ensureHandledLabel()
+  const labelId = await ensureSeenLabel()
 
   let ids: string[] = []
   let nextHistoryId: string | null = null
@@ -258,24 +285,49 @@ export async function GET(req: NextRequest) {
 
   const results: IngestOutcome[] = []
   let failure: string | null = null
+  const failedIds: string[] = []
   for (const id of ids) {
     try {
       results.push(await ingestOne(supabase, id, labelId))
     } catch (err) {
       failure = err instanceof Error ? err.message : 'ingest failed'
+      failedIds.push(id)
       console.error('gmail-sync: ingest failed for', id, failure)
     }
   }
 
   // Only advance the checkpoint when the batch came through cleanly. Moving it
   // past a message we failed to read would lose that message permanently.
+  //
+  // …unless the SAME batch has now failed MAX_FAIL_STREAK runs in a row, which
+  // means the failure is not transient. Retrying a deterministic failure every
+  // three minutes forever does not eventually succeed; it just stops the
+  // mailbox. Force the checkpoint past it, record which ids were skipped so a
+  // human can go and look, and say so out loud.
+  let forcedPast: string[] = []
   if (nextHistoryId && !failure) {
-    await writeState(supabase, { history_id: nextHistoryId, last_error: null })
+    await writeState(supabase, { history_id: nextHistoryId, last_error: null, fail_streak: 0 })
   } else {
-    await writeState(supabase, { last_error: failure })
+    const streak = state.fail_streak + 1
+    if (failure && nextHistoryId && streak >= MAX_FAIL_STREAK) {
+      forcedPast = failedIds
+      await writeState(supabase, {
+        history_id: nextHistoryId,
+        fail_streak: 0,
+        skipped_message_ids: failedIds,
+        last_error: `skipped ${failedIds.length} unreadable message(s) after ${streak} failed runs: ${failure}`,
+      })
+      await notifyOwnerSms(
+        `Gmail sync skipped ${failedIds.length} message(s) it could not ingest after ${streak} tries ` +
+          `(${failedIds.join(', ').slice(0, 120)}). Mail is flowing again; those ids need a look.`,
+      ).catch(() => 0)
+    } else {
+      await writeState(supabase, { last_error: failure, fail_streak: failure ? streak : state.fail_streak })
+    }
   }
 
   const body = {
+    forcedPast,
     configured: true,
     user: gmailUser(),
     mode,

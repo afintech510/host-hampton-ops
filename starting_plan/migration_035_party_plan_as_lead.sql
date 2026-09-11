@@ -177,4 +177,49 @@ ALTER TABLE public.booking_payments ADD CONSTRAINT booking_payments_payment_meth
   payment_method IN ('card', 'cash', 'venmo', 'zelle', 'check', 'other')
 );
 
+-- ─────────────────────────────────────────────────────────────────────────
+-- 9. bookings.contact_id — added by the Phase 3 review pass
+-- ─────────────────────────────────────────────────────────────────────────
+-- A plan has never pointed at a contact; it carries loose contact_name /
+-- contact_email / contact_phone and nothing else.
+--
+-- This is not only a Phase 4 convenience. It is a live bug: gmail-sync's
+-- `bookingFor()` already queries `bookings.contact_id`, so linking an inbound
+-- email to an existing plan has been failing on EVERY Gmail message since
+-- Phase 3 shipped — silently, because a PostgREST unknown-column error just
+-- yields no rows, which is indistinguishable from "this sender has no plan".
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS contact_id UUID
+  REFERENCES public.contacts(id) ON DELETE SET NULL;
+
+-- Backfill by email first (the stronger handle), then by phone for rows with
+-- no email. Both sides normalised the way lib/contacts.ts does it.
+UPDATE public.bookings b SET contact_id = c.id
+  FROM public.contacts c
+ WHERE b.contact_id IS NULL
+   AND nullif(btrim(lower(coalesce(b.contact_email, ''))), '') = lower(c.email);
+
+UPDATE public.bookings b SET contact_id = c.id
+  FROM public.contacts c
+ WHERE b.contact_id IS NULL
+   AND nullif(regexp_replace(coalesce(b.contact_phone, ''), '\D', '', 'g'), '') =
+       nullif(regexp_replace(coalesce(c.phone, ''),        '\D', '', 'g'), '');
+
+CREATE INDEX IF NOT EXISTS idx_bookings_contact_status_created
+  ON public.bookings (contact_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bookings_contact_date
+  ON public.bookings (contact_id, party_date);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 10. gmail_sync_state — an escape hatch for a poison message
+-- ─────────────────────────────────────────────────────────────────────────
+-- /api/cron/gmail-sync deliberately refuses to advance the history checkpoint
+-- when a message in the batch fails to ingest, so nothing is silently skipped.
+-- On its own that is a trap: a DETERMINISTIC failure then stalls the mailbox
+-- forever, and because history.list replays from the same fixed startHistoryId
+-- while new mail piles up behind the POLL_BATCH slice, no new mail is ever read
+-- again. After three failed runs the route forces the checkpoint past, records
+-- the ids here, and texts the reviewers.
+ALTER TABLE public.gmail_sync_state ADD COLUMN IF NOT EXISTS fail_streak INT NOT NULL DEFAULT 0;
+ALTER TABLE public.gmail_sync_state ADD COLUMN IF NOT EXISTS skipped_message_ids TEXT[] NOT NULL DEFAULT '{}';
+
 COMMIT;

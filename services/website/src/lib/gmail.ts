@@ -19,9 +19,26 @@ export function gmailUser(): string {
   return (process.env.GMAIL_USER || 'hosthampton295@gmail.com').toLowerCase()
 }
 
-/** Label applied to a message once the agent has processed it. */
+/**
+ * Two labels, because "the agent read this" and "the agent acted on this" are
+ * different claims and Adam reads them in his own mailbox (2026-09-11).
+ *
+ *  - SEEN is applied by ingestion to everything it polls, including the
+ *    newsletters `autoIgnoreReason()` drops. It means: this message is in
+ *    `ingested_messages`, nothing was lost.
+ *  - HANDLED is applied by the dispatcher only once a message has actually
+ *    produced a draft for a human to review.
+ *
+ * Before this, one label was stamped on every message the poll touched, so a
+ * mailbox full of `HH-Agent/Handled` Abercrombie promos implied the agent had
+ * done something about them.
+ */
 export function handledLabelName(): string {
   return process.env.GMAIL_HANDLED_LABEL || 'HH-Agent/Handled'
+}
+
+export function seenLabelName(): string {
+  return process.env.GMAIL_SEEN_LABEL || 'HH-Agent/Seen'
 }
 
 export function gmailConfigured(): boolean {
@@ -292,9 +309,8 @@ export async function listMessages(q: string, maxResults = 50, pageToken?: strin
 
 /* ── Labels (the only writes this token can make) ───────────────────── */
 
-/** Find or create the handled label. Returns its id, or null if unavailable. */
-export async function ensureHandledLabel(): Promise<string | null> {
-  const name = handledLabelName()
+/** Find or create a label by name. Returns its id, or null if unavailable. */
+export async function ensureLabel(name: string): Promise<string | null> {
   const { ok, data } = await api('/labels')
   if (!ok) return null
 
@@ -306,14 +322,24 @@ export async function ensureHandledLabel(): Promise<string | null> {
     body: JSON.stringify({ name, labelListVisibility: 'labelShow', messageListVisibility: 'show' }),
   })
   if (!created.ok) {
-    console.error('gmail: labels.create failed', created.status)
+    console.error('gmail: labels.create failed', name, created.status)
     return null
   }
   return created.data?.id ? String(created.data.id) : null
 }
 
-/** Apply the handled label. Best-effort: a label failure never loses a message. */
-export async function applyHandledLabel(messageId: string, labelId: string): Promise<boolean> {
+/** Find or create the "agent acted on this" label. */
+export async function ensureHandledLabel(): Promise<string | null> {
+  return ensureLabel(handledLabelName())
+}
+
+/** Find or create the "agent read this" label. */
+export async function ensureSeenLabel(): Promise<string | null> {
+  return ensureLabel(seenLabelName())
+}
+
+/** Apply a label. Best-effort: a label failure never loses a message. */
+export async function applyLabel(messageId: string, labelId: string): Promise<boolean> {
   const { ok, status } = await api(`/messages/${encodeURIComponent(messageId)}/modify`, {
     method: 'POST',
     body: JSON.stringify({ addLabelIds: [labelId] }),
@@ -321,3 +347,12 @@ export async function applyHandledLabel(messageId: string, labelId: string): Pro
   if (!ok) console.error('gmail: messages.modify failed', messageId, status)
   return ok
 }
+
+/** Apply the handled label to a message, resolving the label id itself. */
+export async function markHandled(messageId: string): Promise<boolean> {
+  const labelId = await ensureHandledLabel()
+  if (!labelId) return false
+  return applyLabel(messageId, labelId)
+}
+
+export const applyHandledLabel = applyLabel

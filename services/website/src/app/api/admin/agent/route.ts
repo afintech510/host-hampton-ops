@@ -28,7 +28,13 @@ const DRAFT_COLUMNS =
   'id, review_code, status, party_type, contact_path, draft_kind, channel, missing_fields, subject, email_draft, sms_draft, error, reviewer_phone, booking_id, contact_id, inbound_event_id, approved_at, sent_at, created_at, updated_at'
 
 const EVENT_COLUMNS =
-  'id, source, external_id, direction, from_address, subject, body, parsed, status, classification, contact_id, booking_id, draft_id, error, created_at, handled_at'
+  'id, source, external_id, direction, from_address, subject, body, parsed, status, classification, contact_id, booking_id, draft_id, error, sent_at, created_at, handled_at'
+
+/**
+ * A message older than this is history, not an inquiry. "Draft now" needs
+ * ?force=1 past it.
+ */
+const STALE_DRAFT_MS = 30 * 24 * 60 * 60 * 1000
 
 export async function GET(req: NextRequest) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
@@ -94,6 +100,27 @@ export async function POST(req: NextRequest) {
       .eq('id', body.id)
       .maybeSingle()
     if (error || !event) return NextResponse.json({ error: 'Event not found' }, { status: 404 })
+
+    // The cron path refuses events older than 24h. This one had no age check at
+    // all, and the 12-month Gmail backfill put 270 historical messages into the
+    // Inbox tab — every one of them with a "Draft now" button and, until the
+    // sent_at fix, a created_at of today. Clicking one would have written a
+    // fresh reply to a question from 2024. The admin is a human and may
+    // override, but not by accident: it takes ?force=1.
+    const sentAt = (event as { sent_at?: string | null; created_at?: string }).sent_at
+    const age = Date.now() - new Date(sentAt || (event as { created_at: string }).created_at).getTime()
+    const forced = req.nextUrl.searchParams.get('force') === '1'
+    if (age > STALE_DRAFT_MS && !forced) {
+      const days = Math.round(age / 86_400_000)
+      return NextResponse.json(
+        {
+          error: `This message is ${days} days old — drafting a reply to it now would surprise the recipient. Re-send with ?force=1 if you mean it.`,
+          stale: true,
+          ageDays: days,
+        },
+        { status: 409 },
+      )
+    }
 
     const outcome = await draftForInquiry({ supabase, event: event as unknown as InboundEvent, actor: 'ADMIN' })
     if (!outcome.ok) return NextResponse.json({ error: outcome.error }, { status: outcome.status })
