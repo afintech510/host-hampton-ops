@@ -794,3 +794,50 @@ src/app/api/admin/agent/route.ts                   + action 'revise', per-user a
 src/app/review/[token]/page.tsx                    read-only timeline + deep link
 src/lib/agent/reviewLink.ts                        token TTL
 ```
+
+---
+
+## 12. Deferred: Slack as the reviewer surface (Adam, 2026-09-11)
+
+**Decision: not now.** SMS review is live and working, so it stays. Recorded
+because the reasoning is worth having if the question comes back.
+
+Adam's shape: a channel per product (studio rental / mobile / in-studio theme)
+and a thread per lead.
+
+What Slack would genuinely buy — beyond nicer formatting:
+
+- **It deletes the most fragile component in the system.** `parseReviewerReply`
+  exists only because SMS has no threading and no buttons. Block Kit buttons
+  remove the entire class of bug it guards against — the "contains SEND" trap,
+  iPhone quoted replies carrying our own "Reply SEND" boilerplate, and
+  `"make the price 1200"` being mis-read as a short draft code. All three were
+  real bugs found in review.
+- **Draft resolution becomes free.** `resolveDraft`'s explicit-code → single-open
+  → ask-which-one ladder is a workaround for a flat SMS conversation. A reply in
+  a Slack thread *is* the draft reference, so the ambiguous branch disappears.
+- **Reviewer identity becomes per-person.** A verified Slack `user_id` is the
+  analogue of `REVIEWER_PHONES` but attributable, which is exactly the blocker
+  §11.1 names: today an admin-UI approval writes the anonymous actor `'ADMIN'`,
+  so with two people working leads the ledger cannot say who approved a message
+  to a customer.
+- **Editing gets a real input.** A `views.open` modal beats texting `EDIT: …`.
+
+What it would cost, and why it is not obviously worth it yet:
+
+- SMS is *read*. Slack can be muted, and speed-to-lead is the whole point.
+- It only replaces the **reviewer** channel. Customer delivery stays Resend +
+  Quo, and no guardrail changes — so the upside is ergonomics and robustness,
+  not capability.
+- At ~16 leads/month, three channels is ~5 leads each per month. One
+  `#hh-leads` channel with the party type as a tag is probably the better shape;
+  split only if volume justifies it.
+- Slack's free tier caps history at 90 days. Acceptable — Supabase is the system
+  of record and Slack would be a view of it, not the store.
+
+If it is ever built: keep SMS as a fallback behind `REVIEWER_CHANNEL=slack|sms|both`
+rather than replacing it, verify the Slack signing secret fail-closed exactly as
+`/api/webhooks/quo` does, and gate approvals on a `SLACK_REVIEWER_USER_IDS`
+allowlist so the guardrail shape is unchanged. It would supersede the timeline
+and chat-composer halves of §11, leaving the web workspace to own the plan panel,
+invoice and planner — which Slack cannot render.
