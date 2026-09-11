@@ -1514,16 +1514,42 @@ data plus one loader change.
 - The invoice's mobile menu appendix (Phase 5) renders stations with NO price
   regardless, so it is unaffected either way.
 
-### 15.4 BLOCKED ON — numbers only Adam has
+### 15.4 CONFIRMED by Adam, 2026-09-11 — base table
+
+| Guests | Base price |
+|---|---|
+| 10 | **$850** |
+| 15 | **$950** |
+| 20 | **$1,100** |
+| 25 | **$1,250** |
+| 25+ | ask Adam |
+
+Note the shape: **$85/child at 10 falling to $50/child at 25.** That is a
+volume curve, unlike today's flat $62.50/child across both published tiers, and
+unlike the planner's flat-base-plus-surcharge ladder. Neither existing model can
+express it, which is why this is a rework and not a price change.
+
+**Also confirmed: the published $500 / $750 tier cards STAY UP for now.** Adam's
+call, made with the gap in §15.1 in front of him. So the underpricing continues
+deliberately until the rest of the model lands — do not "fix" it unprompted.
+
+**NOT YET SEEDED INTO `pricing_items`, on purpose.** The base table alone is
+half a model: activating it while stations are still `Ask` and the location rule
+is undefined would produce quotes that are confidently wrong in a new way, and
+would change the planner's live mobile price from $400 to $850 without the
+station/travel arithmetic that is supposed to accompany it. It goes in as one
+data migration when §15.5 is answered.
+
+### 15.5 STILL BLOCKED ON — numbers only Adam has
 
 Nothing here can be built without these, and **no part of it may be guessed**:
 inventing a price is the one thing the draft node's hard rules forbid outright,
 and the same standard applies to the catalog.
 
-1. The base table: price at 10 / 15 / 20 / 25 (and the top band — does it cap,
-   or continue?).
-2. Whether `$850 for 10 guests` is the real starting figure and whether it is
-   the base alone or base + one station.
+1. The 25+ band — does it cap, or continue per guest?
+2. Whether `$850` is the base ALONE or base + one station. This is the load-
+   bearing one: it decides whether a station's band price is additive on top of
+   the base or the first one is already included.
 3. Station prices at each band — or at minimum the handful actually sold often
    (slime, hair tinsel, canvas bag bar, manicures, spa), with the rest staying
    `Ask`.
@@ -1531,5 +1557,6 @@ and the same standard applies to the catalog.
 5. Whether a 12-guest party pays the 15-guest band or a pro-rated figure.
 6. Whether the published anchor stays at all, or mobile goes enquiry-only.
 
-Until (1) and (2) land, the honest interim is to **stop publishing the firm
-$500/$750 tiers**, because they are the one thing actively costing money.
+Adam asked (2026-09-11) to be emailed what is established and what is still
+needed, to fill in and return — sent the same day. The interim is what he chose:
+the published tiers stay, and nothing is seeded until the grid comes back.
