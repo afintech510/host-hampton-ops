@@ -8,7 +8,13 @@ import { buildReviewUrl } from '@/lib/marketing/reviewLink'
 describe('buildReviewUrl', () => {
   it('points at the Host Hampton Google review page for sms', () => {
     const url = buildReviewUrl('sms')
-    expect(url).toContain('https://search.google.com/local/writereview?placeid=')
+    expect(url).toContain('https://g.page/r/CXw9DJM9kFo-EBM/review')
+  })
+
+  it('joins UTM params onto a query-less base with "?" not "&"', () => {
+    const url = buildReviewUrl('sms')
+    expect(url).toContain('/review?utm_source=')
+    expect(url).not.toContain('/review&utm_source=')
   })
 
   it('tags sms links with utm_source=sms&utm_medium=sms', () => {

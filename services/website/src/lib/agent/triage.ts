@@ -207,7 +207,12 @@ async function callClaude(userPrompt: string, model: string): Promise<ClaudeTria
       system: SYSTEM_PROMPT,
       // Schema-enforced: whatever the email body says, the response can only be
       // an enum, a boolean and a string. This is most of the injection defence.
-      output_config: { format: { type: 'json_schema', schema: TRIAGE_SCHEMA }, effort: 'low' },
+      //
+      // NO `effort` here. The draft node sets it (Sonnet 5 supports it), but
+      // Haiku 4.5 rejects the whole request with 400 "This model does not
+      // support the effort parameter" — which is how the first production run
+      // failed triage on every single message.
+      output_config: { format: { type: 'json_schema', schema: TRIAGE_SCHEMA } },
       messages: [{ role: 'user', content: userPrompt }],
     }),
   })

@@ -129,7 +129,7 @@ export interface SmsReviewRequestParams {
   reviewUrl?: string
 }
 
-const DEFAULT_REVIEW_URL = 'https://search.google.com/local/writereview?placeid=ChIJv3k3iqn36IkRfD0Mkz2QWj4'
+const DEFAULT_REVIEW_URL = 'https://g.page/r/CXw9DJM9kFo-EBM/review'
 
 /**
  * Review request sent 24 hours after an event or booking. ~180 chars (2 segments).

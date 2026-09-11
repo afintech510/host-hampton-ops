@@ -278,6 +278,30 @@ describe('GET /api/cron/agent-dispatch', () => {
     expect(res.body.results[0].outcome).toBe('drafted')
   })
 
+  it('re-queues a Gmail event when TRIAGE ITSELF failed, rather than burying it', async () => {
+    // The first production run 400'd on every message and filed ten of them —
+    // one a real customer — as "no action needed". A failure is not a decision.
+    const { supabase } = makeSupabase({
+      candidates: [{ id: 'e1', created_at: new Date().toISOString() }],
+      claimable: ['e1'],
+      eventRows: { e1: websiteFormEvent('e1', { source: 'gmail' }) },
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+    mockTriageMessage.mockResolvedValue({
+      category: 'other',
+      needsAction: false,
+      reason: 'triage failed',
+      error: 'Anthropic error 400: does not support the effort parameter',
+    })
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(res.body.results[0].outcome).toBe('requeued_triage_retry')
+    // Never 'ignored': that is the status that loses the lead for good.
+    expect(mockFinishEvent).not.toHaveBeenCalledWith(expect.anything(), 'e1', 'ignored', expect.anything())
+    expect(mockDraftForInquiry).not.toHaveBeenCalled()
+  })
+
   it('still parks a source nothing can answer yet', async () => {
     const { supabase } = makeSupabase({
       candidates: [{ id: 'e1', created_at: new Date().toISOString() }],

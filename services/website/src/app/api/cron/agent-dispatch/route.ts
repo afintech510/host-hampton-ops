@@ -328,6 +328,32 @@ export async function GET(req: NextRequest) {
         eventId: event.id,
       })
 
+      // A triage FAILURE is not a decision. Marking it 'ignored' would bury a
+      // real person's email behind a transient upstream error — which is
+      // exactly what happened on the first production run, when every message
+      // failed with a 400 and ten of them (one a real customer) were filed as
+      // "no action needed". Re-queue, bounded, and make the last attempt
+      // 'error' so it is visible in Admin → Inbox rather than silently gone.
+      if (triage.error) {
+        const attempts = attemptsOf(event) + 1
+        if (attempts < MAX_DRAFT_ATTEMPTS) {
+          await supabase
+            .from('ingested_messages')
+            .update({
+              status: 'new',
+              claimed_at: null,
+              error: `triage: ${triage.error} (attempt ${attempts}/${MAX_DRAFT_ATTEMPTS})`,
+              classification_meta: { ...(event.classification_meta ?? {}), agent_attempts: attempts },
+            })
+            .eq('id', event.id)
+          results.push({ kind: 'event', id: event.id, outcome: 'requeued_triage_retry', error: triage.error })
+        } else {
+          await finishEvent(supabase, event.id, 'error', { error: `triage: ${triage.error}` })
+          results.push({ kind: 'event', id: event.id, outcome: 'triage_error', error: triage.error })
+        }
+        continue
+      }
+
       if (!triage.needsAction) {
         await finishEvent(supabase, event.id, 'ignored', {
           classification: triage.category,

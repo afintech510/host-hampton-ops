@@ -251,3 +251,27 @@ Thanks`
     expect(res.error).toContain('529')
   })
 })
+
+describe('the Anthropic request shape', () => {
+  const originalEnv = process.env
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockAssertBudget.mockResolvedValue(undefined)
+    process.env = { ...originalEnv, ANTHROPIC_API_KEY: 'sk-test', AGENT_TRIAGE_MODEL: 'claude-haiku-4-5' }
+  })
+  afterAll(() => { process.env = originalEnv })
+
+  it('does not send output_config.effort — Haiku 400s on it', async () => {
+    // The first production triage run failed on EVERY message with
+    // "This model does not support the effort parameter". The draft node sets
+    // effort because Sonnet 5 accepts it; Haiku does not.
+    mockClaude({ category: 'marketing', needsAction: false, reason: 'newsletter' })
+
+    await triageMessage({ supabase: makeSupabase(), from: 'a@b.com', subject: 's', body: 'hi' })
+
+    const sent = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)
+    expect(sent.output_config).toBeDefined()
+    expect(sent.output_config.effort).toBeUndefined()
+    expect(sent.model).toBe('claude-haiku-4-5')
+  })
+})
