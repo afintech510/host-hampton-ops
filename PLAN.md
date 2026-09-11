@@ -95,6 +95,7 @@
 - [x] Phase 2 — SMS review loop (SEND / EDIT / TEST / CANCEL) + real send via Resend + Quo; Quo webhook fail-closed + dedupe + unknown senders become contacts; `lib/agent/{reviewers,reviewLoop,sendApproved}.ts`, `inquiry_draft` as a GATED graph entity, 2h business-hours nudge, admin Send/Test; migration_034. **Deployed 2026-09-11.**
 - [ ] Phase 3 — permanent Gmail ingestion (own OAuth refresh token, `/api/cron/gmail-sync`) + triage (ignore marketing/vendor)
 - [ ] Phase 4 — every lead is a Party Plan (`bookings.status='lead'`, `party_type`), one planner for theme/mobile/studio, pricing single-sourced in `pricing_items`; migration_035
+- [ ] Phase 4.5 — **Lead Thread Workspace** (Adam's ask, 2026-09-11): `/admin/lead/[ref]` as Allie's lead-management interface — unified timeline per lead, chat composer that re-drafts in plain English, tone chips (warmer / mom-to-mom / shorter), inline SMS+email editing, Approve & send, plan panel linking the party planner and invoice. **Blocked on per-user admin login** (`admin_users`) — today every admin approval logs as the anonymous actor 'ADMIN'. `/review/[token]` stays read-only (a forwardable token must never approve a send). See plan §11.
 - [ ] Phase 5 — `/plan/[ref]/summary` DB-rendered invoice page (locked template design) + extracted `PayPanel` with embedded Stripe; "Email me this"; persisted pay links
 - [ ] Phase 6 — learning loop: reviewer-edit capture, weekly distill into `agent_learnings` + voice profile v2; migration_036
 

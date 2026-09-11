@@ -651,3 +651,146 @@ for two hours; covered by unit tests).
   copying the new key to the box stops all inbound SMS.
 - `MODEL_PRICING` had Sonnet 5 at $3/$15 (Sonnet 4.6's rates) and Opus 5 at
   $15/$75; corrected to $2/$10 and $5/$25.
+
+---
+
+## 11. Phase 4.5 — Lead Thread Workspace (Adam, 2026-09-11)
+
+> "I love the thread nature of this, the progression of each lead. I want this to
+> be the lead mgmt interface — this is perfect for Allie."
+
+The review page proved the idea by accident: one lead, its whole progression, on
+a phone. This phase turns that from a read-only preview into the place Allie
+actually works a lead from first touch to deposit paid.
+
+### 11.1 The security constraint that shapes everything
+
+`/review/[token]` is **public and forwardable**. A bearer token in a URL is
+neither an authenticated admin nor a verified reviewer phone, so it must never
+gain approve/send/edit powers — that would drive a hole straight through §4's
+hard guardrail, because anyone who received a forwarded SMS could message a
+customer as Allie.
+
+So the workspace splits in two:
+
+- **`/review/[token]` stays read-only.** It gains the timeline (so the glance is
+  genuinely useful), a countdown-to-expiry, and one prominent
+  **"Open in Host Hampton →"** button that deep-links to the authenticated view.
+- **`/admin/lead/[ref]` is the workspace.** Authenticated, and every mutation
+  goes through the existing `/api/admin/agent` actions, i.e. through `advance()`
+  with a real admin actor.
+
+Preview tokens should also get a TTL (7 days) — today they never expire.
+
+**Prerequisite: Allie needs her own login.** Today there is one shared
+`ADMIN_PASSWORD` and every admin approval lands in `marketing_ledger` as the
+anonymous actor `'ADMIN'`. With two people using this daily, the audit trail
+cannot say who approved a message to a customer — which is the one thing the
+ledger exists to record. Minimum viable fix: an `admin_users` table (email,
+password hash, display name, is_active) and `actor: 'admin:allie@…'`. This is
+small and it blocks the rest of the phase being trustworthy, so it goes first.
+
+### 11.2 The timeline
+
+One chronological stream per lead, assembled from what already exists — no new
+message store:
+
+| Source | Contributes |
+|---|---|
+| `ingested_messages` (`direction` in/out) | the real conversation: form submissions, SMS, email (Phase 3) |
+| `inquiry_drafts.revisions[]` | every draft version, its author (`agent` / `reviewer` / `admin`), and the note that caused it |
+| `marketing_ledger` (`entity_type` `inquiry_draft`, `booking`) | transitions, sends, LLM cost, nudges |
+| `booking_payments` | deposit paid, balance paid |
+| `contact_interactions` | calls, opt-outs, portal messages |
+
+`lib/agent/threadTimeline.ts` → `loadLeadTimeline({ bookingId?, contactId?, draftId? })`
+returns a sorted `TimelineItem[]` discriminated union. Inbound renders left,
+outbound right, system events as thin rules. Draft versions collapse to
+"v2 · warmer, mom-to-mom" and expand to a v1→v2 diff, so Allie can see what her
+note actually changed.
+
+### 11.3 The chat composer (ask for changes in plain English)
+
+A text box under the thread: *"tell me what to change."* Posts to
+`/api/admin/agent` with a new `action: 'revise'`, which calls the **same**
+`redraftForReviewer()` the SMS loop uses. One code path, two surfaces — an
+instruction typed here and one texted in behave identically and land in the same
+`revisions[]` array.
+
+**Tone chips** above the box — one tap each, each just a canned note passed to
+the same endpoint:
+
+`warmer` · `shorter` · `mom-to-mom` · `less salesy` · `more specific on logistics` · `match my last message`
+
+Seed them as a TS constant; promote to an `agent_tone_presets` table once Allie
+wants her own. `mom-to-mom` is the one Adam asked for by name and it belongs in
+the voice profile too, not only as a per-draft nudge — if Allie reaches for it
+every time, that is a standing voice rule and Phase 6 should learn it.
+
+### 11.4 Direct editing (the fastest path to "this sounds like me")
+
+Asking a model for a tone is slower than just typing the sentence. So the email
+and SMS bodies are **editable in place** — textarea, live character count with
+the 160/320-segment boundaries marked, save via the existing `edit` action.
+Editing an approved draft already un-approves it.
+
+This is also the highest-value training signal in the whole system: the diff
+between the agent's v1 and the text Allie actually accepted is exactly what
+Phase 6's `draft_feedback` view distils. The better this editor is, the faster
+the agent learns her voice.
+
+### 11.5 Accept
+
+One **Approve & send** button (confirm dialog, names the recipient), plus
+**Test to me** and **Dismiss**. Mechanically these are the actions that already
+exist; the work here is making the primary action obvious and making the
+"nothing has gone to the customer yet" state unmistakable until it has.
+
+### 11.6 The plan panel (right rail) — where the invoice and planner attach
+
+The thread answers "what did we say"; the rail answers "what are we selling".
+
+- The party-plan fields (date, time, guests, party type, venue, line items),
+  inline-editable, written through the one `lib/plan.ts` writer from Phase 4.
+- **Open planner** → `/party-planner?ref=<booking_ref>` to customise the build.
+- **Open invoice** → `/plan/[ref]/summary` (Phase 5), the DB-rendered quote.
+- **Send quote** → creates a `quote`-kind draft for this plan, so a priced quote
+  still goes through review like everything else.
+- Changing a plan field marks any live draft **stale** ("the plan changed —
+  re-draft?"), because a quote that no longer matches the plan is worse than no
+  quote.
+
+A pipeline header across the top — `lead → quoted → awaiting_deposit →
+deposit_paid → approved → paid_in_full → completed` — with the current stage lit,
+so the progression Adam likes is visible at a glance rather than inferred.
+
+### 11.7 Dependencies and shipping order
+
+The timeline, chat, editor and accept need **nothing new** — they work against
+today's schema and can ship immediately after the login work. The plan panel
+needs Phase 4 (a `bookings` row per lead); the invoice link needs Phase 5.
+
+1. `admin_users` + per-person ledger actor *(blocks everything else)*
+2. `threadTimeline.ts` + the timeline UI, in `/admin/lead/[ref]` and read-only on `/review/[token]`
+3. Chat composer + tone chips + inline editor + Approve & send
+4. Plan panel, gated on Phase 4
+5. Invoice / planner links, gated on Phase 5
+
+Steps 1-3 are the ones worth doing before Phase 4, because they are what makes
+the agent usable daily — and daily use is what generates the training signal
+everything downstream depends on.
+
+### 11.8 New / changed files
+
+```
+starting_plan/migration_0NN_admin_users.sql        admin_users + preview-token TTL
+src/lib/adminAuth.ts                              per-user auth, returns an actor
+src/lib/agent/threadTimeline.ts                    loadLeadTimeline()
+src/lib/agent/tonePresets.ts                       the chips
+src/app/admin/lead/[ref]/page.tsx                  the workspace
+src/app/admin/LeadThread.tsx                       timeline + composer + editor
+src/app/admin/PlanPanel.tsx                        right rail
+src/app/api/admin/agent/route.ts                   + action 'revise', per-user actor
+src/app/review/[token]/page.tsx                    read-only timeline + deep link
+src/lib/agent/reviewLink.ts                        token TTL
+```
