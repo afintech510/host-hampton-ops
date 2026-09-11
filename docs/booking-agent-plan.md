@@ -925,3 +925,52 @@ the number of open drafts, which is bounded by the business.
   `source='gmail'`. The next free number is still **035**.
 - Tests: `gmail` (24), `agentTriage` (17), plus the dispatcher's Gmail paths. 586
   total, the one failure being the pre-existing WIP.
+
+
+### Phase 3 — verified in production (2026-09-11)
+
+Gmail was already consented (the grant predated this session); what was missing
+was that `docker-compose.yml` never passed `GMAIL_*` through, so the container
+saw nothing. Adding the five vars and force-recreating was the whole unlock —
+worth remembering, because "the value is in /opt/hosthampton/.env" and "the app
+can see it" are different claims, and `docker exec hampton_website printenv` is
+the one that settles it.
+
+First live poll: 25 scanned, 8 recorded, 4 auto-ignored, label created and
+applied. Backfill: 270 Gmail rows now span 2024-09 → 2026-09, **119 of them
+`direction='out'`** — the Phase 6 voice corpus exists.
+
+Triage on real mail, once fixed: 13 newsletters and receipts ignored
+(Abercrombie, Royal Caribbean, Disney, TikTok, PayPal…), one spam, and the one
+actual human in the batch classified `customer_reply` → draft `HH-2026-1872`,
+reviewer-texted, awaiting Adam. That is the plan's exit criteria met.
+
+**Three bugs the real mailbox found that tests did not:**
+
+1. **Haiku rejects `output_config.effort`.** The triage call was copied from the
+   draft node, where Sonnet 5 accepts it. Haiku 4.5 returns 400 "This model does
+   not support the effort parameter" and the whole request fails. Every message
+   in the first run failed this way. *Model capabilities differ per model; a
+   parameter that works in one node is not portable to another.*
+2. **A triage failure was treated as a verdict.** Triage returns
+   `needsAction: false` on error, and the Gmail branch filed anything not needing
+   action as `ignored` — terminal. Ten real emails were buried, one from an
+   actual customer, with "triage failed" as the only trace. This is the Phase 2
+   lesson (*a transient failure must not be terminal*) recurring in a new place,
+   which suggests the general rule is worth applying wherever a node returns a
+   negative verdict: **distinguish "decided no" from "could not decide".**
+3. **Ingestion created a contact for every sender it did not recognise.** A
+   sender is only known to be marketing *after* triage reads it, so ingesting
+   first and classifying second created 52 contacts (Abercrombie, Royal
+   Caribbean, Priceline…). `contactSync` mirrors new contacts into Brevo and Quo,
+   so on a busier mailbox this would have published a year of strangers into two
+   external address books. They escaped only because `marketingConsent:false`
+   keeps them out of Brevo lists and they have no phone for Quo. Ingestion now
+   links only; the dispatcher creates the contact after triage says the message
+   is worth answering.
+
+Cleanup left 42 artifact contacts (`source_detail='gmail-inbound'`, no
+interactions, no Brevo, no Quo). Deletion was evidence-based — only senders
+triage had actually classified marketing/spam — because several of the rest
+(`justinh@whbpac.org`, `su65treasurer@gssc.us`, `gigs@gigsalad.com`) are
+plausibly real people and guessing wrong is worse than clutter. Adam's call.
