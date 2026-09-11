@@ -2203,3 +2203,73 @@ unparseable mint time reads as expired.
 - **Line-item editing** in the panel. It renders them and links to the planner,
   which is the one place that already writes them correctly.
 - The planner's three-way product selector, above.
+
+### Send quote, and saying when a quote is not possible (`c19bb4a`)
+
+§11.6's last item. The button reuses the **existing** `draft_with_agent` action
+on `/api/admin/parties/[id]` rather than adding a second endpoint: that action
+already carries the three layers that stop a double-click becoming two texts to
+a customer (a live-draft precheck, the same compare-and-swap claim the cron
+uses, and the DB's partial unique indexes), and duplicating it would mean
+maintaining those three twice — which is how one copy ends up being the one
+nobody remembered to guard.
+
+The gap worth closing was not the button, it was the silence around it. Whether
+a draft comes out as a priced QUOTE or as an info-gather reply is
+`evaluateInquiry()`'s decision, not the button's, so a plain "Send quote" would
+sometimes produce a draft that asks for a date instead of pricing anything, with
+no warning. The lead route now returns the same evaluation the draft node runs,
+and the panel says which is about to happen — *"Ready to quote"* or *"Still
+missing: date, guest count. A draft now would ask for those, not price it"* —
+with the button's own label following. It can still differ from the node's
+conclusion, because the node evaluates the plan MERGED with the inbound message
+(Phase 4 item 6); erring toward "not ready" points at a field worth filling in
+rather than at a quote worth trusting.
+
+Reachability is reported separately from missing fields: a plan with no email
+and no phone cannot be drafted at all, so burying it among eight other fields
+would hide the one that blocks the button. An already-open draft is named rather
+than offered a button that could only 409, and unsaved plan edits disable the
+button rather than quoting stale details.
+
+Live, this immediately earned itself: Natalie's studio rental reads *ready to
+quote*; Ashley's in-studio party is one field short (*guest count*); Eleonore's
+mobile party is four short. None of that was visible before without opening the
+plan and checking by eye.
+
+### The bug production found (`a1404b5`)
+
+`HH-2026-0208` came back from the live API as a lead with **no plan row**. It has
+one. A transient Supabase failure on the booking read inside `resolveLead` was
+being discarded — `const { data } = await …` — so the route answered
+`booking: null`, which the panel renders as the confident sentence *"No party
+plan row for this lead yet."* It resolved correctly on all four retries, which
+is what made it worth fixing rather than shrugging at: the failure is silent and
+the false statement is plausible.
+
+**This is the same rule as the held draft that notified nobody.** An absence
+reads exactly like a fact, so a failure has to say that it failed. The whole
+reason `errors[]` exists on this route is that principle, and the one place it
+had not been applied was the resolver that runs before it.
+
+`resolveLead` now distinguishes "found nothing" from "could not tell" and
+carries `readError`:
+
+- GET reports it in `errors[]` and sets `planReadFailed`; the panel says *"could
+  not be read just now — hit Refresh"* instead of *"no plan row yet"*.
+- A lookup that fails with nothing to show is a **503**, not a 404. "No such
+  lead" sends someone hunting for one that is sitting right there.
+- PATCH refuses with **503** rather than *"this lead has no party plan to edit
+  yet"* — which would invite creating a second plan for a lead that already has
+  one, precisely the duplicate-plan problem `9fedd91` had just fixed elsewhere.
+- A draft naming a booking whose row is missing is flagged too: a dangling
+  reference is also not "there is no plan". A draft with **no `booking_id` at
+  all** is deliberately NOT flagged — that one is a genuine absence, and
+  over-reporting would make the warning meaningless.
+
+Worth generalising, because this is the second time the same shape has cost
+something: **when a lookup can fail, the caller needs three outcomes, not two.**
+Collapsing "error" into "not found" is what turns a blip into a false statement,
+and a false statement about state is what gets acted on.
+
+887 tests, 886 passing.
