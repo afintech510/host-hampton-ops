@@ -55,6 +55,12 @@ function makeSupabase(opts: Opts = {}) {
 
     const chain: any = {
       then: (res: any, rej: any) => {
+        // The route also loads the pricing catalog now (for the rate card it
+        // hands the tab). Returning no rows makes it use the compiled
+        // fallback, which is what this suite wants — it is testing the pipeline.
+        if (table === 'pricing_items') {
+          return Promise.resolve({ data: [], error: null, count: null }).then(res, rej)
+        }
         // The paged query is the one that asked for an exact count.
         const isPaged = ops.some(o => o[0] === 'select' && (o[2] as { count?: string })?.count === 'exact')
         const result = isPaged
@@ -102,6 +108,22 @@ describe('GET /api/admin/parties', () => {
 
     const nots = notFilters(calls)
     expect(nots).toContainEqual(['event_type', 'in', '(vendor_registration)'])
+  })
+
+  it('hands the tab the live studio rate card', async () => {
+    const { supabase } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+
+    const res = await GET(makeReq())
+
+    // The tab's "re-prices the rental fee (...)" helper text reads these, so it
+    // cannot end up describing prices `edit_rental` no longer charges.
+    expect(res.body.studioRates).toMatchObject({
+      weekendBaseCents: expect.any(Number),
+      weekdayBaseCents: expect.any(Number),
+      minHours: expect.any(Number),
+    })
+    expect(res.body.studioRates.weekendBaseCents).toBeGreaterThan(0)
   })
 
   it('returns the pipeline stages in order, with lead and quoted at the front', async () => {

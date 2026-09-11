@@ -3,20 +3,27 @@
 import { useState, useMemo, useCallback, useRef } from 'react'
 import { Check, Minus, Plus, Users, RotateCcw, Bookmark, Calendar, Loader2, Sparkles, Zap, Building2 } from 'lucide-react'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
+import { FALLBACK_CATALOG, type PricingCatalog } from '@/lib/pricingCatalog'
 
 /* ── constants ─────────────────────────────────────── */
 
-const INCLUDED_GUESTS = 10
-const EXTRA_GUEST_CENTS = 3500
-const MINI_PARTY_DISCOUNT_CENTS = 20000 // $200 off
-const MINI_PARTY_MAX_GUESTS = 7         // + birthday child
+// The guest rules and the DIY studio rate card used to be literals here — a
+// SECOND copy of the block at PartyBuilderContent.tsx:17-40. They now come from
+// `pricing_items` via the `catalog` prop (migration 036).
+//
+// EXCEPT the two below, and the reason matters. This file has always said the
+// mini party holds **7** guests while `PartyBuilderContent` — the page that
+// actually takes the booking and prices it — has always said **6**. Nothing
+// compared them, because the constant was declared twice. The catalog says 6.
+//
+// Pointing this page at the catalog would quietly change a published guest
+// limit, which is a business decision and Adam's to make, not a side effect of
+// a refactor. So the divergence is preserved and named here instead of being
+// resolved in the dark. Once Adam says which is right, delete these two lines
+// and read `cat.guestRules` like everything else.
+const MINI_PARTY_MAX_GUESTS = 7         // + birthday child. See note above: the planner says 6.
+const MINI_PARTY_DISCOUNT_CENTS = 20000 // $200 off. Matches the catalog.
 const LS_KEY = 'hh_quote_data'
-
-// DIY Studio Rental rates (from pricing_items / room-rental category)
-const RENTAL_WEEKDAY_3HR = 475   // $475
-const RENTAL_WEEKEND_3HR = 600   // $600
-const RENTAL_ADD_HR_WEEKDAY = 100 // $100/hr
-const RENTAL_ADD_HR_WEEKEND = 150 // $150/hr
 
 // Decor items that support qty (balloon products sold per unit)
 const BALLOON_QTY_ITEMS = new Set([
@@ -283,12 +290,21 @@ interface Props {
   entertainment: PricingItem[]
   partyAddOns: PricingItem[]
   savedQuote?: string | null
+  /** Prices from `pricing_items`; defaults to the pre-036 constants. */
+  catalog?: PricingCatalog
 }
 
 export default function KidsPartyMenuContent({
   themes, premiumActivities, standardActivities,
-  food, desserts, beverages, decor, entertainment, partyAddOns, savedQuote,
+  food, desserts, beverages, decor, entertainment, partyAddOns, savedQuote, catalog,
 }: Props) {
+  const cat = catalog ?? FALLBACK_CATALOG
+  const INCLUDED_GUESTS = cat.guestRules.includedGuests
+  const EXTRA_GUEST_CENTS = cat.guestRules.extraGuestCents
+  const RENTAL_WEEKDAY_3HR = Math.round(cat.studioRates.weekdayBaseCents / 100)
+  const RENTAL_WEEKEND_3HR = Math.round(cat.studioRates.weekendBaseCents / 100)
+  const RENTAL_ADD_HR_WEEKDAY = Math.round(cat.studioRates.weekdayAddlHourCents / 100)
+  const RENTAL_ADD_HR_WEEKEND = Math.round(cat.studioRates.weekendAddlHourCents / 100)
   /* ── restore from ?q= URL param ── */
   const restored = useMemo(() => parseQuoteParam(savedQuote), [savedQuote])
 
@@ -844,7 +860,7 @@ export default function KidsPartyMenuContent({
                 </p>
                 {extraGuests > 0 && (
                   <p className="text-xs text-hampton-navy/50 mt-0.5">
-                    {extraGuests} additional @ $35 each = {fmt(extraGuests * EXTRA_GUEST_CENTS)}
+                    {extraGuests} additional @ {fmt(EXTRA_GUEST_CENTS)} each = {fmt(extraGuests * EXTRA_GUEST_CENTS)}
                   </p>
                 )}
               </div>

@@ -397,7 +397,7 @@ export default function StudioRentalContent(props: Props) {
           <p>• Your <strong>{formatMoney(depositCents)}</strong> deposit is paid — your date is locked.</p>
           <p>• Balance of <strong>{formatMoney(balanceDueCents)}</strong> can be paid any time before your event.</p>
           <p>• Use the link in your email anytime to <strong>add more time or add-ons</strong> and pay your balance.</p>
-          <p>• A <strong>$500 refundable security hold</strong> is placed on your card the day of your event and auto-releases within 7 days.</p>
+          <p>• A <strong>{formatMoney(rates.securityDepositCents)} refundable security hold</strong> is placed on your card the day of your event and auto-releases within 7 days.</p>
         </div>
         <a href="/my-booking" className="btn-primary inline-block mt-8 px-8 py-3">Manage My Booking</a>
       </div>
@@ -414,8 +414,8 @@ export default function StudioRentalContent(props: Props) {
           Seats up to {STUDIO_SEATED_CAPACITY} · standing room for {STUDIO_STANDING_CAPACITY}.
         </p>
         <div className="flex flex-wrap justify-center gap-3 mt-5 text-sm">
-          <span className="bg-white border border-hampton-pink/20 rounded-full px-4 py-1.5 text-hampton-navy">Weekend · $600 / 3 hrs (+$150/hr)</span>
-          <span className="bg-white border border-hampton-pink/20 rounded-full px-4 py-1.5 text-hampton-navy">Weekday · $475 / 3 hrs (+$100/hr)</span>
+          <span className="bg-white border border-hampton-pink/20 rounded-full px-4 py-1.5 text-hampton-navy">Weekend · {formatMoney(rates.weekendBaseCents)} / {minHours} hrs (+{formatMoney(rates.weekendAddlHourCents)}/hr)</span>
+          <span className="bg-white border border-hampton-pink/20 rounded-full px-4 py-1.5 text-hampton-navy">Weekday · {formatMoney(rates.weekdayBaseCents)} / {minHours} hrs (+{formatMoney(rates.weekdayAddlHourCents)}/hr)</span>
         </div>
       </div>
 
@@ -462,7 +462,7 @@ export default function StudioRentalContent(props: Props) {
             <div className="mt-4 space-y-2">
               <label className="flex items-start gap-2 text-sm text-hampton-navy/80">
                 <input ref={agreeRulesRef} type="checkbox" checked={agreeRules} onChange={e => setAgreeRules(e.target.checked)} className="mt-1" />
-                <span>I understand the rental includes my own setup &amp; cleanup time, a <strong>$250 deposit</strong> holds my date with the balance payable any time before the event, half the deposit is non-refundable (the full deposit within 30 days of the event), and a refundable <strong>$500 security hold</strong> ({formatMoney(rates.securityDepositCents)}) is placed on my card on arrival.</span>
+                <span>I understand the rental includes my own setup &amp; cleanup time, a <strong>$250 deposit</strong> holds my date with the balance payable any time before the event, half the deposit is non-refundable (the full deposit within 30 days of the event), and a refundable <strong>{formatMoney(rates.securityDepositCents)} security hold</strong> is placed on my card on arrival.</span>
               </label>
               <label className="flex items-start gap-2 text-sm text-hampton-navy/80">
                 <input ref={consentRef} type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1" />

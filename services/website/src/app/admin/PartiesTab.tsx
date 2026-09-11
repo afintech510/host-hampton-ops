@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { formatMoney } from '@/lib/partyPricing'
 import { PIPELINE_STAGES, PARTY_TYPES, PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
+import { FALLBACK_STUDIO_RATES, type StudioRates } from '@/lib/pricingCatalog'
 
 interface PartyBookingSummary {
   id: string
@@ -89,6 +90,9 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
   const [statusFilter, setStatusFilter] = useState('all')
   const [partyTypeFilter, setPartyTypeFilter] = useState('all')
   const [counts, setCounts] = useState<PipelineCounts | null>(null)
+  // Falls back to the compiled rates until the first fetch lands, so the helper
+  // text is never blank and never zero.
+  const [rates, setRates] = useState<StudioRates>(FALLBACK_STUDIO_RATES)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<PartyDetail | null>(null)
   const [actionLoading, setActionLoading] = useState('')
@@ -173,6 +177,7 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
     setBookings(data.bookings || [])
     setTotal(data.total || 0)
     setCounts(data.counts ?? null)
+    if (data.studioRates) setRates(data.studioRates)
     setLoading(false)
   }
 
@@ -735,6 +740,7 @@ export default function PartiesTab({ headers }: { headers: HeadersInit; onLogout
           {/* Studio rental time (re-prices the rental fee) */}
           {selected.event_type === 'studio-rental' && (
             <StudioTimeEditor
+              rates={rates}
               detail={selected as PartyDetail}
               busy={actionLoading === 'edit_rental'}
               onSave={(startTime, endTime) => doAction('edit_rental', { startTime, endTime })}
@@ -1136,10 +1142,11 @@ function PipelineChip({ label, count, active, onClick }: {
 }
 
 /* ─── Studio rental time editor (re-prices the rental fee) ─────── */
-function StudioTimeEditor({ detail, busy, onSave }: {
+function StudioTimeEditor({ detail, busy, onSave, rates }: {
   detail: PartyDetail
   busy: boolean
   onSave: (startTime: string, endTime: string) => void
+  rates: StudioRates
 }) {
   const tags0 = (detail.party_tags || {}) as Record<string, string>
   const [start, setStart] = useState(tags0.rental_start_time || detail.party_time || '14:00')
@@ -1165,7 +1172,13 @@ function StudioTimeEditor({ detail, busy, onSave }: {
           {busy ? 'Updating…' : 'Update time & re-price'}
         </button>
       </div>
-      <p className="text-[11px] text-gray-400 mt-2">Re-prices the rental fee (Weekend $600/3hr +$150/hr, Weekday $475/3hr +$100/hr; capped at full-day $975 / $700) and recomputes the balance.</p>
+      {/* Reads the live rate card rather than restating it, so this cannot
+          end up describing prices the re-pricing no longer uses. */}
+      <p className="text-[11px] text-gray-400 mt-2">
+        Re-prices the rental fee (Weekend {formatMoney(rates.weekendBaseCents)}/{rates.minHours}hr +{formatMoney(rates.weekendAddlHourCents)}/hr,
+        Weekday {formatMoney(rates.weekdayBaseCents)}/{rates.minHours}hr +{formatMoney(rates.weekdayAddlHourCents)}/hr;
+        capped at full-day {formatMoney(rates.weekendFullDayCents)} / {formatMoney(rates.weekdayFullDayCents)}) and recomputes the balance.
+      </p>
     </div>
   )
 }

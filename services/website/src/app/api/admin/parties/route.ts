@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { PIPELINE_STAGES, PARTY_TYPES, isPartyType } from '@/lib/pipelineStages'
+import { loadPricingCatalog } from '@/lib/pricingCatalog'
 
 /**
  * Admin Parties list — the pipeline view (Phase 4 item 5).
@@ -96,7 +97,11 @@ export async function GET(req: NextRequest) {
     .not('event_type', 'in', `(${NON_PARTY_EVENT_TYPES.join(',')})`)
     .limit(COUNT_SCAN_LIMIT)
 
-  const [{ data, error, count }, { data: countRows, error: countErr }] = await Promise.all([query, countQuery])
+  const [{ data, error, count }, { data: countRows, error: countErr }, catalog] = await Promise.all([
+    query,
+    countQuery,
+    loadPricingCatalog(supabase),
+  ])
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -121,6 +126,9 @@ export async function GET(req: NextRequest) {
     page,
     limit,
     stages: PIPELINE_STAGES,
+    // The live studio rate card, so the tab's re-pricing helper text cannot
+    // describe prices `edit_rental` no longer charges.
+    studioRates: catalog.studioRates,
     counts: {
       byStatus,
       byPartyType,

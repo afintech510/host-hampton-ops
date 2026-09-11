@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { getSupabase } from '@/lib/supabase'
 import KidsPartyMenuContent from './KidsPartyMenuContent'
+import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 
 export const metadata: Metadata = {
@@ -36,6 +37,9 @@ export default async function KidsPartyMenuPage({
 
   const byCategory = (cat: string) => items.filter(i => i.category === cat)
 
+  // Guest rules + the DIY studio rate card (migration 036).
+  const catalog = await loadPricingCatalog()
+
   return (
     <KidsPartyMenuContent
       themes={byCategory('party-theme')}
@@ -47,6 +51,7 @@ export default async function KidsPartyMenuPage({
       decor={byCategory('decor-add-on')}
       entertainment={byCategory('entertainment-add-on')}
       partyAddOns={byCategory('party-add-on')}
+      catalog={catalog}
       savedQuote={searchParams.q ?? null}
     />
   )
