@@ -44,10 +44,32 @@ const OPEN_DRAFT_STATUSES = ['drafted', 'sent_for_review', 'revision_requested',
  * making her know which one she is holding would defeat the point of a single
  * lead page.
  */
-async function resolveLead(supabase: ReturnType<typeof getSupabase>, ref: string) {
+interface ResolvedLead {
+  booking: Record<string, unknown> | null
+  draftId: string | null
+  contactId?: string | null
+  /**
+   * Set when a lookup FAILED, as distinct from finding nothing.
+   *
+   * This distinction is the whole point of the field. Production produced a
+   * transient Supabase failure on the booking read, and because the error was
+   * being discarded the route degraded to `booking: null` — which the panel
+   * renders as the confident sentence "No party plan row for this lead yet".
+   * That is a false statement about a lead that has one, and it is the exact
+   * shape of bug the `errors[]` array exists to prevent: an absence that reads
+   * identically to a fact. "I could not read it" must never be reported as
+   * "there is none".
+   */
+  readError?: string
+}
+
+async function resolveLead(supabase: ReturnType<typeof getSupabase>, ref: string): Promise<ResolvedLead | null> {
   // Booking ref (HH-xxxx style or whatever `bookings.booking_ref` holds).
   const byRef = await supabase.from('bookings').select(BOOKING_COLUMNS).eq('booking_ref', ref).maybeSingle()
-  if (byRef.data) return { booking: byRef.data as unknown as Record<string, unknown>, draftId: null as string | null }
+  if (byRef.data) return { booking: byRef.data as unknown as Record<string, unknown>, draftId: null }
+  // A failed lookup here is not "no such booking" — fall through to the other
+  // shapes of ref, but remember that we never actually answered this question.
+  const refError = byRef.error?.message ?? null
 
   // Review code from a reviewer SMS, e.g. HH-2026-0042.
   const byCode = await supabase
@@ -56,14 +78,28 @@ async function resolveLead(supabase: ReturnType<typeof getSupabase>, ref: string
     .eq('review_code', ref)
     .maybeSingle()
   if (byCode.data) {
+    const draftId = String((byCode.data as { id: string }).id)
+    const contactId = (byCode.data as { contact_id: string | null }).contact_id
     const bookingId = (byCode.data as { booking_id: string | null }).booking_id
     if (bookingId) {
-      const { data } = await supabase.from('bookings').select(BOOKING_COLUMNS).eq('id', bookingId).maybeSingle()
-      if (data) return { booking: data as unknown as Record<string, unknown>, draftId: String((byCode.data as { id: string }).id) }
+      const plan = await supabase.from('bookings').select(BOOKING_COLUMNS).eq('id', bookingId).maybeSingle()
+      if (plan.data) {
+        return { booking: plan.data as unknown as Record<string, unknown>, draftId, contactId }
+      }
+      // The draft NAMES a booking, so a missing row is either a read failure or
+      // a dangling reference. Either way "this lead has no plan" is wrong.
+      return {
+        booking: null,
+        draftId,
+        contactId,
+        readError: plan.error?.message ?? `The plan this draft points at (${bookingId}) could not be read`,
+      }
     }
-    // A draft with no plan row yet is still a lead — it just has no right rail.
-    return { booking: null, draftId: String((byCode.data as { id: string }).id), contactId: (byCode.data as { contact_id: string | null }).contact_id }
+    // A draft with no booking_id at all genuinely has no plan row yet — that is
+    // a fact about the lead, not a failure, so no readError.
+    return { booking: null, draftId, contactId }
   }
+  const codeError = byCode.error?.message ?? null
 
   // A raw UUID: try bookings, then drafts.
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)) {
@@ -77,7 +113,15 @@ async function resolveLead(supabase: ReturnType<typeof getSupabase>, ref: string
         contactId: (d.data as { contact_id: string | null }).contact_id,
       }
     }
+    const uuidError = b.error?.message ?? d.error?.message ?? null
+    if (uuidError) return { booking: null, draftId: null, readError: uuidError }
   }
+
+  // Nothing matched. If any lookup on the way here FAILED, this is "could not
+  // tell", not "no such lead" — and a 404 would send someone off to hunt for a
+  // lead that is sitting right there.
+  const failure = refError ?? codeError
+  if (failure) return { booking: null, draftId: null, readError: failure }
 
   return null
 }
@@ -111,6 +155,15 @@ export async function GET(req: NextRequest, { params }: { params: { ref: string 
 
   const found = await resolveLead(supabase, ref)
   if (!found) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+  // A lookup that failed outright, with nothing to show for it, is a 503 and
+  // not an empty page — "we could not read this" is actionable, "no such lead"
+  // sends you hunting for something that exists.
+  if (found.readError && !found.booking && !found.draftId) {
+    return NextResponse.json(
+      { error: `Could not read this lead — try again. (${found.readError})` },
+      { status: 503 },
+    )
+  }
 
   const booking = found.booking
   const bookingId = booking ? String(booking.id) : null
@@ -158,6 +211,9 @@ export async function GET(req: NextRequest, { params }: { params: { ref: string 
     // Erring toward "not ready" is the useful direction — it points at a field
     // worth filling in rather than at a quote worth trusting.
     evaluation: booking ? evaluationFor(booking) : null,
+    // True only when we KNOW there is no plan row, never when we merely failed
+    // to read one. The panel says two different things for these two cases.
+    planReadFailed: !!found.readError,
     drafts: draftRows,
     // The one the composer acts on by default: the newest still-open draft.
     activeDraftId: openDrafts[0] ? String(openDrafts[0].id) : null,
@@ -165,7 +221,7 @@ export async function GET(req: NextRequest, { params }: { params: { ref: string 
     timeline: timeline.items,
     // Never swallowed: a source that failed to load is shown as a failure, not
     // as an absence that reads exactly like "nothing happened".
-    errors: [...timeline.errors, drafts.error?.message, lineItems.error?.message].filter(Boolean),
+    errors: [found.readError, ...timeline.errors, drafts.error?.message, lineItems.error?.message].filter(Boolean),
   })
 }
 
@@ -203,6 +259,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { ref: strin
   const ref = decodeURIComponent(params.ref || '')
 
   const found = await resolveLead(supabase, ref)
+  // A read failure must not be reported as "there is no plan" — that would
+  // invite someone to go and create a second one for a lead that already has
+  // one, which is precisely the duplicate-plan problem 9fedd91 just fixed
+  // elsewhere.
+  if (found?.readError) {
+    return NextResponse.json(
+      { error: `Could not read this lead's plan — try again. (${found.readError})` },
+      { status: 503 },
+    )
+  }
   if (!found?.booking) {
     return NextResponse.json({ error: 'This lead has no party plan to edit yet' }, { status: 404 })
   }

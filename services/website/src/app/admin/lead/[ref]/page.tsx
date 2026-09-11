@@ -36,6 +36,7 @@ interface LeadPayload {
   drafts: LeadDraft[]
   activeDraftId: string | null
   evaluation: PlanEvaluation | null
+  planReadFailed?: boolean
   lineItems: PlanLineItem[]
   timeline: TimelineItem[]
   errors: string[]
@@ -188,6 +189,7 @@ export default function LeadWorkspacePage({ params }: { params: { ref: string } 
               booking={data.booking}
               lineItems={data.lineItems}
               evaluation={data.evaluation}
+              planReadFailed={!!data.planReadFailed}
               // The quote button defers to an open draft rather than offering a
               // click that could only 409.
               openDraftCode={

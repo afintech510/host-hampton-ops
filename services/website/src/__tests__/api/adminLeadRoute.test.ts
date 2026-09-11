@@ -60,22 +60,32 @@ const BOOKING: Record<string, unknown> = {
 /** The last `.update()` patch this route issued against `bookings`. */
 let lastPatch: Record<string, unknown> | null
 
-function makeSupabase(booking: Record<string, unknown> | null = BOOKING) {
+interface SupaOpts {
+  booking?: Record<string, unknown> | null
+  /** A draft row found by review code, for the by-code resolution path. */
+  draftByCode?: Record<string, unknown> | null
+  /** Make the single-row `bookings` read FAIL, as production briefly did. */
+  bookingReadError?: string
+}
+
+function makeSupabase(opts: SupaOpts = {}) {
+  const booking = opts.booking === undefined ? BOOKING : opts.booking
   const from = jest.fn((table: string) => {
     const chain: any = {
-      then: (res: any, rej: any) => {
-        const data =
-          table === 'bookings' ? booking : table === 'inquiry_drafts' ? [] : table === 'booking_line_items' ? [] : []
-        return Promise.resolve({ data, error: null }).then(res, rej)
-      },
+      then: (res: any, rej: any) => Promise.resolve({ data: [], error: null }).then(res, rej),
     }
     for (const m of ['select', 'eq', 'or', 'in', 'order', 'limit']) chain[m] = () => chain
     // `.maybeSingle()` resolves to a ROW or null — never the empty array a list
     // query returns. Getting that wrong made a lead with no plan look like a
     // draft-only lead, because `[]` is truthy.
     chain.maybeSingle = () => ({
-      then: (res: any, rej: any) =>
-        Promise.resolve({ data: table === 'bookings' ? booking : null, error: null }).then(res, rej),
+      then: (res: any, rej: any) => {
+        if (table === 'bookings' && opts.bookingReadError) {
+          return Promise.resolve({ data: null, error: { message: opts.bookingReadError } }).then(res, rej)
+        }
+        const data = table === 'bookings' ? booking : table === 'inquiry_drafts' ? (opts.draftByCode ?? null) : null
+        return Promise.resolve({ data, error: null }).then(res, rej)
+      },
     })
     chain.update = (patch: Record<string, unknown>) => {
       if (table === 'bookings') lastPatch = patch
@@ -108,7 +118,7 @@ describe('GET /api/admin/lead/[ref] — quote readiness', () => {
   })
 
   it('names the missing fields rather than just refusing', async () => {
-    mockGetSupabase.mockReturnValue(makeSupabase({ ...BOOKING, party_date: null, guest_count_approx: null }))
+    mockGetSupabase.mockReturnValue(makeSupabase({ booking: { ...BOOKING, party_date: null, guest_count_approx: null } }))
     const res = await GET(makeReq(), { params: { ref: 'HH-PTY-TEST1' } })
     expect(res.body.evaluation.path).toBe('info_gather')
     expect(res.body.evaluation.missing).toEqual(expect.arrayContaining(['party_date', 'guest_count']))
@@ -118,15 +128,79 @@ describe('GET /api/admin/lead/[ref] — quote readiness', () => {
   it('flags a plan with no email and no phone as unreachable, separately from missing fields', async () => {
     // A different kind of problem: it blocks the draft entirely, so it must not
     // be buried in a list of eight other fields.
-    mockGetSupabase.mockReturnValue(makeSupabase({ ...BOOKING, contact_email: null, contact_phone: null }))
+    mockGetSupabase.mockReturnValue(makeSupabase({ booking: { ...BOOKING, contact_email: null, contact_phone: null } }))
     const res = await GET(makeReq(), { params: { ref: 'HH-PTY-TEST1' } })
     expect(res.body.evaluation.reachable).toBe(false)
   })
 
   it('has no evaluation for a lead with no plan row', async () => {
-    mockGetSupabase.mockReturnValue(makeSupabase(null))
+    mockGetSupabase.mockReturnValue(makeSupabase({ booking: null }))
     const res = await GET(makeReq(), { params: { ref: 'nope' } })
     expect(res.status).toBe(404)
+  })
+})
+
+/**
+ * Found in production: a transient Supabase failure on the booking read made
+ * the route answer `booking: null`, which the panel renders as the confident
+ * sentence "No party plan row for this lead yet" — about a lead that has one.
+ *
+ * "I could not read it" must never be reported as "there is none". That is the
+ * same rule as the held draft that notified nobody: an absence reads exactly
+ * like a fact, so the failure has to say it failed.
+ */
+describe('GET /api/admin/lead/[ref] — a read failure is not an absence', () => {
+  const DRAFT_WITH_PLAN = { id: 'dr-1', booking_id: 'bk-1', contact_id: 'ct-1' }
+
+  it('does not claim there is no plan when the plan read failed', async () => {
+    mockGetSupabase.mockReturnValue(
+      makeSupabase({ draftByCode: DRAFT_WITH_PLAN, bookingReadError: 'Gateway Timeout' }),
+    )
+    const res = await GET(makeReq(), { params: { ref: 'HH-2026-0208' } })
+
+    expect(res.status).toBe(200)
+    expect(res.body.booking).toBeNull()
+    // The two fields that stop the UI stating a falsehood.
+    expect(res.body.planReadFailed).toBe(true)
+    expect(res.body.errors).toEqual(expect.arrayContaining([expect.stringContaining('Gateway Timeout')]))
+  })
+
+  it('still returns the draft and the timeline, so the thread is usable', async () => {
+    // Degrading the right rail is fine; losing the conversation is not.
+    mockGetSupabase.mockReturnValue(
+      makeSupabase({ draftByCode: DRAFT_WITH_PLAN, bookingReadError: 'Gateway Timeout' }),
+    )
+    const res = await GET(makeReq(), { params: { ref: 'HH-2026-0208' } })
+    expect(res.body.timeline).toEqual([])
+    expect(res.body.evaluation).toBeNull()
+  })
+
+  it('flags a dangling booking reference too, not only a transient error', async () => {
+    // The draft NAMES a booking and the row is simply not there. Still not
+    // "this lead has no plan".
+    mockGetSupabase.mockReturnValue(makeSupabase({ draftByCode: DRAFT_WITH_PLAN, booking: null }))
+    const res = await GET(makeReq(), { params: { ref: 'HH-2026-0208' } })
+    expect(res.body.planReadFailed).toBe(true)
+  })
+
+  it('does NOT flag a draft that genuinely has no booking_id', async () => {
+    // The honest case: a pre-Phase-4 draft with no plan. This one really is an
+    // absence, and over-reporting it would make the warning meaningless.
+    mockGetSupabase.mockReturnValue(
+      makeSupabase({ draftByCode: { id: 'dr-1', booking_id: null, contact_id: 'ct-1' }, booking: null }),
+    )
+    const res = await GET(makeReq(), { params: { ref: 'HH-2026-0313' } })
+    expect(res.body.planReadFailed).toBe(false)
+    expect(res.body.errors).toEqual([])
+  })
+
+  it('PATCH refuses with 503, not a 404 that invites creating a second plan', async () => {
+    mockGetSupabase.mockReturnValue(
+      makeSupabase({ draftByCode: DRAFT_WITH_PLAN, bookingReadError: 'Gateway Timeout' }),
+    )
+    const res = await PATCH(makeReq({ fields: { contact_name: 'x' } }), { params: { ref: 'HH-2026-0208' } })
+    expect(res.status).toBe(503)
+    expect(lastPatch).toBeNull()
   })
 })
 

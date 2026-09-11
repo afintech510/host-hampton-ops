@@ -62,6 +62,8 @@ interface Props {
   booking: PlanBooking | null
   lineItems: PlanLineItem[]
   evaluation: PlanEvaluation | null
+  /** True when the plan could not be READ — distinct from there being none. */
+  planReadFailed: boolean
   /** True when a draft is already open on this lead — the quote button defers to it. */
   openDraftCode: string | null
   headers: Record<string, string>
@@ -121,6 +123,7 @@ export default function PlanPanel({
   booking,
   lineItems,
   evaluation,
+  planReadFailed,
   openDraftCode,
   headers,
   refPath,
@@ -143,10 +146,20 @@ export default function PlanPanel({
     return (
       <aside className="bg-white rounded-2xl border border-gray-200 p-4">
         <h2 className="text-sm font-semibold text-hampton-navy mb-1">The plan</h2>
-        <p className="text-sm text-gray-500">
-          No party plan row for this lead yet. One is created when the lead is drafted through the agent, and the
-          planner and invoice links appear here once it exists.
-        </p>
+        {planReadFailed ? (
+          // NOT "no plan row yet". We do not know that — we failed to read.
+          // Saying it anyway is how someone creates a second plan for a lead
+          // that already has one.
+          <p className="text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
+            The plan for this lead could not be read just now — this is usually momentary. Hit Refresh above
+            rather than treating it as a lead with no plan.
+          </p>
+        ) : (
+          <p className="text-sm text-gray-500">
+            No party plan row for this lead yet. One is created when the lead is drafted through the agent, and
+            the planner and invoice links appear here once it exists.
+          </p>
+        )}
       </aside>
     )
   }
