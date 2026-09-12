@@ -489,30 +489,28 @@ blocked on code.
 
 ---
 
-## 9. The claim, proven in production — and the bug the probe found in it
+## 9. The claim, proven — and the bug the probe found in my own fix
 
 The double-send guard was exercised the way link 2 exercised the email-me
 cooldown: **five concurrent requests**, not two sequential ones. A throwaway
-campaign of type `marketing` was used, because that type passes the
-`scheduled_campaigns_campaign_type_check` and yet neither send branch handles it,
-so the route claims, falls through to "Unknown campaign type", and releases —
-**no provider is ever called, and 944 real people are never at risk.**
+campaign of type `marketing` was used — an allowed value of
+`scheduled_campaigns_campaign_type_check` that neither send branch handles — so
+the route claims it, falls through to "Unknown campaign type", and releases. **No
+provider is ever called and 944 real people are never at risk.**
+
+First run, five at once:
 
 ```
-409  Another send for this campaign was already in flight …
-409  …
-400  {"error":"Unknown campaign type"}          ← exactly ONE winner
-409  …
-409  …
+409  …    409  …
+400  {"error":"Unknown campaign type"}     ← exactly ONE winner
+409  …    409  …
 404  (nonexistent id)
 ```
 
-**One of five won the claim.** That is the guarantee, and it held first time.
-
-**What did not hold was my own fix from §3.** The winner left the row stuck at
-`sending`. `release()` restored `campaign.status`, and `campaign` is the row from
-`UPDATE … RETURNING` — which PostgREST hands back **after** the update, so its
-status is already `sending`. Releasing to it is not a release.
+**What the probe found was a bug in my own fix from §3.** The winner left the row
+stuck at `sending`. `release()` restored `campaign.status`, and `campaign` is the
+row from `UPDATE … RETURNING` — which PostgREST hands back **after** the update,
+so its status is already `sending`. Releasing to it is not a release.
 
 Its unit test passed, because the mock returned a fixed pre-update row. **Rule 8,
 about a mock this time: a test that passes is not behaviour the database agrees
@@ -522,24 +520,46 @@ the conditional UPDATE still is — so a stale value there can only change which
 `draft`/`scheduled` is restored, and the release is itself conditional on still
 holding the claim.
 
-Re-run after the fix: one winner, four 409s, row back at **`draft`** with no
-`sent_at`. Probe campaign deleted; `scheduled_campaigns` back to 7 sent / 103
-draft, unchanged.
+### And then the re-run said something I had to be careful not to over-claim
 
-A third, smaller thing the probe surfaced: two of the four losers observed
-`draft`, because the winner had already released, and the 409 then read *"This
-campaign is 'draft' — it is not waiting to be sent"*, which is a confidently
-contradictory sentence of exactly the kind this chain keeps finding. A raced
-caller is now told it raced.
+After the fix, the same five-way probe produced **three** 400s, not one. That is
+not a regression, and it is not the guarantee failing — **it is the probe's own
+design**. The unknown-type path releases the claim *immediately*, so by the time
+a later caller arrives the row is legitimately `draft` again and legitimately
+re-claimable. The first run showed one winner **because the release was broken**.
+A probe that releases instantly cannot demonstrate a lock that is held.
 
-**Known and not fixed, because it is pre-existing and Adam's call:** a campaign
-of type `marketing` — an allowed value of the CHECK — is handled by neither send
-branch, so it can never be sent through the admin route. There are none in the
-table.
+The path that matters never releases: a real `email`/`event_update` campaign
+holds the claim through the Brevo call and ends at `sent` or `failed`, so a
+second click can never reach `sendCampaign`. That is the statement worth proving,
+and it was proved where it actually lives — the SQL PostgREST compiles the claim
+into, run twice against the same row:
+
+```sql
+update scheduled_campaigns set status='sending'
+  where id = … and status in ('draft','scheduled') returning id, status;
+--  4a135c96-… | sending      UPDATE 1     ← first caller takes it
+
+update scheduled_campaigns set status='sending'
+  where id = … and status in ('draft','scheduled') returning id, status;
+--  (0 rows)                  UPDATE 0     ← second caller gets nothing
+```
+
+A conditional UPDATE returning zero rows is the whole lock. Probe campaigns
+deleted; `scheduled_campaigns` back to 7 sent / 103 draft, unchanged.
+
+A third, smaller thing the probe surfaced: two losers observed `draft` (the
+winner had already released) and the 409 read *"This campaign is 'draft' — it is
+not waiting to be sent"*, a confidently contradictory sentence of exactly the kind
+this chain keeps finding. A raced caller is now told it raced.
+
+**Known and not fixed, because it is pre-existing and Adam's call:** a campaign of
+type `marketing` is handled by neither send branch, so it can never be sent
+through the admin route. There are none in the table.
 
 ## 10. A deploy note for whoever is next
 
-`scripts/deploy.sh` printed, twice, a loud
+`scripts/deploy.sh` printed, on two of four deploys, a loud
 
 ```
 Error response from daemon: Conflict. The container name "/<hash>_hampton_website"
@@ -547,15 +567,14 @@ is already in use by container "<id>"
 ```
 
 …**after having already recreated the container successfully.** The message reads
-like the trap `AGENTS.md` warns about (a stale name leaving the OLD container
-running), and it is not — it is a redundant second recreate attempt. Do not act
-on the message; settle it with the image hash:
+exactly like the trap `AGENTS.md` warns about (a stale name leaving the OLD
+container running) and it is not — it is a redundant second recreate attempt. Do
+not act on the message; settle it with the image hash:
 
 ```
 docker inspect hampton_website --format '{{.Image}}'
 docker images --no-trunc hosthampton-website --format '{{.ID}}'
 ```
 
-Equal means the deploy took. Both times here they were. The third deploy printed
-`Recreated` / `Started` cleanly with no change to the script, so it is
-intermittent.
+Equal means the deploy took. Both times here they were, and the other two deploys
+printed `Recreated` / `Started` cleanly with no change to the script.
