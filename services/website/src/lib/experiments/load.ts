@@ -33,7 +33,21 @@ type Supa = ReturnType<typeof getSupabase>
 
 const EXPERIMENT_COLS =
   'id, name, surface, target_key, metric, min_per_arm, alpha, hypothesis, status, outcome, outcome_note, winning_variant, concluded_at, created_by, activated_by, activated_at, created_at'
-const VARIANT_COLS = 'id, experiment_id, label, is_control, subject, body_html, body_text, screen_notes, created_by, created_at'
+/**
+ * **`body_html` is deliberately NOT selected.**
+ *
+ * The value this module returns for `body_html` is `bodyHtmlFromText()` over the
+ * SCREENED plain text, never the stored column — `screenVariant` screens
+ * `subject` and `body_text` and cannot screen markup. Leaving the column in this
+ * list left a hostile stored value sitting in the row object, one edit away from
+ * being passed through by somebody who noticed it was already there.
+ *
+ * Not fetching it makes the property structural rather than a promise: there is
+ * no variable holding unscreened HTML for a later change to reach for. Same
+ * argument as link 6's — the fix for "the renderer executed agent-written HTML"
+ * was to stop storing HTML, not to add a sanitiser.
+ */
+const VARIANT_COLS = 'id, experiment_id, label, is_control, subject, body_text, screen_notes, created_by, created_at'
 
 export interface UsableExperiment {
   experiment: ExperimentRow

@@ -118,6 +118,29 @@ describe('loadVariants — the read-time screen', () => {
     expect(r.variants[0].body_html).toContain('{{first_name}}')
   })
 
+  it('and does not even SELECT the stored body_html', async () => {
+    // Structural rather than a promise: with the column never fetched there is
+    // no variable holding unscreened HTML for a later change to reach for.
+    // Asserted on the query, because the returned object looks the same either
+    // way — the same trick `agentLearningsStructure.test.ts` uses for
+    // `eq('is_active', true)`.
+    let cols = ''
+    const supabase: any = {
+      from: () => {
+        const q: any = {
+          select: (c: string) => { cols = c; return q },
+          eq: () => q,
+          order: () => q,
+          limit: () => Promise.resolve({ data: [], error: null }),
+        }
+        return q
+      },
+    }
+    await loadVariants(supabase, EXP)
+    expect(cols).toContain('body_text')
+    expect(cols).not.toContain('body_html')
+  })
+
   it('returns the SCREENED copy, not the stored copy', async () => {
     const TAG_A = String.fromCodePoint(0xe0041)
     const db = makeExperimentDb({ content_variants: [variantRow(uuid(2), 'A', { body_text: `${CLEAN_BODY}${TAG_A}` })] })
