@@ -462,7 +462,8 @@ ${theirMessage}
       ? `THIS IS AN INFO-GATHER FIRST CONTACT.
 - We are missing: ${missingLabels.join(', ')}.${dateHint}
 - Ask for exactly those, warmly and in one short paragraph or a short list.
-- ABSOLUTELY NO PRICING. No dollar amounts, no "starting at", no deposit figure, no fee. Not one number with a currency attached. If they asked about cost, say you'll put real numbers together as soon as you have those details.`
+- ABSOLUTELY NO PRICING. No dollar amounts, no "starting at", no deposit figure, no fee. Not one number with a currency attached. If they asked about cost, say you'll put real numbers together as soon as you have those details.
+- This overrides the OPERATOR VOICE section above wherever the two disagree. That section describes how Allie writes when she already has the details — it tells you to state a real starting number and to quote inline. On THIS reply she does not have the details, so that guidance does not apply and naming any figure is wrong.`
       : `THIS IS A QUOTE-PATH REPLY. Everything required is known.
 - Confirm back what we have (date, time, guests) so they can correct it.
 - You may reference the flat $250 deposit that books the date. Do NOT state a total, a package price, or a per-guest rate — the owner attaches the priced quote herself.
