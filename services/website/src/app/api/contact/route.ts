@@ -6,6 +6,8 @@ import { enrollInSequence } from '@/lib/sequences'
 import { getSupabase } from '@/lib/supabase'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailToHref } from '@/lib/emailSafety'
 
 export const dynamic = 'force-dynamic'
 
@@ -99,7 +101,7 @@ export async function POST(req: NextRequest) {
         to: ownerEmail(),
         subject: `Contact form: ${name}`,
         replyTo: email,
-        html: `<p><strong>${name}</strong> (${email}) sent a message via the Contact Us page:</p><blockquote style="border-left:3px solid #E8C7CB;padding:12px 16px;margin:16px 0;color:#555;">${message.replace(/\n/g, '<br>')}</blockquote><p><a href="mailto:${email}">Reply to ${name}</a></p>`,
+        html: `<p><strong>${escapeHtml(name)}</strong> (${escapeHtml(email)}) sent a message via the Contact Us page:</p><blockquote style="border-left:3px solid #E8C7CB;padding:12px 16px;margin:16px 0;color:#555;">${escapeHtml(message).replace(/\n/g, '<br>')}</blockquote><p><a href="${mailToHref(email)}">Reply to ${escapeHtml(name)}</a></p>`,
       }),
       // Customer auto-response
       resend.emails.send({
@@ -107,7 +109,7 @@ export async function POST(req: NextRequest) {
         to: email,
         subject: 'Thanks for reaching out — Host Hampton',
         html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1a2744;">
-          <h2 style="font-size:20px;margin-bottom:12px;">Hi ${firstName}!</h2>
+          <h2 style="font-size:20px;margin-bottom:12px;">Hi ${escapeHtml(firstName)}!</h2>
           <p style="font-size:14px;line-height:1.7;color:#444;">Thanks for contacting Host Hampton. We received your message and will get back to you within 24 hours.</p>
           <p style="font-size:14px;line-height:1.7;color:#444;">In the meantime, feel free to browse our <a href="https://www.hosthampton.com/party-packages" style="color:#1a2744;font-weight:600;">party packages</a> or call us at <a href="tel:6319989325" style="color:#1a2744;font-weight:600;">(631) 998-9325</a>.</p>
           <p style="font-size:13px;color:#888;margin-top:24px;">— The Host Hampton Team</p>

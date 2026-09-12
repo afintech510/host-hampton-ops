@@ -24,6 +24,7 @@ import { writeLedger } from '@/lib/marketing/graph'
 import { sendCheckinLinkSms, hasExplicitSmsOptOut } from '@/lib/checkinLink'
 import { isCheckinReminderType } from '@/lib/checkinReminders'
 import { asLedgerEntityId, claimReminder, finishReminder, isMarketingReminder, type SendOutcome } from '@/lib/reminderQueue'
+import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 
 export const dynamic = 'force-dynamic'
 
@@ -249,7 +250,7 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any):
     if (bErr) return { kind: 'retry', reason: `booking read failed: ${bErr.message}` }
     if (!booking) return { kind: 'failed', reason: `no booking ${reminder.reference_id}` }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com'
+    const siteUrl = CANONICAL_ORIGIN
     const html = birthdayRebookHtml({
       customerName: booking.contact_name || contact.first_name || 'there',
       childName: booking.child_name,
@@ -386,7 +387,7 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any):
       const balanceDue = booking.balance_due_cents || 0
       if (balanceDue <= 0) return { kind: 'skipped', reason: 'balance_paid: nothing owed at send time' }
 
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com'
+      const siteUrl = CANONICAL_ORIGIN
       return sendEmail(resend, {
         from,
         to: ownerEmail(),

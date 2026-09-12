@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { CANONICAL_ORIGIN } from './publicOrigin'
 
 const COOKIE_NAME = 'hh_portal'
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 // 30 days in seconds
@@ -38,7 +39,7 @@ export function validatePortalToken(
 }
 
 export function buildPortalUrl(bookingRef: string, rawToken: string, redirect?: string): string {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com'
+  const baseUrl = CANONICAL_ORIGIN
   let url = `${baseUrl}/api/portal/auth?ref=${encodeURIComponent(bookingRef)}&token=${encodeURIComponent(rawToken)}`
   if (redirect) url += `&redirect=${encodeURIComponent(redirect)}`
   return url

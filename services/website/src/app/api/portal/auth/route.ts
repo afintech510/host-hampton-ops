@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { validatePortalToken, setPortalCookieHeader } from '@/lib/portalAuth'
+import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
 
 export async function GET(req: NextRequest) {
   // Behind nginx + Docker, req.url carries the CONTAINER's host (e.g.
@@ -8,13 +9,15 @@ export async function GET(req: NextRequest) {
   // browser. Every redirect out of this route — success AND failure — has to be
   // built from the forwarded host, or a failed link dead-ends on a browser
   // "site can't be reached" page instead of the login/resend form.
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3002'
-  const forwardedProto = req.headers.get('x-forwarded-proto')
-  const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
-  const proto = forwardedProto || (isLocal ? 'http' : 'https')
-  const publicOrigin = `${proto}://${host}`
+  //
+  // …but the forwarded host is whatever the CALLER typed (nginx never sets
+  // `X-Forwarded-Host`), so it goes through the allowlist first. Until
+  // 2026-09-12 this route was a plain open redirect: measured in production,
+  // `-H 'X-Forwarded-Host: evil.example.com'` moved the 307 to that host.
+  const origin = publicOrigin(req)
+  const isLocal = isLocalRequest(req)
   const loginRedirect = (error: string) =>
-    NextResponse.redirect(new URL(`/my-booking/login?error=${error}`, publicOrigin))
+    NextResponse.redirect(new URL(`/my-booking/login?error=${error}`, origin))
 
   const ref = req.nextUrl.searchParams.get('ref')
   const token = req.nextUrl.searchParams.get('token')
@@ -69,7 +72,7 @@ export async function GET(req: NextRequest) {
   const isAllowed =
     !!redirectTo && (allowedRedirects.includes(redirectTo) || redirectTo === summaryForThisRef)
   const destination = isAllowed ? (redirectTo as string) : '/party-planner'
-  const response = NextResponse.redirect(new URL(destination, publicOrigin))
+  const response = NextResponse.redirect(new URL(destination, origin))
   response.headers.set('Set-Cookie', setPortalCookieHeader(ref, secret, isLocal))
 
   return response

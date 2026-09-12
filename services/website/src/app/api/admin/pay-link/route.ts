@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { sendSMSVia } from '@/lib/sms'
+import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailHref } from '@/lib/emailSafety'
 
 const BRAND = {
   headerBg: 'linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%)',
@@ -28,14 +31,14 @@ function payLinkEmailHtml(opts: {
     <h1 style="color:${BRAND.navy};font-size:26px;margin:0 0 6px;font-weight:normal;">Payment Request</h1>
   </div>
   <div style="padding:36px 40px;">
-    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${opts.firstName},</p>
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${escapeHtml(opts.firstName)},</p>
     <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Here&rsquo;s your payment link for:</p>
     <div style="background:#f9f7f4;border-radius:12px;padding:24px;margin-bottom:24px;text-align:center;">
-      <p style="font-size:14px;color:${BRAND.gray};margin:0 0 8px;">${opts.description}</p>
-      <p style="font-size:32px;font-weight:bold;color:${BRAND.navy};margin:0;">${opts.amountFormatted}</p>
+      <p style="font-size:14px;color:${BRAND.gray};margin:0 0 8px;">${escapeHtml(opts.description)}</p>
+      <p style="font-size:32px;font-weight:bold;color:${BRAND.navy};margin:0;">${escapeHtml(opts.amountFormatted)}</p>
     </div>
     <div style="text-align:center;margin-bottom:24px;">
-      <a href="${opts.payUrl}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:16px 48px;border-radius:50px;text-decoration:none;font-size:15px;font-weight:bold;letter-spacing:0.5px;">Pay Now</a>
+      <a href="${mailHref(opts.payUrl)}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:16px 48px;border-radius:50px;text-decoration:none;font-size:15px;font-weight:bold;letter-spacing:0.5px;">Pay Now</a>
     </div>
     <p style="font-size:13px;color:${BRAND.gray};line-height:1.7;margin:0;">Secure payment powered by Stripe. Questions? Call or text <strong>(631) 998-9325</strong>.</p>
   </div>
@@ -69,7 +72,7 @@ export async function POST(req: NextRequest) {
   }
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
-  const host = 'www.hosthampton.com'
+  const origin = CANONICAL_ORIGIN
 
   const metadata = {
     type: 'pay_link',
@@ -99,7 +102,7 @@ export async function POST(req: NextRequest) {
       metadata,
       after_completion: {
         type: 'redirect',
-        redirect: { url: `https://${host}/book/success?ref=paylink` },
+        redirect: { url: `${origin}/book/success?ref=paylink` },
       },
     })
     payUrl = paymentLink.url
@@ -120,8 +123,8 @@ export async function POST(req: NextRequest) {
         quantity: 1,
       }],
       metadata,
-      success_url: `https://${host}/book/success?ref=paylink`,
-      cancel_url: `https://${host}/?cancelled=true`,
+      success_url: `${origin}/book/success?ref=paylink`,
+      cancel_url: `${origin}/?cancelled=true`,
     })
     payUrl = session.url!
   }

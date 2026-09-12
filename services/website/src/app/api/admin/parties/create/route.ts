@@ -7,6 +7,7 @@ import { buildPlanSnapshot, planTotals, writeLineItems } from '@/lib/plan'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { partyQuoteSentHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 function formatDate(dateStr: string): string {
   try {
@@ -53,11 +54,7 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabase()
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
-    const forwardedProto = req.headers.get('x-forwarded-proto')
-    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
-    const proto = forwardedProto || (isLocal ? 'http' : 'https')
-    const origin = `${proto}://${host}`
+    const origin = publicOrigin(req)
     const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
     const guests = guestCount || 10
     const cutoffs = partyDate ? computeCutoffDates(partyDate) : null

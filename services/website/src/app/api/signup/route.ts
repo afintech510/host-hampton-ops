@@ -5,6 +5,8 @@ import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { Resend } from 'resend'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailToHref, telHref } from '@/lib/emailSafety'
 
 function generateCouponCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no ambiguous chars (0/O, 1/I)
@@ -135,7 +137,7 @@ function welcomeEmailHtml(firstName: string, code: string, expiresAt: string): s
 
   <!-- Body -->
   <div style="padding:36px 40px;">
-    <p style="font-size:16px;color:#1a2744;margin:0 0 20px;font-family:Georgia,serif;">Hi ${firstName},</p>
+    <p style="font-size:16px;color:#1a2744;margin:0 0 20px;font-family:Georgia,serif;">Hi ${escapeHtml(firstName)},</p>
     <p style="color:#555;line-height:1.7;margin:0 0 28px;font-family:Arial,sans-serif;">
       Thanks for joining the Host Hampton family! We're so excited to have you. As promised, here's your exclusive coupon code for <strong>10% off your first party booking</strong>.
     </p>
@@ -144,11 +146,11 @@ function welcomeEmailHtml(firstName: string, code: string, expiresAt: string): s
     <div style="background:linear-gradient(135deg,#A1B5C8 0%,#E8C7CB 100%);padding:3px;border-radius:12px;margin-bottom:28px;">
       <div style="background:white;border-radius:10px;padding:28px;text-align:center;">
         <p style="font-family:Arial,sans-serif;font-size:11px;color:#C9A9A6;text-transform:uppercase;letter-spacing:2px;margin:0 0 8px;">Your Coupon Code</p>
-        <p style="font-family:Arial,sans-serif;font-size:36px;font-weight:bold;color:#1a2744;margin:0 0 8px;letter-spacing:3px;">${code}</p>
+        <p style="font-family:Arial,sans-serif;font-size:36px;font-weight:bold;color:#1a2744;margin:0 0 8px;letter-spacing:3px;">${escapeHtml(code)}</p>
         <p style="font-family:Arial,sans-serif;font-size:13px;color:#555;margin:0;">
-          Use code <strong>${code}</strong> when you book to save 10% on your first party!
+          Use code <strong>${escapeHtml(code)}</strong> when you book to save 10% on your first party!
         </p>
-        <p style="font-family:Arial,sans-serif;font-size:12px;color:#999;margin:8px 0 0;">Valid through ${expiryDate}</p>
+        <p style="font-family:Arial,sans-serif;font-size:12px;color:#999;margin:8px 0 0;">Valid through ${escapeHtml(expiryDate)}</p>
       </div>
     </div>
 
@@ -192,10 +194,10 @@ function adminNotificationHtml(
   </div>
   <div style="padding:28px 40px;">
     <table style="width:100%;font-size:14px;border-collapse:collapse;">
-      <tr><td style="padding:8px 0;color:#999;width:100px;"><strong>Name</strong></td><td style="padding:8px 0;color:#1a2744;">${contact.firstName} ${contact.lastName}</td></tr>
-      <tr><td style="padding:8px 0;color:#999;border-top:1px solid #f0ece7;"><strong>Email</strong></td><td style="padding:8px 0;color:#1a2744;border-top:1px solid #f0ece7;"><a href="mailto:${contact.email}" style="color:#1a2744;">${contact.email}</a></td></tr>
-      <tr><td style="padding:8px 0;color:#999;border-top:1px solid #f0ece7;"><strong>Phone</strong></td><td style="padding:8px 0;color:#1a2744;border-top:1px solid #f0ece7;"><a href="tel:${contact.phone}" style="color:#1a2744;">${contact.phone}</a></td></tr>
-      <tr><td style="padding:8px 0;color:#999;border-top:1px solid #f0ece7;"><strong>Coupon</strong></td><td style="padding:8px 0;color:#1a2744;border-top:1px solid #f0ece7;font-weight:bold;">${couponCode}</td></tr>
+      <tr><td style="padding:8px 0;color:#999;width:100px;"><strong>Name</strong></td><td style="padding:8px 0;color:#1a2744;">${escapeHtml(contact.firstName)} ${escapeHtml(contact.lastName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#999;border-top:1px solid #f0ece7;"><strong>Email</strong></td><td style="padding:8px 0;color:#1a2744;border-top:1px solid #f0ece7;"><a href="${mailToHref(contact.email)}" style="color:#1a2744;">${escapeHtml(contact.email)}</a></td></tr>
+      <tr><td style="padding:8px 0;color:#999;border-top:1px solid #f0ece7;"><strong>Phone</strong></td><td style="padding:8px 0;color:#1a2744;border-top:1px solid #f0ece7;"><a href="${telHref(contact.phone)}" style="color:#1a2744;">${escapeHtml(contact.phone)}</a></td></tr>
+      <tr><td style="padding:8px 0;color:#999;border-top:1px solid #f0ece7;"><strong>Coupon</strong></td><td style="padding:8px 0;color:#1a2744;border-top:1px solid #f0ece7;font-weight:bold;">${escapeHtml(couponCode)}</td></tr>
     </table>
   </div>
   <div style="background:#BCCDEB;padding:16px 40px;text-align:center;">

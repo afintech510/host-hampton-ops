@@ -6,6 +6,8 @@ import { getSupabase } from '@/lib/supabase'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
 import { Resend } from 'resend'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailToHref, telHref } from '@/lib/emailSafety'
 
 export const dynamic = 'force-dynamic'
 
@@ -122,15 +124,15 @@ export async function POST(req: NextRequest) {
         html: `<div style="font-family:sans-serif;max-width:520px;color:#1a2744;">
           <h2 style="font-size:18px;margin-bottom:16px;">New Trucker Hat Bar Inquiry</h2>
           <table style="border-collapse:collapse;width:100%;">
-            <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Name</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${name}</td></tr>
-            <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Email</td><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="mailto:${email}">${email}</a></td></tr>
-            ${phone ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Phone</td><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="tel:${phone.replace(/\D/g, '')}">${phone}</a></td></tr>` : ''}
-            ${company ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Company</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${company}</td></tr>` : ''}
-            ${eventType ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Event Type</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${eventType}</td></tr>` : ''}
-            ${date ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Date</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${date}</td></tr>` : ''}
-            ${guests ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Guests</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${guests}</td></tr>` : ''}
+            <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Name</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(name)}</td></tr>
+            <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Email</td><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="${mailToHref(email)}">${escapeHtml(email)}</a></td></tr>
+            ${phone ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Phone</td><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="${telHref(phone)}">${escapeHtml(phone)}</a></td></tr>` : ''}
+            ${company ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Company</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(company)}</td></tr>` : ''}
+            ${eventType ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Event Type</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(eventType)}</td></tr>` : ''}
+            ${date ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Date</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(date)}</td></tr>` : ''}
+            ${guests ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Guests</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(guests)}</td></tr>` : ''}
           </table>
-          ${vision ? `<div style="margin-top:16px;"><strong>The Vision:</strong><blockquote style="border-left:3px solid #C9A5A5;padding:12px 16px;margin:8px 0;color:#555;">${vision.replace(/\n/g, '<br>')}</blockquote></div>` : ''}
+          ${vision ? `<div style="margin-top:16px;"><strong>The Vision:</strong><blockquote style="border-left:3px solid #C9A5A5;padding:12px 16px;margin:8px 0;color:#555;">${escapeHtml(vision).replace(/\n/g, '<br>')}</blockquote></div>` : ''}
         </div>`,
       }),
       resend.emails.send({
@@ -138,7 +140,7 @@ export async function POST(req: NextRequest) {
         to: email,
         subject: 'Thanks for your inquiry — Atelier Brim by Host Hampton',
         html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#3C2A21;">
-          <h2 style="font-size:20px;margin-bottom:12px;">Hi ${firstName}!</h2>
+          <h2 style="font-size:20px;margin-bottom:12px;">Hi ${escapeHtml(firstName)}!</h2>
           <p style="font-size:14px;line-height:1.7;color:#555;">Thanks for reaching out about our Trucker Hat Bar experience. We've received your inquiry and our team will be in touch within 24 hours to discuss your vision.</p>
           <p style="font-size:14px;line-height:1.7;color:#555;">In the meantime, feel free to call or text us at <a href="tel:6319989325" style="color:#3C2A21;font-weight:600;">(631) 998-9325</a>.</p>
           <p style="font-size:13px;color:#888;margin-top:24px;">— The Host Hampton Team</p>

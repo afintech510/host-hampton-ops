@@ -8,6 +8,7 @@ import { computeCutoffDates, generatePartyRef, formatMoney } from '@/lib/partyPr
 import { buildPlanSnapshot, planTotals, writeLineItems, linkFirstTouchEvent } from '@/lib/plan'
 import { partyRequestReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,11 +35,7 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabase()
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3002'
-    const forwardedProto = req.headers.get('x-forwarded-proto')
-    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
-    const proto = forwardedProto || (isLocal ? 'http' : 'https')
-    const origin = `${proto}://${host}`
+    const origin = publicOrigin(req)
     const bookingRef = generatePartyRef()
     const { modificationCutoff, guestCountCutoff } = computeCutoffDates(partyDate)
 

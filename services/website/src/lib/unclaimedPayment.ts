@@ -151,7 +151,7 @@ async function notifyOwner(
       html:
         `<p style="font-family:sans-serif;font-size:15px">` +
         `<strong>${money(amountCents)}</strong> was paid on Stripe and we could not tell which booking it belongs to.<br><br>` +
-        `It has been recorded in Financials under <strong>${UNCLAIMED_CATEGORY}</strong> so the money is not lost, ` +
+        `It has been recorded in Financials under <strong>${escapeHtml(UNCLAIMED_CATEGORY)}</strong> so the money is not lost, ` +
         `but it is not attached to any party plan.<br><br>` +
         `Customer: ${escapeHtml(name) || '—'}${email ? ` &lt;${escapeHtml(email)}&gt;` : ''}<br>` +
         `Stripe session: <code>${escapeHtml(session.id)}</code><br>` +

@@ -6,6 +6,7 @@ import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 export const dynamic = 'force-dynamic'
 
@@ -151,13 +152,12 @@ export async function POST(req: NextRequest) {
     const resend = new Resend(process.env.RESEND_API_KEY)
     const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
 
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
-    const protocol = host.includes('localhost') ? 'http' : 'https'
+    const origin = publicOrigin(req)
 
     // Build book link for customer confirmation
     const bookParams = new URLSearchParams({ type: 'room-rental' })
     if (preferredDate) bookParams.set('date', preferredDate)
-    const bookLink = `${protocol}://${host}/book?${bookParams.toString()}`
+    const bookLink = `${origin}/book?${bookParams.toString()}`
 
     // Format date for display
     let dateDisplay: string | undefined
@@ -197,7 +197,7 @@ export async function POST(req: NextRequest) {
 
     const confirmBookLink = isRoomRental
       ? bookLink
-      : `${protocol}://${host}/party-packages`
+      : `${origin}/party-packages`
 
     emails.push({
       from,

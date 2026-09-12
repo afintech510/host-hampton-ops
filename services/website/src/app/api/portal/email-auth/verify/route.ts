@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { verifyEmailLoginCode, setEmailCookieHeader, getEmailCodeMaxAttempts } from '@/lib/portalAuth'
+import { isLocalRequest } from '@/lib/publicOrigin'
 
 /**
  * Verify a 6-digit email login code.
@@ -65,8 +66,7 @@ export async function POST(req: NextRequest) {
       attempts: row.attempts + 1,
     }).eq('id', row.id)
 
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3002'
-    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
+    const isLocal = isLocalRequest(req)
     const cookie = setEmailCookieHeader(rawEmail, secret, isLocal)
 
     const response = NextResponse.json({ ok: true, email: rawEmail })

@@ -46,6 +46,7 @@
  * on nothing. `EXCLUDED_PATHS` is that rule, and a test pins it.
  */
 
+import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import crypto from 'crypto'
 import { safeSiteLink } from '@/lib/content/contentSafety'
 
@@ -179,7 +180,7 @@ export function verifyTrackToken(token: string | null | undefined): TrackToken {
 }
 
 export function siteBaseUrl(): string {
-  return (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com').replace(/\/+$/, '')
+  return CANONICAL_ORIGIN
 }
 
 export function buildTrackUrl(token: string): string {

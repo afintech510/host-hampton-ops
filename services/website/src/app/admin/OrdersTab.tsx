@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ChevronDown, ChevronUp, Loader2, Search, Mail, Send, RotateCcw, X, DollarSign, Plus, Save } from 'lucide-react'
 import PayLinkPanel from './PayLinkPanel'
+import { escapeHtml } from '@/lib/escapeHtml'
 
 /* ─── Interfaces ─────────────────────────────────────── */
 
@@ -406,7 +407,13 @@ function QuickEmailForm({
       body: JSON.stringify({
         customer_email: order.customer_email,
         subject,
-        htmlBody: body.replace(/\n/g, '<br>'),
+        // This composer is a plain TEXTAREA, unlike the events tab's
+        // contentEditable — so the newline-to-<br> pass was the only markup
+        // intended, and everything else an admin types is text. Without the
+        // escape, "sizes < 10 left" reached the customer as "sizes " (the
+        // browser read `< 10 left…` as a tag), which is the same defect
+        // `containsMarkup` had on the website (docs/content-pipeline.md §11.2).
+        htmlBody: escapeHtml(body).replace(/\n/g, '<br>'),
       }),
     })
     setSending(false)

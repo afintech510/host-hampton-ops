@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef } from '@/lib/portalAuth'
 import { formatMoney } from '@/lib/partyPricing'
+import { publicOrigin } from '@/lib/publicOrigin'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailHref } from '@/lib/emailSafety'
 
 export async function POST(req: NextRequest) {
   const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
@@ -36,11 +39,8 @@ export async function POST(req: NextRequest) {
 
   // Email admin to reconcile
   if (process.env.RESEND_API_KEY) {
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
-    const forwardedProto = req.headers.get('x-forwarded-proto')
-    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
-    const proto = forwardedProto || (isLocal ? 'http' : 'https')
-    const adminUrl = `${proto}://${host}/admin?tab=parties&ref=${bookingRef}`
+    const origin = publicOrigin(req)
+    const adminUrl = `${origin}/admin?tab=parties&ref=${bookingRef}`
 
     const { Resend } = await import('resend')
     const resend = new Resend(process.env.RESEND_API_KEY)
@@ -50,24 +50,24 @@ export async function POST(req: NextRequest) {
     const html = `<!DOCTYPE html>
 <html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;background:#F6F1EB;padding:20px;">
   <div style="background:white;border-radius:12px;padding:32px;">
-    <h1 style="color:#1a2744;margin:0 0 16px;font-size:22px;">${methodLabel} Payment Pledged</h1>
+    <h1 style="color:#1a2744;margin:0 0 16px;font-size:22px;">${escapeHtml(methodLabel)} Payment Pledged</h1>
     <p style="color:#555;line-height:1.7;">
-      <strong>${booking.contact_name}</strong> says they will send <strong>${formatMoney(amountCents)}</strong>
-      via <strong>${methodLabel}</strong> for booking <strong>${booking.booking_ref}</strong>.
+      <strong>${escapeHtml(booking.contact_name)}</strong> says they will send <strong>${formatMoney(amountCents)}</strong>
+      via <strong>${escapeHtml(methodLabel)}</strong> for booking <strong>${escapeHtml(booking.booking_ref)}</strong>.
     </p>
     <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
-      <tr><td style="padding:6px 0;color:#555;width:120px;">Customer</td><td style="padding:6px 0;color:#1a2744;font-weight:bold;">${booking.contact_name}</td></tr>
-      <tr><td style="padding:6px 0;color:#555;">Email</td><td style="padding:6px 0;color:#1a2744;">${booking.contact_email}</td></tr>
-      <tr><td style="padding:6px 0;color:#555;">Phone</td><td style="padding:6px 0;color:#1a2744;">${booking.contact_phone || '—'}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;width:120px;">Customer</td><td style="padding:6px 0;color:#1a2744;font-weight:bold;">${escapeHtml(booking.contact_name)}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Email</td><td style="padding:6px 0;color:#1a2744;">${escapeHtml(booking.contact_email)}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Phone</td><td style="padding:6px 0;color:#1a2744;">${escapeHtml(booking.contact_phone || '—')}</td></tr>
       <tr><td style="padding:6px 0;color:#555;">Amount</td><td style="padding:6px 0;color:#1a2744;font-weight:bold;">${formatMoney(amountCents)}</td></tr>
-      <tr><td style="padding:6px 0;color:#555;">Method</td><td style="padding:6px 0;color:#1a2744;">${methodLabel}</td></tr>
-      <tr><td style="padding:6px 0;color:#555;">Party Date</td><td style="padding:6px 0;color:#1a2744;">${booking.party_date || 'TBD'}${booking.party_time ? ' at ' + booking.party_time : ''}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Method</td><td style="padding:6px 0;color:#1a2744;">${escapeHtml(methodLabel)}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Party Date</td><td style="padding:6px 0;color:#1a2744;">${escapeHtml(booking.party_date || 'TBD')}${escapeHtml(booking.party_time ? ' at ' + booking.party_time : '')}</td></tr>
     </table>
     <p style="color:#555;font-size:13px;line-height:1.7;">
       Once you receive the payment, log in to the admin to record it. This will update the customer's balance and send them a receipt.
     </p>
     <div style="text-align:center;margin:28px 0;">
-      <a href="${adminUrl}" style="display:inline-block;background:#1a2744;color:#F6F1EB;padding:12px 32px;font-size:14px;text-decoration:none;border-radius:6px;">Open in Admin</a>
+      <a href="${mailHref(adminUrl)}" style="display:inline-block;background:#1a2744;color:#F6F1EB;padding:12px 32px;font-size:14px;text-decoration:none;border-radius:6px;">Open in Admin</a>
     </div>
   </div>
 </body></html>`

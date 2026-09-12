@@ -1,3 +1,29 @@
+/**
+ * MEASURED 2026-09-12: **nothing imports this file.** All five templates below
+ * are unreached — no route, no cron, no library references
+ * `email-templates/marketing-emails`. They are screened anyway, because a
+ * template that is safe only while unused is a trap for whoever wires it up,
+ * and the wiring is a one-line import.
+ *
+ * Also unreached and therefore not "working": the CAN-SPAM footer's unsubscribe
+ * href is the literal `{{unsubscribe_url}}`, which is OUR sequencer's token
+ * name, not Brevo's. `docs/phase-4-campaign-automation.md` records the same bug
+ * being fixed in the newsletter template (Brevo wants `{{ unsubscribe }}`); this
+ * copy was missed because nothing sends it.
+ *
+ * ESCAPING CONVENTION IN THIS FILE. The exported templates escape their params
+ * at ENTRY, before the defaults are destructured. That order is load-bearing:
+ * the default `useCases` / `sessionTypes` arrays are hand-written strings that
+ * already contain HTML entities (`Baby showers &amp; bridal showers`), so
+ * escaping after defaulting would print `&amp;amp;` to a customer. The internal
+ * helpers (`marketingHeader`, `ctaButton`, `marketingWrapper`) therefore receive
+ * values that are ALREADY escaped or trusted, and must not escape again.
+ */
+
+import { escapeHtml } from '@/lib/escapeHtml'
+import { escapeFields, mailHref } from '@/lib/emailSafety'
+import { safeImageUrl } from '@/lib/content/contentSafety'
+
 /* ── Shared brand tokens (mirrors emailTemplates.ts) ─────────── */
 const BRAND = {
   headerBg: 'linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%)',
@@ -26,8 +52,10 @@ function marketingHeader(headline: string, subline: string): string {
 }
 
 function ctaButton(label: string, url: string): string {
+  const href = mailHref(url)
+  if (!href) return ''
   return `<div style="text-align:center;margin:24px 0 8px;">
-    <a href="${url}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">${label}</a>
+    <a href="${href}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">${label}</a>
   </div>`
 }
 
@@ -66,10 +94,13 @@ export interface MarketingPartiesParams {
 }
 
 export function marketingPartiesHtml(params: MarketingPartiesParams): string {
-  const { themeName, themeDescription, imageUrl, availabilityNote, promoText } = params
+  const { themeName, themeDescription, availabilityNote, promoText } = escapeFields(params)
+  // The image URL is SCREENED, not escaped, and so comes off the raw params —
+  // an HTML-escaped URL is no longer a URL a parser recognises (rule 4).
+  const imageUrl = safeImageUrl(params.imageUrl)
 
   const heroBlock = imageUrl
-    ? `<img src="${imageUrl}" alt="${themeName}" width="100%" style="display:block;width:100%;height:280px;object-fit:cover;">`
+    ? `<img src="${escapeHtml(imageUrl)}" alt="${themeName}" width="100%" style="display:block;width:100%;height:280px;object-fit:cover;">`
     : `<div style="background:${BRAND.headerBg};height:180px;text-align:center;display:table;width:100%;"><div style="display:table-cell;vertical-align:middle;"><p style="color:${BRAND.navy};font-size:13px;letter-spacing:2px;text-transform:uppercase;margin:0;opacity:0.6;">Host Hampton</p></div></div>`
 
   const availBlock = availabilityNote
@@ -127,7 +158,7 @@ export function marketingRentalsHtml(params: MarketingRentalsParams = {}): strin
       'Holiday gatherings &amp; reunions',
     ],
     pricingNote,
-  } = params
+  } = escapeFields(params)
 
   const useCaseItems = useCases.map(u => `<li style="padding:5px 0;">${u}</li>`).join('')
 
@@ -184,7 +215,7 @@ export function marketingJewelryHtml(params: MarketingJewelryParams = {}): strin
       'Mother-daughter duo sessions',
       'Party add-on for birthday groups',
     ],
-  } = params
+  } = escapeFields(params)
 
   const sessionItems = sessionTypes.map(s => `<li style="padding:5px 0;">${s}</li>`).join('')
 
@@ -229,7 +260,8 @@ export interface MarketingEventsParams {
 }
 
 export function marketingEventsHtml(params: MarketingEventsParams): string {
-  const { eventTitle, eventDate, eventDescription, eventUrl, spotsLeft } = params
+  const { eventTitle, eventDate, eventDescription, spotsLeft } = escapeFields(params)
+  const eventUrl = params.eventUrl
 
   const urgencyBlock = spotsLeft !== undefined
     ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:16px 20px;margin-bottom:20px;text-align:center;">
@@ -276,7 +308,7 @@ export function marketingCommunityHtml(params: MarketingCommunityParams = {}): s
   const {
     programName = 'Custom Merch Fundraising Program',
     ctaText = 'Learn More',
-  } = params
+  } = escapeFields(params)
 
   const body = `
   ${marketingHeader(programName, 'Raise money for your organization &mdash; we handle the rest.')}

@@ -6,6 +6,7 @@ import { enqueueBookingReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
 import { formatMoney } from '@/lib/partyPricing'
 import { partyRequestReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+    const origin = publicOrigin(req)
 
     // Free bookings — skip Stripe, insert directly
     if (!requiresDeposit || depositCents === 0) {
@@ -117,7 +118,7 @@ export async function POST(req: NextRequest) {
         }).catch(err => console.error('Booking reminder enqueue error:', err))
       }
 
-      return NextResponse.json({ url: `https://${host}/book/success?ref=${bookingRef}` })
+      return NextResponse.json({ url: `${origin}/book/success?ref=${bookingRef}` })
     }
 
     // Deposit-required bookings (parties, room rentals) are now REQUESTS — we
@@ -207,7 +208,7 @@ export async function POST(req: NextRequest) {
             paymentMethod: 'request',
             lineItems: [],
             notes,
-            adminUrl: `https://${host}/admin?tab=parties&ref=${bookingRef}`,
+            adminUrl: `${origin}/admin?tab=parties&ref=${bookingRef}`,
           }),
         }),
       ])
@@ -219,7 +220,7 @@ export async function POST(req: NextRequest) {
     }))
 
     void utm
-    return NextResponse.json({ url: `https://${host}/book/success?request=1&ref=${bookingRef}` })
+    return NextResponse.json({ url: `${origin}/book/success?request=1&ref=${bookingRef}` })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Checkout failed'
     console.error('Stripe checkout error:', message)

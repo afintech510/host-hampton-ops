@@ -8,6 +8,7 @@
 
 import { escapeHtml } from '@/lib/escapeHtml'
 import { buildUnsubscribeUrl } from '@/lib/unsubscribeLink'
+import { mailHref } from '@/lib/emailSafety'
 
 export interface TemplateVars {
   firstName?: string | null
@@ -89,7 +90,11 @@ export function flattenHeaderValue(s: string): string {
  * mail never offered one.
  */
 export function unsubscribeFooterHtml(url: string): string {
-  const safe = encodeURI(url)
+  // `encodeURI` was the whole screen here, and it does not refuse a scheme:
+  // encodeURI('javascript:alert(1)') returns it unchanged. The URL is built
+  // server-side from CANONICAL_ORIGIN so nothing hostile reaches it today, but
+  // an href needs a URL SCREEN, not an encoder (rule 4).
+  const safe = mailHref(url)
   return (
     `<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e0d8;` +
     `font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#8a8279;text-align:center">` +

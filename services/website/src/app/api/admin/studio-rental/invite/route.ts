@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { upsertContact } from '@/lib/contacts'
 import { studioRentalInviteHtml } from '@/lib/emailTemplates'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 /**
  * Admin: add a customer and email them the studio-rental onboarding link.
@@ -22,10 +23,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Build the onboarding link from the request host (falls back to prod).
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
-    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
-    const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
-    const studioUrl = `${proto}://${host}/studio-rental`
+    const origin = publicOrigin(req)
+    const studioUrl = `${origin}/studio-rental`
 
     // Upsert the contact (non-fatal if the CRM write fails).
     await upsertContact({

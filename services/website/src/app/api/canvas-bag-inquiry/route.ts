@@ -6,6 +6,8 @@ import { getSupabase } from '@/lib/supabase'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
 import { Resend } from 'resend'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailToHref, telHref } from '@/lib/emailSafety'
 
 export const dynamic = 'force-dynamic'
 
@@ -130,17 +132,17 @@ export async function POST(req: NextRequest) {
         html: `<div style="font-family:sans-serif;max-width:560px;color:#2F343B;">
           <h2 style="font-size:18px;margin-bottom:16px;">New Canvas Bag Inquiry</h2>
           <table style="border-collapse:collapse;width:100%;">
-            <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;width:140px;">Name</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${name}</td></tr>
-            <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Email</td><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="mailto:${email}">${email}</a></td></tr>
-            ${phone ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Phone</td><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="tel:${phone.replace(/\D/g, '')}">${phone}</a></td></tr>` : ''}
-            <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Product</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${product}</td></tr>
+            <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;width:140px;">Name</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(name)}</td></tr>
+            <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Email</td><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="${mailToHref(email)}">${escapeHtml(email)}</a></td></tr>
+            ${phone ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Phone</td><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="${telHref(phone)}">${escapeHtml(phone)}</a></td></tr>` : ''}
+            <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Product</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(product)}</td></tr>
             <tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Quantity</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${Number(quantity)}</td></tr>
-            ${colorPreference ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Color Pref.</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${colorPreference}</td></tr>` : ''}
-            ${occasion ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Occasion</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${occasion}</td></tr>` : ''}
+            ${colorPreference ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Color Pref.</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(colorPreference)}</td></tr>` : ''}
+            ${occasion ? `<tr><td style="padding:8px 12px;font-weight:bold;border-bottom:1px solid #eee;">Occasion</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(occasion)}</td></tr>` : ''}
           </table>
           <div style="margin-top:16px;"><strong>Patch Idea:</strong>
             <blockquote style="border-left:3px solid #C7A36B;padding:12px 16px;margin:8px 0;color:#555;">
-              ${patchIdea.replace(/\n/g, '<br>')}
+              ${escapeHtml(patchIdea).replace(/\n/g, '<br>')}
             </blockquote>
           </div>
         </div>`,
@@ -150,10 +152,10 @@ export async function POST(req: NextRequest) {
         to: email,
         subject: 'Thanks for your canvas bag inquiry — Host Hampton',
         html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#2F343B;">
-          <h2 style="font-size:20px;margin-bottom:12px;">Hi ${firstName}!</h2>
+          <h2 style="font-size:20px;margin-bottom:12px;">Hi ${escapeHtml(firstName)}!</h2>
           <p style="font-size:14px;line-height:1.7;color:#555;">
             Thanks for reaching out about our custom canvas bags. We've received your inquiry for
-            <strong>${product}</strong> (qty: ${Number(quantity)}) and will be in touch within 24 hours
+            <strong>${escapeHtml(product)}</strong> (qty: ${Number(quantity)}) and will be in touch within 24 hours
             to confirm pricing and next steps.
           </p>
           <p style="font-size:14px;line-height:1.7;color:#555;">

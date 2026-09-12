@@ -13,6 +13,7 @@ import {
 } from '@/lib/portalAuth'
 import { partyQuoteSentHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
+import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
 
 function formatDate(dateStr: string): string {
   try {
@@ -80,11 +81,8 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabase()
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
-    const forwardedProto = req.headers.get('x-forwarded-proto')
-    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
-    const proto = forwardedProto || (isLocal ? 'http' : 'https')
-    const origin = `${proto}://${host}`
+    const origin = publicOrigin(req)
+    const isLocal = isLocalRequest(req)
     const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
     // buildPlanSnapshot owns the arithmetic for all three plan writers.
     const planSnapshot = buildPlanSnapshot({ lineItems, guestCount, packageType, extra: quoteData })

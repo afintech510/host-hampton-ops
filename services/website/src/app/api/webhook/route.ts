@@ -12,6 +12,9 @@ import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest, e
 import { enrollInSequence } from '@/lib/sequences'
 import { matchPlanPayLink, recordPlanPayment, sendPlanPaymentReceipt } from '@/lib/planPayment'
 import { isUnclaimableSession, recordUnclaimedStripeSession } from '@/lib/unclaimedPayment'
+import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailToHref } from '@/lib/emailSafety'
 
 /* Record a Stripe payment in the unified financial_transactions table (non-fatal) */
 async function recordFinancialTransaction(supabase: ReturnType<typeof getSupabase>, opts: {
@@ -82,10 +85,8 @@ async function handlePlanPaySession(
       .select('contact_name, contact_email')
       .eq('booking_ref', rec.bookingRef)
       .maybeSingle()
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
-    const isLocal = (host || '').startsWith('localhost')
-    const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
-    const origin = host ? `${proto}://${host}` : 'https://www.hosthampton.com'
+    const origin = publicOrigin(req)
+    const isLocal = isLocalRequest(req)
     await sendPlanPaymentReceipt({
       bookingRef: rec.bookingRef,
       customerName: bk?.contact_name ?? null,
@@ -246,10 +247,8 @@ export async function POST(req: NextRequest) {
             ? li.unit_price_cents * li.quantity * guestCount
             : li.unit_price_cents * li.quantity,
         }))
-        const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
-        const isLocal = (host || '').startsWith('localhost')
-        const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
-        const origin = host ? `${proto}://${host}` : 'https://www.hosthampton.com'
+        const origin = publicOrigin(req)
+        const isLocal = isLocalRequest(req)
 
         await Promise.allSettled([
           resend.emails.send({
@@ -441,10 +440,8 @@ export async function POST(req: NextRequest) {
             : li.unit_price_cents * li.quantity,
         }))
 
-        const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
-        const isLocal = (host || '').startsWith('localhost')
-        const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
-        const origin = host ? `${proto}://${host}` : 'https://www.hosthampton.com'
+        const origin = publicOrigin(req)
+        const isLocal = isLocalRequest(req)
 
         await Promise.allSettled([
           resend.emails.send({
@@ -1199,11 +1196,11 @@ export async function POST(req: NextRequest) {
   </div>
   <div style="padding:32px 40px;">
     <p style="color:#555;font-size:15px;line-height:1.7;margin:0 0 24px;">
-      Hi ${m.contactName?.split(' ')[0] || 'there'}! We&rsquo;ve got your spot at the Host Hampton Spring Market. We&rsquo;ll be in touch with event details soon.
+      Hi ${escapeHtml(m.contactName?.split(' ')[0] || 'there')}! We&rsquo;ve got your spot at the Host Hampton Spring Market. We&rsquo;ll be in touch with event details soon.
     </p>
     <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:28px;">
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;color:#1a2744;width:140px;">Business</td><td style="padding:10px 12px;color:#555;">${m.businessName}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Instagram</td><td style="padding:10px 12px;color:#555;">${m.igHandle}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;color:#1a2744;width:140px;">Business</td><td style="padding:10px 12px;color:#555;">${escapeHtml(m.businessName)}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Instagram</td><td style="padding:10px 12px;color:#555;">${escapeHtml(m.igHandle)}</td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Registration</td><td style="padding:10px 12px;color:#059669;font-weight:bold;">$46.35 paid ✓</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Ref #</td><td style="padding:10px 12px;color:#888;font-size:12px;">${vendorRef}</td></tr>
     </table>
@@ -1225,11 +1222,11 @@ export async function POST(req: NextRequest) {
   </div>
   <div style="padding:24px 28px;">
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:130px;">Name</td><td style="padding:10px 12px;">${m.contactName}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Business</td><td style="padding:10px 12px;">${m.businessName}</td></tr>
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Instagram</td><td style="padding:10px 12px;">${m.igHandle}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="mailto:${m.contactEmail}">${m.contactEmail}</a></td></tr>
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Phone</td><td style="padding:10px 12px;">${m.contactPhone || '—'}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:130px;">Name</td><td style="padding:10px 12px;">${escapeHtml(m.contactName)}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Business</td><td style="padding:10px 12px;">${escapeHtml(m.businessName)}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Instagram</td><td style="padding:10px 12px;">${escapeHtml(m.igHandle)}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="${mailToHref(m.contactEmail)}">${escapeHtml(m.contactEmail)}</a></td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Phone</td><td style="padding:10px 12px;">${escapeHtml(m.contactPhone || '—')}</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;">Paid</td><td style="padding:10px 12px;color:#059669;font-weight:bold;">$46.35 ✓</td></tr>
     </table>
   </div>
@@ -1355,7 +1352,7 @@ export async function POST(req: NextRequest) {
         })
 
         const portalUrl = buildPortalUrl(bookingRef, rawToken)
-        const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+        const origin = publicOrigin(req)
 
         // Fetch line items for email
         const { data: liRows } = await supabase
@@ -1423,7 +1420,7 @@ export async function POST(req: NextRequest) {
                 totalFormatted: formatMoney(bk?.total_cents || 0),
                 paymentMethod: 'card',
                 lineItems: emailLineItems,
-                adminUrl: `https://${host}/admin?tab=parties&ref=${bookingRef}`,
+                adminUrl: `${origin}/admin?tab=parties&ref=${bookingRef}`,
               }),
             }),
           ])
@@ -1869,18 +1866,18 @@ export async function POST(req: NextRequest) {
   </div>
   <div style="padding:24px 28px;">
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:130px;">Customer</td><td style="padding:10px 12px;">${m.contactName}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="mailto:${m.contactEmail}">${m.contactEmail}</a></td></tr>
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Phone</td><td style="padding:10px 12px;">${m.contactPhone || '—'}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Date</td><td style="padding:10px 12px;">${dateFormatted}</td></tr>
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Time</td><td style="padding:10px 12px;">${m.partyTime || '—'}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Event type</td><td style="padding:10px 12px;">${m.eventType || '—'}</td></tr>
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Package</td><td style="padding:10px 12px;">${m.packageName || '—'}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Child</td><td style="padding:10px 12px;">${m.childName ? `${m.childName}${m.childAge ? `, age ${m.childAge}` : ''}` : '—'}</td></tr>
-      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Guests</td><td style="padding:10px 12px;">${m.guestCount || '—'}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Notes</td><td style="padding:10px 12px;">${m.notes || '—'}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:130px;">Customer</td><td style="padding:10px 12px;">${escapeHtml(m.contactName)}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="${mailToHref(m.contactEmail)}">${escapeHtml(m.contactEmail)}</a></td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Phone</td><td style="padding:10px 12px;">${escapeHtml(m.contactPhone || '—')}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Date</td><td style="padding:10px 12px;">${escapeHtml(dateFormatted)}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Time</td><td style="padding:10px 12px;">${escapeHtml(m.partyTime || '—')}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Event type</td><td style="padding:10px 12px;">${escapeHtml(m.eventType || '—')}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Package</td><td style="padding:10px 12px;">${escapeHtml(m.packageName || '—')}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Child</td><td style="padding:10px 12px;">${m.childName ? `${escapeHtml(m.childName)}${m.childAge ? `, age ${escapeHtml(String(m.childAge))}` : ''}` : '—'}</td></tr>
+      <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Guests</td><td style="padding:10px 12px;">${escapeHtml(m.guestCount || '—')}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Notes</td><td style="padding:10px 12px;">${escapeHtml(m.notes || '—')}</td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Deposit</td><td style="padding:10px 12px;color:#059669;font-weight:bold;">${depositFormatted} ✓</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Stripe PI</td><td style="padding:10px 12px;font-size:12px;color:#888;">${session.payment_intent}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Stripe PI</td><td style="padding:10px 12px;font-size:12px;color:#888;">${escapeHtml(typeof session.payment_intent === 'string' ? session.payment_intent : null)}</td></tr>
     </table>
   </div>
 </div>

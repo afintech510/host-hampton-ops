@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { etToUtc } from '@/lib/partyTime'
+import { CANONICAL_ORIGIN } from './publicOrigin'
 
 /**
  * Pre-arrival check-in link tokens.
@@ -55,7 +56,7 @@ export function validateCheckinToken(
 }
 
 export function buildCheckinUrl(rawToken: string): string {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com'
+  const baseUrl = CANONICAL_ORIGIN
   return `${baseUrl}/checkin/${encodeURIComponent(rawToken)}`
 }
 

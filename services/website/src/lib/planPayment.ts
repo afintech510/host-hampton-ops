@@ -45,6 +45,7 @@ import { ownerEmail } from '@/lib/ownerNotify'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { writeLedger } from '@/lib/marketing/graph'
 import { loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
+import { mailHref } from '@/lib/emailSafety'
 import {
   isPayPurpose,
   paidTowardTotalCents,
@@ -550,9 +551,9 @@ export async function sendPlanPaymentReceipt(opts: {
       <tr style="background:#f9f7f4;"><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Amount</td><td style="padding:10px 12px;color:#555;">${money(opts.amountCents)}</td></tr>
       ${opts.feeCents > 0 ? `<tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Card fee (3%)</td><td style="padding:10px 12px;color:#555;">${money(opts.feeCents)}</td></tr>` : ''}
       <tr style="background:#f9f7f4;"><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Balance remaining</td><td style="padding:10px 12px;color:#555;">${money(opts.newBalanceCents)}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Reference</td><td style="padding:10px 12px;color:#888;font-size:12px;">${opts.bookingRef}</td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Reference</td><td style="padding:10px 12px;color:#888;font-size:12px;">${escapeHtml(opts.bookingRef)}</td></tr>
     </table>
-    ${opts.invoiceUrl ? `<div style="text-align:center;margin-bottom:24px;"><a href="${opts.invoiceUrl}" style="display:inline-block;background:#1a2744;color:#F6F1EB;padding:14px 40px;border-radius:50px;text-decoration:none;font-size:15px;font-weight:bold;">View your plan</a></div>` : ''}
+    ${opts.invoiceUrl ? `<div style="text-align:center;margin-bottom:24px;"><a href="${mailHref(opts.invoiceUrl)}" style="display:inline-block;background:#1a2744;color:#F6F1EB;padding:14px 40px;border-radius:50px;text-decoration:none;font-size:15px;font-weight:bold;">View your plan</a></div>` : ''}
     <p style="font-size:13px;color:#555;line-height:1.7;margin:0;">Questions? Call or text <strong>(631) 998-9325</strong>.</p>
   </div>
   <div style="background:#BCCDEB;padding:20px 40px;text-align:center;">
@@ -576,7 +577,7 @@ export async function sendPlanPaymentReceipt(opts: {
         `${opts.customerName || opts.customerEmail} — ${money(opts.amountCents)} (${opts.bookingRef})`,
       html:
         `<p style="font-family:sans-serif">` +
-        `<strong>${money(opts.amountCents)}</strong> ${what} received for <strong>${opts.bookingRef}</strong>` +
+        `<strong>${money(opts.amountCents)}</strong> ${what} received for <strong>${escapeHtml(opts.bookingRef)}</strong>` +
         `${opts.feeCents > 0 ? ` (+ ${money(opts.feeCents)} card fee)` : ''}.<br>` +
         `Balance remaining: <strong>${money(opts.newBalanceCents)}</strong>.<br>` +
         (overpaid > 0

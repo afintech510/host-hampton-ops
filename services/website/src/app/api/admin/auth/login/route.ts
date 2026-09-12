@@ -24,6 +24,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { isLocalRequest } from '@/lib/publicOrigin'
 import {
   adminSessionSecret,
   hashPassword,
@@ -157,8 +158,7 @@ export async function POST(req: NextRequest) {
     .update({ last_login_at: new Date().toISOString() })
     .eq('id', user.id)
 
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || ''
-  const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
+  const isLocal = isLocalRequest(req)
 
   const res = NextResponse.json({
     ok: true,

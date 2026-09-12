@@ -8,6 +8,7 @@ import { studioRentalRateWith, hoursBetween, STUDIO_STANDING_CAPACITY } from '@/
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { createEmbeddedAgreement, isSignwellConfigured } from '@/lib/signwell'
 import type { BookingLineItem } from '@/types/booking-flow'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 /** Add-on line item as it arrives from the builder (price_type is cosmetic in the DB). */
 interface IncomingLineItem {
@@ -93,10 +94,7 @@ export async function POST(req: NextRequest) {
     const { modificationCutoff, guestCountCutoff } = computeCutoffDates(partyDate)
 
     const supabase = getSupabase()
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3002'
-    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
-    const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
-    const origin = `${proto}://${host}`
+    const origin = publicOrigin(req)
 
     const bookingRef = generateStudioRef()
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,9 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'All fields are required' }, { status: 400 })
   }
 
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
-  const proto = host.startsWith('localhost') ? 'http' : 'https'
-  const baseUrl = `${proto}://${host}`
+  const baseUrl = publicOrigin(req)
 
   try {
     const session = await stripe.checkout.sessions.create({

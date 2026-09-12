@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     }
 
     const amountFormatted = `$${(amountCents / 100).toFixed(0)}`
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+    const origin = publicOrigin(req)
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -52,8 +53,8 @@ export async function POST(req: NextRequest) {
         recipientEmail,
         personalMessage: personalMessage || '',
       },
-      success_url: `https://${host}/gift-cards/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `https://${host}/gift-cards?cancelled=true`,
+      success_url: `${origin}/gift-cards/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/gift-cards?cancelled=true`,
     })
 
     return NextResponse.json({ url: session.url })

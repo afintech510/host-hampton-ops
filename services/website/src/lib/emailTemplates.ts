@@ -1,4 +1,5 @@
 import { escapeHtml } from '@/lib/escapeHtml'
+import { escapeFields, mailHref, mailHrefExternal, mailToHref, telHref } from '@/lib/emailSafety'
 
 /**
  * NOTE for whoever is next. Most templates in this file interpolate
@@ -61,7 +62,8 @@ interface TicketConfirmationData {
   sessions?: { date: string; time: string; label?: string }[]
 }
 
-export function ticketConfirmationHtml(d: TicketConfirmationData): string {
+export function ticketConfirmationHtml(raw: TicketConfirmationData): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   const variantLine = d.variantLabel
     ? `<tr><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;"><strong>Option</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-top:1px solid #f0ece7;">${d.variantLabel}</td></tr>`
@@ -141,7 +143,8 @@ interface TicketNotifyData {
   sessions?: { date: string; time: string; label?: string }[]
 }
 
-export function ticketPurchaseNotifyHtml(d: TicketNotifyData): string {
+export function ticketPurchaseNotifyHtml(raw: TicketNotifyData): string {
+  const d = escapeFields(raw)
   const dateCell = d.sessions && d.sessions.length > 1
     ? d.sessions.map(s => `${s.date} at ${s.time}${s.label ? ` — ${s.label}` : ''}`).join('<br>')
     : d.eventDate + (d.eventTime ? ` at ${d.eventTime}` : '')
@@ -157,7 +160,7 @@ export function ticketPurchaseNotifyHtml(d: TicketNotifyData): string {
   <div style="padding:24px 28px;">
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:110px;">Customer</td><td style="padding:10px 12px;">${d.customerName}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="mailto:${d.customerEmail}">${d.customerEmail}</a></td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="${mailToHref(raw.customerEmail)}">${d.customerEmail}</a></td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Phone</td><td style="padding:10px 12px;">${d.customerPhone || '—'}</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;">Event</td><td style="padding:10px 12px;">${d.eventTitle}</td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;vertical-align:top;">Date</td><td style="padding:10px 12px;">${dateCell}</td></tr>
@@ -180,7 +183,8 @@ export interface FundraiserInquiryAutoReplyData {
   organizationType?: string
 }
 
-export function fundraiserInquiryAutoReplyHtml(d: FundraiserInquiryAutoReplyData): string {
+export function fundraiserInquiryAutoReplyHtml(raw: FundraiserInquiryAutoReplyData): string {
+  const d = escapeFields(raw)
   const firstName = d.contactName.split(' ')[0] || 'there'
   const orgLabel = d.organizationType === 'school' ? 'schools'
     : d.organizationType === 'team' ? 'sports teams'
@@ -242,7 +246,8 @@ export interface FundraiserInquiryNotifyData {
   message?: string
 }
 
-export function fundraiserInquiryNotifyHtml(d: FundraiserInquiryNotifyData): string {
+export function fundraiserInquiryNotifyHtml(raw: FundraiserInquiryNotifyData): string {
+  const d = escapeFields(raw)
   const orgTypeLabel = d.organizationType === 'school' ? 'School / PTA'
     : d.organizationType === 'team' ? 'Sports Team'
     : d.organizationType === 'dance' ? 'Dance Studio / Cheer'
@@ -263,7 +268,7 @@ export function fundraiserInquiryNotifyHtml(d: FundraiserInquiryNotifyData): str
   <div style="padding:24px 28px;">
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:130px;">Contact</td><td style="padding:10px 12px;">${d.contactName}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="mailto:${d.email}">${d.email}</a></td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="${mailToHref(raw.email)}">${d.email}</a></td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Phone</td><td style="padding:10px 12px;">${d.phone || '—'}</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;">Organization</td><td style="padding:10px 12px;">${d.organizationName}</td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Org Type</td><td style="padding:10px 12px;">${orgTypeLabel}</td></tr>
@@ -290,7 +295,8 @@ interface LeadNotifyData {
   notes?: string
 }
 
-export function leadNotifyHtml(d: LeadNotifyData): string {
+export function leadNotifyHtml(raw: LeadNotifyData): string {
+  const d = escapeFields(raw)
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:${BRAND.bodyBg};">
@@ -302,7 +308,7 @@ export function leadNotifyHtml(d: LeadNotifyData): string {
   <div style="padding:24px 28px;">
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:140px;">Name</td><td style="padding:10px 12px;">${d.fullName}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="mailto:${d.email}">${d.email}</a></td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Email</td><td style="padding:10px 12px;"><a href="${mailToHref(raw.email)}">${d.email}</a></td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Phone</td><td style="padding:10px 12px;">${d.phone || '—'}</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;">Event Type</td><td style="padding:10px 12px;">${d.eventType}</td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Child's Age</td><td style="padding:10px 12px;">${d.childAge || '—'}</td></tr>
@@ -319,7 +325,7 @@ export function leadNotifyHtml(d: LeadNotifyData): string {
 
 /* ── Saved Quote (customer) ───────────────────────────────────── */
 
-export function savedQuoteHtml(d: {
+export function savedQuoteHtml(raw: {
   customerName: string
   quoteLink: string
   summary: string
@@ -327,6 +333,7 @@ export function savedQuoteHtml(d: {
   partyTime?: string
   bookLink?: string
 }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   const hasSlot = d.partyDate && d.partyTime
 
@@ -337,9 +344,9 @@ export function savedQuoteHtml(d: {
       </div>`
     : ''
 
-  const bookButton = d.bookLink
+  const bookButton = raw.bookLink
     ? `<div style="text-align:center;margin-bottom:16px;">
-        <a href="${d.bookLink}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Reserve Your Date</a>
+        <a href="${mailHref(raw.bookLink)}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Reserve Your Date</a>
       </div>`
     : ''
 
@@ -362,7 +369,7 @@ export function savedQuoteHtml(d: {
     </div>
     ${bookButton}
     <div style="text-align:center;margin-bottom:24px;">
-      <a href="${d.quoteLink}" style="display:inline-block;background:transparent;color:${BRAND.navy};padding:12px 32px;border-radius:50px;text-decoration:none;font-size:13px;font-weight:bold;letter-spacing:0.5px;border:2px solid ${BRAND.navy};">Continue Building Your Party</a>
+      <a href="${mailHref(raw.quoteLink)}" style="display:inline-block;background:transparent;color:${BRAND.navy};padding:12px 32px;border-radius:50px;text-decoration:none;font-size:13px;font-weight:bold;letter-spacing:0.5px;border:2px solid ${BRAND.navy};">Continue Building Your Party</a>
     </div>
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? We're here to help!<br>${contactBlock}
@@ -375,13 +382,14 @@ export function savedQuoteHtml(d: {
 
 /* ── Lead Confirmation (customer) ────────────────────────────── */
 
-export function leadConfirmHtml(d: {
+export function leadConfirmHtml(raw: {
   customerName: string
   eventType: string
   preferredDate?: string
   guestCount?: string
   bookLink: string
 }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   const dateRow = d.preferredDate
     ? `<tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:140px;">Preferred Date</td><td style="padding:10px 12px;">${d.preferredDate}</td></tr>`
@@ -409,7 +417,7 @@ export function leadConfirmHtml(d: {
     </table>
     <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Ready to secure your date? Reserve with a $250 deposit:</p>
     <div style="text-align:center;margin-bottom:24px;">
-      <a href="${d.bookLink}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Check Availability &amp; Reserve</a>
+      <a href="${mailHref(raw.bookLink)}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Check Availability &amp; Reserve</a>
     </div>
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? We&rsquo;re here to help!<br>${contactBlock}
@@ -438,7 +446,8 @@ export interface BookingConfirmationData {
   balanceDueDate: string
 }
 
-export function bookingConfirmationHtml(d: BookingConfirmationData): string {
+export function bookingConfirmationHtml(raw: BookingConfirmationData): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   const packageLine = d.packageName
     ? `<tr><td style="padding:8px 0;color:${BRAND.gray};"><strong>Package</strong></td><td style="padding:8px 0;color:${BRAND.gray};">${d.packageName}</td></tr>`
@@ -517,7 +526,8 @@ export function bookingConfirmationHtml(d: BookingConfirmationData): string {
 
 /* ── Booking Refund (customer) ───────────────────────────────── */
 
-export function bookingRefundHtml(d: { customerName: string; eventType: string; bookingRef: string; refundAmount: string; reason?: string }): string {
+export function bookingRefundHtml(raw: { customerName: string; eventType: string; bookingRef: string; refundAmount: string; reason?: string }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -550,7 +560,8 @@ interface GiftCardEmailData {
   personalMessage?: string
 }
 
-export function giftCardHtml(d: GiftCardEmailData): string {
+export function giftCardHtml(raw: GiftCardEmailData): string {
+  const d = escapeFields(raw)
   const firstName = d.recipientName.split(' ')[0] || 'there'
   const messageLine = d.personalMessage
     ? `<div style="background:#f0ece7;border-radius:10px;padding:20px;margin-bottom:24px;font-style:italic;color:${BRAND.gray};font-size:15px;line-height:1.7;">"${d.personalMessage}"<br><span style="font-style:normal;font-size:13px;color:${BRAND.navy};margin-top:8px;display:inline-block;">— ${d.senderName}</span></div>`
@@ -615,7 +626,8 @@ interface GiftCardNotifyData {
   stripePI?: string
 }
 
-export function giftCardNotifyHtml(d: GiftCardNotifyData): string {
+export function giftCardNotifyHtml(raw: GiftCardNotifyData): string {
+  const d = escapeFields(raw)
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:20px;background:${BRAND.bodyBg};font-family:sans-serif;">
@@ -629,9 +641,9 @@ export function giftCardNotifyHtml(d: GiftCardNotifyData): string {
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;width:130px;">Code</td><td style="padding:10px 12px;font-weight:bold;letter-spacing:2px;">${d.code}</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;">Amount</td><td style="padding:10px 12px;color:#059669;font-weight:bold;">${d.amountFormatted}</td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Purchased By</td><td style="padding:10px 12px;">${d.purchaserName}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Purchaser Email</td><td style="padding:10px 12px;"><a href="mailto:${d.purchaserEmail}">${d.purchaserEmail}</a></td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Purchaser Email</td><td style="padding:10px 12px;"><a href="${mailToHref(raw.purchaserEmail)}">${d.purchaserEmail}</a></td></tr>
       <tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Recipient</td><td style="padding:10px 12px;">${d.recipientName}</td></tr>
-      <tr><td style="padding:10px 12px;font-weight:bold;">Recipient Email</td><td style="padding:10px 12px;"><a href="mailto:${d.recipientEmail}">${d.recipientEmail}</a></td></tr>
+      <tr><td style="padding:10px 12px;font-weight:bold;">Recipient Email</td><td style="padding:10px 12px;"><a href="${mailToHref(raw.recipientEmail)}">${d.recipientEmail}</a></td></tr>
       ${d.personalMessage ? `<tr style="background:#f9f9f9;"><td style="padding:10px 12px;font-weight:bold;">Message</td><td style="padding:10px 12px;font-style:italic;">${d.personalMessage}</td></tr>` : ''}
       ${d.stripePI ? `<tr><td style="padding:10px 12px;font-weight:bold;">Stripe PI</td><td style="padding:10px 12px;font-size:12px;color:#888;">${d.stripePI}</td></tr>` : ''}
     </table>
@@ -642,12 +654,13 @@ export function giftCardNotifyHtml(d: GiftCardNotifyData): string {
 
 /* ── Gift Card Purchase Confirmation (purchaser) ──────────────── */
 
-export function giftCardPurchaseConfirmHtml(d: {
+export function giftCardPurchaseConfirmHtml(raw: {
   purchaserName: string
   recipientName: string
   amountFormatted: string
   code: string
 }): string {
+  const d = escapeFields(raw)
   const firstName = d.purchaserName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -677,7 +690,8 @@ export function giftCardPurchaseConfirmHtml(d: {
 
 /* ── Ticket Refund (customer) ─────────────────────────────────── */
 
-export function ticketRefundHtml(d: { customerName: string; eventTitle: string; ticketRef: string; refundAmount: string; reason?: string }): string {
+export function ticketRefundHtml(raw: { customerName: string; eventTitle: string; ticketRef: string; refundAmount: string; reason?: string }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -712,15 +726,25 @@ function lineItemRows(items: PartyLineItem[]): string {
     </tr>`).join('')
 }
 
-function payButton(url: string, label: string): string {
+/**
+ * Takes an ALREADY-SCREENED href (`mailHref` / `mailHrefExternal`), not a raw
+ * URL, so the screen is visible at the call site rather than hidden one frame
+ * down. An empty href means the screen refused the value and has already said
+ * so; a button that goes nowhere is worse than no button, and every URL that
+ * reaches this file is built server-side from the canonical origin, so this
+ * branch means a bug upstream rather than an expected state.
+ */
+function payButton(href: string, label: string): string {
+  if (!href) return ''
   return `<div style="text-align:center;margin:28px 0;">
-    <a href="${url}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 40px;font-size:16px;text-decoration:none;border-radius:6px;font-family:Georgia,serif;">${label}</a>
+    <a href="${href}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 40px;font-size:16px;text-decoration:none;border-radius:6px;font-family:Georgia,serif;">${label}</a>
   </div>`
 }
 
 /* ── Party Deposit Received (customer) ───────────────────────── */
 
-export function partyDepositReceivedHtml(d: { customerName: string; bookingRef: string; depositFormatted: string; partyDate: string; portalUrl: string; lineItems: PartyLineItem[]; totalFormatted: string }): string {
+export function partyDepositReceivedHtml(raw: { customerName: string; bookingRef: string; depositFormatted: string; partyDate: string; portalUrl: string; lineItems: PartyLineItem[]; totalFormatted: string }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -743,7 +767,7 @@ export function partyDepositReceivedHtml(d: { customerName: string; bookingRef: 
       <p style="color:${BRAND.navy};font-size:14px;margin:0;"><strong>What happens next:</strong></p>
       <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:8px 0 0;">We'll review and confirm all details within 24 hours. You'll receive an email once your booking is approved.</p>
     </div>
-    ${payButton(d.portalUrl, 'View Your Booking')}
+    ${payButton(mailHref(raw.portalUrl), 'View Your Booking')}
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
     </p>
@@ -755,10 +779,11 @@ export function partyDepositReceivedHtml(d: { customerName: string; bookingRef: 
 
 /* ── Studio Rental Invite (customer) ─────────────────────────── */
 
-export function studioRentalInviteHtml(d: {
+export function studioRentalInviteHtml(raw: {
   customerName: string
   studioUrl: string
 }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -779,7 +804,7 @@ export function studioRentalInviteHtml(d: {
         • $250 deposit holds your date; balance payable any time before your event
       </p>
     </div>
-    ${payButton(d.studioUrl, 'Start Your Booking')}
+    ${payButton(mailHref(raw.studioUrl), 'Start Your Booking')}
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? We're happy to help:<br>${contactBlock}
     </p>
@@ -791,7 +816,7 @@ export function studioRentalInviteHtml(d: {
 
 /* ── Studio Rental Confirmation (customer) ───────────────────── */
 
-export function studioRentalConfirmationHtml(d: {
+export function studioRentalConfirmationHtml(raw: {
   customerName: string
   bookingRef: string
   depositFormatted: string
@@ -806,6 +831,7 @@ export function studioRentalConfirmationHtml(d: {
   portalUrl: string
   agreementUrl?: string | null
 }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -838,9 +864,9 @@ export function studioRentalConfirmationHtml(d: {
         • Your rental window includes your own setup and cleanup time.
       </p>
     </div>
-    ${d.agreementUrl ? `<p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0 0 8px;">📄 <a href="${d.agreementUrl}" style="color:${BRAND.navy};">View your signed rental agreement</a></p>` : ''}
+    ${raw.agreementUrl ? `<p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0 0 8px;">📄 <a href="${mailHrefExternal(raw.agreementUrl)}" style="color:${BRAND.navy};">View your signed rental agreement</a></p>` : ''}
     <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:0 0 4px;text-align:center;">Need more time or want to add extras? Manage your booking anytime:</p>
-    ${payButton(d.portalUrl, 'View & Manage Booking')}
+    ${payButton(mailHref(raw.portalUrl), 'View & Manage Booking')}
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
     </p>
@@ -852,7 +878,8 @@ export function studioRentalConfirmationHtml(d: {
 
 /* ── Party Admin New Booking (admin) ─────────────────────────── */
 
-export function partyAdminNewBookingHtml(d: { bookingRef: string; customerName: string; customerEmail: string; customerPhone?: string; partyDate: string; partyTime: string; guestCount: number; packageType: string; depositFormatted: string; totalFormatted: string; paymentMethod: string; lineItems: PartyLineItem[]; notes?: string; adminUrl: string }): string {
+export function partyAdminNewBookingHtml(raw: { bookingRef: string; customerName: string; customerEmail: string; customerPhone?: string; partyDate: string; partyTime: string; guestCount: number; packageType: string; depositFormatted: string; totalFormatted: string; paymentMethod: string; lineItems: PartyLineItem[]; notes?: string; adminUrl: string }): string {
+  const d = escapeFields(raw)
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:${BRAND.bodyBg};">
@@ -880,7 +907,7 @@ export function partyAdminNewBookingHtml(d: { bookingRef: string; customerName: 
       <tr><td style="padding:4px 0;color:${BRAND.gray};font-size:13px;">Deposit</td><td style="padding:4px 0;color:${BRAND.gray};font-size:13px;text-align:right;">${d.depositFormatted}</td></tr>
     </table>
     ${d.notes ? `<div style="background:#f8f6f3;border-radius:6px;padding:12px 16px;margin:0 0 20px;"><p style="color:${BRAND.gray};font-size:13px;margin:0;"><strong>Customer Notes:</strong> ${d.notes}</p></div>` : ''}
-    ${payButton(d.adminUrl, 'Review & Approve')}
+    ${payButton(mailHref(raw.adminUrl), 'Review & Approve')}
   </div>
   ${footer}
 </div>
@@ -891,7 +918,8 @@ export function partyAdminNewBookingHtml(d: { bookingRef: string; customerName: 
 
 /* ── Party Request Received (customer, no payment) ───────────── */
 
-export function partyRequestReceivedHtml(d: { customerName: string; bookingRef: string; partyDate: string; partyTime: string; depositFormatted: string }): string {
+export function partyRequestReceivedHtml(raw: { customerName: string; bookingRef: string; partyDate: string; partyTime: string; depositFormatted: string }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -918,7 +946,8 @@ export function partyRequestReceivedHtml(d: { customerName: string; bookingRef: 
 </body></html>`
 }
 
-export function partyApprovedHtml(d: { customerName: string; bookingRef: string; partyDate: string; partyTime: string; balanceFormatted: string; portalUrl: string }): string {
+export function partyApprovedHtml(raw: { customerName: string; bookingRef: string; partyDate: string; partyTime: string; balanceFormatted: string; portalUrl: string }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -937,7 +966,7 @@ export function partyApprovedHtml(d: { customerName: string; bookingRef: string;
       <p style="color:${BRAND.navy};margin:0;"><strong>Remaining Balance:</strong> ${d.balanceFormatted}</p>
     </div>
     <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">You can view your booking details, make changes, or submit payments through your portal anytime.</p>
-    ${payButton(d.portalUrl, 'View Your Booking')}
+    ${payButton(mailHref(raw.portalUrl), 'View Your Booking')}
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
     </p>
@@ -949,7 +978,8 @@ export function partyApprovedHtml(d: { customerName: string; bookingRef: string;
 
 /* ── Party Changes Requested (customer) ──────────────────────── */
 
-export function partyChangesRequestedHtml(d: { customerName: string; bookingRef: string; adminMessage: string; portalUrl: string }): string {
+export function partyChangesRequestedHtml(raw: { customerName: string; bookingRef: string; adminMessage: string; portalUrl: string }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -965,7 +995,7 @@ export function partyChangesRequestedHtml(d: { customerName: string; bookingRef:
     <div style="background:${BRAND.bodyBg};border-radius:8px;padding:16px 20px;margin:0 0 24px;border-left:4px solid ${BRAND.navy};">
       <p style="color:${BRAND.navy};font-size:14px;line-height:1.7;margin:0;">${d.adminMessage}</p>
     </div>
-    ${payButton(d.portalUrl, 'View Your Booking')}
+    ${payButton(mailHref(raw.portalUrl), 'View Your Booking')}
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
     </p>
@@ -977,7 +1007,8 @@ export function partyChangesRequestedHtml(d: { customerName: string; bookingRef:
 
 /* ── Party Payment Received (customer) ───────────────────────── */
 
-export function partyPaymentReceivedHtml(d: { customerName: string; bookingRef: string; amountFormatted: string; paymentMethod: string; newBalanceFormatted: string; portalUrl: string }): string {
+export function partyPaymentReceivedHtml(raw: { customerName: string; bookingRef: string; amountFormatted: string; paymentMethod: string; newBalanceFormatted: string; portalUrl: string }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -994,7 +1025,7 @@ export function partyPaymentReceivedHtml(d: { customerName: string; bookingRef: 
       <p style="color:${BRAND.gray};font-size:13px;margin:0 0 4px;">Remaining Balance</p>
       <p style="color:${BRAND.navy};font-size:28px;font-weight:bold;margin:0;">${d.newBalanceFormatted}</p>
     </div>
-    ${payButton(d.portalUrl, 'View Your Booking')}
+    ${payButton(mailHref(raw.portalUrl), 'View Your Booking')}
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
     </p>
@@ -1006,7 +1037,8 @@ export function partyPaymentReceivedHtml(d: { customerName: string; bookingRef: 
 
 /* ── Party Balance Reminder (customer, T-2 / T-1) ───────────── */
 
-export function partyBalanceReminderHtml(d: { customerName: string; bookingRef: string; partyDate: string; balanceFormatted: string; payUrl: string }): string {
+export function partyBalanceReminderHtml(raw: { customerName: string; bookingRef: string; partyDate: string; balanceFormatted: string; payUrl: string }): string {
+  const d = escapeFields(raw)
   const firstName = escapeHtml(d.customerName.split(' ')[0] || 'there')
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -1019,7 +1051,7 @@ export function partyBalanceReminderHtml(d: { customerName: string; bookingRef: 
   <div style="padding:36px 40px;">
     <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
     <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Your party on <strong>${d.partyDate}</strong> is almost here! A friendly reminder that the remaining balance of <strong>${d.balanceFormatted}</strong> is due before the event.</p>
-    ${payButton(d.payUrl, 'Pay Now')}
+    ${payButton(mailHref(raw.payUrl), 'Pay Now')}
     <p style="color:${BRAND.gray};font-size:13px;line-height:1.7;margin:0 0 24px;">You can also pay via Venmo, Zelle, or cash — just let us know!</p>
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
@@ -1032,7 +1064,8 @@ export function partyBalanceReminderHtml(d: { customerName: string; bookingRef: 
 
 /* ── Party Portal Magic Link (customer) ──────────────────────── */
 
-export function partyPortalMagicLinkHtml(d: { customerName: string; bookingRef: string; portalUrl: string }): string {
+export function partyPortalMagicLinkHtml(raw: { customerName: string; bookingRef: string; portalUrl: string }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -1045,7 +1078,7 @@ export function partyPortalMagicLinkHtml(d: { customerName: string; bookingRef: 
   <div style="padding:36px 40px;">
     <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
     <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Click below to access your booking <strong>${d.bookingRef}</strong>. You can view details, make changes, and submit payments.</p>
-    ${payButton(d.portalUrl, 'Access My Booking')}
+    ${payButton(mailHref(raw.portalUrl), 'Access My Booking')}
     <p style="color:${BRAND.gray};font-size:13px;line-height:1.7;margin:0 0 24px;">This link expires in 72 hours. If it expires, you can request a new one from the login page.</p>
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
@@ -1058,7 +1091,8 @@ export function partyPortalMagicLinkHtml(d: { customerName: string; bookingRef: 
 
 /* ── Party Payment Instructions (customer, non-card) ─────────── */
 
-export function partyPaymentInstructionsHtml(d: { customerName: string; bookingRef: string; depositFormatted: string; paymentMethod: string; venmoHandle?: string; zelleEmail?: string; portalUrl: string }): string {
+export function partyPaymentInstructionsHtml(raw: { customerName: string; bookingRef: string; depositFormatted: string; paymentMethod: string; venmoHandle?: string; zelleEmail?: string; portalUrl: string }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   let instructions = ''
   if (d.paymentMethod === 'venmo') {
@@ -1083,7 +1117,7 @@ export function partyPaymentInstructionsHtml(d: { customerName: string; bookingR
       ${instructions}
     </div>
     <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Once we receive your deposit, we'll confirm all details within 24 hours.</p>
-    ${payButton(d.portalUrl, 'View Your Booking')}
+    ${payButton(mailHref(raw.portalUrl), 'View Your Booking')}
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}
     </p>
@@ -1095,12 +1129,13 @@ export function partyPaymentInstructionsHtml(d: { customerName: string; bookingR
 
 /* ── Party Admin Unpaid Day-Of (admin alert) ─────────────────── */
 
-export function partyQuoteSentHtml(d: {
+export function partyQuoteSentHtml(raw: {
   customerName: string; bookingRef: string; partyDate?: string; partyTime?: string;
   guestCount: number; packageType: string; childName?: string;
   totalFormatted: string; depositFormatted: string; balanceFormatted: string;
   lineItems: PartyLineItem[]; builderUrl: string; notes?: string;
 }): string {
+  const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   const dateLine = d.partyDate
     ? `<tr><td style="padding:6px 0;color:${BRAND.gray};width:130px;">Date</td><td style="padding:6px 0;color:${BRAND.navy};font-weight:bold;">${d.partyDate}</td></tr>`
@@ -1145,7 +1180,7 @@ export function partyQuoteSentHtml(d: {
       </table>
     </div>
     ${notesLine}
-    ${payButton(d.builderUrl, 'View & Customize Your Party Plan')}
+    ${payButton(mailHref(raw.builderUrl), 'View & Customize Your Party Plan')}
     <p style="font-size:13px;color:${BRAND.gray};line-height:1.7;margin:0 0 20px;text-align:center;">
       Use the link above to customize your add-ons and pay your $250 deposit to lock it in.
     </p>
@@ -1160,7 +1195,8 @@ export function partyQuoteSentHtml(d: {
 
 /* ── Party Admin Unpaid Day-of (admin) ─────────────────────── */
 
-export function partyAdminUnpaidDayOfHtml(d: { bookingRef: string; customerName: string; customerPhone?: string; partyDate: string; balanceFormatted: string; adminUrl: string }): string {
+export function partyAdminUnpaidDayOfHtml(raw: { bookingRef: string; customerName: string; customerPhone?: string; partyDate: string; balanceFormatted: string; adminUrl: string }): string {
+  const d = escapeFields(raw)
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:${BRAND.bodyBg};">
@@ -1177,9 +1213,9 @@ export function partyAdminUnpaidDayOfHtml(d: { bookingRef: string; customerName:
     </div>
     <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
       <tr><td style="padding:6px 0;color:${BRAND.gray};width:100px;">Customer</td><td style="padding:6px 0;color:${BRAND.navy};font-weight:bold;">${escapeHtml(d.customerName)}</td></tr>
-      ${d.customerPhone ? `<tr><td style="padding:6px 0;color:${BRAND.gray};">Phone</td><td style="padding:6px 0;color:${BRAND.navy};"><a href="tel:${encodeURIComponent(d.customerPhone)}" style="color:${BRAND.navy};">${escapeHtml(d.customerPhone)}</a></td></tr>` : ''}
+      ${d.customerPhone ? `<tr><td style="padding:6px 0;color:${BRAND.gray};">Phone</td><td style="padding:6px 0;color:${BRAND.navy};"><a href="${telHref(raw.customerPhone)}" style="color:${BRAND.navy};">${escapeHtml(d.customerPhone)}</a></td></tr>` : ''}
     </table>
-    ${payButton(d.adminUrl, 'View Booking')}
+    ${payButton(mailHref(raw.adminUrl), 'View Booking')}
   </div>
   ${footer}
 </div>
@@ -1188,7 +1224,8 @@ export function partyAdminUnpaidDayOfHtml(d: { bookingRef: string; customerName:
 
 /* ── Email Login Code (6-digit) ─────────────────────────────── */
 
-export function emailAuthCodeHtml(d: { code: string; expiresMinutes?: number }): string {
+export function emailAuthCodeHtml(raw: { code: string; expiresMinutes?: number }): string {
+  const d = escapeFields(raw)
   const minutes = d.expiresMinutes ?? 15
   // Spaced-out display of the code so it's easy to read at a glance.
   const codeDisplay = d.code.split('').join('&nbsp;')
@@ -1221,7 +1258,7 @@ export function emailAuthCodeHtml(d: { code: string; expiresMinutes?: number }):
 
 /* ── Party Thank You / Post-Event (customer, T+1) ────────────── */
 
-export function partyThankYouHtml(d: {
+export function partyThankYouHtml(raw: {
   customerName: string
   bookingRef: string
   partyDate: string
@@ -1229,19 +1266,20 @@ export function partyThankYouHtml(d: {
   reviewUrl?: string
   childName?: string | null
 }): string {
+  const d = escapeFields(raw)
   const firstName = escapeHtml(d.customerName.split(' ')[0] || 'there')
   const celebrant = d.childName ? `${escapeHtml(d.childName)}'s ` : ''
-  const photoBlock = d.photoGalleryUrl
+  const photoBlock = raw.photoGalleryUrl
     ? `<div style="background:${BRAND.bodyBg};border-radius:10px;padding:24px;margin:0 0 24px;text-align:center;">
         <h3 style="font-size:16px;color:${BRAND.navy};margin:0 0 8px;">📸 Your Party Photos</h3>
         <p style="color:${BRAND.gray};font-size:14px;line-height:1.6;margin:0 0 16px;">We captured the magic! Click below to see the full gallery.</p>
-        ${payButton(d.photoGalleryUrl, 'View Photos')}
+        ${payButton(mailHrefExternal(raw.photoGalleryUrl), 'View Photos')}
       </div>`
     : ''
-  const reviewBlock = d.reviewUrl
+  const reviewBlock = raw.reviewUrl
     ? `<div style="text-align:center;margin:0 0 24px;">
         <p style="color:${BRAND.navy};font-size:15px;margin:0 0 12px;">Loved your celebration? A quick review means the world to us.</p>
-        <a href="${d.reviewUrl}" style="display:inline-block;background:#fff;border:2px solid ${BRAND.navy};color:${BRAND.navy};padding:10px 28px;font-size:14px;text-decoration:none;border-radius:6px;font-family:Georgia,serif;">Leave a Google Review</a>
+        <a href="${mailHrefExternal(raw.reviewUrl)}" style="display:inline-block;background:#fff;border:2px solid ${BRAND.navy};color:${BRAND.navy};padding:10px 28px;font-size:14px;text-decoration:none;border-radius:6px;font-family:Georgia,serif;">Leave a Google Review</a>
       </div>`
     : `<p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:0 0 24px;">If you loved your celebration, we'd be so grateful for a quick Google review — just search <strong>Host Hampton</strong> on Google and click "Write a review."</p>`
 
@@ -1279,12 +1317,13 @@ export function partyThankYouHtml(d: {
  * inviting the family to book next year's celebration. Owner-pre-approved
  * template — merge fields only (child name, next age, book link).
  */
-export function birthdayRebookHtml(d: {
+export function birthdayRebookHtml(raw: {
   customerName: string
   childName?: string | null
   nextAge?: number | null
   bookLink: string
 }): string {
+  const d = escapeFields(raw)
   const firstName = escapeHtml(d.customerName.split(' ')[0] || 'there')
   const who = d.childName ? escapeHtml(d.childName) : 'your little one'
   const turning = d.nextAge != null ? ` turning ${d.nextAge}` : ''
@@ -1305,7 +1344,7 @@ export function birthdayRebookHtml(d: {
       Our calendar for the popular party weekends fills up early. If you'd like to celebrate with us again, now's a great time to lock in your date.
     </p>
     <div style="text-align:center;margin-bottom:24px;">
-      <a href="${d.bookLink}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Check Availability &amp; Reserve</a>
+      <a href="${mailHref(raw.bookLink)}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:14px 36px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.5px;">Check Availability &amp; Reserve</a>
     </div>
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? We'd love to help plan the next one:<br>${contactBlock}

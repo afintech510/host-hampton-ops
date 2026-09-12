@@ -15,6 +15,8 @@
  *   REVIEWER_PHONES           (lib/ownerNotify.ts) who gets the review SMS.
  */
 
+import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
+
 /** Default model for customer-facing drafts. Haiku is fine for triage, not for this. */
 /**
  * Ledger actor and entity name for everything the agent does. They live here,
@@ -108,5 +110,5 @@ export function isBusinessHours(now: Date = new Date()): boolean {
 export const NUDGE_AFTER_MS = 2 * 60 * 60 * 1000
 
 export function siteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, '') || 'https://www.hosthampton.com'
+  return CANONICAL_ORIGIN
 }

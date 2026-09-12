@@ -6,6 +6,9 @@ import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
+import { publicOrigin } from '@/lib/publicOrigin'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailHref } from '@/lib/emailSafety'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,18 +41,17 @@ export async function POST(req: NextRequest) {
   }
 
   // Build the quote link with encoded data
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
-  const protocol = host.includes('localhost') ? 'http' : 'https'
+  const origin = publicOrigin(req)
   const encoded = Buffer.from(JSON.stringify(quoteData)).toString('base64url')
   const quotePath = '/kids-party-menu'
-  const quoteLink = `${protocol}://${host}${quotePath}?q=${encoded}`
+  const quoteLink = `${origin}${quotePath}?q=${encoded}`
 
   // Build the book link (with date/time for auto-selection + encoded quote data including summary)
   const bookEncoded = Buffer.from(JSON.stringify({ ...quoteData, summary })).toString('base64url')
   const bookParams = new URLSearchParams({ type: 'kids-party', from: 'quote', q: bookEncoded })
   if (partyDate) bookParams.set('date', partyDate)
   if (partyTime) bookParams.set('time', partyTime)
-  const bookLink = `${protocol}://${host}/book?${bookParams.toString()}`
+  const bookLink = `${origin}/book?${bookParams.toString()}`
 
   // Format date/time for display
   const dateDisplay = partyDate ? formatDate(partyDate) : undefined
@@ -161,7 +163,7 @@ export async function POST(req: NextRequest) {
         from,
         to: ownerEmail(),
         subject: `Saved quote: ${name}${slotDisplay ? ` — ${slotDisplay}` : ''}`,
-        html: `<p><strong>${name}</strong> (${email}, ${phone || 'no phone'}) saved a party quote.</p>${adminDateLine}<pre>${summary || 'No summary'}</pre><p><a href="${quoteLink}">View their quote</a></p>`,
+        html: `<p><strong>${escapeHtml(name)}</strong> (${escapeHtml(email)}, ${escapeHtml(phone || 'no phone')}) saved a party quote.</p>${adminDateLine}<pre>${escapeHtml(summary || 'No summary')}</pre><p><a href="${mailHref(quoteLink)}">View their quote</a></p>`,
       }),
     ])
     await notifyOwnerSms(leadSmsLine({ kind: 'saved party quote', name, phone, email, date: slotDisplay, extra: summary ? String(summary).slice(0, 120) : null }))

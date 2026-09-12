@@ -165,7 +165,25 @@ export const ALLOWED_IMAGE_HOSTS: readonly string[] = [
  * different ORIGIN in every browser. `startsWith('//')` was the whole guard and
  * it never saw it. Measured, not reasoned about (rule 8).
  */
-export function safeImageUrl(raw: string | null | undefined): string | null {
+/**
+ * The parsing half of every URL screen in this codebase, in ONE place.
+ *
+ * Returns the `URL` a parser agreed the string means, or null when the string
+ * is not a shape we are willing to consider at all. It applies, in order: the
+ * control-character refusal, the backslash refusal, the "absolute http(s) or
+ * site-relative only" shape test, `new URL` resolution against our own origin,
+ * an https-only check, and the doubled-leading-slash path refusal.
+ *
+ * It deliberately does NOT check the host: that is the one thing each caller
+ * decides for itself (an image may come from the storage bucket, a link we
+ * publish under Host Hampton's name may not, and a photo gallery a human typed
+ * into the admin panel may come from anywhere). Everything ABOVE the host check
+ * is identical for all of them, and rule 11's sharpest form is a concept defined
+ * twice — the backslash bypass in `docs/content-pipeline.md` §11.1 and its
+ * second door in §11 of the Phase 4 review are both what "reason about prefixes
+ * again in the next screen" produces.
+ */
+export function parseScreenedUrl(raw: string | null | undefined): URL | null {
   if (!raw) return null
   const s = String(raw).trim()
   if (!s) return null
@@ -177,9 +195,9 @@ export function safeImageUrl(raw: string | null | undefined): string | null {
     const cp = ch.codePointAt(0) as number
     if (cp < 0x20 || cp === 0x7f || (cp >= 0x80 && cp <= 0x9f) || cp === 0x2028 || cp === 0x2029) return null
   }
-  // Refused outright rather than normalised: a backslash in an image URL is
-  // never what a writer meant, and leaving it to the parser is how the meaning
-  // of the string stops matching the meaning of the check above it.
+  // Refused outright rather than normalised: a backslash in a URL is never what
+  // a writer meant, and leaving it to the parser is how the meaning of the
+  // string stops matching the meaning of the check above it.
   if (s.includes('\\')) return null
   // Only two shapes are even considered — an absolute http(s) URL, or a
   // site-relative path. `images/x.png` and `javascript:` never reach the parser.
@@ -195,6 +213,25 @@ export function safeImageUrl(raw: string | null | undefined): string | null {
   // rejects exactly one thing: an explicit `http://` URL, which a browser blocks
   // as mixed content anyway — a value that looked screened and could never load.
   if (url.protocol !== 'https:') return null
+  // A PATH that is itself protocol-relative. `//evil.example.com/x.png` as an
+  // input resolves to another origin and is caught by each caller's host check —
+  // but `https://www.hosthampton.com//evil.example.com/x.png` has OUR host,
+  // passes any allowlist, and leaves `url.pathname` as `//evil.example.com/x.png`.
+  // That string is site-relative to this screen and a DIFFERENT ORIGIN to every
+  // `<img src>`, every `og:image` consumer and every mail client that reads it.
+  //
+  // Exactly docs/content-pipeline.md §11.1 arriving through a second door: the
+  // backslash form was refused, and the value it normalises to was still
+  // reachable by typing it directly. Refused rather than collapsed, because a
+  // doubled leading slash is never what a writer meant and a screen that repairs
+  // a hostile value is a screen whose output nobody can reason about.
+  if (url.pathname.startsWith('//')) return null
+  return url
+}
+
+export function safeImageUrl(raw: string | null | undefined): string | null {
+  const url = parseScreenedUrl(raw)
+  if (!url) return null
   if (!ALLOWED_IMAGE_HOSTS.includes(url.host.toLowerCase())) return null
   // A PATH that is itself protocol-relative. `//evil.example.com/x.png` as an
   // input resolves to another origin and is caught by the host check above — but
@@ -203,12 +240,6 @@ export function safeImageUrl(raw: string | null | undefined): string | null {
   // string is site-relative to this screen and a DIFFERENT ORIGIN to every
   // `<img src>` and every `og:image` consumer that reads it.
   //
-  // Exactly docs/content-pipeline.md §11.1 arriving through a second door: the
-  // backslash form was refused, and the value it normalises to was still
-  // reachable by typing it directly. Refused rather than collapsed, because a
-  // doubled leading slash is never what a writer meant and a screen that repairs
-  // a hostile value is a screen whose output nobody can reason about.
-  if (url.pathname.startsWith('//')) return null
   // Site-relative in, site-relative out: the page should not start emitting
   // absolute URLs for its own images just because they went through a parser.
   if (url.origin === SITE_ORIGIN) return `${url.pathname}${url.search}${url.hash}`

@@ -23,6 +23,8 @@ import { sendSMSViaQuo } from '@/lib/quo'
 import { normalizePhone } from '@/lib/sms'
 import { applySignatureRule } from './draftInquiry'
 import { siteUrl } from './config'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailHref } from '@/lib/emailSafety'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -124,15 +126,6 @@ export async function resolveRecipient(supabase: Supa, draft: SendableDraft): Pr
 
 /* ── Delivery ───────────────────────────────────────────────────────── */
 
-/** Escape for interpolation into the email HTML. */
-function esc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
 /**
  * Wrap the approved plain-text body in the site's email shell. The body is the
  * approved text with line breaks preserved — no rewriting, no added copy beyond
@@ -145,7 +138,7 @@ export function renderEmailHtml(body: string, opts: { name?: string | null } = {
     .filter(Boolean)
     .map(
       p =>
-        `<p style="font-size:15px;line-height:1.8;color:#444;margin:0 0 16px;">${esc(p).replace(/\n/g, '<br />')}</p>`,
+        `<p style="font-size:15px;line-height:1.8;color:#444;margin:0 0 16px;">${escapeHtml(p).replace(/\n/g, '<br />')}</p>`,
     )
     .join('\n    ')
 
@@ -157,7 +150,7 @@ export function renderEmailHtml(body: string, opts: { name?: string | null } = {
     ${paragraphs}
     <p style="font-size:13px;line-height:1.7;color:#888;margin:24px 0 0;border-top:1px solid #f0e6e7;padding-top:16px;">
       Host Hampton · Speonk, NY · <a href="tel:+16319989325" style="color:#1a2744;">(631) 998-9325</a> ·
-      <a href="${siteUrl()}" style="color:#1a2744;">hosthampton.com</a>
+      <a href="${mailHref(siteUrl())}" style="color:#1a2744;">hosthampton.com</a>
     </p>
   </div>
 </div>`

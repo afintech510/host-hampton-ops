@@ -6,6 +6,8 @@ import { enrollInSequence } from '@/lib/sequences'
 import { getSupabase } from '@/lib/supabase'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailToHref, telHref } from '@/lib/emailSafety'
 
 export const dynamic = 'force-dynamic'
 
@@ -112,17 +114,17 @@ export async function POST(req: NextRequest) {
   </div>
   <div style="background:#fff;border:1px solid #e8d0d4;border-top:none;padding:28px 32px;border-radius:0 0 12px 12px;">
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
-      <tr><td style="padding:8px 0;color:#888;width:110px;">Name</td><td style="padding:8px 0;font-weight:600;">${name}</td></tr>
-      <tr><td style="padding:8px 0;color:#888;">Email</td><td style="padding:8px 0;"><a href="mailto:${email}" style="color:#1a2744;font-weight:600;">${email}</a></td></tr>
-      ${phone ? `<tr><td style="padding:8px 0;color:#888;">Phone</td><td style="padding:8px 0;font-weight:600;"><a href="tel:${phone}" style="color:#1a2744;">${phone}</a></td></tr>` : ''}
-      ${date ? `<tr><td style="padding:8px 0;color:#888;">Event Date</td><td style="padding:8px 0;font-weight:600;">${date}</td></tr>` : ''}
+      <tr><td style="padding:8px 0;color:#888;width:110px;">Name</td><td style="padding:8px 0;font-weight:600;">${escapeHtml(name)}</td></tr>
+      <tr><td style="padding:8px 0;color:#888;">Email</td><td style="padding:8px 0;"><a href="${mailToHref(email)}" style="color:#1a2744;font-weight:600;">${escapeHtml(email)}</a></td></tr>
+      ${phone ? `<tr><td style="padding:8px 0;color:#888;">Phone</td><td style="padding:8px 0;font-weight:600;"><a href="${telHref(phone)}" style="color:#1a2744;">${escapeHtml(phone)}</a></td></tr>` : ''}
+      ${date ? `<tr><td style="padding:8px 0;color:#888;">Event Date</td><td style="padding:8px 0;font-weight:600;">${escapeHtml(date)}</td></tr>` : ''}
     </table>
     <div style="margin-top:16px;background:#fdf4f5;border-left:3px solid #E8C7CB;padding:14px 16px;border-radius:0 8px 8px 0;">
       <p style="margin:0 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#888;">Details</p>
-      <p style="margin:0;font-size:14px;line-height:1.7;color:#333;">${details.replace(/\n/g, '<br>')}</p>
+      <p style="margin:0;font-size:14px;line-height:1.7;color:#333;">${escapeHtml(details).replace(/\n/g, '<br>')}</p>
     </div>
     <div style="margin-top:20px;">
-      <a href="mailto:${email}" style="background:#1a2744;color:#fff;padding:10px 22px;border-radius:999px;font-size:13px;font-weight:700;text-decoration:none;display:inline-block;">Reply to ${firstName}</a>
+      <a href="${mailToHref(email)}" style="background:#1a2744;color:#fff;padding:10px 22px;border-radius:999px;font-size:13px;font-weight:700;text-decoration:none;display:inline-block;">Reply to ${escapeHtml(firstName)}</a>
     </div>
   </div>
 </div>`,
@@ -137,13 +139,13 @@ export async function POST(req: NextRequest) {
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#1a2744;">
   <div style="background:linear-gradient(135deg,#E8C7CB,#F6F1EB);padding:32px;text-align:center;border-radius:12px 12px 0 0;">
     <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#1a2744;">Host Hampton</p>
-    <h1 style="margin:0;font-size:26px;font-weight:800;color:#1a2744;">We're on it, ${firstName}! 🎊</h1>
+    <h1 style="margin:0;font-size:26px;font-weight:800;color:#1a2744;">We're on it, ${escapeHtml(firstName)}! 🎊</h1>
   </div>
   <div style="background:#fff;border:1px solid #edd5d8;border-top:none;padding:28px 32px;border-radius:0 0 12px 12px;">
     <p style="font-size:15px;line-height:1.8;color:#444;">
       Thanks for reaching out about a mobile party! We received your request and will be in touch within <strong>24 hours</strong> to discuss the details and put together a custom quote for you.
     </p>
-    ${date ? `<div style="background:#f9f2f3;border-radius:10px;padding:14px 18px;margin:20px 0;font-size:14px;color:#1a2744;"><strong>📅 Requested Date:</strong> ${date}</div>` : ''}
+    ${date ? `<div style="background:#f9f2f3;border-radius:10px;padding:14px 18px;margin:20px 0;font-size:14px;color:#1a2744;"><strong>📅 Requested Date:</strong> ${escapeHtml(date)}</div>` : ''}
     <p style="font-size:14px;line-height:1.7;color:#666;margin-top:16px;">
       In the meantime, feel free to explore our full menu of activities and station options on our website, or call or text us directly at <a href="tel:6319989325" style="color:#1a2744;font-weight:700;">(631) 998-9325</a>.
     </p>

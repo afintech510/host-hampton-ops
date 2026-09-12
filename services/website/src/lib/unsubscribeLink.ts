@@ -18,6 +18,7 @@
  */
 
 import crypto from 'crypto'
+import { CANONICAL_ORIGIN } from './publicOrigin'
 
 function signingSecret(): string | null {
   return process.env.PORTAL_LINK_SIGNING_SECRET || null
@@ -84,7 +85,7 @@ export function verifyUnsubscribeToken(token: string | null | undefined): string
 }
 
 export function siteBaseUrl(): string {
-  return (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hosthampton.com').replace(/\/+$/, '')
+  return CANONICAL_ORIGIN
 }
 
 /** The human-facing confirmation page. GET on this NEVER unsubscribes. */

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { sendSMS } from '@/lib/twilio'
+import { escapeHtml } from '@/lib/escapeHtml'
 
 const BRAND = {
   headerBg: 'linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%)',
@@ -25,7 +26,7 @@ function giftCardPromoHtml(name: string): string {
     <p style="color:${BRAND.navy};opacity:0.7;font-size:15px;margin:0;">Host Hampton Gift Cards</p>
   </div>
   <div style="padding:36px 40px;">
-    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${escapeHtml(firstName)},</p>
     <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Looking for the perfect gift? A <strong>Host Hampton gift card</strong> lets someone special choose their own celebration &mdash; from birthday parties and events to room rentals and more.</p>
     <div style="background:${BRAND.cardBorder};padding:3px;border-radius:12px;margin-bottom:24px;">
       <div style="background:white;border-radius:10px;padding:28px;text-align:center;">

@@ -7,6 +7,7 @@ import { studioRentalRateWith, hoursBetween, STUDIO_STANDING_CAPACITY } from '@/
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { updateCalendarEvent, createCalendarEvent } from '@/lib/googleCalendar'
 import type { BookingLineItem } from '@/types/booking-flow'
+import { escapeHtml } from '@/lib/escapeHtml'
 
 interface IncomingLineItem {
   pricing_item_id?: string | null
@@ -173,7 +174,7 @@ export async function POST(req: NextRequest) {
         await resend.emails.send({
           from, to: ownerEmail(),
           subject: `⏱ Studio time changed: ${booking.contact_name} — ${bookingRef}`,
-          html: `<p><strong>${booking.contact_name}</strong> (${bookingRef}) changed their studio time to <strong>${to12hr(startTime)}–${to12hr(endTime)}</strong> on ${partyDate} (${rate.hours} hrs).</p><p>New total ${formatMoney(totalCents)}, balance ${formatMoney(balanceCents)}. The calendar block was updated — please confirm there's no overlap.</p>`,
+          html: `<p><strong>${escapeHtml(booking.contact_name)}</strong> (${escapeHtml(bookingRef)}) changed their studio time to <strong>${to12hr(startTime)}–${to12hr(endTime)}</strong> on ${escapeHtml(partyDate)} (${rate.hours} hrs).</p><p>New total ${formatMoney(totalCents)}, balance ${formatMoney(balanceCents)}. The calendar block was updated — please confirm there's no overlap.</p>`,
         }).catch(err => console.error('Studio time-change email error (non-fatal):', err))
       }
     }

@@ -3,6 +3,7 @@ import { getSupabase } from '@/lib/supabase'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { partyPortalMagicLinkHtml } from '@/lib/emailTemplates'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 /**
  * Throttle by identifier so this public endpoint can't be used to text-bomb a
@@ -118,10 +119,9 @@ export async function POST(req: NextRequest) {
         .single()
 
       if (interaction?.metadata?.action === 'save_for_later' && interaction.metadata.quoteData) {
-        const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
-        const protocol = host.includes('localhost') ? 'http' : 'https'
+        const origin = publicOrigin(req)
         const encoded = Buffer.from(JSON.stringify(interaction.metadata.quoteData)).toString('base64url')
-        const quoteLink = `${protocol}://${host}/kids-party-menu?q=${encoded}`
+        const quoteLink = `${origin}/kids-party-menu?q=${encoded}`
 
         if (process.env.RESEND_API_KEY) {
           const { Resend } = await import('resend')

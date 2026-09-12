@@ -1,4 +1,5 @@
 import { escapeHtml } from '@/lib/escapeHtml'
+import { escapeFields } from '@/lib/emailSafety'
 
 /**
  * Every value the four templates below interpolate comes out of the database —
@@ -82,8 +83,7 @@ export interface ReminderEvent3DayParams {
 }
 
 export function reminderEvent3DayHtml(params: ReminderEvent3DayParams): string {
-  const { customerName, eventDate } = params
-  const [eventTitle, eventTime, location] = [params.eventTitle, params.eventTime, params.location].map(v => escapeHtml(v ?? ""))
+  const { customerName, eventDate, eventTitle, eventTime, location } = escapeFields(params)
   const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
 
   const headerContent = `
@@ -125,8 +125,7 @@ export interface ReminderEventDayOfParams {
 }
 
 export function reminderEventDayOfHtml(params: ReminderEventDayOfParams): string {
-  const { customerName } = params
-  const [eventTitle, eventTime, location] = [params.eventTitle, params.eventTime, params.location].map(v => escapeHtml(v ?? ""))
+  const { customerName, eventTitle, eventTime, location } = escapeFields(params)
   const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
   const mapsUrl = `https://maps.google.com/?q=295+Montauk+Highway+Suite+7+Speonk+NY+11972`
 
@@ -165,8 +164,7 @@ export interface ReminderBooking7DayParams {
 }
 
 export function reminderBooking7DayHtml(params: ReminderBooking7DayParams): string {
-  const { customerName, partyDate, balanceDueNote } = params
-  const [bookingRef, partyTime, packageName] = [params.bookingRef, params.partyTime, params.packageName].map(v => escapeHtml(v ?? ""))
+  const { customerName, partyDate, balanceDueNote, bookingRef, partyTime, packageName } = escapeFields(params)
   const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
 
   const packageRow = packageName
@@ -220,8 +218,7 @@ export interface ReminderBooking1DayParams {
 }
 
 export function reminderBooking1DayHtml(params: ReminderBooking1DayParams): string {
-  const { customerName } = params
-  const [partyTime, packageName] = [params.partyTime, params.packageName].map(v => escapeHtml(v ?? ""))
+  const { customerName, partyTime, packageName } = escapeFields(params)
   const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
   const mapsUrl = `https://maps.google.com/?q=295+Montauk+Highway+Suite+7+Speonk+NY+11972`
 

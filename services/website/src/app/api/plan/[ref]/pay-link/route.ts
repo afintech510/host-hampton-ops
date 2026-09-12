@@ -30,6 +30,7 @@ import { planAccess } from '@/lib/planAccess'
 import { adminActorId, isAdminAuthorized } from '@/lib/adminAuth'
 import { loadPlanInvoice } from '@/lib/planInvoice'
 import { createPlanPayLink, isPayPurpose, type PaymentRow } from '@/lib/planPayLinks'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ ref: string }> }) {
   const { ref: rawRef } = await params
@@ -98,10 +99,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
     return NextResponse.json({ error: 'Could not read this plan’s payments — try again.' }, { status: 503 })
   }
 
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
-  const isLocal = (host || '').startsWith('localhost')
-  const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
-  const origin = host ? `${proto}://${host}` : 'https://www.hosthampton.com'
+  const origin = publicOrigin(req)
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' })
 

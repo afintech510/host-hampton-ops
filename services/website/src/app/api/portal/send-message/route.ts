@@ -2,6 +2,9 @@ import { ownerEmail, notifyOwnerSms } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef } from '@/lib/portalAuth'
+import { publicOrigin } from '@/lib/publicOrigin'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailToHref, mailHref } from '@/lib/emailSafety'
 
 /**
  * Customer-to-admin message about a specific booking. Auth via portal cookie.
@@ -45,38 +48,36 @@ export async function POST(req: NextRequest) {
 
   // Email admin
   if (process.env.RESEND_API_KEY) {
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
-    const isLocal = host.startsWith('localhost')
-    const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
-    const adminUrl = `${proto}://${host}/admin?tab=parties&ref=${bookingRef}`
+    const origin = publicOrigin(req)
+    const adminUrl = `${origin}/admin?tab=parties&ref=${bookingRef}`
 
     const { Resend } = await import('resend')
     const resend = new Resend(process.env.RESEND_API_KEY)
     const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
 
-    // Escape the message body so HTML special chars render correctly
-    const escaped = message
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\n/g, '<br>')
+    // A customer typed this in the portal and it renders in ADAM's inbox, so it
+    // crosses a trust boundary. It used to be escaped by a THIRD private copy
+    // of the escaper — `&`, `<`, `>` and nothing else, so a `"` survived intact.
+    // Nothing here puts it in an attribute today, which is why that never bit;
+    // rule 11 says an incomplete second copy of a screen is the bug regardless.
+    const escaped = escapeHtml(message).replace(/\n/g, '<br>')
 
     const html = `<!DOCTYPE html>
 <html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;background:#F6F1EB;padding:20px;">
   <div style="background:white;border-radius:12px;padding:32px;">
-    <h1 style="color:#1a2744;margin:0 0 16px;font-size:22px;">Message from ${booking.contact_name || 'a customer'}</h1>
+    <h1 style="color:#1a2744;margin:0 0 16px;font-size:22px;">Message from ${escapeHtml(booking.contact_name || 'a customer')}</h1>
     <table style="width:100%;border-collapse:collapse;margin:0 0 16px;font-size:14px;">
-      <tr><td style="padding:4px 0;color:#555;width:110px;">Booking</td><td style="padding:4px 0;color:#1a2744;font-weight:bold;">${booking.booking_ref}</td></tr>
-      <tr><td style="padding:4px 0;color:#555;">Customer</td><td style="padding:4px 0;color:#1a2744;">${booking.contact_name || '—'}</td></tr>
-      <tr><td style="padding:4px 0;color:#555;">Email</td><td style="padding:4px 0;color:#1a2744;"><a href="mailto:${booking.contact_email}" style="color:#1a2744;">${booking.contact_email}</a></td></tr>
-      <tr><td style="padding:4px 0;color:#555;">Phone</td><td style="padding:4px 0;color:#1a2744;">${booking.contact_phone || '—'}</td></tr>
-      <tr><td style="padding:4px 0;color:#555;">Party</td><td style="padding:4px 0;color:#1a2744;">${booking.party_date || 'TBD'}${booking.party_time ? ` at ${booking.party_time}` : ''} · ${booking.package_type || 'Party'}</td></tr>
+      <tr><td style="padding:4px 0;color:#555;width:110px;">Booking</td><td style="padding:4px 0;color:#1a2744;font-weight:bold;">${escapeHtml(booking.booking_ref)}</td></tr>
+      <tr><td style="padding:4px 0;color:#555;">Customer</td><td style="padding:4px 0;color:#1a2744;">${escapeHtml(booking.contact_name || '—')}</td></tr>
+      <tr><td style="padding:4px 0;color:#555;">Email</td><td style="padding:4px 0;color:#1a2744;"><a href="${mailToHref(booking.contact_email)}" style="color:#1a2744;">${escapeHtml(booking.contact_email)}</a></td></tr>
+      <tr><td style="padding:4px 0;color:#555;">Phone</td><td style="padding:4px 0;color:#1a2744;">${escapeHtml(booking.contact_phone || '—')}</td></tr>
+      <tr><td style="padding:4px 0;color:#555;">Party</td><td style="padding:4px 0;color:#1a2744;">${escapeHtml(booking.party_date || 'TBD')}${booking.party_time ? ` at ${escapeHtml(booking.party_time)}` : ''} · ${escapeHtml(booking.package_type || 'Party')}</td></tr>
     </table>
     <div style="background:#F6F1EB;border-left:4px solid #1a2744;border-radius:8px;padding:16px 20px;margin:0 0 24px;">
       <p style="color:#1a2744;font-size:15px;line-height:1.7;margin:0;">${escaped}</p>
     </div>
     <div style="text-align:center;margin:0 0 8px;">
-      <a href="${adminUrl}" style="display:inline-block;background:#1a2744;color:#F6F1EB;padding:12px 32px;font-size:14px;text-decoration:none;border-radius:6px;">Open Booking in Admin</a>
+      <a href="${mailHref(adminUrl)}" style="display:inline-block;background:#1a2744;color:#F6F1EB;padding:12px 32px;font-size:14px;text-decoration:none;border-radius:6px;">Open Booking in Admin</a>
     </div>
     <p style="color:#888;font-size:12px;line-height:1.6;margin:16px 0 0;text-align:center;">Reply directly to this email to reach the customer.</p>
   </div>

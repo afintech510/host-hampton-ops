@@ -8,6 +8,7 @@ import { ticketConfirmationHtml, ticketPurchaseNotifyHtml } from '@/lib/emailTem
 import { enqueueEventReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
 import { saleAdjustedCents } from '@/lib/sale'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 export const dynamic = 'force-dynamic'
 
@@ -169,7 +170,7 @@ export async function POST(req: NextRequest) {
 
     // Paid multi-session: create Stripe checkout
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
+    const origin = publicOrigin(req)
 
     const multiTaxCents = Math.round(multiTotalCents * TAX_RATE)
     const multiCcFeeCents = Math.round((multiTotalCents + multiTaxCents) * CC_RATE)
@@ -229,8 +230,8 @@ export async function POST(req: NextRequest) {
         eventLocation: event.location || 'Host Hampton',
         marketingConsent: marketingConsent ? 'true' : 'false',
       },
-      success_url: `https://${host}/events/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `https://${host}/events/${event.slug}?cancelled=true`,
+      success_url: `${origin}/events/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/events/${event.slug}?cancelled=true`,
     })
 
     return NextResponse.json({ url: session.url })
@@ -371,7 +372,7 @@ export async function POST(req: NextRequest) {
   }
 
   // PAID events: check for gift card coverage
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
+  const origin = publicOrigin(req)
 
   // Tax + CC fee
   const taxCents = Math.round(totalCents * TAX_RATE)
@@ -557,8 +558,8 @@ export async function POST(req: NextRequest) {
       giftCardCode: giftCard?.code || '',
       giftCardDeductCents: giftCard ? String(giftCardCoversCents) : '',
     },
-    success_url: `https://${host}/events/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `https://${host}/events/${event.slug}?cancelled=true`,
+    success_url: `${origin}/events/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/events/${event.slug}?cancelled=true`,
   })
 
   return NextResponse.json({ url: session.url })

@@ -1,3 +1,5 @@
+import { escapeFields, mailToHref, telHref } from '@/lib/emailSafety'
+
 const BRAND = {
   headerBg: 'linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%)',
   footerBg: '#BCCDEB',
@@ -15,7 +17,8 @@ interface ConfirmationData {
   duration?: string
 }
 
-export function summerHairConfirmationHtml(d: ConfirmationData): string {
+export function summerHairConfirmationHtml(raw: ConfirmationData): string {
+  const d = escapeFields(raw)
   const firstName = d.name.split(' ')[0] || 'there'
   const serviceRows = d.services.map(s =>
     `<tr><td style="padding:6px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${s}</td></tr>`
@@ -65,7 +68,8 @@ interface AdminNotifyData {
   duration?: string
 }
 
-export function summerHairAdminNotifyHtml(d: AdminNotifyData): string {
+export function summerHairAdminNotifyHtml(raw: AdminNotifyData): string {
+  const d = escapeFields(raw)
   const serviceList = d.services.map(s => `<li style="padding:2px 0;color:${BRAND.gray};">${s}</li>`).join('')
   const notesRow = d.notes
     ? `<tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Notes</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.notes}</td></tr>`
@@ -81,8 +85,8 @@ export function summerHairAdminNotifyHtml(d: AdminNotifyData): string {
   <div style="padding:28px 40px;">
     <table style="width:100%;border-collapse:collapse;">
       <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Name</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.name}</td></tr>
-      <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Email</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><a href="mailto:${d.email}" style="color:${BRAND.navy};">${d.email}</a></td></tr>
-      <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Phone</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><a href="tel:${d.phone}" style="color:${BRAND.navy};">${d.phone}</a></td></tr>
+      <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Email</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><a href="${mailToHref(raw.email)}" style="color:${BRAND.navy};">${d.email}</a></td></tr>
+      <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Phone</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><a href="${telHref(raw.phone)}" style="color:${BRAND.navy};">${d.phone}</a></td></tr>
       <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Time</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.duration || d.timeSlot}</td></tr>
       <tr><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;"><strong>Party Size</strong></td><td style="padding:8px 0;color:${BRAND.gray};border-bottom:1px solid #f0ece7;">${d.partySize} ${d.partySize === 1 ? 'person' : 'people'}</td></tr>
       ${notesRow}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { isLocalRequest } from '@/lib/publicOrigin'
 import {
   getEmailFromCookie,
   clearEmailCookieHeader,
@@ -98,8 +99,7 @@ export async function POST(req: NextRequest) {
     expires_at: expiresAt.toISOString(),
   }).then(({ error }) => { if (error) console.error('Portal token insert (non-fatal):', error) })
 
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3002'
-  const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1')
+  const isLocal = isLocalRequest(req)
 
   const response = NextResponse.json({ ok: true, bookingRef })
   response.headers.set('Set-Cookie', setPortalCookieHeader(bookingRef, secret, isLocal))

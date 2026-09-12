@@ -34,6 +34,7 @@ import { getSupabase } from '@/lib/supabase'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { money, type PlanInvoice } from '@/lib/planInvoice'
 import { escapeHtml } from '@/lib/escapeHtml'
+import { mailHref } from '@/lib/emailSafety'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -107,12 +108,12 @@ export function planSummaryEmailHtml(opts: {
     `<tr><td style="padding:9px 12px;font-weight:bold;color:${BRAND.navy};width:150px;">${label}</td><td style="padding:9px 12px;color:${BRAND.gray};">${value}</td></tr>`
 
   const detailRows = [
-    invoice.invoiceNumber ? detail('Invoice #', invoice.invoiceNumber) : '',
-    invoice.eventDateTime ? detail('Date', invoice.eventDateTime) : '',
+    invoice.invoiceNumber ? detail('Invoice #', escapeHtml(invoice.invoiceNumber)) : '',
+    invoice.eventDateTime ? detail('Date', escapeHtml(invoice.eventDateTime)) : '',
     invoice.totalCents > 0 ? detail('Total', money(invoice.totalCents)) : '',
     invoice.totalCents > 0 ? detail('Balance Due', money(invoice.balanceDueCents)) : '',
     invoice.depositCents > 0 ? detail(invoice.depositIsSeparate ? 'Security deposit' : 'Deposit', money(invoice.depositCents)) : '',
-    detail('Reference', invoice.booking.booking_ref),
+    detail('Reference', escapeHtml(invoice.booking.booking_ref)),
   ]
     .filter(Boolean)
     .join('')
@@ -136,7 +137,7 @@ export function planSummaryEmailHtml(opts: {
       ${detailRows}
     </table>
     <div style="text-align:center;margin-bottom:26px;">
-      <a href="${opts.url}" style="display:inline-block;background:${BRAND.navy};color:${BRAND.bodyBg};padding:16px 46px;border-radius:50px;text-decoration:none;font-size:15px;font-weight:bold;letter-spacing:0.5px;">View your ${doc.toLowerCase().includes('invoice') ? 'invoice' : 'quote'}</a>
+      <a href="${mailHref(opts.url)}" style="display:inline-block;background:${BRAND.navy};color:${BRAND.bodyBg};padding:16px 46px;border-radius:50px;text-decoration:none;font-size:15px;font-weight:bold;letter-spacing:0.5px;">View your ${doc.toLowerCase().includes('invoice') ? 'invoice' : 'quote'}</a>
     </div>
     <p style="font-size:13px;color:${BRAND.gray};line-height:1.7;margin:0;">This link is private to you &mdash; please don&rsquo;t forward it. Questions? Call or text <strong>(631) 998-9325</strong>.</p>
   </div>

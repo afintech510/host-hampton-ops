@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { upsertContact } from '@/lib/contacts'
 import { getSupabase } from '@/lib/supabase'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { mailToHref } from '@/lib/emailSafety'
 
 export const dynamic = 'force-dynamic'
 
@@ -81,7 +83,7 @@ export async function POST(req: NextRequest) {
       : '<span style="background:#22c55e;color:#fff;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;">CASH TO COACH</span>'
 
     const itemRows = (itemsData as OrderItem[])
-      .map(i => `<tr><td style="padding:6px 0;color:#555;font-size:14px;">${i.qty}x ${i.name}</td><td style="padding:6px 0;text-align:right;font-weight:600;font-size:14px;">$${i.line_total.toFixed(2)}</td></tr>`)
+      .map(i => `<tr><td style="padding:6px 0;color:#555;font-size:14px;">${i.qty}x ${escapeHtml(i.name)}</td><td style="padding:6px 0;text-align:right;font-weight:600;font-size:14px;">$${i.line_total.toFixed(2)}</td></tr>`)
       .join('')
 
     await Promise.allSettled([
@@ -95,14 +97,14 @@ export async function POST(req: NextRequest) {
 <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#111;">
   <div style="background:#111;border-top:4px solid #CE1126;padding:20px 28px;border-radius:10px 10px 0 0;">
     <h1 style="color:#fff;margin:0;font-size:18px;letter-spacing:0.05em;">CM CHEER — NEW ORDER</h1>
-    <p style="color:#999;margin:4px 0 0;font-size:13px;">${order.order_ref} · ${paymentMethod.toUpperCase()}</p>
+    <p style="color:#999;margin:4px 0 0;font-size:13px;">${escapeHtml(order.order_ref)} · ${escapeHtml(paymentMethod.toUpperCase())}</p>
   </div>
   <div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px 28px;border-radius:0 0 10px 10px;">
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
-      <tr><td style="color:#888;font-size:13px;padding:4px 0;width:120px;">Athlete</td><td style="font-weight:600;font-size:14px;">${athleteName}</td></tr>
-      <tr><td style="color:#888;font-size:13px;padding:4px 0;">Parent/Buyer</td><td style="font-weight:600;font-size:14px;">${parentName}</td></tr>
-      <tr><td style="color:#888;font-size:13px;padding:4px 0;">Email</td><td><a href="mailto:${email}" style="color:#111;font-weight:600;font-size:14px;">${email}</a></td></tr>
-      <tr><td style="color:#888;font-size:13px;padding:4px 0;">Phone</td><td style="font-weight:600;font-size:14px;">${phone}</td></tr>
+      <tr><td style="color:#888;font-size:13px;padding:4px 0;width:120px;">Athlete</td><td style="font-weight:600;font-size:14px;">${escapeHtml(athleteName)}</td></tr>
+      <tr><td style="color:#888;font-size:13px;padding:4px 0;">Parent/Buyer</td><td style="font-weight:600;font-size:14px;">${escapeHtml(parentName)}</td></tr>
+      <tr><td style="color:#888;font-size:13px;padding:4px 0;">Email</td><td><a href="${mailToHref(email)}" style="color:#111;font-weight:600;font-size:14px;">${escapeHtml(email)}</a></td></tr>
+      <tr><td style="color:#888;font-size:13px;padding:4px 0;">Phone</td><td style="font-weight:600;font-size:14px;">${escapeHtml(phone)}</td></tr>
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Payment</td><td style="padding:4px 0;">${paymentBadge}</td></tr>
     </table>
     <div style="background:#f9f9f9;border-radius:8px;padding:14px 16px;border:1px solid #eee;">
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest) {
         <tr><td style="font-weight:700;font-size:15px;">Total</td><td style="text-align:right;font-weight:800;font-size:18px;color:#CE1126;">$${total.toFixed(2)}</td></tr>
       </table>
     </div>
-    <p style="margin-top:16px;font-size:12px;color:#aaa;">Order ID: ${order.order_ref} · Manage at hosthampton.com/cm-cheer/orders</p>
+    <p style="margin-top:16px;font-size:12px;color:#aaa;">Order ID: ${escapeHtml(order.order_ref)} · Manage at hosthampton.com/cm-cheer/orders</p>
   </div>
 </div>`,
       }),
@@ -128,11 +130,11 @@ export async function POST(req: NextRequest) {
     <h1 style="color:#fff;margin:0;font-size:26px;font-weight:800;letter-spacing:0.05em;">CHEER FUNDRAISER</h1>
   </div>
   <div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:28px;border-radius:0 0 10px 10px;">
-    <h2 style="margin:0 0 4px;font-size:20px;">Thanks, ${parentName.split(' ')[0]}! 🎉</h2>
+    <h2 style="margin:0 0 4px;font-size:20px;">Thanks, ${escapeHtml(parentName.split(' ')[0])}! 🎉</h2>
     <p style="color:#555;font-size:14px;margin-bottom:20px;">Your order has been received. Your order number is:</p>
-    <div style="background:#CE1126;color:#fff;text-align:center;padding:12px;border-radius:8px;font-size:22px;font-weight:800;letter-spacing:0.1em;margin-bottom:20px;">${order.order_ref}</div>
+    <div style="background:#CE1126;color:#fff;text-align:center;padding:12px;border-radius:8px;font-size:22px;font-weight:800;letter-spacing:0.1em;margin-bottom:20px;">${escapeHtml(order.order_ref)}</div>
     <div style="background:#f9f9f9;border-radius:8px;padding:14px 16px;border:1px solid #eee;margin-bottom:20px;">
-      <p style="font-size:12px;font-weight:700;text-transform:uppercase;color:#888;margin:0 0 8px;">Athlete: ${athleteName}</p>
+      <p style="font-size:12px;font-weight:700;text-transform:uppercase;color:#888;margin:0 0 8px;">Athlete: ${escapeHtml(athleteName)}</p>
       <table style="width:100%;">${itemRows}
         <tr><td colspan="2" style="border-top:1px solid #ddd;padding-top:8px;"></td></tr>
         <tr><td style="font-weight:700;">Total</td><td style="text-align:right;font-weight:800;color:#CE1126;">$${total.toFixed(2)}</td></tr>
@@ -141,11 +143,11 @@ export async function POST(req: NextRequest) {
     ${paymentMethod === 'venmo' ? `
     <div style="background:#e8f4ff;border-radius:8px;padding:14px;border:1px solid #bde0ff;margin-bottom:16px;">
       <p style="margin:0;font-size:14px;font-weight:700;">💳 Payment Reminder</p>
-      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please complete your Venmo payment of <strong>$${total.toFixed(2)}</strong> to <strong>@CM-PAL-Red-Devils-Football</strong> and include <strong>${athleteName}</strong> in the memo.</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please complete your Venmo payment of <strong>$${total.toFixed(2)}</strong> to <strong>@CM-PAL-Red-Devils-Football</strong> and include <strong>${escapeHtml(athleteName)}</strong> in the memo.</p>
     </div>` : `
     <div style="background:#f0fdf4;border-radius:8px;padding:14px;border:1px solid #bbf7d0;margin-bottom:16px;">
       <p style="margin:0;font-size:14px;font-weight:700;">💵 Payment Reminder</p>
-      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please bring <strong>$${total.toFixed(2)} cash</strong> to your coach. Reference order <strong>${order.order_ref}</strong>.</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please bring <strong>$${total.toFixed(2)} cash</strong> to your coach. Reference order <strong>${escapeHtml(order.order_ref)}</strong>.</p>
     </div>`}
     <p style="font-size:12px;color:#aaa;text-align:center;margin-top:16px;">Questions? Contact your coach or reply to this email.</p>
   </div>

@@ -102,7 +102,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { data: booking } = await supabase.from('bookings').select('*').eq('id', id).single()
   if (!booking) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
 
   // ── "Draft reply with agent" (Phase 4 item 5) ─────────────────────────
   // The button that covers a phone lead: it enqueues an inbound event for this

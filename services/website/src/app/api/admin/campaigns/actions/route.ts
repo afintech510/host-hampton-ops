@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import { escapeHtml } from '@/lib/escapeHtml'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
         weekday: 'long', month: 'long', day: 'numeric',
       })
       const price = e.price_cents === 0 ? 'Free' : `$${(e.price_cents / 100).toFixed(0)}`
-      return `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee"><strong>${e.title}</strong><br>${date}${e.event_time ? ` at ${e.event_time}` : ''}<br>${price}</td></tr>`
+      return `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee"><strong>${escapeHtml(e.title)}</strong><br>${escapeHtml(date)}${e.event_time ? ` at ${escapeHtml(e.event_time)}` : ''}<br>${escapeHtml(price)}</td></tr>`
     }).join('\n')
 
     const html = `<div style="font-family:sans-serif;max-width:600px;margin:0 auto">

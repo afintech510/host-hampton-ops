@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { saleAdjustedCents } from '@/lib/sale'
+import { publicOrigin } from '@/lib/publicOrigin'
 
 export const dynamic = 'force-dynamic'
 
@@ -261,7 +262,7 @@ export async function POST(req: NextRequest) {
 
   // Paid cart: create Stripe checkout session
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'www.hosthampton.com'
+  const origin = publicOrigin(req)
 
   // Add tax + CC fee as line items
   const taxCents = Math.round(overallSubtotalCents * TAX_RATE)
@@ -298,8 +299,8 @@ export async function POST(req: NextRequest) {
       customerPhone,
       marketingConsent: body.marketingConsent ? 'true' : 'false',
     },
-    success_url: `https://${host}/events/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `https://${host}/events?cancelled=true`,
+    success_url: `${origin}/events/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/events?cancelled=true`,
   })
 
   return NextResponse.json({ url: session.url })
