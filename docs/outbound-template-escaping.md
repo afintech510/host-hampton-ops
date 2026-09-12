@@ -454,9 +454,12 @@ version of "exercise it".
 
 ## 12. Production verification
 
-Deployed `59a1067`, then `807d556`. `docker inspect hampton_website` and
-`docker images hosthampton-website` agree on
-`sha256:357762…d17d7e`, so the recreate took.
+Deployed `59a1067` (image `sha256:357762…d17d7e`), then `807d556` (image
+`sha256:797c4a…5eba9d`). `docker inspect hampton_website` and `docker images
+hosthampton-website` agree on the second, so the final recreate took — settled
+that way rather than by reading the deploy script's output, because `deploy.sh`
+prints a stale-container Conflict error *after* a successful recreate (link 8,
+two of four deploys).
 
 **The header, both directions.** The same probe that found it, re-run against
 the deployed fix, plus seven more forms:
