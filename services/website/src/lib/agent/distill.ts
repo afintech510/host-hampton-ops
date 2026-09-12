@@ -35,8 +35,9 @@ import type { getSupabase } from '@/lib/supabase'
 import { assertLlmBudget, recordLlmSpend, BudgetExceededError } from '@/lib/marketing/budget'
 import { writeLedger } from '@/lib/marketing/graph'
 import { costUsd, draftModel } from './config'
-import { proposeLearning, screenLearningText, normalizeLearningText, isLearningKind, LEARNING_KINDS } from './learnings'
-import { proposeVoiceProfile, type VoiceProfile } from './voice'
+import { proposeLearning, normalizeLearningText, isLearningKind, LEARNING_KINDS } from './learnings'
+import { proposeVoiceProfile, sanitizeVoiceProfile, profileIsSubstantive, type VoiceProfile } from './voice'
+import { stripUnescapedControls } from './extractPlanFields'
 import { notifyOwnerSms } from '@/lib/ownerNotify'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -163,8 +164,24 @@ export interface FeedbackRow {
   has_first_version: boolean | null
 }
 
+/**
+ * Clip a corpus field, and neutralise what the JSON fence does not.
+ *
+ * `JSON.stringify` escapes `"`, `\`, `\n`, `\r` and `\t`, which is what makes
+ * it a fence. It does NOT escape U+2028 LINE SEPARATOR, U+2029 PARAGRAPH
+ * SEPARATOR, U+0085 NEL or the rest of the C1 block — those are legal inside a
+ * JSON string and travel through raw. A payload cannot CLOSE the block with
+ * one, but it can open a line inside it that reads like a heading, which is
+ * most of what closing the block would have bought. Nor does stringify touch
+ * the bidi and zero-width controls, which survive the model call, come back in
+ * a proposal, and then misrepresent that proposal to the human reviewing it.
+ *
+ * Newlines are deliberately KEPT: the corpus is whole emails and their
+ * paragraph structure is real evidence about how Allie writes. Stringify
+ * escapes those, so they are inside the fence already.
+ */
 function clip(v: unknown): string {
-  return typeof v === 'string' ? v.slice(0, MAX_FIELD_CHARS) : ''
+  return typeof v === 'string' ? stripUnescapedControls(v).slice(0, MAX_FIELD_CHARS) : ''
 }
 
 export interface DistillCorpus {
@@ -194,6 +211,13 @@ export interface DistillCorpus {
 export function buildCorpus(rows: FeedbackRow[], outbound: { body?: string | null }[]): DistillCorpus {
   const edits = rows
     .filter(r => r.was_edited || (r.reviewer_notes ?? '').trim() !== '')
+    // `has_first_version` is the view's own answer to "do we know what this
+    // started as", and until now this function selected it and never read it —
+    // the drop was emergent from `agentWrote !== ''` below instead. Asking the
+    // flag directly is the same outcome for every real row and says what it
+    // means: a row with no first version is evidence only through the
+    // instruction a human left on it.
+    .filter(r => r.has_first_version !== false || (r.reviewer_notes ?? '').trim() !== '')
     .map(r => ({
       partyType: r.party_type ?? null,
       kind: r.draft_kind ?? null,
@@ -285,60 +309,24 @@ async function callClaude(
 /* ── Sanitising the proposed voice profile ──────────────────────────────── */
 
 /**
- * Every string in a voice profile is printed into the same trusted prompt
- * section a learning is, by `voicePromptAddendum` — so it gets the same screen.
+ * Moved to ./voice in the Phase 6 review, and re-exported here so every
+ * existing import and test still reaches exactly one implementation (rule 11).
  *
- * This drops exemplars containing a figure on purpose. An exemplar is copied
- * into the prompt as "this is how she writes", and one containing "$850" is a
- * standing instruction to quote $850.
+ * It moved because it was only ever run on the way IN. A voice profile is
+ * printed into the same TRUSTED prompt section a learning is, and
+ * `loadActiveLearnings` screens learnings on the way OUT precisely because "a
+ * row is active in Postgres" is not evidence it ever passed a screen. That
+ * argument applies to `voice_profile` word for word — and the live v1 profile,
+ * written by hand before this function existed, proved it.
  */
-export function sanitizeVoiceProfile(raw: unknown): { profile: VoiceProfile; dropped: string[] } {
-  const dropped: string[] = []
-  const p = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+export { sanitizeVoiceProfile } from './voice'
 
-  const keep = (v: unknown, label: string): string | null => {
-    const text = normalizeLearningText(v)
-    if (!text) return null
-    const reason = screenLearningText(text)
-    if (reason) {
-      dropped.push(`${label}: ${reason}`)
-      return null
-    }
-    return text
-  }
-  const keepList = (v: unknown, label: string): string[] =>
-    (Array.isArray(v) ? v : []).map((x, i) => keep(x, `${label}[${i}]`)).filter((s): s is string => !!s)
-
-  const profile: VoiceProfile = {}
-  const toneRules = keepList(p.tone_rules, 'tone_rules')
-  if (toneRules.length) profile.tone_rules = toneRules
-  const greeting = keep(p.greeting, 'greeting')
-  if (greeting) profile.greeting = greeting
-  const pricingStyle = keep(p.pricing_style, 'pricing_style')
-  if (pricingStyle) profile.pricing_style = pricingStyle
-  const dos = keepList(p.dos, 'dos')
-  if (dos.length) profile.dos = dos
-  const donts = keepList(p.donts, 'donts')
-  if (donts.length) profile.donts = donts
-
-  const exemplars = (Array.isArray(p.exemplars) ? p.exemplars : [])
-    .map((e, i) => {
-      const row = (e && typeof e === 'object' ? e : {}) as Record<string, unknown>
-      const text = keep(row.text, `exemplars[${i}]`)
-      if (!text) return null
-      const context = normalizeLearningText(row.context)
-      return { ...(context && !screenLearningText(context) ? { context } : {}), text }
-    })
-    .filter((e): e is { context?: string; text: string } => !!e)
-  if (exemplars.length) profile.exemplars = exemplars
-
-  return { profile, dropped }
-}
-
-/** True when there is enough in a profile to be worth proposing at all. */
-function profileIsSubstantive(p: VoiceProfile): boolean {
-  return !!(p.tone_rules?.length || p.dos?.length || p.donts?.length || p.exemplars?.length || p.greeting || p.pricing_style)
-}
+/**
+ * `profileIsSubstantive` is declared once, in ./voice, next to the shape it
+ * tests (rule 11). The propose path and the READ path have to agree on what
+ * "worth putting in a prompt" means, or the distiller proposes a profile the
+ * loader silently discards.
+ */
 
 /* ── The run ────────────────────────────────────────────────────────────── */
 

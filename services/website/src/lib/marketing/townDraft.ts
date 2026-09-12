@@ -163,7 +163,7 @@ export async function createTownServiceDraft(
     throw err
   }
 
-  const voiceProfile = await loadVoiceProfile(supabase)
+  const { profile: voiceProfile } = await loadVoiceProfile(supabase)
   let generated
   try {
     generated = await callClaude(town, service, voiceProfile)

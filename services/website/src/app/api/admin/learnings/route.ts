@@ -9,7 +9,7 @@ import {
   LEARNING_KINDS,
   MAX_LEARNING_CHARS,
 } from '@/lib/agent/learnings'
-import { activateVoiceProfile } from '@/lib/agent/voice'
+import { activateVoiceProfile, loadVoiceProfile, voicePromptAddendum } from '@/lib/agent/voice'
 import { writeLedger } from '@/lib/marketing/graph'
 import { DISTILL_ENTITY } from '@/lib/agent/distill'
 
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
   const supabase = getSupabase()
 
-  const [learnings, profiles, runs, prompt] = await Promise.all([
+  const [learnings, profiles, runs, prompt, voice] = await Promise.all([
     supabase.from('agent_learnings').select(LEARNING_COLUMNS).order('created_at', { ascending: false }).limit(200),
     supabase
       .from('voice_profile')
@@ -72,6 +72,12 @@ export async function GET(req: NextRequest) {
     // (rule 8), and a guardrail that drops a row silently has not said that it
     // fired (rule 10). Now both are on the page.
     loadActiveLearnings(supabase),
+    // Same argument, for the voice profile: the strings in it print into the
+    // same trusted prompt section, and until the Phase 6 review nothing
+    // screened them on the way out. The live v1 profile loses several to it,
+    // so this is the number that explains why the agent sounds different from
+    // the profile somebody is reading in the table.
+    loadVoiceProfile(supabase),
   ])
 
   // Reported, not swallowed. A missing migration 041 has to read as a clear
@@ -95,6 +101,13 @@ export async function GET(req: NextRequest) {
       rejected: prompt.rejected,
       unavailable: prompt.unavailable,
       block: learningsPromptAddendum(prompt.learnings),
+    },
+    /** What the ACTIVE voice profile contributes, and what the screen removed. */
+    voiceInPrompt: {
+      applied: voice.profile,
+      dropped: voice.dropped,
+      unavailable: voice.unavailable,
+      block: voice.profile ? voicePromptAddendum(voice.profile) : '',
     },
     errors,
   })

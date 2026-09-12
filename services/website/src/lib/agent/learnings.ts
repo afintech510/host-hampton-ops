@@ -106,7 +106,20 @@ export function normalizeLearningText(raw: unknown): string {
  */
 const PROMPT_STRUCTURE: [RegExp, string][] = [
   [/<\s*\/?\s*[a-z_][a-z0-9_-]*\s*>/i, 'an angle-bracket tag'],
-  [/\b(?:HARD RULES?|SECURITY|SYSTEM(?: NOTE| PROMPT)?|ASSISTANT|INQUIRY|OPERATOR VOICE|LEARNED RULES?)\s*:/i, 'a prompt section header'],
+  // The list was written from memory and covered seven headers; the draft
+  // prompt uses more than seven. These were read off SYSTEM_PROMPT and
+  // buildUserPrompt in draftInquiry.ts rather than recalled — a header the
+  // prompt really uses and the screen does not know about is a forgery with
+  // nothing between it and the model (rule 8).
+  [
+    /\b(?:HARD RULES?|SECURITY|SYSTEM(?: NOTE| PROMPT)?|ASSISTANT|INQUIRY|OPERATOR VOICE|LEARNED RULES?|VOICE|PARTY TYPE CONTEXT|CLASSIFIER CONFIDENCE|BOOKING REFERENCE|CORPUS|CORRECTION)\s*[:—]/i,
+    'a prompt section header',
+  ],
+  // And the generic shape, so the next header added to the prompt is covered
+  // without anybody remembering to come back here: two or more ALL-CAPS words
+  // followed by a colon is a heading, not a sentence about how Allie writes.
+  // Case-SENSITIVE on purpose — "party type context:" in a real rule is prose.
+  [/\b[A-Z]{2,}(?:[ -][A-Z]{2,})+\s*:/, 'an upper-case section header'],
   [/\b(?:ignore|disregard|forget|override)\b[^.]{0,40}\b(?:previous|prior|above|earlier|all)\b/i, 'an instruction to ignore earlier rules'],
   [/\byou are (?:now|actually)\b/i, 'an attempt to redefine the assistant'],
   [/\b(?:new|updated) (?:instructions?|rules?|system prompt)\b/i, 'an attempt to replace the instructions'],

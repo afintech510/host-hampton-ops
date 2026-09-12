@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
     throw err
   }
 
-  const voiceProfile = await loadVoiceProfile(supabase)
+  const { profile: voiceProfile } = await loadVoiceProfile(supabase)
 
   let generated
   try {

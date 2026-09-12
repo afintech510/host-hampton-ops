@@ -35,7 +35,7 @@ jest.mock('@/lib/marketing/budget', () => ({
 }))
 jest.mock('@/lib/marketing/graph', () => ({ writeLedger: jest.fn().mockResolvedValue(undefined) }))
 jest.mock('@/lib/agent/voice', () => ({
-  loadVoiceProfile: jest.fn().mockResolvedValue(null),
+  loadVoiceProfile: jest.fn().mockResolvedValue({ profile: null, dropped: [], unavailable: null }),
   voicePromptAddendum: () => '',
 }))
 

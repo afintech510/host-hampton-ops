@@ -29,7 +29,7 @@ import {
   type InquiryEvaluation,
 } from '@/lib/inquiryDrafts'
 import { notifyOwnerSms, reviewerPhones } from '@/lib/ownerNotify'
-import { loadVoiceProfile, voicePromptAddendum } from './voice'
+import { loadVoiceProfile, voicePromptAddendum, type LoadedVoiceProfile } from './voice'
 import { loadActiveLearnings, learningsPromptAddendum, type LoadedLearnings } from './learnings'
 import { generateReviewCode, generateReviewToken, buildReviewUrl } from './reviewLink'
 import { costUsd, draftModel, reviewLinkSecret, siteUrl, AGENT_ACTOR, DRAFT_ENTITY } from './config'
@@ -149,6 +149,29 @@ function learningsMeta(loaded: LoadedLearnings): Record<string, unknown> | null 
   }
   if (loaded.learnings.length) meta.learnings_applied = loaded.learnings.length
   return Object.keys(meta).length ? meta : null
+}
+
+/**
+ * The same, for the voice profile, which is printed into the same trusted half
+ * of the prompt and until the Phase 6 review was never screened on the way out.
+ *
+ * Kept separate from `learningsMeta` only because the two loads return
+ * different shapes; both exist for the same reason. A profile string the screen
+ * drops changes how every draft from now on sounds, and the live v1 profile
+ * loses three exemplars and two rules to it — so this is not a theoretical
+ * branch, it fires on every draft until somebody rewrites that profile.
+ */
+function voiceMeta(loaded: LoadedVoiceProfile): Record<string, unknown> | null {
+  const meta: Record<string, unknown> = {}
+  if (loaded.unavailable) meta.voice_profile_unavailable = loaded.unavailable
+  if (loaded.dropped.length) meta.voice_profile_dropped = loaded.dropped
+  return Object.keys(meta).length ? meta : null
+}
+
+/** Log it too, so a container log and the ledger agree (rule 10). */
+function reportVoiceScreen(loaded: LoadedVoiceProfile): void {
+  if (loaded.unavailable) console.warn('draftInquiry: voice_profile unavailable —', loaded.unavailable)
+  if (loaded.dropped.length) console.warn('draftInquiry: dropped from the active voice profile —', loaded.dropped.join('; '))
 }
 
 const INTRO_RE = /(?:this is|i'?m|i am|it'?s)\s+allie\s+(?:from|with|at|here at)\s+host\s*hampton[.,!—-]*\s*/gi
@@ -792,15 +815,16 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
     throw err
   }
 
-  const [voiceProfile, loadedLearnings, firstTouch] = await Promise.all([
+  const [loadedVoice, loadedLearnings, firstTouch] = await Promise.all([
     loadVoiceProfile(supabase),
     loadActiveLearnings(supabase),
     isFirstTouch(supabase, { bookingId, contactId }),
   ])
+  reportVoiceScreen(loadedVoice)
 
   const systemPrompt =
     SYSTEM_PROMPT +
-    (voiceProfile ? '\n' + voicePromptAddendum(voiceProfile) : '') +
+    (loadedVoice.profile ? '\n' + voicePromptAddendum(loadedVoice.profile) : '') +
     learningsPromptAddendum(loadedLearnings.learnings)
 
   const model = draftModel()
@@ -972,6 +996,7 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
       // history has to say why it stopped asking for a date.
       extracted_fields: extractedFields,
       ...(learningsMeta(loadedLearnings) ?? {}),
+      ...(voiceMeta(loadedVoice) ?? {}),
     },
   })
 
@@ -1111,14 +1136,15 @@ export async function redraftForReviewer(args: {
   }
 
   const evaluation = evaluateInquiry(inquiry)
-  const [voiceProfile, loadedLearnings, firstTouch] = await Promise.all([
+  const [loadedVoice, loadedLearnings, firstTouch] = await Promise.all([
     loadVoiceProfile(supabase),
     loadActiveLearnings(supabase),
     isFirstTouch(supabase, { bookingId: row.booking_id as string | null, contactId: row.contact_id as string | null }),
   ])
+  reportVoiceScreen(loadedVoice)
   const systemPrompt =
     SYSTEM_PROMPT +
-    (voiceProfile ? '\n' + voicePromptAddendum(voiceProfile) : '') +
+    (loadedVoice.profile ? '\n' + voicePromptAddendum(loadedVoice.profile) : '') +
     learningsPromptAddendum(loadedLearnings.learnings)
   const model = draftModel()
 
@@ -1225,6 +1251,7 @@ export async function redraftForReviewer(args: {
       note,
       guardrail_error: guardrailError,
       ...(learningsMeta(loadedLearnings) ?? {}),
+      ...(voiceMeta(loadedVoice) ?? {}),
     },
   })
 
