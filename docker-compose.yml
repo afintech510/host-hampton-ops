@@ -195,6 +195,19 @@ services:
       - SIGNWELL_CHECKIN_TEMPLATE_ID=${SIGNWELL_CHECKIN_TEMPLATE_ID}
       - SIGNWELL_TEST_MODE=${SIGNWELL_TEST_MODE:-false}
       - SIGNWELL_SIGNER_PLACEHOLDER=${SIGNWELL_SIGNER_PLACEHOLDER:-Client}
+      # Template for the photo/video consent release (child-media gate).
+      # UNSET as of 2026-09-12: no consent template exists in the SignWell
+      # dashboard, so /api/admin/marketing/consent answers 503 and no release
+      # has ever been created. Needs Adam — see docs/signwell-agreement-review.md.
+      - SIGNWELL_CONSENT_TEMPLATE_ID=${SIGNWELL_CONSENT_TEMPLATE_ID}
+      # The HMAC key for webhook verification. This is the `id` returned by
+      # POST https://www.signwell.com/api/v1/hooks — SignWell signs
+      # "${event.type}@${event.time}" with it. WITHOUT THIS THE WEBHOOKS FAIL
+      # CLOSED (503) BY DESIGN: an unverified event marks a liability waiver
+      # signed, so "not configured" must never be a bypass. `GET /hooks` lists
+      # what is really registered; it returned [] until 2026-09-12, which is why
+      # zero of 61 bookings had a recorded signature.
+      - SIGNWELL_WEBHOOK_ID=${SIGNWELL_WEBHOOK_ID}
     networks:
       - hampton_net
 

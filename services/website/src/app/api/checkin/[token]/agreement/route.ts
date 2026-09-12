@@ -78,12 +78,31 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     })
 
     // Persist the document id BEFORE the customer can finish signing, or the
-    // webhook arrives with nothing to match. (metadata.booking_ref is the
-    // fallback for that race, mirroring the studio-rental handler.)
-    await supabase
+    // webhook arrives with nothing to match.
+    //
+    // Rule 8 + rule 19: that sentence was already here, sitting above an
+    // `await` whose error was discarded. The comment explained exactly why the
+    // write mattered while the code could not tell whether it had happened.
+    // The check-in handler matches ONLY on checkin_signwell_document_id, so
+    // unlike the studio flow there is no booking_ref fallback — if this write
+    // is lost, the customer's signed waiver has nowhere to go. Fail the request
+    // rather than hand out a signing URL we cannot honour.
+    const { data: linked, error: linkErr } = await supabase
       .from('bookings')
       .update({ checkin_signwell_document_id: documentId })
       .eq('id', bookingId)
+      .select('id')
+
+    if (linkErr || (linked?.length ?? 0) === 0) {
+      console.error(
+        'checkin:signwell FAILED to store document id', documentId, 'for', bookingRef,
+        '—', linkErr?.message ?? 'update matched no rows'
+      )
+      return NextResponse.json(
+        { error: 'Could not open the agreement' },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({ signingUrl: embeddedSigningUrl })
   } catch (err) {

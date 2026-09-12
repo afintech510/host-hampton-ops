@@ -217,7 +217,23 @@ export async function POST(req: NextRequest) {
           },
         })
         signingUrl = embeddedSigningUrl
-        await supabase.from('bookings').update({ signwell_document_id: documentId }).eq('id', booking.id)
+        // Rule 19: unchecked until 2026-09-12. This id is how the webhook finds
+        // the booking again. Losing it silently is survivable — the webhook also
+        // matches on the booking_ref SignWell reports — but it must be SAID, or
+        // a booking whose agreement can never be recorded looks identical to one
+        // where the customer simply hasn't signed yet.
+        const { data: linked, error: linkErr } = await supabase
+          .from('bookings')
+          .update({ signwell_document_id: documentId })
+          .eq('id', booking.id)
+          .select('id')
+        if (linkErr || (linked?.length ?? 0) === 0) {
+          console.error(
+            'Studio rental: FAILED to store signwell_document_id', documentId,
+            'on', bookingRef, '—', linkErr?.message ?? 'update matched no rows',
+            '(webhook will fall back to metadata.booking_ref)'
+          )
+        }
       } catch (err) {
         console.error('SignWell create error (non-fatal — proceeding without signature):', err)
       }

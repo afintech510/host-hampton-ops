@@ -209,18 +209,38 @@ export async function createEmbeddedDocument(
 }
 
 /**
- * Best-effort fetch of the completed PDF URL for a signed document.
- * Returns null if not available yet or on error (non-fatal).
+ * Fetch the completed-PDF URL for a signed document — the signed legal
+ * artifact itself.
+ *
+ * CORRECTED 2026-09-12. This used to GET /documents/{id}/ and read
+ * `files[].pdf_url`. Measured against the real API on a genuinely Completed
+ * document: the `files` array is `[{"name":"…pdf","pages_number":3}]` — there
+ * is **no `pdf_url` key on it, ever**, on any document in any state. So this
+ * function returned null 100% of the time, and both webhook handlers wrote a
+ * NULL `agreement_pdf_url` next to a non-null `agreement_signed_at`. We would
+ * have recorded that a waiver was signed while keeping no copy of it.
+ *
+ * Rule 8: the old doc comment said "returns null if not available yet", which
+ * reads as a transient state. It was permanent, and the wording is exactly what
+ * would have stopped anyone investigating.
+ *
+ * The documented endpoint is /documents/{id}/completed_pdf/, which with
+ * `url_only=true` answers {"file_url": "..."}.
+ * https://developers.signwell.com/reference/completed-pdf
+ *
+ * Returns null only when the document genuinely has no completed PDF (not
+ * signed yet) or on error — callers treat null as "no artifact captured".
  */
 export async function fetchSignedPdfUrl(documentId: string): Promise<string | null> {
   if (!process.env.SIGNWELL_API_KEY) return null
   try {
-    const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(documentId)}/`, {
-      headers: headers(),
-    })
+    const res = await fetch(
+      `${API_BASE}/documents/${encodeURIComponent(documentId)}/completed_pdf/?url_only=true`,
+      { headers: headers() }
+    )
     if (!res.ok) return null
-    const data = (await res.json()) as { files?: { pdf_url?: string }[] }
-    return data.files?.find(f => f.pdf_url)?.pdf_url ?? null
+    const data = (await res.json()) as { file_url?: unknown }
+    return typeof data.file_url === 'string' && data.file_url ? data.file_url : null
   } catch {
     return null
   }
