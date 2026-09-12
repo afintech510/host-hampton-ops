@@ -108,14 +108,25 @@ export function buildVariantPrompt(args: {
   count: number
   hypothesis?: string | null
   audience: string
+  /**
+   * The links the LIVE step carries. They are passed separately because
+   * `htmlToPlainText` — correctly — throws hrefs away, so a model shown only the
+   * plain text has no way to reproduce a link it never saw. Found by driving
+   * this in production: the first real challenger came back with "Take a look at
+   * the calendar." and no URL at all, which on a `clicked` metric is an arm that
+   * can never score. See `requiredLinks` in `generateVariants`.
+   */
+  requiredLinks?: string[]
 }): string {
   // The UNTRUSTED half. `stripUnescapedControls` first (stringify does not
   // escape U+2028 and friends), then `JSON.stringify` as the fence.
+  const links = (args.requiredLinks ?? []).map(l => flattenToOneLine(l))
   const brief = {
     live_subject: flattenToOneLine(args.controlSubject),
     live_body: stripUnescapedControls(args.controlBody),
     audience: stripUnescapedControls(args.audience),
     what_to_try: args.hypothesis ? flattenToOneLine(args.hypothesis) : 'a different angle on the same message',
+    links_you_must_include: links,
   }
 
   return `Write ${args.count} challenger variant(s) for the email below.
@@ -129,7 +140,7 @@ Each variant must:
 - say the same true things as the live email — no new offers, no new facts, no new urgency;
 - differ from the live email in a way somebody could describe in one sentence;
 - differ from the OTHER variants too;
-- keep any link exactly as it appears in the live body.
+- include EVERY url in "links_you_must_include", written out in full exactly as given. A variant missing one will be refused, because the test measures clicks and an email with no link cannot be clicked.
 
 Respond with JSON exactly in this shape:
 {
@@ -176,6 +187,11 @@ export async function generateVariants(args: {
   experiment: ExperimentRow
   control: { subject: string; bodyText: string }
   audience: string
+  /**
+   * Links the live step carries. A challenger that omits one is REFUSED when
+   * the experiment's metric is `clicked` — see the note on `buildVariantPrompt`.
+   */
+  requiredLinks?: string[]
   count?: number
   actor?: string
 }): Promise<GenerateVariantsOutcome> {
@@ -299,6 +315,7 @@ export async function generateVariants(args: {
               count: openLabels.length,
               hypothesis: experiment.hypothesis,
               audience: args.audience,
+              requiredLinks: args.requiredLinks,
             }),
           },
         ],
@@ -374,6 +391,32 @@ export async function generateVariants(args: {
     if (!screened.ok) {
       refused.push({ label, reason: screened.reason })
       continue
+    }
+
+    /**
+     * A challenger that dropped a link the control carries cannot score on a
+     * `clicked` metric, and the control always can — the control's copy IS the
+     * live step, which keeps its real HTML and its real anchor. That is not a
+     * weak variant, it is a rigged comparison, and the result would read as a
+     * finding about the words.
+     *
+     * Found by driving this in production: the first real challenger came back
+     * as "Take a look at the calendar." with no URL, and the send reported
+     * "variant B sent with NO tracked link". The report is what made it visible
+     * (rule 10); this is what stops it.
+     */
+    if (experiment.metric === 'clicked' && (args.requiredLinks ?? []).length > 0) {
+      const missing = (args.requiredLinks ?? []).filter(l => !screened.copy.bodyText.includes(l))
+      if (missing.length > 0) {
+        refused.push({
+          label,
+          reason:
+            `it omits ${missing.length === 1 ? 'the link' : 'the links'} the live email carries ` +
+            `(${missing.join(', ')}) — on a test measured by clicks that arm could never score, ` +
+            `so the control would win by construction`,
+        })
+        continue
+      }
     }
 
     // A variant identical to the control (or to a sibling) is not a variant. It

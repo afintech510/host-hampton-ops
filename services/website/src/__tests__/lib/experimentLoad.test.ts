@@ -9,14 +9,18 @@
  * passed a screen (rule 8).
  */
 
-import { loadVariants, loadActiveExperiment, loadExperiment, sequenceTargetKey } from '@/lib/experiments/load'
+import { loadVariants, loadActiveExperiment, loadExperiment, sequenceTargetKey, hasTrackableLink } from '@/lib/experiments/load'
 import { makeExperimentDb, uuid } from '../helpers/fakeExperimentDb'
 
 const EXP = uuid(1)
 const SEQ = uuid(50)
 
+/** No link — used on purpose by the click tests below. */
 const CLEAN_BODY =
   'Hi {{first_name}},\n\nThe studio has space this month and we would love to have your crew in for an afternoon.'
+
+/** The default fixture body. A click test needs an arm that can be clicked. */
+const CLEAN_BODY_WITH_LINK = `${CLEAN_BODY}\n\nHave a look: https://www.hosthampton.com/book`
 
 function expRow(over: Record<string, any> = {}) {
   return {
@@ -48,7 +52,7 @@ function variantRow(id: string, label: string, over: Record<string, any> = {}) {
     label,
     is_control: label === 'A',
     subject: `Subject ${label} for the studio`,
-    body_text: CLEAN_BODY,
+    body_text: CLEAN_BODY_WITH_LINK,
     body_html: '<p>whatever</p>',
     screen_notes: [],
     created_by: 'COPY',
@@ -126,6 +130,84 @@ describe('loadVariants — the read-time screen', () => {
     const db = makeExperimentDb()
     db.failReads('content_variants')
     expect('error' in (await loadVariants(db.supabase, EXP))).toBe(true)
+  })
+})
+
+describe('a click test needs an arm that can be clicked', () => {
+  /**
+   * Found by driving this in production. The first real challenger COPY wrote
+   * came back as "Take a look at the calendar." with no URL, and the send
+   * reported "variant B sent with NO tracked link". The control's copy is the
+   * live step, which keeps its real anchor, so the control could score and the
+   * challenger could not — the control wins by construction and the result
+   * reads as a finding about the words. That is rule 15 with a plausible number
+   * attached, which is the worst kind.
+   */
+  const LINKED = `${CLEAN_BODY}\n\nHave a look: https://www.hosthampton.com/book`
+
+  it('drops a non-control arm with no trackable link when the metric is `clicked`', async () => {
+    const db = makeExperimentDb({
+      content_variants: [variantRow(uuid(2), 'A'), variantRow(uuid(3), 'B', { body_text: CLEAN_BODY })],
+    })
+    const r = await loadVariants(db.supabase, EXP, { metric: 'clicked' })
+    if ('error' in r) throw new Error(r.error)
+    expect(r.variants.map(v => v.label)).toEqual(['A'])
+    expect(r.rejected[0].reason).toMatch(/could never score/)
+  })
+
+  it('keeps it when the arm does carry a link', async () => {
+    const db = makeExperimentDb({
+      content_variants: [variantRow(uuid(2), 'A'), variantRow(uuid(3), 'B', { body_text: LINKED })],
+    })
+    const r = await loadVariants(db.supabase, EXP, { metric: 'clicked' })
+    if ('error' in r) throw new Error(r.error)
+    expect(r.variants.map(v => v.label)).toEqual(['A', 'B'])
+  })
+
+  it('a body whose only link is the UNSUBSCRIBE link does not count', async () => {
+    const db = makeExperimentDb({
+      content_variants: [
+        variantRow(uuid(3), 'B', { body_text: `${CLEAN_BODY}\n\nhttps://www.hosthampton.com/unsubscribe?t=abc` }),
+      ],
+    })
+    const r = await loadVariants(db.supabase, EXP, { metric: 'clicked' })
+    if ('error' in r) throw new Error(r.error)
+    expect(r.variants).toHaveLength(0)
+  })
+
+  it('the CONTROL is exempt — its link lives in the step, which this cannot see', async () => {
+    const db = makeExperimentDb({
+      content_variants: [variantRow(uuid(2), 'A', { body_text: CLEAN_BODY }), variantRow(uuid(3), 'B', { body_text: LINKED })],
+    })
+    const r = await loadVariants(db.supabase, EXP, { metric: 'clicked' })
+    if ('error' in r) throw new Error(r.error)
+    expect(r.variants.map(v => v.label)).toEqual(['A', 'B'])
+  })
+
+  it('does not apply on a `converted` test, where a link is not the outcome', async () => {
+    const db = makeExperimentDb({
+      content_variants: [variantRow(uuid(2), 'A'), variantRow(uuid(3), 'B', { body_text: CLEAN_BODY })],
+    })
+    const r = await loadVariants(db.supabase, EXP, { metric: 'converted' })
+    if ('error' in r) throw new Error(r.error)
+    expect(r.variants).toHaveLength(2)
+  })
+
+  it('loadActiveExperiment passes the experiment\'s own metric through', async () => {
+    // The whole fix is worthless if the metric never reaches the screen.
+    const db = makeExperimentDb({
+      content_experiments: [expRow({ metric: 'clicked' })],
+      content_variants: [variantRow(uuid(2), 'A'), variantRow(uuid(3), 'B', { body_text: CLEAN_BODY })],
+    })
+    // One usable arm left → not a test → absent.
+    expect((await loadActiveExperiment(db.supabase, 'sequence_step', sequenceTargetKey(SEQ, 1))).kind).toBe('absent')
+  })
+
+  it('hasTrackableLink, directly', () => {
+    expect(hasTrackableLink('come to https://www.hosthampton.com/book')).toBe(true)
+    expect(hasTrackableLink('nothing here at all')).toBe(false)
+    expect(hasTrackableLink('opt out at https://www.hosthampton.com/unsubscribe?t=x')).toBe(false)
+    expect(hasTrackableLink('see https://evil.example.com/x')).toBe(false)
   })
 })
 

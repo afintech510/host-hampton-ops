@@ -16,7 +16,9 @@
  */
 
 import type { getSupabase } from '@/lib/supabase'
-import { screenVariant, bodyHtmlFromText } from './screen'
+import { screenVariant, bodyHtmlFromText, extractLinks } from './screen'
+import { safeSiteLink } from '@/lib/content/contentSafety'
+import { isExcludedFromTracking } from './track'
 import {
   isExperimentMetric,
   isExperimentSurface,
@@ -47,6 +49,21 @@ export type ExperimentLookup =
   | { kind: 'absent' }
   /** The table could not be read. NOT the same fact as `absent`. */
   | { kind: 'unavailable'; error: string }
+
+/**
+ * Does this body contain a link a tracked redirect would actually wrap?
+ *
+ * Both conditions, because either one alone is wrong: `safeSiteLink` says it is
+ * ours, and `isExcludedFromTracking` says it is not the unsubscribe link (which
+ * is ours and is deliberately never wrapped). A body whose only link is the
+ * opt-out has no trackable link.
+ */
+export function hasTrackableLink(bodyText: string): boolean {
+  return extractLinks(bodyText).some(l => {
+    const safe = safeSiteLink(l)
+    return !!safe && !isExcludedFromTracking(safe)
+  })
+}
 
 /** Shape-check a row before believing its columns (rule 13's habit). */
 function asExperimentRow(raw: Record<string, unknown>): ExperimentRow | null {
@@ -85,7 +102,8 @@ function asExperimentRow(raw: Record<string, unknown>): ExperimentRow | null {
  */
 export async function loadVariants(
   supabase: Supa,
-  experimentId: string
+  experimentId: string,
+  opts: { metric?: string } = {}
 ): Promise<{ variants: VariantRow[]; rejected: { id: string; label: string; reason: string }[] } | { error: string }> {
   const { data, error } = await supabase
     .from('content_variants')
@@ -108,6 +126,34 @@ export async function loadVariants(
       rejected.push({ id, label, reason: verdict.reason })
       continue
     }
+
+    /**
+     * The write-path half of this lives in `generate.ts` and refuses a
+     * challenger that drops a link the live step carries. This is the read-path
+     * half, for the same reason every screen in this file has one: a row can be
+     * hand-inserted, or predate the rule.
+     *
+     * A NON-control arm with no trackable link on a `clicked` experiment cannot
+     * score, while the control always can — its copy is the live step, with its
+     * real HTML and its real anchor. That is not a weak variant, it is a rigged
+     * comparison whose result would read as a finding about the words.
+     *
+     * The control is exempt, and deliberately: its link lives in
+     * `email_sequence_steps.body_html`, which this function cannot see. The
+     * variants route refuses to set up a click-metric test on a step that
+     * carries no link at all, which is where that half belongs.
+     */
+    if (opts.metric === 'clicked' && raw.is_control !== true && !hasTrackableLink(verdict.copy.bodyText)) {
+      rejected.push({
+        id,
+        label,
+        reason:
+          'it carries no Host Hampton link, so on a test measured by clicks it could never score — ' +
+          'the control would win by construction',
+      })
+      continue
+    }
+
     variants.push({
       id,
       experiment_id: String(raw.experiment_id),
@@ -186,7 +232,7 @@ export async function loadActiveExperiment(
   if (!experiment) return { kind: 'absent' }
   if (!experimentIsLive(experiment.status)) return { kind: 'absent' }
 
-  const loaded = await loadVariants(supabase, experiment.id)
+  const loaded = await loadVariants(supabase, experiment.id, { metric: experiment.metric })
   if ('error' in loaded) return { kind: 'unavailable', error: `variants unreadable: ${loaded.error}` }
 
   if (loaded.variants.length < 2) {
@@ -211,7 +257,7 @@ export async function loadExperiment(supabase: Supa, id: string): Promise<Experi
   if (!experiment) {
     return { kind: 'unavailable', error: `experiment ${id} has values this build does not understand (surface, metric, min_per_arm or alpha)` }
   }
-  const loaded = await loadVariants(supabase, id)
+  const loaded = await loadVariants(supabase, id, { metric: experiment.metric })
   if ('error' in loaded) return { kind: 'unavailable', error: `variants unreadable: ${loaded.error}` }
   return { kind: 'found', value: { experiment, variants: loaded.variants, rejected: loaded.rejected } }
 }

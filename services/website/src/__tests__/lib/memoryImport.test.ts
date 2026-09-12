@@ -93,6 +93,25 @@ describe('screenMemory — the measurement, per row', () => {
     expect(w.length).toBeGreaterThan(0)
   })
 
+  it('flags a BARE-number price in jsonb — the miss the production scan found', () => {
+    // The real `services.addons` and `services.rentals` rows store prices as
+    // JSON numbers, and `containsFabricatedTerms` (which looks for a "$") called
+    // both of them clean. `services.rentals` says `"price": 450` and the live
+    // weekday rate is $475, so it is also STALE — a row that is wrong AND
+    // invisible to the screen is the whole argument for not wiring this table
+    // into a prompt.
+    expect(screenMemory({ weekday_3hr: { price: 450, description: '3hr Weekday Party Room Rental' } }).join(' ')).toMatch(
+      /bare number/
+    )
+    expect(screenMemory({ decor: { barbie_box: 100, balloon_garland_6ft: 150 } }).length).toBeGreaterThan(0)
+  })
+
+  it('does not flag a row whose only numbers are guest counts and days', () => {
+    // The widened detector must not make every row amber, or the warnings stop
+    // being read.
+    expect(screenMemory({ deposit_required: true, lead_time_days: 14, max_guests: 20 })).toEqual([])
+  })
+
   it('screens the DESCRIPTION too — it is rendered beside the value', () => {
     expect(screenMemory({ ok: 'nothing here' }, 'Tiers with pricing: $850 at ten guests').join(' ')).toMatch(/\$850/)
   })

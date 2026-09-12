@@ -3,7 +3,8 @@ import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { loadExperiment } from '@/lib/experiments/load'
 import { generateVariants } from '@/lib/experiments/generate'
-import { htmlToPlainText } from '@/lib/content/contentSafety'
+import { htmlToPlainText, safeSiteLink } from '@/lib/content/contentSafety'
+import { isExcludedFromTracking } from '@/lib/experiments/track'
 import { MAX_VARIANTS } from '@/lib/experiments/types'
 
 export const dynamic = 'force-dynamic'
@@ -124,6 +125,33 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     )
   }
 
+  /**
+   * The links the live step carries, taken from its HTML `href`s.
+   *
+   * `htmlToPlainText` correctly throws hrefs away, so the model is shown a
+   * control body with no URL in it and has no way to reproduce one. Measured in
+   * production on the first real run: the challenger came back as "Take a look
+   * at the calendar." with no link, and the send reported "variant B sent with
+   * NO tracked link" — an arm that can never register a click, against a control
+   * whose copy is the live step and always can. The control would have won by
+   * construction and the result would have read as a finding about the words.
+   */
+  const stepLinks = Array.from(String(step.body_html ?? '').matchAll(/\shref\s*=\s*["']([^"']+)["']/gi))
+    .map(m => safeSiteLink(m[1]))
+    .filter((u): u is string => !!u && !isExcludedFromTracking(u))
+  const requiredLinks = Array.from(new Set(stepLinks))
+
+  if (experiment.metric === 'clicked' && requiredLinks.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          'This experiment measures CLICKS and the live step carries no trackable Host Hampton link, ' +
+          'so neither arm could ever score. Add a link to the step, or change the metric.',
+      },
+      { status: 422 }
+    )
+  }
+
   const audience = [
     seq?.name ? `sequence "${String(seq.name)}"` : null,
     seq?.description ? String(seq.description) : null,
@@ -138,6 +166,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     experiment,
     control: { subject: controlSubject, bodyText: controlBody },
     audience,
+    requiredLinks,
     count,
     actor,
   })

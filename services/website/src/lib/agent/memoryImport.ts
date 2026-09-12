@@ -61,7 +61,7 @@
  */
 
 import type { getSupabase } from '@/lib/supabase'
-import { containsFabricatedTerms, containsForeignContact, NO_AMOUNTS_ALLOWED } from './draftGuards'
+import { containsFabricatedTerms, containsForeignContact, containsMoney, NO_AMOUNTS_ALLOWED } from './draftGuards'
 import { stripUnescapedControls } from './extractPlanFields'
 import { proposeLearning, screenLearningText, isLearningKind, type LearningKind } from './learnings'
 
@@ -104,6 +104,12 @@ export type MemoryListing =
 /**
  * What the screens say about one memory value.
  *
+ * **These warnings are a HELP, not a gate, and "no warnings" is not "safe".** A
+ * detector finds what it was written to find; a row can be clean by these rules
+ * and still be eight months out of date about an operating policy. Nothing here
+ * decides anything — the gate is that a HUMAN writes the rule text, that
+ * `screenLearningText` runs on that text, and that the rule lands inactive.
+ *
  * Runs the SAME detectors a learned rule is screened with — imported, never
  * restated (rule 11) — with `NO_AMOUNTS_ALLOWED`, because a rule that reaches
  * the draft prompt may not name a figure at all. A row whose value mentions
@@ -118,6 +124,33 @@ export function screenMemory(value: unknown, description?: string | null): strin
 
   const money = containsFabricatedTerms(withDescription, { allowedAmounts: NO_AMOUNTS_ALLOWED })
   if (money) warnings.push(`states ${money}`)
+
+  /**
+   * And the WIDER money detector as well, which is the one that matters here.
+   *
+   * The first version of this function used `containsFabricatedTerms` alone.
+   * Run over the real 44 rows in production it flagged 13 — and called
+   * `services.addons` and `services.rentals` CLEAN, because those store prices
+   * as bare JSON numbers:
+   *
+   *     {"decor": {"barbie_box": 100, "balloon_garland_6ft": 150, …}}
+   *     {"weekday_3hr": {"price": 450, "description": "3hr Weekday Party Room Rental"}}
+   *
+   * `containsFabricatedTerms` is deliberately narrow — it looks for an explicit
+   * `$` and for named concessions — because on a QUOTE-path draft it must not
+   * park every reply that mentions the deposit. Here the trade is the opposite
+   * way round: this is an ADVISORY shown to a human reading a dead table, so a
+   * false positive costs a glance and a miss costs a stale February price
+   * pasted into a standing rule. `containsMoney` catches the bare figure.
+   *
+   * Worth knowing: that `"price": 450` is **stale**. The live weekday studio
+   * rate is $475 (docs/content-pipeline.md §11 corrected the Spanish page from
+   * exactly this number). A row that is wrong AND invisible to the screen is
+   * the whole argument for why nothing reads this table into a prompt.
+   */
+  if (!money && containsMoney(withDescription)) {
+    warnings.push('carries a figure that reads as a price (a bare number, not a "$" amount)')
+  }
 
   const foreign = containsForeignContact(withDescription)
   if (foreign) warnings.push(`contains a ${foreign} that is not ours`)
