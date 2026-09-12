@@ -9,6 +9,7 @@ import { enqueueEventReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
 import { saleAdjustedCents } from '@/lib/sale'
 import { publicOrigin } from '@/lib/publicOrigin'
+import { nextTicketRef, redeemGiftCard } from '@/lib/stripeSettlement'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,12 +75,19 @@ export async function POST(req: NextRequest) {
       const ticketRefs: string[] = []
 
       for (const sess of sessionsData) {
-        const { data: seqData } = await supabase.rpc('nextval_event_ticket_seq')
-        const seqNum = seqData ?? Date.now().toString().slice(-4)
-        const ticketRef = `HH-EVT-${String(seqNum).padStart(4, '0')}`
+        const refResult = await nextTicketRef(supabase)
+        if (!refResult.ok) {
+          // The RPC this used to call HAD NEVER BEEN CREATED and the error was
+          // discarded, so every ref here silently came from
+          // `Date.now().slice(-4)` — a ten-second-wide space against a UNIQUE
+          // column. Migration 046 creates it; this stops pretending it worked.
+          console.error('Ticket ref allocation failed:', refResult.message)
+          return NextResponse.json({ error: 'Could not issue a ticket. Please try again.' }, { status: 500 })
+        }
+        const ticketRef = refResult.ref
         ticketRefs.push(ticketRef)
 
-        await supabase.from('event_tickets').insert({
+        const { error: freeTicketErr } = await supabase.from('event_tickets').insert({
           ticket_ref: ticketRef,
           event_id: eventId,
           session_id: sess.id,
@@ -93,6 +101,12 @@ export async function POST(req: NextRequest) {
           total_cents: 0,
           status: 'confirmed',
         })
+        if (freeTicketErr) {
+          // A free ticket is still a promise to a real person: refusing beats a
+          // confirmation email naming a row that was never written (rule 10).
+          console.error('Free ticket insert failed:', freeTicketErr.message)
+          return NextResponse.json({ error: 'Could not issue a ticket. Please try again.' }, { status: 500 })
+        }
         await supabase.rpc('decrement_session_tickets', { sid: sess.id, qty: quantity })
       }
 
@@ -274,9 +288,16 @@ export async function POST(req: NextRequest) {
 
   // For FREE events: skip Stripe, create ticket directly
   if (isFree) {
-    const { data: seqData } = await supabase.rpc('nextval_event_ticket_seq')
-    const seqNum = seqData ?? Date.now().toString().slice(-4)
-    const ticketRef = `HH-EVT-${String(seqNum).padStart(4, '0')}`
+    const refResult = await nextTicketRef(supabase)
+    if (!refResult.ok) {
+      // The RPC this used to call HAD NEVER BEEN CREATED and the error was
+      // discarded, so every ref here silently came from
+      // `Date.now().slice(-4)` — a ten-second-wide space against a UNIQUE
+      // column. Migration 046 creates it; this stops pretending it worked.
+      console.error('Ticket ref allocation failed:', refResult.message)
+      return NextResponse.json({ error: 'Could not issue a ticket. Please try again.' }, { status: 500 })
+    }
+    const ticketRef = refResult.ref
 
     const { error: insertErr } = await supabase.from('event_tickets').insert({
       ticket_ref: ticketRef,
@@ -405,9 +426,37 @@ export async function POST(req: NextRequest) {
 
   // If gift card covers full amount, skip Stripe
   if (giftCard && remainingAfterGiftCard <= 0) {
-    const { data: seqData } = await supabase.rpc('nextval_event_ticket_seq')
-    const seqNum = seqData ?? Date.now().toString().slice(-4)
-    const ticketRef = `HH-EVT-${String(seqNum).padStart(4, '0')}`
+    const refResult = await nextTicketRef(supabase)
+    if (!refResult.ok) {
+      // The RPC this used to call HAD NEVER BEEN CREATED and the error was
+      // discarded, so every ref here silently came from
+      // `Date.now().slice(-4)` — a ten-second-wide space against a UNIQUE
+      // column. Migration 046 creates it; this stops pretending it worked.
+      console.error('Ticket ref allocation failed:', refResult.message)
+      return NextResponse.json({ error: 'Could not issue a ticket. Please try again.' }, { status: 500 })
+    }
+    const ticketRef = refResult.ref
+
+    // ── Charge the card BEFORE issuing the ticket ────────────────────────
+    //
+    // The order used to be the other way round: ticket inserted, inventory
+    // decremented, and only then the balance deducted — which is the one
+    // sequence in which a failure hands out a free ticket. And the deduction was
+    // a read-modify-write, the THIRD copy of that in this codebase: two requests
+    // racing both read the same balance, so one card paid for two tickets. It
+    // also wrote `redeemed_at: null` whenever the balance did not reach zero,
+    // blanking the timestamp on a card that was already spent.
+    const redemption = await redeemGiftCard(supabase, String(giftCard.code), grandTotalCents)
+    if (redemption.outcome === 'unavailable') {
+      console.error(`Gift card ${giftCard.code}: could not be redeemed —`, redemption.message, '— no ticket issued')
+      return NextResponse.json({ error: 'Could not reach the gift card store. Please try again.' }, { status: 503 })
+    }
+    if (redemption.outcome !== 'redeemed' || redemption.redeemedCents < grandTotalCents) {
+      const got = redemption.outcome === 'redeemed' ? `${redemption.redeemedCents}c` : redemption.outcome
+      console.error(`Gift card ${giftCard.code} could not cover ${grandTotalCents}c (got ${got}) — no ticket issued`)
+      return NextResponse.json({ error: 'That gift card could not be applied. Please try again.' }, { status: 409 })
+    }
+    console.log(`Gift card ${giftCard.code} redeemed ${redemption.redeemedCents}c for ticket ${ticketRef} (balance ${redemption.newBalanceCents}c)`)
 
     const { error: insertErr } = await supabase.from('event_tickets').insert({
       ticket_ref: ticketRef,
@@ -424,7 +473,12 @@ export async function POST(req: NextRequest) {
     })
 
     if (insertErr) {
-      console.error('Gift card ticket insert error:', insertErr)
+      // The balance is already gone. Say so loudly with the numbers a human
+      // needs to put it back — silence here is a customer out of pocket.
+      console.error(
+        `TICKET NOT ISSUED AFTER GIFT CARD CHARGED: ${giftCard.code} was debited ${redemption.redeemedCents}c` +
+          ` for ${customerEmail} on event ${eventId} —`, insertErr.message,
+      )
       return NextResponse.json({ error: 'Failed to create ticket' }, { status: 500 })
     }
 
@@ -434,15 +488,6 @@ export async function POST(req: NextRequest) {
     } else {
       await supabase.rpc('decrement_event_tickets', { eid: eventId, qty: quantity })
     }
-
-    // Redeem gift card
-    const newBalance = giftCard.balance_cents - grandTotalCents
-    await supabase.from('gift_cards').update({
-      balance_cents: Math.max(0, newBalance),
-      status: newBalance <= 0 ? 'redeemed' : 'active',
-      redeemed_at: newBalance <= 0 ? new Date().toISOString() : null,
-    }).eq('id', giftCard.id)
-    console.log(`Gift card ${giftCard.code} redeemed ${grandTotalCents}c for ticket ${ticketRef}`)
 
     // Upsert contact (non-fatal)
     const contactId = await upsertContact({

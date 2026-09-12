@@ -90,7 +90,11 @@ export async function POST(req: NextRequest) {
       party_tags: { ...existingTags, date_locked: true },
     }
     if (newBalance === 0) updateFields.paid_in_full_at = new Date().toISOString()
-    await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+    const { error: updErr } = await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+    if (updErr) {
+      console.error('studio confirm-session booking update error:', updErr.message)
+      return NextResponse.json({ error: updErr.message }, { status: 500 })
+    }
 
     return NextResponse.json({ ok: true, paid: true, bookingRef, newBalance })
   } catch (err: unknown) {

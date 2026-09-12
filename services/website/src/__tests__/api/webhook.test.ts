@@ -24,11 +24,21 @@ jest.mock('resend', () => ({
 
 // Mock Supabase via createClient (webhook uses direct import, not getSupabase)
 const mockFrom = jest.fn()
-const mockRpc = jest.fn().mockResolvedValue({ data: null, error: null })
+// The RPCs answer the way the real ones do after migration 046:
+// `nextval_event_ticket_seq` hands back a number, and the decrements hand back
+// the remaining count (NULL means "declined — oversold"). The old mock returned
+// `{data: null}` for every RPC, which is indistinguishable from a function that
+// does not exist — and `nextval_event_ticket_seq` really did not exist.
+let seqCounter = 10000
+const mockRpc = jest.fn().mockImplementation((fn: string) => {
+  if (fn === 'nextval_event_ticket_seq') return Promise.resolve({ data: ++seqCounter, error: null })
+  if (fn === 'decrement_event_tickets' || fn === 'decrement_session_tickets') return Promise.resolve({ data: 5, error: null })
+  return Promise.resolve({ data: null, error: null })
+})
 
 function buildChain(resolveValue: any) {
   const chain: any = {}
-  const methods = ['select', 'ilike', 'insert', 'update', 'eq', 'neq', 'gte', 'lte', 'order', 'single', 'in']
+  const methods = ['select', 'ilike', 'insert', 'update', 'eq', 'neq', 'gte', 'lte', 'order', 'single', 'maybeSingle', 'limit', 'in']
   for (const m of methods) {
     chain[m] = jest.fn().mockReturnValue(chain)
   }
@@ -125,6 +135,7 @@ describe('POST /api/webhook', () => {
       data: {
         object: {
           id: 'cs_test_123',
+          payment_status: 'paid',
           payment_intent: 'pi_test_123',
           amount_total: 9000,
           metadata: {
@@ -189,6 +200,7 @@ describe('POST /api/webhook', () => {
       data: {
         object: {
           id: 'cs_test_456',
+          payment_status: 'paid',
           payment_intent: 'pi_test_456',
           amount_total: 2000,
           metadata: {
@@ -230,6 +242,7 @@ describe('POST /api/webhook', () => {
       data: {
         object: {
           id: 'cs_test_booking',
+          payment_status: 'paid',
           payment_intent: 'pi_test_booking',
           amount_total: 25000,
           metadata: {

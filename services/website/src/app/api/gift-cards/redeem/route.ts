@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { redeemGiftCard } from '@/lib/stripeSettlement'
 
+/**
+ * Spend against a gift card.
+ *
+ * This used to read the balance, subtract in JavaScript and write the result
+ * back. Two requests racing both read the same balance and both "succeeded",
+ * which spends a card twice — and it was the FOURTH copy of that same
+ * read-modify-write in this codebase (the webhook had two, `events/checkout` a
+ * third). `redeem_gift_card` (migration 046) is now the one implementation:
+ * `SELECT … FOR UPDATE`, the deduction clamped to the balance, and `redeemed_at`
+ * preserved rather than recomputed.
+ */
 export async function POST(req: NextRequest) {
   const { code, amountCents, reference } = await req.json()
 
@@ -9,48 +21,28 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getSupabase()
+  const result = await redeemGiftCard(supabase, String(code).trim().toUpperCase(), Number(amountCents))
 
-  // Fetch and validate in one step
-  const { data: card, error } = await supabase
-    .from('gift_cards')
-    .select('*')
-    .eq('code', code.trim().toUpperCase())
-    .eq('status', 'active')
-    .single()
-
-  if (error || !card) {
+  // Three outcomes, not two: "the database was unreachable" is not "no such
+  // card", and answering 404 to it tells the caller a false thing about a
+  // customer's money (rule 12).
+  if (result.outcome === 'unavailable') {
+    console.error('Gift card redeem failed:', result.message)
+    return NextResponse.json({ error: 'Could not reach the gift card store. Please try again.' }, { status: 503 })
+  }
+  if (result.outcome === 'no_active_card') {
     return NextResponse.json({ error: 'Gift card not found or inactive' }, { status: 404 })
   }
-
-  if (card.balance_cents <= 0) {
+  if (result.redeemedCents === 0) {
     return NextResponse.json({ error: 'Gift card has no remaining balance' }, { status: 400 })
   }
 
-  // Deduct the lesser of requested amount or remaining balance
-  const deductCents = Math.min(amountCents, card.balance_cents)
-  const newBalance = card.balance_cents - deductCents
-  const newStatus = newBalance === 0 ? 'redeemed' : 'active'
-
-  const { error: updateErr } = await supabase
-    .from('gift_cards')
-    .update({
-      balance_cents: newBalance,
-      status: newStatus,
-      redeemed_at: newBalance === 0 ? new Date().toISOString() : card.redeemed_at,
-    })
-    .eq('id', card.id)
-
-  if (updateErr) {
-    console.error('Gift card redeem error:', updateErr)
-    return NextResponse.json({ error: 'Failed to redeem gift card' }, { status: 500 })
-  }
-
-  console.log(`Gift card ${code} redeemed ${deductCents}c for ${reference}. New balance: ${newBalance}c`)
+  console.log(`Gift card ${code} redeemed ${result.redeemedCents}c for ${reference}. New balance: ${result.newBalanceCents}c`)
 
   return NextResponse.json({
-    deductedCents: deductCents,
-    remainingBalanceCents: newBalance,
-    remainingBalanceFormatted: `$${(newBalance / 100).toFixed(2)}`,
-    fullyRedeemed: newBalance === 0,
+    deductedCents: result.redeemedCents,
+    remainingBalanceCents: result.newBalanceCents,
+    remainingBalanceFormatted: `$${(result.newBalanceCents / 100).toFixed(2)}`,
+    fullyRedeemed: result.newBalanceCents === 0,
   })
 }

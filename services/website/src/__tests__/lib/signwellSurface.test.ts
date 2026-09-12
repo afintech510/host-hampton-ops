@@ -200,6 +200,24 @@ const SIGNATURE_COLUMNS = [
   'checkin_agreement_pdf_url',
 ]
 
+/**
+ * A TypeScript TYPE annotation is not a write.
+ *
+ * `agreement_pdf_url: string | null` inside a type literal is the shape of a row
+ * being READ, and it matches `col:` exactly as a write does. Link 16 hit this
+ * the first time anyone typed a `.select()` result on this surface — a FALSE
+ * POSITIVE, which is the other way a tripwire can be wrong and just as bad,
+ * because the fix for one is to weaken the rule. So the exclusion is narrow: the
+ * value must be a bare type expression built only from primitive type names, and
+ * nothing you could ever pass to `.insert()` looks like that.
+ *
+ * `null` and `undefined` are deliberately NOT allowed as the FIRST token, even
+ * though both are type names: `agreement_pdf_url: null,` is a real write — it is
+ * how you blank a column — and the first draft of this exclusion excused it. The
+ * negative test below is what said so.
+ */
+const TYPE_ANNOTATION_VALUE = /^\s*(?:string|number|boolean|Date|unknown|any|Record<[^>]*>)(?:\s*\|\s*(?:string|number|boolean|null|undefined|Date|unknown|any))*\s*(?:[;,}\r\n]|$)/
+
 describe('R3 — only the writer module records a signature', () => {
   it('no other file writes a signature column', () => {
     const offenders: string[] = []
@@ -210,10 +228,44 @@ describe('R3 — only the writer module records a signature', () => {
         // As an object KEY (`col:`) — a WRITE. Distinguished from `booking.col`
         // and `'col'` in an allow-list, which are READS and are fine. Link 14's
         // hole was a rule that could not tell a read from a write.
-        if (new RegExp(`(^|[{,\\s])${col}\\s*:`, 'm').test(body)) offenders.push(`${rel(p)} → ${col}`)
+        const re = new RegExp(`(?:^|[{,\\s])${col}\\s*:(.*)$`, 'gm')
+        for (const match of body.matchAll(re)) {
+          if (TYPE_ANNOTATION_VALUE.test(match[1])) continue
+          offenders.push(`${rel(p)} → ${col}`)
+        }
       }
     }
     expect(offenders).toEqual([])
+  })
+
+  it('the type-annotation exclusion does NOT excuse a real write', () => {
+    // The negative case for the rule above, so the narrowing cannot quietly
+    // become an escape hatch. Each of these is a write and must still be caught.
+    const writes = [
+      `agreement_signed_at: new Date().toISOString(),`,
+      `agreement_pdf_url: pdfUrl,`,
+      `agreement_pdf_url: null,`,          // a literal null VALUE, not a type
+      `checkin_agreement_signed_at: stamp,`,
+      `agreement_pdf_url: someFn(x),`,
+    ]
+    for (const line of writes) {
+      const col = line.split(':')[0].trim()
+      const re = new RegExp(`(?:^|[{,\\s])${col}\\s*:(.*)$`, 'gm')
+      const matches = [...(' ' + line).matchAll(re)]
+      expect(matches.length).toBeGreaterThan(0)
+      expect(TYPE_ANNOTATION_VALUE.test(matches[0][1])).toBe(false)
+    }
+    // …and each of these is a type annotation and must be excused.
+    for (const line of [
+      `agreement_pdf_url: string | null`,
+      `agreement_signed_at: string | null;`,
+      `checkin_agreement_pdf_url: string`,
+    ]) {
+      const col = line.split(':')[0].trim()
+      const re = new RegExp(`(?:^|[{,\\s])${col}\\s*:(.*)$`, 'gm')
+      const matches = [...(' ' + line).matchAll(re)]
+      expect(TYPE_ANNOTATION_VALUE.test(matches[0][1])).toBe(true)
+    }
   })
 })
 

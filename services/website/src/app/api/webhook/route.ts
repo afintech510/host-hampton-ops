@@ -10,18 +10,38 @@ import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest, enqueuePartyReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
-import { matchPlanPayLink, recordPlanPayment, sendPlanPaymentReceipt } from '@/lib/planPayment'
+import { matchPlanPayLink, recordPlanPayment, sendPlanPaymentReceipt, isUniqueViolation } from '@/lib/planPayment'
 import { isUnclaimableSession, recordUnclaimedStripeSession } from '@/lib/unclaimedPayment'
 import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref } from '@/lib/emailSafety'
+import {
+  sessionSettlement,
+  claimBySessionId,
+  nextTicketRef,
+  decrementInventory,
+  redeemGiftCard,
+  parseJsonMetadata,
+  isHandledSessionType,
+  isLegacyBookingSession,
+  type FinancialWrite,
+} from '@/lib/stripeSettlement'
 
-/* Record a Stripe payment in the unified financial_transactions table (non-fatal) */
+/**
+ * Record a Stripe payment in the unified financial_transactions table.
+ *
+ * A duplicate is success — `idx_fin_txn_source_ref` makes `(source, reference)`
+ * unique precisely so a redelivery is a no-op. Anything ELSE is a real failure
+ * and used to be swallowed under a `.includes('duplicate')` string test, which
+ * is the message-text idiom the money rules forbid: `isUniqueViolation` reads
+ * SQLSTATE 23505 first. Five of the six party-planner payments this year have no
+ * financial row at all, so a silent failure here is not theoretical.
+ */
 async function recordFinancialTransaction(supabase: ReturnType<typeof getSupabase>, opts: {
   date: string; description: string; amountCents: number; category: string;
   customerName: string | null; reference: string; notes?: string | null;
-}) {
-  await supabase.from('financial_transactions').insert({
+}): Promise<FinancialWrite> {
+  const { error } = await supabase.from('financial_transactions').insert({
     date: opts.date,
     description: opts.description,
     amount_cents: opts.amountCents,
@@ -30,11 +50,52 @@ async function recordFinancialTransaction(supabase: ReturnType<typeof getSupabas
     customer_name: opts.customerName,
     reference: `stripe-${opts.reference}`,
     notes: opts.notes || null,
-  }).then(({ error }) => {
-    if (error && !error.message.includes('duplicate')) {
-      console.error('Financial txn insert error (non-fatal):', error.message)
-    }
   })
+  if (!error) return 'written'
+  if (isUniqueViolation(error)) return 'duplicate'
+  console.error(
+    `FINANCIAL ROW NOT WRITTEN for stripe-${opts.reference} (${opts.amountCents}c, ${opts.category}):`,
+    error.message,
+    '— this payment will be missing from the Financials tab.',
+  )
+  return 'failed'
+}
+
+/**
+ * The booking totals a balance is computed from, or a refusal.
+ *
+ * Four branches did this inline as `bkRow?.total_cents || 0` over a `.single()`
+ * whose error was discarded. A Supabase blip therefore read the booking's total
+ * as ZERO, which makes `newBal` zero, which writes `status: 'paid_in_full'` and
+ * stamps `paid_in_full_at` over a booking that has been barely paid. The Phase 5
+ * review found exactly that shape on the plan path and fixed it there; the
+ * non-plan branches kept it. Hard-won rule 12, in its money form.
+ */
+async function readBalanceInputs(
+  supabase: ReturnType<typeof getSupabase>,
+  bookingId: string,
+  columns: string,
+): Promise<{ ok: true; paidSum: number; row: Record<string, unknown> } | { ok: false; message: string }> {
+  const { data: payRows, error: payErr } = await supabase
+    .from('booking_payments')
+    .select('amount_cents, payment_type')
+    .eq('booking_id', bookingId)
+  if (payErr) return { ok: false, message: `booking_payments read failed: ${payErr.message}` }
+
+  const { data: bkRow, error: bkErr } = await supabase
+    .from('bookings')
+    .select(columns)
+    .eq('id', bookingId)
+    .maybeSingle()
+  if (bkErr) return { ok: false, message: `bookings read failed: ${bkErr.message}` }
+  if (!bkRow) return { ok: false, message: `no booking row for id ${bookingId}` }
+
+  let paidSum = 0
+  for (const p of (payRows || []) as { amount_cents: number; payment_type: string }[]) {
+    if (p.payment_type === 'refund') paidSum -= p.amount_cents
+    else paidSum += p.amount_cents
+  }
+  return { ok: true, paidSum, row: bkRow as unknown as Record<string, unknown> }
 }
 
 /**
@@ -153,24 +214,36 @@ export async function POST(req: NextRequest) {
         stripe_session_id: null,
         recorded_by: 'system',
       })
-      const alreadyRecorded = !!payErr && (payErr.message || '').toLowerCase().includes('duplicate')
-      if (payErr && !alreadyRecorded) console.error('Studio rental PI payment insert error:', payErr)
-
-      // Recalc balance + status
-      const { data: payRows } = await supabase
-        .from('booking_payments').select('amount_cents, payment_type').eq('booking_id', bookingId)
-      let paidSum = 0
-      for (const p of payRows || []) {
-        if (p.payment_type === 'refund') paidSum -= p.amount_cents
-        else paidSum += p.amount_cents
+      const alreadyRecorded = isUniqueViolation(payErr)
+      if (payErr && !alreadyRecorded) {
+        // A payment we could not record is a payment that is about to be
+        // invisible. 500 so Stripe redelivers; the unique index makes the retry
+        // safe (rule 19).
+        console.error('Studio rental PI payment insert error:', payErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: payErr.message }, { status: 500 })
       }
-      const { data: bkRow } = await supabase
-        .from('bookings')
-        .select('total_cents, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, package_type, guest_count_approx, agreement_pdf_url')
-        .eq('id', bookingId)
-        .single()
-      const newBal = Math.max(0, (bkRow?.total_cents || 0) - paidSum)
-      const existingTags = (bkRow?.party_tags as Record<string, unknown> | null) || {}
+
+      // Recalc balance + status. A FAILED read must not become a balance: reading
+      // the total as 0 writes `paid_in_full` over a booking that has paid a
+      // deposit. Ask Stripe to come back instead (rule 12).
+      const inputs = await readBalanceInputs(
+        supabase,
+        bookingId,
+        'total_cents, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, package_type, guest_count_approx, agreement_pdf_url',
+      )
+      if (!inputs.ok) {
+        console.error('Studio rental PI: cannot recompute balance —', inputs.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: inputs.message }, { status: 500 })
+      }
+      const paidSum = inputs.paidSum
+      const bkRow = inputs.row as {
+        total_cents: number | null; party_tags: Record<string, unknown> | null
+        contact_name: string | null; contact_email: string | null; contact_phone: string | null
+        party_date: string | null; party_time: string | null; package_type: string | null
+        guest_count_approx: number | null; agreement_pdf_url: string | null
+      }
+      const newBal = Math.max(0, (bkRow.total_cents || 0) - paidSum)
+      const existingTags = bkRow.party_tags || {}
 
       const updateFields: Record<string, unknown> = {
         balance_due_cents: newBal,
@@ -178,38 +251,60 @@ export async function POST(req: NextRequest) {
         party_tags: { ...existingTags, date_locked: true },
       }
       if (newBal === 0) updateFields.paid_in_full_at = new Date().toISOString()
-      await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+      const { error: stuUpdErr } = await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+      if (stuUpdErr) {
+        console.error('Studio rental PI: booking update failed —', stuUpdErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: stuUpdErr.message }, { status: 500 })
+      }
 
-      // Audit log
-      await supabase.from('booking_modifications').insert({
-        booking_id: bookingId,
-        modified_by: 'system',
-        change_summary: `Studio rental deposit of ${formatMoney(depositCents)} received via card`,
-      }).then((res: { error: { message: string } | null }) => {
-        if (res.error) console.error('Studio modification log error (non-fatal):', res.error)
-      })
-
-      // Financials
-      await recordFinancialTransaction(supabase, {
+      // Financials FIRST, because its `(source, reference)` unique index is this
+      // branch's idempotency marker — see `FinancialWrite`. `alreadyRecorded`
+      // cannot serve: `/api/studio-rental/confirm-session` writes the same
+      // `booking_payments` row from the browser and does none of the work below.
+      // The reference carries the PaymentIntent id so a second, genuinely
+      // different deposit is never mistaken for a redelivery of the first.
+      const stuFin = await recordFinancialTransaction(supabase, {
         date: new Date().toISOString().split('T')[0],
         description: `Studio Rental Deposit — ${bkRow?.package_type || 'Studio Rental'}`,
         amountCents: totalCharged,
         category: 'Room Rental',
         customerName: bkRow?.contact_name || m.contactName || null,
-        reference: `studio-${bookingRef}-deposit`,
+        reference: `studio-${bookingRef}-${pi.id}`,
         notes: bkRow?.contact_email || m.contactEmail || null,
       })
+      if (stuFin === 'failed') {
+        return NextResponse.json({ error: 'financial row not written' }, { status: 500 })
+      }
+      const stuFirstTime = stuFin === 'written'
 
-      // Portal magic link
+      // Audit log
+      if (stuFirstTime) {
+        const { error: modErr } = await supabase.from('booking_modifications').insert({
+          booking_id: bookingId,
+          modified_by: 'system',
+          change_summary: `Studio rental deposit of ${formatMoney(depositCents)} received via card`,
+        })
+        if (modErr) console.error('Studio modification log error (non-fatal):', modErr.message)
+      }
+
+      // Portal magic link. Minted only when the email that carries it is going to
+      // be sent — one booking already holds 15 live tokens (link 14, §1) and a
+      // redelivery minting another is pure token sprawl.
       const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
       const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
-      await supabase.from('portal_tokens').insert({
-        booking_id: bookingId,
-        token_hash: hash,
-        expires_at: expiresAt.toISOString(),
-      }).then((res: { error: { message: string } | null }) => {
-        if (res.error) console.error('Studio portal token insert (non-fatal):', res.error)
-      })
+      if (stuFirstTime) {
+        const { error: tokErr } = await supabase.from('portal_tokens').insert({
+          booking_id: bookingId,
+          token_hash: hash,
+          expires_at: expiresAt.toISOString(),
+        })
+        if (tokErr) {
+          // The link in the email about to be sent would not work. Better to
+          // retry the whole delivery than to mail a dead magic link.
+          console.error('Studio portal token insert failed:', tokErr.message, '— asking Stripe to retry')
+          return NextResponse.json({ error: tokErr.message }, { status: 500 })
+        }
+      }
       const portalUrl = buildPortalUrl(bookingRef, rawToken, '/studio-rental?manage=1')
 
       const tags = existingTags as Record<string, string>
@@ -230,7 +325,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Emails (only on a genuine first record, not a webhook/confirm race)
-      if (!alreadyRecorded && process.env.RESEND_API_KEY && bkRow?.contact_email) {
+      if (stuFirstTime && process.env.RESEND_API_KEY && bkRow?.contact_email) {
         const resend = new Resend(process.env.RESEND_API_KEY)
         const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
         const { data: liRows } = await supabase
@@ -293,11 +388,11 @@ export async function POST(req: NextRequest) {
       }
 
       // Balance reminder + Google Calendar block over the real rental window
-      if (!alreadyRecorded && bkRow?.party_date && bkRow.contact_email) {
+      if (stuFirstTime && bkRow?.party_date && bkRow.contact_email) {
         await enqueuePartyReminders({ contactEmail: bkRow.contact_email, bookingRef, partyDate: bkRow.party_date })
           .catch(err => console.error('Studio reminder enqueue error:', err))
       }
-      if (!alreadyRecorded && bkRow?.party_date) {
+      if (stuFirstTime && bkRow?.party_date) {
         const calEventId = await createCalendarEvent({
           summary: `[STUDIO RENTAL] ${bkRow.contact_name || 'Rental'} — ${tags.event_label || 'Event'}`,
           startDate: bkRow.party_date,
@@ -347,26 +442,33 @@ export async function POST(req: NextRequest) {
       recorded_by: 'system',
       notes: tipCents > 0 ? `Includes ${formatMoney(tipCents)} tip for party helpers` : null,
     })
-    const alreadyRecorded = !!payErr && (payErr.message || '').toLowerCase().includes('duplicate')
-    if (payErr && !alreadyRecorded) console.error('Party builder PI payment insert error:', payErr)
-
-    // Recalc balance + status from authoritative payment rows
-    const { data: payRows } = await supabase
-      .from('booking_payments')
-      .select('amount_cents, payment_type')
-      .eq('booking_id', bookingId)
-    let paidSum = 0
-    for (const p of payRows || []) {
-      if (p.payment_type === 'refund') paidSum -= p.amount_cents
-      else paidSum += p.amount_cents
+    const alreadyRecorded = isUniqueViolation(payErr)
+    if (payErr && !alreadyRecorded) {
+      console.error('Party builder PI payment insert error:', payErr.message, '— asking Stripe to retry')
+      return NextResponse.json({ error: payErr.message }, { status: 500 })
     }
-    const { data: bkRow } = await supabase
-      .from('bookings')
-      .select('total_cents, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, package_type, guest_count_approx')
-      .eq('id', bookingId)
-      .single()
-    const newBal = Math.max(0, (bkRow?.total_cents || 0) - paidSum)
-    const existingTags = (bkRow?.party_tags as Record<string, unknown> | null) || {}
+
+    // Recalc balance + status from authoritative payment rows. See
+    // `readBalanceInputs`: a failed read used to be read as a zero total, which
+    // marks the booking paid in full.
+    const inputs = await readBalanceInputs(
+      supabase,
+      bookingId,
+      'total_cents, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, package_type, guest_count_approx',
+    )
+    if (!inputs.ok) {
+      console.error('Party builder PI: cannot recompute balance —', inputs.message, '— asking Stripe to retry')
+      return NextResponse.json({ error: inputs.message }, { status: 500 })
+    }
+    const paidSum = inputs.paidSum
+    const bkRow = inputs.row as {
+      total_cents: number | null; party_tags: Record<string, unknown> | null
+      contact_name: string | null; contact_email: string | null; contact_phone: string | null
+      party_date: string | null; party_time: string | null; package_type: string | null
+      guest_count_approx: number | null
+    }
+    const newBal = Math.max(0, (bkRow.total_cents || 0) - paidSum)
+    const existingTags = bkRow.party_tags || {}
 
     const updateFields: Record<string, unknown> = { balance_due_cents: newBal }
     if (paymentType === 'deposit') {
@@ -376,21 +478,19 @@ export async function POST(req: NextRequest) {
       updateFields.status = 'paid_in_full'
     }
     if (newBal === 0) updateFields.paid_in_full_at = new Date().toISOString()
-    await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+    const { error: pbUpdErr } = await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+    if (pbUpdErr) {
+      console.error('Party builder PI: booking update failed —', pbUpdErr.message, '— asking Stripe to retry')
+      return NextResponse.json({ error: pbUpdErr.message }, { status: 500 })
+    }
 
-    // Audit log
-    await supabase.from('booking_modifications').insert({
-      booking_id: bookingId,
-      modified_by: 'system',
-      change_summary: paymentType === 'deposit'
-        ? `Deposit of ${formatMoney(amountCents)} received via card`
-        : `${paymentType === 'final' ? 'Final' : 'Partial'} payment of ${formatMoney(amountCents)} via card. Balance: ${formatMoney(newBal)}`,
-    }).then((res: { error: { message: string } | null }) => {
-      if (res.error) console.error('Modification log error (non-fatal):', res.error)
-    })
-
-    // Financials
-    await recordFinancialTransaction(supabase, {
+    // Financials FIRST — the unique `(source, reference)` row is this branch's
+    // idempotency marker, for the reason given on `FinancialWrite`. The old
+    // reference was `pb-<ref>-<type>`, which is the SAME string for a customer's
+    // second partial payment: that would have read as a redelivery and silently
+    // dropped both the financial row and the receipt. The PaymentIntent id makes
+    // it one marker per payment.
+    const pbFin = await recordFinancialTransaction(supabase, {
       date: new Date().toISOString().split('T')[0],
       description: paymentType === 'deposit'
         ? `Party Deposit — ${bkRow?.package_type || 'Kids Party'}`
@@ -398,24 +498,54 @@ export async function POST(req: NextRequest) {
       amountCents: totalCharged,
       category: 'Party Booking',
       customerName: bkRow?.contact_name || m.contactName || null,
-      reference: `pb-${bookingRef}-${paymentType}`,
+      reference: `pb-${bookingRef}-${paymentType}-${pi.id}`,
       notes: bkRow?.contact_email || m.contactEmail || null,
     })
+    if (pbFin === 'failed') {
+      return NextResponse.json({ error: 'financial row not written' }, { status: 500 })
+    }
+    const pbFirstTime = pbFin === 'written'
 
-    // Portal magic link for the receipt email
+    // Audit log
+    if (pbFirstTime) {
+      const { error: modErr } = await supabase.from('booking_modifications').insert({
+        booking_id: bookingId,
+        modified_by: 'system',
+        change_summary: paymentType === 'deposit'
+          ? `Deposit of ${formatMoney(amountCents)} received via card`
+          : `${paymentType === 'final' ? 'Final' : 'Partial'} payment of ${formatMoney(amountCents)} via card. Balance: ${formatMoney(newBal)}`,
+      })
+      if (modErr) console.error('Modification log error (non-fatal):', modErr.message)
+    }
+
+    // Portal magic link for the receipt email — minted only when that email is
+    // going to be sent.
     const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
     const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
-    await supabase.from('portal_tokens').insert({
-      booking_id: bookingId,
-      token_hash: hash,
-      expires_at: expiresAt.toISOString(),
-    }).then((res: { error: { message: string } | null }) => {
-      if (res.error) console.error('Portal token insert (non-fatal):', res.error)
-    })
+    if (pbFirstTime) {
+      const { error: tokErr } = await supabase.from('portal_tokens').insert({
+        booking_id: bookingId,
+        token_hash: hash,
+        expires_at: expiresAt.toISOString(),
+      })
+      if (tokErr) {
+        console.error('Portal token insert failed:', tokErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: tokErr.message }, { status: 500 })
+      }
+    }
     const portalUrl = buildPortalUrl(bookingRef, rawToken, '/party-planner')
 
-    // Emails
-    if (process.env.RESEND_API_KEY && bkRow?.contact_email) {
+    // Emails — only on a genuine first record.
+    //
+    // The studio branch forty lines above already guarded on `!alreadyRecorded`
+    // and this one did not; it merely did `void alreadyRecorded` to silence the
+    // unused-variable warning. Two ideas of "have we already dealt with this
+    // payment" in one handler is rule 11, and here it decides whether a customer
+    // gets a second receipt, a second reminder and a SECOND Google Calendar
+    // entry for the same party — which is exactly what would have happened on
+    // the day `payment_intent.succeeded` was finally subscribed, to every
+    // payment `/api/party-builder/confirm-session` had already recorded.
+    if (pbFirstTime && process.env.RESEND_API_KEY && bkRow?.contact_email) {
       const resend = new Resend(process.env.RESEND_API_KEY)
       const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
       const partyDateFormatted = bkRow.party_date
@@ -494,7 +624,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Enqueue party balance reminders on first deposit
-    if (paymentType === 'deposit' && bkRow?.party_date && bkRow.contact_email) {
+    if (pbFirstTime && paymentType === 'deposit' && bkRow?.party_date && bkRow.contact_email) {
       await enqueuePartyReminders({ contactEmail: bkRow.contact_email, bookingRef, partyDate: bkRow.party_date })
         .catch(err => console.error('Party reminder enqueue error:', err))
     }
@@ -503,7 +633,7 @@ export async function POST(req: NextRequest) {
     // a 2-hour slot regardless of the booking_type's slot_duration_min
     // (which now controls customer-selectable start times at 1-hour intervals,
     // NOT actual party length).
-    if (paymentType === 'deposit' && bkRow?.party_date && bkRow.party_time) {
+    if (pbFirstTime && paymentType === 'deposit' && bkRow?.party_date && bkRow.party_time) {
       const endTime = addMinutes(bkRow.party_time, 120)
       const calEventId = await createCalendarEvent({
         summary: `[BOOKING] ${bkRow.contact_name || 'Party'} - ${bkRow.package_type || 'Party'}`,
@@ -512,36 +642,69 @@ export async function POST(req: NextRequest) {
         endTime,
         description: `Ref: ${bookingRef}\nContact: ${bkRow.contact_name || ''} (${bkRow.contact_email || ''})\nGuests: ~${bkRow.guest_count_approx || ''}`,
       }).catch(err => { console.error('GCal error:', err); return null })
-      if (calEventId) console.log('Google Calendar event created:', calEventId)
+      if (calEventId) {
+        console.log('Google Calendar event created:', calEventId)
+        // Store it so a later time-edit updates rather than duplicates, the way
+        // the studio branch already does.
+        const { error: calErr } = await supabase.from('bookings')
+          .update({ google_calendar_event_id: calEventId }).eq('id', bookingId)
+        if (calErr) console.error('Party builder GCal id store error (non-fatal):', calErr.message)
+      }
     }
 
-    void alreadyRecorded
-    console.log('Party builder PI processed:', bookingRef, paymentType, formatMoney(amountCents))
+    console.log(
+      'Party builder PI processed:', bookingRef, paymentType, formatMoney(amountCents),
+      pbFirstTime ? '| first record' : '| already handled — side effects skipped',
+    )
     return NextResponse.json({ received: true })
   }
 
-  // ── The delayed half of a Checkout payment ────────────────────
+  // ── A delayed payment that failed ─────────────────────────────
+  //
+  // Say so, out loud, in the log Adam's alerts come from. Nothing below issued
+  // anything for this session (the settlement gate refused it when `completed`
+  // arrived `unpaid`), so there is nothing to reverse — but a silent 200 here
+  // would make "the customer never paid" indistinguishable from "we never heard"
+  // (rule 10).
+  if (event.type === 'checkout.session.async_payment_failed') {
+    const session = event.data.object as Stripe.Checkout.Session
+    console.error(
+      `DELAYED STRIPE PAYMENT FAILED: session ${session.id}` +
+        ` (${session.metadata?.type || 'no type'}, ${session.amount_total ?? 0}c)` +
+        ` — nothing was issued for it.`,
+    )
+    return NextResponse.json({ received: true, failed: true })
+  }
+
+  // ── A settled Checkout Session ────────────────────────────────
   //
   // `checkout.session.completed` does NOT mean paid: for a delayed-notification
   // method it fires with `payment_status: 'unpaid'` and the payment can still
-  // fail. `recordPlanPayment` refuses those, and THIS is the event that says one
+  // fail. `checkout.session.async_payment_succeeded` is the event that says one
   // succeeded after all.
   //
-  // Only the plan path and the unclaimed net run here. The legacy metadata
-  // branches below were all written against `completed`, and re-running them on
-  // a second event would issue duplicate tickets and bookings — so a non-plan
-  // async payment is caught by the net rather than handled twice.
-  if (event.type === 'checkout.session.async_payment_succeeded') {
-    const session = event.data.object as Stripe.Checkout.Session
-    const planned = await handlePlanPaySession(req, supabase, session)
-    if (planned) return planned
-    const un = await recordUnclaimedStripeSession(session, supabase)
-    return NextResponse.json({ received: true, async: true, unclaimed: true, recorded: un.recorded })
-  }
-
-  if (event.type === 'checkout.session.completed') {
+  // Both events now run the SAME branches, behind one settlement gate. The old
+  // code ran the legacy branches only on `completed` — unguarded, so an unpaid
+  // session got its tickets immediately — and dumped a late-settling non-plan
+  // payment into the unclaimed net, because re-running the branches would have
+  // double-issued. Every branch below now takes a claim, so running them twice is
+  // safe and running them once on the RIGHT event is finally possible.
+  //
+  // Measured on the live account: Klarna, Cash App Pay and Amazon Pay are enabled
+  // on ~two thirds of the sessions we create, and they are precisely the methods
+  // that complete `unpaid`.
+  if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
     const session = event.data.object as Stripe.Checkout.Session
     const m = session.metadata || {}
+
+    const settlement = sessionSettlement(session)
+    if (!settlement.settled) {
+      console.log(
+        `stripe session ${session.id} is not settled (${settlement.reason}) —` +
+          ` nothing issued; waiting for checkout.session.async_payment_succeeded`,
+      )
+      return NextResponse.json({ received: true, settled: false, reason: settlement.reason })
+    }
 
     // ── Plan pay link (Phase 5) ─────────────────────────────────
     //
@@ -552,17 +715,65 @@ export async function POST(req: NextRequest) {
     const planned = await handlePlanPaySession(req, supabase, session)
     if (planned) return planned
 
+    // ── Has this session already been turned into rows? ─────────
+    //
+    // One claim, ahead of every legacy branch, because the thing that must not
+    // happen twice is not only the INSERT (migration 046's unique indexes cover
+    // that) but the second confirmation email, the second inventory decrement,
+    // the second `upsertContact` — which mirrors into Brevo and Quo and enrols a
+    // sequence — and the second financial row under a freshly generated
+    // reference the unique index therefore cannot catch.
+    //
+    // `bookings` is checked too because the vendor branch and the legacy tail
+    // both insert one.
+    const ISSUING_TYPES = ['event_ticket', 'event_ticket_multi', 'cart_checkout', 'vendor_registration', 'gift_card']
+    let alreadyIssued = false
+    if (ISSUING_TYPES.includes(m.type || '') || isLegacyBookingSession(m)) {
+      for (const table of ['event_tickets', 'gift_cards', 'bookings'] as const) {
+        const claim = await claimBySessionId(supabase, table, session.id)
+        if (claim.outcome === 'unavailable') {
+          // Not "fresh". Proceeding on an unreadable table risks exactly the
+          // double-issue this check exists to prevent (rule 12).
+          console.error(`stripe session ${session.id}: cannot read ${table} to check for a redelivery —`, claim.message)
+          return NextResponse.json({ error: claim.message }, { status: 500 })
+        }
+        if (claim.outcome === 'already') {
+          console.log(`stripe session ${session.id} already has rows in ${table} — redelivery; side effects suppressed`)
+          alreadyIssued = true
+        }
+      }
+    }
+    // Deliberately advisory rather than an early return. A delivery that failed
+    // HALFWAY through a cart leaves some rows behind, and returning here would
+    // strand the rest of the customer's tickets forever. The inserts below are
+    // individually idempotent against migration 046's unique indexes, so the
+    // retry completes the job; `alreadyIssued` only suppresses the things that
+    // must not happen twice — the emails, the financial row, the contact
+    // upsert (which mirrors into Brevo and Quo), the reminders.
+
     // ── Event ticket purchase ──────────────────────────────────
     if (m.type === 'event_ticket') {
       const qty = parseInt(m.quantity || '1', 10)
-      const ticketRef = `HH-EVT-${Date.now().toString().slice(-4)}`
+      // `HH-EVT-${Date.now().slice(-4)}` is a ten-second-wide space against a
+      // UNIQUE column, and the loser of a collision used to be emailed
+      // "You're in!" for a ticket that did not exist. See `nextTicketRef`.
+      const refResult = await nextTicketRef(supabase)
+      if (!refResult.ok) {
+        console.error('Event ticket: could not allocate a ticket ref —', refResult.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: refResult.message }, { status: 500 })
+      }
+      const ticketRef = refResult.ref
 
       // Fetch event for details
-      const { data: evt } = await supabase
+      const { data: evt, error: evtErr } = await supabase
         .from('events')
         .select('title, event_date, event_time, location')
         .eq('id', m.eventId)
-        .single()
+        .maybeSingle()
+      if (evtErr) {
+        console.error('Event ticket: events read failed —', evtErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: evtErr.message }, { status: 500 })
+      }
 
       // Determine unit price from session amount
       const totalCents = session.amount_total || 0
@@ -584,40 +795,41 @@ export async function POST(req: NextRequest) {
         status: 'confirmed',
       })
 
-      if (ticketErr) {
-        console.error('Event ticket insert error:', ticketErr)
-      } else {
-        // Decrement available tickets
-        if (m.sessionId) {
-          await supabase.rpc('decrement_session_tickets', { sid: m.sessionId, qty })
-        } else {
-          await supabase.rpc('decrement_event_tickets', { eid: m.eventId, qty })
+      if (ticketErr && !isUniqueViolation(ticketErr)) {
+        // The customer paid and has no ticket. A 200 here means Stripe never
+        // comes back and the only trace is this line — and the old code went on
+        // to email them "You're in!" anyway, naming a ref that was never
+        // inserted (rule 10's expensive half).
+        console.error('Event ticket insert error:', ticketErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: ticketErr.message }, { status: 500 })
+      }
+      const ticketWasNew = !ticketErr
+      if (ticketWasNew) {
+        // Decrement available tickets, and say so when it refused.
+        const dec = await decrementInventory(supabase, m.sessionId ? 'session' : 'event', m.sessionId || m.eventId, qty)
+        if (dec.outcome === 'oversold') {
+          console.error(`OVERSOLD: ${ticketRef} (${qty}) issued for ${m.sessionId ? 'session' : 'event'} ${m.sessionId || m.eventId} — inventory NOT decremented, it did not have ${qty} left.`)
+        } else if (dec.outcome === 'unavailable') {
+          console.error(`Ticket ${ticketRef}: inventory decrement failed —`, dec.message, '— stock is now wrong by', qty)
         }
         console.log('Ticket created:', ticketRef, 'for', m.customerEmail)
 
-        // Redeem partial gift card if used (non-fatal)
+        // Redeem partial gift card if used
         if (m.giftCardCode && m.giftCardDeductCents) {
           const gcDeduct = parseInt(m.giftCardDeductCents, 10)
           if (gcDeduct > 0) {
-            const { data: gc } = await supabase
-              .from('gift_cards')
-              .select('id, balance_cents')
-              .eq('code', m.giftCardCode)
-              .eq('status', 'active')
-              .single()
-            if (gc) {
-              const newBal = Math.max(0, gc.balance_cents - gcDeduct)
-              await supabase.from('gift_cards').update({
-                balance_cents: newBal,
-                status: newBal === 0 ? 'redeemed' : 'active',
-                redeemed_at: newBal === 0 ? new Date().toISOString() : null,
-              }).eq('id', gc.id)
-              console.log(`Gift card ${m.giftCardCode} redeemed ${gcDeduct}c via webhook. New balance: ${newBal}c`)
+            const red = await redeemGiftCard(supabase, m.giftCardCode, gcDeduct)
+            if (red.outcome === 'redeemed') {
+              console.log(`Gift card ${m.giftCardCode} redeemed ${red.redeemedCents}c via webhook. New balance: ${red.newBalanceCents}c (${red.status})`)
+            } else if (red.outcome === 'no_active_card') {
+              console.error(`GIFT CARD NOT REDEEMED: ${m.giftCardCode} has no ACTIVE row — ${gcDeduct}c of discount was given on ${ticketRef} and not deducted.`)
+            } else {
+              console.error(`GIFT CARD NOT REDEEMED: ${m.giftCardCode} — ${red.message}. ${gcDeduct}c of discount was given on ${ticketRef} and not deducted.`)
             }
           }
         }
 
-        // Record in financials (non-fatal)
+        // Record in financials
         await recordFinancialTransaction(supabase, {
           date: new Date().toISOString().split('T')[0],
           description: evt?.title || 'Event Ticket',
@@ -666,8 +878,12 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Send emails
-      if (process.env.RESEND_API_KEY && evt) {
+      // Send emails — only over a ticket that actually exists.
+      //
+      // This block used to sit OUTSIDE the insert's `else`, so a refused insert
+      // (a `ticket_ref` collision, then; a redelivery, now) still told the
+      // customer "You're in!" and quoted them a reference that was never written.
+      if (ticketWasNew && !alreadyIssued && process.env.RESEND_API_KEY && evt) {
         const resend = new Resend(process.env.RESEND_API_KEY)
         const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
         const totalFormatted = `$${(totalCents / 100).toFixed(2)}`
@@ -716,31 +932,69 @@ export async function POST(req: NextRequest) {
         console.log('Ticket confirmation sent to', m.customerEmail)
       }
 
-      return NextResponse.json({ received: true })
+      // Say which it was. `{received: true}` for both a fresh issue and a
+      // suppressed redelivery is the shape rule 10 warns about: the caller
+      // cannot tell "I did the work" from "I deliberately did nothing".
+      if (!ticketWasNew || alreadyIssued) {
+        console.log('Event ticket for session', session.id, 'already issued — nothing repeated')
+        return NextResponse.json({ received: true, duplicate: true })
+      }
+      return NextResponse.json({ received: true, ticketRef })
     }
 
     // ── Multi-session event ticket purchase ──────────────────
     if (m.type === 'event_ticket_multi') {
-      const sessionIds = JSON.parse(m.sessionIds || '[]') as string[]
+      // A bare `JSON.parse` on attacker-shaped metadata throws out of the
+      // handler, which Stripe reads as a 500 and retries until it gives up —
+      // the failure mode that lost $927.
+      const parsedIds = parseJsonMetadata<string[]>(m.sessionIds, 'sessionIds')
+      if (!parsedIds.ok) {
+        console.error('Multi-session ticket:', parsedIds.message, '— cannot issue; recording as unclaimed')
+        const un = await recordUnclaimedStripeSession(session, supabase)
+        return NextResponse.json({ received: true, unclaimed: true, recorded: un.recorded, reason: parsedIds.message })
+      }
+      const sessionIds = parsedIds.value
       const qty = parseInt(m.quantity || '1', 10)
       const unitPriceCents = parseInt(m.unitPriceCents || '0', 10)
       const groupRef = `GRP-${Date.now()}`
 
-      const { data: evt } = await supabase
+      const { data: evt, error: evtErr } = await supabase
         .from('events')
         .select('title, event_time, location')
         .eq('id', m.eventId)
-        .single()
+        .maybeSingle()
+      if (evtErr) {
+        console.error('Multi-session ticket: events read failed —', evtErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: evtErr.message }, { status: 500 })
+      }
 
-      const { data: sessionsData } = await supabase
+      const { data: sessionsData, error: sessErr } = await supabase
         .from('event_sessions')
         .select('id, session_date, session_time, label')
         .in('id', sessionIds)
         .order('session_date', { ascending: true })
+      // A failed read here used to leave the loop with nothing to iterate, so
+      // ZERO tickets were inserted while the financial row, the contact upsert
+      // and both confirmation emails all went ahead — the customer paid for a
+      // bundle and received a receipt for tickets that do not exist.
+      if (sessErr) {
+        console.error('Multi-session ticket: event_sessions read failed —', sessErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: sessErr.message }, { status: 500 })
+      }
+      if (!sessionsData || sessionsData.length === 0) {
+        console.error(`Multi-session ticket: none of the ${sessionIds.length} session id(s) in metadata exist — recording as unclaimed rather than emailing a receipt for nothing`)
+        const un = await recordUnclaimedStripeSession(session, supabase)
+        return NextResponse.json({ received: true, unclaimed: true, recorded: un.recorded, reason: 'no matching event_sessions' })
+      }
 
       const ticketRefs: string[] = []
-      for (const sess of (sessionsData || [])) {
-        const ticketRef = `HH-EVT-${Date.now().toString().slice(-4)}-${sess.id.slice(0, 4)}`
+      for (const sess of sessionsData) {
+        const ref = await nextTicketRef(supabase, sess.id)
+        if (!ref.ok) {
+          console.error('Multi-session ticket: could not allocate a ref —', ref.message, '— asking Stripe to retry')
+          return NextResponse.json({ error: ref.message }, { status: 500 })
+        }
+        const ticketRef = ref.ref
         ticketRefs.push(ticketRef)
 
         const { error: ticketErr } = await supabase.from('event_tickets').insert({
@@ -760,14 +1014,25 @@ export async function POST(req: NextRequest) {
           status: 'confirmed',
         })
 
-        if (ticketErr) {
-          console.error('Multi-session ticket insert error:', ticketErr)
-        } else {
-          await supabase.rpc('decrement_session_tickets', { sid: sess.id, qty })
+        if (ticketErr && !isUniqueViolation(ticketErr)) {
+          console.error('Multi-session ticket insert error:', ticketErr.message, '— asking Stripe to retry')
+          return NextResponse.json({ error: ticketErr.message }, { status: 500 })
+        }
+        if (ticketErr) continue   // this line of the bundle already exists
+        const dec = await decrementInventory(supabase, 'session', sess.id, qty)
+        if (dec.outcome === 'oversold') {
+          console.error(`OVERSOLD: ${ticketRef} (${qty}) issued for session ${sess.id} — inventory NOT decremented.`)
+        } else if (dec.outcome === 'unavailable') {
+          console.error(`Ticket ${ticketRef}: inventory decrement failed —`, dec.message)
         }
       }
 
       console.log('Multi-session tickets created:', groupRef, ticketRefs.length, 'sessions for', m.customerEmail)
+
+      if (alreadyIssued) {
+        console.log('Multi-session bundle was a redelivery — no financial row, contact upsert, reminders or emails repeated')
+        return NextResponse.json({ received: true, duplicate: true })
+      }
 
       // Record in financials (non-fatal)
       const multiTotalCents = session.amount_total || 0
@@ -877,7 +1142,7 @@ export async function POST(req: NextRequest) {
 
     // ── Cart checkout (multiple events in one purchase) ────────
     if (m.type === 'cart_checkout') {
-      const cartItems = JSON.parse(m.cartItems || '[]') as {
+      type CartLine = {
         eventId: string
         sessionId?: string
         sessionIds?: string[]
@@ -885,7 +1150,31 @@ export async function POST(req: NextRequest) {
         variantLabel?: string
         unitPriceCents: number
         eventTitle: string
-      }[]
+      }
+      // `/api/cart-checkout` now writes a COMPACT form (one-letter keys) so that
+      // ten items fit inside Stripe's 500-character metadata limit. Sessions
+      // created before that deploy carry the long form and are still payable, so
+      // both are read here.
+      type CompactLine = { e: string; s?: string; S?: string[]; q: number; v?: string; p: number; t: string }
+      const widen = (raw: (CartLine | CompactLine)[]): CartLine[] =>
+        raw.map(r => ('e' in r
+          ? { eventId: r.e, sessionId: r.s, sessionIds: r.S, quantity: r.q, variantLabel: r.v, unitPriceCents: r.p, eventTitle: r.t }
+          : r))
+      const parsedCart = parseJsonMetadata<(CartLine | CompactLine)[]>(m.cartItems, 'cartItems')
+      if (!parsedCart.ok) {
+        // Stripe caps a metadata VALUE at 500 characters (measured: 500 accepted,
+        // 600 refused). A truncated or malformed cart used to throw straight out
+        // of the handler as a 500.
+        console.error('Cart checkout:', parsedCart.message, '— cannot issue; recording as unclaimed')
+        const un = await recordUnclaimedStripeSession(session, supabase)
+        return NextResponse.json({ received: true, unclaimed: true, recorded: un.recorded, reason: parsedCart.message })
+      }
+      const cartItems = widen(parsedCart.value)
+      if (!cartItems.length) {
+        console.error('Cart checkout: metadata.cartItems is empty — recording as unclaimed rather than emailing a receipt for nothing')
+        const un = await recordUnclaimedStripeSession(session, supabase)
+        return NextResponse.json({ received: true, unclaimed: true, recorded: un.recorded, reason: 'empty cart metadata' })
+      }
       const cartRef = `CART-${Date.now()}`
       const ticketRefs: string[] = []
       const eventTitles: string[] = []
@@ -896,7 +1185,12 @@ export async function POST(req: NextRequest) {
         if (ci.sessionIds?.length) {
           // Multi-session item
           for (const sid of ci.sessionIds) {
-            const ticketRef = `HH-EVT-${Date.now().toString().slice(-4)}-${sid.slice(0, 4)}`
+            const ref = await nextTicketRef(supabase, sid)
+            if (!ref.ok) {
+              console.error('Cart ticket: could not allocate a ref —', ref.message, '— asking Stripe to retry')
+              return NextResponse.json({ error: ref.message }, { status: 500 })
+            }
+            const ticketRef = ref.ref
             ticketRefs.push(ticketRef)
 
             const { error: ticketErr } = await supabase.from('event_tickets').insert({
@@ -916,15 +1210,28 @@ export async function POST(req: NextRequest) {
               status: 'confirmed',
             })
 
-            if (ticketErr) {
-              console.error('Cart ticket insert error:', ticketErr)
-            } else {
-              await supabase.rpc('decrement_session_tickets', { sid, qty })
+            if (ticketErr && !isUniqueViolation(ticketErr)) {
+              console.error('Cart ticket insert error:', ticketErr.message, '— asking Stripe to retry')
+              return NextResponse.json({ error: ticketErr.message }, { status: 500 })
             }
+            if (ticketErr) continue
+            const dec = await decrementInventory(supabase, 'session', sid, qty)
+            if (dec.outcome === 'oversold') console.error(`OVERSOLD: ${ticketRef} (${qty}) issued for session ${sid} — inventory NOT decremented.`)
+            else if (dec.outcome === 'unavailable') console.error(`Ticket ${ticketRef}: inventory decrement failed —`, dec.message)
           }
         } else {
-          // Single session or no session
-          const ticketRef = `HH-EVT-${Date.now().toString().slice(-4)}-${ci.eventId.slice(0, 4)}`
+          // Single session or no session.
+          //
+          // The old ref was `HH-EVT-${Date.now().slice(-4)}-${eventId.slice(0,4)}`,
+          // computed inside a tight loop: two cart lines for the SAME event in one
+          // request land on the same millisecond and produce the SAME ref against
+          // a UNIQUE column, so the second line was silently refused.
+          const ref = await nextTicketRef(supabase, ci.eventId)
+          if (!ref.ok) {
+            console.error('Cart ticket: could not allocate a ref —', ref.message, '— asking Stripe to retry')
+            return NextResponse.json({ error: ref.message }, { status: 500 })
+          }
+          const ticketRef = ref.ref
           ticketRefs.push(ticketRef)
 
           const { error: ticketErr } = await supabase.from('event_tickets').insert({
@@ -944,20 +1251,25 @@ export async function POST(req: NextRequest) {
             status: 'confirmed',
           })
 
-          if (ticketErr) {
-            console.error('Cart ticket insert error:', ticketErr)
-          } else {
-            if (ci.sessionId) {
-              await supabase.rpc('decrement_session_tickets', { sid: ci.sessionId, qty })
-            } else {
-              await supabase.rpc('decrement_event_tickets', { eid: ci.eventId, qty })
-            }
+          if (ticketErr && !isUniqueViolation(ticketErr)) {
+            console.error('Cart ticket insert error:', ticketErr.message, '— asking Stripe to retry')
+            return NextResponse.json({ error: ticketErr.message }, { status: 500 })
+          }
+          if (!ticketErr) {
+            const dec = await decrementInventory(supabase, ci.sessionId ? 'session' : 'event', ci.sessionId || ci.eventId, qty)
+            if (dec.outcome === 'oversold') console.error(`OVERSOLD: ${ticketRef} (${qty}) issued for ${ci.sessionId ? 'session' : 'event'} ${ci.sessionId || ci.eventId} — inventory NOT decremented.`)
+            else if (dec.outcome === 'unavailable') console.error(`Ticket ${ticketRef}: inventory decrement failed —`, dec.message)
           }
         }
         if (!eventTitles.includes(ci.eventTitle)) eventTitles.push(ci.eventTitle)
       }
 
       console.log('Cart checkout processed:', cartRef, ticketRefs.length, 'tickets for', m.customerEmail)
+
+      if (alreadyIssued) {
+        console.log('Cart was a redelivery — no financial row, contact upsert, reminders or emails repeated')
+        return NextResponse.json({ received: true, duplicate: true })
+      }
 
       // Record in financials (non-fatal)
       const cartTotalCents = session.amount_total || 0
@@ -1144,22 +1456,28 @@ export async function POST(req: NextRequest) {
         notes: JSON.stringify({ businessName: m.businessName, igHandle: m.igHandle }),
       })
 
-      if (dbError) {
-        console.error('Vendor registration insert error:', dbError)
-      } else {
-        console.log('Vendor registration created:', vendorRef, m.businessName, m.contactEmail)
-
-        // Record in financials (non-fatal)
-        await recordFinancialTransaction(supabase, {
-          date: new Date().toISOString().split('T')[0],
-          description: `Vendor Registration — ${m.businessName}`,
-          amountCents: 4635,
-          category: 'Vendor Fee',
-          customerName: m.contactName,
-          reference: `bk-${vendorRef}`,
-          notes: m.contactEmail,
-        })
+      if (dbError && !isUniqueViolation(dbError)) {
+        // Same shape as the tickets: the old code logged this and carried on to
+        // email "You're registered!" over a row that does not exist.
+        console.error('Vendor registration insert error:', dbError.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: dbError.message }, { status: 500 })
       }
+      if (dbError || alreadyIssued) {
+        console.log('Vendor registration was a redelivery — nothing re-issued for', session.id)
+        return NextResponse.json({ received: true, duplicate: true })
+      }
+      console.log('Vendor registration created:', vendorRef, m.businessName, m.contactEmail)
+
+      // Record in financials (non-fatal)
+      await recordFinancialTransaction(supabase, {
+        date: new Date().toISOString().split('T')[0],
+        description: `Vendor Registration — ${m.businessName}`,
+        amountCents: 4635,
+        category: 'Vendor Fee',
+        customerName: m.contactName,
+        reference: `bk-${vendorRef}`,
+        notes: m.contactEmail,
+      })
 
       // Upsert contact
       const contactId = await upsertContact({
@@ -1278,28 +1596,25 @@ export async function POST(req: NextRequest) {
           stripe_session_id: session.id,
           recorded_by: 'system',
         })
-        const alreadyRecorded = !!payErr && (payErr.message || '').toLowerCase().includes('duplicate')
-        if (payErr && !alreadyRecorded) console.error('Party builder payment insert error:', payErr)
+        const alreadyRecorded = isUniqueViolation(payErr)
+        if (payErr && !alreadyRecorded) {
+          console.error('Party builder payment insert error:', payErr.message, '— asking Stripe to retry')
+          return NextResponse.json({ error: payErr.message }, { status: 500 })
+        }
 
         // Recalculate balance from all payments + lock the date.
         // Idempotent: if confirm-session already set these to the same values,
-        // this is a no-op write.
-        const { data: payRows } = await supabase
-          .from('booking_payments')
-          .select('amount_cents, payment_type')
-          .eq('booking_id', bookingId)
-        let paidSum = 0
-        for (const p of payRows || []) {
-          if (p.payment_type === 'refund') paidSum -= p.amount_cents
-          else paidSum += p.amount_cents
+        // this is a no-op write. A FAILED read is not: it used to read the total
+        // as zero and write `paid_in_full`.
+        const inputs = await readBalanceInputs(supabase, bookingId, 'total_cents, party_tags')
+        if (!inputs.ok) {
+          console.error('Party builder deposit: cannot recompute balance —', inputs.message, '— asking Stripe to retry')
+          return NextResponse.json({ error: inputs.message }, { status: 500 })
         }
-        const { data: bkRow } = await supabase
-          .from('bookings')
-          .select('total_cents, party_tags')
-          .eq('id', bookingId)
-          .single()
-        const newBal = Math.max(0, (bkRow?.total_cents || 0) - paidSum)
-        const existingTags = (bkRow?.party_tags as Record<string, unknown> | null) || {}
+        const paidSum = inputs.paidSum
+        const bkRow = inputs.row as { total_cents: number | null; party_tags: Record<string, unknown> | null }
+        const newBal = Math.max(0, (bkRow.total_cents || 0) - paidSum)
+        const existingTags = bkRow.party_tags || {}
         const { error: updateErr } = await supabase
           .from('bookings')
           .update({
@@ -1309,47 +1624,53 @@ export async function POST(req: NextRequest) {
             ...(newBal === 0 ? { paid_in_full_at: new Date().toISOString() } : {}),
           })
           .eq('id', bookingId)
-        if (updateErr) console.error('Party builder booking update error:', updateErr)
-
-        // If the payment was already recorded (confirm-session won the race),
-        // the audit log + financials + reminders were skipped previously and
-        // need to fire now (this is where webhook does its side-effects work).
-        // The duplicate-suppression below relies on each side-effect being
-        // either idempotent or naturally deduplicated.
-        if (alreadyRecorded) {
-          console.log('Party builder deposit: confirm-session won race for', bookingRef, '— webhook sending side-effects + email')
+        if (updateErr) {
+          console.error('Party builder booking update error:', updateErr.message, '— asking Stripe to retry')
+          return NextResponse.json({ error: updateErr.message }, { status: 500 })
         }
 
-        // Insert audit log
-        await supabase.from('booking_modifications').insert({
-          booking_id: bookingId,
-          modified_by: 'system',
-          change_summary: `Deposit of ${formatMoney(depositCents)} received via card`,
-        }).then(({ error }) => {
-          if (error) console.error('Modification log error (non-fatal):', error)
-        })
-
-        // Record in financials
-        await recordFinancialTransaction(supabase, {
+        // The side effects are keyed on the financial row, not on
+        // `alreadyRecorded`, for the reason on `FinancialWrite`: confirm-session
+        // writes the same `booking_payments` row from the browser and does none
+        // of this, so "my insert was a duplicate" cannot mean "already done".
+        // The reference now carries the Stripe session so a genuine second
+        // payment is not mistaken for a redelivery of the first.
+        const pbcFin = await recordFinancialTransaction(supabase, {
           date: new Date().toISOString().split('T')[0],
           description: `Party Deposit — ${m.packageType || 'Kids Party'}`,
           amountCents: totalCharged,
           category: 'Party Booking',
           customerName: m.contactName,
-          reference: `pb-${bookingRef}`,
+          reference: `pb-${bookingRef}-${session.id}`,
           notes: m.contactEmail,
         })
+        if (pbcFin === 'failed') return NextResponse.json({ error: 'financial row not written' }, { status: 500 })
+        const pbcFirstTime = pbcFin === 'written'
+        if (!pbcFirstTime) {
+          console.log('Party builder deposit: already handled for session', session.id, '— no second email')
+          return NextResponse.json({ received: true, duplicate: true })
+        }
+
+        // Insert audit log
+        const { error: pbcModErr } = await supabase.from('booking_modifications').insert({
+          booking_id: bookingId,
+          modified_by: 'system',
+          change_summary: `Deposit of ${formatMoney(depositCents)} received via card`,
+        })
+        if (pbcModErr) console.error('Modification log error (non-fatal):', pbcModErr.message)
 
         // Generate portal link
         const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
         const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
-        await supabase.from('portal_tokens').insert({
+        const { error: pbcTokErr } = await supabase.from('portal_tokens').insert({
           booking_id: bookingId,
           token_hash: hash,
           expires_at: expiresAt.toISOString(),
-        }).then(({ error }) => {
-          if (error) console.error('Portal token insert error (non-fatal):', error)
         })
+        if (pbcTokErr) {
+          console.error('Portal token insert failed:', pbcTokErr.message, '— asking Stripe to retry')
+          return NextResponse.json({ error: pbcTokErr.message }, { status: 500 })
+        }
 
         const portalUrl = buildPortalUrl(bookingRef, rawToken)
         const origin = publicOrigin(req)
@@ -1439,7 +1760,7 @@ export async function POST(req: NextRequest) {
         const amountCents = parseInt(m.amountCents || '0', 10)
         const pCardFee = parseInt(m.cardFeeCents || '0', 10)
 
-        await supabase.from('booking_payments').insert({
+        const { error: pbpErr } = await supabase.from('booking_payments').insert({
           booking_id: bookingId,
           payment_type: paymentType,
           payment_method: 'card',
@@ -1449,28 +1770,22 @@ export async function POST(req: NextRequest) {
           stripe_payment_intent_id: session.payment_intent as string,
           stripe_session_id: session.id,
           recorded_by: 'system',
-        }).then(({ error }) => {
-          if (error) console.error('Party payment insert error:', error)
         })
-
-        // Recalculate balance
-        const { data: payments } = await supabase
-          .from('booking_payments')
-          .select('amount_cents, payment_type')
-          .eq('booking_id', bookingId)
-
-        const { data: bk } = await supabase
-          .from('bookings')
-          .select('total_cents')
-          .eq('id', bookingId)
-          .single()
-
-        let paid = 0
-        for (const p of (payments || [])) {
-          if (p.payment_type === 'refund') paid -= p.amount_cents
-          else paid += p.amount_cents
+        if (pbpErr && !isUniqueViolation(pbpErr)) {
+          console.error('Party payment insert error:', pbpErr.message, '— asking Stripe to retry')
+          return NextResponse.json({ error: pbpErr.message }, { status: 500 })
         }
-        const newBalance = Math.max(0, (bk?.total_cents || 0) - paid)
+
+        // Recalculate balance. This branch had NO duplicate handling at all: a
+        // redelivery logged the 23505, recomputed, and then sent the customer a
+        // second "Payment Received" email.
+        const pInputs = await readBalanceInputs(supabase, bookingId, 'total_cents')
+        if (!pInputs.ok) {
+          console.error('Party builder payment: cannot recompute balance —', pInputs.message, '— asking Stripe to retry')
+          return NextResponse.json({ error: pInputs.message }, { status: 500 })
+        }
+        const paid = pInputs.paidSum
+        const newBalance = Math.max(0, ((pInputs.row as { total_cents: number | null }).total_cents || 0) - paid)
 
         const updateFields: Record<string, unknown> = { balance_due_cents: newBalance }
         if (newBalance === 0) {
@@ -1478,37 +1793,47 @@ export async function POST(req: NextRequest) {
           updateFields.status = 'paid_in_full'
         }
 
-        await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+        const { error: pbpUpdErr } = await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+        if (pbpUpdErr) {
+          console.error('Party builder payment: booking update failed —', pbpUpdErr.message, '— asking Stripe to retry')
+          return NextResponse.json({ error: pbpUpdErr.message }, { status: 500 })
+        }
 
-        await supabase.from('booking_modifications').insert({
-          booking_id: bookingId,
-          modified_by: 'system',
-          change_summary: `Payment of ${formatMoney(amountCents)} received via card. Balance: ${formatMoney(newBalance)}`,
-        }).then(({ error }) => {
-          if (error) console.error('Modification log error (non-fatal):', error)
-        })
-
-        await recordFinancialTransaction(supabase, {
+        const pbpFin = await recordFinancialTransaction(supabase, {
           date: new Date().toISOString().split('T')[0],
           description: `Party ${paymentType === 'final' ? 'Final' : 'Partial'} Payment — ${bookingRef}`,
           amountCents: totalCharged,
           category: 'Party Booking',
           customerName: m.contactName || null,
-          reference: `pb-${bookingRef}-${paymentType}`,
+          reference: `pb-${bookingRef}-${paymentType}-${session.id}`,
           notes: m.contactEmail || null,
         })
+        if (pbpFin === 'failed') return NextResponse.json({ error: 'financial row not written' }, { status: 500 })
+        if (pbpFin === 'duplicate') {
+          console.log('Party builder payment: already handled for session', session.id, '— no second receipt')
+          return NextResponse.json({ received: true, duplicate: true })
+        }
+
+        const { error: pbpModErr } = await supabase.from('booking_modifications').insert({
+          booking_id: bookingId,
+          modified_by: 'system',
+          change_summary: `Payment of ${formatMoney(amountCents)} received via card. Balance: ${formatMoney(newBalance)}`,
+        })
+        if (pbpModErr) console.error('Modification log error (non-fatal):', pbpModErr.message)
 
         // Send payment receipt to customer (confirm-session no longer sends emails)
         if (process.env.RESEND_API_KEY && m.contactEmail) {
           const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
           const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
-          await supabase.from('portal_tokens').insert({
+          const { error: pbpTokErr } = await supabase.from('portal_tokens').insert({
             booking_id: bookingId,
             token_hash: hash,
             expires_at: expiresAt.toISOString(),
-          }).then(({ error }) => {
-            if (error) console.error('Portal token insert (non-fatal):', error)
           })
+          if (pbpTokErr) {
+            console.error('Portal token insert failed:', pbpTokErr.message, '— asking Stripe to retry rather than mailing a dead link')
+            return NextResponse.json({ error: pbpTokErr.message }, { status: 500 })
+          }
           const portalUrl = buildPortalUrl(bookingRef, rawToken, '/party-planner')
 
           const resend = new Resend(process.env.RESEND_API_KEY)
@@ -1589,31 +1914,40 @@ export async function POST(req: NextRequest) {
         status: 'active',
       })
 
-      if (gcErr) {
-        console.error('Gift card insert error:', gcErr)
-      } else {
-        console.log('Gift card created:', code, amountFormatted, 'for', m.recipientEmail)
-
-        // Record in financials (non-fatal)
-        await recordFinancialTransaction(supabase, {
-          date: new Date().toISOString().split('T')[0],
-          description: `Gift Card — ${code}`,
-          amountCents,
-          category: 'Gift Card',
-          customerName: m.purchaserName,
-          reference: `gc-${code}`,
-          notes: `Purchaser: ${m.purchaserEmail} | Recipient: ${m.recipientEmail}`,
-        })
-
-        // Upsert purchaser contact (non-fatal)
-        await upsertContact({
-          name: m.purchaserName,
-          email: m.purchaserEmail,
-          sourceDetail: `Gift card purchase — ${code}`,
-          serviceInterests: ['general'],
-          marketingConsent: false,
-        }).catch(err => console.error('Gift card contact upsert error (non-fatal):', err))
+      if (gcErr && !isUniqueViolation(gcErr)) {
+        console.error('Gift card insert error:', gcErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: gcErr.message }, { status: 500 })
       }
+      if (gcErr || alreadyIssued) {
+        // `gift_cards_stripe_session_id_key` has always been unique, so a
+        // redelivery ALWAYS failed this insert — and the old code then emailed
+        // the recipient the freshly generated `code`, which was never written to
+        // the table. A second gift-card email quoting a code that redeems
+        // nothing, for a card the customer already holds under a different code.
+        console.log('Gift card already issued for session', session.id, '— nothing re-issued, no second email')
+        return NextResponse.json({ received: true, duplicate: true })
+      }
+      console.log('Gift card created:', code, amountFormatted, 'for', m.recipientEmail)
+
+      // Record in financials (non-fatal)
+      await recordFinancialTransaction(supabase, {
+        date: new Date().toISOString().split('T')[0],
+        description: `Gift Card — ${code}`,
+        amountCents,
+        category: 'Gift Card',
+        customerName: m.purchaserName,
+        reference: `gc-${code}`,
+        notes: `Purchaser: ${m.purchaserEmail} | Recipient: ${m.recipientEmail}`,
+      })
+
+      // Upsert purchaser contact (non-fatal)
+      await upsertContact({
+        name: m.purchaserName,
+        email: m.purchaserEmail,
+        sourceDetail: `Gift card purchase — ${code}`,
+        serviceInterests: ['general'],
+        marketingConsent: false,
+      }).catch(err => console.error('Gift card contact upsert error (non-fatal):', err))
 
       // Send emails
       if (process.env.RESEND_API_KEY) {
@@ -1678,6 +2012,31 @@ export async function POST(req: NextRequest) {
     // That is how a real $927 customer payment was recorded nowhere: Stripe
     // retried, gave up, and the only trace was a stack trace in a log. See
     // lib/unclaimedPayment.ts.
+    //
+    // ── Why there is a second test here now ───────────────────────────────
+    //
+    // `isUnclaimableSession` asks "does the legacy tail have what it needs",
+    // which is NOT the same question as "did any branch claim this". A session
+    // naming a type nobody handles but carrying a `contactEmail` passed it, fell
+    // into the legacy tail, and silently became a phantom `deposit_paid`
+    // kids-party booking — with a "You're booked! 🎉" email sent to whoever paid.
+    //
+    // And this is measured, not imagined. Stripe's own records hold a settled
+    // LIVE session from 2026-07-22 for **$250.00** whose metadata is
+    // `{customerName, type: "invoice_deposit"}` — a type this codebase has never
+    // written, from a hand-made dashboard link. It is in no table: no booking, no
+    // booking_payment, no financial row. A second lost payment on this surface,
+    // two months BEFORE the $927 one that got a net built for it, and the net as
+    // built would still have missed it if the link had carried an email address.
+    if (!isHandledSessionType(m.type) && !isLegacyBookingSession(m)) {
+      console.error(
+        `UNHANDLED STRIPE SESSION TYPE "${m.type}" on ${session.id} —` +
+          ` no branch claims it; recording as unclaimed rather than guessing it is a party booking.`,
+      )
+      const un = await recordUnclaimedStripeSession(session, supabase)
+      return NextResponse.json({ received: true, unclaimed: true, unknownType: m.type, recorded: un.recorded })
+    }
+
     if (isUnclaimableSession(session.metadata)) {
       const un = await recordUnclaimedStripeSession(session, supabase)
       // Acknowledged either way. Retrying an unclaimable session produces the
@@ -1691,10 +2050,9 @@ export async function POST(req: NextRequest) {
       ? new Date(new Date(partyDate).getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       : null
 
-    let partyTags = {}
-    try {
-      partyTags = m.partyTags ? JSON.parse(m.partyTags) : {}
-    } catch { /* ignore */ }
+    const parsedTags = parseJsonMetadata<Record<string, unknown>>(m.partyTags, 'partyTags')
+    if (!parsedTags.ok) console.error('Legacy booking:', parsedTags.message, '— continuing with empty party_tags')
+    const partyTags = parsedTags.ok && !Array.isArray(parsedTags.value) ? parsedTags.value : {}
 
     const bookingRef = `HH-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`
 
@@ -1719,29 +2077,34 @@ export async function POST(req: NextRequest) {
       booking_ref: bookingRef,
     })
 
-    if (dbError) {
-      console.error('Supabase insert error:', dbError)
-    } else {
+    if (dbError && !isUniqueViolation(dbError)) {
+      // The booking was refused — most likely by `bookings_contact_reachable_check`,
+      // which is exactly what happened to the $927 payment. Do NOT carry on into
+      // the confirmation email: there is no booking to confirm. Record the money
+      // where a human looks and acknowledge, because retrying an unclaimable
+      // session produces the same nothing three days running.
+      console.error('Supabase insert error:', dbError.message, '— recording this payment as unclaimed instead')
+      const un = await recordUnclaimedStripeSession(session, supabase)
+      return NextResponse.json({ received: true, unclaimed: true, recorded: un.recorded, reason: dbError.message })
+    }
+    if (dbError || alreadyIssued) {
+      console.log('Legacy booking already created for session', session.id, '— nothing re-issued, no second email')
+      return NextResponse.json({ received: true, duplicate: true })
+    }
+    {
       console.log('Booking created:', bookingRef, 'for', m.contactEmail, 'on', partyDate)
 
-      // Redeem partial gift card if used (non-fatal)
+      // Redeem partial gift card if used
       if (m.giftCardCode && m.giftCardDeductCents) {
         const gcDeduct = parseInt(m.giftCardDeductCents, 10)
         if (gcDeduct > 0) {
-          const { data: gc } = await supabase
-            .from('gift_cards')
-            .select('id, balance_cents')
-            .eq('code', m.giftCardCode)
-            .eq('status', 'active')
-            .single()
-          if (gc) {
-            const newBal = Math.max(0, gc.balance_cents - gcDeduct)
-            await supabase.from('gift_cards').update({
-              balance_cents: newBal,
-              status: newBal === 0 ? 'redeemed' : 'active',
-              redeemed_at: newBal === 0 ? new Date().toISOString() : null,
-            }).eq('id', gc.id)
-            console.log(`Gift card ${m.giftCardCode} redeemed ${gcDeduct}c for booking ${bookingRef}. New balance: ${newBal}c`)
+          const red = await redeemGiftCard(supabase, m.giftCardCode, gcDeduct)
+          if (red.outcome === 'redeemed') {
+            console.log(`Gift card ${m.giftCardCode} redeemed ${red.redeemedCents}c for booking ${bookingRef}. New balance: ${red.newBalanceCents}c (${red.status})`)
+          } else if (red.outcome === 'no_active_card') {
+            console.error(`GIFT CARD NOT REDEEMED: ${m.giftCardCode} has no ACTIVE row — ${gcDeduct}c of discount was given on ${bookingRef} and not deducted.`)
+          } else {
+            console.error(`GIFT CARD NOT REDEEMED: ${m.giftCardCode} — ${red.message}. ${gcDeduct}c of discount was given on ${bookingRef} and not deducted.`)
           }
         }
       }

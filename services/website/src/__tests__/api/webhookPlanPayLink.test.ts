@@ -75,6 +75,11 @@ function req(sig: string | null = 'sig_valid') {
 
 const SESSION = {
   id: 'cs_plan_1',
+  // Real Stripe always sets this. Link 16 added a settlement gate ahead of every
+  // branch, and it fails CLOSED: a session with no `payment_status` is treated as
+  // not settled, because issuing goods for money that is not there is the
+  // expensive direction.
+  payment_status: 'paid',
   amount_total: 25750,
   payment_intent: 'pi_1',
   payment_link: 'plink_1',
@@ -183,6 +188,7 @@ describe('POST /api/webhook — plan pay link', () => {
       data: {
         object: {
           id: 'cs_legacy_1',
+          payment_status: 'paid',
           amount_total: 5000,
           payment_intent: 'pi_legacy',
           payment_link: 'plink_legacy',

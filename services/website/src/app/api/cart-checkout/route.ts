@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { saleAdjustedCents } from '@/lib/sale'
 import { publicOrigin } from '@/lib/publicOrigin'
+import { STRIPE_METADATA_VALUE_LIMIT, nextTicketRef } from '@/lib/stripeSettlement'
 
 export const dynamic = 'force-dynamic'
 
@@ -208,12 +209,19 @@ export async function POST(req: NextRequest) {
     for (const meta of cartMeta) {
       if (meta.sessionIds?.length) {
         for (const sid of meta.sessionIds) {
-          const { data: seqData } = await supabase.rpc('nextval_event_ticket_seq')
-          const seqNum = seqData ?? Date.now().toString().slice(-4)
-          const ticketRef = `HH-EVT-${String(seqNum).padStart(4, '0')}`
+          const refResult = await nextTicketRef(supabase)
+          if (!refResult.ok) {
+            // The RPC this used to call HAD NEVER BEEN CREATED and the error was
+            // discarded, so every ref here silently came from
+            // `Date.now().slice(-4)` — a ten-second-wide space against a UNIQUE
+            // column. Migration 046 creates it; this stops pretending it worked.
+            console.error('Ticket ref allocation failed:', refResult.message)
+            return NextResponse.json({ error: 'Could not issue a ticket. Please try again.' }, { status: 500 })
+          }
+          const ticketRef = refResult.ref
           ticketRefs.push(ticketRef)
 
-          await supabase.from('event_tickets').insert({
+          const { error: freeTicketErr } = await supabase.from('event_tickets').insert({
             ticket_ref: ticketRef,
             event_id: meta.eventId,
             session_id: sid,
@@ -227,15 +235,28 @@ export async function POST(req: NextRequest) {
             total_cents: 0,
             status: 'confirmed',
           })
+          if (freeTicketErr) {
+            // A free ticket is still a promise to a real person: refusing beats a
+            // confirmation email naming a row that was never written (rule 10).
+            console.error('Free ticket insert failed:', freeTicketErr.message)
+            return NextResponse.json({ error: 'Could not issue a ticket. Please try again.' }, { status: 500 })
+          }
           await supabase.rpc('decrement_session_tickets', { sid, qty: meta.quantity })
         }
       } else {
-        const { data: seqData } = await supabase.rpc('nextval_event_ticket_seq')
-        const seqNum = seqData ?? Date.now().toString().slice(-4)
-        const ticketRef = `HH-EVT-${String(seqNum).padStart(4, '0')}`
+        const refResult = await nextTicketRef(supabase)
+        if (!refResult.ok) {
+          // The RPC this used to call HAD NEVER BEEN CREATED and the error was
+          // discarded, so every ref here silently came from
+          // `Date.now().slice(-4)` — a ten-second-wide space against a UNIQUE
+          // column. Migration 046 creates it; this stops pretending it worked.
+          console.error('Ticket ref allocation failed:', refResult.message)
+          return NextResponse.json({ error: 'Could not issue a ticket. Please try again.' }, { status: 500 })
+        }
+        const ticketRef = refResult.ref
         ticketRefs.push(ticketRef)
 
-        await supabase.from('event_tickets').insert({
+        const { error: freeTicketErr } = await supabase.from('event_tickets').insert({
           ticket_ref: ticketRef,
           event_id: meta.eventId,
           session_id: meta.sessionId || null,
@@ -249,6 +270,12 @@ export async function POST(req: NextRequest) {
           total_cents: 0,
           status: 'confirmed',
         })
+        if (freeTicketErr) {
+          // A free ticket is still a promise to a real person: refusing beats a
+          // confirmation email naming a row that was never written (rule 10).
+          console.error('Free ticket insert failed:', freeTicketErr.message)
+          return NextResponse.json({ error: 'Could not issue a ticket. Please try again.' }, { status: 500 })
+        }
         if (meta.sessionId) {
           await supabase.rpc('decrement_session_tickets', { sid: meta.sessionId, qty: meta.quantity })
         } else {
@@ -287,21 +314,58 @@ export async function POST(req: NextRequest) {
     },
   )
 
-  const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
-    customer_email: customerEmail,
-    line_items: lineItems,
-    metadata: {
-      type: 'cart_checkout',
-      cartItems: JSON.stringify(cartMeta),
-      customerName,
-      customerEmail,
-      customerPhone,
-      marketingConsent: body.marketingConsent ? 'true' : 'false',
-    },
-    success_url: `${origin}/events/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/events?cancelled=true`,
-  })
+  // Stripe caps a single metadata VALUE at 500 characters. Measured against the
+  // live API rather than taken from the docs: 500 is accepted, 600 is refused
+  // with "Metadata values can have up to 500 characters".
+  //
+  // The webhook rebuilds every ticket from `cartItems`, and real carts have
+  // already reached 303 characters at THREE items — so this route's advertised
+  // 10-item cart could not fit, and `sessions.create` would have thrown with no
+  // try/catch around it: an unhandled 500 on the checkout button. Nobody had hit
+  // it yet because the largest real cart was three items.
+  //
+  // The keys are shortened so ten items do fit; the webhook reads both this
+  // compact form and the long one, because sessions created before this deploy
+  // are still out there.
+  const compactCart = cartMeta.map(c => ({
+    e: c.eventId,
+    ...(c.sessionId ? { s: c.sessionId } : {}),
+    ...(c.sessionIds ? { S: c.sessionIds } : {}),
+    q: c.quantity,
+    ...(c.variantLabel ? { v: c.variantLabel } : {}),
+    p: c.unitPriceCents,
+    t: c.eventTitle,
+  }))
+  const cartJson = JSON.stringify(compactCart)
+  if (cartJson.length > STRIPE_METADATA_VALUE_LIMIT) {
+    // Refusing with a reason the customer can act on beats a 500 they cannot.
+    return NextResponse.json({
+      error: `This cart has too many different events to check out in one go (${items.length}). Please split it into two orders.`,
+    }, { status: 400 })
+  }
+
+  let session: Stripe.Checkout.Session
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer_email: customerEmail,
+      line_items: lineItems,
+      metadata: {
+        type: 'cart_checkout',
+        cartItems: cartJson,
+        customerName,
+        customerEmail,
+        customerPhone,
+        marketingConsent: body.marketingConsent ? 'true' : 'false',
+      },
+      success_url: `${origin}/events/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/events?cancelled=true`,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Stripe checkout failed'
+    console.error('Cart checkout: Stripe session create failed:', message)
+    return NextResponse.json({ error: 'Could not start checkout. Please try again.' }, { status: 502 })
+  }
 
   return NextResponse.json({ url: session.url })
 }

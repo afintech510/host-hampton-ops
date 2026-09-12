@@ -53,7 +53,10 @@ const mockFrom = jest.fn()
 jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn().mockImplementation(() => ({
     from: mockFrom,
-    rpc: jest.fn().mockResolvedValue({ data: null, error: null }),
+    rpc: jest.fn().mockImplementation((fn: string) =>
+      fn === 'nextval_event_ticket_seq'
+        ? Promise.resolve({ data: 10001, error: null })
+        : Promise.resolve({ data: 5, error: null })),
   })),
 }))
 
@@ -155,11 +158,23 @@ describe('POST /api/webhook — a settled session that nothing claims', () => {
     expect((unclaimedSpy.mock.calls[0][0] as { amount_total: number }).amount_total).toBe(92700)
   })
 
-  it('never reaches the legacy party-booking insert that used to throw', async () => {
+  it('never reaches the legacy party-booking INSERT that used to throw', async () => {
     // That insert is what turned a lost payment into a 500 and a stack trace.
+    //
+    // The assertion is about the INSERT, not about touching the table at all:
+    // link 16 added a redelivery claim that READS `bookings` by
+    // `stripe_session_id` ahead of the legacy branch, and a read cannot create a
+    // phantom booking. (Link 14's tripwire hole was the mirror of this — a rule
+    // that could not tell a read from a write.)
+    const inserts: string[] = []
+    mockFrom.mockImplementation((t: string) => {
+      const c = chain({ data: null, error: null }) as Record<string, unknown>
+      c.insert = () => { inserts.push(t); return c }
+      return c
+    })
     const { POST } = await import('@/app/api/webhook/route')
     await POST(req())
-    expect(tablesTouched()).not.toContain('bookings')
+    expect(inserts).not.toContain('bookings')
   })
 
   it('is ACKNOWLEDGED even when recording it also failed — a retry changes nothing', async () => {
@@ -224,14 +239,53 @@ describe('POST /api/webhook — the delayed half of a Checkout payment', () => {
     expect(recordSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('does NOT re-run the legacy ticket branches — that would issue a second ticket', async () => {
+  it('DOES run the legacy ticket branches, because a late settlement is still a sale', async () => {
+    // This inverts what the test used to assert, deliberately.
+    //
+    // The old handler dumped a non-plan `async_payment_succeeded` into the
+    // unclaimed net, because re-running the branches would have issued a second
+    // ticket. The cost of that was worse than the cure: a customer whose Klarna
+    // or Cash App payment settled a few minutes late paid in full and got NO
+    // ticket, no confirmation and no inventory decrement — only a line in Adam's
+    // Financials tab saying somebody's money needs attributing.
+    //
+    // Both events now run the same branches behind one claim, so the ticket is
+    // issued exactly once whichever event arrives first. Link 16, and the reason
+    // the settlement gate had to come first.
     event({ metadata: { type: 'event_ticket', eventId: 'e1', quantity: '2', customerEmail: 'x@example.com', customerName: 'X' } }, 'checkout.session.async_payment_succeeded')
     const { POST } = await import('@/app/api/webhook/route')
     const res = await POST(req())
     expect(res.status).toBe(200)
+    expect(tablesTouched()).toContain('event_tickets')
+    expect(unclaimedSpy).not.toHaveBeenCalled()
+  })
+
+  it('issues nothing at all for a session that completed UNPAID', async () => {
+    // `checkout.session.completed` does not mean paid. Before the settlement
+    // gate, every legacy branch issued immediately on `completed` regardless —
+    // and Klarna, Cash App Pay and Amazon Pay are enabled on about two thirds of
+    // the sessions this account creates.
+    event(
+      { payment_status: 'unpaid', metadata: { type: 'event_ticket', eventId: 'e1', quantity: '2', customerEmail: 'x@example.com', customerName: 'X' } },
+      'checkout.session.completed',
+    )
+    const { POST } = await import('@/app/api/webhook/route')
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    expect(res.json()).toMatchObject({ settled: false })
     expect(tablesTouched()).not.toContain('event_tickets')
-    // Caught by the net instead, so it is visible rather than silently handled twice.
-    expect(unclaimedSpy).toHaveBeenCalledTimes(1)
+    // And it is NOT recorded as unclaimed either — nothing has settled, so there
+    // is no money to chase yet.
+    expect(unclaimedSpy).not.toHaveBeenCalled()
+  })
+
+  it('says out loud when a delayed payment FAILS', async () => {
+    event({ metadata: { type: 'event_ticket', eventId: 'e1' } }, 'checkout.session.async_payment_failed')
+    const { POST } = await import('@/app/api/webhook/route')
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    expect(res.json()).toMatchObject({ failed: true })
+    expect(tablesTouched()).not.toContain('event_tickets')
   })
 
   it('passes an overpayment through to the receipt so Adam is told', async () => {

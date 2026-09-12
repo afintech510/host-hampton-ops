@@ -130,7 +130,12 @@ export async function POST(req: NextRequest) {
       updateFields.paid_in_full_at = new Date().toISOString()
       updateFields.status = 'paid_in_full'
     }
-    await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+    const { error: updErr } = await supabase.from('bookings').update(updateFields).eq('id', bookingId)
+    if (updErr) {
+      // The UI is about to show a balance this write did not store.
+      console.error('confirm-session booking update error:', updErr.message)
+      return NextResponse.json({ error: updErr.message }, { status: 500 })
+    }
 
     return NextResponse.json({
       ok: true,
