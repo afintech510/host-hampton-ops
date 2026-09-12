@@ -122,8 +122,30 @@
 
 ## Phase 4: Campaign Automation
 
+**Measured starting state, 2026-09-12 (link 7) — check it again before trusting
+it.** Counted from the nginx container's own log, filtered to Host Hampton's
+route names **and by status code**, because that nginx fronts ~30 businesses on
+this box and an unfiltered `grep` counts other people's crons (an unfiltered
+count also returns `444`s, which never reached an app at all):
+
+| cron route | hits | verdict |
+|---|---|---|
+| `agent-dispatch` | **996 × 200** | the only Host Hampton cron genuinely scheduled and working |
+| `agent-distill` | 1 × 200, 4 × 401, 4 × 502 | hand runs + the schema 502s §23 documented; not scheduled |
+| `draft-newsletter` | **11 × 401, 0 × 200** | something calls it and it has **never once authenticated** — a job that looks scheduled and has never done anything |
+| `send-campaigns` | **0** | never called |
+| `process-sequences` | **0** | never called — **and this route already exists**, so Phase 4's "email campaign sequencing" is partly built, not greenfield |
+| `send-reminders` / `event-reminders` / `birthday-rebooking` | **0** | never called |
+
+So **Phase 3B's whole reminder-and-campaign engine has never run in
+production.** It is code with a test suite and no operational history, which is
+a different risk profile from code that works — and the first Phase 4 job is to
+find out which parts of it are real. Note also that the Brevo list is **944 real
+people** ([[comms-provider-config]] / `PLAN.md` Phase 3B): nothing here may
+auto-send, and a campaign is never a test.
+
 - [ ] Social content calendar auto-generation (COPY + SOC)
-- [ ] Automated Instagram posting via Meta API (OUTBOUND) — needs META credentials
+- [ ] **Needs Adam — Automated Instagram posting via Meta API (OUTBOUND).** Measured 2026-09-12: the container has **zero** `META_*` environment variables, so this is blocked on credentials before it is blocked on code.
 - [ ] Email campaign sequencing (LIST + OUTBOUND)
 - [ ] Google Business Profile post automation
 
