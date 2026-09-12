@@ -9,6 +9,8 @@
  * Multi-segment messages are clearly noted.
  */
 
+import { REVIEW_BASE_URL } from '@/lib/marketing/reviewLink'
+
 /* ── Transactional — Event Reminders ─────────────────────────── */
 
 export interface SmsEventReminder1DayParams {
@@ -129,7 +131,12 @@ export interface SmsReviewRequestParams {
   reviewUrl?: string
 }
 
-const DEFAULT_REVIEW_URL = 'https://g.page/r/CXw9DJM9kFo-EBM/review'
+/**
+ * Imported, not re-declared. This was a second copy of the same URL, and when
+ * `lib/marketing/reviewLink.ts`'s copy changed, this one and its test kept the
+ * old value — a failing test nobody owned. One constant, one answer.
+ */
+const DEFAULT_REVIEW_URL = REVIEW_BASE_URL
 
 /**
  * Review request sent 24 hours after an event or booking. ~180 chars (2 segments).

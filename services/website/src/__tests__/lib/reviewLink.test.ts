@@ -6,6 +6,21 @@
 import { buildReviewUrl } from '@/lib/marketing/reviewLink'
 
 describe('buildReviewUrl', () => {
+  /**
+   * The ONE place the literal is deliberately written out in a test, and it is
+   * a tripwire rather than an assertion about plumbing: changing where we send
+   * customers to review the business should be a conscious act that breaks a
+   * test, not a drive-by edit.
+   *
+   * That distinction is the lesson from the failure this replaced. The SMS
+   * template test asserted this same URL — a value it did not own, copied from
+   * another file — so when that file changed, the test went red and stayed red
+   * for days because nobody could tell whether it was a real bug. A test that
+   * pins a value it owns is a guard; one that pins a value it borrowed is rot.
+   *
+   * If you are here because this test failed: check the new URL actually
+   * resolves to Host Hampton's Google place, then update this line on purpose.
+   */
   it('points at the Host Hampton Google review page for sms', () => {
     const url = buildReviewUrl('sms')
     expect(url).toContain('https://g.page/r/CXw9DJM9kFo-EBM/review')

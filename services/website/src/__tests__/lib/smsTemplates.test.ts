@@ -13,6 +13,7 @@ import {
   smsFlashSale,
   smsReviewRequest,
 } from '@/lib/sms-templates'
+import { REVIEW_BASE_URL, buildReviewUrl } from '@/lib/marketing/reviewLink'
 
 describe('SMS Templates', () => {
   describe('smsEventReminder1Day', () => {
@@ -141,13 +142,24 @@ describe('SMS Templates', () => {
     it('includes first name and the default review link when none is passed', () => {
       const result = smsReviewRequest({ firstName: 'Jane' })
       expect(result).toContain('Jane')
-      expect(result).toContain('https://search.google.com/local/writereview')
+      // Asserted against the CONSTANT, not a copy of its value. This test spent
+      // days red because it hardcoded the old URL while the code moved on, and
+      // a literal here would simply set that trap again.
+      expect(result).toContain(REVIEW_BASE_URL)
     })
 
     it('uses a passed-in reviewUrl (e.g. UTM-tagged) instead of the default', () => {
       const result = smsReviewRequest({ firstName: 'Jane', reviewUrl: 'https://example.com/review?utm_source=sms' })
       expect(result).toContain('https://example.com/review?utm_source=sms')
-      expect(result).not.toContain('placeid=')
+      expect(result).not.toContain(REVIEW_BASE_URL)
+    })
+
+    it('sends people to the same place the email review link does', () => {
+      // The regression this whole exercise was: the URL was declared in two
+      // files, one changed, and nothing compared them. This is the comparison.
+      expect(smsReviewRequest({ firstName: 'Jane' })).toContain(REVIEW_BASE_URL)
+      expect(buildReviewUrl('email')).toContain(REVIEW_BASE_URL)
+      expect(buildReviewUrl('sms')).toContain(REVIEW_BASE_URL)
     })
 
     it('includes STOP opt-out', () => {
