@@ -120,11 +120,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       // "this campaign is draft — it is not waiting to be sent" would be a
       // confidently contradictory sentence, so the two cases are separated.
       const raced = existing.status === 'draft' || existing.status === 'scheduled'
+      // `sending` is its own case and it is the one an operator can get stuck
+      // in. Unlike `email_sequence_sends`, this claim has NO stale-claim
+      // takeover, and deliberately: a claim reaped here would re-enter
+      // `sendCampaign`, and a retried Brevo send is a SECOND campaign to 944
+      // people. So the recovery is a human one, and the message has to say what
+      // the human should do rather than the flatly wrong "it is not waiting to
+      // be sent" (rule 10 — a refusal that misdescribes itself).
+      const stuck = existing.status === 'sending'
       return NextResponse.json(
         {
           error: raced
             ? 'Another send for this campaign was already in flight — nothing was sent twice. Check its status before pressing Send again.'
-            : `This campaign is "${existing.status}" — it is not waiting to be sent.`,
+            : stuck
+              ? 'A send for this campaign is in flight (or a previous one did not finish). Check your Brevo dashboard before doing anything else — pressing Send again would create a SECOND campaign. If Brevo shows nothing, set this row back to draft.'
+              : `This campaign is "${existing.status}" — it is not waiting to be sent.`,
           status: existing.status,
         },
         { status: 409 }
@@ -235,13 +245,46 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const results = await sendBulkSMS(smsContacts, 1000, mediaUrls)
       const successCount = results.filter(r => r !== null).length
 
+      // §3 fixed exactly this on the EMAIL branch and left it here: the row was
+      // written `sent` with `total_recipients` set to the number ATTEMPTED,
+      // whatever the provider actually did — so a Twilio outage that delivered
+      // nothing at all was recorded in Adam's campaign history as a completed
+      // send to N people. `sendBulkSMS` returns null per failed message and
+      // nothing read it. Rule 12: three outcomes, and `total_recipients` now
+      // counts what went out.
+      if (successCount === 0) {
+        await supabase
+          .from('scheduled_campaigns')
+          .update({ status: 'failed', total_recipients: 0 })
+          .eq('id', id)
+        console.error(`admin:campaigns SMS campaign ${id} — all ${smsContacts.length} messages failed`)
+        return NextResponse.json(
+          { error: `No messages were accepted by the provider (0 of ${smsContacts.length}).`, sent: 0, total: smsContacts.length },
+          { status: 502 }
+        )
+      }
+
       await supabase.from('scheduled_campaigns').update({
         status: 'sent',
         sent_at: new Date().toISOString(),
-        total_recipients: smsContacts.length,
+        total_recipients: successCount,
       }).eq('id', id)
 
-      return NextResponse.json({ ok: true, sent: successCount, total: smsContacts.length })
+      if (successCount < smsContacts.length) {
+        console.warn(
+          `admin:campaigns SMS campaign ${id} — ${smsContacts.length - successCount} of ` +
+            `${smsContacts.length} messages were NOT accepted by the provider`
+        )
+      }
+
+      return NextResponse.json({
+        ok: true,
+        sent: successCount,
+        total: smsContacts.length,
+        ...(successCount < smsContacts.length
+          ? { warning: `${smsContacts.length - successCount} message(s) were not accepted by the provider.` }
+          : {}),
+      })
     }
 
     await release()

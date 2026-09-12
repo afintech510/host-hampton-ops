@@ -1,5 +1,6 @@
 import { getSupabase } from '@/lib/supabase'
 import { syncContactExternally } from '@/lib/contactSync'
+import { findContactsByEmail } from '@/lib/contactLookup'
 
 // Valid service_type enum values in the database
 const SERVICE_TYPE_MAP: Record<string, string> = {
@@ -63,16 +64,37 @@ export async function upsertContact({
     const supabase = getSupabase()
     const nameParts = name.trim().split(/\s+/)
 
+    // Read BEFORE the upsert, because `upsert` overwrites every column in the
+    // payload — and one of them used to be `status`.
+    //
+    // `contacts.status` is the `contact_status` enum, and two of its labels are
+    // load-bearing: `customer` (429 rows today) and **`unsubscribed`**, which is
+    // half of what `optedOutReason()` in lib/sequences/processor.ts reads before
+    // every marketing send. Writing `status: 'lead'` unconditionally made this
+    // function a FOURTH writer of opt-out state, in the wrong direction and
+    // silently: an admin marking somebody unsubscribed in the Contacts tab had
+    // it erased by that person's next enquiry form, and the sequencer then saw a
+    // perfectly ordinary lead. It also demoted paying customers back to leads.
+    //
+    // A new contact is a lead. An existing one keeps whatever it had.
+    const prior = await findContactsByEmail(supabase, email, 'id, email, status')
+    if (prior.kind === 'unavailable') {
+      // Rule 12: "could not read" is not "there is no such contact". Guessing
+      // `lead` here is exactly the write this block exists to prevent.
+      console.error('upsertContact: could not read existing contact:', prior.error)
+      return null
+    }
+
     const record: Record<string, unknown> = {
       email,
       first_name: nameParts[0],
       last_name: nameParts.length > 1 ? nameParts.slice(1).join(' ') : null,
       phone: phone || null,
-      status: 'lead',
       source: 'direct',
       source_detail: sourceDetail,
       service_interests: normalizeServiceInterests(serviceInterests),
     }
+    if (prior.kind === 'absent') record.status = 'lead'
 
     // Only set opt-in fields when consent is explicitly provided (true)
     // Never flip opt-in to false via this function — that's handled by unsubscribe flows

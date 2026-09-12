@@ -374,3 +374,47 @@ describe('sequence content problems are named, not guessed at', () => {
     expect(s.sent).toHaveLength(0)
   })
 })
+
+describe('an enrollment that can never become due', () => {
+  /**
+   * Added by chain link 9. `isDue` returning false for an unparseable reference
+   * is the SAFE outcome and it was also a silent one: the enrollment stays
+   * `active`, is skipped every fifteen minutes forever, and is indistinguishable
+   * in every log and summary from one that is simply not due yet. Rule 10 — a
+   * guardrail that stops something must say that it stopped it.
+   */
+  it('is reported rather than skipped quietly', async () => {
+    const store = baseStore()
+    store.contact_sequence_enrollments[0].metadata = { event_date: '2026-10-09T00:00:00+00:00' }
+    store.email_sequence_steps[0].delay_reference = 'event_date'
+    const supabase = makeSupabase(store)
+    const s = sender()
+
+    const summary = await processSequences({ supabase: supabase as any, sendEmail: s.fn, now: NOW })
+
+    expect(s.sent).toHaveLength(0)
+    expect(summary.skipped).toBe(0)
+    expect(summary.deferred).toBe(1)
+    expect(summary.notes.join(' ')).toMatch(/metadata\.event_date/)
+    expect(summary.notes.join(' ')).toMatch(/never send/)
+    // Nothing was changed — it is a content problem, not a state transition.
+    expect(store.contact_sequence_enrollments[0].status).toBe('active')
+    expect(store.email_sequence_sends).toHaveLength(0)
+  })
+
+  it('a step that is merely not due yet is still a quiet skip', async () => {
+    const store = baseStore()
+    const supabase = makeSupabase(store)
+    const s = sender()
+
+    const summary = await processSequences({
+      supabase: supabase as any,
+      sendEmail: s.fn,
+      now: new Date('2026-09-02T12:00:00Z'),
+    })
+
+    expect(summary.skipped).toBe(1)
+    expect(summary.deferred).toBe(0)
+    expect(summary.notes).toEqual([])
+  })
+})

@@ -6,9 +6,12 @@ import { generateWeek } from '@/lib/social/calendar'
 import {
   screenStoredPost,
   sanitizeCaptionText,
+  normalizeHashtag,
   trimChars,
   MAX_CAPTION_CHARS,
   MAX_CTA_CHARS,
+  MAX_HASHTAGS,
+  MAX_IMAGE_IDEA_CHARS,
 } from '@/lib/social/normalize'
 import { safeSiteLink } from '@/lib/content/contentSafety'
 
@@ -62,6 +65,10 @@ export async function GET(req: NextRequest) {
       caption: typeof row.caption === 'string' ? row.caption : null,
       call_to_action: typeof row.call_to_action === 'string' ? row.call_to_action : null,
       link_url: typeof row.link_url === 'string' ? row.link_url : null,
+      // The panel renders both of these next to the caption, so both are things
+      // a reviewer reads as vetted copy (rule 11).
+      hashtags: row.hashtags,
+      image_idea: typeof row.image_idea === 'string' ? row.image_idea : null,
     })
     return { ...row, screen_failures: problems }
   })
@@ -102,7 +109,7 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.to === 'string' && body.to) {
     const { data: current, error: readErr } = await supabase
       .from('social_posts')
-      .select('id, status, caption, call_to_action, link_url')
+      .select('id, status, caption, call_to_action, link_url, hashtags, image_idea')
       .eq('id', id)
       .maybeSingle()
 
@@ -172,7 +179,10 @@ export async function PATCH(req: NextRequest) {
     patch.call_to_action = cta || null
   }
   if (body.image_idea === null || typeof body.image_idea === 'string') {
-    patch.image_idea = body.image_idea === null ? null : sanitizeCaptionText(body.image_idea) || null
+    patch.image_idea =
+      body.image_idea === null
+        ? null
+        : trimChars(sanitizeCaptionText(body.image_idea), MAX_IMAGE_IDEA_CHARS) || null
   }
   if (body.link_url === null || typeof body.link_url === 'string') {
     if (body.link_url === null || body.link_url === '') {
@@ -186,11 +196,33 @@ export async function PATCH(req: NextRequest) {
     }
   }
   if (Array.isArray(body.hashtags)) {
-    patch.hashtags = body.hashtags
-      .filter((h: unknown) => typeof h === 'string')
-      .map((h: string) => sanitizeCaptionText(h).replace(/\s+/g, ''))
-      .filter(Boolean)
-      .slice(0, 12)
+    // The SAME parser the generator uses. This path used to strip whitespace and
+    // store whatever was left, so a hashtag written here was bound by a weaker
+    // rule than one written by the model — two implementations of one concept,
+    // which is the concept nothing is checking (rule 11).
+    const tags: string[] = []
+    const rejected: string[] = []
+    for (const h of body.hashtags) {
+      const tag = normalizeHashtag(h)
+      if (!tag) {
+        if (String(h ?? '').trim()) rejected.push(String(h))
+        continue
+      }
+      if (!tags.includes(tag) && tags.length < MAX_HASHTAGS) tags.push(tag)
+    }
+    if (rejected.length > 0) {
+      // Rule 10: a value that does not stick has to say why, or the reviewer
+      // retypes it and watches it vanish again.
+      return NextResponse.json(
+        {
+          error:
+            `A hashtag may only contain letters, numbers and underscores. ` +
+            `Refused: ${rejected.slice(0, 5).join(', ')}`,
+        },
+        { status: 400 }
+      )
+    }
+    patch.hashtags = tags
   }
   if (typeof body.scheduled_for === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.scheduled_for)) {
     // Noon UTC, same as the generator writes, so the slot's unique index (over
@@ -206,6 +238,8 @@ export async function PATCH(req: NextRequest) {
     caption: typeof patch.caption === 'string' ? patch.caption : undefined,
     call_to_action: typeof patch.call_to_action === 'string' ? patch.call_to_action : undefined,
     link_url: typeof patch.link_url === 'string' ? patch.link_url : undefined,
+    hashtags: Array.isArray(patch.hashtags) ? patch.hashtags : undefined,
+    image_idea: typeof patch.image_idea === 'string' ? patch.image_idea : undefined,
   })
   if (screened.length > 0) {
     return NextResponse.json({ error: `Refused: ${screened.join('; ')}`, problems: screened }, { status: 422 })

@@ -28,7 +28,7 @@ const mockRpc = jest.fn().mockResolvedValue({ data: null, error: null })
 
 function buildChain(resolveValue: any) {
   const chain: any = {}
-  const methods = ['select', 'insert', 'update', 'eq', 'neq', 'gte', 'lte', 'order', 'single', 'in']
+  const methods = ['select', 'ilike', 'insert', 'update', 'eq', 'neq', 'gte', 'lte', 'order', 'single', 'in']
   for (const m of methods) {
     chain[m] = jest.fn().mockReturnValue(chain)
   }

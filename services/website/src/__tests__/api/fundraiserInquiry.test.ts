@@ -5,7 +5,7 @@
 // --- Supabase chain mock ---
 function buildChain(resolveValue: any) {
   const chain: any = {}
-  const methods = ['select', 'insert', 'update', 'upsert', 'eq', 'neq', 'gte', 'lte', 'order', 'limit', 'single', 'in']
+  const methods = ['select', 'ilike', 'insert', 'update', 'upsert', 'eq', 'neq', 'gte', 'lte', 'order', 'limit', 'single', 'in']
   for (const m of methods) {
     chain[m] = jest.fn().mockReturnValue(chain)
   }
@@ -94,12 +94,20 @@ describe('POST /api/fundraiser-inquiry', () => {
     const contactSelectChain = buildChain({ data: { id: 'contact-uuid-1' }, error: null })
     const interactionsChain = buildChain({ data: null, error: null })
 
+    // `upsertContact` now READS before it writes — it must not overwrite an
+    // existing contact's `status` (a `customer`, or an admin-set
+    // `unsubscribed`, which is half of what the sequencer's opt-out check
+    // reads). So the contacts table is touched three times: the prior lookup,
+    // the upsert, the id read. Keyed on which one it is rather than on call
+    // order, so the next change to that function does not silently move the
+    // assertions onto the wrong chain.
+    const priorLookupChain = buildChain({ data: [], error: null })
+    let contactsCalls = 0
     const fromMock = jest.fn().mockImplementation((table: string) => {
       if (table === 'contacts') {
-        // First call is upsert, second call is select
-        if (fromMock.mock.calls.filter((c: any[]) => c[0] === 'contacts').length <= 1) {
-          return contactsChain
-        }
+        contactsCalls++
+        if (contactsCalls === 1) return priorLookupChain
+        if (contactsCalls === 2) return contactsChain
         return contactSelectChain
       }
       return interactionsChain
@@ -111,7 +119,43 @@ describe('POST /api/fundraiser-inquiry', () => {
     expect(response.status).toBe(200)
     expect(response.json().success).toBe(true)
     expect(fromMock).toHaveBeenCalledWith('contacts')
+    expect(priorLookupChain.ilike).toHaveBeenCalledWith('email', 'sarah@lincoln.edu')
     expect(contactsChain.upsert).toHaveBeenCalled()
+    // A brand-new contact IS a lead; an existing one keeps what it had.
+    expect(contactsChain.upsert.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ status: 'lead' })
+    )
+  })
+
+  it('does not rewrite an existing contact\'s status', async () => {
+    // The row already exists as a `customer`. The old code upserted
+    // `status: 'lead'` unconditionally, which demoted paying customers and —
+    // the reason it matters here — erased `unsubscribed`.
+    const priorLookupChain = buildChain({
+      data: [{ id: 'contact-uuid-1', email: 'sarah@lincoln.edu', status: 'unsubscribed' }],
+      error: null,
+    })
+    const contactsChain = buildChain({ data: null, error: null })
+    const contactSelectChain = buildChain({ data: { id: 'contact-uuid-1' }, error: null })
+    const interactionsChain = buildChain({ data: null, error: null })
+
+    let contactsCalls = 0
+    mockGetSupabase.mockReturnValue({
+      from: jest.fn().mockImplementation((table: string) => {
+        if (table === 'contacts') {
+          contactsCalls++
+          if (contactsCalls === 1) return priorLookupChain
+          if (contactsCalls === 2) return contactsChain
+          return contactSelectChain
+        }
+        return interactionsChain
+      }),
+    })
+
+    const response = await POST(makeReq(validBody))
+    expect(response.status).toBe(200)
+    expect(contactsChain.upsert).toHaveBeenCalled()
+    expect(contactsChain.upsert.mock.calls[0][0]).not.toHaveProperty('status')
   })
 
   it('inserts contact_interaction with form_submission type', async () => {

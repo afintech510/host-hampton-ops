@@ -62,14 +62,37 @@ export type NormalizeResult =
  * Flatten the characters that forge structure without being visible.
  *
  * Newlines are KEPT — a caption has paragraphs — but the C0 controls that are
- * not a newline, the whole C1 block, U+2028/U+2029, the bidi overrides and the
- * zero-width joiners/spaces go. §24's finding in one sentence: a rule that
- * renders as one line in the panel to the very person whose approval is the
- * guardrail can open a second line somewhere else.
+ * not a newline, the whole C1 block, U+2028/U+2029 and everything that occupies
+ * no width go. §24's finding in one sentence: a rule that renders as one line in
+ * the panel to the very person whose approval is the guardrail can open a second
+ * line somewhere else.
+ *
+ * The first version of this list was written from memory and missed the family
+ * that matters most today: **the Unicode TAG block, U+E0000–U+E007F, whose code
+ * points mirror ASCII one for one.** A caption ending in tag characters renders
+ * as nothing at all in the review panel, survives the clipboard intact, and says
+ * whatever the writer wanted wherever it is finally read. Same class as U+2028
+ * in §24 — invisible structure inside a value a human is signing off on.
  *
  * Built by code point, never by typing a literal: an invisible character in a
  * source file is a screen nobody can read in a diff.
  */
+function isInvisible(cp: number): boolean {
+  if (cp === 0x00ad) return true // soft hyphen
+  if (cp === 0x061c) return true // Arabic letter mark
+  if (cp === 0x180e) return true // Mongolian vowel separator (Cf since Unicode 6.3)
+  if (cp >= 0x200b && cp <= 0x200f) return true // ZWSP/ZWNJ/ZWJ, LRM, RLM
+  if (cp >= 0x202a && cp <= 0x202e) return true // bidi embeddings and overrides
+  if (cp >= 0x2060 && cp <= 0x2064) return true // word joiner, invisible operators
+  if (cp >= 0x2066 && cp <= 0x2069) return true // bidi isolates
+  if (cp === 0xfeff) return true // BOM / zero-width no-break space
+  if (cp === 0x115f || cp === 0x1160 || cp === 0x3164 || cp === 0xffa0) return true // Hangul fillers
+  if (cp >= 0xfff9 && cp <= 0xfffb) return true // interlinear annotation
+  if (cp >= 0xe0000 && cp <= 0xe007f) return true // TAG block — invisible ASCII
+  if (cp >= 0xe0100 && cp <= 0xe01ef) return true // variation selectors supplement
+  return false
+}
+
 export function sanitizeCaptionText(input: unknown): string {
   const s = typeof input === 'string' ? input : ''
   let out = ''
@@ -89,9 +112,13 @@ export function sanitizeCaptionText(input: unknown): string {
       out += '\n'
       continue
     }
-    // Bidi overrides/embeddings/isolates and the zero-width family.
-    if ((cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069)) continue
-    if (cp === 0x200b || cp === 0x200c || cp === 0x200d || cp === 0x2060 || cp === 0xfeff) continue
+    // A LONE SURROGATE is not a character. `for…of` yields it on its own when it
+    // is unpaired, and storing it produces U+FFFD in every consumer and a
+    // `\uXXXX` error inside Postgres jsonb. Rule 15: an input that cannot be
+    // interpreted is DROPPED, never guessed at. A well-formed pair arrives here
+    // as one code point above 0xFFFF and is untouched.
+    if (cp >= 0xd800 && cp <= 0xdfff) continue
+    if (isInvisible(cp)) continue
     out += ch
   }
   return out.replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim()
@@ -112,7 +139,7 @@ export function trimChars(s: string, max: number): string {
   return chars.slice(0, max).join('').trimEnd()
 }
 
-function normalizeHashtag(raw: unknown): string | null {
+export function normalizeHashtag(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const cleaned = sanitizeCaptionText(raw).replace(/\s+/g, '')
   const body = cleaned.replace(/^#+/, '')
@@ -227,11 +254,24 @@ export function isPostType(v: unknown): v is PostType {
  * the admin panel, and §24 found precisely this — a live voice profile that had
  * never been near the sanitiser it was written for. Returns the reasons a stored
  * row would be refused today, empty when it is clean.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * `hashtags` and `image_idea` are screened here because **the panel renders
+ * them**, which is the only test that matters (hard-won rule 11, sharpest form:
+ * a field read by two readers and screened in only one is a screen nobody is
+ * applying). `SocialTab` prints the hashtag line under the caption and the
+ * "Photo:" block under that; Allie reads both as vetted copy and copies the
+ * hashtags into Instagram by hand. The writer-side parser bounds them —
+ * `normalizeHashtag` allows only `[A-Za-z0-9_]` — but the whole premise of this
+ * function is that a row can arrive without ever meeting the writer, and the
+ * PATCH edit path is a second writer that never ran that parser either.
  */
 export function screenStoredPost(row: {
   caption?: string | null
   call_to_action?: string | null
   link_url?: string | null
+  hashtags?: unknown
+  image_idea?: string | null
 }): string[] {
   const problems: string[] = []
   const caption = String(row.caption ?? '')
@@ -245,12 +285,32 @@ export function screenStoredPost(row: {
     problems.push('caption contains invisible or control characters')
   }
 
-  if (row.call_to_action) {
-    const cta = String(row.call_to_action)
-    const ctaMoney = containsFabricatedTerms(cta, { allowedAmounts: NO_AMOUNTS_ALLOWED })
-    if (ctaMoney) problems.push(`call to action states ${ctaMoney}`)
-    const ctaForeign = containsForeignContact(cta)
-    if (ctaForeign) problems.push(`call to action carries a ${ctaForeign}`)
+  /** The same four questions, asked of any other field a human reads. */
+  const screenText = (value: string, label: string): void => {
+    if (containsMarkup(value)) problems.push(`${label} contains markup`)
+    const amt = containsFabricatedTerms(value, { allowedAmounts: NO_AMOUNTS_ALLOWED })
+    if (amt) problems.push(`${label} states ${amt}`)
+    const fc = containsForeignContact(value)
+    if (fc) problems.push(`${label} carries a ${fc}`)
+    if (sanitizeCaptionText(value) !== value.trim()) {
+      problems.push(`${label} contains invisible or control characters`)
+    }
+  }
+
+  if (row.call_to_action) screenText(String(row.call_to_action), 'call to action')
+  if (row.image_idea) screenText(String(row.image_idea), 'image idea')
+
+  if (Array.isArray(row.hashtags)) {
+    for (const h of row.hashtags) {
+      const raw = String(h ?? '')
+      if (!raw) continue
+      // Judged by the writer's own rule rather than a second one written here.
+      if (!normalizeHashtag(raw)) {
+        problems.push(`hashtag "${trimChars(raw, 40)}" is not a hashtag`)
+        continue
+      }
+      screenText(raw, 'hashtag')
+    }
   }
 
   if (row.link_url && !safeSiteLink(row.link_url)) {

@@ -10,7 +10,7 @@
 
 function buildChain(resolveValue: any) {
   const chain: any = {}
-  const methods = ['select', 'insert', 'update', 'delete', 'eq', 'neq', 'gte', 'lte', 'or', 'order', 'single', 'maybeSingle', 'in', 'range', 'limit']
+  const methods = ['select', 'ilike', 'insert', 'update', 'delete', 'eq', 'neq', 'gte', 'lte', 'or', 'order', 'single', 'maybeSingle', 'in', 'range', 'limit']
   for (const m of methods) chain[m] = jest.fn().mockReturnValue(chain)
   const p = Promise.resolve(resolveValue)
   chain.then = p.then.bind(p)

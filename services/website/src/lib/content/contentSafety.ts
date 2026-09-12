@@ -196,6 +196,19 @@ export function safeImageUrl(raw: string | null | undefined): string | null {
   // as mixed content anyway — a value that looked screened and could never load.
   if (url.protocol !== 'https:') return null
   if (!ALLOWED_IMAGE_HOSTS.includes(url.host.toLowerCase())) return null
+  // A PATH that is itself protocol-relative. `//evil.example.com/x.png` as an
+  // input resolves to another origin and is caught by the host check above — but
+  // `https://www.hosthampton.com//evil.example.com/x.png` has OUR host, passes
+  // the allowlist, and leaves `url.pathname` as `//evil.example.com/x.png`. That
+  // string is site-relative to this screen and a DIFFERENT ORIGIN to every
+  // `<img src>` and every `og:image` consumer that reads it.
+  //
+  // Exactly docs/content-pipeline.md §11.1 arriving through a second door: the
+  // backslash form was refused, and the value it normalises to was still
+  // reachable by typing it directly. Refused rather than collapsed, because a
+  // doubled leading slash is never what a writer meant and a screen that repairs
+  // a hostile value is a screen whose output nobody can reason about.
+  if (url.pathname.startsWith('//')) return null
   // Site-relative in, site-relative out: the page should not start emitting
   // absolute URLs for its own images just because they went through a parser.
   if (url.origin === SITE_ORIGIN) return `${url.pathname}${url.search}${url.hash}`

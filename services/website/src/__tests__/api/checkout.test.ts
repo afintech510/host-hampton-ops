@@ -7,7 +7,7 @@ import { sampleEvent, sampleFreeEvent, sampleSession, sampleSessionEvent } from 
 // --- Supabase chain mock ---
 function buildChain(resolveValue: any) {
   const chain: any = {}
-  const methods = ['select', 'insert', 'update', 'eq', 'neq', 'gte', 'lte', 'order', 'limit', 'single', 'in']
+  const methods = ['select', 'ilike', 'insert', 'update', 'eq', 'neq', 'gte', 'lte', 'order', 'limit', 'single', 'in']
   for (const m of methods) {
     chain[m] = jest.fn().mockReturnValue(chain)
   }

@@ -368,7 +368,24 @@ async function processOne(
   }
   const step = stepLookup.value
 
-  if (!isDue(enrollment, step, nextStepNum, now)) {
+  const due = dueAt(enrollment, step, nextStepNum)
+  if (due.kind === 'unreadable') {
+    // Rule 10's other half. `isDue` was fixed to return false for an unparseable
+    // reference — correct, and silent: the enrollment stays `active`, is skipped
+    // every fifteen minutes forever, and looks exactly like an enrollment that
+    // is simply not due yet. Nobody would ever find it. A reference nobody can
+    // parse is a content problem and it has to be said out loud.
+    summary.deferred++
+    summary.notes.push(
+      `enrollment ${enrollment.id}: step ${nextStepNum} has an unusable ${due.field} ("${due.raw}") — ` +
+        `it can never become due and will never send. Needs a human.`
+    )
+    console.error(
+      `cron:sequences enrollment ${enrollment.id} step ${nextStepNum}: unusable ${due.field} "${due.raw}"`
+    )
+    return
+  }
+  if (now < due.at) {
     summary.skipped++
     return
   }
@@ -535,32 +552,73 @@ export function optedOutReason(contact: {
   return null
 }
 
+export type DueAt =
+  | { kind: 'at'; at: Date }
+  /** The reference or the delay cannot be read. This step can NEVER become due. */
+  | { kind: 'unreadable'; field: string; raw: string }
+
+/**
+ * When step `stepNumber` becomes due, or why that cannot be worked out.
+ *
+ * Three outcomes rather than a boolean, for the reason rule 12 keeps giving:
+ * "not yet" and "never, because the data is broken" are different facts and the
+ * second one needs a human. The old code produced an Invalid Date, every
+ * comparison against it was false, and `now < dueDate` being false meant "send
+ * it" — so a malformed `event_date` sent every remaining step of the sequence at
+ * once. The first fix made that case return `false`, which is safe and
+ * indistinguishable from "not due yet": the enrollment then sits `active` and
+ * silently skipped forever.
+ */
+export function dueAt(
+  enrollment: { enrolled_at: string; last_sent_at?: string | null; metadata?: Record<string, string> | null },
+  step: { delay_days: number; delay_reference?: string | null },
+  stepNumber: number
+): DueAt {
+  const meta = enrollment.metadata || {}
+  let reference: Date
+  let field: string
+  let raw: string
+
+  if (step.delay_reference === 'event_date' && meta.event_date) {
+    field = 'metadata.event_date'
+    raw = String(meta.event_date)
+    reference = new Date(`${raw}T12:00:00`)
+  } else if (stepNumber === 1) {
+    field = 'enrolled_at'
+    raw = String(enrollment.enrolled_at)
+    reference = new Date(raw)
+  } else if (enrollment.last_sent_at) {
+    field = 'last_sent_at'
+    raw = String(enrollment.last_sent_at)
+    reference = new Date(raw)
+  } else {
+    field = 'enrolled_at'
+    raw = String(enrollment.enrolled_at)
+    reference = new Date(raw)
+  }
+
+  if (!Number.isFinite(reference.getTime())) return { kind: 'unreadable', field, raw }
+
+  const delay = Number(step.delay_days ?? 0)
+  if (!Number.isFinite(delay)) {
+    return { kind: 'unreadable', field: 'delay_days', raw: String(step.delay_days) }
+  }
+
+  const due = new Date(reference)
+  due.setDate(due.getDate() + delay)
+  if (!Number.isFinite(due.getTime())) return { kind: 'unreadable', field, raw }
+  return { kind: 'at', at: due }
+}
+
+/** Kept for callers that only want the boolean. */
 export function isDue(
   enrollment: { enrolled_at: string; last_sent_at?: string | null; metadata?: Record<string, string> | null },
   step: { delay_days: number; delay_reference?: string | null },
   stepNumber: number,
   now: Date
 ): boolean {
-  const meta = enrollment.metadata || {}
-  let reference: Date
-
-  if (step.delay_reference === 'event_date' && meta.event_date) {
-    reference = new Date(`${meta.event_date}T12:00:00`)
-  } else if (stepNumber === 1) {
-    reference = new Date(enrollment.enrolled_at)
-  } else {
-    reference = enrollment.last_sent_at ? new Date(enrollment.last_sent_at) : new Date(enrollment.enrolled_at)
-  }
-
-  // An unparseable reference date is NOT due. The old code produced an Invalid
-  // Date, every comparison against it was false, and `now < dueDate` being false
-  // meant "send it" — so a malformed event_date sent every remaining step of the
-  // sequence at once.
-  if (!Number.isFinite(reference.getTime())) return false
-
-  const due = new Date(reference)
-  due.setDate(due.getDate() + Number(step.delay_days ?? 0))
-  return now >= due
+  const due = dueAt(enrollment, step, stepNumber)
+  return due.kind === 'at' && now >= due.at
 }
 
 async function setEnrollmentStatus(supabase: Supa, id: string, status: string): Promise<void> {
