@@ -109,7 +109,13 @@ function flattenBlock(raw: unknown): string {
  */
 export function trimToBudget(s: string, max: number): string {
   if (s.length <= max) return s
-  const cut = s.slice(0, max)
+  let cut = s.slice(0, max)
+  // `.length` and `.slice` count UTF-16 CODE UNITS, so a cut can land between
+  // the two halves of a surrogate pair — an emoji, which a meta description is
+  // quite likely to end on. The leftover high surrogate is not a character: it
+  // serialises as U+FFFD in the <title> or <meta> this string is headed for, so
+  // the budget fix would put a replacement glyph in a search result. Drop it.
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1)
   const lastSpace = cut.lastIndexOf(' ')
   // Only back up to a word boundary if one is reasonably near the end;
   // otherwise a single very long token would collapse the whole string.
@@ -142,8 +148,18 @@ function textField(raw: unknown, notes: string[], label: string, max: number): s
   if (typeof raw !== 'string') return ''
   let s = raw
   if (containsMarkup(s)) {
-    notes.push(`${label}: markup removed (this renderer publishes text, not HTML).`)
-    s = htmlToPlainText(s)
+    const reduced = htmlToPlainText(s)
+    // Rule 10 cuts both ways: a note claiming markup was removed when nothing
+    // was removed is a false record of what happened to the copy. An UNCLOSED
+    // tag (`<img src=x onerror=…` with no `>`) is the real case — it survives
+    // the reducer as literal text, which the renderer escapes, but the reviewer
+    // should be told it is sitting in their draft rather than told it is gone.
+    notes.push(
+      reduced !== s
+        ? `${label}: markup removed (this renderer publishes text, not HTML).`
+        : `${label}: contains "<" but no complete tag — kept as literal text.`,
+    )
+    s = reduced
   }
   const flat = flattenBlock(s)
   if (flat.length > max) {

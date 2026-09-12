@@ -405,3 +405,223 @@ never publish, so it never reaches Google.
   sitemap 72 URLs, 0 duplicates; publish gate, PATCH guards, cache and tag flush
   all exercised live; hostile row defeated and deleted.
 - **No migration (043 still free) and no new environment variables.**
+
+---
+
+# 11. The review of §§0-10 (chain link 7, worktree `velvet-moss`)
+
+2026-09-12. **No migration — 043 is still free.** No new environment variables.
+
+Link 6 built the pipeline and attacked it. This is the second pass over the same
+surface, and the method was the one that has now worked for six links running:
+**run the code against hostile input rather than read it.** Four defects came
+back, three of them in the two hand-written screens §2 introduced — which is
+exactly where §2 predicted the next problem would be ("a sanitiser is a list of
+things you thought of").
+
+## 11.1 One backslash defeated the protocol-relative guard
+
+`safeImageUrl` screened `featured_image` and `structured.gallery[]`, and the
+whole of its "not another origin" guarantee was this line:
+
+```ts
+if (s.startsWith('//')) return null
+if (s.startsWith('/')) return s        // ← "site-relative, therefore ours"
+```
+
+It is not ours. The WHATWG URL spec normalises a **backslash to a forward
+slash** in a special scheme, so a browser resolves a leading `/\` exactly as it
+resolves `//`:
+
+```
+new URL('/\evil.example.com/x.png', 'https://www.hosthampton.com')
+  → https://evil.example.com/x.png
+```
+
+`/\evil.example.com/x.png` contains no control character, does not begin `//`,
+and does begin `/` — so the screen returned it **unchanged, as a site-relative
+path**, into `<img src>` on the public page and into `og:image` in
+`generateMetadata`. The same two readers §6 had just had to fix for this field.
+
+The fix is not another prefix test. The screen now **parses**: it refuses a
+backslash outright, resolves the value with `new URL` against the site origin,
+and checks the **host the parser agreed on**. What comes back is the
+re-serialised URL, not the string it was handed — which also closed a smaller
+one, that `^https?://[^/\s]+` only ever matched a PREFIX, so
+`https://host/a.png" onerror="alert(1)` passed the screen with its tail intact.
+
+## 11.2 `safeImageUrl` accepted any host on the internet
+
+The brief asked whether "any `http(s)://host`" was the right allowlist. It is
+not, and the sharper half is not the `<img>`:
+
+- **`<img src>`** hands every visitor's IP, User-Agent and Referer to whoever
+  owns that host, on a page of ours.
+- **`og:image`** is worse, because it is not about our visitors at all: the card
+  Facebook, iMessage and Slack render for a Host Hampton URL becomes whatever
+  that host serves — **and it can change after a human approved the row.**
+
+These fields are written by the COPY agent, so rule 5 applies. The allowlist is
+now the hosts the app already declares: `SITE_URL` and the Supabase storage
+bucket in `next.config.js` `images.domains`. Plain `http:` is refused even for
+our own host — this site is https, so a plaintext subresource is blocked as
+mixed content anyway, and allowing it only created a value that looked screened
+and could never load.
+
+Rule 11 in test form: a test **reads `next.config.js` off disk** and fails if a
+host is declared there and missing here, rather than the list being restated in
+two files and agreeing by luck.
+
+**This is a deliberate tightening of policy, and it changed two existing test
+expectations** (`https://cdn.example.com/a.png` and `http://example.com/a.png`
+were asserted as allowed). Those assertions encoded the old policy; they were
+rewritten rather than worked around, and it is called out here because "a test
+changed" is normally the smell of the opposite. Blast radius on live data is
+**zero**: every `featured_image` in the table is NULL.
+
+## 11.3 The reducer and the predicate disagreed about what a tag is
+
+`contentSafety.ts` carried **two definitions of "markup" in one file**:
+
+```ts
+containsMarkup  →  /<[a-zA-Z!/?]/      // `<` + letter, `/`, `!` or `?`
+htmlToPlainText →  s.replace(/<[^>]*>/g, '')   // …anything between brackets
+```
+
+So a string the predicate called prose, the reducer mangled:
+
+| input | old output |
+|---|---|
+| `Groups of <10 guests and >4 adults` | `Groups of 4 adults` |
+| `5 < 10 and 20 > 3` | `5 3` |
+
+The file's own test suite already asserted `'5 < 10'` and `'a < b and c > d'`
+are **not** markup — and the reducer ate them anyway, because nothing ever put
+the two functions in the same test.
+
+This was not theoretical reach. `ContentRenderBody` calls `htmlToPlainText`
+**unguarded** on every FAQ question, FAQ answer and section heading, and
+`buildJsonLd` calls it on the FAQ that goes to Google — so it ran on every
+render of every published page. `draftNormalize.textField` was the only caller
+that guarded it with `containsMarkup` first, which is why the writer path never
+showed the damage.
+
+There is now **one source** for the tag opener, shared by the predicate and the
+stripper, and a test asserting they agree in both directions. Markup is still
+removed exactly as before — `<b>bold</b>`, `<script>` bodies, unterminated
+tags — only prose stopped being treated as markup.
+
+**Measured, not assumed:** no live row contains a `<` at all
+(`structured::text ~ '<'` is false for all ten rows), so nothing published has
+been corrupted by this. It was a loaded gun, not a wound.
+
+**A residual, documented rather than fixed:** an *unterminated* `<style>` or
+`<script>` still deletes to end of string, so prose like
+`"We love the <style> of the room"` loses its tail. That is what a browser does
+with the same bytes — `<style>` really is a tag opener — so the reducer is being
+faithful, and "narrow it with a heuristic" is how a screen becomes a list of
+things you thought of. Worth knowing before writing copy about HTML.
+
+## 11.4 The budget trim split emoji in half
+
+`trimToBudget` cut with `slice(0, max)`, and `.length`/`.slice` count **UTF-16
+code units**. A meta description ending in an emoji — a normal thing in a SERP
+snippet — got cut **between the two halves of a surrogate pair**, leaving a lone
+surrogate, which is not a character: it serialises as `U+FFFD` in the
+`<meta name="description">` the string exists to fill. The fix that enforced the
+SEO budget would have put a replacement glyph in the search result.
+
+Confirmed and fixed: a 100-emoji description came back with a lone surrogate
+before, and does not after (159 chars, ends on a whole `🎉`).
+
+## 11.5 A note that claimed a strip that never happened
+
+`textField` pushed `"markup removed"` whenever `containsMarkup` was true —
+including when `htmlToPlainText` removed nothing, which is the real case for an
+**unclosed** tag (`<img src=x onerror=…` with no `>`) that survives the reducer
+as literal text. The note went to the ledger and to the reviewer's panel.
+
+Rule 10 cuts both ways: a guardrail must say when it stopped something, and must
+not say it stopped something it did not. The note now reports which of the two
+actually happened.
+
+## 11.6 What was attacked and HELD
+
+Reported because "we checked and it was fine" is the half that usually goes
+unwritten:
+
+- **`carriesPublishedPrice`** does a full traversal with a `WeakSet`, not a
+  depth cap — a price nested ten levels inside a hostile `structured.jsonLd` is
+  still found. No bypass.
+- **The JSON-LD breakout.** `JSON.stringify(node).replace(/</g, '\\u003c')` is
+  applied at the render site, so a `</script>` in any DB field — title, FAQ,
+  explicit `jsonLd` — cannot escape the script tag. This was the first thing
+  looked for and it was already closed.
+- **The publish gate is the only door.** Every `advance()` call in the codebase
+  was enumerated: only `/api/admin/marketing/content` moves a `website_content`
+  row to `published`, and `townDraft.ts` only ever reaches `pending_review`.
+- **Nothing writes a published row without flushing.** The only writers are that
+  route (flushes) and `townDraft` (inserts a `draft`, so there is nothing
+  cached to flush). The single `CONTENT_TAG` also disposes of the "old URL's
+  cache entry" worry after a slug change: there are no per-row tags to miss.
+- **The preview route has no second reader.** It returns JSON and the panel
+  renders it through `ContentRenderBody` and nothing else — no raw
+  `featured_image`, no separate `<img>`, no JSON dump.
+- **`STATIC_ROUTE_PATTERNS`' walker handles route groups correctly**
+  (`app/(marketing)/foo` → `/foo`), so the tripwire cannot be satisfied by a
+  pattern that does not match the URL. There are no route groups in the app
+  today; the walker would be right if there were.
+- **`matchesPattern`** was checked against trailing segments and catch-alls:
+  `/book/extra` is correctly NOT shadowed by `/book`, `/events/x` IS shadowed by
+  `/events/[slug]`, `/events/x/y` is not.
+
+## 11.7 Rule 12, exercised rather than trusted
+
+§4 claims `unavailable` produces a 500 and not a 404. The brief said to prove it
+by making a read fail. Breaking production's database to watch it break is not a
+test worth running, so the **production build** was run locally against a
+deliberately broken `SUPABASE_URL`, which is the same code path:
+
+| path | status |
+|---|---|
+| `/permanent-jewelry-southampton` (published) | **500** |
+| `/es/party-room-rental` (published) | **500** |
+| `/wp-login.php` (never published) | **500** |
+| `/book` (static) | 200 |
+
+So the guarantee holds: a Supabase blip tells Google "come back", not "this page
+is gone". Rule 10 held with it — the container log named the failure and the
+reason on every request.
+
+**The third row is the part worth carrying forward, because it is a consequence
+nobody wrote down.** `[...slug]` is the site's de-facto 404 handler, so during a
+database outage **every unmatched URL returns 500 instead of 404** — every
+scanner probe, every typo, every stale inbound link. That is the rule-12-correct
+answer (we genuinely cannot tell whether that URL is a published page, and
+answering 404 is the confident false statement rule 12 exists to prevent), but
+it means a Supabase outage presents as a site-wide 500 signal in monitoring
+rather than a content-pages-only one. Stated, not changed.
+
+## 11.8 Known gap, not closed
+
+**Nothing re-checks a published row when a new static page shadows it later.**
+`checkSlug` runs before the draft, at the publish gate and in the panel; if
+someone adds `app/permanent-jewelry-southampton/page.tsx` tomorrow, the live row
+silently stops rendering. The blast radius is bounded — the visitor gets the new
+hand-built page, the sitemap **skips and logs** the row (§1.3), and the admin
+panel badges it amber — so nothing is broken and nothing lies; the row just goes
+quietly dead. A tripwire cannot see the DB, so closing it properly means a
+startup check or an admin sweep. Left as a known gap rather than built, because
+every surface that matters already tells the truth about it.
+
+## 11.9 Verification
+
+- **1 452 tests** (was 1 437), all green — 15 added, 2 existing expectations
+  deliberately rewritten (11.2).
+- **0 app-code `tsc` errors** (`grep -E "^src/" | grep -v "^src/__tests__"`).
+- `next build` clean; `/book` still `○ Static`; `[...slug]` still `ƒ Dynamic`.
+- All three inherited tripwires still pass: `seo.test.ts` (including "no mobile
+  surface publishes a structured-data price"), `slugSafety.test.ts`,
+  `contentRendererGuards.test.ts`.
+- **No migration (043 still free) and no new environment variables.**
+- **Mobile pricing untouched**, per §9 and plan §15.

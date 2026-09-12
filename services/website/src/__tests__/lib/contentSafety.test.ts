@@ -8,9 +8,43 @@
  * actually produce.
  */
 
-import { htmlToPlainText, containsMarkup, safeImageUrl } from '@/lib/content/contentSafety'
+import path from 'path'
+import {
+  htmlToPlainText,
+  containsMarkup,
+  safeImageUrl,
+  ALLOWED_IMAGE_HOSTS,
+} from '@/lib/content/contentSafety'
+import { SITE_URL } from '@/lib/seo'
 
 const U = (cp: number) => String.fromCodePoint(cp)
+
+/**
+ * `containsMarkup` and the stripper inside `htmlToPlainText` used to carry two
+ * different definitions of "a tag": the predicate said `<` + `[a-zA-Z!/?]`, the
+ * stripper deleted `<[^>]*>` — anything between angle brackets. So a string the
+ * predicate called prose, the stripper mangled. `ContentRenderBody` and
+ * `buildJsonLd` call `htmlToPlainText` UNGUARDED on FAQ questions, FAQ answers
+ * and section headings, so this ran on every render of every published page.
+ */
+describe('the two definitions of "markup" agree', () => {
+  it.each([
+    'Groups of <10 guests and >4 adults',
+    '5 < 10 and 20 > 3',
+    'Ages 5<8 are welcome',
+    'Parties for <12 kids',
+  ])('prose the predicate calls safe survives the stripper: %j', s => {
+    expect(containsMarkup(s)).toBe(false)
+    expect(htmlToPlainText(s)).toBe(s)
+  })
+
+  it('anything the stripper removes, the predicate flags', () => {
+    for (const s of ['<b>x</b>', '</p>', '<!-- c -->', '<?php ?>', '<img src=x>', '<1 2>', '<10 x>']) {
+      const changed = htmlToPlainText(s) !== s
+      if (changed) expect(containsMarkup(s)).toBe(true)
+    }
+  })
+})
 
 describe('containsMarkup', () => {
   it.each([
@@ -74,10 +108,18 @@ describe('htmlToPlainText removes the payload, keeps the prose', () => {
 })
 
 describe('safeImageUrl', () => {
-  it.each(['/images/party.jpg', 'https://cdn.example.com/a.png', 'http://example.com/a.png'])(
-    'allows %j',
-    u => expect(safeImageUrl(u)).toBe(u),
+  it.each(['/images/party.jpg', '/images/party.jpg?v=2'])('allows %j', u =>
+    expect(safeImageUrl(u)).toBe(u),
   )
+
+  it('allows the Supabase storage bucket the app already renders from', () => {
+    const u = 'https://ychnlroczjhwimouecxz.supabase.co/storage/v1/object/public/a.png'
+    expect(safeImageUrl(u)).toBe(u)
+  })
+
+  it('an absolute URL for our OWN origin comes back site-relative', () => {
+    expect(safeImageUrl('https://www.hosthampton.com/images/a.png')).toBe('/images/a.png')
+  })
 
   it.each([
     'javascript:alert(1)',
@@ -89,6 +131,44 @@ describe('safeImageUrl', () => {
     '',
     '   ',
   ])('refuses %j', u => expect(safeImageUrl(u)).toBeNull())
+
+  /**
+   * THE BYPASS. `startsWith('//')` was the entire protocol-relative guard, and
+   * the WHATWG URL spec normalises a backslash to a forward slash in a special
+   * scheme — so ONE backslash turned a path the screen read as site-relative
+   * into a different origin in every browser. Landed in `<img src>` on the
+   * public page and in `og:image`, three lines apart, exactly the two readers
+   * link 6's own probe caught for `featured_image`.
+   */
+  it('refuses a backslash protocol-relative URL, which resolves to another host', () => {
+    const payload = '/\\evil.example.com/x.png'
+    // The premise, asserted rather than described: this really is another host.
+    expect(new URL(payload, 'https://www.hosthampton.com').href).toBe('https://evil.example.com/x.png')
+    expect(safeImageUrl(payload)).toBeNull()
+    expect(safeImageUrl('/\\/evil.example.com/x.png')).toBeNull()
+    expect(safeImageUrl('\\\\evil.example.com/x.png')).toBeNull()
+  })
+
+  it('refuses an arbitrary remote host — an <img> leaks every visitor to it', () => {
+    expect(safeImageUrl('https://cdn.example.com/a.png')).toBeNull()
+    expect(safeImageUrl('HtTpS://EVIL.example.com/a.png')).toBeNull()
+    // `og:image` is the sharper half: the card Facebook and iMessage render for
+    // a Host Hampton URL would be whatever that host serves, changeable after a
+    // human approved the row.
+    expect(safeImageUrl('https://evil.example.com/og.png')).toBeNull()
+  })
+
+  it('refuses plaintext http even for our own host (mixed content never loads)', () => {
+    expect(safeImageUrl('http://www.hosthampton.com/images/a.png')).toBeNull()
+  })
+
+  it('PARSES rather than prefix-matches, so trailing junk cannot ride along', () => {
+    // The old screen tested only `^https?://[^/\s]+` and returned the string it
+    // was handed, tail and all.
+    expect(safeImageUrl('https://ychnlroczjhwimouecxz.supabase.co/a.png" onerror="alert(1)')).toBe(
+      'https://ychnlroczjhwimouecxz.supabase.co/a.png%22%20onerror=%22alert(1)',
+    )
+  })
 
   it('refuses a scheme split by a control character', () => {
     // `java<NUL>script:` is the classic bypass; built by code point so the test
@@ -115,4 +195,28 @@ describe('safeImageUrl', () => {
   })
 
   it.each([null, undefined])('handles %j', v => expect(safeImageUrl(v as string)).toBeNull())
+})
+
+/**
+ * Rule 11: the app declares its remote image hosts in `next.config.js`
+ * (`images.domains`). If a host is added there and not here, every DB image
+ * from it is silently refused; if it is added here and not there, `next/image`
+ * refuses it instead. Read the config off disk rather than restating it.
+ */
+describe('ALLOWED_IMAGE_HOSTS does not drift from next.config.js', () => {
+  it('covers every host in images.domains', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const config = require(path.join(process.cwd(), 'next.config.js')) as {
+      images?: { domains?: string[] }
+    }
+    const declared = config.images?.domains ?? []
+    expect(declared.length).toBeGreaterThan(0)
+    for (const host of declared) {
+      expect(ALLOWED_IMAGE_HOSTS).toContain(host.toLowerCase())
+    }
+  })
+
+  it('includes the site origin itself', () => {
+    expect(ALLOWED_IMAGE_HOSTS).toContain(new URL(SITE_URL).host)
+  })
 })

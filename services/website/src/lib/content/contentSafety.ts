@@ -58,10 +58,30 @@ function decodeEntities(s: string): string {
   })
 }
 
+/**
+ * What a browser treats as the start of a tag: `<` followed by a letter (a start
+ * tag), `/` (an end tag), `!` (a declaration or comment) or `?` (a bogus
+ * comment). Anything else after `<` is TEXT — `<10 guests` is prose, not markup.
+ *
+ * ONE source, because `containsMarkup` and the stripper below used to carry two
+ * different definitions of "a tag": the predicate said `<[a-zA-Z!/?]` while the
+ * stripper deleted `<[^>]*>`, which is anything at all between angle brackets.
+ * The stripper's wider definition ate real copy — `"Groups of <10 guests and >4
+ * adults"` came out as `"Groups of 4 adults"` and `"5 < 10 and 20 > 3"` as
+ * `"5 3"` — on every render, silently, because `ContentRenderBody` and
+ * `buildJsonLd` call `htmlToPlainText` unguarded on FAQ questions, FAQ answers
+ * and section headings. A constant declared in two places is a constant nothing
+ * is checking (rule 11); so is a definition.
+ */
+const TAG_OPEN_SOURCE = '<[a-zA-Z!/?]'
+const TAG_OPEN_RE = new RegExp(TAG_OPEN_SOURCE)
+/** A complete tag. Same opener as the predicate, so the two cannot drift. */
+const tagRe = () => new RegExp(`${TAG_OPEN_SOURCE}[^>]*>`, 'g')
+
 /** Does this string carry anything a browser would parse as markup? */
 export function containsMarkup(s: string | null | undefined): boolean {
   if (!s) return false
-  return /<[a-zA-Z!/?]/.test(s)
+  return TAG_OPEN_RE.test(s)
 }
 
 /**
@@ -77,11 +97,11 @@ export function htmlToPlainText(input: string | null | undefined): string {
   s = s.replace(/<(script|style|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
   // An unterminated <script> is the interesting case: drop to end of string.
   s = s.replace(/<(script|style|template)\b[\s\S]*$/i, ' ')
-  s = s.replace(/<\s*(br|\/p|\/div|\/li|\/h[1-6]|\/tr)\b[^>]*>/gi, '\n')
-  s = s.replace(/<[^>]*>/g, '')
+  s = s.replace(/<(br|\/p|\/div|\/li|\/h[1-6]|\/tr)\b[^>]*>/gi, '\n')
+  s = s.replace(tagRe(), '')
   s = decodeEntities(s)
   // A second pass: decoding can reveal markup that was entity-encoded once.
-  s = s.replace(/<[^>]*>/g, '')
+  s = s.replace(tagRe(), '')
   return s
     .split('\n')
     .map(line => line.replace(/[ \t\u00a0]+/g, ' ').trim())
@@ -91,12 +111,59 @@ export function htmlToPlainText(input: string | null | undefined): string {
 }
 
 /**
+ * Origin this site is served from. Relative image paths resolve against it, and
+ * a URL that resolves back to it is returned as a bare path.
+ */
+const SITE_ORIGIN = 'https://www.hosthampton.com'
+
+/**
+ * The only hosts a DB-authored image may come from.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WHY AN ALLOWLIST AND NOT "any https URL". The previous screen accepted any
+ * `http(s)://host`, which is two different problems on a page we publish:
+ *
+ *  - **`<img src>`** — every visitor's IP address, User-Agent and Referer are
+ *    handed to whoever owns that host, on a page of ours, with no consent
+ *    banner and nothing in the DOM that looks wrong.
+ *  - **`og:image`** — the share card Facebook, iMessage and Slack render for a
+ *    Host Hampton URL becomes whatever that host decides to serve, and it can
+ *    change after a human approved the row.
+ *
+ * `featured_image` and `structured.gallery[]` are written by the COPY agent, so
+ * rule 5 applies: the field is hostile because of who can WRITE it. The hosts
+ * below are the ones the app already declares — `SITE_URL` and the Supabase
+ * storage bucket in `next.config.js` `images.domains`. A test asserts this list
+ * still covers that config, so adding an image host in one place and not the
+ * other fails the suite rather than silently refusing every image from it.
+ *
+ * `http:` is not accepted for a remote host: this site is https, so a plaintext
+ * subresource is blocked as mixed content by every browser anyway — allowing it
+ * only created a value that looked screened and could never load.
+ */
+export const ALLOWED_IMAGE_HOSTS: readonly string[] = [
+  'www.hosthampton.com',
+  'hosthampton.com',
+  'ychnlroczjhwimouecxz.supabase.co',
+]
+
+/**
  * Is this a URL we are willing to point an `<img src>` at?
  *
- * `featured_image` and `structured.gallery[]` are DB-authored too. A relative
- * path or an absolute http(s) URL is fine; `javascript:`, `data:` and protocol-
- * relative `//evil/x.png` are not. Returns null when the value is unusable, so
- * the caller renders no image rather than a broken or hostile one.
+ * Returns the RESOLVED, re-serialised URL — what a URL parser agreed the string
+ * means — or null when the value is unusable, so the caller renders no image
+ * rather than a broken or hostile one.
+ *
+ * The screen PARSES rather than prefix-matches, because prefix-matching this is
+ * how the protocol-relative check got bypassed:
+ *
+ *     safeImageUrl('/\\evil.example.com/x.png')   // old: allowed, "site-relative"
+ *     new URL('/\\evil.example.com/x.png', SITE)  // → https://evil.example.com/x.png
+ *
+ * The WHATWG URL spec normalises a backslash to a forward slash in a special
+ * scheme, so one backslash turns a path the screen read as local into a
+ * different ORIGIN in every browser. `startsWith('//')` was the whole guard and
+ * it never saw it. Measured, not reasoned about (rule 8).
  */
 export function safeImageUrl(raw: string | null | undefined): string | null {
   if (!raw) return null
@@ -110,8 +177,27 @@ export function safeImageUrl(raw: string | null | undefined): string | null {
     const cp = ch.codePointAt(0) as number
     if (cp < 0x20 || cp === 0x7f || (cp >= 0x80 && cp <= 0x9f) || cp === 0x2028 || cp === 0x2029) return null
   }
-  if (s.startsWith('//')) return null
-  if (s.startsWith('/')) return s
-  if (/^https?:\/\/[^/\s]+/i.test(s)) return s
-  return null
+  // Refused outright rather than normalised: a backslash in an image URL is
+  // never what a writer meant, and leaving it to the parser is how the meaning
+  // of the string stops matching the meaning of the check above it.
+  if (s.includes('\\')) return null
+  // Only two shapes are even considered — an absolute http(s) URL, or a
+  // site-relative path. `images/x.png` and `javascript:` never reach the parser.
+  if (!/^(?:https?:\/\/|\/)/i.test(s)) return null
+
+  let url: URL
+  try {
+    url = new URL(s, SITE_ORIGIN)
+  } catch {
+    return null
+  }
+  // https only. A site-relative path resolves to https by construction, so this
+  // rejects exactly one thing: an explicit `http://` URL, which a browser blocks
+  // as mixed content anyway — a value that looked screened and could never load.
+  if (url.protocol !== 'https:') return null
+  if (!ALLOWED_IMAGE_HOSTS.includes(url.host.toLowerCase())) return null
+  // Site-relative in, site-relative out: the page should not start emitting
+  // absolute URLs for its own images just because they went through a parser.
+  if (url.origin === SITE_ORIGIN) return `${url.pathname}${url.search}${url.hash}`
+  return url.href
 }

@@ -116,6 +116,41 @@ describe('the `html` key — the one the renderer used to execute', () => {
   })
 })
 
+/**
+ * `.length` and `.slice` count UTF-16 code units, not characters. A budget cut
+ * that lands between the halves of a surrogate pair leaves a lone surrogate,
+ * which is not a character at all: it serialises as U+FFFD in the `<title>` or
+ * `<meta name="description">` this string exists to fill. The trim that fixed
+ * the SEO budget would have put a replacement glyph in the search result.
+ */
+describe('trimming never splits a surrogate pair', () => {
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
+  it('an emoji-heavy description is cut on a whole character', () => {
+    const desc = 'Book a party ' + '\u{1F389}'.repeat(100)
+    const out = trimToBudget(desc, MAX_DESCRIPTION_CHARS)
+    expect(out.length).toBeLessThanOrEqual(MAX_DESCRIPTION_CHARS)
+    expect(LONE_SURROGATE.test(out)).toBe(false)
+    // And it is still the same string up to the cut, not a mangled one.
+    expect(desc.startsWith(out)).toBe(true)
+  })
+
+  it('a cut landing exactly between the two halves drops the half', () => {
+    // 'ab' + one emoji: slicing to 3 lands mid-pair.
+    const out = trimToBudget('ab\u{1F389}cd', 3)
+    expect(LONE_SURROGATE.test(out)).toBe(false)
+    expect(out).toBe('ab')
+  })
+
+  it('an emoji title keeps its brand suffix and stays whole', () => {
+    const title = 'Permanent Jewelry ' + '\u{1F389}'.repeat(30) + TITLE_SUFFIX
+    const out = trimTitleToBudget(title)
+    expect(out.length).toBeLessThanOrEqual(MAX_TITLE_CHARS)
+    expect(LONE_SURROGATE.test(out)).toBe(false)
+    expect(out.endsWith(TITLE_SUFFIX)).toBe(true)
+  })
+})
+
 describe('the characters that forge structure', () => {
   it('a newline in the title becomes a space', () => {
     const r = normalizeDraft({ ...GOOD, title: 'South\nampton | Host Hampton' })
