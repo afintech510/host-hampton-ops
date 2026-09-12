@@ -553,3 +553,573 @@ and they are there.
 4. **The 26 flagged memory rows are not reviewed.** Nobody has to read them; the
    table is inert. But if any of that knowledge is worth giving the booking
    agent, the Memory panel is where it happens, one screened sentence at a time.
+
+---
+
+## 11. Phase 5 review findings
+
+**Link 12 of the build chain. 2026-09-12. Worktree `ancient-cairn`. No migration —
+046 is still free. Suite 1802 → 1840 green.**
+
+§8 was the starting list. Five of its six items are closed below; the sixth
+(`replied`) has no writer and could not be. Then each stated guarantee was
+attacked in production, and **nine gave**.
+
+Nothing here changes the shape of Phase 5. The screens hold, the claim holds, the
+redirect holds, the refusal holds. What gave was the reporting around them —
+twice in the direction rule 10 warns about, and once in the direction that caps
+the whole feature.
+
+---
+
+### 11.1 What §8 could not verify, and what production said
+
+**A real `winner` — now measured.** A throwaway experiment, isolated by a
+`target_key` naming a sequence uuid that does not exist (so no real enrollment
+could ever match it), was given 60 assignments over real contacts, 60 `sent`
+events and a deliberate skew:
+
+```
+arm A (control) 5/30 · arm B 18/30
+→ "Arm B beat the control (B: 18/30, control A: 5/30, p = 0.0006
+   against α = 0.0500, Bonferroni over 1 challenger(s)).
+   This is a PROPOSAL: nothing has been changed."
+```
+
+p = 0.0006 against a hand-computed 0.000557. **The arithmetic in §3.4 is right on
+real Postgres.** `concluded` then wrote the verdict and `email_sequence_steps` was
+**byte-identical before and after** (sha256 of all nine rows, unchanged) — a
+winner really does change no copy.
+
+**`min_per_arm` is really read, proved by CHANGING it** (rule 6, not by reading
+the page). `UPDATE … SET min_per_arm = 40` turned the same data from `winner`
+into:
+
+```
+"Not enough data to call … arm A has 30 send(s) of the 40 needed;
+ arm B has 30 send(s) of the 40 needed."
+```
+
+And it cannot go the other way by accident: `min_per_arm` has no PATCH route, the
+create route refuses `1` and `2.5` with 400, the DB CHECK refuses anything below
+2, and `asExperimentRow` refuses it again on read.
+
+**The conversion attribution, against real bookings.** Five hand-built cases over
+real `bookings` rows, each one naming what it tested:
+
+| case | assigned relative to the booking | expected | got |
+|---|---|---|---|
+| confirmed booking | 1 day before | count | counted |
+| deposit_paid booking | 12 days before | count | counted |
+| booking PRE-DATES assignment | 5 days after | no | not counted |
+| 60 days before | outside the 14-day window | no | not counted |
+| **cancelled** booking | 1 day before | no | not counted |
+
+`control A: 2/2, best challenger B: 0/3`. **All five window rules are right on
+live data**, which §8 listed as untested. The `bookings` table was read-only
+throughout and still holds 60 rows.
+
+**`campaign_subject`, which nobody had exercised.** It activates cleanly (the
+gate does not care which surface), the report analyses it honestly
+(`not_enough_data`, 0 of 2 needed), nothing sends, and the create route warns in
+so many words: *"no sender in this codebase reads the campaign_subject surface
+yet, so activating it will change nothing."* The open item is closed: it behaves.
+
+**`/r/<token>`, attacked with GENUINE signatures on thirteen destination forms
+§4 did not try** — every one refused, 302 to the homepage, nothing recorded:
+
+| destination | result |
+|---|---|
+| `https://www.hosthampton.com@evil.example.com/` (userinfo) | refused |
+| `https://www.hosthampton.com:443@evil.example.com/` | refused |
+| `data:text/html,<script>alert(1)</script>` | refused |
+| `//` alone | refused |
+| `///evil.example.com/x` | refused |
+| `https://www.hosthаmpton.com/x` (Cyrillic а — IDN homograph) | refused |
+| NUL inside the destination | refused |
+| U+2028 inside the destination | refused |
+| `/\evil.example.com/x` | refused |
+| `ht<TAB>tps://evil.example.com/x` | refused |
+| `vbscript:` · `file:///etc/passwd` | refused |
+| CRLF header injection in the destination | refused |
+
+…and nine malformed-token forms: a one-character token, dots only, base64 that
+decodes to invalid UTF-8, a valid token with one character appended, a 40 kB
+token (**414** from nginx — bounded), a NUL inside the assignment id, an
+assignment id that is not a uuid, and a genuinely signed token for an assignment
+that does not exist. The last one wrote **exactly one** `unattributed_signals`
+row; the two malformed-id cases wrote **none**, which is correct — a 22P02 on a
+uuid column is a blip, and a blip must not put a permanent row in front of a
+human (rule 12). A mixed-case scheme on a real destination (`HtTpS://`) **still
+worked**, so legitimate input survives. Seven further requests on that same valid
+token — two serial, five concurrent — left `clicked` at exactly **1**.
+
+**`loadVariants` is the only reader of `content_variants` in the codebase.**
+Grepped, not assumed: `generate.ts` writes, `load.ts` reads, nothing else names
+the table. The panel renders `body_text` as a React child, and `body_html` is
+never selected anywhere. **§24's shape does not recur here.**
+
+Still unverified, and honestly: **a click from a real mail client**, and
+**`replied`**, which is in the CHECK and has no writer.
+
+---
+
+### 11.2 Finding 1 — the analysis died at ~390 assignments, permanently
+
+The one that matters. PostgREST takes `.in()` as a query **parameter**, so the
+whole id list travels in the URL. Driven against the real endpoint with real
+assignment uuids:
+
+```
+n=300  urlLen=11,214  http=200  rows=300
+n=350  urlLen=13,064  http=200  rows=350
+n=380  urlLen=14,174  http=200  rows=380
+n=400  urlLen=14,914  THREW: fetch failed
+n=500  urlLen=18,614  THREW: fetch failed
+```
+
+And against the live analysis, with 500 assignments really in the table:
+
+```
+analysis kind: unavailable
+summary      : unavailable: events unreadable: TypeError: fetch failed
+TOTAL sent counted by the analysis: 0   (the table holds 500)
+```
+
+**Rule 12 held — it reported `unavailable`, not zero.** But it reported it
+*forever*: past about 390 assigned contacts an experiment becomes permanently
+unanalysable, and nothing ever recovers it. That ceiling sits **inside the range
+the feature is designed for**: `min_per_arm` defaults to 30, two arms need 60, and
+a nurture experiment left running over a 1,219-row `contacts` table reaches 390
+without anybody doing anything unusual. `attributeConversions` has the same
+ceiling on distinct contact ids.
+
+Worse, the weekly report would stay **green** while this happened: a single failed
+experiment among several keeps HTTP 200 (`allFailed` requires *every* one to fail),
+so the only symptom is a line in `failures[]` nobody is watching for.
+
+There is no PostgREST row cap in the way — the same probe confirmed an unlimited
+`select` returned all 500 rows. It is purely the URL.
+
+**Fixed** by chunking both `.in()` reads at 100 ids (URL ≈ 3.8 kB, an order of
+magnitude of headroom), with a failure in **any** batch failing the whole read —
+half the events would be a smaller numerator against a full denominator, which is
+the one direction that invents a result.
+
+**Verified after deploy, on the same 520 rows that had just failed:**
+
+```
+analysis kind: winner
+arms         : [{A, sent 250, m 40}, {B, sent 250, m 120}]
+```
+
+250/250, matching what the database itself reported. The read that threw now
+answers.
+
+---
+
+### 11.3 Finding 2 — unattributed events were counted and never written down
+
+A hostile arm C (`"take $500 off"`) was inserted straight into Postgres, past
+every route, into an already-**active** experiment. The read screen dropped it and
+named it, exactly as §4 claims. Its events — **19, nine of them clicks, 39% of
+the experiment's entire click volume** — were correctly held out of both arms.
+
+And then:
+
+```
+unattributedSignals rows: 0
+```
+
+The panel's own message reads *"19 event(s) could not be attributed to any arm —
+**see the unattributed signals**"*, and that list was empty. `analyseExperiment`
+incremented a counter in both of its unattributable branches and called
+`recordUnattributed` in neither.
+
+This is hard-won rule 14 — *an unattributable record is a bookkeeping problem; an
+INVISIBLE one is a loss* — failing in the module whose header cites rule 14 as its
+reason for existing, and rule 10's expensive half on top: the panel said it had
+recorded something where a human looks, and it had not.
+
+**Fixed:** one naming row per analysis run (not one per event — nineteen identical
+lines in front of a human is its own kind of silence), carrying the count, the arm
+label and the screen's reason. Written only when `attribute` is on, so the admin
+GET still never writes to the table it is displaying.
+
+**Verified in production:**
+
+```
+variant_events | 32 outcome event(s) in "ZZ p5 review probe — scale" belong to
+                 no usable arm and are in no arm's numerator or denominator:
+                 arm C (32 event(s)) — it states dollar amount $500 —
+                 this surface may not publish a price
+```
+
+…and the panel GET before that run still wrote nothing.
+
+---
+
+### 11.4 Finding 3 — a significant loss read as "no difference"
+
+The conversion probe came back:
+
+> `no_difference` — *"No significant difference … (best challenger B: 0/3, control
+> A: 2/2, p = 0.0253 against α = 0.0500 …). Enough data, no winner — which is a
+> result."*
+
+**p was below alpha and the control had won.** The `winner` branch requires
+`best.rate > controlArm.rate`, which is right — a winner should only ever be a
+challenger — but everything below it fell through to a sentence that says the
+copy made no difference, over a measurement saying the new copy is significantly
+*worse*.
+
+That is the same class of mistake as §5's rigged arm, with the arithmetic pointing
+the other way: the number is correct and the sentence contradicts it. And it is
+the more dangerous direction, because "no difference" is the verdict under which
+somebody adopts the challenger anyway.
+
+**Fixed:** the `kind` stays `no_difference` (no challenger won, and the DB
+`outcome` CHECK has no fifth label), but the note now says it:
+
+```
+The CONTROL beat every challenger in "…" on clicked, significantly
+(control A: 190/250, best challenger B: 120/250, p = 0.0000 against α = 0.0500…).
+No challenger won, so there is no winner to propose — but this is not
+"no difference": the live copy is measurably ahead and the challengers should
+not be adopted.
+```
+
+Verified in production by pushing the control ahead on the 500-row probe. A
+genuine tie still reads as no difference, with no mention of a control winning.
+
+---
+
+### 11.5 Finding 4 — the weekly report could not say an arm had been dropped
+
+`/api/cron/experiment-report` is the **only scheduled reader** of an experiment.
+With arm C dropped and nine clicks discarded, it answered:
+
+```
+kind: winner | outcome: winner | unattributed: 19
+summary: Arm B beat the control (B: 18/30, control A: 5/30, p = 0.0006 …)
+```
+
+`loadExperiment` returns `rejected`; the report never looked at it. The count was
+in the JSON as `unattributed: 19`, and the **sentence** — the thing that goes into
+the ledger, the console and any future email — said nothing. The admin panel does
+show it, and that is exactly the gap: the panel needs a human to open it, and
+§24's whole lesson is a correct screen whose finding nobody was shown.
+
+**Fixed:** `rejected` now reaches the per-result payload, the `summary` sentence,
+the console line and the ledger meta, through **one shared sentence**
+(`droppedArmsNote` in `analysis.ts`) rather than a second spelling in the route —
+because a sentence written in two places is rule 11 with prose instead of a
+constant. Verified live; the summary now carries *"NOTE: the read-time screen
+dropped arm C (…) — any sends or clicks on that arm are in NO arm's numbers."*
+
+---
+
+### 11.6 Finding 5 — a billed model call was recorded as costing nothing
+
+`inputTokens`/`outputTokens` are read off `usage` **before** the JSON parse, and
+the parse is the step most likely to fail: `max_tokens` is 3,000, the screen
+allows 12,000-character bodies, three variants truncate, and a truncated reply has
+no closing brace — so `text.match(/\{[\s\S]*\}/)` misses and the whole call throws.
+
+Anthropic has already billed those tokens. The old `catch` returned
+`{ costUsd: 0, tokens: 0 }` and **never called `recordLlmSpend`** — so the ledger
+said a call that cost money cost nothing, and `assertLlmBudget` would let the next
+caller spend as if it had never happened.
+
+`assertLlmBudget` before / `recordLlmSpend` after was correct **by invocation**
+on the happy path, which is what §6 checked. It was the failure path that lied.
+Same family as link 10's finding that the SMS half of that module was charged 1
+segment for a 3-segment message: a counter is only as good as what it is told, and
+rule 10's expensive half is reporting something you did not do — here, spending
+nothing.
+
+**Fixed:** one `recordSpend()` helper, idempotent, called on both the success and
+the failure path, and the response reports the real figure. A reply with no `usage`
+at all records nothing rather than a fabricated zero-token row.
+
+---
+
+### 11.7 Finding 6 — `EXPERIMENT_ENTITY` was re-typed four times
+
+`generate.ts` imports four things from `./types` and then writes
+`entityType: 'content_experiment'` out by hand in four places — including once
+three lines from a comment explaining that the constant lives in `types.ts`
+*"which is where it belonged anyway (rule 11)"*.
+
+Same value today, so nothing was broken. It is rule 11 in its plainest form, in
+the file whose own header preaches it, and it is one import. Fixed, and pinned by
+a test that reads the source and fails if the literal comes back.
+
+---
+
+### 11.8 Finding 7 — a tracked plain-text link pointed at a 404
+
+The text pass matches a bare URL with `[^\s<>"')\]]+`. That correctly stops at a
+closing bracket and does **not** stop at a full stop:
+
+```
+"Pick a date here: https://www.hosthampton.com/book."
+  → token signed for  https://www.hosthampton.com/book.
+"See https://www.hosthampton.com/book, then call."
+  → token signed for  …/book,   and the comma vanished from the sentence
+```
+
+And in production:
+
+```
+/book   → 200
+/book.  → 404
+/book,  → 404
+```
+
+So the plain-text part of a variant email carried a tracked link to a dead page.
+The click is still *recorded* (the route writes before redirecting), so the
+measurement survives — the customer is the one who pays, with a 404 on
+hosthampton.com reached from an email we sent.
+
+The module comment above it read *"There is no failure mode here in which a
+recipient gets a broken link: the worst case is an untracked click."* Rule 8's
+oldest form, now for the sixth time: a comment asserting the opposite of its code.
+
+It matters more here than it would elsewhere, because the screen **requires** the
+model to write plain paragraphs and the prompt tells it to include the URL in
+full — `"…here: <url>."` is the most natural sentence it could produce.
+
+**Fixed:** sentence punctuation is split off the end, wrapped URL and punctuation
+re-joined, so the reader keeps the full stop and the token carries the real path.
+
+---
+
+### 11.9 Finding 8 — `EXCLUDED_PATHS` was case-sensitive
+
+`/UNSUBSCRIBE?t=…` and `/API/unsubscribe` pass `safeSiteLink` and were **not**
+excluded, so a body carrying either would have had its opt-out wrapped.
+
+**No live opt-out was ever defeated, and it is worth being exact about why:**
+Next's route matching is case-sensitive, so both forms answer **404 in
+production** (measured), and every unsubscribe link the system actually emits
+comes from `buildUnsubscribeUrl`, which is lower case and is *also* passed to
+`rewriteTrackedLinks` explicitly. Three independent things had to be true for the
+guarantee to hold and two of them were coincidences.
+
+One related observation, not a finding: the explicit `url === unsub` belt is
+defeated by HTML entity encoding (`&amp;` in an href), and only
+`isExcludedFromTracking` catches it — confirmed by test. It does not arise today
+because `buildUnsubscribeUrl` emits a single query parameter and so has no `&`. If
+a second parameter is ever added, the belt goes silently inert and the path check
+is all that remains.
+
+**Fixed:** the path is lower-cased before comparison, and a test asserts every
+entry in the list is itself lower case — otherwise the comparison silently stops
+working. `/unsubscribe-policy` is still correctly **not** excluded; the match is
+by segment for exactly that reason.
+
+---
+
+### 11.10 Finding 9 — `advance()` called a failed read "not found"
+
+Observed live, activating an experiment through the real route:
+
+```
+{"error":"advance: content_experiment 0f5e0001-… not found (Gateway Timeout)"}
+```
+
+A Supabase blip, reported as a confident statement that the row does not exist —
+about a row that was sitting right there. A retry seconds later succeeded.
+
+This is **shared code**: `advance()` is the one transition function for all six
+entity types, including `inquiry_draft` → `approved`/`sent`. `.single()` reports a
+genuine miss as **PGRST116**, so the two were always distinguishable; collapsing
+them turned a blip into a fact (rule 12). The route answered 500, so nothing
+false was written — the damage is a person sent looking for a row that is fine.
+
+**Fixed:** PGRST116 is "not found"; anything else is *"could not be read (…) — the
+row may well exist; this is a failed read, and nothing was changed."*
+
+---
+
+### 11.11 Finding 10 — `loadActiveExperiment` truncated, then filtered
+
+```
+.eq('surface', surface).eq('status','active').order('created_at').limit(8)
+   … then  .filter(r => r.target_key == null || r.target_key === targetKey)
+```
+
+The target filter ran in **code, after the LIMIT**. With nine active
+`sequence_step` experiments the ninth is invisible, and the one it hides could be
+the one naming this very step. The processor reads that as `absent` — the "normal
+case, and it is not news" branch — so the experiment simply never runs and
+**nothing anywhere says so**. Rule 16's shape again: a framework default (a limit)
+deciding the answer.
+
+Not reachable today (nobody has had more than four active at once, and this
+review's probes peaked at three). Fixed anyway, because the failure is silent:
+two explicit reads, one `.eq('target_key', key)` and one `.is('target_key',
+null)`, each filtered in the query. Two reads rather than one PostgREST `.or(...)`
+because `target_key` is `<uuid>:<step>` and a colon inside an `or` filter is a
+syntax question nobody should have to think about on the live send path. The
+existing query-assertion test was extended to pin both reads.
+
+While in there: an **active** row `asExperimentRow` cannot parse was dropped by a
+`.filter(r => r !== null)` and became `absent` — the same rule-12 collapse,
+unreachable today because migration 045's CHECKs are exactly that function's
+bounds, reachable the moment a migration widens one while an older image is still
+serving. It now logs what it did not understand.
+
+---
+
+### 11.12 Finding 11 — the memory screen, and a wrong fix caught by its own test
+
+`screenMemory` runs three detectors. Two read the whole value — deliberately,
+because *"screening a truncated value would be a screen that gets weaker the
+longer the payload is"* is this module's own stated reason for reading `value` in
+full. The third, the prompt-structure detector, was called on `text.slice(0, 400)`.
+So a forged `PRIORITY PULL LOGIC:` header at character 500 was invisible to the
+one detector that looks for forged headers, while the same row's `$850` was not.
+
+**The first fix was wrong, and the test is what said so.** Passing the whole value
+makes it *worse*: `screenLearningText` refuses anything over `MAX_LEARNING_CHARS`
+(400) with *"it is longer than 400 characters"* **before** it ever reaches
+`PROMPT_STRUCTURE`, and `screenMemory` filters that verdict out — so every value
+over 400 characters would have lost its structural screen entirely. The real rows
+run to 3,210 characters. `.slice(0, 400)` was not an oversight; it was working
+around that cap, and it happened to screen exactly the window the cap allows.
+
+**Fixed properly:** overlapping 400-character windows (overlap 120, so a heading
+straddling a boundary is still matched whole), keeping only structural verdicts.
+Rule 8 applies to one's own patches, and this is the second time in two sessions
+that writing the test for a fix found the fix.
+
+---
+
+### 11.13 Recorded, not fixed: `promoteMemory` stamps `updated_at`
+
+§2 and migration 045 go to some trouble not to UPDATE `agent_memory`, because
+`trg_memory_updated_at` fires **unconditionally** and `updated_at` is the evidence
+that 43 rows have not been touched since February. The migration used a COMMENT
+for that reason and says so.
+
+`promoteMemory` then does:
+
+```ts
+await supabase.from('agent_memory').update({ promoted_learning_id: proposed.id }).eq('id', memoryId)
+```
+
+The migration anticipated this and argued it is fine — *"where bumping
+`updated_at` is correct, since that row really did change."* **I would reverse
+that call.** The row changed; the *knowledge* did not, and `updated_at` on this
+table means when the value was last maintained — that is what `trg_memory_version`
+keys on and what the entire retirement argument rests on. Making one column carry
+both facts is rule 11's sharpest form, and after two promotions nobody can tell
+which rows are stale: `agent_memory_history` does not log it (the value is
+unchanged) and `version` is not bumped either.
+
+**Not changed here**, because the right fix is a migration —
+`agent_learnings.source_memory_id`, which also makes the link readable from either
+side as the code comment claims it wanted — and that is a design change, not a
+defect repair. **Migration 046 is free and this is what it is for.** Flagged for
+the next link.
+
+It is still **latent**: production shows `agent_memory promoted = 0` and
+`updated_at` bounded `2026-02-18 … 2026-04-22`. This review deliberately did
+**not** exercise `promoteMemory` against production, because proving the finding
+would have destroyed the evidence on a real row. The trigger was read out of
+`pg_trigger` instead (rule 13), which is the right way to know.
+
+---
+
+### 11.14 Driven against production
+
+Everything above was measured on the live box, either through the public routes
+from inside the container or through `/root/pg.sh`.
+
+Three throwaway experiments, each isolated by a `target_key` naming a sequence
+uuid **that does not exist**, so no real enrollment could match one even if
+`/api/cron/process-sequences` had fired (it is not scheduled — PLAN.md
+needs-Adam 3). The 44 active enrollments were never touched and
+**no email or SMS was sent by this session at all.**
+
+Doors, re-checked: `/api/cron/experiment-report` 401 without the secret and with
+a wrong one; `/api/admin/experiments` 401 unauthenticated, including on the
+`transition → active` edge; `create` refuses `minPerArm: 1`, `minPerArm: 2.5`,
+`alpha: 0.9` and `alpha: 0` with 400 and a reason. `content_experiment`'s GATED
+set is `{active}` and nothing else — read out of `graph.ts`, and it is the sixth
+gated edge in the file.
+
+**What was written to a real customer's record, and removed.** The legitimate-click
+probe wrote one `contact_interactions` row of type `email_clicked` against a real
+contact — a true record of the route's behaviour and a **false statement about a
+customer**, who never clicked anything. It was deleted, scoped by the
+`metadata.source = 'variant_track'` stamp the route writes.
+`contact_interactions` is back to **142** rows with **zero** `email_%`.
+
+**Restored, every counter, against the figures this session started from:**
+
+```
+content_experiments 0 · content_variants 0 · variant_assignments 0
+variant_events 0 · unattributed_signals 0
+contact_interactions 142 (email_% = 0) · contacts 1219 (21 still mixed-case)
+bookings 60 · active enrollments 44 · email_sequences 7 · steps 9
+agent_memory 44 (promoted 0) · agent_memory_history 89
+agent_learnings 3 (0 active) · social_posts draft 3
+scheduled_reminders 0 · scheduled_campaigns draft 103
+agent_memory.updated_at  min 2026-02-18  max 2026-04-22   ← unchanged
+invoice_number_seq  118 / t                                ← untouched
+```
+
+No Stripe object was created, no charge of any kind was made, no Brevo campaign
+was sent, and **no model call was made** — the two `llm_call` rows in
+`marketing_ledger` ($0.0043) are timestamped 15:39 and 15:45 and belong to link
+11, before this session began.
+
+**What could not be cleaned up.** `marketing_ledger` is append-only (a
+migration-021 trigger raises on DELETE), so this session's rows are permanent:
+**7 `transition`, 15 INTEL `note` and 2 ADMIN `note`**, all against
+`entity_type = 'content_experiment'`, all with `cost_usd` null or 0. They record
+probe activations, probe reports and one probe conclusion. Harmless, and they are
+there.
+
+Live funnel after deploy: `/`, `/book`, `/party-planner`, `/party-room-rental`
+and `/admin` all **200**.
+
+---
+
+### 11.15 Tests
+
+`src/__tests__/lib/phase5Review.test.ts` — **37 tests, one `describe` per
+finding**, each carrying the production observation that justified it, in the
+shape `phase4Review.test.ts` established. The chunk-size test derives its bound
+from the **measured** 14,174-character ceiling rather than pinning a number
+somebody chose, so raising `IN_CHUNK` past what the URL can carry fails in CI.
+
+`fakeReminderDb`'s engine gained `.is(col, null)` — NULL is not a value `.eq()`
+can match, in PostgREST or in Postgres, and `loadActiveExperiment` now depends on
+that distinction. Extended, not replaced (§6's rule about the fake).
+`experimentLoad.test.ts`'s query assertion was widened to pin **both** reads and
+their target filters, which is the finding in 11.11 made permanent.
+
+`npx jest` → **1840/1840**. `npx tsc --noEmit` → 0 errors in app code.
+`npx next build` → compiled successfully, `/book` unchanged at `○ Static`
+7.15 kB, `/r/[token]` still `ƒ (Dynamic)`.
+
+---
+
+### 11.16 Needs Adam
+
+Unchanged from §10, plus nothing new. Restating the one that now matters more:
+
+**The `/api/cron/experiment-report` job (§10.1) is worth scheduling even with
+nothing to measure** — it is the surface that writes the `unattributed_signals`
+row from 11.3, and after this review it is also the surface that names a dropped
+arm. It concludes nothing, changes no copy and costs nothing. Ninth job in the
+same cron-job.org backlog as PLAN.md items 1, 6, 12, 13 and 18.
+
+And a note for whoever schedules it: a **partial** failure keeps HTTP 200 and
+names the failures in `failures[]` (11.2). That is a deliberate judgement — the
+experiments that did analyse produced real verdicts and hiding them behind a 503
+would lose them — but it means a green run is not proof every experiment was read.
