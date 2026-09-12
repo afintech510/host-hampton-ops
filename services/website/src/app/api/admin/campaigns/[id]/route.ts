@@ -75,6 +75,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // If sending now
   if (body.status === 'sending') {
+    // What the row was BEFORE the claim. Read separately because
+    // `UPDATE … RETURNING` gives the row as it is AFTER the update — so the
+    // claimed row's `status` is already `sending`, and using it to release the
+    // claim restores `sending` to `sending`, which is no release at all.
+    //
+    // That was a real bug in the first version of this fix. It passed its unit
+    // test, because the mock handed back a fixed pre-update row; production
+    // handed back the post-update one and a probe campaign stayed stuck at
+    // `sending`. Hard-won rule 8, on a mock this time: a test that passes is not
+    // behaviour the database agrees with.
+    //
+    // This read is NOT the gate — the conditional UPDATE below is. A stale value
+    // here can only affect which of `draft`/`scheduled` we restore.
+    const { data: before } = await supabase
+      .from('scheduled_campaigns').select('status').eq('id', id).maybeSingle()
+    const priorStatus = before?.status === 'scheduled' ? 'scheduled' : 'draft'
+
     // CLAIM FIRST, then read. This used to be a plain SELECT followed by a send,
     // so two clicks on "Send" (or a double-submit) both saw `draft`, both called
     // Brevo, and 944 real people got the same campaign twice. The conditional
@@ -110,7 +127,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // simply returned and the row stayed `draft`; the claim is what made this
     // necessary, so it is part of the same change.)
     const release = async () => {
-      await supabase.from('scheduled_campaigns').update({ status: campaign.status }).eq('id', id)
+      await supabase
+        .from('scheduled_campaigns')
+        .update({ status: priorStatus })
+        .eq('id', id)
+        // Only release a claim we still hold. If something else has moved the
+        // row on since, leave it where it is.
+        .eq('status', 'sending')
     }
 
     if (campaign.campaign_type === 'email' || campaign.campaign_type === 'event_update') {

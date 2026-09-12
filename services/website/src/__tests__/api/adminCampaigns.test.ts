@@ -189,16 +189,31 @@ describe('Admin Campaigns API', () => {
      * old shape was SELECT-then-send, so two clicks on Send both saw `draft`,
      * both called Brevo, and 944 real people got the campaign twice.
      */
-    function sendMocks(claimResult: any) {
+    /**
+     * Call 1 is the pre-claim status read, call 2 is the claim itself, and the
+     * claim's chain resolves to the row as PostgREST really returns it — i.e.
+     * AFTER the update, with `status: 'sending'`. Modelling that matters: the
+     * first version of the release fix restored `campaign.status` from the
+     * claimed row, which is already `sending`, and a mock that handed back a
+     * fixed pre-update row let it pass while production stayed stuck.
+     */
+    function sendMocks(claimResult: any, priorStatus = 'draft') {
+      const beforeChain = buildChain({ data: { status: priorStatus }, error: null })
       const claimChain = buildChain(claimResult)
       const restChain = buildChain({ data: null, error: null })
       let callCount = 0
-      const fromMock = jest.fn().mockImplementation(() => (++callCount <= 1 ? claimChain : restChain))
+      const fromMock = jest.fn().mockImplementation(() => {
+        callCount++
+        if (callCount === 1) return beforeChain
+        if (callCount === 2) return claimChain
+        return restChain
+      })
       mockGetSupabase.mockReturnValue({ from: fromMock })
-      return { claimChain, restChain, fromMock }
+      return { beforeChain, claimChain, restChain, fromMock }
     }
 
-    const sendableRow = { ...sampleCampaign, campaign_type: 'email', subject: 'Test', body_html: '<p>Hi</p>' }
+    // As returned by UPDATE … RETURNING: status is already 'sending'.
+    const sendableRow = { ...sampleCampaign, campaign_type: 'email', subject: 'Test', body_html: '<p>Hi</p>', status: 'sending' }
 
     it('sends campaign via Brevo when status=sending', async () => {
       const { claimChain } = sendMocks({ data: [sendableRow], error: null })
