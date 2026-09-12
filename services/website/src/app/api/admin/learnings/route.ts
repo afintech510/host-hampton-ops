@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
-import { proposeLearning, setLearningActive, LEARNING_KINDS, MAX_LEARNING_CHARS } from '@/lib/agent/learnings'
+import {
+  proposeLearning,
+  setLearningActive,
+  loadActiveLearnings,
+  learningsPromptAddendum,
+  LEARNING_KINDS,
+  MAX_LEARNING_CHARS,
+} from '@/lib/agent/learnings'
 import { activateVoiceProfile } from '@/lib/agent/voice'
 import { writeLedger } from '@/lib/marketing/graph'
 import { DISTILL_ENTITY } from '@/lib/agent/distill'
@@ -41,7 +48,7 @@ export async function GET(req: NextRequest) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
   const supabase = getSupabase()
 
-  const [learnings, profiles, runs] = await Promise.all([
+  const [learnings, profiles, runs, prompt] = await Promise.all([
     supabase.from('agent_learnings').select(LEARNING_COLUMNS).order('created_at', { ascending: false }).limit(200),
     supabase
       .from('voice_profile')
@@ -54,6 +61,17 @@ export async function GET(req: NextRequest) {
       .eq('entity_type', DISTILL_ENTITY)
       .order('created_at', { ascending: false })
       .limit(5),
+    // Not a second query of the list above — this is the ACTUAL call the draft
+    // node makes, run against the same database, so the panel can state what
+    // the agent is reading right now rather than what the table implies.
+    //
+    // It exists because two of this phase's guarantees were otherwise
+    // unobservable in production: that `is_active = false` really does keep a
+    // row out of the prompt, and that an ACTIVE row failing the read-time
+    // screen is dropped. A guarantee you cannot watch is one you are trusting
+    // (rule 8), and a guardrail that drops a row silently has not said that it
+    // fired (rule 10). Now both are on the page.
+    loadActiveLearnings(supabase),
   ])
 
   // Reported, not swallowed. A missing migration 041 has to read as a clear
@@ -71,6 +89,13 @@ export async function GET(req: NextRequest) {
     learnings: learnings.data ?? [],
     voiceProfiles: profiles.data ?? [],
     distillRuns: runs.data ?? [],
+    /** What the draft prompt is loading right now, and what it refused to. */
+    inPrompt: {
+      applied: prompt.learnings,
+      rejected: prompt.rejected,
+      unavailable: prompt.unavailable,
+      block: learningsPromptAddendum(prompt.learnings),
+    },
     errors,
   })
 }

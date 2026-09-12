@@ -51,6 +51,14 @@ interface DistillRun {
   meta: Record<string, unknown> | null
 }
 
+/** What the draft prompt is actually loading — the real call, not a re-query. */
+interface InPrompt {
+  applied: { id?: string; kind: string; text: string }[]
+  rejected: { id: string; reason: string }[]
+  unavailable: string | null
+  block: string
+}
+
 const KIND_TONE: Record<string, string> = {
   style: 'bg-purple-100 text-purple-800',
   rule: 'bg-blue-100 text-blue-800',
@@ -73,6 +81,7 @@ export default function LearningsPanel({
   const [learnings, setLearnings] = useState<Learning[]>([])
   const [profiles, setProfiles] = useState<VoiceProfileRow[]>([])
   const [runs, setRuns] = useState<DistillRun[]>([])
+  const [inPrompt, setInPrompt] = useState<InPrompt | null>(null)
   const [kinds, setKinds] = useState<string[]>(['style', 'rule', 'fact', 'pricing'])
   const [maxChars, setMaxChars] = useState(400)
   const [loadErrors, setLoadErrors] = useState<string[]>([])
@@ -93,6 +102,7 @@ export default function LearningsPanel({
       setLearnings(data.learnings || [])
       setProfiles(data.voiceProfiles || [])
       setRuns(data.distillRuns || [])
+      setInPrompt(data.inPrompt || null)
       if (Array.isArray(data.kinds) && data.kinds.length) setKinds(data.kinds)
       if (typeof data.maxChars === 'number') setMaxChars(data.maxChars)
       setLoadErrors(data.errors || [])
@@ -175,7 +185,13 @@ export default function LearningsPanel({
   return (
     <section>
       <h3 className="flex items-center gap-2 text-sm font-semibold text-hampton-navy mb-3">
-        <GraduationCap className="w-4 h-4" /> What the agent has learned ({active.length} live)
+        <GraduationCap className="w-4 h-4" /> What the agent has learned
+        {/* The count the agent is really using, not the count of active rows —
+          * they differ exactly when something is wrong, which is when the
+          * number is worth reading. */}
+        <span className="font-normal text-gray-400">
+          ({inPrompt ? `${inPrompt.applied.length} in use` : `${active.length} live`})
+        </span>
         <button
           onClick={load}
           className="ml-auto p-1.5 text-gray-400 hover:text-hampton-navy hover:bg-gray-100 rounded-lg"
@@ -223,6 +239,35 @@ export default function LearningsPanel({
           discount, a link or an email address — those come from the plan and the pricing catalogue, never from a rule.
         </p>
       </div>
+
+      {/* ── What the agent is actually reading ──
+        *
+        * Two things here are not decoration. An ACTIVE row that the draft node
+        * refuses to load looks, from the list below, exactly like a rule that
+        * is working — so the refusal is stated loudly, with the reason. And a
+        * failed read means the agent is drafting with NO learned rules, which
+        * is the safe direction and is not the same as having none.
+        */}
+      {inPrompt?.unavailable && (
+        <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-xl px-4 py-3 mb-3">
+          <AlertTriangle className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+          The agent could not read the learned rules just now ({inPrompt.unavailable}) — it is drafting without
+          any of them.
+        </div>
+      )}
+      {inPrompt && inPrompt.rejected.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-xl px-4 py-3 mb-3">
+          <AlertTriangle className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+          <span className="font-semibold">
+            {inPrompt.rejected.length} live rule{inPrompt.rejected.length === 1 ? ' is' : 's are'} being ignored by
+            the agent
+          </span>{' '}
+          — switched on, but refused when the draft prompt is built. Retire and rewrite:
+          <ul className="mt-1 ml-5 list-disc text-xs">
+            {inPrompt.rejected.map(r => <li key={r.id}>{r.reason}</li>)}
+          </ul>
+        </div>
+      )}
 
       {/* ── Live ── */}
       <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 mb-3">
