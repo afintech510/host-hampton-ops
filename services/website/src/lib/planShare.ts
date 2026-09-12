@@ -33,6 +33,7 @@ import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
 import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { money, type PlanInvoice } from '@/lib/planInvoice'
+import { escapeHtml } from '@/lib/escapeHtml'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -96,8 +97,11 @@ export function planSummaryEmailHtml(opts: {
   note: string | null
 }): string {
   const { invoice } = opts
-  const first = (invoice.booking.contact_name || 'there').split(' ')[0]
-  const doc = invoice.docTitle
+  // `contact_name` is customer-written (public intake forms, and the agent's
+  // field extraction) and this is raw markup. A field is hostile because of who
+  // can WRITE it, not which template it prints in — hard-won rule 5.
+  const first = escapeHtml((invoice.booking.contact_name || 'there').split(' ')[0])
+  const doc = escapeHtml(invoice.docTitle)
 
   const detail = (label: string, value: string) =>
     `<tr><td style="padding:9px 12px;font-weight:bold;color:${BRAND.navy};width:150px;">${label}</td><td style="padding:9px 12px;color:${BRAND.gray};">${value}</td></tr>`
@@ -125,7 +129,7 @@ export function planSummaryEmailHtml(opts: {
     <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${first},</p>
     <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 22px;">${
       opts.note
-        ? opts.note
+        ? escapeHtml(opts.note)
         : `Here&rsquo;s your ${doc.toLowerCase()}. The link below opens the full document &mdash; you can review everything, pay online, or use your browser&rsquo;s &ldquo;Save as PDF&rdquo; to keep a copy.`
     }</p>
     <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:26px;background:#f9f7f4;border-radius:10px;">
@@ -145,6 +149,9 @@ export function planSummaryEmailHtml(opts: {
 }
 
 export function planSummarySms(invoice: PlanInvoice, url: string): string {
+  // NOT escaped, deliberately: this is an SMS body, not markup. Escaping here
+  // would put a literal `&#39;` in a text message, and `lib/smsSegments.ts`
+  // would then bill the carrier's arithmetic on five characters instead of one.
   const first = (invoice.booking.contact_name || 'there').split(' ')[0]
   const doc = invoice.docTitle.toLowerCase()
   return `Hi ${first}! Here's your Host Hampton ${doc}${

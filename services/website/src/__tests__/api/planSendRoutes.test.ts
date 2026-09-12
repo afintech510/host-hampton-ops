@@ -87,6 +87,9 @@ const params = (ref = 'HH-2026-MINE') => Promise.resolve({ ref })
 const portalCookie = (ref: string) => `hh_portal=${buildPortalCookieValue(ref, PORTAL_SECRET)}`
 const adminCookie = () => `hh_admin=${buildAdminCookieValue('hosthampton295@gmail.com', ADMIN_SECRET)}`
 
+/** The cooldown claim row this request believes it inserted. */
+const MY_CLAIM = { id: 'claim-mine', created_at: '2026-09-11T12:00:00.000Z' }
+
 const originalEnv = process.env
 
 beforeEach(() => {
@@ -98,7 +101,10 @@ beforeEach(() => {
     ADMIN_PASSWORD: 'shared-pw',
     RESEND_API_KEY: 're_test',
   }
-  db = makePlanDb({ marketing_ledger: [{ data: [], error: null }] })
+  // The email-me cooldown is now CLAIMED, not merely checked: insert a claim
+  // row, read the claims back, win only if ours is the oldest. So the ledger
+  // queue is (1) our claim insert, (2) the claims read, (3) the real send row.
+  db = makePlanDb({ marketing_ledger: [{ data: MY_CLAIM, error: null }, { data: [MY_CLAIM], error: null }, { data: null, error: null }] })
   loadSpy.mockResolvedValue({ ok: true, invoice: INVOICE() })
   sendEmailSpy.mockResolvedValue({ ok: true })
   smsSpy.mockResolvedValue('msg_1')
@@ -221,20 +227,71 @@ describe('POST /api/plan/[ref]/email-me — customer self-serve', () => {
   })
 
   it('rate-limits a double click', async () => {
-    db = makePlanDb({ marketing_ledger: [{ data: [{ id: 'recent' }], error: null }] })
+    // An OLDER claim than ours exists in the window, so we lost the slot.
+    db = makePlanDb({
+      marketing_ledger: [
+        { data: MY_CLAIM, error: null },
+        { data: [{ id: 'claim-theirs', created_at: '2026-09-11T00:00:00.000Z' }], error: null },
+      ],
+    })
     const { POST } = await import('@/app/api/plan/[ref]/email-me/route')
     const res = await POST(req({ cookie: portalCookie('HH-2026-MINE') }), { params: params('HH-2026-MINE') })
     expect(res.status).toBe(429)
     expect(sendEmailSpy).not.toHaveBeenCalled()
   })
 
-  it('a failed cooldown check DECLINES rather than sending', async () => {
+  it('only ONE of several simultaneous callers gets the slot', async () => {
+    // The bug this replaced: the check and the write straddled the send, so the
+    // limit was check-then-act. Measured in production before the fix — five
+    // concurrent calls, THREE emails. Every racer inserts its own claim, then
+    // every racer sees every claim, and the oldest id is the only winner.
+    const winner = { id: 'claim-aaa', created_at: '2026-09-11T12:00:00.000Z' }
+    const loser = { id: 'claim-bbb', created_at: '2026-09-11T12:00:00.000Z' }
+    const all = [winner, loser]
+    const { POST } = await import('@/app/api/plan/[ref]/email-me/route')
+
+    db = makePlanDb({ marketing_ledger: [{ data: winner, error: null }, { data: all, error: null }, { data: null, error: null }] })
+    const first = await POST(req({ cookie: portalCookie('HH-2026-MINE') }), { params: params('HH-2026-MINE') })
+
+    db = makePlanDb({ marketing_ledger: [{ data: loser, error: null }, { data: all, error: null }] })
+    const second = await POST(req({ cookie: portalCookie('HH-2026-MINE') }), { params: params('HH-2026-MINE') })
+
+    expect([first.status, second.status]).toEqual([200, 429])
+    expect(sendEmailSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('a failed cooldown claim DECLINES rather than sending', async () => {
     // "Cannot tell" must not be the way round the limit.
     db = makePlanDb({ marketing_ledger: [{ data: null, error: { message: 'connection reset' } }] })
     const { POST } = await import('@/app/api/plan/[ref]/email-me/route')
     const res = await POST(req({ cookie: portalCookie('HH-2026-MINE') }), { params: params('HH-2026-MINE') })
     expect(res.status).toBe(503)
     expect(sendEmailSpy).not.toHaveBeenCalled()
+  })
+
+  it('a failed cooldown READ declines too, and does not send', async () => {
+    db = makePlanDb({
+      marketing_ledger: [{ data: MY_CLAIM, error: null }, { data: null, error: { message: 'connection reset' } }],
+    })
+    const { POST } = await import('@/app/api/plan/[ref]/email-me/route')
+    const res = await POST(req({ cookie: portalCookie('HH-2026-MINE') }), { params: params('HH-2026-MINE') })
+    expect(res.status).toBe(503)
+    expect(sendEmailSpy).not.toHaveBeenCalled()
+  })
+
+  it('a send that FAILS after claiming the slot records the failure, not a send', async () => {
+    // Rule 10: a claimed cooldown that produced no email must say so, or the
+    // ledger asserts a send that never happened.
+    sendEmailSpy.mockResolvedValue({ ok: false, reason: 'Email failed: bounced' })
+    const { POST } = await import('@/app/api/plan/[ref]/email-me/route')
+    const res = await POST(req({ cookie: portalCookie('HH-2026-MINE') }), { params: params('HH-2026-MINE') })
+    expect(res.status).toBe(502)
+    const rows = writesTo(db, 'marketing_ledger', 'insert').map(
+      w => ((w.payload as Record<string, unknown>).meta as Record<string, unknown>).job,
+    )
+    expect(rows).toContain('plan_summary_email_claim')
+    expect(rows).toContain('plan_summary_email_failed')
+    expect(rows).not.toContain('plan_summary_email')
   })
 
   it('says so plainly when the plan has no email address yet', async () => {

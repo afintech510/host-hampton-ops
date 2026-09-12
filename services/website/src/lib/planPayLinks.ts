@@ -393,7 +393,19 @@ export async function createPlanPayLink(opts: {
     // A live link we did not record is precisely the gap migration 035 exists to
     // close: money could arrive against nothing. Take the link back down rather
     // than leave it payable and untraceable.
-    console.error(`createPlanPayLink: row insert failed for ${ref}, deactivating link:`, insErr.message)
+    //
+    // 23505 here is the ordinary outcome of two people minting at once, now that
+    // migration 040's `idx_bpl_one_live_per_purpose` makes the DB the
+    // serialisation point this function never had. Before that index, six
+    // concurrent mints produced six simultaneously payable links and paying two
+    // of them charged the same deposit twice — measured, not imagined. The
+    // recovery was already correct; only the message needed to stop telling the
+    // loser that something broke.
+    const lostTheRace = insErr.code === '23505'
+    console.error(
+      `createPlanPayLink: row insert failed for ${ref}, deactivating link:`,
+      lostTheRace ? `another mint won the race (23505)` : insErr.message,
+    )
     try {
       await stripe.paymentLinks.update(stripeLinkId, { active: false })
     } catch (err) {
@@ -404,7 +416,13 @@ export async function createPlanPayLink(opts: {
         err instanceof Error ? err.message : err,
       )
     }
-    return { ok: false, reason: 'Could not record the payment link — try again.', retryable: true }
+    return {
+      ok: false,
+      reason: lostTheRace
+        ? 'A payment link for this was just created — reload the page and use that one.'
+        : 'Could not record the payment link — try again.',
+      retryable: true,
+    }
   }
 
   await writeLedger(db, {

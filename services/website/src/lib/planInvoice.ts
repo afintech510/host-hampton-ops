@@ -196,11 +196,25 @@ export async function loadPlanInvoice(
   const booking = bookingRow as unknown as InvoiceBooking
   const partyType = booking.party_type || 'unknown'
 
-  const [{ data: itemRows }, catalog, content] = await Promise.all([
+  const [{ data: itemRows, error: itemErr }, catalog, content] = await Promise.all([
     db.from('booking_line_items').select('*').eq('booking_id', booking.id).order('sort_order', { ascending: true }),
     loadPricingCatalog(db),
     loadPlanContent(partyType, db),
   ])
+
+  // A FAILED line-items read is not an empty plan (hard-won rule 12, and the
+  // Phase 5 review found this one by exercising it). Every figure below is
+  // derived from these rows, so discarding the error yields `totalCents: 0` —
+  // and `recordPlanPayment` then computes `max(0, 0 - paid) = 0`, writes
+  // `balance_due_cents = 0` and advances the plan to `paid_in_full`. Proven in
+  // production on a throwaway plan: a $600 payment against a plan whose items
+  // could not be read marked it PAID IN FULL with nothing outstanding.
+  //
+  // `loadPricingCatalog` and `loadPlanContent` are deliberately NOT treated this
+  // way: both have documented per-field fallbacks to today's real values, so a
+  // failure there renders the right prose and prices. Nothing falls back for the
+  // line items, because they are the plan.
+  if (itemErr) return { ok: false, notFound: false, error: `line items: ${itemErr.message}` }
 
   const guestCount = booking.guest_count_approx && booking.guest_count_approx > 0 ? booking.guest_count_approx : 0
   const lineItems = orderLineItems((itemRows ?? []) as BookingLineItem[], guestCount || 1)

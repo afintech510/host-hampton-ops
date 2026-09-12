@@ -383,6 +383,40 @@ function InvoiceBody({
   )
 }
 
+/**
+ * "We could not load this", which is a different statement from "this does not
+ * exist". Says nothing about the balance and offers no pay button, because the
+ * figures are exactly what we failed to read.
+ */
+function PlanUnavailable({ ref_ }: { ref_: string }) {
+  return (
+    <div className="hh-invoice">
+      <div
+        style={{
+          margin: '48px auto',
+          maxWidth: 620,
+          padding: '28px 32px',
+          borderRadius: 12,
+          background: '#fff',
+          border: '1px solid rgba(26,39,68,0.15)',
+          fontFamily: 'Georgia, serif',
+          color: '#1a2744',
+        }}
+      >
+        <h1 style={{ fontSize: 22, fontWeight: 'normal', margin: '0 0 14px' }}>We couldn’t load this plan</h1>
+        <p style={{ color: '#555', lineHeight: 1.7, margin: '0 0 14px', fontSize: 15 }}>
+          Your plan <strong>{ref_}</strong> is still here — we just could not read it this moment. Please refresh in
+          a few seconds.
+        </p>
+        <p style={{ color: '#555', lineHeight: 1.7, margin: 0, fontSize: 14 }}>
+          If it keeps happening, call or text <strong>(631) 998-9325</strong> and we will sort it out. Nothing has
+          been charged.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default async function PlanSummaryPage({
   params,
   searchParams,
@@ -416,7 +450,17 @@ export default async function PlanSummaryPage({
 
   const supabase = getSupabase()
   const result = await loadPlanInvoice(ref, supabase)
-  if (!result.ok) notFound()
+  if (!result.ok) {
+    // Three outcomes here too. A 404 for a plan that exists but could not be
+    // READ tells a customer mid-payment that their invoice has vanished — and
+    // the pay route next door already refuses to say that (it answers 503). The
+    // same rule has to hold on the page, or the two disagree about the same
+    // failure. A genuinely absent plan is still a 404, which is also what an
+    // unauthorized one looks like, deliberately.
+    if (result.notFound) notFound()
+    console.error('plan summary: invoice load failed:', result.error)
+    return <PlanUnavailable ref_={ref} />
+  }
 
   // The number is issued on FIRST RENDER, not at insert, so a lead that never
   // gets quoted does not burn one. Idempotent: a refresh returns the same one.
@@ -446,7 +490,23 @@ export default async function PlanSummaryPage({
     for (const purpose of ['deposit', 'balance'] as const) {
       const q = quoteFor(invoice, payments, purpose)
       if (!q.ok) continue
-      const noun = purpose === 'deposit' ? (invoice.depositIsSeparate ? 'security deposit' : 'deposit') : 'balance'
+      // ── What the button is allowed to CALL the money ──────────────────────
+      //
+      // `quoteFor('balance')` charges everything still outstanding. On a plan
+      // where the deposit has NOT been paid that is the whole total, while the
+      // invoice's own "Balance Due" line reads total-minus-deposit — so the page
+      // said "Balance Due $350.00" directly above a button saying "Pay $600.00
+      // balance". The figure was right and the word was wrong, and a number that
+      // contradicts the line above it is the one error a client always catches.
+      const clearsEverything = purpose === 'balance' && q.quote.amountCents > invoice.balanceDueCents
+      const noun =
+        purpose === 'deposit'
+          ? invoice.depositIsSeparate
+            ? 'security deposit'
+            : 'deposit'
+          : clearsEverything
+            ? 'in full'
+            : 'balance'
       payOptions.push({
         purpose,
         cta: `Pay ${money(q.quote.amountCents)} ${noun}`,

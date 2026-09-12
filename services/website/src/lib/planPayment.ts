@@ -42,6 +42,7 @@ import type Stripe from 'stripe'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
 import { ownerEmail } from '@/lib/ownerNotify'
+import { escapeHtml } from '@/lib/escapeHtml'
 import { writeLedger } from '@/lib/marketing/graph'
 import { loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
 import {
@@ -195,11 +196,21 @@ export type RecordResult =
       bookingRef: string
       amountCents: number
       newBalanceCents: number
+      /**
+       * How much more has been credited than the plan's total — 0 normally.
+       *
+       * `newBalanceCents` is clamped at 0, so without this an overpayment is
+       * indistinguishable from paid-in-full. The Phase 5 review produced one in
+       * production: a $600 link minted, the plan then re-priced DOWN to $300,
+       * the link paid — $600 credited, balance 0, `paid_in_full`, and no flag
+       * anywhere. The money Adam owes back has to be visible somewhere.
+       */
+      overpaidCents: number
     }
   | { ok: false; retryable: boolean; message: string }
 
 /** Postgres unique-violation. Checked by CODE; the message text is not a contract. */
-function isUniqueViolation(err: { code?: string; message?: string } | null): boolean {
+export function isUniqueViolation(err: { code?: string; message?: string } | null): boolean {
   if (!err) return false
   if (err.code === '23505') return true
   return (err.message || '').toLowerCase().includes('duplicate')
@@ -234,6 +245,41 @@ export async function recordPlanPayment(
 ): Promise<RecordResult> {
   const supabase = db ?? getSupabase()
   const ref = target.bookingRef
+
+  // ── Only money that has actually settled ─────────────────────────────────
+  //
+  // `checkout.session.completed` does NOT mean paid. For a delayed-notification
+  // method (ACH, SEPA, and some Klarna/Affirm flows) it fires with
+  // `payment_status: 'unpaid'` and the payment can still FAIL afterwards; the
+  // real confirmation is `checkout.session.async_payment_succeeded`.
+  //
+  // Recording it here would be worse than a phantom payment: the session id is
+  // UNIQUE, so taking it now means the later `async_payment_succeeded` is
+  // swallowed as a redelivery, and `async_payment_failed` is invisible — the
+  // books would say paid and never learn otherwise.
+  //
+  // The account's live payment methods today are card / link / apple_pay /
+  // cashapp, all immediate, so this cannot fire. It is one dashboard toggle away
+  // from firing ("let them pay by bank transfer and skip the 3%"), which is
+  // precisely why the guarantee belongs in code rather than in a setting.
+  // Verified against production 2026-09-11: without this, an `unpaid` session
+  // was recorded as a full $600 payment.
+  if (session.payment_status === 'unpaid') {
+    console.warn(
+      `recordPlanPayment: ${ref} session ${session.id} is payment_status=unpaid — NOT recording; waiting for async_payment_succeeded`,
+    )
+    return { ok: false, retryable: false, message: 'payment has not settled yet' }
+  }
+
+  // Zero (or absent) is not a payment. `amount_total` is null on a session that
+  // collected nothing, and recording a $0 row would consume the session id and
+  // make a corrected redelivery look like a duplicate.
+  if (!session.amount_total || session.amount_total <= 0) {
+    console.error(
+      `recordPlanPayment: ${ref} session ${session.id} has amount_total=${String(session.amount_total)} — nothing to record`,
+    )
+    return { ok: false, retryable: false, message: 'session collected no money' }
+  }
 
   // The invoice is the single source of truth for the total and for the studio
   // deposit rule — the same function that rendered the document the customer
@@ -321,6 +367,8 @@ export async function recordPlanPayment(
         bookingRef: ref,
         amountCents: creditCents,
         newBalanceCents: (balRow as { balance_due_cents: number | null } | null)?.balance_due_cents ?? 0,
+        // A redelivery changes nothing, so it raises nothing either.
+        overpaidCents: 0,
       }
     }
     // The money is real and unrecorded. Ask Stripe to come back.
@@ -351,6 +399,18 @@ export async function recordPlanPayment(
   const after = (afterRows ?? before.concat([{ amount_cents: creditCents, payment_type: paymentType }])) as PaymentRow[]
   const paid = paidTowardTotalCents(after, invoice.depositIsSeparate)
   const newBalanceCents = Math.max(0, invoice.totalCents - paid)
+
+  // The clamp above is right for the balance the customer reads — nobody owes a
+  // negative number — but it is also where an overpayment disappears. Say it.
+  // `mismatch` cannot catch this case: it compares what Stripe collected against
+  // what the LINK expected, and those agree exactly when a stale link is paid
+  // after the plan was re-priced downwards.
+  const overpaidCents = Math.max(0, paid - invoice.totalCents)
+  if (overpaidCents > 0) {
+    console.error(
+      `recordPlanPayment: ${ref} is OVERPAID by ${money(overpaidCents)} (credited ${money(paid)} against a total of ${money(invoice.totalCents)}) — a refund may be due`,
+    )
+  }
 
   // Two updates, deliberately. `bookings_scheduled_fields_check` (migration 035)
   // re-imposes date + time + name for every status past lead/quoted, so a status
@@ -383,7 +443,8 @@ export async function recordPlanPayment(
       modified_by: 'system',
       change_summary:
         `${money(creditCents)} received via card pay link (${target.purpose})` +
-        `${feeCents > 0 ? ` + ${money(feeCents)} card fee` : ''}. Balance: ${money(newBalanceCents)}`,
+        `${feeCents > 0 ? ` + ${money(feeCents)} card fee` : ''}. Balance: ${money(newBalanceCents)}` +
+        `${overpaidCents > 0 ? ` — OVERPAID by ${money(overpaidCents)}, refund may be due` : ''}`,
     })
     .then(({ error }) => {
       if (error) console.error('recordPlanPayment: modification log (non-fatal):', error.message)
@@ -421,6 +482,7 @@ export async function recordPlanPayment(
       fee_cents: feeCents,
       charged_cents: chargedCents,
       balance_due_cents: newBalanceCents,
+      overpaid_cents: overpaidCents,
       amount_mismatch: mismatch,
       plan_was_cancelled: isCancelled,
       from_metadata_only: target.fromMetadataOnly,
@@ -431,7 +493,7 @@ export async function recordPlanPayment(
     `Plan payment recorded: ${ref} ${target.purpose} ${money(creditCents)} (charged ${money(chargedCents)}), balance ${money(newBalanceCents)}`,
   )
 
-  return { ok: true, duplicate: false, bookingRef: ref, amountCents: creditCents, newBalanceCents }
+  return { ok: true, duplicate: false, bookingRef: ref, amountCents: creditCents, newBalanceCents, overpaidCents }
 }
 
 /* ── Receipts ──────────────────────────────────────────────────────────── */
@@ -458,12 +520,20 @@ export async function sendPlanPaymentReceipt(opts: {
   newBalanceCents: number
   purpose: PayPurpose
   invoiceUrl: string | null
+  /**
+   * Named in the OWNER's copy only. The customer's copy is unchanged on
+   * purpose: an automated "you overpaid" raises a question only Adam can
+   * answer, and whether to refund is his call. What must not happen is the
+   * overpayment being visible nowhere, which is what it was.
+   */
+  overpaidCents?: number
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY || !opts.customerEmail) return
   const resend = new Resend(process.env.RESEND_API_KEY)
   const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
-  const first = (opts.customerName || 'there').split(' ')[0]
+  const first = escapeHtml((opts.customerName || 'there').split(' ')[0])
   const what = opts.purpose === 'deposit' ? 'deposit' : 'payment'
+  const overpaid = opts.overpaidCents ?? 0
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -501,13 +571,18 @@ export async function sendPlanPaymentReceipt(opts: {
     resend.emails.send({
       from,
       to: ownerEmail(),
-      subject: `Paid: ${opts.customerName || opts.customerEmail} — ${money(opts.amountCents)} (${opts.bookingRef})`,
+      subject:
+        (overpaid > 0 ? `OVERPAID by ${money(overpaid)} — ` : 'Paid: ') +
+        `${opts.customerName || opts.customerEmail} — ${money(opts.amountCents)} (${opts.bookingRef})`,
       html:
         `<p style="font-family:sans-serif">` +
         `<strong>${money(opts.amountCents)}</strong> ${what} received for <strong>${opts.bookingRef}</strong>` +
         `${opts.feeCents > 0 ? ` (+ ${money(opts.feeCents)} card fee)` : ''}.<br>` +
         `Balance remaining: <strong>${money(opts.newBalanceCents)}</strong>.<br>` +
-        `Customer: ${opts.customerName || '—'} &lt;${opts.customerEmail}&gt;` +
+        (overpaid > 0
+          ? `<strong style="color:#b00020">This plan is now OVERPAID by ${money(overpaid)}</strong> — the total came down after the link was sent, or two links were paid. A refund may be due.<br>`
+          : '') +
+        `Customer: ${escapeHtml(opts.customerName) || '—'} &lt;${escapeHtml(opts.customerEmail)}&gt;` +
         `</p>`,
     }),
   ]).catch(err => console.error('sendPlanPaymentReceipt (non-fatal):', err))

@@ -412,6 +412,79 @@ describe('createPlanPayLink', () => {
   })
 })
 
+describe('createPlanPayLink — losing the concurrent-mint race (migration 040)', () => {
+  /**
+   * `voidLivePayLinks` → Stripe create → row insert is three round trips with
+   * nothing serialising them. Measured in production BEFORE migration 040: six
+   * concurrent mints of the same (booking, purpose) produced SIX simultaneously
+   * live, payable Stripe links, and paying two of them charged the same $250
+   * deposit twice. §21's "there is never a window with two payable links" was
+   * simply false.
+   *
+   * `idx_bpl_one_live_per_purpose` makes the DB the serialisation point, and the
+   * existing failed-insert recovery then does the right thing by itself.
+   */
+  const raced = () => ({
+    booking_pay_links: [
+      { data: [], error: null },
+      { data: null, error: { message: 'duplicate key value violates unique constraint "idx_bpl_one_live_per_purpose"', code: '23505' } },
+    ],
+    marketing_ledger: [{ data: null, error: null }],
+  })
+
+  const mint = (db: unknown, stripe: unknown) =>
+    createPlanPayLink({
+      invoice: invoice({ totalCents: 100000 }),
+      payments: [],
+      purpose: 'deposit',
+      actor: 'admin:adam@benchworksai.com',
+      stripe: stripe as never,
+      db: db as never,
+      origin: 'https://www.hosthampton.com',
+    })
+
+  it('takes its own Stripe link back down rather than leaving it payable', async () => {
+    // A live link we did not record is the untraceable pay link migration 035
+    // exists to eliminate — and here it would be a SECOND way to pay the same
+    // deposit.
+    const db = makePlanDb(raced())
+    const { stripe, created } = makeStripe()
+    const res = await mint(db, stripe)
+    expect(res.ok).toBe(false)
+    expect(created.updates).toEqual([['plink_1', { active: false }]])
+  })
+
+  it('tells the loser to use the link that won, not that something broke', async () => {
+    const db = makePlanDb(raced())
+    const { stripe } = makeStripe()
+    const res = await mint(db, stripe)
+    if (res.ok) throw new Error('expected the race to be lost')
+    expect(res.reason).toMatch(/just created/)
+    expect(res.retryable).toBe(true)
+  })
+
+  it('still says "could not record" for a failure that is NOT a race', async () => {
+    const db = makePlanDb({
+      booking_pay_links: [{ data: [], error: null }, { data: null, error: { message: 'connection reset' } }],
+      marketing_ledger: [{ data: null, error: null }],
+    })
+    const { stripe } = makeStripe()
+    const res = await mint(db, stripe)
+    if (res.ok) throw new Error('expected failure')
+    expect(res.reason).toMatch(/Could not record/)
+  })
+
+  it('writes no ledger "created" note for a link that was not recorded', async () => {
+    const db = makePlanDb(raced())
+    const { stripe } = makeStripe()
+    await mint(db, stripe)
+    const notes = writesTo(db, 'marketing_ledger', 'insert').map(
+      w => ((w.payload as Record<string, unknown>).meta as Record<string, unknown>).job,
+    )
+    expect(notes).not.toContain('pay_link_created')
+  })
+})
+
 describe('voidLivePayLinks', () => {
   it('reports the Stripe failure rather than marking a live link void', async () => {
     const db = makePlanDb({

@@ -93,12 +93,20 @@ describe('orderLineItems', () => {
 
 /* ── The whole thing, against a stubbed DB ─────────────────────────────── */
 
-function makeSupabase(booking: Record<string, unknown> | null, items: unknown[] = []) {
+function makeSupabase(
+  booking: Record<string, unknown> | null,
+  items: unknown[] = [],
+  errors: { booking?: { message: string }; items?: { message: string } } = {},
+) {
   const from = jest.fn((table: string) => {
     const chain: Record<string, unknown> = {
       then: (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
-        if (table === 'bookings') return Promise.resolve({ data: booking, error: null }).then(res, rej)
-        if (table === 'booking_line_items') return Promise.resolve({ data: items, error: null }).then(res, rej)
+        if (table === 'bookings') {
+          return Promise.resolve({ data: errors.booking ? null : booking, error: errors.booking ?? null }).then(res, rej)
+        }
+        if (table === 'booking_line_items') {
+          return Promise.resolve({ data: errors.items ? null : items, error: errors.items ?? null }).then(res, rej)
+        }
         // pricing_items / plan_content: empty, so both fall back to their
         // compiled seed — which is exactly the state this must still render in.
         return Promise.resolve({ data: [], error: null }).then(res, rej)
@@ -184,6 +192,44 @@ describe('loadPlanInvoice', () => {
   it('says "not found" rather than throwing on a bad ref', async () => {
     const res = await loadPlanInvoice('HH-PTY-NOPE', makeSupabase(null))
     expect(res.ok).toBe(false)
+  })
+
+  describe('a read that FAILED is not an empty plan (hard-won rule 12)', () => {
+    it('reports a failed line-items read rather than a $0 total', async () => {
+      // Every figure on the invoice derives from these rows. Discarding the error
+      // gave `totalCents: 0`, and `recordPlanPayment` then computed
+      // `max(0, 0 - paid) = 0` — writing balance 0 and advancing the plan to
+      // `paid_in_full`. Reproduced in production on a throwaway plan before this
+      // fix: a $600 payment against a plan whose items could not be read marked
+      // it PAID IN FULL with nothing outstanding.
+      const supabase = makeSupabase(STUDIO, [], { items: { message: 'connection reset' } })
+      const res = await loadPlanInvoice('HH-PTY-AAA', supabase)
+      expect(res.ok).toBe(false)
+      if (res.ok) throw new Error('expected failure')
+      // `notFound: false` is the load-bearing half: the webhook answers 500 and
+      // Stripe redelivers, instead of 200 and the payment being lost.
+      expect(res.notFound).toBe(false)
+      expect(res.error).toMatch(/line items/)
+    })
+
+    it('still distinguishes a plan that genuinely does not exist', async () => {
+      const res = await loadPlanInvoice('HH-NOPE', makeSupabase(null, []))
+      expect(res).toMatchObject({ ok: false, notFound: true })
+    })
+
+    it('still separates a failed BOOKING read from an absent booking', async () => {
+      const res = await loadPlanInvoice('HH-PTY-AAA', makeSupabase(STUDIO, [], { booking: { message: 'timeout' } }))
+      expect(res).toMatchObject({ ok: false, notFound: false })
+    })
+
+    it('renders fine when the plan genuinely has no line items', async () => {
+      // An empty plan is legitimate — a lead nobody has priced yet. It must not
+      // be conflated with the failure above in the other direction either.
+      const res = await loadPlanInvoice('HH-PTY-AAA', makeSupabase(STUDIO, []))
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.totalCents).toBe(0)
+      expect(res.invoice.depositCents).toBe(0)
+    })
   })
 
   describe('the mobile menu appendix', () => {

@@ -11,6 +11,7 @@ import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest, enqueuePartyReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
 import { matchPlanPayLink, recordPlanPayment, sendPlanPaymentReceipt } from '@/lib/planPayment'
+import { isUnclaimableSession, recordUnclaimedStripeSession } from '@/lib/unclaimedPayment'
 
 /* Record a Stripe payment in the unified financial_transactions table (non-fatal) */
 async function recordFinancialTransaction(supabase: ReturnType<typeof getSupabase>, opts: {
@@ -31,6 +32,74 @@ async function recordFinancialTransaction(supabase: ReturnType<typeof getSupabas
       console.error('Financial txn insert error (non-fatal):', error.message)
     }
   })
+}
+
+/**
+ * Is this Checkout Session a plan pay-link payment, and if so, deal with it.
+ *
+ * Returns the response to send, or `null` when the session is not a plan
+ * payment and the caller should fall through to its own handlers.
+ *
+ * Extracted by the Phase 5 review so `checkout.session.completed` and
+ * `checkout.session.async_payment_succeeded` cannot drift into only one of them
+ * recording a payment — two copies of a money path is the `smsReviewRequest`
+ * lesson with a card number attached.
+ */
+async function handlePlanPaySession(
+  req: NextRequest,
+  supabase: ReturnType<typeof getSupabase>,
+  session: Stripe.Checkout.Session,
+): Promise<NextResponse | null> {
+  const planMatch = await matchPlanPayLink(session, supabase)
+  if (planMatch.outcome === 'error') {
+    // Could not tell whether this was a plan payment. A 200 here tells Stripe
+    // never to redeliver, which would discard a payment that really happened —
+    // so fail and let it come back. (Hard-won rule 12: a lookup that can fail
+    // has three outcomes, and "could not tell" is not "no".)
+    console.error('Plan pay link match failed:', planMatch.message)
+    return NextResponse.json({ error: 'pay link lookup failed' }, { status: 500 })
+  }
+  if (planMatch.outcome !== 'matched') return null
+
+  const rec = await recordPlanPayment(planMatch.target, session, supabase)
+  if (!rec.ok) {
+    if (rec.retryable) {
+      console.error('Plan payment not recorded, asking Stripe to retry:', rec.message)
+      return NextResponse.json({ error: rec.message }, { status: 500 })
+    }
+    // Not retryable: no such plan, nothing settled, or a payment still pending
+    // (the async event above is what brings that one back). Acknowledge so
+    // Stripe stops; the error log inside `recordPlanPayment` is the alert.
+    console.error('Plan payment could not be recorded and will not be retried:', rec.message)
+    return NextResponse.json({ received: true, error: rec.message })
+  }
+
+  // Receipts only on a genuine first record — a redelivery must not email the
+  // customer a second time.
+  if (!rec.duplicate) {
+    const { data: bk } = await supabase
+      .from('bookings')
+      .select('contact_name, contact_email')
+      .eq('booking_ref', rec.bookingRef)
+      .maybeSingle()
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+    const isLocal = (host || '').startsWith('localhost')
+    const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
+    const origin = host ? `${proto}://${host}` : 'https://www.hosthampton.com'
+    await sendPlanPaymentReceipt({
+      bookingRef: rec.bookingRef,
+      customerName: bk?.contact_name ?? null,
+      customerEmail: bk?.contact_email ?? null,
+      amountCents: rec.amountCents,
+      feeCents: Math.max(0, Math.min(planMatch.target.feeCents, session.amount_total ?? 0)),
+      newBalanceCents: rec.newBalanceCents,
+      purpose: planMatch.target.purpose,
+      invoiceUrl: `${origin}/my-booking?ref=${encodeURIComponent(rec.bookingRef)}`,
+      // Named in Adam's copy only, and only when it is non-zero.
+      overpaidCents: rec.overpaidCents,
+    })
+  }
+  return NextResponse.json({ received: true, duplicate: rec.duplicate })
 }
 
 export async function POST(req: NextRequest) {
@@ -454,6 +523,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true })
   }
 
+  // ── The delayed half of a Checkout payment ────────────────────
+  //
+  // `checkout.session.completed` does NOT mean paid: for a delayed-notification
+  // method it fires with `payment_status: 'unpaid'` and the payment can still
+  // fail. `recordPlanPayment` refuses those, and THIS is the event that says one
+  // succeeded after all.
+  //
+  // Only the plan path and the unclaimed net run here. The legacy metadata
+  // branches below were all written against `completed`, and re-running them on
+  // a second event would issue duplicate tickets and bookings — so a non-plan
+  // async payment is caught by the net rather than handled twice.
+  if (event.type === 'checkout.session.async_payment_succeeded') {
+    const session = event.data.object as Stripe.Checkout.Session
+    const planned = await handlePlanPaySession(req, supabase, session)
+    if (planned) return planned
+    const un = await recordUnclaimedStripeSession(session, supabase)
+    return NextResponse.json({ received: true, async: true, unclaimed: true, recorded: un.recorded })
+  }
+
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
     const m = session.metadata || {}
@@ -464,52 +552,8 @@ export async function POST(req: NextRequest) {
     // through into the legacy `pay_link` handler below: that one records a
     // `financial_transactions` row and no `booking_payments` row, which is the
     // untraceable pay link migration 035 exists to replace. See lib/planPayment.ts.
-    const planMatch = await matchPlanPayLink(session, supabase)
-    if (planMatch.outcome === 'error') {
-      // Could not tell whether this was a plan payment. A 200 here tells Stripe
-      // never to redeliver, which would discard a payment that really happened —
-      // so fail and let it come back. (Hard-won rule 12: a lookup that can fail
-      // has three outcomes, and "could not tell" is not "no".)
-      console.error('Plan pay link match failed:', planMatch.message)
-      return NextResponse.json({ error: 'pay link lookup failed' }, { status: 500 })
-    }
-    if (planMatch.outcome === 'matched') {
-      const rec = await recordPlanPayment(planMatch.target, session, supabase)
-      if (!rec.ok) {
-        if (rec.retryable) {
-          console.error('Plan payment not recorded, asking Stripe to retry:', rec.message)
-          return NextResponse.json({ error: rec.message }, { status: 500 })
-        }
-        // Not retryable (no such plan). Acknowledge so Stripe stops, but the
-        // error log above `recordPlanPayment` is the alert.
-        console.error('Plan payment could not be recorded and will not be retried:', rec.message)
-        return NextResponse.json({ received: true, error: rec.message })
-      }
-      // Receipts only on a genuine first record — a redelivery must not email
-      // the customer a second time.
-      if (!rec.duplicate) {
-        const { data: bk } = await supabase
-          .from('bookings')
-          .select('contact_name, contact_email')
-          .eq('booking_ref', rec.bookingRef)
-          .maybeSingle()
-        const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
-        const isLocal = (host || '').startsWith('localhost')
-        const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
-        const origin = host ? `${proto}://${host}` : 'https://www.hosthampton.com'
-        await sendPlanPaymentReceipt({
-          bookingRef: rec.bookingRef,
-          customerName: bk?.contact_name ?? null,
-          customerEmail: bk?.contact_email ?? null,
-          amountCents: rec.amountCents,
-          feeCents: Math.max(0, Math.min(planMatch.target.feeCents, session.amount_total ?? 0)),
-          newBalanceCents: rec.newBalanceCents,
-          purpose: planMatch.target.purpose,
-          invoiceUrl: `${origin}/my-booking?ref=${encodeURIComponent(rec.bookingRef)}`,
-        })
-      }
-      return NextResponse.json({ received: true, duplicate: rec.duplicate })
-    }
+    const planned = await handlePlanPaySession(req, supabase, session)
+    if (planned) return planned
 
     // ── Event ticket purchase ──────────────────────────────────
     if (m.type === 'event_ticket') {
@@ -1623,6 +1667,25 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({ received: true })
+    }
+
+    // ── A settled payment that nothing above claimed ───────────
+    //
+    // Everything above keys on `m.type`. A Payment Link created BY HAND in the
+    // Stripe dashboard carries no metadata at all, so it reached the legacy
+    // party-booking tail below, which insists on inserting a `bookings` row —
+    // and that insert is refused by `bookings_contact_reachable_check` when
+    // there is no contact to put on it, after which this handler used to THROW
+    // formatting a confirmation email for a customer it did not have. A 500.
+    //
+    // That is how a real $927 customer payment was recorded nowhere: Stripe
+    // retried, gave up, and the only trace was a stack trace in a log. See
+    // lib/unclaimedPayment.ts.
+    if (isUnclaimableSession(session.metadata)) {
+      const un = await recordUnclaimedStripeSession(session, supabase)
+      // Acknowledged either way. Retrying an unclaimable session produces the
+      // same nothing; the alert is the log line and the email, not a 500.
+      return NextResponse.json({ received: true, unclaimed: true, recorded: un.recorded })
     }
 
     // ── Party booking deposit (existing flow) ──────────────────
