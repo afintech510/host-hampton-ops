@@ -157,9 +157,26 @@ Runtime env (`website`):
 `AGENT_ENABLED`, `AGENT_DRAFT_MODEL`, `AGENT_TRIAGE_MODEL`, `AGENT_DAILY_USD_CAP`, `REVIEW_LINK_SIGNING_SECRET`,
 `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `GMAIL_USER`, `GMAIL_HANDLED_LABEL`,
 `VENMO_HANDLE`, `ZELLE_PHONE`,
-`SIGNWELL_API_KEY`, `SIGNWELL_TEMPLATE_ID`, `SIGNWELL_TEST_MODE`, `SIGNWELL_SIGNER_PLACEHOLDER`
+`SIGNWELL_API_KEY`, `SIGNWELL_TEMPLATE_ID`, `SIGNWELL_TEST_MODE`, `SIGNWELL_SIGNER_PLACEHOLDER`,
+`SIGNWELL_WEBHOOK_ID`
 
 `db_setup.sh` additionally reads: `DATABASE_URL` (or `SUPABASE_DB_HOST` / `SUPABASE_DB_PASSWORD` / `SUPABASE_DB_PORT` / `SUPABASE_DB_NAME` / `SUPABASE_DB_USER`).
+
+**`SIGNWELL_WEBHOOK_ID`** (link 15) is the HMAC key for webhook verification: the
+`id` returned by `POST https://www.signwell.com/api/v1/hooks`, with which SignWell
+signs `"${event.type}@${event.time}"`. **Without it the SignWell webhooks fail
+closed with 503, by design** — an unverified event marks a liability waiver
+signed, so "not configured" must never be a bypass (this is deliberately unlike
+`QUO_WEBHOOK_SECRET`, which skips verification when unset). `GET /hooks` lists
+what is really registered; it returned `[]` until 2026-09-12, which is why zero of
+61 bookings had a recorded signature. **Rotating it means deleting the hook and
+creating a new one** — the id and the hook are the same object.
+
+**Mapped in `docker-compose.yml` but NOT set in `/opt/hosthampton/.env`:**
+`SIGNWELL_CHECKIN_TEMPLATE_ID` and `SIGNWELL_CONSENT_TEMPLATE_ID`. Both need a
+template built in the SignWell dashboard. Until they are set, the pre-arrival
+check-in waiver reports `{unavailable:true}` and `/api/admin/marketing/consent`
+answers 503 — both needs-Adam, both live and tested otherwise.
 
 > Never commit `.env`, `*.pem`, `*.key`, or SSH keys — all are gitignored. `SIGNWELL_TEST_MODE=false` means live e-sign.
 
@@ -375,6 +392,32 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
   payments go to **631-599-2469** / `VENMO_HANDLE`; **(631) 998-9325** is the
   business line and finds nothing in Venmo. A phone number as a literal in the
   portal or plan surface fails the suite.
+- **A webhook that changes legal or money state verifies, and fails CLOSED when
+  unconfigured.** All three SignWell routes verified nothing until 2026-09-12 —
+  an anonymous POST carrying `"hash":"totally-made-up-hash"` wrote
+  `agreement_signed_at` and was answered `{"received":true}`. `verifySignwellEvent`
+  in `lib/signwellWebhook.ts` is the only implementation; a second copy fails the
+  suite. `/api/webhooks/quo` skips verification when its secret is unset and that
+  is *correct for quo* (its unverified actions are logging and opt-out) — it is
+  not a pattern to copy onto a surface that marks a waiver signed.
+- **A signature over the envelope is not a signature over the body.** SignWell
+  signs only `"${type}@${time}"`, so a valid hash cannot vouch for the document
+  id, the status or the metadata — anyone who observes one genuine triple can
+  replay it with a body of their choosing. Every write is gated on **re-reading
+  the document from the provider's own API**, and `booking_ref`, `release_id` and
+  `metadata.type` are taken from that response, never from the POST. Check what
+  a provider's signature actually covers before trusting it.
+- **A provider field that is always absent reads as "not ready yet".**
+  `fetchSignedPdfUrl` read `files[].pdf_url`, a key SignWell returns on no
+  document in any state, under a comment saying "returns null if not available
+  yet". It returned null 100% of the time, so a recorded signature would have had
+  no signed PDF beside it. The endpoint that returns one is
+  `/documents/{id}/completed_pdf/?url_only=true`.
+- **`.or()` takes a RAW PostgREST filter expression.** Interpolating an
+  attacker-supplied value into it lets a `,` or `)` rewrite the filter — the same
+  family as `.ilike('%')` as an authorization filter. Use sequential `.eq()`
+  calls, which are parameter-encoded. `signwellSurface.test.ts` R6 fails the
+  suite on a template literal passed to `.or()`.
 - **Escaping vs URL-screening in mail bodies.** Text into an element body gets `escapeHtml`; a URL in an `href`/`src` gets a URL SCREEN (`mailHref` / `mailHrefExternal` in `lib/emailSafety.ts`) and *then* attribute encoding. `escapeHtml` alone on an href leaves `javascript:` working while looking screened, and an HTML-escaped URL handed to a URL parser is silently corrupted rather than refused. A number you computed and a nested template you built get neither. The plain-text half of an email must never be escaped. `src/__tests__/lib/emailTemplateEscaping.test.ts` enforces all of it off disk.
 - **Never `docker compose restart`** to deploy — always `up -d --build` (restart ignores `.env` and new images).
 - **`NEXT_PUBLIC_*` changes require a rebuild** (`--build`); they are baked at build time, not read at runtime.
