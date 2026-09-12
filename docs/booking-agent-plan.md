@@ -149,7 +149,11 @@ and 039 are written and applied** and the next free number is **040**.
 >   lands as the anonymous `'ADMIN'` or as Adam, which is the exact problem
 >   §11.1 exists to solve. A data-only migration for 036's reason: a seed run by
 >   hand is not reproducible.
-> - the learning loop is therefore **040**.
+> - the learning loop is therefore **040**, and it is **still free**: Phase 5's
+>   pay path (§21, 2026-09-12) needed no DDL at all — `booking_pay_links` was
+>   already there from 035 and `booking_payments` already had the UNIQUE index
+>   idempotency turns on. A phase that takes no number is worth recording for the
+>   same reason the renumberings are.
 
 ### 032 — inbound events + gmail sync state + contact sync + deposit default (WRITTEN 2026-09-10)
 File: `starting_plan/migration_032_agent_inbound_and_contact_sync.sql`.
@@ -2362,3 +2366,137 @@ The meta-lesson, which cost more than the bug did: **a red test nobody owns
 becomes folklore in about three sessions.** Each handoff note made the next
 session more confident it was someone else's problem. Chase it once instead of
 documenting it forever.
+
+## 21. Phase 5 items 2-4 as built (2026-09-12) — the pay path
+
+§17 deferred all four items on one sentence: *"the panel is only safe once the
+webhook records what it charges. Half of it is worse than none of it."* So it was
+built back to front — persistence, then the webhook match, then the panel, then
+the sends — and the order is the design, not a preference.
+
+**No migration.** `booking_pay_links` has existed since 035 and needed no DDL;
+`booking_payments` already had the UNIQUE index idempotency depends on. **040 is
+still free for the learning loop.** No new env either: the pay path reuses
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PORTAL_LINK_SIGNING_SECRET`,
+`ADMIN_SESSION_SECRET` and `RESEND_API_KEY`, so `AGENTS.md` §7 is unchanged.
+
+### The money rules, and where each one lives
+
+- **The amount is never read from the request.** The client posts a `purpose`
+  (`deposit` | `balance`); `quoteFor()` in `lib/planPayLinks.ts` derives the
+  figure from `loadPlanInvoice()` — the same call that renders the document the
+  customer is looking at, so the invoice and the charge cannot disagree. The one
+  human-supplied figure is an admin `custom` amount, and it is capped at
+  `remaining + depositOwed`: an admin who needs to charge more adds the line item
+  to the plan first, which is the correct workflow anyway because the invoice
+  should say what the money was for.
+- **The studio rule is imported, never restated.** `paidTowardTotalCents()` takes
+  `invoice.depositIsSeparate` off the view model and never re-derives it from
+  `party_type`. That flag decides whether we undercharge a studio rental by $250
+  or double-charge one, and a constant declared in two files is a constant
+  nothing is checking — the lesson the `smsReviewRequest` bug paid for.
+- **Only the webhook records.** No other path writes a `booking_payments` row for
+  a plan link. Signature verification is untouched and upstream of all of it.
+- **Idempotency is the database's job.** `idx_bp_stripe_session` is UNIQUE;
+  `recordPlanPayment` treats **23505 as already-recorded, a success**, and checks
+  the CODE rather than a message substring, because the wording is not a
+  contract. Nothing downstream re-runs on a redelivery: no balance rewrite, no
+  audit row, no second receipt.
+- **We credit what Stripe collected, never what we hoped to charge.** This is
+  what makes a link minted before the plan was re-priced safe: the customer paid
+  the old figure, the remaining balance simply stays higher, and the mismatch is
+  noted on the payment row and in the ledger. Crediting the *expected* amount
+  would credit money nobody paid.
+- **A stale link is deactivated at Stripe, not merely marked in our table.**
+  Minting voids the previous link for that purpose BEFORE creating the new one,
+  so there is never a window with two payable links. If creation then fails the
+  customer has no link, which is the safe direction. Each link also carries
+  `restrictions.completed_sessions.limit = 1`, so Stripe itself refuses a second
+  payment on it — a different failure from a redelivered webhook, and it needs
+  its own stop.
+- **A live link we could not record is taken back down.** That orphan is exactly
+  the untraceable pay link 035 exists to eliminate, so a failed row insert
+  deactivates the Stripe link; if *that* fails too it is logged as
+  `ORPHANED LIVE PAY LINK`, the one case here that needs a human.
+
+### Three outcomes, not two, twice more
+
+`loadPlanInvoice()` now returns `{ ok: false, notFound }`. The pay path is why:
+a webhook that reads a DB blip as "no such plan" **drops a payment that really
+happened**, because a 200 tells Stripe never to retry. So a read failure answers
+500 and the event comes back; a genuinely absent plan is acknowledged and logged
+as an alert. `matchPlanPayLink()` has the same shape — `unmatched` (fall through
+to the legacy handlers), `error` (could not tell, so 500), `matched`.
+
+The same rule caught a second case: the "email me this" cooldown reads the
+ledger, and a **failed** read declines rather than sending, because "cannot tell"
+must not be the way around a rate limit.
+
+### What else is deliberately load-bearing
+
+- **`lib/planAccess.ts`** extracts the summary page's six inlined lines, because
+  `/api/plan/[ref]/pay-link` has to make the *same* decision. If the page
+  enforced "a portal session for another booking is not a session for this one"
+  and the pay route did not, any portal cookie would mint a link against any
+  plan. The shared admin password is deliberately not accepted *there* — it is a
+  Bearer header, which a browser never sends on a navigation — but the routes
+  still call `isAdminAuthorized(req)` alongside it so the other ~56 routes'
+  convention keeps working.
+- **A payment on a CANCELLED plan is recorded anyway.** The money is real;
+  dropping it leaves a charge with no row anywhere. It is flagged in the notes
+  and the ledger, the status is not advanced, and whether to refund is Adam's
+  call. Minting a link on a cancelled plan IS refused — and the refusal is
+  written to the ledger, because a guardrail that stops something silently is
+  indistinguishable from one that never fired.
+- **The balance and the status are two separate UPDATEs.**
+  `bookings_scheduled_fields_check` (035) re-imposes date + time + name past
+  `lead`/`quoted`, so advancing an unscheduled plan to `deposit_paid` is REFUSED
+  by the constraint. Bundled with the balance, that refusal would also lose the
+  balance write — the number both the customer and Adam read. Tested by
+  exercising the refusal, not by trusting the comment.
+- **`recorded_by` stays `'system'`.** Its CHECK allows only `system | admin`, so
+  `adminActorId()` cannot go there; who minted the link lives on
+  `booking_pay_links.created_by`, which is free text and gets `admin:<email>` or
+  `portal:<ref>`.
+- **Neither send route takes an address from the request.** Honouring a `to`
+  would turn "email me my invoice" into a way to have someone else's invoice
+  delivered to an inbox of the caller's choosing, with the portal cookie making
+  it look authorized. The address is a property of the plan. The admin route
+  additionally requires `confirm: true` and is attributed by `adminActorId`; it
+  does not touch `inquiry_drafts`, so `approved`/`sent` remain the gated edges in
+  `lib/marketing/graph.ts`.
+- **The receipt the webhook sends is not the auto-send rule being bent.** That
+  rule governs quotes and drafted messages. A receipt for money the customer has
+  just handed over is the same category as the deposit receipt the webhook has
+  always sent, and a card charge with no confirmation generates a phone call.
+
+### How far this was actually tested — read this before trusting it
+
+**The container holds only a `sk_live` key.** There is no Stripe test secret and
+no test webhook secret anywhere in the environment, so an end-to-end payment
+could not be exercised without charging a real card, which is the one thing the
+brief forbids outright. What was done instead, stated plainly:
+
+- **80 new tests (992 total, all green).** The webhook match and record paths are
+  exercised against synthetic sessions: redelivery, a forged and a missing
+  signature, an amount that changed after minting, an underpayment, a cancelled
+  plan, a deleted pay-link row, a legacy admin pay link falling through, a DB
+  read failure at each step, and the status-constraint refusal. The route tests
+  cover a portal cookie for a *different* plan, a customer attempting a `custom`
+  amount, and an admin send without `confirm`.
+- **Production: minting only.** A link was minted against a test plan, the
+  `booking_pay_links` row checked against the server-derived figure, and the link
+  voided. Minting is not a charge.
+- **NOT exercised in production: a real payment.** The recording path has never
+  run against a live Stripe event.
+
+**Needs Adam:** a Stripe **test** secret + test webhook secret in the container
+(e.g. `STRIPE_TEST_SECRET_KEY` / `STRIPE_TEST_WEBHOOK_SECRET`) so the pay path
+can be driven end to end with a test card. Until then the webhook half is
+test-covered but production-unproven.
+
+**Also needs Adam, smaller:** `booking_payments` does not record which payment a
+`refund` row reverses, so refunding a studio *security* deposit subtracts $250
+that was never credited and the remaining balance reads $250 high. It errs
+towards asking for more rather than less, and it is a hand-entered admin row
+either way. Left as a stated limitation rather than a guess at the business rule.

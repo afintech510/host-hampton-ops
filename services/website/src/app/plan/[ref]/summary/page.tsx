@@ -30,24 +30,34 @@
  * admin is entitled to every plan. That asymmetry is the whole of the access
  * rule here and is worth not "tidying" later.
  *
- * ── What this page deliberately does NOT do ────────────────────────────────
+ * ── Taking money (Phase 5 items 2-4, added) ────────────────────────────────
  *
- * It takes no money and sends nothing. `PayPanel`, "Email me this" and the
- * admin "Send to client" are Phase 5 items 2-4 and are not here: a page that
- * charged a card without recording the payment, or a button that mailed a
- * customer without review, would be worse than a page that only renders. The
- * payment block shows the deposit and the Venmo details as the template does,
- * and links to the existing portal payment flow.
+ * This comment used to say the page took no money and sent nothing, and that
+ * `PayPanel` was absent because a page that charged a card without recording the
+ * payment would be worse than a page that only renders. That condition is now
+ * met: lib/planPayment.ts records what the webhook confirms, so the panel is
+ * here.
+ *
+ * The shape of it matters. This page computes every figure with
+ * `loadPlanInvoice()` — the same call that renders the document — and hands the
+ * client component pre-formatted STRINGS plus a `purpose`. No amount travels
+ * from the browser to the server, so the printed invoice and the card charge
+ * cannot disagree and neither can be edited by whoever is looking at the page.
+ *
+ * PDF is still option (a) from plan §17: the link plus inline HTML, no
+ * attachment, no puppeteer. The `@media print` rules make "Save as PDF" produce
+ * the same document, and everything added here is `no-print`.
  */
 
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
-import { getPortalBookingRef } from '@/lib/portalAuth'
-import { adminSessionSecret, getAdminEmailFromCookie } from '@/lib/adminAuth'
 import { loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
 import { ensureInvoiceNumber } from '@/lib/invoiceNumber'
+import { planAccess } from '@/lib/planAccess'
+import { quoteFor, type PaymentRow } from '@/lib/planPayLinks'
+import { PayPanel, PlanShareBar, AdminCustomCharge, type PayOption } from './PayPanel'
 import './invoice.css'
 
 export const dynamic = 'force-dynamic'
@@ -81,7 +91,17 @@ function RichText({ text }: { text: string }) {
   )
 }
 
-function InvoiceBody({ invoice, ref_ }: { invoice: PlanInvoice; ref_: string }) {
+function InvoiceBody({
+  invoice,
+  ref_,
+  payOptions,
+  isAdminView,
+}: {
+  invoice: PlanInvoice
+  ref_: string
+  payOptions: PayOption[]
+  isAdminView: boolean
+}) {
   const { booking, content, partyType } = invoice
   const venmoAmount = (invoice.depositCents / 100).toFixed(2)
   const venmoNote = `${(booking.contact_name || 'Party').split(' ')[0]} — ${
@@ -277,9 +297,20 @@ function InvoiceBody({ invoice, ref_ }: { invoice: PlanInvoice; ref_: string }) 
               required to book &mdash; separate from your total, see above. A 3% processing fee applies to
               card payments; Venmo and Zelle avoid it.
             </p>
-            <Link className="action" href={`/my-booking/pay?ref=${encodeURIComponent(ref_)}`}>
-              Pay {money(invoice.depositCents)} Deposit
-            </Link>
+            {/*
+              The pay buttons post a `purpose`, never an amount — see PayPanel's
+              header. When there is nothing left to charge (paid in full) the
+              panel renders nothing, and the fallback below keeps the printed
+              document pointing somewhere sensible.
+            */}
+            {payOptions.length > 0 ? (
+              <PayPanel ref_={ref_} options={payOptions} />
+            ) : (
+              <Link className="action" href={`/my-booking?ref=${encodeURIComponent(ref_)}`}>
+                View your booking
+              </Link>
+            )}
+            {isAdminView && <AdminCustomCharge ref_={ref_} />}
             <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(174,182,194,0.2)' }}>
               <p className="section-sub" style={{ marginBottom: 6 }}>
                 Prefer Venmo? Send {money(invoice.depositCents)} &mdash; no card fee.
@@ -352,11 +383,15 @@ function InvoiceBody({ invoice, ref_ }: { invoice: PlanInvoice; ref_: string }) 
   )
 }
 
-export default async function PlanSummaryPage({ params }: { params: Promise<{ ref: string }> }) {
+export default async function PlanSummaryPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ ref: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   const { ref } = await params
-
-  const secret = process.env.PORTAL_LINK_SIGNING_SECRET
-  if (!secret) notFound()
+  const query = await searchParams
 
   const cookieStore = await cookies()
   const cookieHeader = cookieStore
@@ -364,22 +399,20 @@ export default async function PlanSummaryPage({ params }: { params: Promise<{ re
     .map(c => `${c.name}=${c.value}`)
     .join('; ')
 
-  // Two ways to be allowed in here.
+  // Two ways to be allowed in here, and the rule now lives in lib/planAccess.ts
+  // rather than inline, because `/api/plan/[ref]/pay-link` has to make exactly
+  // the same decision. A copy of an access rule is a place for it to drift, and
+  // if this page enforced "a portal session for another booking is not a session
+  // for this one" while the pay route did not, any portal cookie would mint a
+  // pay link against any plan.
   //
-  // 1. The CUSTOMER's portal cookie, which must name THIS plan. A portal session
-  //    for another booking is not a session for this one — that is the whole
-  //    point of scoping it to the ref.
-  // 2. An ADMIN session cookie (migration 038), which is not scoped to a ref
-  //    because an admin is entitled to every plan. This is what the header
-  //    comment above was waiting for: `hh_admin` is a signed HttpOnly cookie, so
-  //    unlike the old Bearer-in-localStorage a server component CAN see it, and
-  //    Adam and Allie stop having to open a plan through its customer link.
-  //
-  // Verification is pure HMAC + a clock read, so it adds no query to the render.
-  const authedRef = getPortalBookingRef(cookieHeader, secret)
-  const adminEmail = getAdminEmailFromCookie(cookieHeader, adminSessionSecret())
-  const isAdminView = adminEmail !== null
-  if (!isAdminView && (!authedRef || authedRef !== ref)) notFound()
+  //   1. The CUSTOMER's portal cookie, which must name THIS plan.
+  //   2. An ADMIN session cookie (migration 038), not scoped to a ref, because
+  //      an admin is entitled to every plan.
+  const access = planAccess(cookieHeader, ref)
+  if (!access.ok) notFound()
+  const isAdminView = access.isAdmin
+  const adminEmail = access.adminEmail
 
   const supabase = getSupabase()
   const result = await loadPlanInvoice(ref, supabase)
@@ -393,12 +426,56 @@ export default async function PlanSummaryPage({ params }: { params: Promise<{ re
     invoiceNumber: numbered.ok ? numbered.invoiceNumber : result.invoice.invoiceNumber,
   }
 
+  // ── What there is left to pay ────────────────────────────────────────────
+  //
+  // Priced here, on the server, from the invoice and the authoritative payment
+  // rows. The client gets formatted strings and a `purpose`; it never sees or
+  // sends a figure. A payments read failure shows NO pay buttons rather than
+  // buttons priced as if nothing had been paid — offering to charge a deposit
+  // that is already paid is the one mistake worth failing closed on.
+  const { data: payRows, error: payErr } = await supabase
+    .from('booking_payments')
+    .select('amount_cents, payment_type')
+    .eq('booking_id', invoice.booking.id)
+  if (payErr) console.error('plan summary: payments read failed:', payErr.message)
+  const payments = (payRows ?? []) as PaymentRow[]
+
+  const isCancelled = invoice.booking.status === 'cancelled'
+  const payOptions: PayOption[] = []
+  if (!payErr && !isCancelled) {
+    for (const purpose of ['deposit', 'balance'] as const) {
+      const q = quoteFor(invoice, payments, purpose)
+      if (!q.ok) continue
+      const noun = purpose === 'deposit' ? (invoice.depositIsSeparate ? 'security deposit' : 'deposit') : 'balance'
+      payOptions.push({
+        purpose,
+        cta: `Pay ${money(q.quote.amountCents)} ${noun}`,
+        detail:
+          q.quote.feeCents > 0
+            ? `${money(q.quote.amountCents)} + ${money(q.quote.feeCents)} card fee = ${money(q.quote.chargeCents)} charged. Venmo or Zelle avoids the fee.`
+            : `${money(q.quote.chargeCents)} charged.`,
+      })
+    }
+  }
+
+  // `?paid=1` is where Stripe sends them back. The webhook usually lands first,
+  // but it is not guaranteed to, so this promises nothing about the balance
+  // below — a banner claiming a payment the ledger has not recorded yet would be
+  // the page telling a customer something we cannot see.
+  const justPaid = query.paid === '1'
+
   return (
     <div className="hh-invoice">
       <div className="action-bar no-print">
         <Link className="action" href={`/party-planner?ref=${encodeURIComponent(ref)}`}>
           Edit plan
         </Link>
+        <PlanShareBar
+          ref_={ref}
+          canEmail={!!invoice.booking.contact_email}
+          isAdmin={isAdminView}
+          hasPhone={!!invoice.booking.contact_phone}
+        />
         {/* `no-print` so a "Save as PDF" for the client never carries it. */}
         {isAdminView && (
           <span className="action" style={{ cursor: 'default' }}>
@@ -406,7 +483,40 @@ export default async function PlanSummaryPage({ params }: { params: Promise<{ re
           </span>
         )}
       </div>
-      <InvoiceBody invoice={invoice} ref_={ref} />
+      {justPaid && (
+        <div
+          className="no-print"
+          style={{
+            margin: '0 auto 16px',
+            maxWidth: 820,
+            padding: '12px 18px',
+            borderRadius: 10,
+            background: '#e8f3ec',
+            color: '#1a6b3a',
+            fontSize: 14,
+          }}
+        >
+          Thank you — your payment is going through. Your receipt will arrive by email, and the balance
+          below updates once Stripe confirms it (usually within a minute).
+        </div>
+      )}
+      {isCancelled && (
+        <div
+          className="no-print"
+          style={{
+            margin: '0 auto 16px',
+            maxWidth: 820,
+            padding: '12px 18px',
+            borderRadius: 10,
+            background: '#fdecea',
+            color: '#8a1c1c',
+            fontSize: 14,
+          }}
+        >
+          This plan is cancelled, so it cannot take a payment. Please call or text (631) 998-9325.
+        </div>
+      )}
+      <InvoiceBody invoice={invoice} ref_={ref} payOptions={payOptions} isAdminView={isAdminView} />
     </div>
   )
 }

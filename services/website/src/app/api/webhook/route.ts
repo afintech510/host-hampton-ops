@@ -10,6 +10,7 @@ import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest, enqueuePartyReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
+import { matchPlanPayLink, recordPlanPayment, sendPlanPaymentReceipt } from '@/lib/planPayment'
 
 /* Record a Stripe payment in the unified financial_transactions table (non-fatal) */
 async function recordFinancialTransaction(supabase: ReturnType<typeof getSupabase>, opts: {
@@ -456,6 +457,59 @@ export async function POST(req: NextRequest) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
     const m = session.metadata || {}
+
+    // ── Plan pay link (Phase 5) ─────────────────────────────────
+    //
+    // FIRST, ahead of every other branch, because a plan link must never fall
+    // through into the legacy `pay_link` handler below: that one records a
+    // `financial_transactions` row and no `booking_payments` row, which is the
+    // untraceable pay link migration 035 exists to replace. See lib/planPayment.ts.
+    const planMatch = await matchPlanPayLink(session, supabase)
+    if (planMatch.outcome === 'error') {
+      // Could not tell whether this was a plan payment. A 200 here tells Stripe
+      // never to redeliver, which would discard a payment that really happened —
+      // so fail and let it come back. (Hard-won rule 12: a lookup that can fail
+      // has three outcomes, and "could not tell" is not "no".)
+      console.error('Plan pay link match failed:', planMatch.message)
+      return NextResponse.json({ error: 'pay link lookup failed' }, { status: 500 })
+    }
+    if (planMatch.outcome === 'matched') {
+      const rec = await recordPlanPayment(planMatch.target, session, supabase)
+      if (!rec.ok) {
+        if (rec.retryable) {
+          console.error('Plan payment not recorded, asking Stripe to retry:', rec.message)
+          return NextResponse.json({ error: rec.message }, { status: 500 })
+        }
+        // Not retryable (no such plan). Acknowledge so Stripe stops, but the
+        // error log above `recordPlanPayment` is the alert.
+        console.error('Plan payment could not be recorded and will not be retried:', rec.message)
+        return NextResponse.json({ received: true, error: rec.message })
+      }
+      // Receipts only on a genuine first record — a redelivery must not email
+      // the customer a second time.
+      if (!rec.duplicate) {
+        const { data: bk } = await supabase
+          .from('bookings')
+          .select('contact_name, contact_email')
+          .eq('booking_ref', rec.bookingRef)
+          .maybeSingle()
+        const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
+        const isLocal = (host || '').startsWith('localhost')
+        const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https')
+        const origin = host ? `${proto}://${host}` : 'https://www.hosthampton.com'
+        await sendPlanPaymentReceipt({
+          bookingRef: rec.bookingRef,
+          customerName: bk?.contact_name ?? null,
+          customerEmail: bk?.contact_email ?? null,
+          amountCents: rec.amountCents,
+          feeCents: Math.max(0, Math.min(planMatch.target.feeCents, session.amount_total ?? 0)),
+          newBalanceCents: rec.newBalanceCents,
+          purpose: planMatch.target.purpose,
+          invoiceUrl: `${origin}/my-booking?ref=${encodeURIComponent(rec.bookingRef)}`,
+        })
+      }
+      return NextResponse.json({ received: true, duplicate: rec.duplicate })
+    }
 
     // ── Event ticket purchase ──────────────────────────────────
     if (m.type === 'event_ticket') {

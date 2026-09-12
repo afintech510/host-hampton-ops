@@ -166,10 +166,23 @@ export function orderLineItems(rows: BookingLineItem[], guestCount: number): Inv
  * beneath it, and an invoice whose rows do not add up to its own total is the
  * one error a client always catches.
  */
+export type LoadPlanInvoiceResult =
+  | { ok: true; invoice: PlanInvoice }
+  /**
+   * Three outcomes, not two. `notFound: true` means "there is no such plan";
+   * `notFound: false` means "we could not find out". The pay path is why that
+   * distinction now has to be carried: a webhook that reads a DB blip as "no
+   * such plan" drops a payment that really happened, and a page that reads it
+   * as 404 tells a customer their invoice is gone. The caller decides which of
+   * those it can tolerate — see api/plan/[ref]/pay-link (503, try again) and
+   * lib/planPayment.ts (500, so Stripe redelivers).
+   */
+  | { ok: false; notFound: boolean; error: string }
+
 export async function loadPlanInvoice(
   bookingRef: string,
   supabase?: Supa,
-): Promise<{ ok: true; invoice: PlanInvoice } | { ok: false; error: string }> {
+): Promise<LoadPlanInvoiceResult> {
   const db = supabase ?? getSupabase()
 
   const { data: bookingRow, error } = await db
@@ -177,8 +190,8 @@ export async function loadPlanInvoice(
     .select(INVOICE_BOOKING_COLUMNS)
     .eq('booking_ref', bookingRef)
     .maybeSingle()
-  if (error) return { ok: false, error: error.message }
-  if (!bookingRow) return { ok: false, error: 'not found' }
+  if (error) return { ok: false, notFound: false, error: error.message }
+  if (!bookingRow) return { ok: false, notFound: true, error: 'not found' }
 
   const booking = bookingRow as unknown as InvoiceBooking
   const partyType = booking.party_type || 'unknown'
