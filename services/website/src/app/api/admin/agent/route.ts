@@ -27,7 +27,7 @@ export const dynamic = 'force-dynamic'
  */
 
 const DRAFT_COLUMNS =
-  'id, review_code, status, party_type, contact_path, draft_kind, channel, missing_fields, subject, email_draft, sms_draft, error, reviewer_phone, booking_id, contact_id, inbound_event_id, approved_at, sent_at, created_at, updated_at'
+  'id, review_code, status, party_type, contact_path, draft_kind, channel, missing_fields, subject, email_draft, sms_draft, error, reviewer_phone, booking_id, contact_id, inbound_event_id, approved_at, sent_at, sent_for_review_at, created_at, updated_at'
 
 const EVENT_COLUMNS =
   'id, source, external_id, direction, from_address, subject, body, parsed, status, classification, contact_id, booking_id, draft_id, error, sent_at, created_at, handled_at'
@@ -61,12 +61,39 @@ export async function GET(req: NextRequest) {
       .limit(30),
   ])
 
+  // Who each draft is FOR. The Inbox showed a review code and a party type but
+  // never a name, so triaging the queue meant opening rows to find out whose
+  // party each one was. One extra query for the whole page, not one per row.
+  const draftRows = (drafts.data || []) as unknown as Record<string, unknown>[]
+  // `Array.from`, not a spread: this tsconfig targets below es2015, where
+  // spreading a Set needs `downlevelIteration`.
+  const bookingIds = Array.from(new Set(draftRows.map(d => d.booking_id).filter(Boolean))) as string[]
+  let plans: Record<string, { booking_ref: string | null; contact_name: string | null }> = {}
+  if (bookingIds.length) {
+    const { data: planRows } = await supabase
+      .from('bookings')
+      .select('id, booking_ref, contact_name')
+      .in('id', bookingIds)
+    plans = Object.fromEntries(
+      ((planRows || []) as { id: string; booking_ref: string | null; contact_name: string | null }[]).map(p => [
+        p.id,
+        { booking_ref: p.booking_ref, contact_name: p.contact_name },
+      ]),
+    )
+  }
+
   return NextResponse.json({
     enabled: agentEnabled(),
     model: draftModel(),
     reviewerPhoneCount: reviewerPhones().length,
     events: events.data || [],
-    drafts: drafts.data || [],
+    drafts: draftRows.map(d => ({
+      ...d,
+      // Absent when the draft has no plan row, or when the plan could not be
+      // read — the Inbox shows nothing rather than an empty name.
+      booking_ref: d.booking_id ? (plans[d.booking_id as string]?.booking_ref ?? null) : null,
+      contact_name: d.booking_id ? (plans[d.booking_id as string]?.contact_name ?? null) : null,
+    })),
     ledger: ledger.data || [],
     // Surfaced so a missing migration reads as a clear message, not an empty tab.
     errors: [events.error?.message, drafts.error?.message].filter(Boolean),

@@ -2,8 +2,38 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  RefreshCw, CheckCircle2, XCircle, Pencil, Inbox, MessageSquare, Mail, Sparkles, AlertTriangle, X, Send,
+  RefreshCw, CheckCircle2, XCircle, Pencil, Inbox, MessageSquare, Mail, Sparkles, AlertTriangle, X, Send, Clock,
 } from 'lucide-react'
+import { byLongestWaiting, waitingInfo } from '@/lib/leadWaiting'
+
+/**
+ * How long this draft has been sitting on a human, said in words.
+ *
+ * An absolute timestamp is not something anybody triages on — a column of them
+ * all looks the same, and the four-day-old one is indistinguishable from this
+ * morning's. Plan §18's lead was visible in this list the entire time it was
+ * being missed.
+ */
+function WaitingBadge({ draft }: { draft: { sent_for_review_at: string | null; created_at: string } }) {
+  const info = waitingInfo(draft)
+  // No readable clock: show nothing. "Waiting just now" would be a claim.
+  if (!info) return null
+  const tone =
+    info.severity === 'overdue'
+      ? 'bg-red-100 text-red-800 font-semibold'
+      : info.severity === 'waiting'
+        ? 'bg-amber-100 text-amber-800'
+        : 'bg-gray-100 text-gray-500'
+  return (
+    <span
+      className={`text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${tone}`}
+      title={`Waiting since ${new Date(draft.sent_for_review_at || draft.created_at).toLocaleString()}`}
+    >
+      <Clock className="w-3 h-3" />
+      {info.severity === 'overdue' ? `waiting ${info.label}` : info.label}
+    </span>
+  )
+}
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -35,7 +65,11 @@ interface DraftRow {
   sms_draft: string | null
   error: string | null
   booking_id: string | null
+  sent_for_review_at: string | null
   created_at: string
+  /** From the plan, when there is one — so the queue names people, not codes. */
+  booking_ref: string | null
+  contact_name: string | null
 }
 
 interface LedgerRow {
@@ -170,7 +204,13 @@ export default function InboxTab({
     if (ok) setEditing(null)
   }
 
-  const openDrafts = drafts.filter(d => !['sent', 'cancelled'].includes(d.status))
+  // Longest-waiting first. The queue's job is to surface the neglected one, and
+  // newest-first buries it — which is how the lead in plan §18 sat in this list
+  // for days while looking exactly like every other row.
+  const openDrafts = drafts
+    .filter(d => !['sent', 'cancelled'].includes(d.status))
+    .slice()
+    .sort((a, b) => byLongestWaiting(a, b))
 
   /**
    * Scroll the linked-to draft into view once the drafts have actually loaded —
@@ -241,7 +281,12 @@ export default function InboxTab({
                 >
                   {d.review_code}
                 </a>
+                {/* Whose party this is. A queue of codes cannot be triaged. */}
+                {d.contact_name && (
+                  <span className="text-xs font-semibold text-hampton-navy">{d.contact_name}</span>
+                )}
                 <StatusBadge status={d.status} />
+                <WaitingBadge draft={d} />
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                   {d.party_type.replace(/_/g, ' ')}
                 </span>
