@@ -549,3 +549,61 @@ handler has branches for.
 - **Nothing was written to `marketing_ledger`.** No model call, no SMS.
 - `audit_scratch/` and `services/website/scripts/attack-stripe-tripwire.js` are
   untracked on purpose, per the do-not-commit list.
+
+---
+
+## 11. The secondary: the duplicate plan `9fedd91` was supposed to stop
+
+The main scope closed cleanly, so the brief's secondary item was taken.
+
+`/api/party-builder/save` looked a returning customer's prior plans up with
+`.eq('contact_email', normalizedEmail)` where `normalizedEmail` is lowercased.
+`bookings.contact_email` is plain `text` holding whatever the customer typed, and
+**9 of 61 live rows are not lowercase** — six of them `kid-party` plans. For those
+customers the lookup returned nothing and a **brand new plan was created on every
+save**, which is exactly the behaviour commit `9fedd91` ("one plan per customer,
+not one per save") was written to remove.
+
+Measured on the live database, the two filters disagree by six rows:
+
+```
+old  .eq('contact_email', lower(input))   →  19 of 25 kid-party plans reachable
+new  case-insensitive exact re-compare    →  25
+                                             6 plans a mixed-case customer could never find
+```
+
+`refBelongsToCustomer`, **fifteen lines above it in the same file**, compares the
+same two addresses case-insensitively and is correct. Rule 11 again, and link 14
+found the identical pair forty lines apart in `/api/portal/my-bookings`.
+
+Now `findBookingsByContactEmail` — candidates by `ilike`, then an exact
+re-compare, so a `_` in a real address cannot wildcard onto somebody else's plan
+— and a **failed** lookup answers 503 rather than silently creating the duplicate
+it exists to prevent (rule 12). Four tests, and the fix was reverted to confirm
+they go red.
+
+### And measuring that turned up one more thing, for link 17
+
+`upsertContact` (`lib/contacts.ts`) has the same `.eq('email', …)`, and
+`contacts_email_key` is unique on the **raw** value. So a returning customer who
+capitalises differently misses the lookup, the insert succeeds, and the person is
+duplicated. It has happened **eight times**:
+
+```
+haleybelmonte94@…   jeberhardt517@…   jessica.lindstrand4@…   aled5290@…
+meganpastier97@…    michaela.j.manning@…   nitai.finkelstein@…   jgilde711@…
+```
+
+Sixteen of the 21 mixed-case addresses are one half of such a pair. And
+`upsertContact` **mirrors into Brevo and Quo**, so those eight are probably
+duplicated in the 944-person marketing list too, with opt-out state written to
+one row and not the other — link 9's unsubscribe finding with a second door.
+Recorded as needs-Adam 31, because the *lookup* is a technical fix and the
+*merge* is a decision about real people and an external list.
+
+Five `.eq('email', …)` sites remain and are handed to link 17:
+`lib/contacts.ts`, `lib/sequences.ts`, `lib/agent/draftInquiry.ts`,
+`/api/admin/photos/backfill-reminders` and `/api/cron/gmail-sync`. (The two in
+`/api/admin/auth/*` are `admin_users`, a column we write, and the three in
+`/api/portal/email-auth/*` are `email_auth_codes.email`, which link 14 measured
+and cleared.)
