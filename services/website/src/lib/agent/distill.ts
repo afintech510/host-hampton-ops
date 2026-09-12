@@ -80,6 +80,20 @@ Also return an updated voice profile describing how Allie actually writes, built
 
 Respond ONLY with valid JSON — no markdown fences, no extra text.`
 
+/**
+ * The output schema.
+ *
+ * **No `maxItems` anywhere.** Anthropic's structured output refuses it —
+ * `output_config.format.schema: For 'array' type, property 'maxItems' is not
+ * supported` — and the whole call 400s. The mocked unit tests could not see
+ * that; production did, on the first authenticated cron run. Rule 8 in its
+ * plainest form: a schema that type-checks is not a schema the API accepts.
+ *
+ * The counts are capped in CODE instead, which is where they were load-bearing
+ * anyway: `slice(0, MAX_PROPOSALS)` before storing, and `sanitizeVoiceProfile`
+ * for the profile's lists. A model that returns 200 rules therefore costs one
+ * ignored response, not a rule explosion.
+ */
 const DISTILL_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -87,7 +101,6 @@ const DISTILL_SCHEMA = {
   properties: {
     learnings: {
       type: 'array',
-      maxItems: MAX_PROPOSALS,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -104,14 +117,13 @@ const DISTILL_SCHEMA = {
       type: 'object',
       additionalProperties: false,
       properties: {
-        tone_rules: { type: 'array', maxItems: 10, items: { type: 'string', maxLength: 300 } },
+        tone_rules: { type: 'array', items: { type: 'string', maxLength: 300 } },
         greeting: { type: 'string', maxLength: 200 },
         pricing_style: { type: 'string', maxLength: 300 },
-        dos: { type: 'array', maxItems: 10, items: { type: 'string', maxLength: 300 } },
-        donts: { type: 'array', maxItems: 10, items: { type: 'string', maxLength: 300 } },
+        dos: { type: 'array', items: { type: 'string', maxLength: 300 } },
+        donts: { type: 'array', items: { type: 'string', maxLength: 300 } },
         exemplars: {
           type: 'array',
-          maxItems: 5,
           items: {
             type: 'object',
             additionalProperties: false,

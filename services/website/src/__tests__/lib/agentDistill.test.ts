@@ -267,6 +267,20 @@ describe('the untrusted corpus is fenced by JSON, not by a delimiter', () => {
       'style', 'rule', 'fact', 'pricing',
     ])
   })
+
+  it('uses no schema keyword the Anthropic API rejects', async () => {
+    // A tripwire, and it owns its value rather than borrowing one. Production
+    // answered, on the first authenticated cron run:
+    //   output_config.format.schema: For 'array' type, property 'maxItems' is
+    //   not supported
+    // — a 400 on every call, which no mock of `fetch` can ever see. The counts
+    // are capped in code instead. Re-adding `maxItems` here breaks the distill
+    // silently everywhere except this line.
+    await distillFeedback({ supabase: makeSupabase({ feedback: [EDITED] }) })
+    const schema = JSON.stringify(lastFetchBody.output_config.format.schema)
+    expect(schema).not.toContain('maxItems')
+    expect(schema).not.toContain('minItems')
+  })
 })
 
 /* ── 4. What it writes ──────────────────────────────────────────────────── */
