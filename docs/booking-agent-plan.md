@@ -119,7 +119,8 @@ record itself is always mirrored.
 
 Migrations are applied by hand (`/root/pg.sh` on the box; the service-role key
 cannot do DDL). Numbers 029–031 were taken; **032, 033, 034, 035, 036, 037, 038
-and 039 are written and applied** and the next free number is **040**.
+and 039 are written and applied**, **040 was taken by the Phase 5 REVIEW pass**
+(2026-09-11, §22) and the next free number is **041**.
 
 > Renumbered three times on 2026-09-11, every time because a later phase
 > shipped first and migrations are kept in the order they are actually applied:
@@ -149,11 +150,11 @@ and 039 are written and applied** and the next free number is **040**.
 >   lands as the anonymous `'ADMIN'` or as Adam, which is the exact problem
 >   §11.1 exists to solve. A data-only migration for 036's reason: a seed run by
 >   hand is not reproducible.
-> - the learning loop is therefore **040**, and it is **still free**: Phase 5's
->   pay path (§21, 2026-09-12) needed no DDL at all — `booking_pay_links` was
->   already there from 035 and `booking_payments` already had the UNIQUE index
->   idempotency turns on. A phase that takes no number is worth recording for the
->   same reason the renumberings are.
+> - **040** = the two idempotency guarantees the code already ASSUMED. Phase 5's
+>   BUILD genuinely needed no DDL — `booking_pay_links` came with 035 — and this
+>   list said so, twice, as "040 stays free". Then the review pass found that two
+>   constraints the comments leaned on did not exist, and each one is a single
+>   partial index. See §22. **The learning loop is therefore 041.**
 
 ### 032 — inbound events + gmail sync state + contact sync + deposit default (WRITTEN 2026-09-10)
 File: `starting_plan/migration_032_agent_inbound_and_contact_sync.sql`.
@@ -320,7 +321,18 @@ Re-run verified: 2 updates, 0 inserts, `password_hash` untouched by the
 `ON CONFLICT DO UPDATE`, so re-applying after Allie sets a password cannot lock
 her out.
 
-### 040 — learning loop
+### 040 — payment idempotency (APPLIED 2026-09-11, from the Phase 5 review)
+File: `starting_plan/migration_040_payment_idempotency.sql`. Two partial unique
+indexes, each one a guarantee the code already claimed in a comment (§22):
+- `idx_bpl_one_live_per_purpose` on `booking_pay_links (booking_id, purpose)
+  WHERE voided_at IS NULL`. Void-then-create-then-insert is three round trips
+  with nothing serialising them, so six concurrent mints produced six payable
+  links and paying two of them charged the same deposit twice. The repair half
+  voids all but the newest duplicate first, so the index can be created at all.
+- `idx_bp_stripe_pi` on `booking_payments (stripe_payment_intent_id) WHERE NOT
+  NULL`. Three webhook comments said this constraint existed. It did not.
+
+### 041 — learning loop
 - New `agent_learnings (id, kind CHECK('style','rule','fact','pricing'), text, source_draft_id, source_event_id, confidence, is_active, created_by, created_at)`.
   The draft prompt loads active rows. Reviewer corrections become rows here
   (Phase 6), and Adam/Allie can add rules directly from the admin Inbox tab.
@@ -2521,3 +2533,203 @@ test-covered but production-unproven.
 that was never credited and the remaining balance reads $250 high. It errs
 towards asking for more rather than less, and it is a hand-entered admin row
 either way. Left as a stated limitation rather than a guess at the business rule.
+
+---
+
+## 22. Phase 5 review findings (2026-09-11) — the pay path, exercised
+
+§21 ended by stating plainly that the recording half had **never run against a
+live Stripe event**. It has now, and the review's method is the finding worth
+carrying: **the container still holds only `sk_live`, so instead of paying a
+card, the webhook was driven with synthetic `checkout.session.*` events SIGNED
+with the real `STRIPE_WEBHOOK_SECRET` from inside the container.** That exercises
+our code end to end — every DB write, every status transition, every receipt —
+while creating no charge at Stripe at all. It is not a substitute for a test card
+(it proves nothing about what Stripe actually sends), but it is strictly better
+than 24 unit tests against mocks, and unlike a test key it is available today.
+
+Throwaway plans `HH-TEST-PAY2` … `HH-TEST-PAY6` were created for it and are
+cancelled with notes. They carry sentinel invoice numbers (`TEST-PAY2` …) so that
+rendering them burnt **no sequence value**: `last_value` is still **118**,
+`is_called = t`, and the next number is `444124-000119`.
+
+### What held, exercised rather than read
+
+- **There is no amount in any request to tamper with.** A body carrying
+  `amountCents`, `amountDollars`, `amount` and `chargeCents` all set to 1 minted a
+  link for the server-derived **$600**. `custom` as a customer → 403; `custom`
+  over the cap → 409 naming **$850** (= $600 remaining + $250 deposit owed, which
+  also proves the $200 Optional item is not in the total); negative, `null`, a
+  bare string and `1e9` all refused; `purpose: ['balance']` → 400; a GET → 405.
+- **Signature verification fails closed, four ways.** A forged `v1`, an absent
+  header, a signature from the wrong secret, and a valid signature over a
+  two-hour-old timestamp: 400 every time, and **zero** rows written.
+- **Idempotency is real.** A byte-identical redelivery answered `duplicate: true`
+  and wrote nothing. A redelivery with `amount_total` inflated to **$9,999** also
+  wrote nothing — the session id is the key, not the amount.
+- **The trust order in `matchPlanPayLink` is the right way round.** A signed event
+  whose metadata claimed a *different* plan, a different purpose and
+  `amount_cents: 1`, but whose `pay_link_row_id` pointed at a real row, credited
+  **the row's** plan, purpose and figures. Metadata loses to the database.
+- **The studio rule survives a real payment.** A $250 deposit recorded against a
+  $600 studio rental left `balance_due_cents` at **$600** and the status at
+  `deposit_paid`. The $600 balance then cleared it to 0 and `paid_in_full` — $850
+  collected on a $600 rental, correctly.
+- **The two-UPDATE split earns itself.** On an undated `lead` the balance write
+  landed and the status advance was refused by `bookings_scheduled_fields_check`,
+  logged as such. Bundled, the balance would have been lost with it.
+- **A cancelled plan** recorded the payment, flagged it in the notes, and did not
+  advance the status. **An unknown plan ref** answered 200 with the error and
+  logged `PAYMENT FOR UNKNOWN PLAN` — no pointless retry loop.
+- **Access control holds on every door.** A portal cookie for plan A got 403 on
+  plan B's pay-link and email-me and 404 on its summary page; an admin cookie
+  signed with the wrong secret and an eight-day-old admin cookie both got 403; the
+  admin send refused without `confirm` (400) and unauthenticated (401); email-me
+  ignored a `to` in the body and mailed the plan's own address.
+
+### The six things that were wrong
+
+**1. A failed line-items read marked plans PAID IN FULL.** `loadPlanInvoice`
+discarded the error from `booking_line_items`, so a transient failure produced
+`totalCents: 0` — and `recordPlanPayment` then computed `max(0, 0 - paid) = 0`,
+wrote `balance_due_cents = 0`, set `paid_in_full_at` and advanced the plan to
+`paid_in_full`. Demonstrated live: a $600 payment against a plan whose items could
+not be read left it paid in full with nothing outstanding, and the payment row
+labelled `partial`. This is **hard-won rule 12 inside the function the whole phase
+depends on** — the pay path was built around three outcomes and then read its most
+important input with two. Fixed: the read has its own failure outcome, so the
+webhook 500s and Stripe redelivers.
+
+**2. The $927 that went missing — raised by the parent session, and the most
+expensive bug in this codebase so far.** A real customer paid **$927.00** on a live
+Payment Link created BY HAND in the Stripe dashboard. It was recorded nowhere: no
+`booking_payments` row, no `financial_transactions` row, no booking. Her earlier
+$257.50 deposit, through an app-made link, recorded one second later.
+
+Reproduced exactly, in production, using the real event shape (empty metadata,
+`payment_link` present, `client_reference_id` null, `payment_status: 'paid'`):
+
+```
+Supabase insert error: 23514 bookings_contact_reachable_check
+TypeError: Cannot read properties of undefined (reading 'split')
+→ HTTP 500
+```
+
+Every branch keys on `session.metadata.type`. With `{}` there is nothing to match,
+so it fell through to the legacy party-booking tail, which inserts a `bookings` row
+unconditionally — refused, because there was no contact to put on it — and then
+**threw** formatting a confirmation email for a customer it did not have. Stripe
+retried and gave up. The only trace was a stack trace in a container log and a
+failed event in a dashboard nobody opens.
+
+`lib/unclaimedPayment.ts` is the net: any settled session nothing claims is written
+to `financial_transactions` under **"Unmatched Stripe Payment"**, keyed on the
+session id so a redelivery cannot double it, and Adam is emailed once. Then it is
+**acknowledged** — retrying an unclaimable session produces the same nothing three
+days running. **An unattributable payment is a bookkeeping problem; an invisible
+one is a lost payment.** Adam's actual $927 row is deliberately NOT backfilled:
+that is his accounting, and the parent session is raising it with him directly.
+
+**3. §21's "there is never a window with two payable links" was false.**
+`voidLivePayLinks` → Stripe create → row insert is three round trips with nothing
+serialising them. **Six concurrent mints produced six simultaneously live, payable
+Stripe links** for the same plan and purpose, each carrying
+`completed_sessions.limit = 1`, and **paying two of them charged the same $250
+deposit twice** — $500 credited against a $600 plan. The session-id index cannot
+help: those are two genuinely different sessions. Migration 040's
+`idx_bpl_one_live_per_purpose` makes the database the serialisation point, and the
+*existing* failed-insert recovery already deactivates the loser's Stripe link — so
+the index alone makes the documented behaviour true, which is the cheapest kind of
+fix there is. Re-measured after: one live link, five losers `active=false` at
+Stripe, five 503s telling the caller to use the one that won.
+
+**4. The PaymentIntent constraint that three comments asserted and nothing
+declared.** "the unique `stripe_payment_intent_id` constraint fails silently in
+that case" appears three times in `api/webhook/route.ts`. There was no such
+constraint: `idx_bp_stripe_session` is partial on `stripe_session_id IS NOT NULL`,
+and **every** `payment_intent.succeeded` path inserts `stripe_session_id: null`. So
+the planner deposit and studio rental paths have never been idempotent, and a
+routine Stripe redelivery would have inserted a second deposit row, doubled the
+paid sum and halved the balance. It has not fired yet purely by luck — 18 payment
+rows, 5 with a PI, 0 duplicates. Migration 040 declares it. **Hard-won rule 11 — a
+constant declared in two files is a constant nothing is checking — has a worse
+sibling: a constraint asserted in three comments and declared nowhere.**
+
+**5. `payment_status: 'unpaid'` was recorded as a full payment.** Exercised: a $600
+credit, a `financial_transactions` row, a zeroed balance and a receipt, for money
+that had not settled. Latent today — the account's live payment methods are
+card/link/apple_pay/cashapp, all immediate — but it is **one dashboard toggle from
+real** ("let them pay by bank transfer and skip the 3%"), and the failure mode is
+the bad kind: the session id it consumes means the later
+`async_payment_succeeded` is swallowed as a redelivery while
+`async_payment_failed` is invisible, so the books would say paid and never learn
+otherwise. Now refused, and `checkout.session.async_payment_succeeded` routes
+through the **same** `handlePlanPaySession` helper, so the two cannot drift into
+only one of them recording. Alongside it: `amount_total: null` used to insert a
+**$0** payment row and burn the session id, so a corrected redelivery would then
+have looked like a duplicate.
+
+**6. An overpayment was clamped into silence.** A $600 link was minted, the plan
+re-priced DOWN to $300, and the stale link paid: $600 credited, balance
+`max(0, 300 - 600) = 0`, `paid_in_full`, and **no flag anywhere**. The existing
+`mismatch` check cannot see this one — it compares what Stripe collected against
+what the LINK expected, and those agree exactly when a stale link is paid after a
+downward re-price. `overpaidCents` is now computed against the PLAN and named in
+the ledger, the plan history and the subject line of Adam's copy of the receipt.
+The customer's copy is unchanged on purpose: whether to refund is his call.
+
+### Smaller, also fixed
+
+- **The email-me cooldown was check-then-act.** Five concurrent calls, **three
+  emails sent** and three portal tokens minted. It now inserts a claim row and
+  proceeds only if its own claim is the oldest in the window — and the claim is a
+  `note`, not a `send`, so a failed send never appears in the audit trail as a send
+  that happened.
+- **The summary page turned "could not tell" into 404**, the exact sentence the pay
+  route next door refuses to say. It now renders "we couldn't load this plan —
+  nothing has been charged", and keeps 404 for a plan that genuinely is not there
+  (which is also what an unauthorized one looks like, deliberately).
+- **The balance button contradicted the invoice above it.** On a non-studio plan
+  with the deposit unpaid, `quoteFor('balance')` charges the whole total while the
+  invoice's own Balance Due line reads total-minus-deposit — so the page said
+  "Balance Due $350.00" directly above "Pay $600.00 balance". The figure was right
+  and the word was wrong; the CTA now reads "Pay $600.00 in full".
+- **`contact_name` was interpolated raw into email HTML.** A customer-written field
+  in a markup context — rule 5. `lib/escapeHtml.ts`, one module rather than two
+  copies (rule 11), and deliberately NOT applied to the SMS body, where it would
+  send a literal `&#39;` and wreck `smsSegments`' carrier arithmetic.
+
+### Noted, not changed
+
+- **The portal cookie has no expiry inside its signed payload**, only `Max-Age` —
+  which `adminAuth.ts` explicitly calls "a client-side hint a client can ignore"
+  and guards against for the admin cookie. So an `hh_portal` value is effectively a
+  permanent bearer token for that ref, and it now authorizes *minting a pay link*.
+  Changing the format logs out every customer mid-season and is outside this diff;
+  worth doing deliberately.
+- **`planAccess` honours an admin cookie without the `sec-fetch-site` check** that
+  `getAdminEmail(req)` applies, so the pay-link route is nominally a
+  cookie-authorized mutation with no CSRF check of its own. Every cookie is
+  `SameSite=Lax`, which is the real defence and does hold; this is a missing second
+  lock, not a hole. (`adminActorId` *does* apply the check, so a cross-site mint
+  would be attributed to `'ADMIN'`.)
+- **Each mint leaves an orphaned Stripe Product and Price** (two of each when there
+  is a card fee), because only `stripe_price_id` is stored and voiding deactivates
+  the link rather than the product. Harmless and invisible to customers; it
+  accumulates in the Stripe product catalogue.
+- **The Host header chooses the post-payment redirect URL.** Only someone already
+  authorized for the plan can mint, so the worst case is phishing yourself.
+- **A refunded deposit still reads as paid** by `depositOwedCents`, so a deposit
+  link cannot be re-minted after a refund. Same root as §21's stated limitation:
+  `booking_payments` does not record what a refund reverses. Still **needs Adam**.
+
+### Still needs Adam, unchanged and not guessed
+
+1. **A Stripe TEST key pair in the container** (`STRIPE_TEST_SECRET_KEY` +
+   `STRIPE_TEST_WEBHOOK_SECRET`). Confirmed again against the API: the only key
+   present is live (`livemode: true` on every object), so **no real payment was
+   made and none should be**. The signed-synthetic-event harness above closes most
+   of the gap; what it cannot prove is what Stripe itself sends.
+2. **What a `refund` row reverses.** Unchanged from §21.
+
+**1032 tests (was 992), all green. 0 app-code `tsc` errors. `next build` clean.**
