@@ -345,6 +345,44 @@ Checked in both directions rather than read.
 
 ---
 
+## 8b. Cloudflare is overriding `robots.ts` — and blocking the AI crawlers it welcomes
+
+Found while verifying the deploy, by reading the **served** file rather than the
+source. `https://www.hosthampton.com/robots.txt` is not what `src/app/robots.ts`
+emits. Cloudflare's **Managed robots.txt / Content Signals Policy** is enabled on
+the zone and PREPENDS its own block to the origin's:
+
+```
+# BEGIN Cloudflare Managed content
+
+User-agent: *
+Content-Signal: search=yes,ai-train=no,use=reference
+Allow: /
+
+User-agent: ClaudeBot
+Disallow: /
+…  GPTBot, CCBot, Google-Extended, Bytespider, Amazonbot,
+   Applebot-Extended, meta-externalagent — all Disallow: /
+```
+
+Our rules still follow it (the deploy is confirmed present: `Disallow: /admin`
+without the trailing slash is there, and `/book/success` is correctly gone). So
+the served file now contains **two contradictory groups for the same
+user-agent** — Cloudflare's `Disallow: /` and ours `Allow: /`.
+
+RFC 9309 says a crawler merges matching groups and the least restrictive rule
+wins a same-length tie, so in strict terms `Allow: /` should win — but real
+crawlers differ, Cloudflare's group is FIRST, and `ai-train=no` is unambiguous
+regardless.
+
+This matters because it is **the same defect as `/book`, one layer out**:
+`robots.ts` exists specifically to invite GPTBot, ClaudeBot, PerplexityBot and
+Google-Extended to read and cite Host Hampton, and the edge is telling them no.
+Fixing it is a Cloudflare dashboard setting on the zone, for which this session
+has no credentials — **needs Adam**, recorded rather than guessed at.
+
+---
+
 ## 9. What was NOT touched
 
 - **Mobile pricing.** No `mobile-package` row, no `MobilePriceBlock`, no planner
@@ -382,7 +420,14 @@ Checked in both directions rather than read.
    **$800** (up to 10), **$1,045** (up to 12). Both visible, both live. The
    structured data now publishes the table ($650–$1,045) because that is what a
    visitor can see, but one of the two has to go.
-2. **No Google Search Console access.** Which URLs currently rank could not be
+2. **Cloudflare's Managed robots.txt is blocking every AI crawler the site
+   wants** (§8b). `ai-train=no` plus `Disallow: /` for ClaudeBot, GPTBot, CCBot,
+   Google-Extended, Bytespider, Amazonbot, Applebot-Extended and
+   meta-externalagent, prepended at the edge and directly contradicting
+   `src/app/robots.ts`, which lists those same crawlers to WELCOME them. Turning
+   it off (or aligning it) is a zone setting in the Cloudflare dashboard, which
+   this session has no login for.
+3. **No Google Search Console access.** Which URLs currently rank could not be
    checked, so every canonical and `robots` decision here was made on the
    conservative side — `noindex` only where a page is structurally not content,
    and 308 only on two unambiguous content consolidations. A Search Console

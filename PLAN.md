@@ -188,7 +188,19 @@ needs the mobile pricing numbers only Adam has (§15).
    page. The structured data now publishes the TABLE ($650–$1,045), because that
    is what a visitor can see and Google requires the markup to match — but one
    of the two numbers has to go, and which one is Adam's call.
-5. **No Google Search Console access.** Which URLs currently rank could not be
+5. **Cloudflare's Managed robots.txt is blocking every AI crawler the site is
+   trying to attract** (`docs/seo-pass.md` §8b). The file served at
+   `www.hosthampton.com/robots.txt` is NOT what `src/app/robots.ts` emits:
+   Cloudflare prepends a "BEGIN Cloudflare Managed content" block carrying
+   `Content-Signal: ai-train=no` and `Disallow: /` for **ClaudeBot, GPTBot,
+   CCBot, Google-Extended, Bytespider, Amazonbot, Applebot-Extended and
+   meta-externalagent** — the exact crawlers `robots.ts` names in order to
+   WELCOME them. Our rules still follow it, so the served file holds two
+   contradictory groups per user-agent. This is the same defect as `/book`, one
+   layer out: the site is trying to be cited by AI answer engines and the edge
+   is telling them no. Fixing it is a zone setting in the Cloudflare dashboard,
+   which no build session has a login for.
+6. **No Google Search Console access.** Which URLs currently rank could not be
    checked, so every canonical / `robots` / redirect decision in the SEO pass
    was made on the conservative side (`noindex` only where a page is
    structurally not content; 308 only on two unambiguous consolidations, with

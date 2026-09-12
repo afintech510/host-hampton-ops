@@ -7,7 +7,7 @@ import { OG_DEFAULTS, SITE_URL, businessRef } from '@/lib/seo'
 export const metadata: Metadata = {
   title: 'Trucker Hat & Canvas Gear Fundraiser',
   description:
-    'A fun, easy way to raise money for your school, team, or class. Custom branded trucker hats, canvas totes & pouches. No upfront cost — keep 100% of the profit. Speonk, NY.',
+    'Raise money for your school, team or class with custom branded trucker hats, canvas totes and pouches. No upfront cost — keep 100% of the profit.',
   keywords: [
     'trucker hat fundraiser Long Island',
     'school fundraiser merchandise',

@@ -27,7 +27,7 @@ const CANONICAL = 'https://www.hosthampton.com/mobile-craft-party'
 export const revalidate = 3600
 
 export const metadata: Metadata = {
-  title: 'Mobile Craft Party — Kids Crafts, Anywhere on LI',
+  title: 'Mobile Kids Craft Parties on Long Island',
   description:
     'We bring hands-on arts & crafts — canvas painting, sand art, balloon dogs, slime and more — to your home anywhere on Long Island, or host at our Speonk studio.',
   keywords: [
