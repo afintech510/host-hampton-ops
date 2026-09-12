@@ -124,3 +124,32 @@
 - Branch-per-business model (not SaaS multi-tenant)
 - Same codebase, different .env + Supabase + agent_memory seed data
 - Target businesses: MyGravelGuy.com, Eastern Landscape (easternlm.com)
+
+## The autonomous build chain (Adam, 2026-09-12)
+
+Adam asked for a self-driving sequence rather than one session at a time:
+**Phase 5 build → Phase 5 review/test → Phase 6 build → Phase 6 review/test →
+continue until the project is complete.** Each session spawns its own successor
+as its last act, so the chain does not depend on any one session staying alive.
+
+| # | Session | Status |
+|---|---|---|
+| 1 | Phase 5 — the pay path (items 2-4) | spawned 2026-09-12, worktree `sandy-lotus`, from main `0fd3dc1` |
+| 2 | Phase 5 review + test | spawned by #1 |
+| 3 | Phase 6 — learning loop (migration 040 or 041) | spawned by #2 |
+| 4 | Phase 6 review + test | spawned by #3 |
+| 5+ | remaining work, assessed by the chain | — |
+
+**If the chain stops**, it is because a link failed before spawning its
+successor. Restart it by spawning the next link by hand with the same brief
+shape — the briefs are self-contained by design and each one carries the
+standing rules forward verbatim.
+
+**The judgement rule every link carries:** decide technical questions and keep
+moving; if something needs Adam (a price, a business rule, a missing
+credential), record it as "needs Adam" in PLAN.md and the memory, skip that
+item, and carry on rather than blocking the loop. The single exception is
+anything that could charge a real customer incorrectly — that stops and asks.
+
+**Known blocked, do not start:** the planner's three-way product selector, which
+needs the mobile pricing numbers only Adam has (§15).
