@@ -83,16 +83,26 @@ Respond ONLY with valid JSON — no markdown fences, no extra text.`
 /**
  * The output schema.
  *
- * **No `maxItems` anywhere.** Anthropic's structured output refuses it —
- * `output_config.format.schema: For 'array' type, property 'maxItems' is not
- * supported` — and the whole call 400s. The mocked unit tests could not see
- * that; production did, on the first authenticated cron run. Rule 8 in its
- * plainest form: a schema that type-checks is not a schema the API accepts.
+ * **No `maxItems`, and no `minimum`/`maximum` on a number.** Anthropic's
+ * structured output refuses both, and the whole call 400s:
  *
- * The counts are capped in CODE instead, which is where they were load-bearing
- * anyway: `slice(0, MAX_PROPOSALS)` before storing, and `sanitizeVoiceProfile`
- * for the profile's lists. A model that returns 200 rules therefore costs one
- * ignored response, not a rule explosion.
+ *   For 'array' type, property 'maxItems' is not supported
+ *   For 'number' type, properties maximum, minimum are not supported
+ *
+ * No mock of `fetch` can see that — the schema type-checks and the tests pass,
+ * and the weekly run would have 502'd every Monday. Rule 8 in its plainest
+ * form: a schema that type-checks is not a schema the API accepts.
+ *
+ * Which keywords DO work was established by probing the live API rather than
+ * by guessing one redeploy at a time: `enum`, `required`,
+ * `additionalProperties` and **`maxLength` are all accepted**; only those two
+ * are not.
+ *
+ * Both limits were load-bearing in CODE anyway, which is why losing them from
+ * the schema costs nothing: `slice(0, MAX_PROPOSALS)` caps the proposals,
+ * `sanitizeVoiceProfile` caps the profile's lists, and `proposeLearning` clamps
+ * `confidence` into [0,1]. A model returning 200 rules with confidence 42 costs
+ * one ignored response, not a rule explosion.
  */
 const DISTILL_SCHEMA = {
   type: 'object',
@@ -108,7 +118,7 @@ const DISTILL_SCHEMA = {
         properties: {
           kind: { type: 'string', enum: LEARNING_KINDS as unknown as string[] },
           text: { type: 'string', maxLength: 400 },
-          confidence: { type: 'number', minimum: 0, maximum: 1 },
+          confidence: { type: 'number' },
           evidence: { type: 'string', maxLength: 400 },
         },
       },
