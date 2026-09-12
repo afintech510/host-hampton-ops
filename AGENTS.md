@@ -188,7 +188,8 @@ is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
 The next free migration number is **046** — still free after the Phase 5 review
-(link 12), which took none and needed none. `docs/phase-5-memory-learning.md`
+(link 12), the outbound template pass (link 13) and the portal auth review
+(link 14), none of which needed one. `docs/phase-5-memory-learning.md`
 §11.13 names the one thing 046 is wanted for: moving the memory-promotion
 back-reference off `agent_memory` (where writing it fires the unconditional
 `trg_memory_updated_at` and erases the evidence those rows are dead) and onto
@@ -336,6 +337,44 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
 - **`nginx/nginx.conf` is `git update-index --skip-worktree` on the box.** The box's real config (with the other projects' server blocks + `app`/`api` blocks) differs from the tracked minimal file. Edit the live config **on the box** and reload with `nginx -t && nginx -s reload`. To hand control back to git: `git update-index --no-skip-worktree nginx/nginx.conf`.
 - **Server-only SSL mounts live in `docker-compose.override.yml` on the box** (gitignored, auto-merged by Compose). Edit there for per-host volume mounts; don't add them to the tracked `docker-compose.yml`.
 - **Never trust the request for the site's own origin. Use `publicOrigin(req)` (`lib/publicOrigin.ts`).** nginx's HTTPS `default_server` answers **444** for a hostname that is not one of its `server_name`s, so `Host` cannot be forged past the edge — but **nginx never SETS `X-Forwarded-Host`** (it sets `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` and nothing else), so that header reaches the container exactly as the caller typed it. Twenty-two routes preferred it over `Host` until 2026-09-12, which made it decide the links in the owner's own notification emails, a link mailed to a customer, every redirect out of three portal routes, and **Stripe's `success_url`/`cancel_url` in five checkout routes**. Measured, not reasoned about: `curl -H 'X-Forwarded-Host: evil.example.com' https://www.hosthampton.com/api/portal/auth` moved the 307 to that host. `docs/outbound-template-escaping.md` §3. A test fails the suite if any file outside `lib/publicOrigin.ts` reads `x-forwarded-host` or `NEXT_PUBLIC_SITE_URL`.
+- **An email address is never a filter. Use `lib/contactLookup.ts`.**
+  `contacts.email` and `bookings.contact_email` are plain `text` holding
+  whatever the customer typed — 21 of 1217 contacts and **9 of 61 bookings** are
+  not lowercase — so `.eq()` is case-sensitive and misses them. And `.ilike()`
+  is a LIKE **pattern**: `%` is a wildcard run, `_` is any single character.
+  `/api/portal/my-bookings` used `.ilike('contact_email', cookieEmail)` as its
+  **authorization filter**, and a signed session cookie whose email was the
+  single character `%` returned **34 bookings — every kids party in the
+  database, with the children's names**. Measured live. `findContactsByEmail()`
+  and `findBookingsByContactEmail()` use `ilike` to fetch CANDIDATES and then
+  re-compare exactly in JS; callers write by `id`, never by the email filter.
+  `docs/portal-auth-review.md` §2/§4. `src/__tests__/lib/portalAuthSurface.test.ts`
+  fails the suite if any file outside `lib/contactLookup.ts` filters an email
+  column, with one documented exemption.
+- **A session cookie carries its own expiry, inside the signature.** `hh_admin`
+  always did; `hh_portal` and `hh_portal_email` did not until 2026-09-12 — the
+  value was `HMAC("cookie:" + ref)`, a constant, so `Max-Age` was a hint to the
+  browser and a copy of the value authenticated that booking forever, with no
+  revocation short of rotating `PORTAL_LINK_SIGNING_SECRET` (which you must not
+  do; see §7). All three now use `<subject>:<issuedAtMs>:<sig>`. **The
+  expiry-less form is honoured until a hard-coded sunset of 2026-10-20** so no
+  live customer was signed out; after that date it is invalid with no deploy
+  needed.
+- **A customer-facing route names its columns.** `select('*')` on `bookings`
+  hands out 62 columns including `admin_notes`, `quote_snapshot`,
+  `portal_token_hash` and the Stripe ids. Use an ALLOW-list, so a column added
+  by the next migration is private until somebody decides otherwise —
+  `PORTAL_BOOKING_COLUMNS` in `/api/portal/booking`, `publicBookingView` in
+  `/api/checkin/[token]`.
+- **A failed link and an unknown link answer the same thing.** `/api/portal/auth`
+  used to redirect with `error=not_found` for a ref that does not exist and
+  `error=expired` for one that does — an unauthenticated, unthrottled oracle
+  over a structured ref space. `/review/[token]` was deliberately built the
+  other way and that is the rule.
+- **The Venmo/Zelle number is not the public line.** `lib/paymentContacts.ts`:
+  payments go to **631-599-2469** / `VENMO_HANDLE`; **(631) 998-9325** is the
+  business line and finds nothing in Venmo. A phone number as a literal in the
+  portal or plan surface fails the suite.
 - **Escaping vs URL-screening in mail bodies.** Text into an element body gets `escapeHtml`; a URL in an `href`/`src` gets a URL SCREEN (`mailHref` / `mailHrefExternal` in `lib/emailSafety.ts`) and *then* attribute encoding. `escapeHtml` alone on an href leaves `javascript:` working while looking screened, and an HTML-escaped URL handed to a URL parser is silently corrupted rather than refused. A number you computed and a nested template you built get neither. The plain-text half of an email must never be escaped. `src/__tests__/lib/emailTemplateEscaping.test.ts` enforces all of it off disk.
 - **Never `docker compose restart`** to deploy — always `up -d --build` (restart ignores `.env` and new images).
 - **`NEXT_PUBLIC_*` changes require a rebuild** (`--build`); they are baked at build time, not read at runtime.
