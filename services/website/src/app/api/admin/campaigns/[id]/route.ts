@@ -104,9 +104,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       )
     }
 
+    // Claiming moved the row to `sending`. Any path below that does NOT attempt
+    // a send has to put it back, or a misconfiguration strands a real campaign
+    // in a status nothing will ever pick up again. (Before the claim these paths
+    // simply returned and the row stayed `draft`; the claim is what made this
+    // necessary, so it is part of the same change.)
+    const release = async () => {
+      await supabase.from('scheduled_campaigns').update({ status: campaign.status }).eq('id', id)
+    }
+
     if (campaign.campaign_type === 'email' || campaign.campaign_type === 'event_update') {
       const listId = body.listId ? parseInt(body.listId, 10) : parseInt(process.env.BREVO_DEFAULT_LIST_ID || '0', 10)
       if (!listId) {
+        await release()
         return NextResponse.json({ error: 'BREVO_DEFAULT_LIST_ID not configured' }, { status: 500 })
       }
 
@@ -201,6 +211,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ ok: true, sent: successCount, total: smsContacts.length })
     }
 
+    await release()
     return NextResponse.json({ error: 'Unknown campaign type' }, { status: 400 })
   }
 

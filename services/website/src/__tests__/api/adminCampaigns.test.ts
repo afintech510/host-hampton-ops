@@ -255,6 +255,23 @@ describe('Admin Campaigns API', () => {
       expect(res.status).toBe(404)
     })
 
+    it('releases the claim when it never attempts a send', async () => {
+      // The claim moves the row to `sending`. A path that does not reach a
+      // provider has to put it back, or a misconfiguration strands a real
+      // campaign in a status nothing picks up again.
+      const { restChain } = sendMocks({ data: [{ ...sendableRow, campaign_type: 'carrier-pigeon' }], error: null })
+
+      const req = {
+        headers: authHeaders(),
+        json: jest.fn().mockResolvedValue({ status: 'sending' }),
+      } as any
+
+      const res = await updateCampaign(req, { params: Promise.resolve({ id: 'camp-001' }) })
+      expect(res.status).toBe(400)
+      expect(restChain.update).toHaveBeenCalledWith({ status: 'draft' })
+      expect(mockSendCampaign).not.toHaveBeenCalled()
+    })
+
     it('returns 500 when Brevo send fails', async () => {
       sendMocks({ data: [sendableRow], error: null })
       mockSendCampaign.mockResolvedValue({ kind: 'failed', error: 'create 401: bad key' })

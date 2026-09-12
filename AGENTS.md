@@ -187,7 +187,16 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **037**.
+The next free migration number is **044**. (037 plan content, 038 + 039 per-user
+admin login, 040 payment idempotency, 041 the learning loop, 042 typed
+`draft_feedback`, **043 Phase 4 campaign automation** — `email_sequence_sends`
+plus the columns and slot index that extend the pre-existing `social_posts`.)
+
+**No new environment variable was added for Phase 4.** The unsubscribe tokens
+reuse `PORTAL_LINK_SIGNING_SECRET`; the social calendar reuses
+`ANTHROPIC_API_KEY` and the optional `MARKETING_DRAFT_MODEL`. **Rotating
+`PORTAL_LINK_SIGNING_SECRET` now also invalidates every outstanding unsubscribe
+link**, which is a link that must keep working for years — so don't.
 
 **Never re-consent `GOOGLE_REFRESH_TOKEN` for Gmail.** That grant is
 calendar-only and powers live availability on the booking pages; re-running

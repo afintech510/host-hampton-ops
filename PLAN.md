@@ -144,10 +144,33 @@ find out which parts of it are real. Note also that the Brevo list is **944 real
 people** ([[comms-provider-config]] / `PLAN.md` Phase 3B): nothing here may
 auto-send, and a campaign is never a test.
 
-- [ ] Social content calendar auto-generation (COPY + SOC)
+**The table above is a TEN-DAY WINDOW, and it is wrong about history** (link 8,
+2026-09-12 — `docs/phase-4-campaign-automation.md` §1). `docker logs
+hampton_nginx` starts at `02/Sep/2026:00:53:15`. The database disagrees with it:
+
+- **`process-sequences` ran every fifteen minutes for five months.** 57
+  enrollments carry a `last_sent_at` between **2026-03-21** and **2026-08-16**, on
+  15-minute boundaries. It sent real marketing email to real customers and then
+  its cron-job.org job disappeared. **44 enrollments are still `active`, frozen
+  mid-sequence.**
+- **`draft-newsletter` ran daily at 11:00 UTC** until 2026-07-17 and left **17
+  `event_update` drafts** in `scheduled_campaigns`, seven of them for the same
+  event, none ever sent. It has 401'd once a day since ~2026-07-18, as has
+  `booking-locks` at 04:00. **The container's `CRON_SECRET` is correct** (a
+  request made from inside the container 200s on both), so those two
+  cron-job.org jobs hold a stale one — **needs Adam.**
+
+The lesson: **a log is a window, and a count over a window is not a statement
+about history.** "Never run" and "ran for five months and stopped" are different
+risk profiles — the second means anything wrong with the code has already
+happened to real people, which is exactly what §2.1 below turned out to be.
+
+- [x] **Email campaign sequencing (LIST + OUTBOUND)** — **done 2026-09-12, migration 043, `docs/phase-4-campaign-automation.md`.** Not greenfield: `/api/cron/process-sequences` had already sent 57 real emails, with **four defects in code that had already run.** (1) **Its activity log never wrote a single row.** It inserted `type: 'sequence_email_sent'`, which violates `contact_interactions_type_check`, on a `.then(() => {})` that discarded the error — confirmed in production with a rolled-back INSERT. 57 marketing emails to real customers, zero records, for five months. `lib/contactInteractions.ts` now holds the CHECK's contents read out of `pg_constraint`, types the writer against them, and **reports** a failure. (2) **Check-then-act on a path that emails customers**: read `current_step`, send, write it back — two ticks both send. `email_sequence_sends` + `UNIQUE (enrollment_id, step_number)` is now CLAIMED BEFORE THE SEND, 23505 handled by CODE; the send row is marked `sent` *before* the enrollment advances, so a crash between them is recovered by catching up rather than re-sending; a stale claim is taken over by a CONDITIONAL update; an **unreadable** claim timestamp counts as fresh, never abandoned. (3) **A transient failure was terminal twice, in opposite directions** (rule 12, twice in nine lines): an unreadable STEP marked the enrollment `completed`, permanently ending a customer's sequence over one bad second; an unreadable CONTACT marked it `unsubscribed` — a claim about what a person asked for, made on a failed SELECT. Every lookup is now `found | absent | unavailable`. A third instance was in `isDue`: an unparseable `event_date` gave an Invalid Date, every comparison false **including `now < dueDate`**, so a malformed date sent every remaining step at once. (4) **The mail had no unsubscribe link at all** — no link, no header, no route, which is also why the opt-out state it checks could only be updated from somewhere else. `lib/unsubscribeLink.ts` (HMAC on the existing `PORTAL_LINK_SIGNING_SECRET`, **no expiry**, no new env), a `/unsubscribe` page that **never acts on GET** because mail scanners fetch every link, and `POST /api/unsubscribe` doubling as the RFC 8058 one-click endpoint. No address is read from the request — only the one the token names. Also: customer-written `first_name` went RAW into HTML (rule 5, same defect as plan §22's receipts) and unflattened into the SUBJECT, which is a mail header. **The opt-out check was already in the right place** — at send time, not enrolment — and it stays there, now reading both `email_opt_in` and `contacts.status`.
+- [x] **Social content calendar auto-generation (COPY + SOC)** — **done 2026-09-12.** A week of Instagram drafts written by Claude into `social_posts` at the column default `draft`, reviewed in a new **Social** admin tab. **`social_posts` ALREADY EXISTED** from the orchestrator schema — empty, no writers, different shape — and the first `CREATE TABLE IF NOT EXISTS` was answered `relation "social_posts" already exists, skipping`, which would have left the app inserting columns that do not exist against enums it did not know. 043 **extends** it instead, and the code uses the LIVE enum labels read out of `pg_enum`: `facebook_page` (not `facebook`), no `pending_review`, `created_by` is the `agent_name` enum so it is always `SOC` with the human requester in `generation_meta`, and `scheduled_for` is a timestamptz so every slot is noon UTC and the unique index is over the UTC calendar day. Four guardrails, §23/§24's shape: `status` DEFAULTS to the safe value; the prompt's untrusted half is fenced with `JSON.stringify`; screened on the way IN with `containsFabricatedTerms` called with an **EMPTY allowed-amount set** — a caption may state no dollar figure at all, not even the $250 deposit a draft may name — plus `containsForeignContact`, `containsMarkup` and `safeSiteLink`; and **screened again on the way OUT**, because a row being in Postgres is not evidence it passed a screen. `approved`/`published` are GATED edges. **Nothing posts anywhere**: "Published" means Allie recorded that she put it up. **Driven in production** — 3 real drafts for 3 real events at $0.0054, a re-run that inserted nothing and spent nothing and SAID so, then attacked with four hostile rows inserted straight into Postgres (a price, a foreign link + `/\evil.example.com/x`, a U+2028-forged `SYSTEM:` header, a `<script>`): all four refused with the reason named in the panel, the ledger and the log, all four approve attempts 422 — **and a legitimate draft still approved cleanly**, both directions.
+- [x] **The campaign sender could not tell "delivered" from "created".** `sendCampaign` returned the campaign id after a FAILED `/sendNow` and both callers wrote `status: 'sent'` — a send to **944 real people** reported as delivered when it was only created, and not retryable either because a retry makes a SECOND campaign at Brevo. Three outcomes now, with the Brevo id kept on the failure so the orphan is traceable. Both send paths were **check-then-act on those same 944 people** (two clicks on Send both saw `draft`); both now claim with one conditional UPDATE and a second attempt is a 409. **A regression this introduced and then fixed:** claiming strands the row at `sending` on any path that does not attempt a send, so those paths release it explicitly. `draft-newsletter` now refuses to draft while an unread `event_update` draft is waiting (and names it), reads the first TEXT block (rule 1), and **screens the model's subject and intro**, which went unscreened into a body bound for 944 inboxes.
 - [ ] **Needs Adam — Automated Instagram posting via Meta API (OUTBOUND).** Measured 2026-09-12: the container has **zero** `META_*` environment variables, so this is blocked on credentials before it is blocked on code.
-- [ ] Email campaign sequencing (LIST + OUTBOUND)
-- [ ] Google Business Profile post automation
+- [ ] **Needs Adam — Google Business Profile post automation.** Same: no credential in the container.
+- [ ] **Needs Adam — whether to reschedule `process-sequences`.** The code is ready and safe; the DATA is not. Turning the cron back on immediately processes **44 enrollments frozen since 2026-08-16**, whose next steps are weeks or months overdue — *"Still thinking about your event?"* to people who enquired in July about an event that has already happened. That is a business call and it mails real customers, which is the one case the chain's judgement rule stops for. Two options: reschedule as-is, or cancel the stale enrollments first.
 
 ## Phase 5: Memory + Learning
 
@@ -176,7 +199,8 @@ as its last act, so the chain does not depend on any one session staying alive.
 | 5 | SEO optimization pass | **done 2026-09-12**, worktree `grand-cardinal`, `docs/seo-pass.md`. Measured the live site instead of trusting the brief: nine of the twenty "pages with no metadata" inherit it from a sibling layout and two are bare redirects. Found that **`/book` served ten characters of HTML** (a `useSearchParams()` client page bails to its Suspense fallback during a static prerender, and the AI crawlers robots.ts invites by name run no JS), that **every `Event` rich result on the site was invalid ISO 8601**, that **40 of 69 URLs had no `og:image`** because Next merges metadata shallowly, and two structured-data prices that disagreed with their own pages. **No migration — 043 is still free.** 1284/1284 green. |
 | 6 | agent content pipeline: COPY → `website_content` → ISR | **done 2026-09-12**, worktree `windy-summit`, `docs/content-pipeline.md`. Measured first: the pipeline had never produced a row (all five rows `created_by='manual'`) and the weekly cron is **not scheduled** (0 nginx hits in 10 days). Found that **all four English drafts are shadowed by hand-built static pages** and would publish to a URL that renders somebody else's page; that the renderer handed **agent-written HTML to `dangerouslySetInnerHTML`, including in the admin preview modal**; and that route-level `revalidate` **does not work on any Supabase-reading route** (`cache: 'no-store'` opts it out of static rendering) — measured, not assumed. Drove COPY → published → live page → sitemap end to end, proved the cache by CHANGING a value both ways, and attacked it with a hostile row that found **two unscreened readers it had just written**. **No migration — 043 is still free.** 1437/1437 green. |
 | 7 | agent content pipeline — review + test | **done 2026-09-12**, worktree `velvet-moss`, `docs/content-pipeline.md` §11. Attacked §2's two hand-written screens and found **four** real defects, three of them in those screens: **one backslash defeated the protocol-relative guard** (`/\evil.com/x.png` is site-relative to the screen and another ORIGIN to every browser — into `<img src>` and `og:image`, the same two readers link 6 had just fixed for that field); `safeImageUrl` accepted **any host on the internet**, which makes our share card attacker-controlled and changeable after approval; `containsMarkup` and `htmlToPlainText` carried **two different definitions of a tag** in one file, so `"Groups of <10 guests and >4 adults"` rendered as `"Groups of 4 adults"` on every page view; and the SEO budget trim **split emoji in half**, putting U+FFFD in a meta description. Rule 12 exercised rather than trusted (a broken DB really does return 500, not 404 — and, newly measured, so does every unmatched URL). **No migration — 043 is still free.** 1453/1453 green. A fifth defect was found by the production probe itself: all three hostile image URLs were correctly refused and the log said **nothing** — a screen that worked perfectly and told nobody (rule 10). |
-| 8+ | remaining work, assessed by the chain | — |
+| 8 | Phase 4 — campaign automation (the buildable half) | **done 2026-09-12**, worktree `proud-badger`, `docs/phase-4-campaign-automation.md`. **Took migration 043 — the next free number is 044.** Measured first and the brief's own table did not survive it: the nginx log is a **ten-day window**, and the database proves `process-sequences` **ran every fifteen minutes for five months** and stopped on 2026-08-16 with 44 enrollments frozen. Found **four defects in code that had already sent 57 real marketing emails** — an activity log that never wrote a row because its `type` violates a CHECK and the error was discarded; check-then-act on the send; a transient read failure marking a customer `completed` *and* another marking one `unsubscribed`; and no unsubscribe link of any kind. Plus a campaign sender that reported a created-but-undelivered Brevo campaign as `sent` to 944 people, and two check-then-act send paths. Built the social content calendar and attacked it in production with four hostile rows — all refused, a legitimate draft still approved. **1542/1542 green.** Did NOT reschedule the sequencer: that mails 44 real people and is Adam's call. |
+| 9+ | remaining work, assessed by the chain | — |
 
 **If the chain stops**, it is because a link failed before spawning its
 successor. Restart it by spawning the next link by hand with the same brief
@@ -261,3 +285,27 @@ needs the mobile pricing numbers only Adam has (§15).
    (they go through Quo, on a different number, with a working webhook). Not
    repointed by a build session because it is a live number feeding something
    else, which is Adam's call; when he confirms, it is one API call.
+12. **Two cron-job.org jobs hold a stale `CRON_SECRET`** (link 8, measured
+   2026-09-12). `draft-newsletter` (daily 11:00 UTC) and `booking-locks` (daily
+   04:00 UTC) have 401'd every single day since ~2026-07-18. The container's
+   secret is **correct** — a request made from inside the container returns 200
+   on both routes — so it is the jobs that are stale, and `agent-dispatch`
+   (998 × 200) holds the current value. One edit each at cron-job.org. Third and
+   fourth items in the same backlog as items 1 and 6.
+13. **`/api/cron/social-calendar` needs a weekly cron job** —
+   `?secret=<CRON_SECRET>`, weekly, Monday ~8am. Self-throttling (it asks which
+   slots are already drafted BEFORE calling the model, so a duplicate delivery
+   costs nothing) and everything lands at `draft`, so it is safe to leave
+   scheduled indefinitely. **Fifth job in the same backlog.**
+14. **Three social drafts are waiting for review** in the new Social tab — the
+   first copy the SOC agent has ever written. Accurate, priceless, about real
+   upcoming events. **The model misspelled the brand hashtag as `#hosthamption`
+   in all three**, which is worth a look before any of them goes up.
+15. **17 stale `event_update` newsletter drafts** from 2026-07-01 → 07-17 sit in
+   the Campaigns tab, seven of them for the same Bitchy Bingo night with seven
+   different subject lines. Nothing will add to the pile now (the route refuses
+   to draft while one is waiting). Clearing them is a content call.
+16. **Two campaigns are recorded as `sent` with `total_recipients: 0`** — Brevo
+   ids 1 and 2, on 2026-04-23 and 2026-07-06. Given that `sendCampaign` used to
+   report a created-but-undelivered campaign as `sent`, at least one of those may
+   never have reached anybody. Only the Brevo dashboard can answer it.
