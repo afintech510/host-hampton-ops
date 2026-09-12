@@ -8,6 +8,7 @@ import {
   type ContentRow,
 } from '@/lib/content/published'
 import { ContentRenderBody } from '@/components/content/ContentRenderBody'
+import { htmlToPlainText, safeImageUrl } from '@/lib/content/contentSafety'
 import { BUSINESS_ID, ORGANIZATION_ID, OG_DEFAULTS, carriesPublishedPrice } from '@/lib/seo'
 
 /**
@@ -59,7 +60,8 @@ import { BUSINESS_ID, ORGANIZATION_ID, OG_DEFAULTS, carriesPublishedPrice } from
 export const dynamic = 'force-dynamic'
 
 interface StructuredContent {
-  faq?: { q: string; a: string }[]
+  /** `unknown[]` on purpose — this comes off a jsonb column, not a type. */
+  faq?: unknown
   jsonLd?: unknown
 }
 
@@ -93,6 +95,8 @@ export async function generateMetadata({ params }: { params: { slug: string[] } 
   if (locales.has('es')) languages['es'] = localeUrl(slug, 'es')
   if (locales.has('en')) languages['x-default'] = localeUrl(slug, 'en')
 
+  const ogImage = safeImageUrl(row.featured_image)
+
   return {
     // `absolute` bypasses the root layout's '%s | Host Hampton' template —
     // row.title already ends with '| Host Hampton' (the LLM prompt asks for
@@ -111,7 +115,14 @@ export async function generateMetadata({ params }: { params: { slug: string[] } 
       url,
       // Spread order matters: only override OG_DEFAULTS' card when the row
       // really has a featured image. `images: undefined` would clear it.
-      ...(row.featured_image ? { images: [{ url: row.featured_image }] } : {}),
+      //
+      // Screened with the SAME helper the <img> uses, because it is the same
+      // DB-authored value: a probe row with `featured_image` set to
+      // `javascript:…` was refused by the component and published verbatim as
+      // `og:image` three lines of code away. Inert in a meta tag, but a value
+      // screened in one reader and not the other is a screen nobody is
+      // actually applying (rule 11).
+      ...(ogImage ? { images: [{ url: ogImage }] } : {}),
       locale: locale === 'es' ? 'es_US' : 'en_US',
     },
   }
@@ -154,12 +165,31 @@ function buildJsonLd(url: string, row: ContentRow): unknown[] {
     dateModified: row.updated_at,
   })
 
-  const faq = structured.faq
-  if (Array.isArray(faq) && faq.length > 0) {
+  // The FAQ has TWO readers — this graph and `ContentRenderBody` — and only
+  // one of them used to screen it. A hostile row inserted straight into
+  // Postgres proved it: the page showed a clean "Question?" while the
+  // `FAQPage` node published `<script>window…</script>` as
+  // the question TEXT. Escaped, so inert, and never a way out of the script
+  // tag — but it is agent-written data going to Google under our name, and a
+  // field screened in one reader and not the other is rule 11's failure shape.
+  // Same `htmlToPlainText` the visible page uses, so the two cannot drift.
+  const faq: unknown[] = Array.isArray(structured.faq) ? structured.faq : []
+  const faqNodes = faq
+    .filter((f): f is { q: string; a: string } => {
+      if (!f || typeof f !== 'object' || Array.isArray(f)) return false
+      const item = f as { q?: unknown; a?: unknown }
+      return typeof item.q === 'string' && typeof item.a === 'string'
+    })
+    .map(f => ({ q: htmlToPlainText(f.q), a: htmlToPlainText(f.a) }))
+    // A Question with an empty acceptedAnswer is invalid structured data —
+    // drop it rather than publish an empty one (rule 15).
+    .filter(f => f.q && f.a)
+
+  if (faqNodes.length > 0) {
     graph.push({
       '@context': 'https://schema.org',
       '@type': 'FAQPage',
-      mainEntity: faq.map(f => ({
+      mainEntity: faqNodes.map(f => ({
         '@type': 'Question',
         name: f.q,
         acceptedAnswer: { '@type': 'Answer', text: f.a },
