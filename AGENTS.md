@@ -204,13 +204,20 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **046** — still free after the Phase 5 review
-(link 12), the outbound template pass (link 13) and the portal auth review
-(link 14), none of which needed one. `docs/phase-5-memory-learning.md`
-§11.13 names the one thing 046 is wanted for: moving the memory-promotion
-back-reference off `agent_memory` (where writing it fires the unconditional
-`trg_memory_updated_at` and erases the evidence those rows are dead) and onto
-`agent_learnings.source_memory_id`. (037 plan content, 038 + 039 per-user
+The next free migration number is **047**. **046 was taken by link 16** — the
+webhook money-idempotency migration: `uniq_event_ticket_per_session_line`
+(`NULLS NOT DISTINCT`, so a redelivery of a single-event ticket really does
+collide), `uniq_bookings_stripe_session`, the **`nextval_event_ticket_seq()`
+function five call sites had been calling for months without it existing** (with
+`event_ticket_seq` set to 10000 so new refs cannot collide with the legacy
+four-digit space), `decrement_event_tickets` / `decrement_session_tickets`
+returning the new count instead of `void` so an oversell can be reported, and
+`redeem_gift_card` — one atomic `SELECT … FOR UPDATE` replacing four copies of a
+read-modify-write. The thing 046 was *previously* wanted for is still unclaimed
+and is now **047's** job: `docs/phase-5-memory-learning.md` §11.13, moving the
+memory-promotion back-reference off `agent_memory` (where writing it fires the
+unconditional `trg_memory_updated_at` and erases the evidence those rows are
+dead) and onto `agent_learnings.source_memory_id`. (037 plan content, 038 + 039 per-user
 admin login, 040 payment idempotency, 041 the learning loop, 042 typed
 `draft_feedback`, **043 Phase 4 campaign automation** — `email_sequence_sends`
 plus the columns and slot index that extend the pre-existing `social_posts`;
@@ -250,6 +257,21 @@ has its own client and its own token, minted by `scripts/gmail_consent.mjs`,
 which refuses to print a token unless the mailbox matches `GMAIL_USER`. The
 Gmail grant has no send scope, so it is structurally incapable of emailing a
 customer — that is the guardrail, not a policy.
+
+**`STRIPE_WEBHOOK_SECRET` and the endpoint it belongs to.** The live endpoint is
+`we_1T7ckv02uXWznKaWMiPeXCCf` → `https://www.hosthampton.com/api/webhook`,
+created 2026-03-05. **Until 2026-09-12 it was subscribed to
+`checkout.session.completed` and nothing else**, so `payment_intent.succeeded`
+— the entire in-page Payment Element path, i.e. every party-planner payment and
+every studio-rental deposit — had never been delivered, and neither had
+`checkout.session.async_payment_succeeded`. It now carries all four event types
+the handler has branches for. **Check the subscription, not just the code**, with
+`GET /v1/webhook_endpoints`; a handler with no matching subscription is
+indistinguishable from a handler that is merely never triggered
+(`docs/stripe-webhook-branches-review.md` §1). **Never RECREATE that endpoint to
+change its events — UPDATE it** (`POST /v1/webhook_endpoints/{id}`): recreating
+rotates the signing secret and every delivery 400s until
+`/opt/hosthampton/.env` catches up.
 
 `QUO_WEBHOOK_SECRET` became security-relevant in Phase 2: `/api/webhooks/quo`
 now **fails closed** (401 on a bad or missing signature) because an inbound SMS
@@ -418,6 +440,40 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
   family as `.ilike('%')` as an authorization filter. Use sequential `.eq()`
   calls, which are parameter-encoded. `signwellSurface.test.ts` R6 fails the
   suite on a template literal passed to `.or()`.
+- **`checkout.session.completed` does NOT mean paid.** For a delayed-notification
+  method it fires with `payment_status: 'unpaid'` and the payment can still fail;
+  `checkout.session.async_payment_succeeded` is what says it settled. Measured on
+  the live account: `klarna`, `cashapp` and `amazon_pay` are enabled on about two
+  thirds of the Checkout Sessions we create. Every branch gates on
+  `sessionSettlement()` in `lib/stripeSettlement.ts`, which **fails closed** — a
+  session with no `payment_status` is not settled, because issuing goods for money
+  that is not there is the expensive direction.
+- **Stripe redelivers, so every issuing branch takes a CLAIM.** The unique indexes
+  (migration 040 for payments, 046 for tickets and bookings) stop a duplicate
+  INSERT; they do not stop the second confirmation email, the second inventory
+  decrement, the second `upsertContact` (which mirrors into Brevo and Quo and
+  enrols a sequence) or a second financial row under a freshly generated
+  reference. `claimBySessionId` does, with three outcomes — an unreadable table is
+  **not** "fresh". And the idempotency marker for the Payment-Element branches is
+  the **`financial_transactions` row, not the `booking_payments` row**: that path
+  has two writers (the browser's `confirm-session` and the webhook) and only the
+  webhook does the side effects, so "my insert was a duplicate" cannot mean "this
+  is already done".
+- **A handler with no matching webhook SUBSCRIPTION looks exactly like a handler
+  that is never triggered.** Link 15 found `GET /hooks` returning `[]` at
+  SignWell; link 16 found the Stripe endpoint subscribed to one event type out of
+  four. Before concluding a branch is dead code, ask the provider what it is
+  configured to send. `docs/stripe-webhook-branches-review.md` §1.
+- **A ticket reference comes from `event_ticket_seq`, never from the clock.**
+  `HH-EVT-${Date.now().toString().slice(-4)}` is a ten-second-wide space against
+  `event_tickets_ticket_ref_key`, and in `cart_checkout` it was computed inside a
+  tight loop so two lines for one event always collided. Use `nextTicketRef()`.
+  Refs are five digits from 10000 up; the legacy four-digit space tops out at 9932.
+- **Gift-card redemption is `redeem_gift_card` (migration 046) and nothing else.**
+  It existed four times as a read-modify-write with both errors discarded — one of
+  which issued the ticket *before* deducting the balance, so a race gave a whole
+  ticket away — and all four wrote `redeemed_at: newBal === 0 ? now : null`, which
+  CLEARS the timestamp on a card that was already spent.
 - **Escaping vs URL-screening in mail bodies.** Text into an element body gets `escapeHtml`; a URL in an `href`/`src` gets a URL SCREEN (`mailHref` / `mailHrefExternal` in `lib/emailSafety.ts`) and *then* attribute encoding. `escapeHtml` alone on an href leaves `javascript:` working while looking screened, and an HTML-escaped URL handed to a URL parser is silently corrupted rather than refused. A number you computed and a nested template you built get neither. The plain-text half of an email must never be escaped. `src/__tests__/lib/emailTemplateEscaping.test.ts` enforces all of it off disk.
 - **Never `docker compose restart`** to deploy — always `up -d --build` (restart ignores `.env` and new images).
 - **`NEXT_PUBLIC_*` changes require a rebuild** (`--build`); they are baked at build time, not read at runtime.
