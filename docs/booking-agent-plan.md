@@ -2273,3 +2273,52 @@ Collapsing "error" into "not found" is what turns a blip into a false statement,
 and a false statement about state is what gets acted on.
 
 887 tests, 886 passing.
+
+### The Inbox queue, and what it found on its first run (`cf6ddcc`, `a1e8e34`)
+
+Two small changes to the Inbox draft list, then one real hazard they exposed.
+
+**The queue could not be triaged.** It rendered `created_at` as an absolute
+timestamp and sorted newest-first. Neither is usable: a column of timestamps all
+looks the same, so the four-day-old row is indistinguishable from this
+morning's, and newest-first *buries the neglected one by construction*. Plan
+§18's lead — the one whose silence Adam noticed — was sitting in that list the
+whole time it was being missed.
+
+`lib/leadWaiting.ts` states the elapsed time in words with an escalating colour:
+grey inside the 2-hour nudge window, amber once the nudge has fired, red past a
+day — which is the honest threshold, because **the nudge fires once**, so past a
+day nothing automated will ever chase it again. The list now sorts
+longest-waiting first.
+
+The clock prefers `sent_for_review_at`, so a re-draft or an edit does not leave a
+draft accruing age it has not earned, and falls back to `created_at` for a HELD
+draft, which never gets one — those being exactly the drafts that used to notify
+nobody, so they must not read as ageless. An unreadable clock shows **no badge**
+and sorts **last**: "waiting just now" would be a claim, and an unknown at the
+top of a most-neglected list pushes a real one off it.
+
+The queue also names people now. It showed a review code and a party type but
+never the customer, so triaging meant opening rows to find out whose party each
+one was. One extra query for the page, not one per row.
+
+**What it found immediately, which is the argument for having built it.**
+Shannon Ballantyne had four plans for the same October date — the duplicate-plan
+bug `9fedd91` fixed. Three were cancelled in the cleanup. The **drafts** hanging
+off two of them were not, and they were sitting in the review queue looking like
+ordinary work. Approving one sends a real customer a quote for a party that was
+called off, and there is no undo on that. Nothing in the system said so: a
+cancelled plan and a live one rendered identically.
+
+Both surfaces now carry a loud warning when an OPEN draft points at a
+`cancelled` plan, and the send confirmation repeats it **inside the dialog**,
+because a banner can be scrolled past and a confirm cannot. Deliberately not a
+hard block — the gate is unchanged and there may be a reason — but silence was
+not a defensible default.
+
+**The §18 rule, one step further out: the thing that makes a send dangerous has
+to say so at the moment of sending.** And the general lesson about the queue
+itself: *an elapsed time that is only implied by a date is not visible to
+anyone.* The data was on the page for days; the fact was not.
+
+897 tests, 896 passing.
