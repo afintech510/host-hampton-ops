@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { loadExperiment } from '@/lib/experiments/load'
-import { analyseExperiment, outcomeLabel, summarise, type AnalysisResult } from '@/lib/experiments/analysis'
+import { analyseExperiment, outcomeLabel, summarise, droppedArmsNote, type AnalysisResult } from '@/lib/experiments/analysis'
 import { writeLedger } from '@/lib/marketing/graph'
 import { CONVERSION_WINDOW_DAYS, EXPERIMENT_ENTITY } from '@/lib/experiments/types'
 
@@ -97,6 +97,18 @@ export async function GET(req: NextRequest) {
     kind: AnalysisResult['kind']
     summary: string
     unattributed?: number
+    /**
+     * Arms the READ-TIME screen dropped.
+     *
+     * This is the only SCHEDULED reader of an experiment, and it could not say
+     * this. Measured in production on 2026-09-12: a hostile arm C was dropped,
+     * its nine clicks were held out, and the weekly report said
+     * `winner: "Arm B beat the control"` with no mention that a third of the
+     * click volume belonged to an arm nobody could see. The admin panel showed
+     * it — but the panel needs a human to open it, and §24's whole lesson is a
+     * correct screen whose finding nobody was shown.
+     */
+    rejectedVariants?: { label: string; reason: string }[]
   }[] = []
   const failures: string[] = []
 
@@ -122,13 +134,20 @@ export async function GET(req: NextRequest) {
     const analysis = await analyseExperiment(supabase, loaded.value)
     if (analysis.kind === 'unavailable') failures.push(`${name}: ${analysis.error}`)
 
+    const rejected = loaded.value.rejected.map(r => ({ label: r.label, reason: r.reason }))
+    // Rule 10, in the sentence and not only in the payload: a run that dropped
+    // an arm says so where the arm's absence would otherwise read as a verdict.
+    // One definition of that sentence, in `analysis.ts` (rule 11).
+    const droppedNote = droppedArmsNote(rejected)
+
     results.push({
       id,
       name,
       outcome: outcomeLabel(analysis),
       kind: analysis.kind,
-      summary: summarise(analysis),
+      summary: summarise(analysis) + droppedNote,
       unattributed: 'unattributed' in analysis ? analysis.unattributed : undefined,
+      rejectedVariants: rejected.length ? rejected : undefined,
     })
 
     await writeLedger(supabase, {
@@ -141,13 +160,15 @@ export async function GET(req: NextRequest) {
         name,
         kind: analysis.kind,
         outcome: outcomeLabel(analysis),
-        summary: summarise(analysis).slice(0, 1000),
+        summary: (summarise(analysis) + droppedNote).slice(0, 1000),
         arms: 'arms' in analysis ? analysis.arms : null,
+        rejected_variants: rejected.length ? rejected : null,
+        unattributed: 'unattributed' in analysis ? analysis.unattributed : null,
         conversion_window_days: CONVERSION_WINDOW_DAYS,
       },
     })
 
-    console.log(`cron:experiment-report "${name}" → ${analysis.kind}: ${summarise(analysis)}`)
+    console.log(`cron:experiment-report "${name}" → ${analysis.kind}: ${summarise(analysis)}${droppedNote}`)
   }
 
   // If EVERY experiment failed to read, this run measured nothing and must say

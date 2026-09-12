@@ -63,7 +63,14 @@
 import type { getSupabase } from '@/lib/supabase'
 import { containsFabricatedTerms, containsForeignContact, containsMoney, NO_AMOUNTS_ALLOWED } from './draftGuards'
 import { stripUnescapedControls } from './extractPlanFields'
-import { proposeLearning, screenLearningText, isLearningKind, type LearningKind } from './learnings'
+import {
+  proposeLearning,
+  screenLearningText,
+  isLearningKind,
+  MAX_LEARNING_CHARS,
+  MIN_LEARNING_CHARS,
+  type LearningKind,
+} from './learnings'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -115,6 +122,34 @@ export type MemoryListing =
  * the draft prompt may not name a figure at all. A row whose value mentions
  * "$850" is exactly the shape that cost `HH-2026-4295`.
  */
+/**
+ * Run `screenLearningText`'s prompt-structure detectors over a value of any
+ * length, and return only a STRUCTURAL verdict.
+ *
+ * `screenLearningText` caps at `MAX_LEARNING_CHARS` because it screens rules,
+ * which are short by design. A memory `value` is arbitrary jsonb — the real rows
+ * run to 3,210 characters — so it is fed through in windows of that size,
+ * overlapping by `STRUCTURE_WINDOW_OVERLAP` so a heading sitting across a
+ * boundary is still matched whole.
+ *
+ * Length and "too short" verdicts are dropped: they are facts about a rule, and
+ * this is not one.
+ */
+const STRUCTURE_WINDOW_OVERLAP = 120
+const STRUCTURAL_VERDICT = /header|tag|code fence|ignore earlier|redefine|replace the instructions/
+
+export function screenStructureAcrossValue(text: string): string | null {
+  const size = MAX_LEARNING_CHARS
+  const step = Math.max(1, size - STRUCTURE_WINDOW_OVERLAP)
+  for (let start = 0; start < Math.max(text.length, 1); start += step) {
+    const window = text.slice(start, start + size)
+    if (window.length < MIN_LEARNING_CHARS) break
+    const verdict = screenLearningText(window)
+    if (verdict && STRUCTURAL_VERDICT.test(verdict)) return verdict
+  }
+  return null
+}
+
 export function screenMemory(value: unknown, description?: string | null): string[] {
   const warnings: string[] = []
   const text = stripUnescapedControls(
@@ -155,12 +190,30 @@ export function screenMemory(value: unknown, description?: string | null): strin
   const foreign = containsForeignContact(withDescription)
   if (foreign) warnings.push(`contains a ${foreign} that is not ours`)
 
-  // The prompt-structure screen, applied to the value rather than to a rule. A
-  // row carrying an ALL-CAPS heading is one somebody might paste verbatim.
-  const structural = screenLearningText(text.slice(0, 400))
-  if (structural && /header|tag|code fence|ignore earlier|redefine|replace the instructions/.test(structural)) {
-    warnings.push(structural.replace(/^it /, ''))
-  }
+  /**
+   * The prompt-structure screen, applied to the value rather than to a rule. A
+   * row carrying an ALL-CAPS heading is one somebody might paste verbatim.
+   *
+   * Over the WHOLE value, in overlapping WINDOWS — and the windows are the
+   * point.
+   *
+   * `screenLearningText` is built for a 400-character rule: it refuses anything
+   * longer with `"it is longer than 400 characters"` BEFORE it ever reaches
+   * `PROMPT_STRUCTURE`, and that message is not one of the structural verdicts
+   * this function keeps. So the original `.slice(0, 400)` found a forged header
+   * only in the first 400 characters, and simply passing the whole value is
+   * WORSE — every value over 400 characters would then get no structural screen
+   * at all. (Found by writing the test for the fix; the fix was wrong and the
+   * test said so. Rule 8 applies to one's own patches.)
+   *
+   * The windows overlap by a header's width so a heading straddling a boundary
+   * is still seen whole. The money and foreign-contact detectors above already
+   * read the entire value — "screening a truncated value would be a screen that
+   * gets weaker the longer the payload is" is this module's own stated reason for
+   * reading `value` in full, and this makes the third detector obey it too.
+   */
+  const structural = screenStructureAcrossValue(text)
+  if (structural) warnings.push(structural.replace(/^it /, ''))
 
   return warnings
 }

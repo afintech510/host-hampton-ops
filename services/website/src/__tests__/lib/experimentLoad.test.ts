@@ -255,24 +255,66 @@ describe('loadActiveExperiment — a draft experiment is invisible', () => {
     }
   })
 
-  it('issues the status filter as a QUERY, not as a code-side filter', async () => {
+  it('issues the status AND target filters as QUERIES, not as code-side filters', async () => {
     // Asserted on the query for the reason `agentLearningsStructure.test.ts`
     // gives: on a one-row fixture the output looks identical either way, and the
     // safety property IS the filter.
-    const calls: [string, any][] = []
+    //
+    // The target filter is asserted here too, and that is the review finding
+    // this test now pins: it used to be a `.limit(8)` followed by a code-side
+    // `target_key` filter, so the ninth active experiment on a surface was
+    // invisible and the one it hid could be the one naming this very step —
+    // truncate-then-filter, reported to the processor as `absent`.
+    const queries: { eq: [string, any][]; is: [string, any][] }[] = []
     const supabase: any = {
       from: () => {
+        const rec = { eq: [] as [string, any][], is: [] as [string, any][] }
+        queries.push(rec)
         const q: any = {
           select: () => q,
-          eq: (k: string, v: any) => { calls.push([k, v]); return q },
+          eq: (k: string, v: any) => { rec.eq.push([k, v]); return q },
+          is: (k: string, v: any) => { rec.is.push([k, v]); return q },
           order: () => q,
           limit: () => Promise.resolve({ data: [], error: null }),
         }
         return q
       },
     }
-    await loadActiveExperiment(supabase, 'sequence_step', 'x')
-    expect(calls).toContainEqual(['status', 'active'])
+    await loadActiveExperiment(supabase, 'sequence_step', 'seq:1')
+
+    // Every read filters on the active status and on the surface.
+    expect(queries.length).toBe(2)
+    for (const rec of queries) {
+      expect(rec.eq).toContainEqual(['status', 'active'])
+      expect(rec.eq).toContainEqual(['surface', 'sequence_step'])
+    }
+    // One read names the exact target; the other asks for the catch-all by
+    // `.is(null)` — which is the only thing that matches a NULL column.
+    expect(queries.some(r => r.eq.some(([k, v]) => k === 'target_key' && v === 'seq:1'))).toBe(true)
+    expect(queries.some(r => r.is.some(([k, v]) => k === 'target_key' && v === null))).toBe(true)
+    // And no read asks for every target and sorts it out afterwards.
+    expect(queries.every(r => r.eq.some(([k]) => k === 'target_key') || r.is.some(([k]) => k === 'target_key'))).toBe(true)
+  })
+
+  it('with no targetKey at all, only the catch-all read is issued', async () => {
+    const queries: { eq: [string, any][]; is: [string, any][] }[] = []
+    const supabase: any = {
+      from: () => {
+        const rec = { eq: [] as [string, any][], is: [] as [string, any][] }
+        queries.push(rec)
+        const q: any = {
+          select: () => q,
+          eq: (k: string, v: any) => { rec.eq.push([k, v]); return q },
+          is: (k: string, v: any) => { rec.is.push([k, v]); return q },
+          order: () => q,
+          limit: () => Promise.resolve({ data: [], error: null }),
+        }
+        return q
+      },
+    }
+    await loadActiveExperiment(supabase, 'sequence_step', null)
+    expect(queries.length).toBe(1)
+    expect(queries[0].is).toContainEqual(['target_key', null])
   })
 
   it('does not match an experiment bound to a different target', async () => {

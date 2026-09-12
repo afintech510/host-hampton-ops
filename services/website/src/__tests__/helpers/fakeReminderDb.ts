@@ -232,6 +232,16 @@ export function makeFakeDb(
         return q
       },
       in(k: string, vals: any[]) { preds.push(r => vals.includes(r[k])); return q },
+      /**
+       * `.is(col, null)` — NULL is not a value `.eq()` can match, in PostgREST
+       * or in Postgres. `undefined` counts as NULL here because a row inserted
+       * without a nullable column simply has no property for it.
+       */
+      is(k: string, v: any) {
+        if (v === null) preds.push(r => r[k] === null || r[k] === undefined)
+        else preds.push(r => r[k] === v)
+        return q
+      },
       lte(k: string, v: any) { preds.push(r => String(r[k]) <= String(v)); return q },
       gte(k: string, v: any) { preds.push(r => String(r[k]) >= String(v)); return q },
       not(k: string, op: string, v: any) {

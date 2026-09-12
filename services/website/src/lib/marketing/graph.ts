@@ -266,8 +266,29 @@ export async function advance(input: AdvanceInput): Promise<{ from: string; to: 
     .eq('id', input.id)
     .single()
 
+  /**
+   * Three outcomes, not two (hard-won rule 12).
+   *
+   * This used to say "not found" for every failure, with the cause in
+   * parentheses. Observed in production 2026-09-12 while activating an
+   * experiment: a Supabase blip produced
+   *
+   *   advance: content_experiment <id> not found (Gateway Timeout)
+   *
+   * — a confident false statement about a row that was sitting right there,
+   * shown to an admin who would have gone looking for it. `.single()` reports a
+   * genuine miss as PGRST116, so the two ARE distinguishable; collapsing them
+   * turned a blip into a fact. Shared by all six entity types, including the
+   * `inquiry_draft` → `approved`/`sent` edges.
+   */
+  if (readErr && (readErr as { code?: string }).code !== 'PGRST116') {
+    throw new Error(
+      `advance: ${input.entity} ${input.id} could not be read (${readErr.message}) — the row may well exist; ` +
+        `this is a failed read, and nothing was changed`
+    )
+  }
   if (readErr || !current) {
-    throw new Error(`advance: ${input.entity} ${input.id} not found${readErr ? ` (${readErr.message})` : ''}`)
+    throw new Error(`advance: ${input.entity} ${input.id} not found`)
   }
 
   const from = current.status as string

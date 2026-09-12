@@ -149,6 +149,57 @@ interface AssignmentRow {
 }
 
 /**
+ * How many ids go into one `.in(...)` filter.
+ *
+ * PostgREST takes `.in()` as a query PARAMETER, so the whole id list travels in
+ * the URL. Measured against production on 2026-09-12 by driving the real
+ * endpoint with a growing list of real assignment uuids:
+ *
+ *   380 ids → URL 14,174 chars → 200, 380 rows
+ *   400 ids → URL 14,914 chars → the request is refused at the connection and
+ *             `fetch` throws, which supabase-js hands back as
+ *             `{ error: 'TypeError: fetch failed' }`
+ *
+ * So an unchunked read died at about 390 assignments. The analysis reported
+ * `unavailable` rather than a wrong number — rule 12 held — but it reported it
+ * FOREVER: an experiment that reached that many assigned contacts became
+ * permanently unanalysable, and `min_per_arm` defaults to 30 over two arms
+ * against a 1,219-row contacts table, so the ceiling sat inside the range the
+ * feature is for. Chunked at 100 the URL is under 4 kB with an order of
+ * magnitude of headroom.
+ *
+ * There is no PostgREST row cap in the way: the same probe confirmed an
+ * unlimited `select` returned all 500 rows.
+ */
+export const IN_CHUNK = 100
+
+function chunk<T>(items: T[], size = IN_CHUNK): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
+/**
+ * Run one `.in()` read in bounded batches and concatenate.
+ *
+ * A failure in ANY batch is the whole read failing (rule 12): half the events
+ * is not a smaller truth, it is a smaller numerator against a full
+ * denominator, which is the one direction that invents a result.
+ */
+async function readIn(
+  ids: string[],
+  run: (batch: string[]) => PromiseLike<{ data: unknown; error: { message: string } | null }>
+): Promise<{ rows: Record<string, unknown>[] } | { error: string }> {
+  const rows: Record<string, unknown>[] = []
+  for (const batch of chunk(ids)) {
+    const { data, error } = await run(batch)
+    if (error) return { error: error.message }
+    rows.push(...((data ?? []) as Record<string, unknown>[]))
+  }
+  return { rows }
+}
+
+/**
  * Attribute conversions inside the stated window and RECORD them.
  *
  * A booking whose `contact_id` matches an assigned contact and whose
@@ -167,12 +218,12 @@ export async function attributeConversions(
   if (assignments.length === 0) return { recorded: 0, duplicates: 0 }
 
   const contactIds = Array.from(new Set(assignments.map(a => a.contact_id)))
-  const { data, error } = await supabase
-    .from('bookings')
-    .select('id, contact_id, created_at, status')
-    .in('contact_id', contactIds)
-
-  if (error) return { error: `bookings unreadable: ${error.message}` }
+  // Chunked: see IN_CHUNK. A 400-contact experiment made this read throw.
+  const read = await readIn(contactIds, batch =>
+    supabase.from('bookings').select('id, contact_id, created_at, status').in('contact_id', batch)
+  )
+  if ('error' in read) return { error: `bookings unreadable: ${read.error}` }
+  const data = read.rows
 
   const windowMs = CONVERSION_WINDOW_DAYS * 24 * 60 * 60 * 1000
   let recorded = 0
@@ -267,12 +318,13 @@ export async function analyseExperiment(
   const assignmentIds = assignments.map(a => a.id)
   let events: { assignment_id: string; event_type: string }[] = []
   if (assignmentIds.length > 0) {
-    const { data: rawEvents, error: eErr } = await supabase
-      .from('variant_events')
-      .select('assignment_id, event_type')
-      .in('assignment_id', assignmentIds)
-    if (eErr) return { kind: 'unavailable', error: `events unreadable: ${eErr.message}` }
-    events = ((rawEvents ?? []) as Record<string, unknown>[]).map(r => ({
+    // Chunked: see IN_CHUNK. Unchunked, this is the read that threw at ~390
+    // assignments and left the experiment permanently `unavailable`.
+    const read = await readIn(assignmentIds, batch =>
+      supabase.from('variant_events').select('assignment_id, event_type').in('assignment_id', batch)
+    )
+    if ('error' in read) return { kind: 'unavailable', error: `events unreadable: ${read.error}` }
+    events = read.rows.map(r => ({
       assignment_id: String(r.assignment_id),
       event_type: String(r.event_type),
     }))
@@ -285,6 +337,8 @@ export async function analyseExperiment(
   const sentBy = new Map<string, number>()
   const metricBy = new Map<string, number>()
   let unattributed = 0
+  /** Which arms swallowed events, so the row written below can name them. */
+  const unattributedArms = new Map<string, number>()
 
   for (const ev of events) {
     const assignment = byAssignment.get(ev.assignment_id)
@@ -302,6 +356,7 @@ export async function analyseExperiment(
       // variants — the read screen dropped it, or it was deleted. Counting this
       // event against any arm would attribute an outcome to copy we cannot see.
       unattributed++
+      unattributedArms.set(variantId, (unattributedArms.get(variantId) ?? 0) + 1)
       continue
     }
     if (ev.event_type === 'sent') sentBy.set(variantId, (sentBy.get(variantId) ?? 0) + 1)
@@ -320,6 +375,52 @@ export async function analyseExperiment(
       rate: sent > 0 ? metricCount / sent : null,
     }
   })
+
+  /**
+   * Rule 14's final branch, which this function had been counting and not
+   * writing.
+   *
+   * Measured in production on 2026-09-12: a hostile arm C inserted straight
+   * into Postgres was correctly dropped by the read screen, and its 19 events
+   * — including NINE clicks, 39% of the experiment's click volume — were held
+   * out of both arms and counted here. `unattributed_signals` stayed EMPTY, and
+   * the admin panel's own message pointed the reader at it:
+   *
+   *   "19 event(s) could not be attributed to any arm — see the unattributed
+   *    signals" … a list with nothing in it.
+   *
+   * That is rule 14 exactly (an unattributable record is a bookkeeping problem;
+   * an INVISIBLE one is a loss) and rule 10's expensive half (it must not say it
+   * did something it did not), in the module whose header cites rule 14 as its
+   * reason for existing.
+   *
+   * ONE summary row per analysis run, not one per event: the count and the arms
+   * are what a human needs, and a row per event would put nineteen identical
+   * lines in front of them. Written only when `attribute` is on — i.e. by the
+   * scheduled report, never by the admin GET, because opening a page must not
+   * write to the table the page is showing.
+   */
+  if (unattributed > 0 && opts.attribute !== false) {
+    const named = Array.from(unattributedArms.entries())
+      .map(([variantId, n]) => {
+        const dropped = loaded.rejected.find(r => r.id === variantId)
+        return dropped ? `arm ${dropped.label} (${n} event(s)) — ${dropped.reason}` : `variant ${variantId} (${n} event(s)) — not among the usable variants`
+      })
+      .join('; ')
+    await recordUnattributed(
+      supabase,
+      'variant_events',
+      `${unattributed} outcome event(s) in "${experiment.name}" belong to no usable arm and are in no arm's numerator or denominator` +
+        (named ? `: ${named}` : ''),
+      {
+        experiment_id: experiment.id,
+        experiment_name: experiment.name,
+        events: unattributed,
+        arms: Object.fromEntries(unattributedArms),
+        rejected: loaded.rejected,
+      }
+    )
+  }
 
   const controlArm = arms.find(a => a.variantId === control.id) as ArmCounts
   const windowNote =
@@ -386,6 +487,22 @@ export async function analyseExperiment(
     }
   }
 
+  /**
+   * A significant result in the CONTROL's favour is still `no_difference` as far
+   * as the `kind` goes — a winner here only ever means a challenger won, and the
+   * DB `outcome` CHECK has no fifth label — but the SENTENCE has to say it.
+   *
+   * Measured in production on 2026-09-12: a conversion probe came back
+   * `no_difference` with "control A: 2/2, challenger B: 0/3, p = 0.0253 against
+   * α = 0.0500" and the words "Enough data, no winner — which is a result."
+   * p was BELOW alpha and the control had won. A reader takes that sentence as
+   * "the copy makes no difference" when the measurement says "the new copy is
+   * significantly worse" — which is the same class of mistake as reporting a
+   * rigged arm as a losing one (rule 15), with the arithmetic pointing the
+   * other way.
+   */
+  const controlWon = p < adjustedAlpha && (controlArm.rate ?? 0) > (best.rate ?? 0)
+
   return {
     kind: 'no_difference',
     metric: experiment.metric,
@@ -395,11 +512,17 @@ export async function analyseExperiment(
     alpha: adjustedAlpha,
     unattributed,
     note:
-      `No significant difference in "${experiment.name}" on ${experiment.metric} ` +
-      `(best challenger ${best.label}: ${best.metricCount}/${best.sent}, control ${controlArm.label}: ` +
-      `${controlArm.metricCount}/${controlArm.sent}, p = ${p.toFixed(4)} against α = ${adjustedAlpha.toFixed(4)}, ` +
-      `Bonferroni over ${challengers.length} challenger(s)). ` +
-      `Enough data, no winner — which is a result.${windowNote}`,
+      (controlWon
+        ? `The CONTROL beat every challenger in "${experiment.name}" on ${experiment.metric}, significantly ` +
+          `(control ${controlArm.label}: ${controlArm.metricCount}/${controlArm.sent}, best challenger ${best.label}: ` +
+          `${best.metricCount}/${best.sent}, p = ${p.toFixed(4)} against α = ${adjustedAlpha.toFixed(4)}, ` +
+          `Bonferroni over ${challengers.length} challenger(s)). No challenger won, so there is no winner to propose — ` +
+          `but this is not "no difference": the live copy is measurably ahead and the challengers should not be adopted.`
+        : `No significant difference in "${experiment.name}" on ${experiment.metric} ` +
+          `(best challenger ${best.label}: ${best.metricCount}/${best.sent}, control ${controlArm.label}: ` +
+          `${controlArm.metricCount}/${controlArm.sent}, p = ${p.toFixed(4)} against α = ${adjustedAlpha.toFixed(4)}, ` +
+          `Bonferroni over ${challengers.length} challenger(s)). ` +
+          `Enough data, no winner — which is a result.`) + windowNote,
   }
 }
 
@@ -417,6 +540,24 @@ export function outcomeLabel(r: AnalysisResult): 'winner' | 'no_difference' | 'n
     default:
       return null
   }
+}
+
+/**
+ * The sentence a report must add when the read-time screen ate an arm.
+ *
+ * Declared once and used by the scheduled report and by anything else that
+ * prints a verdict, because a constant — or a SENTENCE — written in two places
+ * is one nothing is checking (rule 11). It exists at all because the weekly
+ * report could not say this: an arm dropped in production took nine of the
+ * experiment's twenty-three clicks out of the numbers and the report said
+ * `winner` without a word about it.
+ */
+export function droppedArmsNote(rejected: { label: string; reason: string }[]): string {
+  if (!rejected.length) return ''
+  return (
+    ` NOTE: the read-time screen dropped ${rejected.map(r => `arm ${r.label} (${r.reason})`).join('; ')} — ` +
+    `any sends or clicks on that arm are in NO arm's numbers.`
+  )
 }
 
 /** A one-line summary safe to put in a ledger row or a cron console. */

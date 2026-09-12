@@ -220,27 +220,55 @@ export async function loadActiveExperiment(
   surface: ExperimentSurface,
   targetKey?: string | null
 ): Promise<ExperimentLookup> {
-  const query = supabase
-    .from('content_experiments')
-    .select(EXPERIMENT_COLS)
-    .eq('surface', surface)
-    .eq('status', 'active')
-    .order('created_at', { ascending: true })
-    .limit(8)
+  /**
+   * The target filter is in the QUERY, in two reads, not applied after a LIMIT.
+   *
+   * The first version issued one `.limit(8)` over every active experiment on
+   * the surface and filtered `target_key` in code afterwards. That is
+   * truncate-then-filter: with nine active `sequence_step` experiments the
+   * ninth is invisible, and the one it hides could be the one naming THIS step.
+   * The processor treats the result as `absent` and sends the live copy in
+   * silence — an experiment that never runs and never says why, which is the
+   * shape rule 16 keeps taking (a framework default deciding the answer).
+   *
+   * Two explicit reads instead of one PostgREST `.or(...)`: `target_key` is
+   * `<uuid>:<step>` and an `or` filter's value is delimited by punctuation, so a
+   * colon in it is a syntax question nobody should have to think about on the
+   * live send path.
+   */
+  const base = () => supabase.from('content_experiments').select(EXPERIMENT_COLS).eq('surface', surface).eq('status', 'active')
 
-  const { data, error } = await query
-  if (error) return { kind: 'unavailable', error: error.message }
+  const specific = targetKey == null ? null : await base().eq('target_key', targetKey).order('created_at', { ascending: true }).limit(4)
+  if (specific?.error) return { kind: 'unavailable', error: specific.error.message }
 
-  const rows = ((data ?? []) as Record<string, unknown>[])
-    .map(asExperimentRow)
-    .filter((r): r is ExperimentRow => r !== null)
-    // `target_key = null` means "any target". A row naming a target only
-    // matches that target.
-    .filter(r => r.target_key == null || (targetKey != null && r.target_key === targetKey))
+  const catchAll = await base().is('target_key', null).order('created_at', { ascending: true }).limit(4)
+  if (catchAll.error) return { kind: 'unavailable', error: catchAll.error.message }
 
   // Most specific first: an experiment naming this exact target beats a
   // catch-all, so a general test does not shadow a deliberate one.
-  rows.sort((a, b) => (a.target_key == null ? 1 : 0) - (b.target_key == null ? 1 : 0))
+  const raw = [...((specific?.data ?? []) as Record<string, unknown>[]), ...((catchAll.data ?? []) as Record<string, unknown>[])]
+
+  const rows: ExperimentRow[] = []
+  for (const r of raw) {
+    const parsed = asExperimentRow(r)
+    if (parsed) {
+      rows.push(parsed)
+      continue
+    }
+    /**
+     * An ACTIVE row this build cannot make sense of used to be dropped by a
+     * `.filter(r => r !== null)` and become `absent` — a live experiment turned
+     * into "there is no experiment" without a word (rule 12 again). Unreachable
+     * today, because migration 045's CHECKs are exactly `asExperimentRow`'s
+     * bounds; reachable the moment a migration widens one of them while an older
+     * image is still serving. Said out loud rather than trusted to stay
+     * unreachable.
+     */
+    console.warn(
+      `experiments: ACTIVE experiment ${String(r.id)} on "${surface}" has values this build does not understand ` +
+        `(surface=${String(r.surface)} metric=${String(r.metric)} min_per_arm=${String(r.min_per_arm)} alpha=${String(r.alpha)}) — skipped`
+    )
+  }
 
   const experiment = rows[0]
   if (!experiment) return { kind: 'absent' }

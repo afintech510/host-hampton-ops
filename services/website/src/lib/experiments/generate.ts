@@ -43,7 +43,7 @@ import { loadVoiceProfile, voicePromptAddendum } from '@/lib/agent/voice'
 import { stripUnescapedControls, flattenToOneLine } from '@/lib/agent/extractPlanFields'
 import { screenVariant, bodyHtmlFromText } from './screen'
 import { loadVariants } from './load'
-import { MAX_VARIANTS, VARIANT_LABELS, MAX_SUBJECT_CHARS, type ExperimentRow } from './types'
+import { MAX_VARIANTS, VARIANT_LABELS, MAX_SUBJECT_CHARS, EXPERIMENT_ENTITY, type ExperimentRow } from './types'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -278,7 +278,7 @@ export async function generateVariants(args: {
     await assertLlmBudget(supabase, {
       estimatedUsd: ESTIMATED_USD,
       actor,
-      entityType: 'content_experiment',
+      entityType: EXPERIMENT_ENTITY,
       entityId: experiment.id,
     })
   } catch (err) {
@@ -294,6 +294,43 @@ export async function generateVariants(args: {
   let parsed: unknown
   let inputTokens = 0
   let outputTokens = 0
+  /**
+   * Recording the spend, whatever happens next.
+   *
+   * The first version of this function called `recordLlmSpend` only after the
+   * JSON parsed. But `inputTokens`/`outputTokens` are read off `usage` BEFORE
+   * the parse, and the parse is the step most likely to fail: `max_tokens` is
+   * 3,000 and three variants of up to 12,000 characters truncate, and a
+   * truncated reply has no closing brace, so `text.match(/\{[\s\S]*\}/)` misses
+   * and the whole call throws. Anthropic had already billed those tokens. The
+   * route then answered `costUsd: 0` and the budget counter was never told —
+   * so `assertLlmBudget` would let the next caller spend as if nothing had
+   * happened, and the ledger said a call that cost money cost nothing.
+   *
+   * That is the same family as link 10's finding that the SMS half of this
+   * module was charged 1 segment for a 3-segment message: the counter is only
+   * as good as what it is told, and rule 10's expensive half is reporting
+   * something you did not do — here, spending nothing.
+   */
+  let spendRecorded = false
+  const recordSpend = async () => {
+    if (spendRecorded || inputTokens + outputTokens === 0) return
+    spendRecorded = true
+    await recordLlmSpend(supabase, {
+      usd: costUsd(MODEL, inputTokens, outputTokens),
+      tokens: inputTokens + outputTokens,
+      actor,
+      entityType: EXPERIMENT_ENTITY,
+      entityId: experiment.id,
+      meta: {
+        model: MODEL,
+        experiment: experiment.name,
+        wanted: openLabels.length,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+      },
+    })
+  }
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -333,29 +370,25 @@ export async function generateVariants(args: {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('experiments:generateVariants model call failed:', msg)
-    return { ok: false, status: 502, error: 'Variant generation failed', costUsd: 0, tokens: 0 }
+    // The tokens were billed even though nothing usable came back. Record the
+    // spend before answering, and REPORT it rather than claiming zero.
+    await recordSpend()
+    return {
+      ok: false,
+      status: 502,
+      error: 'Variant generation failed',
+      costUsd: costUsd(MODEL, inputTokens, outputTokens),
+      tokens: inputTokens + outputTokens,
+    }
   }
 
   const usd = costUsd(MODEL, inputTokens, outputTokens)
-  await recordLlmSpend(supabase, {
-    usd,
-    tokens: inputTokens + outputTokens,
-    actor,
-    entityType: 'content_experiment',
-    entityId: experiment.id,
-    meta: {
-      model: MODEL,
-      experiment: experiment.name,
-      wanted: openLabels.length,
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-    },
-  })
+  await recordSpend()
 
   const rawVariants = (parsed as { variants?: unknown })?.variants
   if (!Array.isArray(rawVariants)) {
     await writeLedger(supabase, {
-      entityType: 'content_experiment',
+      entityType: EXPERIMENT_ENTITY,
       entityId: experiment.id,
       action: 'note',
       actor,
@@ -461,7 +494,7 @@ export async function generateVariants(args: {
 
   if (refused.length > 0) {
     await writeLedger(supabase, {
-      entityType: 'content_experiment',
+      entityType: EXPERIMENT_ENTITY,
       entityId: experiment.id,
       action: 'note',
       actor,

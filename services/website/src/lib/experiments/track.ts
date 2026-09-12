@@ -84,8 +84,40 @@ export function isExcludedFromTracking(url: string): boolean {
   } catch {
     return true // cannot tell → do not wrap it
   }
-  return EXCLUDED_PATHS.some(p => path === p || path.startsWith(p.endsWith('/') ? p : `${p}/`))
+  /**
+   * Lower-cased before comparing.
+   *
+   * Measured 2026-09-12: `/UNSUBSCRIBE?t=…` and `/API/unsubscribe` passed
+   * `safeSiteLink` and were NOT excluded, so a body carrying either would have
+   * had its opt-out link wrapped. Next's route matching is case-sensitive, so
+   * both already answer 404 in production and no live opt-out was defeated —
+   * `buildUnsubscribeUrl` emits lower case and is passed to
+   * `rewriteTrackedLinks` explicitly as well. But "the exclusion list happens to
+   * be safe because the bypass leads to a 404" is not a rule, it is a
+   * coincidence, and this list is the rule.
+   */
+  const lower = path.toLowerCase()
+  return EXCLUDED_PATHS.some(p => lower === p || lower.startsWith(p.endsWith('/') ? p : `${p}/`))
 }
+
+/**
+ * Trailing characters that belong to the SENTENCE, not to the URL.
+ *
+ * The plain-text pass matches a bare URL with `[^\s<>"')\]]+`, which correctly
+ * stops at a closing bracket and does NOT stop at a full stop or a comma. So
+ * `Pick a date here: https://www.hosthampton.com/book.` minted a token for
+ * `/book.` — and `/book.` is a **404 in production** (measured). The recipient
+ * of the plain-text part got a tracked link to a dead page, and
+ * `See …/book, then call.` lost its comma into the URL as well.
+ *
+ * That matters here more than it would elsewhere, because the variant screen
+ * requires the model to write plain paragraphs and the prompt tells it to
+ * include the URL in full — "…here: <url>." is the most natural sentence it
+ * could produce. The module comment above claimed "there is no failure mode here
+ * in which a recipient gets a broken link"; this is what makes that true.
+ */
+const TRAILING_PUNCTUATION = /[.,;:!?'"’”)\]}>]+$/
+
 
 /**
  * Mint a tracking token. Returns null when there is no signing secret or the
@@ -214,7 +246,14 @@ export function rewriteTrackedLinks(args: {
   )
 
   // The text part: bare URLs, since that is the only form they take there.
-  const text = String(args.text ?? '').replace(/(?:https?:)\/\/[^\s<>"')\]]+/gi, url => wrap(url) ?? url)
+  // Sentence punctuation is split off the end and PUT BACK — it is not part of
+  // the URL, and signing it into the token produced a tracked link to a 404.
+  const text = String(args.text ?? '').replace(/(?:https?:)\/\/[^\s<>"')\]]+/gi, match => {
+    const tail = TRAILING_PUNCTUATION.exec(match)?.[0] ?? ''
+    const url = tail ? match.slice(0, match.length - tail.length) : match
+    if (!url) return match
+    return `${wrap(url) ?? url}${tail}`
+  })
 
   return { html, text, rewritten, skipped }
 }
