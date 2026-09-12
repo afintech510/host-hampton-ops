@@ -51,6 +51,8 @@ interface Props {
   onChanged: () => void
   /** Draft ids the plan panel has marked stale this session. */
   staleDraftIds: string[]
+  /** The plan's pipeline status. 'cancelled' makes an open draft a hazard. */
+  planStatus: string | null
 }
 
 /* ── Small presentational helpers ───────────────────────────────────────── */
@@ -174,6 +176,7 @@ export default function LeadThread({
   headers,
   onChanged,
   staleDraftIds,
+  planStatus,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(activeDraftId)
   const draft = useMemo(
@@ -193,6 +196,8 @@ export default function LeadThread({
 
   const stale = draft ? staleDraftIds.includes(draft.id) : false
   const closed = !draft || draft.status === 'sent' || draft.status === 'cancelled'
+  /** An open draft against a cancelled plan would quote a party that was called off. */
+  const planCancelled = planStatus === 'cancelled' && !closed
 
   function startEditing() {
     if (!draft) return
@@ -246,6 +251,11 @@ export default function LeadThread({
     // click through; "Send to Jess (jess@…)?" is one they read.
     const ok = window.confirm(
       `Send this to ${recipient.name ? `${recipient.name} ` : ''}${recipient.email || recipient.phone}?\n\n` +
+        // The cancelled-plan warning is repeated INSIDE the confirm, because
+        // the banner above can be scrolled past and this dialog cannot.
+        (planCancelled
+          ? 'WARNING: the plan behind this draft is CANCELLED. This would quote a party that was called off.\n\n'
+          : '') +
         `This goes to the real customer and cannot be pulled back.`,
     )
     if (!ok) return
@@ -447,6 +457,13 @@ export default function LeadThread({
           {draft.error && (
             <p className="text-sm bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2">
               Held back: {draft.error}
+            </p>
+          )}
+          {planCancelled && (
+            <p className="text-sm bg-red-50 border border-red-300 text-red-800 rounded-lg px-3 py-2 font-semibold">
+              ⚠ The plan behind this draft is CANCELLED. Sending it would quote a party that was called off —
+              usually this means the plan was a duplicate and the draft was left behind. Dismiss it unless you
+              know otherwise.
             </p>
           )}
           {stale && (

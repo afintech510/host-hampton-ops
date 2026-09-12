@@ -183,6 +183,7 @@ export default function LeadWorkspacePage({ params }: { params: { ref: string } 
                 headers={headers}
                 onChanged={() => void load()}
                 staleDraftIds={staleDraftIds}
+                planStatus={data.booking?.status ?? null}
               />
             </div>
             <PlanPanel

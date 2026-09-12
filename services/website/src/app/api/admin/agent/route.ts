@@ -68,17 +68,21 @@ export async function GET(req: NextRequest) {
   // `Array.from`, not a spread: this tsconfig targets below es2015, where
   // spreading a Set needs `downlevelIteration`.
   const bookingIds = Array.from(new Set(draftRows.map(d => d.booking_id).filter(Boolean))) as string[]
-  let plans: Record<string, { booking_ref: string | null; contact_name: string | null }> = {}
+  let plans: Record<string, { booking_ref: string | null; contact_name: string | null; status: string | null }> = {}
   if (bookingIds.length) {
     const { data: planRows } = await supabase
       .from('bookings')
-      .select('id, booking_ref, contact_name')
+      .select('id, booking_ref, contact_name, status')
       .in('id', bookingIds)
     plans = Object.fromEntries(
-      ((planRows || []) as { id: string; booking_ref: string | null; contact_name: string | null }[]).map(p => [
-        p.id,
-        { booking_ref: p.booking_ref, contact_name: p.contact_name },
-      ]),
+      (
+        (planRows || []) as {
+          id: string
+          booking_ref: string | null
+          contact_name: string | null
+          status: string | null
+        }[]
+      ).map(p => [p.id, { booking_ref: p.booking_ref, contact_name: p.contact_name, status: p.status }]),
     )
   }
 
@@ -93,6 +97,11 @@ export async function GET(req: NextRequest) {
       // read — the Inbox shows nothing rather than an empty name.
       booking_ref: d.booking_id ? (plans[d.booking_id as string]?.booking_ref ?? null) : null,
       contact_name: d.booking_id ? (plans[d.booking_id as string]?.contact_name ?? null) : null,
+      // An OPEN draft whose plan has been cancelled is a live hazard, not a
+      // curiosity: approving it sends a customer a quote for a party that was
+      // called off. Production had two of these the day this was written —
+      // duplicate plans got cancelled, and the drafts hanging off them did not.
+      booking_status: d.booking_id ? (plans[d.booking_id as string]?.status ?? null) : null,
     })),
     ledger: ledger.data || [],
     // Surfaced so a missing migration reads as a clear message, not an empty tab.

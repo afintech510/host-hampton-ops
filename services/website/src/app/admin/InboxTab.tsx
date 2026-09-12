@@ -70,6 +70,8 @@ interface DraftRow {
   /** From the plan, when there is one — so the queue names people, not codes. */
   booking_ref: string | null
   contact_name: string | null
+  /** The plan's pipeline status. 'cancelled' makes this draft a hazard. */
+  booking_status: string | null
 }
 
 interface LedgerRow {
@@ -299,6 +301,15 @@ export default function InboxTab({
               {d.error && (
                 <p className="text-xs bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2">
                   Held back: {d.error}
+                </p>
+              )}
+              {d.booking_status === 'cancelled' && (
+                // Loud, because the mistake it prevents is unrecoverable: this
+                // draft would quote a customer for a party that was called off.
+                <p className="text-xs bg-red-50 border border-red-300 text-red-800 rounded-lg px-3 py-2 font-semibold">
+                  ⚠ The plan behind this draft ({d.booking_ref}) is CANCELLED. Sending this would quote a party
+                  that was called off — usually it means the plan was a duplicate and this draft was left behind.
+                  Dismiss it unless you know otherwise.
                 </p>
               )}
               {d.missing_fields && d.missing_fields.length > 0 && (
