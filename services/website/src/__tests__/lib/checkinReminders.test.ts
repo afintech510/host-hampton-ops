@@ -2,6 +2,13 @@
  * Tests for the check-in reminder scheduler.
  * Covers: the two send times (incl. DST), past-date skipping, the reschedule
  * path clearing old rows first, and suppression on completion.
+ *
+ * The scheduling half was rebuilt 2026-09-12 on `helpers/fakeReminderDb`. The
+ * mock it used before accepted any insert, which is why nobody noticed that
+ * `reference_id` was a `uuid` column and this module writes a booking_ref into
+ * it: every insert here had been answered 22P02 since the feature shipped, and
+ * `checkin_tokens` held zero rows in production as a result. The store now
+ * carries the real column types, so a regression would fail rather than pass.
  */
 
 const mockGetSupabase = jest.fn()
@@ -13,49 +20,33 @@ import {
   cancelCheckinReminders,
   isCheckinReminderType,
 } from '@/lib/checkinReminders'
+import {
+  makeFakeDb,
+  scheduledRemindersSpec,
+  type TableSpec,
+} from '../helpers/fakeReminderDb'
 
-/**
- * Supabase mock: contacts.single resolves the contact, scheduled_reminders
- * records inserts and update() calls (with the filters applied to them).
- */
-function makeSupabase(opts: { contact?: any } = {}) {
-  const inserted: any[][] = []
-  const updates: { payload: any; filters: Record<string, any> }[] = []
+const CONTACT_ID = '11111111-1111-4111-8111-111111111111'
 
-  function chain(table: string): any {
-    const c: any = {}
-    const filters: Record<string, any> = {}
+const contactsSpec: TableSpec = {
+  columns: { id: 'uuid', email: 'text', created_at: 'timestamptz' },
+}
 
-    ;['select', 'order', 'limit'].forEach(m => (c[m] = jest.fn(() => c)))
-    c.eq = jest.fn((k: string, v: any) => { filters[k] = v; return c })
-    c.in = jest.fn((k: string, v: any) => { filters[k] = v; return c })
-
-    c.single = jest.fn(() =>
-      Promise.resolve({ data: table === 'contacts' ? (opts.contact ?? null) : null, error: null }),
-    )
-
-    c.insert = jest.fn((rows: any) => {
-      if (table === 'scheduled_reminders') inserted.push(Array.isArray(rows) ? rows : [rows])
-      return Promise.resolve({ error: null })
-    })
-
-    c.update = jest.fn((payload: any) => {
-      const u: any = { payload, filters }
-      ;['eq', 'in'].forEach(m => {
-        u[m] = jest.fn((k: string, v: any) => { filters[k] = v; return u })
-      })
-      // Terminal await on the update chain.
-      const p = Promise.resolve({ error: null })
-      u.then = p.then.bind(p)
-      u.catch = p.catch.bind(p)
-      if (table === 'scheduled_reminders') updates.push({ payload, filters })
-      return u
-    })
-
-    return c
-  }
-
-  return { supabase: { from: jest.fn((t: string) => chain(t)) } as any, inserted, updates }
+function setup(opts: { contactEmail?: string | null; legacy?: boolean } = {}) {
+  const fake = makeFakeDb(
+    {
+      scheduled_reminders: scheduledRemindersSpec({ legacyUuidReferenceId: opts.legacy }),
+      contacts: contactsSpec,
+    },
+    {
+      contacts:
+        opts.contactEmail === null
+          ? []
+          : [{ id: CONTACT_ID, email: opts.contactEmail ?? 'jane@example.com', created_at: '2026-01-01T00:00:00.000Z' }],
+    }
+  )
+  mockGetSupabase.mockReturnValue(fake.supabase)
+  return fake
 }
 
 beforeEach(() => jest.clearAllMocks())
@@ -98,17 +89,17 @@ describe('enqueueCheckinReminders', () => {
   }
 
   it('inserts both rows with the correct shape', async () => {
-    const { supabase, inserted } = makeSupabase({ contact: { id: 'c-1' } })
-    mockGetSupabase.mockReturnValue(supabase)
+    const fake = setup()
 
     await enqueueCheckinReminders(base)
 
-    expect(inserted).toHaveLength(1)
-    const rows = inserted[0]
+    const rows = [...fake.tables.scheduled_reminders].sort((a, b) =>
+      String(a.scheduled_for).localeCompare(String(b.scheduled_for))
+    )
     expect(rows).toHaveLength(2)
 
     expect(rows[0]).toMatchObject({
-      contact_id: 'c-1',
+      contact_id: CONTACT_ID,
       reminder_type: 'checkin_link_36hr',
       reference_type: 'booking',
       reference_id: 'HH-2026-0042',
@@ -120,52 +111,90 @@ describe('enqueueCheckinReminders', () => {
       channel: 'sms',
       scheduled_for: '2026-10-11T10:00:00.000Z',
     })
+    expect(fake.refusals).toHaveLength(0)
+  })
+
+  it('THE DEFECT, PINNED: the pre-044 uuid column refused both rows', async () => {
+    const fake = setup({ legacy: true })
+
+    await enqueueCheckinReminders(base)
+
+    expect(fake.tables.scheduled_reminders).toHaveLength(0)
+    // Both rows are attempted and both are refused — the per-row enqueue reports
+    // each one. The old bulk insert lost the whole batch to the first failure
+    // and then threw the error away, which is how this went unseen.
+    expect(fake.refusals).toHaveLength(2)
+    expect(fake.refusals.every(r => r.error.code === '22P02')).toBe(true)
   })
 
   it('never sets status — the DB default of pending must apply', async () => {
-    const { supabase, inserted } = makeSupabase({ contact: { id: 'c-1' } })
-    mockGetSupabase.mockReturnValue(supabase)
+    const fake = setup()
     await enqueueCheckinReminders(base)
-    expect(inserted[0][0]).not.toHaveProperty('status')
+    expect(fake.tables.scheduled_reminders.every(r => r.status === 'pending')).toBe(true)
   })
 
   it('cancels existing pending rows first, so a date change does not double-send', async () => {
-    const { supabase, updates } = makeSupabase({ contact: { id: 'c-1' } })
-    mockGetSupabase.mockReturnValue(supabase)
+    const fake = setup()
 
     await enqueueCheckinReminders(base)
+    // Reschedule to a different party date.
+    await enqueueCheckinReminders({ ...base, partyDate: '2026-10-18' })
 
-    expect(updates).toHaveLength(1)
-    expect(updates[0].payload).toEqual({ status: 'cancelled' })
-    expect(updates[0].filters.reference_id).toBe('HH-2026-0042')
+    const rows = fake.tables.scheduled_reminders
+    const pending = rows.filter(r => r.status === 'pending')
+    const cancelled = rows.filter(r => r.status === 'cancelled')
+
+    expect(cancelled).toHaveLength(2)
+    expect(pending).toHaveLength(2)
+    // The surviving pending rows are the NEW schedule, and the unique index did
+    // not stand in the way of the reschedule.
+    expect(pending.map(r => r.scheduled_for).sort()).toEqual([
+      '2026-10-17T06:00:00.000Z',
+      '2026-10-18T10:00:00.000Z',
+    ])
   })
 
   it('skips a send time already in the past', async () => {
-    const { supabase, inserted } = makeSupabase({ contact: { id: 'c-1' } })
-    mockGetSupabase.mockReturnValue(supabase)
+    const fake = setup()
 
     // Between the 36hr mark and the party itself.
     await enqueueCheckinReminders({ ...base, now: new Date('2026-10-10T12:00:00Z') })
 
-    const rows = inserted[0]
+    const rows = fake.tables.scheduled_reminders
     expect(rows).toHaveLength(1)
     expect(rows[0].reminder_type).toBe('checkin_link_dayof')
   })
 
   it('inserts nothing when the whole party is in the past', async () => {
-    const { supabase, inserted } = makeSupabase({ contact: { id: 'c-1' } })
-    mockGetSupabase.mockReturnValue(supabase)
-
+    const fake = setup()
     await enqueueCheckinReminders({ ...base, now: new Date('2026-11-01T00:00:00Z') })
-    expect(inserted).toHaveLength(0)
+    expect(fake.tables.scheduled_reminders).toHaveLength(0)
+  })
+
+  it('finds a contact whose stored address is MIXED CASE', async () => {
+    const fake = setup({ contactEmail: 'Jane@Example.com' })
+    await enqueueCheckinReminders(base)
+    expect(fake.tables.scheduled_reminders).toHaveLength(2)
   })
 
   it('does nothing when there is no contact for the email', async () => {
-    const { supabase, inserted } = makeSupabase({ contact: null })
-    mockGetSupabase.mockReturnValue(supabase)
-
+    const fake = setup({ contactEmail: null })
     await enqueueCheckinReminders(base)
-    expect(inserted).toHaveLength(0)
+    expect(fake.tables.scheduled_reminders).toHaveLength(0)
+  })
+
+  it('leaves an EXISTING schedule alone when the contacts read fails (rule 12)', async () => {
+    const fake = setup()
+    await enqueueCheckinReminders(base)
+    const before = fake.tables.scheduled_reminders.map(r => ({ ...r }))
+
+    fake.failReads('contacts')
+    await enqueueCheckinReminders({ ...base, partyDate: '2026-10-18' })
+
+    // Nothing cancelled, nothing added — a blip must not silently disarm the
+    // customer's pre-arrival texts.
+    expect(fake.tables.scheduled_reminders).toHaveLength(before.length)
+    expect(fake.tables.scheduled_reminders.every(r => r.status === 'pending')).toBe(true)
   })
 
   it('never throws — a scheduling failure must not break a booking', async () => {
@@ -176,19 +205,30 @@ describe('enqueueCheckinReminders', () => {
 
 describe('cancelCheckinReminders', () => {
   it('cancels only pending check-in rows for that booking', async () => {
-    const { supabase, updates } = makeSupabase()
-    mockGetSupabase.mockReturnValue(supabase)
+    const fake = setup()
+    await enqueueCheckinReminders({
+      bookingRef: 'HH-2026-0042',
+      contactEmail: 'jane@example.com',
+      partyDate: '2026-10-11',
+      partyTime: '2:00 PM',
+      now: new Date('2026-09-01T00:00:00Z'),
+    })
+    // A reminder for a DIFFERENT booking, and one already sent, must survive.
+    fake.tables.scheduled_reminders.push({
+      id: 'aaaaaaaa-0000-4000-8000-000000000009',
+      contact_id: CONTACT_ID, reminder_type: 'checkin_link_36hr', reference_type: 'booking',
+      reference_id: 'HH-2026-9999', scheduled_for: '2026-10-10T06:00:00.000Z',
+      channel: 'sms', status: 'pending',
+    })
+    fake.tables.scheduled_reminders[0].status = 'sent'
 
     await cancelCheckinReminders('HH-2026-0042')
 
-    expect(updates).toHaveLength(1)
-    expect(updates[0].payload).toEqual({ status: 'cancelled' })
-    expect(updates[0].filters).toMatchObject({
-      reference_type: 'booking',
-      reference_id: 'HH-2026-0042',
-      status: 'pending',
-      reminder_type: ['checkin_link_36hr', 'checkin_link_dayof'],
-    })
+    const byRef = (ref: string) => fake.tables.scheduled_reminders.filter(r => r.reference_id === ref)
+    expect(byRef('HH-2026-9999')[0].status).toBe('pending')
+    // The already-sent one is history and must not be rewritten.
+    expect(byRef('HH-2026-0042').filter(r => r.status === 'sent')).toHaveLength(1)
+    expect(byRef('HH-2026-0042').filter(r => r.status === 'cancelled')).toHaveLength(1)
   })
 
   it('never throws', async () => {

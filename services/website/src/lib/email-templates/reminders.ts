@@ -1,3 +1,14 @@
+import { escapeHtml } from '@/lib/escapeHtml'
+
+/**
+ * Every value the four templates below interpolate comes out of the database —
+ * `customerName`, `partyTime` and `packageName` are typed by the customer;
+ * `eventTitle` and `location` by an admin — and all of them landed in the HTML
+ * raw. These emails were never actually sent by anything until 2026-09-12 (the
+ * reminder queue had never held a row, see `docs/reminder-engine-review.md`), so
+ * they are escaped now, before they start going out for the first time.
+ */
+
 /* ── Shared brand tokens (mirrors emailTemplates.ts) ─────────── */
 const BRAND = {
   headerBg: 'linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%)',
@@ -71,8 +82,9 @@ export interface ReminderEvent3DayParams {
 }
 
 export function reminderEvent3DayHtml(params: ReminderEvent3DayParams): string {
-  const { customerName, eventTitle, eventDate, eventTime, location } = params
-  const firstName = customerName.split(' ')[0] || 'there'
+  const { customerName, eventDate } = params
+  const [eventTitle, eventTime, location] = [params.eventTitle, params.eventTime, params.location].map(v => escapeHtml(v ?? ""))
+  const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
 
   const headerContent = `
     <h1 style="color:${BRAND.navy};font-size:28px;margin:0 0 6px;font-weight:normal;">Your Event Is Coming Up!</h1>
@@ -113,8 +125,9 @@ export interface ReminderEventDayOfParams {
 }
 
 export function reminderEventDayOfHtml(params: ReminderEventDayOfParams): string {
-  const { customerName, eventTitle, eventTime, location } = params
-  const firstName = customerName.split(' ')[0] || 'there'
+  const { customerName } = params
+  const [eventTitle, eventTime, location] = [params.eventTitle, params.eventTime, params.location].map(v => escapeHtml(v ?? ""))
+  const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
   const mapsUrl = `https://maps.google.com/?q=295+Montauk+Highway+Suite+7+Speonk+NY+11972`
 
   const headerContent = `
@@ -152,8 +165,9 @@ export interface ReminderBooking7DayParams {
 }
 
 export function reminderBooking7DayHtml(params: ReminderBooking7DayParams): string {
-  const { customerName, bookingRef, partyDate, partyTime, packageName, balanceDueNote } = params
-  const firstName = customerName.split(' ')[0] || 'there'
+  const { customerName, partyDate, balanceDueNote } = params
+  const [bookingRef, partyTime, packageName] = [params.bookingRef, params.partyTime, params.packageName].map(v => escapeHtml(v ?? ""))
+  const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
 
   const packageRow = packageName
     ? { label: 'Package', value: packageName }
@@ -206,8 +220,9 @@ export interface ReminderBooking1DayParams {
 }
 
 export function reminderBooking1DayHtml(params: ReminderBooking1DayParams): string {
-  const { customerName, partyTime, packageName } = params
-  const firstName = customerName.split(' ')[0] || 'there'
+  const { customerName } = params
+  const [partyTime, packageName] = [params.partyTime, params.packageName].map(v => escapeHtml(v ?? ""))
+  const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
   const mapsUrl = `https://maps.google.com/?q=295+Montauk+Highway+Suite+7+Speonk+NY+11972`
 
   const packageLine = packageName

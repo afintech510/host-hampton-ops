@@ -109,9 +109,20 @@ export async function resolveCheckinToken(rawToken: string): Promise<CheckinReso
   return { ok: true, booking }
 }
 
+/**
+ * The check-in text.
+ *
+ * The separator is a COLON and not an em dash on purpose. An em dash is outside
+ * GSM-03.38, so one of them flips the whole message to UCS-2 and drops the
+ * per-segment limit from 153 to 67. Measured: this body is 224 characters, which
+ * is **4 segments with the em dash and 2 without it** — double the carrier cost
+ * of every pre-arrival text, for a punctuation mark. `lib/smsSegments.ts`
+ * explains the arithmetic; `reminderTemplates.test.ts` asserts this body stays
+ * GSM-7 so it cannot drift back.
+ */
 export function buildCheckinSmsBody(contactName: string | null, url: string): string {
   const firstName = (contactName || '').trim().split(/\s+/)[0] || 'there'
-  return `Hi ${firstName}! Before your Host Hampton party, please complete your quick check-in — contact details and your rental agreement: ${url} Reply STOP to opt out`
+  return `Hi ${firstName}! Before your Host Hampton party, please complete your quick check-in: contact details and your rental agreement. ${url} Reply STOP to opt out`
 }
 
 /**

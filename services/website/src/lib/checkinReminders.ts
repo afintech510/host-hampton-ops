@@ -1,5 +1,7 @@
 import { getSupabase } from '@/lib/supabase'
 import { parseTime, etToUtc } from '@/lib/partyTime'
+import { findContactsByEmail } from '@/lib/contactLookup'
+import { enqueueReminders, type ReminderRow } from '@/lib/reminderQueue'
 
 /**
  * Scheduling for the two automatic check-in link texts.
@@ -11,7 +13,15 @@ import { parseTime, etToUtc } from '@/lib/partyTime'
  *   checkin_link_dayof — 6:00am Eastern on the party date
  *
  * Both are `channel: 'sms'`, `reference_type: 'booking'`, and keyed by
- * `reference_id = booking_ref` (what the cron looks bookings up by).
+ * `reference_id = booking_ref`.
+ *
+ * That last sentence was a COMMENT ASSERTING A CONSTRAINT THE SCHEMA DID NOT
+ * HAVE — hard-won rule 13. `reference_id` was declared `uuid`, so every insert
+ * below was answered `22P02 invalid input syntax for type uuid: "HH-2026-…"`,
+ * and `cancelCheckinReminders`'s `.eq('reference_id', bookingRef)` failed the
+ * same way. `checkin_tokens` held zero rows in production on 2026-09-12 because
+ * of it: not one check-in link has ever been texted on a schedule. Migration 044
+ * makes the column `text`, which is what this comment always claimed.
  */
 
 export const CHECKIN_REMINDER_TYPES = ['checkin_link_36hr', 'checkin_link_dayof'] as const
@@ -83,16 +93,24 @@ export async function enqueueCheckinReminders({
   try {
     const supabase = getSupabase()
 
-    const { data: contact } = await supabase
-      .from('contacts')
-      .select('id')
-      .eq('email', contactEmail)
-      .single()
-
-    if (!contact) {
-      console.warn('checkin:enqueue — no contact for', contactEmail, '— skipping')
+    // Case-INSENSITIVE: `contacts.email` is raw text and 21 rows carry capitals.
+    // Three outcomes, because "could not read the table" must not cancel the
+    // customer's existing reminders below (rule 12).
+    const lookup = await findContactsByEmail(supabase, contactEmail, 'id, email, created_at')
+    if (lookup.kind === 'unavailable') {
+      console.error('checkin:enqueue — contacts lookup FAILED, leaving schedule untouched:', lookup.error)
       return
     }
+    if (lookup.kind === 'absent') {
+      console.warn('checkin:enqueue — no contact for that address — skipping')
+      return
+    }
+    const contact = [...lookup.contacts]
+      .sort((a, b) =>
+        String((a as { created_at?: string }).created_at ?? '').localeCompare(
+          String((b as { created_at?: string }).created_at ?? '')
+        )
+      )[0]
 
     // Clear the old rows before writing new ones. Without this, a date change
     // leaves the original rows in place and the customer gets texted on the
@@ -107,7 +125,7 @@ export async function enqueueCheckinReminders({
     ]
       // Never schedule into the past — the cron would fire it immediately.
       .filter((r): r is { type: typeof r.type; when: Date } => !!r.when && r.when > now)
-      .map(r => ({
+      .map((r): ReminderRow => ({
         contact_id: contact.id,
         reminder_type: r.type,
         reference_type: 'booking',
@@ -118,8 +136,11 @@ export async function enqueueCheckinReminders({
 
     if (rows.length === 0) return
 
-    const { error } = await supabase.from('scheduled_reminders').insert(rows)
-    if (error) console.error('checkin:enqueue insert error:', error)
+    // Per-row, so one already-queued reminder cannot abort the other.
+    const res = await enqueueReminders(supabase, rows)
+    console.log(
+      `checkin:enqueue ${bookingRef} — queued ${res.inserted}, already queued ${res.duplicate}, refused ${res.refused.length}`
+    )
   } catch (err) {
     console.error('checkin:enqueue error (non-fatal):', err)
   }

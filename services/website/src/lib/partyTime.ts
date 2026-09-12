@@ -43,6 +43,25 @@ function tzOffsetMs(instant: Date): number {
 }
 
 /**
+ * The Eastern calendar date (YYYY-MM-DD) an instant falls on.
+ *
+ * The counterpart of `etToUtc`, and the reason it exists: the box runs in UTC,
+ * so `new Date().toISOString().slice(0,10)` rolls over to the next day at 8pm
+ * Eastern. `/api/cron/event-reminders` computed "tomorrow" that way, so an
+ * evening run looked at the day AFTER tomorrow and reminded nobody about the
+ * event that was actually happening. Anything comparing against a DATE column
+ * that means a local calendar day has to come through here.
+ */
+export function etDateString(instant: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: PARTY_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(instant)
+}
+
+/**
  * Convert an Eastern wall-clock date + time to the correct UTC instant.
  *
  * This exists because the server runs in UTC (see lib/googleCalendar.ts), so
