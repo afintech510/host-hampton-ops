@@ -8,6 +8,7 @@ import GoogleAnalytics from '@/components/GoogleAnalytics'
 import { CartProvider } from '@/context/CartContext'
 import CartDrawer from '@/components/CartDrawer'
 import { RATING } from '@/lib/reviews'
+import { OG_DEFAULTS, OG_DEFAULT_IMAGE, SITE_URL, BUSINESS_ID, ORGANIZATION_ID } from '@/lib/seo'
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -37,11 +38,17 @@ export const metadata: Metadata = {
       { url: '/images/H_icon_hh_375.png', sizes: '375x375', type: 'image/png' },
     ],
   },
-  openGraph: {
-    siteName: 'Host Hampton',
-    locale: 'en_US',
-    type: 'website',
-    images: [{ url: '/images/og-default.png', width: 1200, height: 630, alt: 'Host Hampton — Boutique Celebration Studio in Speonk, NY' }],
+  openGraph: OG_DEFAULTS,
+  // Declared here rather than per page: nothing under this layout sets its own
+  // `twitter` block, so the root value is what every page gets. Without it Next
+  // emits a bare `twitter:card=summary` — the small square card — and no image,
+  // which is what every X/Slack/LinkedIn unfurl of this site looked like.
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Host Hampton | Birthday Party Venue in Speonk, NY',
+    description:
+      'Upscale themed birthday parties at our private Hamptons studio in Speonk, NY — or mobile at your home across Long Island.',
+    images: [OG_DEFAULT_IMAGE.url],
   },
 }
 
@@ -51,7 +58,11 @@ const GBP_URL = 'https://maps.app.goo.gl/LFAKi3WzCNmcDsNV9'
 
 const localBusinessSchema = {
   '@context': 'https://schema.org',
-  '@type': 'EventVenue',
+  // Multi-typed on purpose. It IS an event venue and it IS a local business,
+  // and every page-level `Service.provider` refers to it as a LocalBusiness by
+  // @id — so the node has to answer to both names or the reference dangles.
+  '@type': ['EventVenue', 'LocalBusiness'],
+  '@id': BUSINESS_ID,
   name: 'Host Hampton',
   description: 'Boutique celebration studio offering themed birthday parties, permanent jewelry, room rentals, and workshops.',
   url: 'https://www.hosthampton.com',
@@ -80,6 +91,8 @@ const localBusinessSchema = {
     GBP_URL,
   ],
   priceRange: '$$',
+  image: `${SITE_URL}/images/og-default.png`,
+  parentOrganization: { '@id': ORGANIZATION_ID },
   // Half the business is mobile (a service-area business), which EventVenue has
   // no semantics for — so declare the served areas explicitly.
   //
@@ -108,9 +121,10 @@ const localBusinessSchema = {
 const organizationSchema = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
+  '@id': ORGANIZATION_ID,
   name: 'Host Hampton',
-  url: 'https://www.hosthampton.com',
-  logo: 'https://www.hosthampton.com/images/host-hampton-logo_300.png',
+  url: SITE_URL,
+  logo: `${SITE_URL}/images/host-hampton-logo_300.png`,
   telephone: '+16319989325',
   email: 'hosthampton295@gmail.com',
   address: {

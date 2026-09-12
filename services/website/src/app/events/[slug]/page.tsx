@@ -4,30 +4,39 @@ import { Calendar, Clock, MapPin, ArrowLeft } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import TicketForm from './TicketForm'
 import ImageGallery from './ImageGallery'
-import { isSaleActive, effectiveBasePriceCents } from '@/lib/sale'
+import { buildEventSchema } from '@/lib/eventSchema'
+import { NOINDEX, OG_DEFAULTS, SITE_URL } from '@/lib/seo'
 
 export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: { slug: string } }) {
   const supabase = getSupabase()
+  // Mirror the page's own filter. Without `is_active` a retired event gave its
+  // real title and description to a page that then rendered a 404.
   const { data: event } = await supabase
     .from('events')
     .select('title, short_description, image_url, images')
     .eq('slug', params.slug)
-    .single()
+    .eq('is_active', true)
+    .maybeSingle()
 
-  if (!event) return { title: 'Event Not Found' }
+  if (!event) return { title: 'Event Not Found', robots: NOINDEX }
 
   const description = event.short_description || `Join us for ${event.title} at Host Hampton in Speonk, NY.`
   const imgs: { url: string; is_primary: boolean }[] = event.images || []
   const ogImage = event.image_url || (imgs.find(i => i.is_primary) || imgs[0])?.url || null
+  const url = `${SITE_URL}/events/${params.slug}`
 
   return {
     title: event.title,
     description,
+    alternates: { canonical: url },
     openGraph: {
+      ...OG_DEFAULTS,
       title: event.title,
       description,
+      url,
+      type: 'article',
       ...(ogImage ? { images: [{ url: ogImage }] } : {}),
     },
   }
@@ -73,52 +82,10 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
       : 'Date coming soon'
 
   // Event JSON-LD so this shows up in Google's event listings & AI answers.
-  const eventImages: { url: string; is_primary: boolean }[] = event.images || []
-  const eventImage = event.image_url || (eventImages.find(i => i.is_primary) || eventImages[0])?.url || null
-  const startDate = event.event_date
-    ? `${event.event_date}${event.event_time ? `T${event.event_time}` : ''}`
-    : undefined
-  const eventSchema = {
-    '@context': 'https://schema.org',
-    '@type': 'Event',
-    name: event.title,
-    description: event.short_description || event.description || `Join us for ${event.title} at Host Hampton in Speonk, NY.`,
-    ...(startDate ? { startDate } : {}),
-    ...(eventImage ? { image: [eventImage] } : {}),
-    eventStatus: 'https://schema.org/EventScheduled',
-    eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
-    location: {
-      '@type': 'Place',
-      name: event.location || 'Host Hampton',
-      address: {
-        '@type': 'PostalAddress',
-        streetAddress: '295 Montauk Hwy, Suite 7',
-        addressLocality: 'Speonk',
-        addressRegion: 'NY',
-        postalCode: '11972',
-        addressCountry: 'US',
-      },
-    },
-    organizer: {
-      '@type': 'Organization',
-      name: 'Host Hampton',
-      url: 'https://www.hosthampton.com',
-    },
-    ...(typeof event.price_cents === 'number'
-      ? {
-          offers: {
-            '@type': 'Offer',
-            price: (effectiveBasePriceCents(event) / 100).toFixed(2),
-            priceCurrency: 'USD',
-            url: `https://www.hosthampton.com/events/${event.slug}`,
-            availability: 'https://schema.org/InStock',
-            ...(isSaleActive(event) && event.sale_ends_at
-              ? { priceValidUntil: new Date(event.sale_ends_at).toISOString().split('T')[0] }
-              : {}),
-          },
-        }
-      : {}),
-  }
+  // Built in lib/eventSchema.ts — `event_time` is free text with seven live
+  // shapes and the inline version emitted "2026-10-09T7:00 PM", which is not
+  // ISO 8601, so no event on this site has ever been eligible for a rich result.
+  const eventSchema = buildEventSchema(event)
 
   return (
     <div className="min-h-screen">

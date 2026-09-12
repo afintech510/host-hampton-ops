@@ -1,6 +1,10 @@
 import type { Metadata } from 'next'
 
-export const metadata: Metadata = { title: 'Terms of Service | Host Hampton' }
+// The root layout appends ' | Host Hampton'; naming it here rendered it twice.
+export const metadata: Metadata = {
+  title: 'Terms of Service',
+  description: 'The terms that apply to bookings, payments, cancellations and use of the Host Hampton website.',
+}
 
 export default function TermsOfService() {
   return (

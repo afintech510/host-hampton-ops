@@ -5,6 +5,7 @@ import MobilePartyForm from '@/components/MobilePartyForm'
 import MobilePriceBlock from '@/components/MobilePriceBlock'
 import { LOCATIONS } from '@/lib/locations'
 import { type CraftParty, craftDisplayName } from '@/lib/craftParties'
+import { businessRef } from '@/lib/seo'
 
 const BASE = 'https://www.hosthampton.com'
 
@@ -35,20 +36,7 @@ export default function CraftPartyLanding({ data }: { data: CraftParty }) {
     serviceType: data.serviceType,
     name: `${data.name} — Host Hampton`,
     description: data.metaDescription,
-    provider: {
-      '@type': 'LocalBusiness',
-      name: 'Host Hampton',
-      telephone: '+1-631-998-9325',
-      url: BASE,
-      address: {
-        '@type': 'PostalAddress',
-        streetAddress: '295 Montauk Highway, Suite 7',
-        addressLocality: 'Speonk',
-        addressRegion: 'NY',
-        postalCode: '11972',
-        addressCountry: 'US',
-      },
-    },
+    provider: businessRef(),
     areaServed: mobile ? { '@type': 'AdministrativeArea', name: 'Long Island, NY' } : { '@type': 'City', name: 'Speonk, NY' },
     url,
   }
@@ -119,7 +107,7 @@ export default function CraftPartyLanding({ data }: { data: CraftParty }) {
           <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
             {data.heroImages.slice(0, 4).map((src, i) => (
               <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 0 ? 'ring-2 ring-[#c4975a]' : ''}`}>
-                <Image src={src} alt={`${data.name} at Host Hampton`} fill className="object-cover" />
+                <Image src={src} alt={`${data.name} at Host Hampton`} fill sizes="(max-width: 768px) 45vw, 240px" className="object-cover" />
               </div>
             ))}
           </div>

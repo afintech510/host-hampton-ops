@@ -5,7 +5,7 @@ import UniversalCalendar from '@/components/UniversalCalendar'
 
 export const metadata: Metadata = {
   title: 'Permanent Jewelry — Long Island (Speonk, NY)',
-  description: 'Custom-welded permanent bracelets, anklets, and necklaces on Long Island — at Host Hampton in Speonk, NY. Perfect for moms & daughters, bachelorettes, and birthday parties. Starting at $65.',
+  description: 'Custom-welded permanent bracelets, anklets and necklaces at Host Hampton in Speonk, NY. Moms & daughters, bachelorettes, parties. From $65.',
 }
 
 const types = [
@@ -78,7 +78,7 @@ export default function PermanentJewelry() {
           {types.map(t => (
             <div key={t.name} className="card">
               <div className="relative aspect-square overflow-hidden">
-                <Image src={t.img} alt={t.name} fill className="object-cover" />
+                <Image src={t.img} alt={t.name} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw" className="object-cover" />
               </div>
               <div className="p-5">
                 <h3 className="font-semibold text-hampton-navy text-base mb-1">{t.name}</h3>

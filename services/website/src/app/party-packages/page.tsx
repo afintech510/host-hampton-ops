@@ -4,7 +4,7 @@ import PartyPackagesContent from './PartyPackagesContent'
 
 export const metadata: Metadata = {
   title: 'Kids Party Packages & Pricing — Long Island',
-  description: 'Themed kids birthday party packages on Long Island — at our Hamptons studio in Speonk or mobile at your house. Glow, Swiftie, Spa, Slime, K-Pop, Barbie and more, starting at $800.',
+  description: 'Themed kids birthday party packages at our Speonk studio or mobile at your house — Glow, Swiftie, Spa, Slime, K-Pop, Barbie and more, from $800.',
 }
 
 export const dynamic = 'force-dynamic'

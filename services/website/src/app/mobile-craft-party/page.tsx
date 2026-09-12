@@ -7,6 +7,7 @@ import MobilePriceBlock from '@/components/MobilePriceBlock'
 import { CRAFT_STATIONS } from '@/lib/craftStations'
 import { locationsByRegion, LOCATIONS } from '@/lib/locations'
 import { CRAFT_PARTIES } from '@/lib/craftParties'
+import { OG_DEFAULTS, businessRef } from '@/lib/seo'
 
 const CANONICAL = 'https://www.hosthampton.com/mobile-craft-party'
 
@@ -26,9 +27,9 @@ const CANONICAL = 'https://www.hosthampton.com/mobile-craft-party'
 export const revalidate = 3600
 
 export const metadata: Metadata = {
-  title: 'Mobile Craft Party — Kids Arts & Crafts Parties Across Long Island',
+  title: 'Mobile Craft Party — Kids Crafts, Anywhere on LI',
   description:
-    'Book a mobile craft party anywhere on Long Island. We bring hands-on arts & crafts — canvas painting, sand art, drip-paint balloon dogs, slime & more — to your home, or host at our Speonk studio. Serving the Hamptons to Nassau County.',
+    'We bring hands-on arts & crafts — canvas painting, sand art, balloon dogs, slime and more — to your home anywhere on Long Island, or host at our Speonk studio.',
   keywords: [
     'mobile craft party',
     'mobile craft party near me',
@@ -42,6 +43,7 @@ export const metadata: Metadata = {
   ],
   alternates: { canonical: CANONICAL },
   openGraph: {
+    ...OG_DEFAULTS,
     title: 'Mobile Craft Party — We Bring the Crafts to You',
     description:
       'Hands-on kids craft parties at your home or our Speonk studio. Canvas painting, sand art, balloon-dog drip painting, slime & more — anywhere on Long Island.',
@@ -106,20 +108,7 @@ const serviceSchema = {
   name: 'Host Hampton Mobile Craft Party',
   description:
     'Hands-on mobile arts and crafts birthday parties brought to your home, or hosted at the Host Hampton studio in Speonk, NY. Serving Long Island from the Hamptons to Nassau County.',
-  provider: {
-    '@type': 'LocalBusiness',
-    name: 'Host Hampton',
-    telephone: '+1-631-998-9325',
-    url: 'https://www.hosthampton.com',
-    address: {
-      '@type': 'PostalAddress',
-      streetAddress: '295 Montauk Highway, Suite 7',
-      addressLocality: 'Speonk',
-      addressRegion: 'NY',
-      postalCode: '11972',
-      addressCountry: 'US',
-    },
-  },
+  provider: businessRef(),
   areaServed: LOCATIONS.map(l => ({ '@type': 'City', name: `${l.name}, NY` })),
   url: CANONICAL,
 }
@@ -161,7 +150,7 @@ export default function MobileCraftPartyHub() {
           <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
             {['/images/theme-slime.webp', '/images/gallery/venue-painting-workshop.webp', '/images/gallery/outdoor-party-setup.webp', '/images/theme-spa.webp'].map((src, i) => (
               <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 1 ? 'ring-2 ring-[#c4975a]' : ''}`}>
-                <Image src={src} alt="Kids craft party" fill className="object-cover" />
+                <Image src={src} alt="Kids craft party" fill sizes="(max-width: 768px) 45vw, 240px" className="object-cover" />
               </div>
             ))}
           </div>

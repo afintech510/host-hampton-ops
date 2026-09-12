@@ -1,11 +1,12 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ChevronDown } from 'lucide-react'
+import { OG_DEFAULTS } from '@/lib/seo'
 
 export const metadata: Metadata = {
-  title: 'Party FAQ — Booking, Pricing & Common Questions',
+  title: 'Party FAQ — Booking & Pricing',
   description:
-    'Answers to the most common questions about parties at Host Hampton in Speonk, NY — deposits, pricing, guest counts, food and cake, mobile at-home parties, travel area, and how to book. Serving the Hamptons, Long Island & the East End.',
+    'Deposits, pricing, guest counts, food and cake, mobile at-home parties and how to book a party at Host Hampton in Speonk, NY.',
   keywords: [
     'party venue FAQ Long Island',
     'birthday party questions Speonk',
@@ -15,6 +16,7 @@ export const metadata: Metadata = {
     'party deposit booking',
   ],
   openGraph: {
+    ...OG_DEFAULTS,
     title: 'Host Hampton — Party FAQ',
     description:
       'Deposits, pricing, guest counts, food & cake, mobile parties, travel area, and how to book. Everything people ask before booking a party at Host Hampton.',

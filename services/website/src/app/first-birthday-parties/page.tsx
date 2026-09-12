@@ -2,27 +2,57 @@ import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Check, Heart, Star } from 'lucide-react'
+import { OG_DEFAULTS, SITE_URL, businessRef } from '@/lib/seo'
 
 export const metadata: Metadata = {
-  title: 'First Birthday Party Venue — Long Island & the Hamptons',
+  title: 'First Birthday Party Venue — Long Island',
   description:
-    'Make baby\'s first birthday magical at Host Hampton in Speonk, NY. Private studio, full setup, themed decorations, and a stress-free celebration for toddlers on Long Island. Reserve with a $250 deposit.',
+    'Make baby\'s first birthday magical at Host Hampton in Speonk, NY. Private studio, full setup, themed decor and a $250 deposit to hold your date.',
   keywords: ['first birthday party Hamptons', 'first birthday party venue Long Island', 'first birthday party Speonk NY', 'toddler birthday party venue', '1st birthday party Long Island'],
+  alternates: { canonical: `${SITE_URL}/first-birthday-parties` },
+  openGraph: {
+    ...OG_DEFAULTS,
+    title: 'First Birthday Party Venue on Long Island',
+    description: 'A private Hamptons studio, fully set up before you arrive. Packages from $650.',
+    url: `${SITE_URL}/first-birthday-parties`,
+  },
 }
+
+/**
+ * The three packages this page renders. Hoisted out of the JSX so the
+ * structured data is DERIVED from the prices a visitor can see rather than
+ * restated beside them (rule 11).
+ *
+ * It had drifted: the JSON-LD published a flat `Offer` of `price: '850'` while
+ * this table showed $650 / $800 / $1,045. Google's structured-data policy
+ * requires the marked-up price to match the visible one, and a price in search
+ * that the page contradicts is a customer dispute before it is an SEO problem.
+ */
+const PACKAGES = [
+  { name: 'Mini First Birthday', guests: 'Up to 8 guests', price: 650 },
+  { name: 'First Birthday Fave', guests: 'Up to 10 guests', price: 800, popular: true },
+  { name: 'Big ONE Bash', guests: 'Up to 12 guests', price: 1045 },
+] as const
+
+const packagePrices = PACKAGES.map(p => p.price)
 
 const firstBirthdaySchema = {
   '@context': 'https://schema.org',
   '@type': 'Service',
   name: 'First Birthday Party at Host Hampton',
   description: 'Private studio first birthday party packages for babies and toddlers in Speonk, NY (The Hamptons area).',
-  provider: {
-    '@type': 'LocalBusiness',
-    name: 'Host Hampton',
-    address: { '@type': 'PostalAddress', streetAddress: '295 Montauk Hwy', addressLocality: 'Speonk', addressRegion: 'NY', postalCode: '11972' },
-    telephone: '+16319989325',
-  },
+  provider: businessRef(),
   areaServed: ['Hamptons', 'Long Island', 'Speonk NY', 'Southampton', 'East End'],
-  offers: { '@type': 'Offer', price: '850', priceCurrency: 'USD', description: 'First birthday party starting at $850 for up to 10 guests' },
+  url: `${SITE_URL}/first-birthday-parties`,
+  offers: {
+    '@type': 'AggregateOffer',
+    lowPrice: String(Math.min(...packagePrices)),
+    highPrice: String(Math.max(...packagePrices)),
+    priceCurrency: 'USD',
+    offerCount: PACKAGES.length,
+    availability: 'https://schema.org/InStock',
+    url: `${SITE_URL}/first-birthday-parties`,
+  },
 }
 
 const included = [
@@ -91,6 +121,12 @@ export default function FirstBirthdayParties() {
       <section className="bg-hampton-pink/10 py-16">
         <div className="max-w-4xl mx-auto px-4 sm:px-6">
           <h2 className="section-heading text-center mb-2">Everything Included</h2>
+          {/* NEEDS ADAM: this sentence says "$850 for up to 10 guests" and the
+              pricing table below says $800 for up to 10 (and $650 for up to 8).
+              Both are visible on this one page and they disagree. The figure is
+              Adam's to settle, so nothing here was changed — but the structured
+              data no longer publishes $850, because it did not match anything a
+              visitor could see. Recorded in PLAN.md as "needs Adam". */}
           <p className="text-center text-hampton-navy mb-8">First birthday packages start at $850 for up to 10 guests.</p>
           <div className="bg-white rounded-2xl border border-hampton-pink/20 p-8 grid sm:grid-cols-2 gap-3">
             {included.map(item => (
@@ -114,14 +150,10 @@ export default function FirstBirthdayParties() {
         <h2 className="section-heading mb-2">Simple, Transparent Pricing</h2>
         <p className="text-hampton-navy mb-8">No hidden fees. Everything listed is included.</p>
         <div className="grid sm:grid-cols-3 gap-4">
-          {[
-            { name: 'Mini First Birthday', guests: 'Up to 8 guests',  price: 650 },
-            { name: 'First Birthday Fave', guests: 'Up to 10 guests', price: 800, popular: true },
-            { name: 'Big ONE Bash',        guests: 'Up to 12 guests', price: 1045 },
-          ].map(p => (
+          {PACKAGES.map(p => (
             <div key={p.name}
-                 className={`rounded-2xl p-6 border-2 ${p.popular ? 'border-hampton-pink bg-hampton-pink/10' : 'bg-white border-hampton-pink/20'}`}>
-              {p.popular && <p className="text-hampton-navy text-xs font-bold mb-2 uppercase tracking-wide">Most Popular</p>}
+                 className={`rounded-2xl p-6 border-2 ${'popular' in p && p.popular ? 'border-hampton-pink bg-hampton-pink/10' : 'bg-white border-hampton-pink/20'}`}>
+              {'popular' in p && p.popular && <p className="text-hampton-navy text-xs font-bold mb-2 uppercase tracking-wide">Most Popular</p>}
               <h3 className="font-serif text-hampton-navy text-base font-bold mb-1">{p.name}</h3>
               <p className="text-hampton-navy text-xs mb-4">{p.guests} • 2 hours</p>
               <p className="text-3xl font-bold text-hampton-navy">${p.price.toLocaleString()}</p>

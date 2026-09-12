@@ -4,9 +4,9 @@ import Image from 'next/image'
 import { Check, Truck, Palette, Gift, Users, Star, ArrowRight } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'Custom Canvas Bags & Trucker Hats — Party Favors',
+  title: 'Custom Canvas Bags & Trucker Hats',
   description:
-    'Personalized canvas bags and custom trucker hats for birthday parties, school groups, sports teams, and special events. Available as party favors or on-site at your event in Speonk, NY.',
+    'Personalized canvas bags and custom trucker hats for parties, school groups and teams — as favors, or a live bar at your event.',
   keywords: ['custom party favors long island', 'personalized canvas bags NY', 'custom trucker hats kids party', 'party favor ideas hamptons', 'custom accessories Speonk'],
 }
 
@@ -115,7 +115,7 @@ export default function CustomAccessoriesPage() {
               <Image
                 src="/images/gallery/product-pouches-2.webp"
                 alt="Custom canvas party bags at Host Hampton"
-                fill
+                fill sizes="(max-width: 768px) 100vw, 50vw"
                 className="object-cover"
               />
               <div className="absolute inset-0 bg-hampton-navy/40 flex items-end p-6">
@@ -143,7 +143,7 @@ export default function CustomAccessoriesPage() {
               <Image
                 src="/images/jewelry-weld.png"
                 alt="Custom trucker hats at Host Hampton"
-                fill
+                fill sizes="(max-width: 768px) 100vw, 50vw"
                 className="object-cover"
               />
               <div className="absolute inset-0 bg-hampton-navy/40 flex items-end p-6">

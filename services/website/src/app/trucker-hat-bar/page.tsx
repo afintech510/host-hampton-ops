@@ -1,11 +1,12 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import InquiryForm from './InquiryForm'
+import { OG_DEFAULTS } from '@/lib/seo'
 
 export const metadata: Metadata = {
   title: 'Atelier Brim — Bespoke Hat Bar Activations',
   description:
-    'Curated trucker hat bar experiences for corporate events, brand activations, and private gatherings. Bespoke headwear styling for tastemakers in NYC, the Hamptons, and beyond.',
+    'Curated trucker hat bar experiences for corporate events, brand activations and private gatherings in NYC, the Hamptons and beyond.',
   keywords: [
     'hat bar activation NYC',
     'trucker hat bar corporate event',
@@ -15,6 +16,7 @@ export const metadata: Metadata = {
     'bespoke headwear event NYC',
   ],
   openGraph: {
+    ...OG_DEFAULTS,
     title: 'Atelier Brim — Bespoke Hat Bar Activations',
     description:
       'Curated headwear experiences for brand activations, corporate events, and private gatherings. By Host Hampton.',
@@ -139,7 +141,7 @@ export default function AtelierBrimPage() {
               <Image
                 src="/images/gallery/card-trucker-hat-bar.webp"
                 alt="Atelier Brim — curated hat bar styling"
-                fill
+                fill sizes="(max-width: 768px) 100vw, 50vw"
                 className="object-cover"
                 priority
               />
@@ -192,7 +194,7 @@ export default function AtelierBrimPage() {
             <Image
               src="/images/gallery/venue-party-setup-5.webp"
               alt="Curated hat bar experience"
-              fill
+              fill sizes="(max-width: 768px) 100vw, 50vw"
               className="object-cover"
             />
           </div>
@@ -322,7 +324,7 @@ export default function AtelierBrimPage() {
             <Image
               src="/images/gallery/product-pouches-1.webp"
               alt="Hat bar display styling"
-              fill
+              fill sizes="(max-width: 768px) 100vw, 50vw"
               className="object-cover"
             />
           </div>

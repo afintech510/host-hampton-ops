@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
+import { NOINDEX } from '@/lib/seo'
 
 export const metadata: Metadata = {
+  robots: NOINDEX,
   title: 'Boggle Solver',
   description: 'Upload a screenshot of your word game grid and find every valid word instantly.',
 }

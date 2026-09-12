@@ -72,7 +72,7 @@ export const CRAFT_PARTIES: CraftParty[] = [
     h1Accent: 'Arts & Crafts',
     metaTitle: 'Kids Arts & Crafts Party — Long Island | Host Hampton',
     metaDescription:
-      'Hands-on arts & crafts birthday parties for kids. Canvas painting, sand art, slime, bracelet making & more — at your home across Long Island or at our Speonk studio. Every craft is a take-home keepsake.',
+      'Hands-on arts & crafts birthday parties for kids — canvas painting, sand art, slime and more. At your home across Long Island, or at our Speonk studio.',
     keywords: ['arts and crafts party', 'kids arts and crafts birthday party', 'craft party Long Island', 'art party kids near me', 'craft birthday party Hamptons'],
     intro:
       'A hands-on arts & crafts party the kids actually make things at. Pick your stations — canvas painting, sand art, slime, bracelet making and more — and our hosts guide every child through each one. Every craft is a keepsake they take home, which doubles as the party favor.',
@@ -105,9 +105,9 @@ export const CRAFT_PARTIES: CraftParty[] = [
     // Deliberately targets Hamptons / East End / Suffolk / "studio" rather than
     // "slime party long island" — a competitor owns that head term with 60+ town
     // pages at ~2,500 words each. We win where they have nothing.
-    metaTitle: 'Kids Slime Party — Hamptons, East End & Suffolk | Host Hampton',
+    metaTitle: 'Kids Slime Party — Hamptons & Suffolk | Host Hampton',
     metaDescription:
-      'A gooey, glittery slime party for kids in the Hamptons and across Suffolk. Every guest mixes and customizes their own slime to take home. At your house on the East End, or at our Speonk studio.',
+      'A gooey, glittery slime party for kids. Every guest mixes their own slime to take home — at your house on the East End, or at our Speonk studio.',
     keywords: ['slime party', 'kids slime party near me', 'slime party Hamptons', 'slime party East End', 'slime party Suffolk County', 'mobile slime party', 'slime party studio', 'glow slime party'],
     intro:
       'The messiest fun without the mess at home. Every guest mixes, stretches, and customizes their own slime — glitter, charms, colors, scents — and takes it home in its own container. We bring everything and handle the cleanup.',
@@ -151,9 +151,9 @@ export const CRAFT_PARTIES: CraftParty[] = [
     name: 'Balloon Dog Painting Party',
     eyebrow: 'Signature Craft · Long Island',
     h1Accent: 'Balloon Dog',
-    metaTitle: 'Drip-Paint Balloon Dog Party — Fluid Art for Kids | Host Hampton',
+    metaTitle: 'Drip-Paint Balloon Dog Party for Kids | Host Hampton',
     metaDescription:
-      'Our signature: pour and drip fluid paint over a balloon-dog figure for a glossy, one-of-a-kind sculpture. A viral-worthy craft party at your home on Long Island or our Speonk studio.',
+      'Pour and drip fluid paint over a balloon-dog figure for a glossy, one-of-a-kind sculpture. At your home on Long Island, or at our Speonk studio.',
     keywords: ['balloon dog painting party', 'drip paint balloon dog', 'fluid art party kids', 'paint pour party Long Island', 'balloon dog craft'],
     intro:
       'Our signature craft — and the one everyone posts. Kids pour and drip vibrant fluid paint over a balloon-dog figure, watching the colors marble into a glossy, one-of-a-kind sculpture they take home. Equal parts art, science, and total wow.',
@@ -183,9 +183,9 @@ export const CRAFT_PARTIES: CraftParty[] = [
     name: 'Spa Party',
     eyebrow: 'Kids Spa Party · Long Island',
     h1Accent: 'Spa',
-    metaTitle: 'Kids Spa Party — Mini Mani, Facials & Pampering | Host Hampton',
+    metaTitle: 'Kids Spa Party — Mini Manis & Facials | Host Hampton',
     metaDescription:
-      'A pampering kids spa party — mini manicures, face masks, robes, and glam. At your home across Long Island or our Speonk studio. Fully hosted, fully relaxing (for the parents too).',
+      'A pampering kids spa party — mini manicures, face masks, robes and glam. At your home across Long Island, or at our Speonk studio.',
     keywords: ['kids spa party', 'spa birthday party Long Island', 'mobile spa party kids', 'mani pedi party kids', 'pamper party Hamptons'],
     intro:
       'A little luxury for the birthday crew. Mini manicures, gentle face masks, cozy robes, and a glam station — our hosts run a calm, pampering spa experience that makes every kid feel like a VIP.',
@@ -229,9 +229,9 @@ export const CRAFT_PARTIES: CraftParty[] = [
     name: 'Toddler Party',
     eyebrow: 'Toddler Party · Long Island',
     h1Accent: 'Toddler',
-    metaTitle: 'Toddler Birthday Party — Sensory Play & Crafts | Host Hampton',
+    metaTitle: 'Toddler Birthday Party — Sensory Play | Host Hampton',
     metaDescription:
-      'A gentle, age-perfect toddler birthday party — sensory play, simple crafts, and safe, soft setups for ages 2–4. At your home on Long Island or our Speonk studio.',
+      'A gentle, age-perfect toddler birthday party — sensory play, simple crafts and soft setups for ages 2–4. At your home or our Speonk studio.',
     keywords: ['toddler birthday party', 'toddler party Long Island', '2 year old birthday party ideas', 'sensory party toddlers', 'first birthday and toddler party near me'],
     intro:
       'Made for the littlest guests. Soft sensory play, simple hands-on crafts, and a calm, safe setup paced just right for ages 2–4. Big fun, small mess, and a host who keeps it gentle and easy.',
@@ -263,7 +263,7 @@ export const CRAFT_PARTIES: CraftParty[] = [
     h1Accent: 'Shower Venue',
     metaTitle: 'Baby & Bridal Shower Venue — Speonk, Hamptons | Host Hampton',
     metaDescription:
-      'A private, beautifully styled shower venue in Speonk on the East End. Baby showers, bridal showers, and celebrations with an optional craft or activity bar. Book your date with a simple deposit.',
+      'A private, beautifully styled shower venue in Speonk on the East End. Baby and bridal showers, with an optional craft or activity bar.',
     keywords: ['baby shower venue Long Island', 'bridal shower venue Hamptons', 'shower venue Speonk', 'private party venue East End', 'shower venue near me'],
     intro:
       'A private, styled space for your baby or bridal shower on the East End. Bring your vision — we provide the beautiful setting, flexible layout, and an optional craft or activity bar (permanent jewelry, canvas totes, and more) to make it memorable. Elegant, intimate, and entirely yours.',
@@ -325,9 +325,9 @@ export const CRAFT_PARTIES: CraftParty[] = [
     name: 'Squishy Party',
     eyebrow: 'Kids Craft Party · Long Island',
     h1Accent: 'Squishy',
-    metaTitle: 'Squishy Party — DIY Squishies & Sensory Crafts | Host Hampton',
+    metaTitle: 'Squishy Party — DIY Squishies for Kids | Host Hampton',
     metaDescription:
-      'A DIY squishy party where kids make and decorate their own squishies and sensory toys. Soft, satisfying, take-home fun — at your house on Long Island or our Speonk studio.',
+      'A DIY squishy party where kids make and decorate their own squishies and sensory toys. At your house on Long Island, or at our Speonk studio.',
     keywords: ['squishy party', 'DIY squishy party kids', 'squishy making party', 'sensory craft party Long Island', 'squishmallow style party near me'],
     intro:
       'Soft, squishy, and endlessly satisfying. Kids make and decorate their own squishies and sensory toys — foam, air-dry, and puff crafts they can squeeze all the way home. A fresh twist on the slime-and-sensory craze.',
@@ -357,9 +357,9 @@ export const CRAFT_PARTIES: CraftParty[] = [
     name: 'Canvas Tote Activation',
     eyebrow: 'Brand & Event Activation · NY / Long Island',
     h1Accent: 'Tote',
-    metaTitle: 'Canvas Tote Bar Activation — Brand & Event Experiences | Host Hampton',
+    metaTitle: 'Canvas Tote Bar Activation — Brand Events | Host Hampton',
     metaDescription:
-      'A custom canvas tote bar activation for brand launches, corporate events, pop-ups, and private parties. Guests personalize a tote with patches, paint & press — on-site anywhere in NY & Long Island.',
+      'A custom canvas tote bar for brand launches, corporate events and pop-ups. Guests personalize a tote with patches, paint and press, on-site across NY.',
     keywords: ['canvas tote activation', 'tote bag bar event', 'brand activation Long Island', 'corporate event craft station NYC', 'customization bar pop up'],
     intro:
       'An interactive, on-brand craft bar your guests will actually remember. Attendees personalize a premium canvas tote — iron-on patches, paint, and press — as a wearable takeaway. Perfect for brand launches, corporate events, pop-ups, storefronts, and private parties. We bring the full station and staff to your location.',
@@ -389,9 +389,9 @@ export const CRAFT_PARTIES: CraftParty[] = [
     name: 'Paint Party',
     eyebrow: 'Kids Paint Party · Long Island',
     h1Accent: 'Paint',
-    metaTitle: 'Kids Paint Party — Long Island Canvas, Splatter & Glow | Host Hampton',
+    metaTitle: 'Kids Paint Party on Long Island | Host Hampton',
     metaDescription:
-      'A kids paint party on Long Island — canvas painting, splatter art, and glow paint. At your house anywhere from the Hamptons to Nassau, or at our Speonk studio. Every painting goes home.',
+      'A kids paint party on Long Island — canvas painting, splatter art and glow paint. At your house, or at our Speonk studio. Every painting goes home.',
     keywords: ['paint party', 'kids paint party', 'paint party Long Island', 'canvas painting party kids', 'splatter paint party', 'glow paint party near me', 'mobile paint party'],
     intro:
       'Every kid paints something they are proud to hang up. Choose classic canvas painting, messy splatter art, or glow-in-the-dark paint under blacklight — our hosts guide each child start to finish, and every painting goes home as the party favor.',
@@ -438,7 +438,7 @@ export const CRAFT_PARTIES: CraftParty[] = [
     h1Accent: 'Halloween',
     metaTitle: 'Halloween Craft Party for Kids — Long Island | Host Hampton',
     metaDescription:
-      'A Halloween craft party for kids on Long Island — pumpkin decorating, spooky slime, monster crafts and trick-or-treat totes. At your house or our Speonk studio. Book October dates early.',
+      'A Halloween craft party for kids on Long Island — pumpkin decorating, spooky slime and monster crafts. At your house or our Speonk studio.',
     keywords: ['halloween craft party', 'halloween party for kids Long Island', 'pumpkin decorating party', 'halloween craft ideas kids party', 'spooky slime party', 'halloween party Hamptons'],
     intro:
       'Not-too-spooky, all-hands-on Halloween fun. Pumpkin decorating, glow-in-the-dark spooky slime, monster crafts, and decorate-your-own trick-or-treat totes — costumes absolutely encouraged. We bring it to your house or host it at our Speonk studio.',

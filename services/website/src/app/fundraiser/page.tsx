@@ -2,9 +2,10 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Check } from 'lucide-react'
 import FundraiserForm from './FundraiserForm'
+import { OG_DEFAULTS, SITE_URL, businessRef } from '@/lib/seo'
 
 export const metadata: Metadata = {
-  title: 'Trucker Hat & Canvas Gear Fundraiser — Long Island',
+  title: 'Trucker Hat & Canvas Gear Fundraiser',
   description:
     'A fun, easy way to raise money for your school, team, or class. Custom branded trucker hats, canvas totes & pouches. No upfront cost — keep 100% of the profit. Speonk, NY.',
   keywords: [
@@ -18,6 +19,7 @@ export const metadata: Metadata = {
     'custom merchandise fundraiser',
   ],
   openGraph: {
+    ...OG_DEFAULTS,
     title: 'Trucker Hat + Canvas Gear Fundraiser',
     description:
       'Custom branded items your fans actually want to represent your organization. No upfront cost, no inventory, keep 100% of the profit.',
@@ -34,19 +36,7 @@ const fundraiserServiceSchema = {
   name: 'Trucker Hat & Canvas Gear Fundraiser',
   description:
     'A fun, easy way to raise money for your school, team, or class. Custom branded trucker hats, canvas tote bags, and zipper pouches. No upfront cost — your organization keeps 100% of the profit.',
-  provider: {
-    '@type': 'LocalBusiness',
-    name: 'Host Hampton',
-    address: {
-      '@type': 'PostalAddress',
-      streetAddress: '295 Montauk Hwy, Suite 7',
-      addressLocality: 'Speonk',
-      addressRegion: 'NY',
-      postalCode: '11972',
-    },
-    telephone: '+16319989325',
-    url: 'https://www.hosthampton.com',
-  },
+  provider: businessRef(),
   areaServed: [
     'Long Island',
     'Hamptons',
@@ -55,12 +45,12 @@ const fundraiserServiceSchema = {
     'New York',
   ],
   serviceType: 'Fundraising',
-  offers: {
-    '@type': 'Offer',
-    description:
-      'Custom merchandise fundraising — no upfront cost. Organizations keep 100% of the profit. Minimum 20% of total sales guaranteed.',
-    priceCurrency: 'USD',
-  },
+  // NO `offers` node. There was one, carrying `priceCurrency: 'USD'` and no
+  // `price` — an Offer without a price is invalid and Google rejects the whole
+  // block. The thing it was trying to say is a commercial term, not a price, so
+  // it belongs in prose — and it already is, in the FAQPage node below ("You
+  // keep 20% minimum of total sales"), which is the block Google can use.
+  url: `${SITE_URL}/fundraiser`,
 }
 
 const faqItems = [

@@ -25,7 +25,7 @@ export const dynamic = 'force-dynamic'
  * URL changed on every fetch — the fastest way to make it ignore `lastmod`
  * entirely. Bump this date when page copy actually changes.
  */
-const CONTENT_LAST_MODIFIED = '2026-09-05'
+const CONTENT_LAST_MODIFIED = '2026-09-12'
 
 interface Entry {
   path: string
@@ -59,6 +59,11 @@ const STATIC_ROUTES: Entry[] = [
   { path: '/faq', changefreq: 'monthly', priority: 0.5 },
   { path: '/contact-us', changefreq: 'yearly', priority: 0.6 },
   { path: '/book', changefreq: 'monthly', priority: 0.8 },
+  // Indexable lead-capture pages that were routable and crawlable but absent
+  // from the sitemap. A sitemap that omits its own indexable pages is not
+  // wrong so much as incomplete — these are the only two that were.
+  { path: '/signup', changefreq: 'yearly', priority: 0.3 },
+  { path: '/vendor-registration', changefreq: 'monthly', priority: 0.4 },
   { path: '/sitemap', changefreq: 'monthly', priority: 0.3 },
   { path: '/privacy-policy', changefreq: 'yearly', priority: 0.2 },
   { path: '/terms-of-service', changefreq: 'yearly', priority: 0.2 },
@@ -88,13 +93,21 @@ export async function GET() {
   }
 
   // DB-driven published content pages + active events (best-effort).
+  //
+  // "Best-effort" used to mean SILENT: a failed read dropped every DB URL and
+  // served a sitemap that looked complete. Google would then see the event and
+  // Spanish pages disappear and read that as "these are gone". It still serves
+  // the static half rather than 500ing — a partial sitemap beats none — but a
+  // failure now says so in the container log, because an absence reads exactly
+  // like a fact (plan §18, the held draft that notified nobody).
   try {
     const supabase = getSupabase()
 
-    const { data: content } = await supabase
+    const { data: content, error: contentError } = await supabase
       .from('website_content')
       .select('slug, locale, updated_at')
       .eq('status', 'published')
+    if (contentError) console.error('[sitemap] website_content read failed:', contentError.message)
     for (const c of content || []) {
       const row = c as { slug: string; locale: string; updated_at: string | null }
       entries.push({
@@ -105,16 +118,18 @@ export async function GET() {
       })
     }
 
-    const { data: events } = await supabase
+    const { data: events, error: eventsError } = await supabase
       .from('events')
       .select('slug, updated_at')
       .eq('is_active', true)
+    if (eventsError) console.error('[sitemap] events read failed:', eventsError.message)
     for (const e of events || []) {
       const row = e as { slug: string; updated_at: string | null }
       entries.push({ path: `/events/${row.slug}`, changefreq: 'weekly', priority: 0.6, lastmod: row.updated_at || CONTENT_LAST_MODIFIED })
     }
-  } catch {
+  } catch (err) {
     // Sitemap still serves static + location entries if the DB is unreachable.
+    console.error('[sitemap] DB section skipped:', err instanceof Error ? err.message : String(err))
   }
 
   const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.map(urlNode).join('\n')}\n</urlset>`

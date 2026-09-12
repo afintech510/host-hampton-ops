@@ -3,12 +3,14 @@ import { getSupabase } from '@/lib/supabase'
 import KidsPartyMenuContent from './KidsPartyMenuContent'
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
+import { OG_DEFAULTS } from '@/lib/seo'
 
 export const metadata: Metadata = {
   title: "Kids Party Menu & Quote Builder — Long Island",
   description:
     'Browse our full kids party menu — themes, activities, food, desserts, decor, entertainment and more. Select items to build your custom quote instantly.',
   openGraph: {
+    ...OG_DEFAULTS,
     title: "Kids Party Menu & Quote Builder",
     description: 'Browse our full kids party menu. Select items, see your total in real time, and save your quote.',
   },

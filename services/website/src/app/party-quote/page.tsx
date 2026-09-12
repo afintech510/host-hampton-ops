@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
 import QuoteBuilder from '@/components/QuoteBuilder'
 import type { PricingItem } from '@/components/QuoteBuilder'
+import { OG_DEFAULTS } from '@/lib/seo'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +12,7 @@ export const metadata: Metadata = {
   description:
     'Build your dream party quote instantly. Choose a theme, activities, food, desserts, decor, entertainment, and more. See your estimated total in real time.',
   openGraph: {
+    ...OG_DEFAULTS,
     title: "Children's Party Quote Builder",
     description: 'Build your dream party quote instantly. Choose a theme, add-ons, and see your total in real time.',
   },

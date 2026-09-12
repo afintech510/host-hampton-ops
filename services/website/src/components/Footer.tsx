@@ -28,9 +28,13 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Services */}
+        {/* Services.
+            These are <h2>, not <h4>. The footer renders on every page, and an
+            <h4> straight after the page's own <h2> is a two-level jump in the
+            heading outline on all 69 URLs at once — the only heading-hierarchy
+            break the live-site audit found, and it was global. */}
         <div>
-          <h4 className="font-semibold text-sm tracking-widest uppercase text-hampton-navy mb-4">Services</h4>
+          <h2 className="font-semibold text-sm tracking-widest uppercase text-hampton-navy mb-4">Services</h2>
           <ul className="space-y-2 text-sm text-hampton-navy/70">
             {[
               { href: '/kids-party-menu',    label: 'Design Your Party' },
@@ -38,6 +42,10 @@ export default function Footer() {
               { href: '/mobile-craft-party', label: 'Mobile Craft Parties' },
               { href: '/shower-venue',       label: 'Baby & Bridal Showers' },
               { href: '/party-room-rental',  label: 'Room Rental' },
+              // /studio-rental was reachable from exactly two pages sitewide
+              // (/party-room-rental and /sitemap) despite being one of the three
+              // money pages. An orphan cannot rank.
+              { href: '/studio-rental',      label: 'Studio Rental' },
               { href: '/permanent-jewelry',  label: 'Permanent Jewelry' },
               { href: '/events',             label: 'Events & Classes' },
               { href: '/first-birthday-parties', label: 'First Birthdays' },
@@ -52,7 +60,7 @@ export default function Footer() {
 
         {/* Quick Links */}
         <div>
-          <h4 className="font-semibold text-sm tracking-widest uppercase text-hampton-navy mb-4">Quick Links</h4>
+          <h2 className="font-semibold text-sm tracking-widest uppercase text-hampton-navy mb-4">Quick Links</h2>
           <ul className="space-y-2 text-sm text-hampton-navy/70">
             {[
               { href: '/book',              label: 'Reserve Your Date' },
@@ -73,7 +81,7 @@ export default function Footer() {
 
         {/* Contact */}
         <div>
-          <h4 className="font-semibold text-sm tracking-widest uppercase text-hampton-navy mb-4">Find Us</h4>
+          <h2 className="font-semibold text-sm tracking-widest uppercase text-hampton-navy mb-4">Find Us</h2>
           <ul className="space-y-3 text-sm text-hampton-navy/70">
             <li>
               <a href="https://maps.app.goo.gl/dpHmDoUKSN7dXCaT8" target="_blank" rel="noopener noreferrer" className="flex gap-2 hover:text-hampton-navy transition-colors">

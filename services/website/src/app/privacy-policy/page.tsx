@@ -1,6 +1,10 @@
 import type { Metadata } from 'next'
 
-export const metadata: Metadata = { title: 'Privacy Policy | Host Hampton' }
+// The root layout appends ' | Host Hampton'; naming it here rendered it twice.
+export const metadata: Metadata = {
+  title: 'Privacy Policy',
+  description: 'How Host Hampton collects, uses and protects your personal information, and the choices you have.',
+}
 
 export default function PrivacyPolicy() {
   return (

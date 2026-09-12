@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { NOINDEX } from '@/lib/seo'
 
 export const metadata: Metadata = {
+  robots: NOINDEX,
   title: 'Gift Card Sent! | Host Hampton',
 }
 

@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { getSupabase } from '@/lib/supabase'
 import { type Locale, localeUrl, parseLocaleSlug } from '@/lib/content/slug'
 import { ContentRenderBody } from '@/components/content/ContentRenderBody'
+import { BUSINESS_ID, ORGANIZATION_ID, OG_DEFAULTS, carriesPublishedPrice } from '@/lib/seo'
 
 /**
  * DB-driven content renderer for PUBLISHED website_content rows.
@@ -119,11 +120,13 @@ export async function generateMetadata({ params }: { params: { slug: string[] } 
       languages: Object.keys(languages).length ? languages : undefined,
     },
     openGraph: {
+      ...OG_DEFAULTS,
       title: row.title,
       description: row.meta_description || undefined,
       url,
-      images: row.featured_image ? [{ url: row.featured_image }] : undefined,
-      type: 'website',
+      // Spread order matters: only override OG_DEFAULTS' card when the row
+      // really has a featured image. `images: undefined` would clear it.
+      ...(row.featured_image ? { images: [{ url: row.featured_image }] } : {}),
       locale: locale === 'es' ? 'es_US' : 'en_US',
     },
   }
@@ -135,24 +138,34 @@ function buildJsonLd(url: string, row: ContentRow): unknown[] {
 
   const explicit = row.structured?.jsonLd
   if (explicit) {
-    return Array.isArray(explicit) ? explicit : [explicit]
+    // `structured` is written by the COPY agent and the weekly town-drafts
+    // cron, and this block is rendered verbatim into the page. A price in it is
+    // a price we PUBLISH to Google with no human in the path — and on a town
+    // page it would be a mobile price, which is Adam's alone (plan §15). Drop
+    // it and fall through to the derived graph, which prices nothing, and say
+    // so: rule 10, a guardrail that stops something must report that it did.
+    if (carriesPublishedPrice(explicit)) {
+      console.warn(
+        `[seo] dropped DB-authored JSON-LD for /${row.slug}: it carries a price ` +
+        `(offers/price/priceCurrency). Structured-data prices must come from code, ` +
+        `not from website_content. Falling back to the derived graph.`,
+      )
+    } else {
+      return Array.isArray(explicit) ? explicit : [explicit]
+    }
   }
 
-  // LocalBusiness anchor (always useful for local SEO).
+  // Anchor to the business node the root layout already publishes, by @id,
+  // instead of describing a second business at the same address (rule 11).
   graph.push({
     '@context': 'https://schema.org',
-    '@type': 'LocalBusiness',
-    name: 'Host Hampton',
+    '@type': 'WebPage',
     url,
-    telephone: '+1-631-998-9325',
-    address: {
-      '@type': 'PostalAddress',
-      streetAddress: '295 Montauk Highway, Suite 7',
-      addressLocality: 'Speonk',
-      addressRegion: 'NY',
-      postalCode: '11972',
-      addressCountry: 'US',
-    },
+    name: row.title,
+    isPartOf: { '@id': ORGANIZATION_ID },
+    about: { '@id': BUSINESS_ID },
+    ...(row.published_at ? { datePublished: row.published_at } : {}),
+    dateModified: row.updated_at,
   })
 
   const faq = row.structured?.faq
@@ -180,7 +193,13 @@ export default async function DynamicContentPage({ params }: { params: { slug: s
   const jsonLd = buildJsonLd(localeUrl(slug, locale), row)
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-12">
+    // `lang` on the content wrapper, because the root layout hardcodes
+    // <html lang="en"> and App Router gives a page no way to change it. The
+    // Spanish rows were shipping Spanish prose declared as English while their
+    // own hreflang alternates said `es` — the page contradicted its own
+    // metadata. This is not the <html> attribute, but it is the one a crawler
+    // and a screen reader read for the text that actually differs.
+    <main className="mx-auto max-w-3xl px-5 py-12" lang={locale}>
       {jsonLd.map((node, i) => (
         <script
           key={i}

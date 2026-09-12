@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
+import { NOINDEX } from '@/lib/seo'
 
 export const metadata: Metadata = {
+  robots: NOINDEX,
   title: 'Sample Fundraiser Ordering Page — Host Hampton',
   description: 'See a live example of the custom online ordering page your supporters use to order fundraiser gear — trucker hats, canvas totes, pouches, and team patches.',
 }

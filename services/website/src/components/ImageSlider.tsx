@@ -10,6 +10,12 @@ interface ImageSliderProps {
   aspectRatio?: string
   autoPlayMs?: number
   className?: string
+  /**
+   * Required by next/image whenever `fill` is used. Without it the browser
+   * assumes 100vw and Next serves the 3840px variant into a card-sized box —
+   * which is what every slider on the site was doing.
+   */
+  sizes?: string
 }
 
 export default function ImageSlider({
@@ -18,6 +24,7 @@ export default function ImageSlider({
   aspectRatio = 'aspect-[3/2]',
   autoPlayMs = 4000,
   className = '',
+  sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw',
 }: ImageSliderProps) {
   const [current, setCurrent] = useState(0)
   const [paused, setPaused] = useState(false)
@@ -75,6 +82,7 @@ export default function ImageSlider({
           src={src}
           alt={`${alt} ${i + 1}`}
           fill
+          sizes={sizes}
           className={`object-cover transition-opacity duration-700 ease-in-out ${
             i === current ? 'opacity-100' : 'opacity-0'
           }`}

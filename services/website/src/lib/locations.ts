@@ -99,6 +99,34 @@ export function getLocation(slug: string): Location | undefined {
   return LOCATIONS.find(l => l.slug === slug)
 }
 
+/**
+ * Title and meta description for one town landing page.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * These are here, not inlined in the page, so `seo.test.ts` can assert the
+ * length budget against ALL 26 towns at once. Measured live on 2026-09-12 the
+ * previous template produced titles of 85–96 characters (the brand suffix was
+ * being appended on top of an already-long title) and descriptions of 209–231.
+ * Google cuts a title at roughly 60 characters and a description at 160, so
+ * every one of these pages was showing "Mobile Craft Party in Westhampton
+ * Beach, NY — Kids Arts &…" — the town landed, the offer never did.
+ *
+ * Budget, worst case (Westhampton Beach, 17 chars, New York County, 8):
+ *   title       27 + 17 + 4  = 48
+ *   description 130 + 17 + 8 = 155
+ *
+ * If a longer town is ever added the test fails rather than Google truncating
+ * it quietly.
+ */
+export function townMeta(loc: Location): { title: string; description: string } {
+  return {
+    title: `Mobile Kids Craft Party in ${loc.name}, NY`,
+    description:
+      `We bring the craft party to you in ${loc.name}, NY — canvas painting, sand art, ` +
+      `slime and more. Serving ${loc.county} County, or at our Speonk studio.`,
+  }
+}
+
 /** Locations grouped by region, in display order, for the hub page. */
 export function locationsByRegion(): { region: string; items: Location[] }[] {
   const order: string[] = []

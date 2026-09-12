@@ -1,7 +1,19 @@
 import { MetadataRoute } from 'next'
 
-// Pages that should never be indexed (flows, confirmations, admin, API).
-const disallow = ['/api/', '/admin/', '/book/success', '/events/success', '/cm-cheer/order']
+/**
+ * Paths we do not want crawled at all.
+ *
+ * Deliberately SHORT. A `Disallow` stops a URL being fetched, which means the
+ * `noindex` on the page is never read — so a disallowed URL can still be listed
+ * from an inbound link, with no snippet and no way to remove it. Anything that
+ * must stay OUT of the index says so on the page instead (`NOINDEX` in
+ * lib/seo.ts): the customer portal, /plan, /review, /checkin, the confirmation
+ * pages and the internal tools all carry a robots meta tag.
+ *
+ * `/admin` is listed WITHOUT the trailing slash as well: `/admin/` does not
+ * match `/admin` itself, which returns 200.
+ */
+const disallow = ['/api/', '/admin', '/admin/', '/cm-cheer/order']
 
 // AI answer-engine crawlers we explicitly welcome — we WANT ChatGPT, Claude,
 // Perplexity, Google's AI Overviews, etc. to read and cite Host Hampton when

@@ -5,8 +5,7 @@ import { Star, CheckCircle, Clock, Users, Sparkles, Heart, Shield, Palette } fro
 import DynamicTypingSection from '@/components/DynamicTypingSection'
 import ThemeTileGrid, { ThemeData } from '@/components/ThemeTileGrid'
 import { getSupabase } from '@/lib/supabase'
-
-const HH_URL = 'https://www.hosthampton.com'
+import { businessRef } from '@/lib/seo'
 
 const reviewSchema = [
   { name: 'Jessica M.', stars: 5, text: 'Absolutely incredible! My daughter and all her friends had the best time. The studio was perfectly decorated and the staff was so attentive. Worth every penny!' },
@@ -15,7 +14,9 @@ const reviewSchema = [
 ].map(r => ({
   '@context': 'https://schema.org',
   '@type': 'Review',
-  itemReviewed: { '@type': 'LocalBusiness', name: 'Host Hampton', url: HH_URL },
+  // By @id, so these three reviews attach to the SAME business node the root
+  // layout publishes rather than describing three more unnamed businesses.
+  itemReviewed: businessRef(),
   author: { '@type': 'Person', name: r.name },
   reviewRating: { '@type': 'Rating', ratingValue: r.stars, bestRating: 5, worstRating: 1 },
   reviewBody: r.text,
@@ -24,7 +25,7 @@ const reviewSchema = [
 export const metadata: Metadata = {
   title: 'Kids Birthday Parties on Long Island & the Hamptons',
   description:
-    'Upscale themed kids birthday parties on Long Island — at our private Hamptons studio in Speonk, or mobile at your house — at prices you\u2019d pay anywhere. Hands-on hosts, fully customizable, stress-free. Reserve with a $250 deposit.',
+    'Upscale themed kids birthday parties at our private Hamptons studio in Speonk, NY — or mobile at your house. Hands-on hosts, $250 deposit holds your date.',
 }
 
 const themes = [
@@ -108,9 +109,25 @@ export default async function Home() {
             </div>
           </div>
           <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
-            {['/images/theme-glow.webp', '/images/theme-barbie.webp', '/images/theme-spa.webp', '/images/theme-sweets.webp'].map((src, i) => (
-              <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 0 ? 'ring-2 ring-hampton-pink' : ''}`}>
-                <Image src={src} alt="Party theme" fill className="object-cover" />
+            {[
+              { src: '/images/theme-glow.webp', alt: 'Glow party setup with neon décor at the Host Hampton studio' },
+              { src: '/images/theme-barbie.webp', alt: 'Barbie-themed birthday party table set for kids' },
+              { src: '/images/theme-spa.webp', alt: 'Kids spa party station with robes and mini manicures' },
+              { src: '/images/theme-sweets.webp', alt: 'Sweets and treats party dessert table' },
+            ].map((img, i) => (
+              <div key={img.src} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 0 ? 'ring-2 ring-hampton-pink' : ''}`}>
+                {/* `sizes` is required with `fill`: without it the browser
+                    assumes 100vw and Next serves the 3840px variant into a
+                    ~230px box. `priority` on the first tile because this grid
+                    is the homepage LCP and it was shipping loading="lazy". */}
+                <Image
+                  src={img.src}
+                  alt={img.alt}
+                  fill
+                  sizes="(max-width: 768px) 45vw, 240px"
+                  priority={i === 0}
+                  className="object-cover"
+                />
               </div>
             ))}
           </div>
@@ -256,7 +273,7 @@ export default async function Home() {
               </div>
             </div>
             <div className="relative h-64 md:h-full min-h-[280px]">
-              <Image src="/images/gallery/venue-craft-station.webp" alt="Mobile craft party — canvas painting and crafts" fill className="object-cover" />
+              <Image src="/images/gallery/venue-craft-station.webp" alt="Mobile craft party — canvas painting and crafts" fill sizes="(max-width: 768px) 100vw, 50vw" className="object-cover" />
             </div>
           </div>
         </div>
@@ -277,7 +294,7 @@ export default async function Home() {
           ].map(s => (
             <Link href={s.href} key={s.href} className="card group">
               <div className="relative aspect-[3/4] overflow-hidden">
-                <Image src={s.img} alt={s.title} fill className="object-cover group-hover:scale-105 transition-transform duration-300" />
+                <Image src={s.img} alt={s.title} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" className="object-cover group-hover:scale-105 transition-transform duration-300" />
               </div>
               <div className="p-5">
                 <h3 className="font-semibold text-hampton-navy text-base mb-1">{s.title}</h3>

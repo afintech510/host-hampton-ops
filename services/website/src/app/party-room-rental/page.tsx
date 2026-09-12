@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
   title: 'Party Room Rental — Long Island (Speonk, NY)',
   description:
-    'Rent our private party studio on Long Island — Speonk, NY — for birthdays, showers, photo shoots, workshops, and more. Starting at $475 for 3 hours. DIY your event your way.',
+    'Rent our private studio in Speonk, NY for birthdays, showers, photo shoots and workshops. From $475 for 3 hours — run your event your way.',
   alternates: {
     canonical: 'https://www.hosthampton.com/party-room-rental',
     languages: {
@@ -135,7 +135,7 @@ export default async function PartyRoomRental() {
             { src: '/images/gallery/activity-bracelet-making.webp', alt: 'Bracelet making activity at Host Hampton' },
           ].map((img, i) => (
             <div key={i} className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-md">
-              <Image src={img.src} alt={img.alt} fill className="object-cover" />
+              <Image src={img.src} alt={img.alt} fill sizes="(max-width: 768px) 50vw, 25vw" className="object-cover" />
             </div>
           ))}
         </div>

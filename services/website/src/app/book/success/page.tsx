@@ -3,8 +3,10 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import { CheckCircle, Calendar, Mail, Phone } from 'lucide-react'
 import ConversionTracker from '@/components/ConversionTracker'
+import { NOINDEX } from '@/lib/seo'
 
-export const metadata: Metadata = { title: 'Request Received!' }
+export const metadata: Metadata = {
+  robots: NOINDEX, title: 'Request Received!' }
 
 export default function BookSuccess({ searchParams }: { searchParams: { request?: string } }) {
   const isRequest = searchParams?.request === '1'

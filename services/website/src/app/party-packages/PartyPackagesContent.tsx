@@ -541,7 +541,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                     className="shrink-0 w-[100px] snap-start group text-left"
                   >
                     <div className="relative aspect-square rounded-xl overflow-hidden border-2 border-transparent group-hover:border-hampton-pink transition-colors">
-                      <Image src={t.imgs[0]} alt={t.name} fill className="object-cover" />
+                      <Image src={t.imgs[0]} alt={t.name} fill sizes="100px" className="object-cover" />
                     </div>
                     <p className="text-xs text-hampton-navy mt-1.5 font-medium text-center truncate">{t.name}</p>
                     <p className="text-[10px] text-hampton-navy/50 text-center">${(lookupThemePrice(t.name, pricingItems) ?? t.price).toLocaleString()}</p>
@@ -568,7 +568,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                   </div>
                 )}
                 <div className="relative aspect-video overflow-hidden">
-                  <Image src={t.imgs[0]} alt={t.name} fill className="object-cover transition-transform duration-500 hover:scale-105" />
+                  <Image src={t.imgs[0]} alt={t.name} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" className="object-cover transition-transform duration-500 hover:scale-105" />
                 </div>
                 <div className="p-5">
                   <div className="flex justify-between items-start mb-2">

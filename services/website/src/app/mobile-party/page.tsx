@@ -3,6 +3,7 @@ import Image from 'next/image'
 import { MapPin, PartyPopper, Sparkles, Heart, Truck, ChevronDown } from 'lucide-react'
 import MobilePartyForm from '@/components/MobilePartyForm'
 import MobilePriceBlock from '@/components/MobilePriceBlock'
+import { OG_DEFAULTS } from '@/lib/seo'
 
 /**
  * ISR, because the prices on this page are DB rows now (migration 036).
@@ -22,7 +23,7 @@ export const revalidate = 3600
 export const metadata: Metadata = {
   title: 'Mobile Party — We Bring the Party to You',
   description:
-    'Host Hampton brings themed birthday parties, activities, and entertainment directly to your home, backyard, or venue. Full-service mobile party in the Hamptons & Long Island.',
+    'We bring themed birthday parties, activities and entertainment to your home, backyard or venue across the Hamptons and Long Island.',
   keywords: [
     'mobile party Long Island',
     'at home birthday party Hamptons',
@@ -35,6 +36,7 @@ export const metadata: Metadata = {
     'kids craft party near me',
   ],
   openGraph: {
+    ...OG_DEFAULTS,
     title: 'Mobile Party — We Bring the Party to You',
     description:
       'Themed birthday parties delivered to your door. Professional hosts, activities, decor & cleanup — all at your location.',
@@ -177,7 +179,7 @@ export default function MobilePartyPage() {
           <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
             {['/images/theme-glow.webp', '/images/gallery/outdoor-party-setup.webp', '/images/theme-spa.webp', '/images/theme-slime.webp'].map((src, i) => (
               <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 1 ? 'ring-2 ring-[#c4975a]' : ''}`}>
-                <Image src={src} alt="Mobile party theme" fill className="object-cover" />
+                <Image src={src} alt="Mobile party theme" fill sizes="(max-width: 768px) 45vw, 240px" className="object-cover" />
                 {i === 1 && (
                   <div className="absolute inset-0 bg-hampton-navy/40 flex items-center justify-center">
                     <span className="text-white font-bold text-sm bg-[#c4975a] px-3 py-1 rounded-full">At Your Home</span>

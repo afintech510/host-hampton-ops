@@ -3,12 +3,14 @@ import { getSupabase } from '@/lib/supabase'
 import PartyBuilderContent from '../party-builder/PartyBuilderContent'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
+import { OG_DEFAULTS } from '@/lib/seo'
 
 export const metadata: Metadata = {
   title: "Host Hampton Party Planner — Speonk NY",
   description:
     'Plan your custom Host Hampton party — review details, add options, pick a date, and pay $250 down to reserve.',
   openGraph: {
+    ...OG_DEFAULTS,
     title: "Host Hampton Party Planner",
     description: 'Plan, customize, and reserve your party in one place.',
   },

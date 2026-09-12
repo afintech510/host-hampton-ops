@@ -6,7 +6,8 @@ import { MapPin, Home, Store, Truck, Palette, ChevronDown, ArrowLeft } from 'luc
 import MobilePartyForm from '@/components/MobilePartyForm'
 import MobilePriceBlock from '@/components/MobilePriceBlock'
 import { CRAFT_STATIONS } from '@/lib/craftStations'
-import { LOCATIONS, getLocation, TRAVEL_NOTES, type Location } from '@/lib/locations'
+import { LOCATIONS, getLocation, townMeta, TRAVEL_NOTES, type Location } from '@/lib/locations'
+import { OG_DEFAULTS, businessRef } from '@/lib/seo'
 
 const BASE = 'https://www.hosthampton.com/mobile-craft-party'
 
@@ -35,10 +36,13 @@ export async function generateMetadata(
   const loc = getLocation(params.location)
   if (!loc) return {}
   const url = `${BASE}/${loc.slug}`
-  const title = `Mobile Craft Party in ${loc.name}, NY — Kids Arts & Crafts at Your Home`
-  const description = `Book a mobile kids craft party in ${loc.name}. Host Hampton brings canvas painting, sand art, drip-paint balloon dogs, slime & more to your home in ${loc.name} — or host at our Speonk studio. Serving ${loc.county} County.`
+  const { title, description } = townMeta(loc)
   return {
-    title: { absolute: `${title} | Host Hampton` },
+    // `absolute`, so the root layout's ' | Host Hampton' template is NOT applied.
+    // These 26 titles used to run 85–96 characters with the brand appended and
+    // Google cut every one of them at ~60 — the town name survived, the offer
+    // did not. See townMeta() for the budget.
+    title: { absolute: title },
     description,
     keywords: [
       `mobile craft party ${loc.name}`,
@@ -49,7 +53,7 @@ export async function generateMetadata(
       'mobile craft party near me',
     ],
     alternates: { canonical: url },
-    openGraph: { title, description, url, type: 'website' },
+    openGraph: { ...OG_DEFAULTS, title, description, url },
   }
 }
 
@@ -60,20 +64,10 @@ function buildSchema(loc: Location, url: string, faqs: { q: string; a: string }[
     serviceType: 'Mobile kids craft party',
     name: `Mobile Craft Party in ${loc.name}, NY`,
     description: `Hands-on mobile arts and crafts birthday parties brought to homes in ${loc.name}, NY, by Host Hampton.`,
-    provider: {
-      '@type': 'LocalBusiness',
-      name: 'Host Hampton',
-      telephone: '+1-631-998-9325',
-      url: 'https://www.hosthampton.com',
-      address: {
-        '@type': 'PostalAddress',
-        streetAddress: '295 Montauk Highway, Suite 7',
-        addressLocality: 'Speonk',
-        addressRegion: 'NY',
-        postalCode: '11972',
-        addressCountry: 'US',
-      },
-    },
+    // A reference to the node the root layout already publishes, not a fourth
+    // copy of the address (rule 11 — a constant declared in two files is a
+    // constant nothing is checking).
+    provider: businessRef(),
     areaServed: { '@type': 'City', name: `${loc.name}, NY` },
     url,
   }
@@ -169,7 +163,7 @@ export default function LocationPage({ params }: { params: { location: string } 
             <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
               {['/images/gallery/venue-painting-workshop.webp', '/images/theme-slime.webp', '/images/theme-spa.webp', '/images/gallery/outdoor-party-setup.webp'].map((src, i) => (
                 <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 0 ? 'ring-2 ring-[#c4975a]' : ''}`}>
-                  <Image src={src} alt={`Kids craft party in ${loc.name}`} fill className="object-cover" />
+                  <Image src={src} alt={`Kids craft party in ${loc.name}`} fill sizes="(max-width: 768px) 45vw, 240px" className="object-cover" />
                 </div>
               ))}
             </div>

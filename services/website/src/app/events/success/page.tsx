@@ -3,8 +3,10 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import { CheckCircle, Calendar, MapPin, ArrowRight } from 'lucide-react'
 import ConversionTracker from '@/components/ConversionTracker'
+import { NOINDEX } from '@/lib/seo'
 
 export const metadata: Metadata = {
+  robots: NOINDEX,
   title: 'Tickets Confirmed',
 }
 
