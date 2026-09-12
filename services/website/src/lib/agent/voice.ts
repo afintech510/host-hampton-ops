@@ -6,9 +6,10 @@
  * already drifted (the fb-reply copy silently dropped dos/donts). Both now
  * import from here; this version is the superset.
  *
- * `loadLearnings` reads `agent_learnings`, which arrives in a later migration
- * (the learning loop, plan Phase 6). Until then it returns [] — every caller
- * must keep working against a database where that table does not exist.
+ * The learned-rules half moved to ./learnings in Phase 6. It grew a screen, a
+ * fence and a write path of its own once `agent_learnings` became a real table,
+ * and leaving a second `loadLearnings` here would have been exactly the shape
+ * of hard-won rule 11.
  */
 
 import { getSupabase } from '@/lib/supabase'
@@ -22,12 +23,6 @@ export interface VoiceProfile {
   dos?: string[]
   donts?: string[]
   exemplars?: { context?: string; text: string }[]
-}
-
-export interface AgentLearning {
-  kind: 'style' | 'rule' | 'fact' | 'pricing'
-  text: string
-  confidence?: number | null
 }
 
 /**
@@ -68,28 +63,88 @@ export function voicePromptAddendum(profile: VoiceProfile): string {
 }
 
 /**
- * Active learned rules, highest confidence first. Fails soft to [] when the
- * table is absent (it ships with the Phase 6 migration) or the query errors.
+ * The next version number for a proposed profile. `voice_profile_version_uniq`
+ * makes a collision a 23505, which the caller retries rather than guessing at.
  */
-export async function loadLearnings(supabase: Supa, limit = 20): Promise<AgentLearning[]> {
-  try {
-    const { data, error } = await supabase
-      .from('agent_learnings')
-      .select('kind, text, confidence')
-      .eq('is_active', true)
-      .order('confidence', { ascending: false })
-      .limit(limit)
-    if (error || !data) return []
-    return data as AgentLearning[]
-  } catch {
-    return []
-  }
+async function nextVoiceVersion(supabase: Supa): Promise<number> {
+  const { data } = await supabase
+    .from('voice_profile')
+    .select('version')
+    .order('version', { ascending: false })
+    .limit(1)
+  const top = Number((data as { version?: unknown }[] | null)?.[0]?.version)
+  return Number.isFinite(top) ? top + 1 : 2
 }
 
-/** Prompt block for learned rules. Empty string when there are none. */
-export function learningsPromptAddendum(learnings: AgentLearning[]): string {
-  if (learnings.length === 0) return ''
-  const lines = ['', 'LEARNED RULES (corrections Adam/Allie have already made — follow them):']
-  learnings.forEach(l => lines.push(`- [${l.kind}] ${l.text}`))
-  return lines.join('\n')
+/**
+ * Record a proposed voice profile. INACTIVE, always — same rule as a proposed
+ * learning: the weekly distiller may describe how Allie writes, it may not
+ * change how the agent writes. `activateVoiceProfile` is the admin-only gate.
+ */
+export async function proposeVoiceProfile(args: {
+  supabase: Supa
+  profile: VoiceProfile
+  createdBy: string
+  corpusNotes?: string | null
+  confidence?: 'low' | 'medium' | 'high'
+}): Promise<{ ok: true; id: string; version: number } | { ok: false; error: string }> {
+  const { supabase, profile, createdBy } = args
+  const version = await nextVoiceVersion(supabase)
+  const { data, error } = await supabase
+    .from('voice_profile')
+    .insert({
+      version,
+      is_active: false,
+      profile,
+      corpus_notes: args.corpusNotes ?? null,
+      confidence: args.confidence ?? 'low',
+      created_by: createdBy,
+    })
+    .select('id')
+    .single()
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, id: String(data.id), version }
+}
+
+/**
+ * Make a proposed profile the live one.
+ *
+ * Deactivate-then-activate, two statements, because `voice_profile_one_active`
+ * is a partial UNIQUE index and doing it the other way round is refused. The
+ * window between them has ZERO active profiles, which is the safe direction to
+ * fail: `loadVoiceProfile` returns null and drafts fall back to the base system
+ * prompt, rather than two profiles fighting or the old one silently winning.
+ */
+export async function activateVoiceProfile(args: {
+  supabase: Supa
+  id: string
+  actor: string
+}): Promise<{ ok: true; version: number } | { ok: false; status: number; error: string }> {
+  const { supabase, id } = args
+  const { data: row, error: readErr } = await supabase
+    .from('voice_profile')
+    .select('id, version, profile')
+    .eq('id', id)
+    .maybeSingle()
+  if (readErr) return { ok: false, status: 503, error: `Could not read the voice profile: ${readErr.message}` }
+  if (!row) return { ok: false, status: 404, error: 'Voice profile not found' }
+
+  const { error: offErr } = await supabase
+    .from('voice_profile')
+    .update({ is_active: false })
+    .eq('is_active', true)
+  if (offErr) return { ok: false, status: 500, error: offErr.message }
+
+  const { error: onErr } = await supabase.from('voice_profile').update({ is_active: true }).eq('id', id)
+  if (onErr) {
+    return {
+      ok: false,
+      status: 500,
+      // Say what state this left behind. There is now NO active profile, which
+      // is safe but is not what the caller asked for, and silence about it is
+      // how someone spends an afternoon wondering why drafts changed tone.
+      error: `${onErr.message}. No voice profile is active — drafts are using the base prompt until one is.`,
+    }
+  }
+  return { ok: true, version: Number(row.version) }
 }

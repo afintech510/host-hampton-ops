@@ -5,6 +5,7 @@ import {
   RefreshCw, CheckCircle2, XCircle, Pencil, Inbox, MessageSquare, Mail, Sparkles, AlertTriangle, X, Send, Clock,
 } from 'lucide-react'
 import { byLongestWaiting, waitingInfo } from '@/lib/leadWaiting'
+import LearningsPanel from './LearningsPanel'
 
 /**
  * How long this draft has been sitting on a human, said in words.
@@ -475,6 +476,9 @@ export default function InboxTab({
           </div>
         </section>
       )}
+
+      {/* ── What the agent has learned (Phase 6) ── */}
+      <LearningsPanel headers={headers} onLogout={onLogout} />
 
       {/* ── Agent activity ── */}
       <section>

@@ -37,8 +37,15 @@ jest.mock('@/lib/marketing/graph', () => ({ writeLedger: jest.fn().mockResolvedV
 jest.mock('@/lib/agent/voice', () => ({
   loadVoiceProfile: jest.fn().mockResolvedValue(null),
   voicePromptAddendum: () => '',
-  loadLearnings: jest.fn().mockResolvedValue([]),
-  learningsPromptAddendum: () => '',
+}))
+
+// The learned-rules layer moved out of voice.ts in Phase 6. Mocked as "no
+// learnings", which is what a database without migration 041 gives — the
+// screen and the fence have their own suite (agentLearnings.test.ts) where the
+// REAL functions are exercised rather than stubbed.
+jest.mock('@/lib/agent/learnings', () => ({
+  ...jest.requireActual('@/lib/agent/learnings'),
+  loadActiveLearnings: jest.fn().mockResolvedValue({ learnings: [], unavailable: null, rejected: [] }),
 }))
 
 import { draftForInquiry, containsFabricatedTerms } from '@/lib/agent/draftInquiry'
