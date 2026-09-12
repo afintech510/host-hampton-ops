@@ -578,3 +578,406 @@ docker images --no-trunc hosthampton-website --format '{{.ID}}'
 
 Equal means the deploy took. Both times here they were, and the other two deploys
 printed `Recreated` / `Started` cleanly with no change to the script.
+
+---
+
+# 11. Review + test (chain link 9, 2026-09-12, worktree `amber-mountain`)
+
+Phase 4 attacked rather than summarised. **No migration — 044 is still free.** No
+new env. **1573 tests, all green** (was 1542). 0 app-code `tsc` errors,
+`next build` clean, `/book` still `○ Static` at 7.15 kB.
+
+Seven defects. The first one had already happened to real people, which is what
+§1 predicted would keep being true of this surface.
+
+## 11.1 The unsubscribe link did nothing for 21 real contacts, 7 of them mid-sequence
+
+§2.4 built the opt-out path this business had never had, and §5 measured it end
+to end with a throwaway contact — `hh-p4-probe@…`, lowercase, as every address a
+developer types is.
+
+`contacts.email` is plain `text` with a unique index **on the raw value**, and
+the rows in it are whatever the customer typed:
+
+```
+contacts with an email               : 1216
+  …whose address is not lowercase    :   21     BON…@GMAIL.COM, Kel…@yahoo.com, Nit…@gmail.com
+  …of those, on an ACTIVE enrollment :    7
+```
+
+`generateUnsubscribeToken` lowercases the address **deliberately** — §2.4's own
+reasoning, so `Foo@Bar.com` and `foo@bar.com` cannot be two valid tokens for one
+person. `POST /api/unsubscribe` then looked the address up with
+`.eq('email', …)`, which is case-**sensitive** in Postgres.
+
+So for those 21 people the row was never found, and the endpoint took the branch
+written for an address that has never been heard of: **HTTP 200, a confirmation
+page, and not one byte written.** They stay `email_opt_in = true`, they stay
+`active` on their enrollment, and the sequencer mails them again. Seven of them
+are exactly the people the frozen cron reaches first when Adam turns it back on
+(§6).
+
+That is rule 10's other half in the one place it is most expensive: *a guardrail
+must not say it stopped something it did not stop.* And it is CAN-SPAM before it
+is engineering — the whole argument of §2.4.
+
+**The same bug was in the Brevo webhook**, which matters more than it looks.
+`optedOutReason()` reads `contacts.email_opt_in` before every single marketing
+send, and the Brevo webhook is one of only two writers of that column. Brevo
+normalises addresses and posts them back lowercased; `/api/webhooks/brevo` used
+`.eq('email', …)` in six places. **Every `unsubscribed` and every `hardBounce`
+Brevo has ever reported for those 21 addresses updated zero rows**, and the
+handler answered `{received: true}` regardless — so Brevo never redelivered
+either.
+
+Fixed with **one** lookup, `findContactsByEmail()` in `lib/contactLookup.ts`,
+not two (rule 11). Three things about it are deliberate:
+
+* `ilike` fetches the candidates and is **not trusted to be the answer**.
+  PostgREST hands the pattern to LIKE, where `_` matches any single character
+  and `*` becomes `%` — so `first_last@gmail.com` also matches
+  `firstXlast@gmail.com`, a stranger. Every candidate is re-compared in JS and
+  **every write is by `id`**, never by the email filter.
+* It returns `found | absent | unavailable` (rule 12). On the Brevo route a
+  failed read is now a **500**, because answering 200 to an `unsubscribed` we
+  could not record means Brevo never retries and the opt-out is gone.
+* The 21 stored addresses were **not** rewritten. Lowercasing them risks a
+  collision against `contacts_email_key` and does nothing about the 22nd address
+  somebody types tomorrow.
+
+## 11.2 The oracle the route's own comment forbade
+
+Directly under a comment saying *"saying 'we have never heard of you' tells a
+stranger holding a token whether an address is on the list"*, the unknown-address
+branch returned `{"ok": true, "alreadyOff": true}` while the known-address branch
+returned `{"ok": true}`. Rule 8, third form: a comment asserting the opposite of
+the code beneath it. The bodies are now byte-identical and the distinction lives
+in the log, where it belongs.
+
+## 11.3 `safeImageUrl` still returned another origin — through a second door
+
+`docs/content-pipeline.md` §11.1 is link 7's finding that one backslash defeated
+the protocol-relative guard, fixed by **parsing** instead of prefix-matching.
+The value that fix normalises to was still reachable by typing it directly:
+
+```
+safeImageUrl('https://www.hosthampton.com//evil.example.com/x.png')
+  → url.host      = 'www.hosthampton.com'      ← allowlist passes
+  → url.origin    = SITE_ORIGIN                 ← "it's ours", returns the path
+  → url.pathname  = '//evil.example.com/x.png'  ← another ORIGIN to every browser
+```
+
+That string lands in `<img src>` on a published page and in `og:image`, which is
+the sharper half: the card Facebook and iMessage render for a Host Hampton URL
+becomes whatever that host serves, and it can change after a human approved the
+row. Refused now, rather than collapsed — a doubled leading slash is never what a
+writer meant, and a screen that repairs a hostile value has an output nobody can
+reason about.
+
+`safeSiteLink` was **sound**: it returns `SITE_ORIGIN + path`, and
+`https://www.hosthampton.com//evil.example.com/x` resolves back to our own
+origin. So this was `safeImageUrl`'s bug alone, and the brief's question about "a
+path that is itself `//something`" had two different answers depending on which
+of the two callers asked it.
+
+## 11.4 The two fields the panel renders and the screen had never read
+
+§4.4's whole argument is that *a row being `draft` in Postgres is not evidence it
+ever passed a screen* — migration 043 is the only thing between a hand-written
+INSERT and the review panel. `screenStoredPost` checked `caption`,
+`call_to_action` and `link_url`.
+
+`SocialTab.tsx` renders **five** fields. The other two:
+
+```tsx
+{post.hashtags?.length > 0 && <p …>{post.hashtags.join(' ')}</p>}
+{post.image_idea && <p …><strong>Photo:</strong> {post.image_idea}</p>}
+```
+
+Allie reads both as vetted copy and copies the hashtags into Instagram by hand.
+`image_idea` is 300 characters of free text and is the field she acts on. Rule
+11's sharpest form: **a field read by two readers and screened in only one is a
+screen nobody is applying.**
+
+And there was a second writer that never met the generator's parser either. The
+PATCH edit path stored hashtags as `sanitizeCaptionText(h).replace(/\s+/g,'')` —
+anything at all, minus the whitespace — while `normalizeHashtag` on the write
+path allows only `[A-Za-z0-9_]{2,}`. Two implementations of one concept. The edit
+path now calls `normalizeHashtag` itself and **says which tag it refused**,
+because a value that silently does not stick is a value the reviewer retypes.
+
+## 11.5 `sanitizeCaptionText`, written by hand, missed the fashionable one
+
+§24 found `flattenToOneLine` missing U+2028/U+2029/NEL/C1. The social sanitiser
+was written afterwards with that list in mind and still missed:
+
+| range | what it is |
+|---|---|
+| **U+E0000–U+E007F** | the **TAG block — invisible ASCII, one code point per character.** The current fashionable injection, and the one that matters most here: it renders as nothing in the panel and survives the clipboard intact into Instagram. |
+| U+180E | Mongolian vowel separator (a format character since Unicode 6.3) |
+| U+200E / U+200F / U+061C | LRM, RLM, Arabic letter mark |
+| U+2061–U+2064 | invisible mathematical operators |
+| U+115F, U+1160, U+3164, U+FFA0 | Hangul fillers — zero-width, and in no "zero-width" list written from memory |
+| U+FFF9–U+FFFB | interlinear annotation |
+| U+00AD | soft hyphen |
+| **lone surrogates** | not a character at all. `for…of` yields an unpaired one on its own; storing it produces U+FFFD in every consumer and a `\uXXXX` error inside Postgres `jsonb`. Rule 15 — dropped, never guessed at. A well-formed pair arrives as one code point above 0xFFFF and is untouched. |
+
+Built by code point, never typed — an invisible character in a source file is a
+screen nobody can read in a diff.
+
+## 11.6 A FOURTH writer of opt-out state, writing in the wrong direction
+
+The brief asked whether anything other than the Brevo webhook, the Twilio
+webhook, the admin Contacts tab and `contactSync` writes opt-out state.
+Something does, and it is not a webhook.
+
+`contacts.status` is the `contact_status` enum, read out of `pg_enum` rather than
+remembered: `lead | warm_lead | hot_lead | customer | vip | inactive |
+unsubscribed`. `optedOutReason()` reads `status === 'unsubscribed'` as the second
+half of the opt-out check, precisely because *"an admin sets `contacts.status`"*.
+
+`upsertContact()` — called by **twenty** routes, every public intake form among
+them — did this:
+
+```ts
+const record = { email, …, status: 'lead', … }
+await supabase.from('contacts').upsert(record, { onConflict: 'email' })
+```
+
+An upsert overwrites every column in the payload. So an admin marking somebody
+`unsubscribed` in the Contacts tab had it **silently reset to `lead` by that
+person's next enquiry form**, and the sequencer then saw an ordinary lead. The
+same line demoted paying customers: `contacts.status` holds 429 `customer` rows,
+and any of them filling in a form became a `lead` again.
+
+It now reads first (case-insensitively, the same helper as §11.1) and sets a
+status **only on insert**; a failed read is a refusal, not a guess, because
+guessing `lead` is the exact write this is about. A ticked marketing-consent box
+still sets `email_opt_in = true` — that is fresh, explicit consent, and it is
+left alone.
+
+**Stated rather than over-claimed:** this one is proven from the live enum, the
+live row counts and the code, and it is covered by tests in both directions. It
+was **not** driven through a live intake form, because every one of the twenty
+also creates a `bookings` plan row and enqueues an agent event.
+
+## 11.7 The SMS campaign branch still could not tell "sent" from "attempted"
+
+§3 fixed exactly this on the email branch and stopped there. The SMS branch:
+
+```ts
+const results = await sendBulkSMS(smsContacts, 1000, mediaUrls)
+const successCount = results.filter(r => r !== null).length   // ← read, then dropped
+await supabase.from('scheduled_campaigns').update({
+  status: 'sent', total_recipients: smsContacts.length,        // ← what was ATTEMPTED
+})
+```
+
+`sendBulkSMS` returns `null` per failed message and nothing acted on it, so a
+Twilio outage that delivered nothing at all was recorded in Adam's campaign
+history as a completed send to N people. Three outcomes now (`failed` + 502 when
+nothing was accepted, a warning when only some were), and `total_recipients`
+counts what actually went out. This is also the reason §8 item 6 can never be
+settled from our own table: a `total_recipients` that was never a delivery count.
+
+## 11.8 Two smaller things, and one that was not a bug
+
+**An enrollment that can never become due said nothing.** §2.3 correctly made an
+unparseable reference date *not due* — and that is silent: the enrollment stays
+`active`, is skipped every fifteen minutes forever, and is indistinguishable in
+every log and summary from one that is simply not due yet. `isDue` is now
+`dueAt()` with three outcomes; an unreadable reference is `deferred`, names the
+field and its raw value, and says *"it can never become due and will never send.
+Needs a human."* (Measured: no live enrollment is in this state today — all 21
+`event_date` values are clean `YYYY-MM-DD`. It is a trap, not a fire.)
+
+**A campaign stranded at `sending` was told the wrong thing.** The
+`scheduled_campaigns` claim and the `email_sequence_sends` claim are the brief's
+"two implementations of one idea", and **they disagree on purpose**: the
+sequencer takes a stale claim over after `STALE_CLAIM_MS`, and the campaign claim
+has no reaper at all — because a reaped campaign claim would re-enter
+`sendCampaign`, and a retried Brevo send is a **second campaign to 944 people**.
+That is right. What was wrong is what the 409 said: *"This campaign is 'sending'
+— it is not waiting to be sent"*, which tells an operator nothing about the one
+state they can actually get stuck in. It now names the recovery: check Brevo
+first, because pressing Send again makes a second campaign.
+
+**Link 8's calendar arithmetic held, checked rather than read.** The rotation
+`floor(now / 7 days)` changes exactly once a week (on the Thursday epoch
+boundary) and is computed once per run, so one week's slots never straddle two
+values. `planDates` is pure UTC, so the US DST boundary is a non-event — runs
+from 2026-10-29 through 2026-11-05 all produce Tue/Thu/Sat — and
+`slotTimestamp(d)` round-trips to exactly the UTC calendar day
+`social_posts_slot_uniq` keys on. `email_sequence_sends.enrollment_id` is
+`ON DELETE CASCADE` (read out of `pg_constraint`, not out of the migration file),
+so the brief's orphan-row question has no orphan.
+
+---
+
+## 11.9 Driven against production
+
+### The sequencer's send path, end to end — the gap §6 could not close
+
+§6 stated plainly that the full send path had never been exercised in production,
+because the only way to run it is the cron and the cron mails 44 real people.
+That is now closed, without mailing any of them.
+
+The route grew `?limit=N` (1…`BATCH_SIZE`). The scan is
+`ORDER BY enrolled_at ASC`, so the cap is deterministic — the same N enrollments,
+longest-waiting first. It exists for Adam: **`?limit=1` is the drain** for the 44
+frozen enrollments, one real person per tick with a look in between, instead of
+one batch of 44 months-late emails. It can only make a tick do less work and it
+is behind `CRON_SECRET` like everything else.
+
+A throwaway contact was enrolled on the real **Lead Follow-Up** sequence with
+`enrolled_at = 2000-01-01`, making it the oldest active enrollment — verified by
+reading the three oldest before firing anything, rather than assuming the
+ordering:
+
+```
+3020bfe8-… | 2000-01-01 00:00:00+00        | is_probe = t
+1c3a6207-… | 2026-03-10 13:43:06.534785+00 | f
+62bd5124-… | 2026-03-10 15:17:19.860428+00 | f
+```
+
+| probe | result |
+|---|---|
+| `?limit=0`, `?limit=abc` | **400**, naming the value — a cap that is silently ignored is a cap the operator thinks is protecting them |
+| wrong `x-cron-secret` | **401** |
+| `?limit=1` | `{"scanned":1,"sent":1,…}` — **one real Resend send, to the probe and nobody else** |
+| immediately again | `{"scanned":1,"sent":0,"skipped":1}` — step 2 is four days out |
+
+Afterwards, in the database: the claim row `status = sent` with a real Resend
+`provider_id`, the enrollment at `current_step = 1`, and —
+
+```
+email_sent | Sequence "Lead Follow-Up" step 1/2: Still thinking about your event at Host Hampton?
+```
+
+**— a `contact_interactions` row.** That is §2.1 proven on the send path itself,
+not by analogy from the unsubscribe route: the exact insert that had been
+silently refused by `contact_interactions_type_check` for five months and 57 real
+emails now lands.
+
+### Five concurrent ticks, one email
+
+The guarantee §2.2 exists for, proved where it lives rather than in the fake
+store. `last_sent_at` backdated so step 2 was due, then five requests at once:
+
+```
+#0 200 sent=0 claimedElsewhere=1  notes=["… step 2 claimed by another run"]
+#1 200 sent=0 claimedElsewhere=1
+#2 200 sent=0 claimedElsewhere=1
+#3 200 sent=1 claimedElsewhere=0   ← exactly one winner
+#4 200 sent=0 claimedElsewhere=1
+
+email_sequence_sends: step 1 sent, step 2 sent — one row per step, two emails in total
+```
+
+Unlike §9's five-way campaign probe, this one does not release its claim, so the
+number is the lock rather than the probe's own design: the four losers hit the
+real 23505 on the real unique index and stopped.
+
+### Opt-out flipped mid-sequence, both halves
+
+The brief asked for proof rather than a reading of `optedOutReason`. With the
+enrollment reset to step 1 and due:
+
+| state | result |
+|---|---|
+| `email_opt_in = false` | `unsubscribed: 1`, **`sent: 0`** — *"stopped before step 2 — contacts.email_opt_in is false"* |
+| `email_opt_in = true`, `contacts.status = 'unsubscribed'` | `unsubscribed: 1`, **`sent: 0`** — *"stopped before step 2 — contacts.status is 'unsubscribed'"* |
+
+No claim row was even created in either case — the check is before the claim,
+which is before the send. The second half had **never been true for anybody in
+production**: `contacts.status` holds only `lead` (790) and `customer` (429)
+today, which is §11.6 in one line.
+
+### The unsubscribe endpoint, attacked
+
+Token minted **inside the container**, so the signing secret never left it.
+
+| probe | result |
+|---|---|
+| `GET /unsubscribe?t=…` | 200, renders, **changes nothing** |
+| `GET /api/unsubscribe` | **405** |
+| tampered payload (a victim's address, a valid signature) | **400** |
+| 20 000-character payload | **414 at nginx** — it never reaches the app |
+| `a.b.c.d.e.f` | **400** |
+| a non-base64 body (`////…`) | **400** |
+| the **uppercase** payload with the real signature | **400** — the token must round-trip to what was signed, or one person has two tokens |
+| a validly-signed address with **no contact row** | **200 `{"ok":true}`** |
+| the real one-click against **`HH-P4R-Case@easternbuilding.supply`** | **200 `{"ok":true}`** — byte-identical to the line above |
+| again | 200, idempotent |
+
+And in the database afterwards: `email_opt_in = f` on the mixed-case row, two
+`email_unsubscribed` interactions for two deliberate clicks, and — checked
+explicitly — **zero non-probe contacts modified in the past hour**, so the
+`ilike` candidate fetch swept nobody up.
+
+### The social calendar, attacked on the fields §5 did not have
+
+§5's four payloads were all in the caption. These four are the fifth class, and
+they are all in fields that had no screen at all. Inserted straight into Postgres
+past the route, the normaliser and every write guard:
+
+| probe | payload | before | after |
+|---|---|---|---|
+| price in `image_idea` | *"…the sign reading Mobile parties from $850 for 10 kids"* | clean, Approve enabled | **flagged**, approve **422** |
+| foreign handle in `hashtags` | `DMnotallie@evil.example.com` | clean, Approve enabled | **flagged**, approve **422** |
+| TAG characters in the caption | `chr(917572)…` — invisible ASCII, never typed | clean, Approve enabled | **flagged** — *"caption contains invisible or control characters"* |
+| foreign link in `image_idea` | *"reference photo at https://evil.example.com/inspo"* | clean, Approve enabled | **flagged**, approve **422** |
+| **a legitimate draft** | ordinary winter copy | — | **`{"ok":true,"from":"draft","to":"approved"}`** |
+
+`GET /api/admin/social` returned `flaggedCount: 4`, the container log named all
+four by id and reason, and four `note` rows carrying `refused_transition:
+approved` landed in `marketing_ledger` — which **cannot be deleted**, because
+migration 021 makes it append-only, so they are still there and they are an
+honest record of a probe. Unauthenticated `GET` → 401.
+
+The edit path was attacked too: a hashtag reading `pay me at venmo.com/@not-allie`
+→ **400 naming it**, and an `image_idea` of *"the sign reading $850 for 10 kids"*
+→ **422**.
+
+**Both directions, and the three real drafts are the third:** the widened screen
+returned `flaggedCount: 4` against a table that also held Allie's three genuine
+drafts, so the new checks did not start flagging real copy.
+
+### The rest
+
+* Funnel after deploy: `/`, `/book`, `/party-planner`, `/studio-rental`,
+  `/events`, `/kids-party-menu`, `/permanent-jewelry-southampton`, `/admin`,
+  `/unsubscribe` all 200 with full bodies; `og:image` and the `<h1>` intact on
+  `/book` and on the live Spanish page.
+* **One 500 that was the system working.** `/es/party-room-rental` answered 500
+  once and 200 on the retry. The log said why: `[content] row read failed for
+  es:party-room-rental: Gateway Timeout`. That is precisely link 7's rule-12
+  design — a failed read is a 500, not a 404, because 404ing a published page
+  tells Google the content was deleted — and it announced itself instead of
+  presenting as an empty page. Checked before it was written down, which is the
+  only reason this paragraph says "not a regression".
+* **Every `advance()` call site and every direct `.update({ status })`** on
+  `social_posts`, `inquiry_drafts`, `website_content` and `scheduled_campaigns`
+  enumerated. Ten `advance()` calls; the three whitelist PATCH paths
+  (`admin/social`, `admin/marketing/content`, `admin/agent`) all exclude
+  `status`; `scheduled_campaigns` is deliberately not a graph entity (its gate is
+  the claim) and its only status writes are the claim, the release and the
+  outcome.
+* **Everything restored.** Probe contacts, enrollment, send rows, interactions
+  and the five `social_posts` rows deleted. Enrollments back to **44 active / 48
+  completed / 27 unsubscribed**, `social_posts` back to the three real drafts,
+  `email_sequence_sends` back to 0, `scheduled_campaigns` unchanged at 7 sent /
+  103 draft, and `invoice_number_seq` untouched at **118 / t** — the next invoice
+  is still `444124-000119`.
+
+## 11.10 What link 9 could NOT verify
+
+* **Whether the 21 real mixed-case contacts have been trying to unsubscribe.**
+  The fix is proven against a row shaped exactly like theirs, but there is no
+  record of a click that wrote nothing — that is the defect. If any of them
+  reported us for spam it happened at their mail provider and we cannot see it.
+  Worth knowing before the sequencer's cron is rescheduled.
+* **§11.6 was not driven through a live intake form** (see above).
+* **§8's items are unchanged.** Whether Brevo campaigns 1 and 2 reached anybody
+  is still only answerable in the Brevo dashboard, and the two stale cron-job.org
+  secrets still need Adam's login.

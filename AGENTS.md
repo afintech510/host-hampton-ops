@@ -191,6 +191,7 @@ The next free migration number is **044**. (037 plan content, 038 + 039 per-user
 admin login, 040 payment idempotency, 041 the learning loop, 042 typed
 `draft_feedback`, **043 Phase 4 campaign automation** — `email_sequence_sends`
 plus the columns and slot index that extend the pre-existing `social_posts`.)
+Phase 4's **review** (link 9, 2026-09-12) took no migration; 044 is still free.
 
 **No new environment variable was added for Phase 4.** The unsubscribe tokens
 reuse `PORTAL_LINK_SIGNING_SECRET`; the social calendar reuses
@@ -237,7 +238,7 @@ Cron routes (under `services/website/src/app/api/cron/`):
 - `/api/cron/send-reminders` — booking/event reminder emails + SMS
 - `/api/cron/send-campaigns` — outbound campaign sends
 - `/api/cron/draft-newsletter` — newsletter drafting
-- `/api/cron/process-sequences` — email sequence processing
+- `/api/cron/process-sequences` — email sequence processing. **Not currently scheduled, and must not be rescheduled blind** (PLAN.md needs-Adam): its cron-job.org job disappeared on 2026-08-16 and **44 enrollments are frozen mid-sequence**, so turning it back on mails 44 real people at once, months late. `?limit=N` (1…50) caps one tick to the N longest-waiting enrollments — that is the drain: one real person per tick, checked in between. An out-of-range `limit` is a 400, never a silent full batch.
 - `/api/cron/event-reminders`
 - `/api/cron/booking-locks`
 - `/api/cron/agent-dispatch` — booking agent: claims new inbound events, drafts replies, texts the reviewers. Every 2 minutes. No-op unless `AGENT_ENABLED` is true.
