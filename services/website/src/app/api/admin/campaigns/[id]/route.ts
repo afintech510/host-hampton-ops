@@ -75,14 +75,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // If sending now
   if (body.status === 'sending') {
-    const { data: campaign } = await supabase
+    // CLAIM FIRST, then read. This used to be a plain SELECT followed by a send,
+    // so two clicks on "Send" (or a double-submit) both saw `draft`, both called
+    // Brevo, and 944 real people got the same campaign twice. The conditional
+    // UPDATE is the lock: only one caller can move a row out of a sendable
+    // status, and the row it gets back is the row it owns.
+    const { data: claimed, error: claimErr } = await supabase
       .from('scheduled_campaigns')
-      .select('*')
+      .update({ status: 'sending' })
       .eq('id', id)
-      .single()
+      .in('status', ['draft', 'scheduled'])
+      .select('*')
 
+    if (claimErr) {
+      return NextResponse.json({ error: `Could not claim the campaign: ${claimErr.message}` }, { status: 503 })
+    }
+
+    const campaign = claimed?.[0]
     if (!campaign) {
-      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+      // Either there is no such campaign, or it is not in a sendable state —
+      // which, on this route, usually means somebody already pressed Send.
+      const { data: existing } = await supabase
+        .from('scheduled_campaigns').select('status').eq('id', id).maybeSingle()
+      if (!existing) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+      return NextResponse.json(
+        { error: `This campaign is "${existing.status}" — it is not waiting to be sent.`, status: existing.status },
+        { status: 409 }
+      )
     }
 
     if (campaign.campaign_type === 'email' || campaign.campaign_type === 'event_update') {
@@ -91,7 +110,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ error: 'BREVO_DEFAULT_LIST_ID not configured' }, { status: 500 })
       }
 
-      const brevoCampaignId = await sendCampaign(
+      const result = await sendCampaign(
         listId,
         campaign.subject,
         campaign.body_html || '<p>No content</p>',
@@ -99,9 +118,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         campaign.scheduled_for || undefined
       )
 
-      if (!brevoCampaignId) {
+      if (result.kind === 'failed') {
         await supabase.from('scheduled_campaigns').update({ status: 'failed' }).eq('id', id)
-        return NextResponse.json({ error: 'Failed to send via Brevo' }, { status: 500 })
+        return NextResponse.json({ error: `Failed to send via Brevo: ${result.error}` }, { status: 500 })
+      }
+
+      if (result.kind === 'created_not_sent') {
+        // The campaign EXISTS at Brevo. Recording this as `sent` was the old
+        // behaviour and it is a lie in the one direction that matters: Adam
+        // would believe 944 people heard from him. It is also not `failed`,
+        // because retrying would create a second campaign.
+        await supabase
+          .from('scheduled_campaigns')
+          .update({ status: 'failed', brevo_campaign_id: String(result.id) })
+          .eq('id', id)
+        console.error(`admin:campaigns Brevo campaign ${result.id} was CREATED but not sent: ${result.error}`)
+        return NextResponse.json(
+          {
+            error:
+              `Brevo created campaign ${result.id} but did not send it (${result.error}). ` +
+              `It exists in your Brevo dashboard — send or delete it there. Do NOT press Send again, that would make a second campaign.`,
+            brevo_campaign_id: result.id,
+          },
+          { status: 502 }
+        )
       }
 
       await supabase
@@ -109,11 +149,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         .update({
           status: 'sent',
           sent_at: new Date().toISOString(),
-          brevo_campaign_id: brevoCampaignId,
+          brevo_campaign_id: String(result.id),
         })
         .eq('id', id)
 
-      return NextResponse.json({ ok: true, brevo_campaign_id: brevoCampaignId })
+      return NextResponse.json({ ok: true, brevo_campaign_id: result.id })
     }
 
     // SMS campaign send via Twilio

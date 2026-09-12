@@ -201,3 +201,30 @@ export function safeImageUrl(raw: string | null | undefined): string | null {
   if (url.origin === SITE_ORIGIN) return `${url.pathname}${url.search}${url.hash}`
   return url.href
 }
+
+/**
+ * Is this a URL we are willing to put in a social caption's "link in bio" slot?
+ *
+ * Narrower than `safeImageUrl` and deliberately so: an image may come from the
+ * Supabase bucket, but a link we publish under Host Hampton's name goes to Host
+ * Hampton and nowhere else. A model wrote this field, and a link is the single
+ * most valuable thing an injected instruction could get us to publish.
+ *
+ * Returns the ABSOLUTE https URL (a caption is read outside a browser context,
+ * so a bare path means nothing there), or null.
+ *
+ * Shares `safeImageUrl`'s parsing rather than repeating it — same control-char
+ * and backslash refusals, same `new URL` resolution, same "check the host the
+ * parser agreed on". Rule 11: two implementations of one screen is a screen
+ * nothing is checking, and the backslash bypass in §11.1 is exactly what
+ * reasoning about prefixes a second time would reproduce.
+ */
+export function safeSiteLink(raw: string | null | undefined): string | null {
+  const screened = safeImageUrl(raw)
+  if (!screened) return null
+  // safeImageUrl returns a bare path for our own origin and an absolute URL for
+  // any other allowed host. Only our origin is acceptable here, so anything that
+  // came back absolute is by definition not ours.
+  if (!screened.startsWith('/')) return null
+  return `${SITE_ORIGIN}${screened}`
+}

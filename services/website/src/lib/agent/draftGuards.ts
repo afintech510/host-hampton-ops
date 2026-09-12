@@ -159,8 +159,25 @@ const CONCESSIONS: [RegExp, string][] = [
  * parks every quote draft means Adam stops getting texts and the agent is
  * effectively off. Explicit currency and named concessions only.
  */
-export function containsFabricatedTerms(text: string): string | null {
+export function containsFabricatedTerms(
+  text: string,
+  opts?: {
+    /**
+     * Dollar figures this caller is allowed to state, normalised (no commas,
+     * no `$`). Defaults to the draft rule: the flat $250 deposit and nothing
+     * else. Phase 4's social calendar passes an EMPTY set, because a social
+     * caption may state no price at all — the mobile pricing rework means every
+     * published mobile figure is under review (PLAN.md §15), and the same rule
+     * `seo.test.ts` enforces on the website binds generated copy.
+     *
+     * Parameterised rather than copied: a second implementation of this screen
+     * is a screen nothing is checking (hard-won rule 11).
+     */
+    allowedAmounts?: ReadonlySet<string>
+  }
+): string | null {
   const raw = String(text || '')
+  const allowed = opts?.allowedAmounts ?? ALLOWED_AMOUNTS
 
   for (const [re, label] of CONCESSIONS) {
     const m = raw.match(re)
@@ -171,13 +188,18 @@ export function containsFabricatedTerms(text: string): string | null {
   let m: RegExpExecArray | null
   while ((m = AMOUNT.exec(raw)) !== null) {
     const normalised = m[1].replace(/,/g, '')
-    if (!ALLOWED_AMOUNTS.has(normalised)) {
-      return `dollar amount $${m[1]} that is not the $250 deposit`
+    if (!allowed.has(normalised)) {
+      return allowed.size === 0
+        ? `dollar amount $${m[1]} — this surface may not publish a price`
+        : `dollar amount $${m[1]} that is not the $250 deposit`
     }
   }
 
   return null
 }
+
+/** For callers that may publish no price at all. See the option above. */
+export const NO_AMOUNTS_ALLOWED: ReadonlySet<string> = new Set<string>()
 
 /** Hosts a customer-facing draft may legitimately link to. */
 const OUR_HOSTS = /(?:^|\.)(?:hosthampton\.com|venmo\.com|stripe\.com)$/i

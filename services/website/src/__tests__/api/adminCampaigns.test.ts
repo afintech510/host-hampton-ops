@@ -8,7 +8,7 @@
 
 function buildChain(resolveValue: any) {
   const chain: any = {}
-  const methods = ['select', 'insert', 'update', 'delete', 'eq', 'neq', 'gte', 'lte', 'or', 'order', 'single', 'in', 'range', 'limit']
+  const methods = ['select', 'insert', 'update', 'delete', 'eq', 'neq', 'gte', 'lte', 'or', 'order', 'single', 'maybeSingle', 'in', 'range', 'limit']
   for (const m of methods) {
     chain[m] = jest.fn().mockReturnValue(chain)
   }
@@ -183,17 +183,26 @@ describe('Admin Campaigns API', () => {
   })
 
   describe('PATCH /api/admin/campaigns/[id]', () => {
-    it('sends campaign via Brevo when status=sending', async () => {
-      const campaignChain = buildChain({ data: { ...sampleCampaign, campaign_type: 'email', subject: 'Test', body_html: '<p>Hi</p>' }, error: null })
-      const updateChain = buildChain({ data: null, error: null })
-
+    /**
+     * The send path CLAIMS before it reads: a single conditional UPDATE moves
+     * the row out of `draft`/`scheduled` and returns the row it just took. The
+     * old shape was SELECT-then-send, so two clicks on Send both saw `draft`,
+     * both called Brevo, and 944 real people got the campaign twice.
+     */
+    function sendMocks(claimResult: any) {
+      const claimChain = buildChain(claimResult)
+      const restChain = buildChain({ data: null, error: null })
       let callCount = 0
-      const fromMock = jest.fn().mockImplementation(() => {
-        callCount++
-        return callCount <= 1 ? campaignChain : updateChain
-      })
+      const fromMock = jest.fn().mockImplementation(() => (++callCount <= 1 ? claimChain : restChain))
       mockGetSupabase.mockReturnValue({ from: fromMock })
-      mockSendCampaign.mockResolvedValue(42)
+      return { claimChain, restChain, fromMock }
+    }
+
+    const sendableRow = { ...sampleCampaign, campaign_type: 'email', subject: 'Test', body_html: '<p>Hi</p>' }
+
+    it('sends campaign via Brevo when status=sending', async () => {
+      const { claimChain } = sendMocks({ data: [sendableRow], error: null })
+      mockSendCampaign.mockResolvedValue({ kind: 'sent', id: 42 })
 
       const req = {
         headers: authHeaders(),
@@ -203,19 +212,52 @@ describe('Admin Campaigns API', () => {
       const res = await updateCampaign(req, { params: Promise.resolve({ id: 'camp-001' }) })
       expect(res.json().ok).toBe(true)
       expect(mockSendCampaign).toHaveBeenCalledWith(5, 'Test', '<p>Hi</p>', 'Host Hampton', undefined)
+      // The claim is what makes it single-shot.
+      expect(claimChain.update).toHaveBeenCalledWith({ status: 'sending' })
+      expect(claimChain.in).toHaveBeenCalledWith('status', ['draft', 'scheduled'])
+    })
+
+    it('refuses a second send: the claim returns no row', async () => {
+      // The conditional UPDATE matched nothing because the row is already
+      // `sending`. This is the double-click, and it must not reach Brevo.
+      const claimChain = buildChain({ data: [], error: null })
+      const statusChain = buildChain({ data: { status: 'sending' }, error: null })
+      let callCount = 0
+      mockGetSupabase.mockReturnValue({
+        from: jest.fn().mockImplementation(() => (++callCount <= 1 ? claimChain : statusChain)),
+      })
+      mockSendCampaign.mockResolvedValue({ kind: 'sent', id: 99 })
+
+      const req = {
+        headers: authHeaders(),
+        json: jest.fn().mockResolvedValue({ status: 'sending' }),
+      } as any
+
+      const res = await updateCampaign(req, { params: Promise.resolve({ id: 'camp-001' }) })
+      expect(res.status).toBe(409)
+      expect(mockSendCampaign).not.toHaveBeenCalled()
+    })
+
+    it('returns 404 when the campaign does not exist at all', async () => {
+      const claimChain = buildChain({ data: [], error: null })
+      const statusChain = buildChain({ data: null, error: null })
+      let callCount = 0
+      mockGetSupabase.mockReturnValue({
+        from: jest.fn().mockImplementation(() => (++callCount <= 1 ? claimChain : statusChain)),
+      })
+
+      const req = {
+        headers: authHeaders(),
+        json: jest.fn().mockResolvedValue({ status: 'sending' }),
+      } as any
+
+      const res = await updateCampaign(req, { params: Promise.resolve({ id: 'nope' }) })
+      expect(res.status).toBe(404)
     })
 
     it('returns 500 when Brevo send fails', async () => {
-      const campaignChain = buildChain({ data: { ...sampleCampaign, campaign_type: 'email', subject: 'Test', body_html: '<p>Hi</p>' }, error: null })
-      const updateChain = buildChain({ data: null, error: null })
-
-      let callCount = 0
-      const fromMock = jest.fn().mockImplementation(() => {
-        callCount++
-        return callCount <= 1 ? campaignChain : updateChain
-      })
-      mockGetSupabase.mockReturnValue({ from: fromMock })
-      mockSendCampaign.mockResolvedValue(null)
+      sendMocks({ data: [sendableRow], error: null })
+      mockSendCampaign.mockResolvedValue({ kind: 'failed', error: 'create 401: bad key' })
 
       const req = {
         headers: authHeaders(),
@@ -224,6 +266,29 @@ describe('Admin Campaigns API', () => {
 
       const res = await updateCampaign(req, { params: Promise.resolve({ id: 'camp-001' }) })
       expect(res.status).toBe(500)
+    })
+
+    /**
+     * The outcome the old `number | null` return could not express: Brevo
+     * CREATED the campaign and did not deliver it. Recording that as `sent` told
+     * Adam 944 people had heard from him when nobody had; retrying it would make
+     * a second campaign at Brevo.
+     */
+    it('does NOT report a created-but-unsent Brevo campaign as sent', async () => {
+      const { restChain } = sendMocks({ data: [sendableRow], error: null })
+      mockSendCampaign.mockResolvedValue({ kind: 'created_not_sent', id: 77, error: 'sendNow 402: credits' })
+
+      const req = {
+        headers: authHeaders(),
+        json: jest.fn().mockResolvedValue({ status: 'sending' }),
+      } as any
+
+      const res = await updateCampaign(req, { params: Promise.resolve({ id: 'camp-001' }) })
+      expect(res.status).toBe(502)
+      expect(res.json().brevo_campaign_id).toBe(77)
+      expect(String(res.json().error)).toMatch(/Do NOT press Send again/)
+      // The Brevo id is still recorded, so the orphan is traceable.
+      expect(restChain.update).toHaveBeenCalledWith({ status: 'failed', brevo_campaign_id: '77' })
     })
 
     it('updates draft fields', async () => {

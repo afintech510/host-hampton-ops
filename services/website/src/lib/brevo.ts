@@ -168,13 +168,29 @@ export interface CampaignStats {
 }
 
 /**
+ * The three things a campaign send can come back as.
+ *
+ * The old signature was `Promise<number | null>` and the caller read a number as
+ * "sent" — but the function returned the id after a FAILED `/sendNow` too, with
+ * a comment saying "still return the id so caller can retry or inspect". No
+ * caller inspected. `/api/cron/send-campaigns` wrote `status: 'sent'` and a
+ * `brevo_campaign_id` for a campaign that exists at Brevo and was never
+ * delivered to anybody — the same collapse of two outcomes into one value that
+ * hard-won rule 12 is about, on the path that reports to Adam whether 944 people
+ * heard from him.
+ */
+export type CampaignSendResult =
+  | { kind: 'sent'; id: number }
+  /** Created at Brevo, delivery not confirmed. A human must look. */
+  | { kind: 'created_not_sent'; id: number; error: string }
+  | { kind: 'failed'; error: string }
+
+/**
  * Create an email campaign and either send it immediately or schedule it.
  *
  * If scheduledAt is provided (ISO 8601 string), the campaign is scheduled
  * via the campaign's scheduledAt field. Otherwise, POST /sendNow is called
  * immediately after creation.
- *
- * Returns the campaign ID on success, null on error.
  */
 export async function sendCampaign(
   listId: number,
@@ -182,7 +198,7 @@ export async function sendCampaign(
   htmlContent: string,
   senderName = 'Host Hampton',
   scheduledAt?: string
-): Promise<number | null> {
+): Promise<CampaignSendResult> {
   try {
     const headers = brevoHeaders()
 
@@ -212,7 +228,7 @@ export async function sendCampaign(
     if (!createRes.ok) {
       const body = await createRes.text()
       console.error('brevo:sendCampaign create error:', createRes.status, body)
-      return null
+      return { kind: 'failed', error: `create ${createRes.status}: ${body.slice(0, 300)}` }
     }
 
     const { id } = await createRes.json() as { id: number }
@@ -227,16 +243,16 @@ export async function sendCampaign(
       if (!sendRes.ok) {
         const body = await sendRes.text()
         console.error('brevo:sendCampaign sendNow error:', sendRes.status, body)
-        // Campaign was created but send failed — still return the id so caller
-        // can retry or inspect.
-        return id
+        // Created but NOT delivered. Naming that distinctly is the whole point:
+        // the campaign exists at Brevo and retrying create would make a second.
+        return { kind: 'created_not_sent', id, error: `sendNow ${sendRes.status}: ${body.slice(0, 300)}` }
       }
     }
 
-    return id
+    return { kind: 'sent', id }
   } catch (err) {
     console.error('brevo:sendCampaign exception:', err)
-    return null
+    return { kind: 'failed', error: err instanceof Error ? err.message : String(err) }
   }
 }
 

@@ -21,7 +21,12 @@ import { getSupabase } from '@/lib/supabase'
 
 type Supa = ReturnType<typeof getSupabase>
 
-export type EntityType = 'marketing_task' | 'website_content' | 'consent_release' | 'inquiry_draft'
+export type EntityType =
+  | 'marketing_task'
+  | 'website_content'
+  | 'consent_release'
+  | 'inquiry_draft'
+  | 'social_post'
 
 /** Physical table backing each logical entity. */
 const TABLE: Record<EntityType, string> = {
@@ -29,6 +34,7 @@ const TABLE: Record<EntityType, string> = {
   website_content: 'website_content',
   consent_release: 'consent_releases',
   inquiry_draft: 'inquiry_drafts',
+  social_post: 'social_posts',
 }
 
 /**
@@ -72,6 +78,29 @@ export const TRANSITIONS: Record<EntityType, Record<string, string[]>> = {
     sent: [],
     cancelled: ['drafted'], // a dismissed lead can be re-opened by hand
   },
+  /**
+   * Phase 4's social content calendar. Model-written copy that would go out
+   * under Host Hampton's name, so it moves on exactly the `website_content`
+   * shape: a draft can always be archived, an edit un-approves nothing because
+   * an edited row goes back to `draft`, and the two statuses a stranger could
+   * ever observe are gated below.
+   */
+  /**
+   * The statuses here are the labels of the EXISTING `content_status` enum on
+   * `social_posts` — draft | approved | scheduled | published | archived —
+   * read out of `pg_enum` rather than invented (rule 13). There is deliberately
+   * no `pending_review`: the reviewer is the same person either way, so a
+   * queueing status would have cost an `ALTER TYPE` on a live enum to buy
+   * nothing. `scheduled` means "Allie has put it in her own calendar"; it is
+   * still not published and still posts nothing.
+   */
+  social_post: {
+    draft: ['approved', 'archived'],
+    approved: ['scheduled', 'published', 'draft', 'archived'],
+    scheduled: ['published', 'approved', 'archived'],
+    published: ['archived'],
+    archived: ['draft'],
+  },
 }
 
 /**
@@ -93,6 +122,14 @@ const GATED: Record<EntityType, Set<string>> = {
    * sets it after verifying the sender's phone number.
    */
   inquiry_draft: new Set(['approved', 'sent']),
+  /**
+   * A social caption is written by a model and read by the public. The same
+   * rule as every other outward edge in this file: the cron proposes, a human
+   * disposes. `is_active`-style safety is in the table too — `social_posts.status`
+   * DEFAULTS to `draft` (migration 043) — so a future writer that forgets to
+   * set a status fails safe rather than publishing.
+   */
+  social_post: new Set(['approved', 'published']),
 }
 
 export interface Actor {

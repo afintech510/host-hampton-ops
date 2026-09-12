@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
-  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors, Rocket, TrendingUp, Inbox
+  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors, Rocket, TrendingUp, Inbox,
+  Instagram
 } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
@@ -22,11 +23,12 @@ import PartiesTab from './PartiesTab'
 import PhotosTab from './PhotosTab'
 import SummerHairTab from './SummerHairTab'
 import MarketingTab from './MarketingTab'
+import SocialTab from './SocialTab'
 import InboxTab from './InboxTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'inbox' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'financials' | 'revenue' | 'gift-cards' | 'summer-hair'
+type TabKey = 'dashboard' | 'inbox' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'social' | 'financials' | 'revenue' | 'gift-cards' | 'summer-hair'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
@@ -46,6 +48,7 @@ const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[]
   { key: 'sequences',  label: 'Sequences',  Icon: ListOrdered,     group: 'marketing' },
   { key: 'campaigns',  label: 'Campaigns',  Icon: Megaphone,       group: 'marketing' },
   { key: 'marketing',  label: 'Marketing',  Icon: Rocket,          group: 'marketing' },
+  { key: 'social',     label: 'Social',     Icon: Instagram,       group: 'marketing' },
 ]
 
 const GROUP_LABELS: Record<string, string> = {
@@ -439,6 +442,9 @@ function AdminDashboard({
           )}
           {activeTab === 'marketing' && (
             <MarketingTab key={`marketing-${refreshKey}`} headers={headers} onLogout={onLogout} />
+          )}
+          {activeTab === 'social' && (
+            <SocialTab key={`social-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
           {activeTab === 'parties' && (
             <PartiesTab

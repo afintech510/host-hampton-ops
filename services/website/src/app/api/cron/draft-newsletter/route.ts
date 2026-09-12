@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { eventNewsletterHtml } from '@/lib/email-templates/event-newsletter'
+import {
+  containsFabricatedTerms,
+  containsForeignContact,
+  NO_AMOUNTS_ALLOWED,
+} from '@/lib/agent/draftGuards'
+import { containsMarkup } from '@/lib/content/contentSafety'
+import { flattenToOneLine } from '@/lib/agent/extractPlanFields'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +30,54 @@ Respond ONLY with valid JSON — no markdown, no extra text.`
 interface CopyResult {
   subject: string
   intro: string
+}
+
+/**
+ * Refuse model prose that states money, promises a concession, or carries a
+ * link/handle that is not ours. A refusal drops back to the static copy — the
+ * newsletter still goes out, it just goes out in words a human wrote — and the
+ * reason is named, never silent (hard-won rule 10).
+ */
+function screenCopy(copy: CopyResult | null, notes: string[]): CopyResult | null {
+  if (!copy) return null
+
+  const subject = typeof copy.subject === 'string' ? flattenToOneLine(copy.subject) : ''
+  const intro = typeof copy.intro === 'string' ? copy.intro : ''
+  if (!subject || !intro) {
+    notes.push('reply was missing a subject or an intro')
+    return null
+  }
+
+  for (const [label, text] of [['subject', subject], ['intro', intro]] as const) {
+    const money = containsFabricatedTerms(text, { allowedAmounts: NO_AMOUNTS_ALLOWED })
+    if (money) {
+      notes.push(`${label} states ${money}`)
+      return null
+    }
+    const foreign = containsForeignContact(text)
+    if (foreign) {
+      notes.push(`${label} carries a ${foreign}`)
+      return null
+    }
+    if (containsMarkup(text)) {
+      notes.push(`${label} contains markup`)
+      return null
+    }
+  }
+
+  return { subject, intro }
+}
+
+/** See rule 1. Find the first block that IS text, not whichever is first. */
+function firstTextBlock(content: unknown): string {
+  if (!Array.isArray(content)) return ''
+  for (const block of content) {
+    if (block && typeof block === 'object' && (block as { type?: string }).type === 'text') {
+      const t = (block as { text?: unknown }).text
+      if (typeof t === 'string') return t
+    }
+  }
+  return ''
 }
 
 async function generateCopy(
@@ -66,8 +121,11 @@ Respond with JSON:
       return null
     }
 
-    const data = await res.json() as { content: { type: string; text: string }[] }
-    const text = data.content[0]?.type === 'text' ? data.content[0].text : ''
+    const data = await res.json() as { content?: unknown }
+    // Hard-won rule 1: `content[0]` is not necessarily the text — with extended
+    // thinking it is a `thinking` block, and reading index 0 then yields '' and
+    // fails as "no JSON" rather than as the config change it really is.
+    const text = firstTextBlock(data.content)
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return null
 
@@ -121,6 +179,45 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: 'No upcoming events to feature', drafted: false, archived: archivedCount || 0 })
   }
 
+  // Don't draft on top of a draft nobody has looked at.
+  //
+  // Measured 2026-09-12: this job ran daily at 11:00 UTC and left **17
+  // `event_update` drafts** in `scheduled_campaigns` between 2026-07-01 and
+  // 2026-07-17, seven of them for the same Bitchy Bingo event with seven
+  // different subject lines. Not one was ever sent. A review queue that grows by
+  // one unread item a day is a review queue nobody reads — the same failure the
+  // Inbox triage fix (plan, `cf6ddcc`) was written for, one surface over.
+  //
+  // A read failure does NOT fall through to drafting: "could not tell" is not
+  // "there is nothing there" (rule 12), and drafting on an unreadable table is
+  // exactly how the pile above accumulated.
+  const { data: openDrafts, error: openErr } = await supabase
+    .from('scheduled_campaigns')
+    .select('id, created_at')
+    .eq('campaign_type', 'event_update')
+    .in('status', ['draft', 'scheduled'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  if (openErr) {
+    console.error('cron:newsletter could not check for an existing draft:', openErr.message)
+    return NextResponse.json(
+      { error: `Could not check for an existing draft: ${openErr.message}`, drafted: false },
+      { status: 503 }
+    )
+  }
+
+  if (openDrafts && openDrafts.length > 0) {
+    console.log(`cron:newsletter skipped — draft ${openDrafts[0].id} is still waiting for review`)
+    return NextResponse.json({
+      drafted: false,
+      skipped: 'an event_update draft is already waiting for review',
+      existingDraftId: openDrafts[0].id,
+      existingDraftCreatedAt: openDrafts[0].created_at,
+      archived: archivedCount || 0,
+    })
+  }
+
   // Format events for the template
   const templateEvents = events.map(e => {
     const imgs = (e.images as any[]) || []
@@ -146,7 +243,15 @@ export async function GET(req: NextRequest) {
   })
 
   // Generate AI copy via COPY agent (Claude Haiku — fast + cheap)
-  const copy = await generateCopy(templateEvents.map(e => ({ title: e.title, date: e.date, price: e.price })))
+  const rawCopy = await generateCopy(templateEvents.map(e => ({ title: e.title, date: e.date, price: e.price })))
+
+  // Screen the model's prose before it can reach 944 real inboxes. The event
+  // CARDS carry real ticket prices from the DB and that is fine — what is not
+  // fine is the model inventing a figure, a discount or a link in the intro it
+  // writes. Same screens the agent's drafts use, imported not restated (rule 11).
+  const screenNotes: string[] = []
+  const copy = screenCopy(rawCopy, screenNotes)
+  for (const n of screenNotes) console.warn(`cron:newsletter dropped model copy — ${n}`)
 
   const subject = copy?.subject ?? `What's Coming Up at Host Hampton | ${templateEvents[0].date}`
   const html = eventNewsletterHtml({

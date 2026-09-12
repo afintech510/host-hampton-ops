@@ -1,3 +1,6 @@
+import { escapeHtml } from '@/lib/escapeHtml'
+import { safeImageUrl, safeSiteLink } from '@/lib/content/contentSafety'
+
 /* ── Shared brand tokens (mirrors emailTemplates.ts) ─────────── */
 const BRAND = {
   headerBg: 'linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%)',
@@ -18,7 +21,7 @@ const BRAND = {
 
 function newsletterHeader(preheader?: string): string {
   const preheaderSpan = preheader
-    ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;color:#F6F1EB;">${preheader}</div>`
+    ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;color:#F6F1EB;">${escapeHtml(preheader)}</div>`
     : ''
   return `${preheaderSpan}
   <div style="background:${BRAND.headerBg};padding:40px 40px 32px;text-align:center;">
@@ -28,6 +31,15 @@ function newsletterHeader(preheader?: string): string {
   </div>`
 }
 
+/**
+ * The unsubscribe link is Brevo's own merge tag, `{{ unsubscribe }}`.
+ *
+ * It used to be `{{unsubscribe_url}}` — a token name from OUR sequencer, which
+ * Brevo has never heard of, so the href in every campaign this template has ever
+ * produced was the literal seven-character string. (Brevo also appends its own
+ * unsubscribe footer to a classic campaign, which is why nobody noticed; that is
+ * the link that has actually been working.)
+ */
 function canSpamFooter(): string {
   return `
   <div style="background:${BRAND.footerBg};padding:24px 40px;text-align:center;">
@@ -36,7 +48,7 @@ function canSpamFooter(): string {
     <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">(631) 998-9325 &middot; <a href="https://www.instagram.com/hosthampton" style="color:${BRAND.navy};">@hosthampton</a></p>
     <p style="color:${BRAND.navy};opacity:0.6;font-size:11px;margin:12px 0 0;">
       You&rsquo;re receiving this because you signed up for Host Hampton updates.<br>
-      <a href="{{unsubscribe_url}}" style="color:${BRAND.navy};text-decoration:underline;">Unsubscribe</a> &middot; 295 Montauk Highway, Suite 7, Speonk, NY 11972
+      <a href="{{ unsubscribe }}" style="color:${BRAND.navy};text-decoration:underline;">Unsubscribe</a> &middot; 295 Montauk Highway, Suite 7, Speonk, NY 11972
     </p>
   </div>`
 }
@@ -53,8 +65,15 @@ interface NewsletterEvent {
 }
 
 function eventCard(event: NewsletterEvent): string {
-  const imageBlock = event.imageUrl
-    ? `<img src="${event.imageUrl}" alt="${event.title}" width="100%" style="display:block;width:100%;height:auto;border-radius:10px 10px 0 0;">`
+  // Every value here is a database string and this markup goes to 944 real
+  // inboxes. A field is hostile because of who can WRITE it (hard-won rule 5),
+  // and the URL fields get the SAME parsing screen the public pages use rather
+  // than a second implementation of it (rule 11) — which is what let one
+  // backslash through on the website (docs/content-pipeline.md §11.1).
+  const img = safeImageUrl(event.imageUrl)
+  const ticketUrl = safeSiteLink(event.ticketUrl) ?? 'https://www.hosthampton.com/events'
+  const imageBlock = img
+    ? `<img src="${escapeHtml(img.startsWith('/') ? `https://www.hosthampton.com${img}` : img)}" alt="${escapeHtml(event.title)}" width="100%" style="display:block;width:100%;height:auto;border-radius:10px 10px 0 0;">`
     : `<div style="background:${BRAND.headerBg};height:140px;border-radius:10px 10px 0 0;display:flex;align-items:center;justify-content:center;">
         <p style="color:${BRAND.navy};font-size:13px;letter-spacing:1px;text-transform:uppercase;margin:0;opacity:0.6;">Host Hampton</p>
       </div>`
@@ -64,22 +83,22 @@ function eventCard(event: NewsletterEvent): string {
     <div style="background:white;border-radius:10px;overflow:hidden;">
       ${imageBlock}
       <div style="padding:20px 22px 24px;">
-        <h3 style="color:${BRAND.navy};font-size:17px;margin:0 0 10px;font-weight:bold;line-height:1.3;">${event.title}</h3>
+        <h3 style="color:${BRAND.navy};font-size:17px;margin:0 0 10px;font-weight:bold;line-height:1.3;">${escapeHtml(event.title)}</h3>
         <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
           <tr>
             <td style="padding:4px 0;color:${BRAND.gray};width:16px;">&#128197;</td>
-            <td style="padding:4px 0;color:${BRAND.gray};">${event.date}</td>
+            <td style="padding:4px 0;color:${BRAND.gray};">${escapeHtml(event.date)}</td>
           </tr>
           <tr>
             <td style="padding:4px 0;color:${BRAND.gray};">&#128336;</td>
-            <td style="padding:4px 0;color:${BRAND.gray};">${event.time}</td>
+            <td style="padding:4px 0;color:${BRAND.gray};">${escapeHtml(event.time)}</td>
           </tr>
           <tr>
             <td style="padding:4px 0;color:${BRAND.gray};">&#127915;</td>
-            <td style="padding:4px 0;color:${BRAND.navy};font-weight:bold;">${event.price}</td>
+            <td style="padding:4px 0;color:${BRAND.navy};font-weight:bold;">${escapeHtml(event.price)}</td>
           </tr>
         </table>
-        <a href="${event.ticketUrl}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:11px 28px;border-radius:50px;text-decoration:none;font-size:13px;font-weight:bold;letter-spacing:0.5px;">Get Tickets</a>
+        <a href="${escapeHtml(ticketUrl)}" style="display:inline-block;background:${BRAND.ctaBg};color:${BRAND.ctaText};padding:11px 28px;border-radius:50px;text-decoration:none;font-size:13px;font-weight:bold;letter-spacing:0.5px;">Get Tickets</a>
       </div>
     </div>
   </div>`
@@ -118,7 +137,7 @@ export function eventNewsletterHtml(params: EventNewsletterParams): string {
   ${newsletterHeader(preheader)}
   <div style="padding:36px 32px 24px;">
     <p style="color:${BRAND.gray};font-size:15px;line-height:1.7;margin:0 0 28px;text-align:center;">
-      ${intro ?? 'Reserve your spot for upcoming workshops, parties &amp; pop-ups at Host Hampton&rsquo;s boutique celebration studio in Speonk, NY.'}
+      ${intro ? escapeHtml(intro) : 'Reserve your spot for upcoming workshops, parties &amp; pop-ups at Host Hampton&rsquo;s boutique celebration studio in Speonk, NY.'}
     </p>
     ${noEventsBlock}${cards}
     <div style="text-align:center;padding:16px 0 8px;">

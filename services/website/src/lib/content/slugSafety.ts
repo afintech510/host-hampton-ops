@@ -107,6 +107,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/terms-of-service',
   '/toddler-party',
   '/trucker-hat-bar',
+  '/unsubscribe',
   '/vendor-registration',
   '/vendor-registration/success',
   // Not pages, but paths Next / the CDN own.
