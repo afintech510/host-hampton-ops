@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { byLongestWaiting, waitingInfo } from '@/lib/leadWaiting'
 import LearningsPanel from './LearningsPanel'
+import ExperimentsPanel from './ExperimentsPanel'
 
 /**
  * How long this draft has been sitting on a human, said in words.
@@ -479,6 +480,9 @@ export default function InboxTab({
 
       {/* ── What the agent has learned (Phase 6) ── */}
       <LearningsPanel headers={headers} onLogout={onLogout} />
+
+      {/* ── A/B content tests + the retired memory store (Phase 5) ── */}
+      <ExperimentsPanel headers={headers} onLogout={onLogout} />
 
       {/* ── Agent activity ── */}
       <section>

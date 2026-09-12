@@ -39,8 +39,11 @@
 
 import { getSupabase } from '@/lib/supabase'
 import { logInteraction } from '@/lib/contactInteractions'
-import { generateUnsubscribeToken, unsubscribeHeaders } from '@/lib/unsubscribeLink'
+import { generateUnsubscribeToken, unsubscribeHeaders, buildUnsubscribeUrl } from '@/lib/unsubscribeLink'
 import { renderStepEmail } from '@/lib/sequences/render'
+import { loadActiveExperiment, sequenceTargetKey } from '@/lib/experiments/load'
+import { assignVariant, recordVariantEvent } from '@/lib/experiments/assign'
+import { rewriteTrackedLinks } from '@/lib/experiments/track'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -178,6 +181,105 @@ async function loadContact(supabase: Supa, contactId: string): Promise<Lookup<an
   if (error) return { kind: 'unavailable', error: error.message }
   if (!data) return { kind: 'absent' }
   return { kind: 'found', value: data }
+}
+
+/* ── the A/B variant (Phase 5) ─────────────────────────────────────────── */
+
+export interface ResolvedVariant {
+  /** Non-null only when a variant really was assigned AND will be sent. */
+  assignmentId: string | null
+  experimentId: string | null
+  label: string | null
+  copy: { subject: string; body_html: string; body_text: string | null } | null
+}
+
+const NO_VARIANT: ResolvedVariant = { assignmentId: null, experimentId: null, label: null, copy: null }
+
+/**
+ * Which variant, if any, this contact gets for this step.
+ *
+ * Returns `NO_VARIANT` for every outcome except a clean assignment, and every
+ * non-clean outcome that is not simply "no experiment" is NOTED. The three the
+ * notes distinguish:
+ *
+ *   no active experiment       → silent. The normal case, and it is not news.
+ *   tables unreadable          → noted, control sent, nothing recorded.
+ *   assignment could not be made → noted, control sent, nothing recorded.
+ *
+ * Never throws. This sits between a claim and a send; an exception here would
+ * strand a claimed step at `claimed` for STALE_CLAIM_MS over an A/B feature.
+ */
+export async function resolveVariant(
+  supabase: Supa,
+  args: {
+    enrollment: { id: string; sequence_id: string }
+    stepNumber: number
+    contactId: string
+    summary: ProcessSummary
+  }
+): Promise<ResolvedVariant> {
+  const { enrollment, stepNumber, contactId, summary } = args
+  try {
+    const lookup = await loadActiveExperiment(
+      supabase,
+      'sequence_step',
+      sequenceTargetKey(enrollment.sequence_id, stepNumber)
+    )
+    if (lookup.kind === 'absent') return NO_VARIANT
+    if (lookup.kind === 'unavailable') {
+      summary.notes.push(
+        `enrollment ${enrollment.id}: experiment tables unreadable (${lookup.error}) — sent the live copy, recorded nothing`
+      )
+      return NO_VARIANT
+    }
+
+    const { experiment, variants, rejected } = lookup.value
+    if (rejected.length > 0) {
+      // A live experiment whose arms the read-time screen just dropped is
+      // exactly what §24 says nobody notices. Named, every run.
+      summary.notes.push(
+        `experiment "${experiment.name}": read-time screen dropped ${rejected.map(r => `${r.label} (${r.reason})`).join('; ')}`
+      )
+    }
+
+    const assignment = await assignVariant({
+      supabase,
+      experimentId: experiment.id,
+      contactId,
+      variants,
+      actor: 'cron:process-sequences',
+      context: { sequence_id: enrollment.sequence_id, step_number: stepNumber, enrollment_id: enrollment.id },
+    })
+
+    if (assignment.kind === 'unavailable') {
+      summary.notes.push(
+        `enrollment ${enrollment.id}: could not assign a variant for "${experiment.name}" (${assignment.error}) — sent the live copy, recorded nothing`
+      )
+      return NO_VARIANT
+    }
+
+    const v = assignment.variant
+    // The control arm is the live copy by construction, so there is nothing to
+    // substitute — but there IS an assignment, because the control needs a
+    // denominator or the test has one arm.
+    return {
+      assignmentId: assignment.id,
+      experimentId: experiment.id,
+      label: v.label,
+      copy: v.is_control
+        ? null
+        : {
+            subject: v.subject ?? '',
+            body_html: v.body_html ?? '',
+            body_text: v.body_text,
+          },
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    summary.notes.push(`enrollment ${enrollment.id}: variant resolution threw (${msg}) — sent the live copy`)
+    console.error(`cron:sequences resolveVariant threw for enrollment ${enrollment.id}:`, msg)
+    return NO_VARIANT
+  }
 }
 
 /* ── the claim ─────────────────────────────────────────────────────────── */
@@ -456,16 +558,69 @@ async function processOne(
     return
   }
 
-  const rendered = renderStepEmail(step, {
+  /**
+   * ── The A/B variant (Phase 5) ──────────────────────────────────────────────
+   *
+   * Resolved AFTER the claim, so a tick that lost the claim never assigns
+   * anybody, and BEFORE the render, so the variant is what gets rendered rather
+   * than something patched in afterwards.
+   *
+   * Three outcomes, and the middle one is the point (rule 12): when the
+   * experiment tables cannot be READ we send the step exactly as it is today
+   * and record NOTHING. Sending the control is the right thing to do; recording
+   * a `sent` against an arm we did not use would be fabricated signal in the one
+   * place it becomes a standing rule about how Host Hampton writes.
+   */
+  const variant = await resolveVariant(supabase, {
+    enrollment,
+    stepNumber: nextStepNum,
+    contactId: enrollment.contact_id,
+    summary,
+  })
+
+  const stepToSend = variant.copy
+    ? { subject: variant.copy.subject, body_html: variant.copy.body_html, body_text: variant.copy.body_text }
+    : step
+
+  const rendered = renderStepEmail(stepToSend, {
     firstName: contact.first_name,
     bookingRef: (enrollment.metadata || {}).booking_ref,
   }, token)
 
+  /**
+   * Tracked links, only when there is an assignment to attribute a click to.
+   * `rewriteTrackedLinks` is given the unsubscribe URL explicitly as well as
+   * relying on `EXCLUDED_PATHS`: wrapping an opt-out link would make a person's
+   * ability to unsubscribe depend on a `variant_assignments` row, and that link
+   * has to work for years.
+   */
+  let html = rendered.html
+  let text = rendered.text
+  if (variant.assignmentId) {
+    const rewritten = rewriteTrackedLinks({
+      html,
+      text: text ?? '',
+      assignmentId: variant.assignmentId,
+      unsubscribeUrl: buildUnsubscribeUrl(token),
+    })
+    html = rewritten.html
+    if (text) text = rewritten.text
+    if (rewritten.rewritten === 0) {
+      // Reported rather than silent: an experiment on `clicked` whose mail
+      // carries no trackable link can never produce a data point, and that
+      // reads exactly like "nobody clicked".
+      summary.notes.push(
+        `enrollment ${enrollment.id}: variant ${variant.label} sent with NO tracked link` +
+          (rewritten.skipped.length ? ` (skipped: ${rewritten.skipped.map(s => s.reason).join(', ')})` : '')
+      )
+    }
+  }
+
   const result = await sender({
     to: contact.email,
     subject: rendered.subject,
-    html: rendered.html,
-    text: rendered.text,
+    html,
+    text,
     headers: unsubscribeHeaders(token),
   })
 
@@ -516,6 +671,31 @@ async function processOne(
 
   await advanceEnrollment(supabase, enrollment, nextStepNum, seq, now, summary)
 
+  /**
+   * The `sent` denominator, recorded only now — after the send really happened.
+   * Recording it beside the claim would have counted every failed send as an
+   * impression, which is the same defect as `send-reminders` writing
+   * `status='sent'` over six kinds of non-send (rule 10's expensive half).
+   */
+  if (variant.assignmentId) {
+    const ev = await recordVariantEvent({
+      supabase,
+      assignmentId: variant.assignmentId,
+      eventType: 'sent',
+      detail: `step ${nextStepNum}`,
+      meta: { sequence_id: enrollment.sequence_id, step_number: nextStepNum, provider_id: result.id ?? null },
+    })
+    if (ev.kind === 'unavailable') {
+      // The send happened; the denominator did not land. Said out loud, because
+      // a missing denominator with a present numerator makes a rate look
+      // impossibly good.
+      summary.notes.push(
+        `enrollment ${enrollment.id}: variant ${variant.label} was SENT but its 'sent' event could not be recorded (${ev.error}) — that arm's rate will read high`
+      )
+      console.error(`cron:sequences variant 'sent' event failed for assignment ${variant.assignmentId}: ${ev.error}`)
+    }
+  }
+
   await logInteraction(supabase, {
     contactId: enrollment.contact_id,
     type: 'email_sent',
@@ -528,6 +708,9 @@ async function processOne(
       subject: rendered.subject,
       provider: 'resend',
       provider_id: result.id ?? null,
+      ...(variant.assignmentId
+        ? { experiment_id: variant.experimentId, variant_label: variant.label, assignment_id: variant.assignmentId }
+        : {}),
     },
   })
 

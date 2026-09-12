@@ -93,6 +93,15 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/permanent-jewelry',
   '/plan/[ref]/summary',
   '/privacy-policy',
+  /**
+   * Phase 5's tracked-link redirect. It is a `route.ts`, not a `page.tsx`, so
+   * the walker in `slugSafety.test.ts` does not see it — and a route handler
+   * shadows the `[...slug]` catch-all every bit as hard as a page does. The
+   * whole point of this list is "what a published content row would lose to",
+   * and being invisible to the test that checks the list is precisely how a row
+   * goes quietly dead (docs/content-pipeline.md §2).
+   */
+  '/r/[token]',
   '/return-policy',
   '/review/[token]',
   '/shower-venue',

@@ -27,6 +27,7 @@ export type EntityType =
   | 'consent_release'
   | 'inquiry_draft'
   | 'social_post'
+  | 'content_experiment'
 
 /** Physical table backing each logical entity. */
 const TABLE: Record<EntityType, string> = {
@@ -35,6 +36,7 @@ const TABLE: Record<EntityType, string> = {
   consent_release: 'consent_releases',
   inquiry_draft: 'inquiry_drafts',
   social_post: 'social_posts',
+  content_experiment: 'content_experiments',
 }
 
 /**
@@ -101,6 +103,31 @@ export const TRANSITIONS: Record<EntityType, Record<string, string[]>> = {
     published: ['archived'],
     archived: ['draft'],
   },
+  /**
+   * Phase 5's A/B test (migration 045). `active` is the edge that starts
+   * substituting model-written copy into mail a real customer receives, so it
+   * is GATED below — and `content_experiments.status` DEFAULTS to 'draft', so a
+   * writer that forgets fails safe.
+   *
+   * `concluded` is NOT gated and NOT terminal-with-a-side-effect: concluding an
+   * experiment records the analysis run's verdict and changes no copy anywhere.
+   * The winner is a PROPOSAL a human reads. A pipeline that promoted its own
+   * winner into the live sequence step would be the chain from "a model wrote
+   * this" to "a customer received this" with no human in it — exactly what
+   * `agent_learnings.is_active` defaulting false exists to prevent, one surface
+   * over.
+   *
+   * `paused` exists so stopping a test does not have to mean concluding it:
+   * there is no way to un-conclude, and a test paused for a week is a normal
+   * thing to want.
+   */
+  content_experiment: {
+    draft: ['active', 'archived'],
+    active: ['paused', 'concluded', 'archived'],
+    paused: ['active', 'concluded', 'archived'],
+    concluded: ['archived'],
+    archived: ['draft'],
+  },
 }
 
 /**
@@ -130,6 +157,16 @@ const GATED: Record<EntityType, Set<string>> = {
    * set a status fails safe rather than publishing.
    */
   social_post: new Set(['approved', 'published']),
+  /**
+   * Only `active`. Turning an experiment on is the moment model-written copy
+   * starts reaching customers instead of the copy Allie approved, so it needs a
+   * human — and `experimentIsLive()` in lib/experiments/types.ts treats ONLY
+   * `active` as live, so this one edge is the whole gate.
+   *
+   * `concluded` is deliberately not here: it writes a verdict and changes no
+   * copy. Gating it would mean an analysis run could not record what it found.
+   */
+  content_experiment: new Set(['active']),
 }
 
 export interface Actor {

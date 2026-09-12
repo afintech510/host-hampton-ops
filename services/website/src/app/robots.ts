@@ -13,7 +13,14 @@ import { MetadataRoute } from 'next'
  * `/admin` is listed WITHOUT the trailing slash as well: `/admin/` does not
  * match `/admin` itself, which returns 200.
  */
-const disallow = ['/api/', '/admin', '/admin/', '/cm-cheer/order']
+/**
+ * `/r/` is Phase 5's tracked-link redirect. Those URLs only ever appear inside
+ * an email, so no crawler should reach one — but a `Disallow` is cheap
+ * insurance, because a bot that follows one records a click event against a
+ * real person's A/B assignment. Fabricated signal is worse than none, and a
+ * crawler's click is exactly that.
+ */
+const disallow = ['/api/', '/admin', '/admin/', '/cm-cheer/order', '/r/']
 
 // AI answer-engine crawlers we explicitly welcome — we WANT ChatGPT, Claude,
 // Perplexity, Google's AI Overviews, etc. to read and cite Host Hampton when

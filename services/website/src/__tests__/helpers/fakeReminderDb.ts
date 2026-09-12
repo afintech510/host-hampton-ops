@@ -298,9 +298,17 @@ export function makeFakeDb(
         const spec = specs[table]
         const staged: Row[] = []
         for (const raw of list) {
+          // `created_at` is supplied only when the table really HAS one. Not
+          // every table names its timestamp that way — `variant_assignments`
+          // has `assigned_at` and `variant_events` has `occurred_at` — and
+          // injecting a column the spec does not declare made this store answer
+          // 42703 on a row Postgres accepts, which is a fake that disagrees
+          // with the database in the opposite direction from the one that cost
+          // five months. A fake is only useful while it is right both ways.
+          const hasCreatedAt = !spec || 'created_at' in spec.columns
           const row: Row = {
             id: newUuid(),
-            created_at: new Date().toISOString(),
+            ...(hasCreatedAt ? { created_at: new Date().toISOString() } : {}),
             ...(spec?.defaults ?? {}),
             ...raw,
           }
