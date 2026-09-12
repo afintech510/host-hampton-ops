@@ -1,6 +1,6 @@
 # The outbound template layer — escaping, and the header that decided every link
 
-**Link 13 of the build chain. 2026-09-12. No migration — 046 is still free. Suite 1840 → 1984 green.**
+**Link 13 of the build chain. 2026-09-12. No migration — 046 is still free. Suite 1840 → 1985 green.**
 
 Scope: every place customer- or admin-written data is interpolated into an
 outbound email body — `lib/emailTemplates.ts`, `lib/email-templates/*`,
@@ -382,6 +382,21 @@ is worse than the injection it was fixing.** Caught by re-measuring, which is
 the argument for building the measurement instrument before the fix rather than
 after.
 
+**And a fifth of the family that WAS a bug, found by the production probe rather
+than by any test.** After the entry pattern landed, ten `escapeHtml(…)` calls
+that had been correct *before* it became a SECOND escape. The delivered mail
+read:
+
+```
+Hi &amp;quot;&amp;gt;&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;,
+```
+
+The payload was dead and the customer was shown entity gibberish instead of
+their name. Invisible for "Adam"; a live break for anyone called `O'Brien` or
+`Smith & Sons`. Fixed in `807d556`, and the tripwire now checks that class too —
+a file that escapes at entry must not escape again — verified by reintroducing
+the defect and watching it go red. See §12 for both renders.
+
 There is a fifth of the same family that is *not* a bug and is worth stating,
 because it is the reason the tripwire checks call sites: passing an
 already-escaped URL to `mailHref` does **not** produce a refusal. `&amp;` is a
@@ -426,21 +441,111 @@ version of "exercise it".
 
 | suite | what it holds up |
 |---|---|
-| `lib/emailTemplateEscaping.test.ts` (61) | the four checks in §8, every exemption with a reason |
+| `lib/emailTemplateEscaping.test.ts` (62) | the four checks in §8, every exemption with a reason |
 | `lib/publicOrigin.test.ts` (40) | 16 hostile host forms, 8 control code points, both directions, the refusal being reported, and that no file spells the origin a seventh way |
 | `lib/emailSafety.test.ts` (43) | `mailHref`/`mailHrefExternal`/`mailToHref`/`telHref` refusing and accepting; `escapeFields` leaving numbers alone, not mutating, not hanging on a cycle; the double-escape corruption pinned |
 | `lib/contentSafety.test.ts` (49, unchanged) | that extracting `parseScreenedUrl` changed no behaviour |
 | `lib/reminderTemplates.test.ts` (18, unchanged) | that converting four templates to `escapeFields` changed no output |
 
-**1840 → 1984 green.** `tsc --noEmit` filtered to app code: **0**.
+**1840 → 1985 green.** `tsc --noEmit` filtered to app code: **0**.
 `next build`: `✓ Compiled successfully`, `/book` still `○ Static` at 7.15 kB.
 
 ---
 
 ## 12. Production verification
 
-See the commit and the deploy log; the probe results are recorded in §10 and the
-post-deploy numbers in the chain table row in `PLAN.md`.
+Deployed `59a1067`, then `807d556`. `docker inspect hampton_website` and
+`docker images hosthampton-website` agree on
+`sha256:357762…d17d7e`, so the recreate took.
+
+**The header, both directions.** The same probe that found it, re-run against
+the deployed fix, plus seven more forms:
+
+| `X-Forwarded-Host:` | `location:` after the fix |
+|---|---|
+| *(none — baseline)* | `https://www.hosthampton.com/…` |
+| `evil.example.com` | `https://www.hosthampton.com/…` |
+| `www.hosthampton.com.evil.example.com` | `https://www.hosthampton.com/…` |
+| `evil.example.com@www.hosthampton.com` | `https://www.hosthampton.com/…` |
+| `www.hosthampton.com:80@evil.example.com` | `https://www.hosthampton.com/…` |
+| `www.hosthampton.com, evil.example.com` | `https://www.hosthampton.com/…` |
+| `//evil.example.com` | `https://www.hosthampton.com/…` |
+| `localhost` | `https://www.hosthampton.com/…` |
+| `www.hosthampton.com` (IDN homograph) | `https://www.hosthampton.com/…` |
+| `www.hosthampton.com` (legitimate) | `https://www.hosthampton.com/…` |
+
+**And every refusal named itself** (rule 10's quiet half), read out of
+`docker logs hampton_website`:
+
+```
+[publicOrigin] refused host header "www.hosthampton.com.evil.example.com"; using www.hosthampton.com
+[publicOrigin] refused host header "evil.example.com@www.hosthampton.com"; using www.hosthampton.com
+[publicOrigin] refused host header "www.hosthampton.com:80@evil.example.com"; using www.hosthampton.com
+[publicOrigin] refused host header "www.hosthampton.com, evil.example.com"; using www.hosthampton.com
+[publicOrigin] refused host header "//evil.example.com"; using www.hosthampton.com
+[publicOrigin] refused a forwarded development host; using www.hosthampton.com
+```
+
+The last line is the `localhost` case taking the branch written for it — which
+is the `Secure`-flag bug from §3 being closed, observed rather than asserted.
+
+**The mail, rendered.** `scheduled_reminders` held **0 rows** — the whole table,
+so "how many real rows are in the scan" answers itself. One throwaway row was
+inserted by SQL (no `upsertContact`, so nothing was mirrored into Brevo),
+`scheduled_for = 2000-01-01` so it sorts first, pointing at an existing event
+and at the existing contact for `adam@easternbuilding.supply`. The scan was read
+**before** firing: one row, mine, `real_rows_in_scan = 0`. Then
+`/api/cron/send-reminders?limit=1`, and the delivered body read back out of the
+Resend API.
+
+With that contact's own `first_name` set to
+`"><script>alert(1)</script> & <img src=x onerror=alert(1)> '`:
+
+```
+RAW <script>            false      escaped &lt;script&gt;  true
+RAW <img src=x onerror  false      escaped &quot;          true
+hrefs that are not ours/mailto/tel: []
+greeting rendered as: "&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;,"
+```
+
+…and the mail was still a mail: event block, details card and footer all
+present.
+
+**The first run of this probe is what found §9's fifth defect**, and it is the
+reason the probe was worth doing at all. Before `807d556` the same greeting came
+back as
+
+```
+Hi &amp;quot;&amp;gt;&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;,
+```
+
+— the payload dead, and the customer shown entity gibberish instead of their
+name. Ten `escapeHtml(…)` calls that were correct *before* the entry pattern and
+wrong *after* it. Invisible for "Adam"; a live break for anyone whose name has
+an apostrophe. So the legitimate direction was driven too, with `first_name` set
+to `O'Brien & Sons`:
+
+```
+greeting rendered as: "O&#39;Brien,"
+```
+
+One escape, which a mail client renders as `O'Brien`. Before the fix it would
+have been `O&amp;#39;Brien` — displayed literally.
+
+**Restored.** `first_name` back to `Adam` by a conditional `UPDATE … WHERE
+first_name = <the probe value>` (rule 6), the throwaway row deleted,
+`scheduled_reminders` back to **0**. `contacts` is at 1220 rather than the 1219
+in the record — the extra row is a **real customer lead** that arrived at
+19:01 UTC while this was deploying (`farrandsphotography@gmail.com`, a room
+rental inquiry), not a probe row. Nothing of mine is in `contacts`.
+
+**The funnel, after deploy.** `/`, `/book`, `/party-packages`, `/studio-rental`,
+`/kids-party-menu`, `/mobile-party`, `/gift-cards`, `/events`,
+`/my-booking/login` and `/es/party-room-rental` all **200**, and `/book` serves
+**52,742 bytes** — not the ten characters the SEO pass found it serving.
+
+**Three emails were sent, all to `adam@easternbuilding.supply`.** No SMS was
+sent to any number other than `+16314008080`. No Stripe object was created.
 
 ---
 
