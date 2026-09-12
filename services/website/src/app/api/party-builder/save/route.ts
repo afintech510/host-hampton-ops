@@ -14,6 +14,7 @@ import {
 import { partyQuoteSentHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
+import { findBookingsByContactEmail } from '@/lib/contactLookup'
 
 function formatDate(dateStr: string): string {
   try {
@@ -120,16 +121,39 @@ export async function POST(req: NextRequest) {
     if (!existingRef) {
       // Newest unpaid, uncancelled plan for this email whose date doesn't
       // conflict — a plan with no date yet is still the one being built.
-      const { data: priorPlans } = await supabase
-        .from('bookings')
-        .select('id, booking_ref, party_date')
-        .eq('contact_email', normalizedEmail)
-        .eq('event_type', 'kid-party')
-        .not('status', 'in', '(cancelled,completed)')
-        .order('created_at', { ascending: false })
-        .limit(10)
+      //
+      // This was `.eq('contact_email', normalizedEmail)`, and `normalizedEmail`
+      // is lowercased while `bookings.contact_email` is plain `text` holding
+      // whatever the customer typed — **9 of 61 rows are not lowercase**. For
+      // those customers the lookup returned nothing and a BRAND NEW PLAN was
+      // created on every save, which is precisely the bug commit `9fedd91`
+      // ("one plan per customer, not one per save") was written to fix.
+      //
+      // `refBelongsToCustomer`, fifteen lines above, compares the same two
+      // addresses case-insensitively and is right. Two answers to "is this the
+      // same person" in one file — hard-won rule 11, and link 14 found the
+      // identical pair forty lines apart in `/api/portal/my-bookings`.
+      const lookup = await findBookingsByContactEmail(
+        supabase,
+        normalizedEmail,
+        'id, booking_ref, party_date, status, event_type, created_at',
+        { limit: 100 },
+      )
+      if (lookup.kind === 'unavailable') {
+        // Rule 12. Treating "could not read" as "no prior plan" is how the
+        // duplicate gets created — the failure mode this whole block exists to
+        // prevent. Refuse the save; the planner retries.
+        console.error('party-builder/save: prior-plan lookup failed —', lookup.error)
+        return NextResponse.json({ error: 'Could not load your plan. Please try again.' }, { status: 503 })
+      }
+      const priorPlans = (lookup.kind === 'found' ? lookup.bookings : [])
+        .filter(b => b.event_type === 'kid-party')
+        .filter(b => !['cancelled', 'completed'].includes(String(b.status)))
+        .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+        .slice(0, 10)
+        .map(b => ({ id: b.id, booking_ref: b.booking_ref, party_date: (b.party_date as string | null) ?? null }))
 
-      for (const plan of priorPlans || []) {
+      for (const plan of priorPlans) {
         const datesAgree = !plan.party_date || !partyDate || plan.party_date === partyDate
         if (!datesAgree) continue
 
