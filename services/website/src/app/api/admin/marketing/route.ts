@@ -16,7 +16,10 @@ export async function GET(req: NextRequest) {
   const [content, tasks, budget, releases, ledger] = await Promise.all([
     supabase
       .from('website_content')
-      .select('id, slug, title, status, locale, page_type, references_child_media, consent_release_ids, reviewed_by, reviewed_at, updated_at')
+      // meta_description and created_by are here so the Marketing tab can show
+      // the SEO budget and who wrote the row (COPY vs a human) without a second
+      // round-trip — a reviewer's first two questions about a draft.
+      .select('id, slug, title, meta_description, status, locale, page_type, created_by, references_child_media, consent_release_ids, reviewed_by, reviewed_at, updated_at')
       .neq('status', 'archived')
       .order('updated_at', { ascending: false })
       .limit(100),

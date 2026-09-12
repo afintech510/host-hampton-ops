@@ -1,6 +1,7 @@
 import { getSupabase } from '@/lib/supabase'
 import { LOCATIONS } from '@/lib/locations'
 import { CRAFT_PARTIES } from '@/lib/craftParties'
+import { contentPath, isShadowedByStaticRoute } from '@/lib/content/slugSafety'
 
 const BASE = 'https://www.hosthampton.com'
 
@@ -110,8 +111,23 @@ export async function GET() {
     if (contentError) console.error('[sitemap] website_content read failed:', contentError.message)
     for (const c of content || []) {
       const row = c as { slug: string; locale: string; updated_at: string | null }
+      const path = contentPath(row.slug, row.locale === 'es' ? 'es' : 'en')
+      // A published row whose slug collides with a hand-built page never
+      // renders — Next gives the static route precedence over the [...slug]
+      // catch-all. Listing it here would submit the SAME URL to Google twice,
+      // at two priorities, described by a row nobody can see. The publish gate
+      // in /api/admin/marketing/content refuses to create this state; this is
+      // the backstop for the four rows that predate the gate, and it says so
+      // rather than dropping them quietly (rule 10).
+      if (isShadowedByStaticRoute(path)) {
+        console.warn(
+          `[sitemap] skipping published website_content row "${row.slug}" (${row.locale}): ` +
+          `${path} is a hand-built static page, so the DB row renders nowhere.`,
+        )
+        continue
+      }
       entries.push({
-        path: row.locale === 'es' ? `/es/${row.slug}` : `/${row.slug}`,
+        path,
         changefreq: 'monthly',
         priority: 0.6,
         lastmod: row.updated_at || CONTENT_LAST_MODIFIED,

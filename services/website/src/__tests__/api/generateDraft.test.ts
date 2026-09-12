@@ -35,12 +35,17 @@ jest.mock('@/lib/marketing/budget', () => ({
 
 jest.mock('@/lib/marketing/graph', () => ({
   advance: jest.fn().mockResolvedValue({ from: 'draft', to: 'pending_review' }),
+  // townDraft writes a `note` row when the normaliser changed anything. Without
+  // this the mock would throw the moment a test produced a note — rule 7, a
+  // guardrail moved between modules breaking its own test silently.
+  writeLedger: jest.fn().mockResolvedValue(undefined),
 }))
 
 import { POST } from '@/app/api/marketing/generate-draft/route'
 import { isAdminAuthorized } from '@/lib/adminAuth'
 import { assertLlmBudget, recordLlmSpend } from '@/lib/marketing/budget'
-import { advance } from '@/lib/marketing/graph'
+import { advance, writeLedger } from '@/lib/marketing/graph'
+import { MAX_TITLE_CHARS, MAX_DESCRIPTION_CHARS } from '@/lib/seo'
 
 const VALID_DRAFT = {
   title: 'Permanent Jewelry in Southampton, NY | Host Hampton',
@@ -230,6 +235,125 @@ describe('POST /api/marketing/generate-draft', () => {
     const call = (global.fetch as jest.Mock).mock.calls[0]
     const requestBody = JSON.parse(call[1].body)
     expect(requestBody.system).not.toContain('OPERATOR VOICE')
+  })
+
+  /* ── What the model writes is data, not a DraftResult ──────────────────── */
+
+  function mockAnthropicRaw(content: any) {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ content, usage: { input_tokens: 10, output_tokens: 10 } }),
+    }) as any
+  }
+
+  it('finds the first TEXT block — content[0] can be a thinking block (rule 1)', async () => {
+    const { supabase, inserted } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+    mockAnthropicRaw([
+      { type: 'thinking', thinking: 'Let me plan the page…' },
+      { type: 'text', text: JSON.stringify(VALID_DRAFT) },
+    ])
+    const res = await POST(makeReq({ town: 'Southampton', service: 'permanent jewelry' }))
+    expect(res.status).toBe(200)
+    expect(inserted).toHaveLength(1)
+  })
+
+  it('states the real character budget in the prompt, imported not restated (rule 11)', async () => {
+    const { supabase } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+    mockAnthropicOk()
+    await POST(makeReq({ town: 'Southampton', service: 'permanent jewelry' }))
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)
+    const userPrompt = body.messages[0].content
+    expect(userPrompt).toContain(`at most ${MAX_TITLE_CHARS} characters`)
+    expect(userPrompt).toContain(`at most ${MAX_DESCRIPTION_CHARS} characters`)
+  })
+
+  it('an over-budget title is trimmed BEFORE it reaches the row, and the trim is on the ledger', async () => {
+    const { supabase, inserted } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+    mockAnthropicRaw([
+      {
+        type: 'text',
+        text: JSON.stringify({
+          ...VALID_DRAFT,
+          title: 'Permanent Jewelry Welded Bracelets and Anklets for Southampton NY | Host Hampton',
+        }),
+      },
+    ])
+    const res = await POST(makeReq({ town: 'Southampton', service: 'permanent jewelry' }))
+    expect(res.status).toBe(200)
+    expect(inserted[0].title.length).toBeLessThanOrEqual(MAX_TITLE_CHARS)
+    expect(inserted[0].title.endsWith(' | Host Hampton')).toBe(true)
+    // Rule 10: it happened, so it is recorded and returned.
+    expect(res.json().notes.join(' ')).toMatch(/title/)
+    expect(writeLedger).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'note', entityType: 'website_content' }),
+    )
+  })
+
+  it('a section that answers with "html" stores text, and no markup reaches the DB', async () => {
+    const { supabase, inserted } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+    mockAnthropicRaw([
+      {
+        type: 'text',
+        text: JSON.stringify({
+          ...VALID_DRAFT,
+          sections: [{ heading: 'How it works', html: '<p>We weld it on.</p><script>steal()</script>' }],
+        }),
+      },
+    ])
+    const res = await POST(makeReq({ town: 'Southampton', service: 'permanent jewelry' }))
+    expect(res.status).toBe(200)
+    expect(inserted[0].structured.sections).toEqual([{ heading: 'How it works', text: 'We weld it on.' }])
+    expect(JSON.stringify(inserted[0])).not.toMatch(/<script|steal/)
+  })
+
+  it('refuses a reply with no usable body rather than queueing an empty page for review', async () => {
+    const { supabase, inserted } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+    mockAnthropicRaw([{ type: 'text', text: JSON.stringify({ ...VALID_DRAFT, sections: [], faq: [] }) }])
+    const res = await POST(makeReq({ town: 'Southampton', service: 'permanent jewelry' }))
+    expect(res.status).toBe(502)
+    expect(inserted).toHaveLength(0)
+    expect(advance).not.toHaveBeenCalled()
+  })
+
+  /* ── The slug is checked before the money is spent ─────────────────────── */
+
+  it('refuses a slug shadowed by a hand-built page — with NO model call', async () => {
+    const { supabase, inserted } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+    global.fetch = jest.fn() as any
+    const res = await POST(
+      makeReq({ town: 'Southampton', service: 'permanent jewelry', slug: 'studio-rental' }),
+    )
+    expect(res.status).toBe(422)
+    expect(res.json().error).toMatch(/hand-built page/)
+    // The whole point of checking first: no Claude call, no spend, no row.
+    expect(global.fetch).not.toHaveBeenCalled()
+    expect(recordLlmSpend).not.toHaveBeenCalled()
+    expect(inserted).toHaveLength(0)
+  })
+
+  it('refuses a reserved slug before spending', async () => {
+    const { supabase } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+    global.fetch = jest.fn() as any
+    const res = await POST(makeReq({ town: 'X', service: 'y', slug: 'admin' }))
+    expect(res.status).toBe(422)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('the slug the cron generates for every one of its towns is publishable', async () => {
+    const { supabase, inserted } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+    mockAnthropicOk()
+    const res = await POST(makeReq({ town: 'East Hampton', service: 'permanent jewelry' }))
+    expect(res.status).toBe(200)
+    expect(inserted[0].slug).toBe('permanent-jewelry-east-hampton')
   })
 
   it('falls back to the base system prompt when the voice_profile query errors (defensive no-op)', async () => {

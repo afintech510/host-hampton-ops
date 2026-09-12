@@ -42,5 +42,8 @@ export async function POST(req: NextRequest) {
     status: result.contentStatus,
     costUsd: result.costUsd,
     tokens: result.tokens,
+    // What the normaliser trimmed or stripped, so the reviewer is told rather
+    // than handed a quietly shortened page (rule 10).
+    notes: result.notes,
   })
 }

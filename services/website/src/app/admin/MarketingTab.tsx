@@ -1,8 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, CheckCircle2, XCircle, Send, Eye, Archive, DollarSign, FileText, ShieldCheck, Sparkles, ListChecks, BookMarked, MessageSquare, X } from 'lucide-react'
+import { RefreshCw, CheckCircle2, XCircle, Send, Eye, Archive, DollarSign, FileText, ShieldCheck, Sparkles, ListChecks, BookMarked, MessageSquare, X, AlertTriangle, Pencil } from 'lucide-react'
 import { ContentRenderBody, type ContentRenderRow } from '@/components/content/ContentRenderBody'
+import { checkSlug } from '@/lib/content/slugSafety'
+import { MAX_TITLE_CHARS, MAX_DESCRIPTION_CHARS } from '@/lib/seo'
+import type { Locale } from '@/lib/content/slug'
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -10,9 +13,11 @@ interface ContentRow {
   id: string
   slug: string
   title: string
+  meta_description: string | null
   status: string
   locale: string
   page_type: string
+  created_by: string | null
   references_child_media: boolean
   consent_release_ids: string[] | null
   reviewed_by: string | null
@@ -104,6 +109,18 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
+/** Length readout for a field Google truncates. Amber at 90%, red over. */
+function Budget({ label, value, max }: { label: string; value: string; max: number }) {
+  const n = value.length
+  const tone = n > max ? 'text-red-600 font-semibold' : n > max * 0.9 ? 'text-amber-600' : 'text-gray-400'
+  return (
+    <span className={`text-[11px] ${tone}`}>
+      {label} {n}/{max}
+      {n > max ? ' — Google will cut this' : ''}
+    </span>
+  )
+}
+
 /* ── Component ─────────────────────────────────────────── */
 
 export default function MarketingTab({ headers, onLogout }: { headers: Record<string, string>; onLogout: () => void }) {
@@ -121,6 +138,10 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
   const [previewRow, setPreviewRow] = useState<(ContentRenderRow & { locale: string; status: string }) | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDesc, setEditDesc] = useState('')
+  const [editSlug, setEditSlug] = useState('')
 
   const fetchSnapshot = useCallback(async () => {
     setLoading(true)
@@ -156,6 +177,39 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Action failed'); return }
+      await fetchSnapshot()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  function startEdit(row: ContentRow) {
+    setEditId(row.id)
+    setEditTitle(row.title || '')
+    setEditDesc(row.meta_description || '')
+    setEditSlug(row.slug || '')
+    setError(null)
+  }
+
+  // The reviewer's fix-it path: the title, the description and the slug are the
+  // three fields an LLM gets wrong in ways only a human can judge. `status` is
+  // NOT editable here — it moves through advance() and nowhere else, so this
+  // cannot become a second, ungated publish door.
+  async function saveEdit(id: string) {
+    setBusyId(id); setError(null); setNotice(null)
+    try {
+      const res = await fetch('/api/admin/marketing/content', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ id, title: editTitle, meta_description: editDesc, slug: editSlug }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Save failed'); return }
+      // Rule 10: if the server trimmed something to fit the budget, say so —
+      // otherwise the field silently differs from what was typed.
+      if (data.notes?.length) setNotice(`Saved. ${data.notes.join('; ')}.`)
+      else setNotice('Saved.')
+      setEditId(null)
       await fetchSnapshot()
     } finally {
       setBusyId(null)
@@ -212,7 +266,11 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Draft generation failed'); return }
-      setNotice(`Draft created for ${town} · ${service} — review it below.`)
+      // The normaliser's notes are the difference between "the model wrote
+      // this" and "the model wrote this and we cut 40 characters off the
+      // title". The reviewer is approving the second thing.
+      const trimmed = data.notes?.length ? ` (${data.notes.join('; ')})` : ''
+      setNotice(`Draft created for ${town} · ${service} — review it below.${trimmed}`)
       await fetchSnapshot()
     } finally {
       setRunning(null)
@@ -355,27 +413,45 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
         </h3>
         <div className="space-y-2">
           {content.length === 0 && <p className="text-sm text-gray-400">No content in the pipeline.</p>}
-          {content.map(row => (
-            <div key={row.id} className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap items-center gap-3">
+          {content.map(row => {
+            // Where this row will actually live, and whether anything can ever
+            // render there. All four English drafts in the table collide with a
+            // hand-built page; publishing one changes nothing a visitor sees.
+            const slugState = checkSlug(row.slug, (row.locale === 'es' ? 'es' : 'en') as Locale)
+            const canPublish = slugState.ok
+            return (
+            <div key={row.id} className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex flex-wrap items-center gap-3">
               <div className="flex-1 min-w-[200px]">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-hampton-navy text-sm">{row.title}</span>
                   <StatusBadge status={row.status} />
                   {row.locale !== 'en' && <span className="text-[10px] uppercase text-gray-400">{row.locale}</span>}
+                  {row.created_by && (
+                    <span className="text-[10px] uppercase text-gray-400" title="Who wrote this row">{row.created_by}</span>
+                  )}
                   {row.references_child_media && (
                     <span className="flex items-center gap-1 text-[10px] text-amber-700" title="References child media — consent gated">
                       <ShieldCheck className="w-3 h-3" /> child media
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  /{row.slug} · {row.page_type}
-                  {row.status === 'published' && (
-                    <a href={`/${row.slug}`} target="_blank" rel="noreferrer" className="ml-2 text-blue-500 hover:underline">view ↗</a>
+                <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-3 flex-wrap">
+                  <span>{slugState.path} · {row.page_type}</span>
+                  <Budget label="title" value={row.title || ''} max={MAX_TITLE_CHARS} />
+                  <Budget label="desc" value={row.meta_description || ''} max={MAX_DESCRIPTION_CHARS} />
+                  {row.status === 'published' && canPublish && (
+                    <a href={slugState.path} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">view ↗</a>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => startEdit(row)}
+                  className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg text-hampton-navy hover:bg-gray-100 transition-all"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Edit
+                </button>
                 {row.status !== 'published' && (
                   <button
                     onClick={() => openPreview(row.id)}
@@ -384,21 +460,89 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
                     <Eye className="w-3.5 h-3.5" /> Preview
                   </button>
                 )}
-                {(CONTENT_ACTIONS[row.status] || []).map(a => (
+                {(CONTENT_ACTIONS[row.status] || []).map(a => {
+                  // The publish button is the one action a bad slug makes
+                  // pointless. Disable it and say why on the button itself — a
+                  // banner elsewhere is something you scroll past.
+                  const blocked = a.to === 'published' && !canPublish
+                  return (
                   <button
                     key={a.to}
-                    disabled={busyId === row.id}
+                    disabled={busyId === row.id || blocked}
+                    title={blocked ? slugState.message : undefined}
                     onClick={() => advanceContent(row.id, a.to)}
-                    className={`flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 ${
+                    className={`flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                       a.danger ? 'text-red-600 hover:bg-red-50' : 'text-hampton-navy hover:bg-gray-100'
                     }`}
                   >
                     <a.Icon className="w-3.5 h-3.5" /> {a.label}
                   </button>
-                ))}
+                  )
+                })}
               </div>
+              </div>
+
+              {!canPublish && (
+                <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>{slugState.message}</span>
+                </div>
+              )}
+
+              {editId === row.id && (
+                <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+                  <label className="block">
+                    <span className="text-[11px] text-gray-500">Title</span>
+                    <input
+                      value={editTitle}
+                      onChange={e => setEditTitle(e.target.value)}
+                      className="w-full mt-0.5 text-sm rounded-lg border border-gray-300 px-2 py-1.5"
+                    />
+                    <Budget label="title" value={editTitle} max={MAX_TITLE_CHARS} />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] text-gray-500">Meta description</span>
+                    <textarea
+                      value={editDesc}
+                      onChange={e => setEditDesc(e.target.value)}
+                      rows={3}
+                      className="w-full mt-0.5 text-sm rounded-lg border border-gray-300 px-2 py-1.5"
+                    />
+                    <Budget label="desc" value={editDesc} max={MAX_DESCRIPTION_CHARS} />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] text-gray-500">Slug</span>
+                    <input
+                      value={editSlug}
+                      onChange={e => setEditSlug(e.target.value)}
+                      className="w-full mt-0.5 text-sm rounded-lg border border-gray-300 px-2 py-1.5 font-mono"
+                    />
+                    {(() => {
+                      const s = checkSlug(editSlug, (row.locale === 'es' ? 'es' : 'en') as Locale)
+                      return (
+                        <span className={`text-[11px] ${s.ok ? 'text-gray-400' : 'text-red-600'}`}>
+                          {s.ok ? `will publish at ${s.path}` : s.message}
+                        </span>
+                      )
+                    })()}
+                  </label>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => saveEdit(row.id)}
+                      disabled={busyId === row.id}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-hampton-navy text-white disabled:opacity-50"
+                    >
+                      Save
+                    </button>
+                    <button onClick={() => setEditId(null)} className="text-xs px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          ))}
+            )
+          })}
         </div>
       </section>
 

@@ -8,8 +8,11 @@
 
 import { getSupabase } from '@/lib/supabase'
 import { assertLlmBudget, recordLlmSpend, BudgetExceededError } from '@/lib/marketing/budget'
-import { advance } from '@/lib/marketing/graph'
+import { advance, writeLedger } from '@/lib/marketing/graph'
 import { loadVoiceProfile, voicePromptAddendum, type VoiceProfile } from '@/lib/agent/voice'
+import { MAX_TITLE_CHARS, MAX_DESCRIPTION_CHARS } from '@/lib/seo'
+import { checkSlug } from '@/lib/content/slugSafety'
+import { normalizeDraft, type NormalizedDraft } from '@/lib/content/draftNormalize'
 
 // The voice profile now lives in lib/agent/voice.ts (one copy, shared with the
 // booking agent). Re-exported here so existing importers keep working.
@@ -48,13 +51,7 @@ You write local SEO landing pages for a specific town + service. Be specific to 
 
 Respond ONLY with valid JSON — no markdown fences, no extra text.`
 
-export interface DraftResult {
-  title: string
-  meta_description: string
-  keywords: string[]
-  sections: { heading: string; text: string }[]
-  faq: { q: string; a: string }[]
-}
+export type DraftResult = NormalizedDraft
 
 export function slugify(s: string): string {
   return s
@@ -64,11 +61,31 @@ export function slugify(s: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+/**
+ * Pull the model's text out of a reply.
+ *
+ * Hard-won rule 1: `content[0]` is not necessarily the text — with extended
+ * thinking enabled it is a `thinking` block, and the old
+ * `content?.[0]?.type === 'text' ? … : ''` then produced an empty string, which
+ * failed as "response did not contain JSON" rather than as the config change it
+ * really was. Find the first block that IS text.
+ */
+function firstTextBlock(content: unknown): string {
+  if (!Array.isArray(content)) return ''
+  for (const block of content) {
+    if (block && typeof block === 'object' && (block as { type?: string }).type === 'text') {
+      const text = (block as { text?: unknown }).text
+      if (typeof text === 'string') return text
+    }
+  }
+  return ''
+}
+
 async function callClaude(
   town: string,
   service: string,
   voiceProfile: VoiceProfile | null
-): Promise<{ draft: DraftResult; inputTokens: number; outputTokens: number }> {
+): Promise<{ draft: DraftResult; notes: string[]; inputTokens: number; outputTokens: number }> {
   const apiKey = process.env.ANTHROPIC_API_KEY as string
   const systemPrompt = voiceProfile ? COPY_SYSTEM_PROMPT + '\n' + voicePromptAddendum(voiceProfile) : COPY_SYSTEM_PROMPT
 
@@ -78,8 +95,8 @@ async function callClaude(
 
 Respond with JSON exactly in this shape:
 {
-  "title": "SEO page title, ~55-60 chars, includes the town and service, ends with '| Host Hampton'",
-  "meta_description": "meta description, ~150 chars, warm and specific to the town",
+  "title": "SEO page title including the town and service, ending with '| Host Hampton'",
+  "meta_description": "meta description, warm and specific to the town",
   "keywords": ["3-6 short lowercase local keyword phrases"],
   "sections": [
     { "heading": "short section heading", "text": "1-2 warm, specific paragraphs (plain text, no HTML)" }
@@ -88,7 +105,13 @@ Respond with JSON exactly in this shape:
     { "q": "a real question a ${town} customer would ask about ${service}", "a": "a helpful, honest answer" }
   ]
 }
-Include 2-3 sections and 3 FAQ entries.`
+Include 2-3 sections and 3 FAQ entries.
+
+HARD LIMITS — these are what Google shows, not suggestions:
+- "title" must be at most ${MAX_TITLE_CHARS} characters INCLUDING the " | Host Hampton" suffix. Google truncates past that and the tail of a long title is never read.
+- "meta_description" must be at most ${MAX_DESCRIPTION_CHARS} characters.
+- Every value must be plain text. No HTML tags, no markdown.
+- Do not state a price, a package rate or a dollar figure anywhere.`
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -111,16 +134,29 @@ Include 2-3 sections and 3 FAQ entries.`
   }
 
   const data = (await res.json()) as {
-    content: { type: string; text: string }[]
+    content?: unknown
     usage?: { input_tokens?: number; output_tokens?: number }
   }
-  const text = data.content?.[0]?.type === 'text' ? data.content[0].text : ''
+  const text = firstTextBlock(data.content)
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error('Anthropic response did not contain JSON')
 
-  const draft = JSON.parse(jsonMatch[0]) as DraftResult
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonMatch[0])
+  } catch {
+    throw new Error('Anthropic response was not valid JSON')
+  }
+
+  // The reply is data from a model, not a DraftResult because a cast said so.
+  // Everything the row will publish — <title>, <meta>, the page body — is
+  // bounded and stripped here before it can reach the database.
+  const normalized = normalizeDraft(parsed)
+  if (!normalized.ok) throw new Error(normalized.error)
+
   return {
-    draft,
+    draft: normalized.draft,
+    notes: normalized.notes,
     inputTokens: data.usage?.input_tokens ?? 0,
     outputTokens: data.usage?.output_tokens ?? 0,
   }
@@ -132,7 +168,18 @@ function costUsd(model: string, inputTokens: number, outputTokens: number): numb
 }
 
 export type TownDraftOutcome =
-  | { ok: true; status: 200; id: string; slug: string; locale: string; contentStatus: 'pending_review'; costUsd: number; tokens: number }
+  | {
+      ok: true
+      status: 200
+      id: string
+      slug: string
+      locale: string
+      contentStatus: 'pending_review'
+      costUsd: number
+      tokens: number
+      /** What the normaliser trimmed or dropped — shown to the reviewer (rule 10). */
+      notes: string[]
+    }
   | { ok: false; status: number; error: string }
 
 /**
@@ -156,6 +203,15 @@ export async function createTownServiceDraft(
     return { ok: false, status: 503, error: 'ANTHROPIC_API_KEY is not configured on the server' }
   }
 
+  // Check the URL BEFORE spending money on the copy. A slug shadowed by a
+  // hand-built page can never render, so a draft under it is a page nobody will
+  // ever see and a review nobody should be asked for — and the check costs
+  // nothing, while the Claude call costs real budget.
+  const slugCheck = checkSlug(slug, locale)
+  if (!slugCheck.ok) {
+    return { ok: false, status: 422, error: `Cannot draft "${slug}" (${locale}): ${slugCheck.message}` }
+  }
+
   try {
     await assertLlmBudget(supabase, { estimatedUsd: ESTIMATED_USD, actor, entityType: 'website_content' })
   } catch (err) {
@@ -173,7 +229,7 @@ export async function createTownServiceDraft(
     return { ok: false, status: 502, error: 'Draft generation failed' }
   }
 
-  const { draft, inputTokens, outputTokens } = generated
+  const { draft, notes, inputTokens, outputTokens } = generated
 
   const { data: row, error: insErr } = await supabase
     .from('website_content')
@@ -183,11 +239,11 @@ export async function createTownServiceDraft(
       page_type: 'landing',
       title: draft.title,
       meta_description: draft.meta_description,
-      keywords: draft.keywords ?? [],
+      keywords: draft.keywords,
       status: 'draft',
       created_by: actor,
       references_child_media: false,
-      structured: { sections: draft.sections ?? [], faq: draft.faq ?? [] },
+      structured: { sections: draft.sections, faq: draft.faq },
     })
     .select('id')
     .single()
@@ -216,8 +272,31 @@ export async function createTownServiceDraft(
     to: 'pending_review',
     actor: { id: actor },
     supabase,
-    meta: { generated_by: 'llm', model: MODEL },
+    meta: { generated_by: 'llm', model: MODEL, normalizer_notes: notes },
   })
 
-  return { ok: true, status: 200, id: row.id, slug, locale, contentStatus: 'pending_review', costUsd: usd, tokens: inputTokens + outputTokens }
+  // Rule 10: the normaliser trimming a title or stripping markup is a thing
+  // that HAPPENED to the copy a human is about to approve. A ledger note is
+  // where that fact lives permanently; the route also returns it to the panel.
+  if (notes.length > 0) {
+    await writeLedger(supabase, {
+      entityType: 'website_content',
+      entityId: row.id,
+      action: 'note',
+      actor,
+      meta: { normalizer_notes: notes, slug, locale },
+    })
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    id: row.id,
+    slug,
+    locale,
+    contentStatus: 'pending_review',
+    costUsd: usd,
+    tokens: inputTokens + outputTokens,
+    notes,
+  }
 }

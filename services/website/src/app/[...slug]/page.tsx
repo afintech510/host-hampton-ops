@@ -1,7 +1,12 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { getSupabase } from '@/lib/supabase'
 import { type Locale, localeUrl, parseLocaleSlug } from '@/lib/content/slug'
+import {
+  loadPublishedIndex,
+  loadPublishedRow,
+  localesForSlug,
+  type ContentRow,
+} from '@/lib/content/published'
 import { ContentRenderBody } from '@/components/content/ContentRenderBody'
 import { BUSINESS_ID, ORGANIZATION_ID, OG_DEFAULTS, carriesPublishedPrice } from '@/lib/seo'
 
@@ -11,7 +16,12 @@ import { BUSINESS_ID, ORGANIZATION_ID, OG_DEFAULTS, carriesPublishedPrice } from
  * This is a catch-all ([...slug]) so it only ever runs for paths that don't
  * match a real static route — Next.js gives static segments precedence over a
  * dynamic catch-all, so existing pages (/book, /permanent-jewelry, …) are
- * never shadowed. A reserved-slug blocklist is defence-in-depth on top of that.
+ * never shadowed. That precedence is also why `lib/content/slugSafety.ts`
+ * refuses to publish a row whose slug collides with one of those pages: the row
+ * would be `published` in the graph, listed in the sitemap, and rendered
+ * nowhere.
+ *
+ * A reserved-slug blocklist is defence-in-depth on top of that.
  *
  * Bilingual: an `/es/<slug>` path prefix selects the Spanish (locale='es') row;
  * everything else is English. English keeps its bare slug (/party-room-rental);
@@ -22,87 +32,62 @@ import { BUSINESS_ID, ORGANIZATION_ID, OG_DEFAULTS, carriesPublishedPrice } from
  * 'published' without signed releases in the first place.
  */
 
+/**
+ * The ROUTE stays dynamic; the CACHING is in `lib/content/published.ts`.
+ *
+ * Phase 3C's checklist item says "ISR", and caching is right — two Supabase
+ * round-trips per visitor on a landing page that changes a few times a year is
+ * the wrong shape. But route-level `revalidate` is the wrong mechanism here,
+ * for two reasons, and the first was MEASURED rather than assumed:
+ *
+ *  1. **It does not work on this route.** Swapping this line for
+ *     `export const revalidate = 60` and rebuilding leaves `[...slug]` marked
+ *     `ƒ (Dynamic)` in the build output, not `●`. `lib/supabase.ts` sets
+ *     `cache: 'no-store'` on every Supabase fetch, and a no-store fetch opts
+ *     its route out of static rendering entirely. The `revalidate` export would
+ *     have been a comment.
+ *  2. Even if it did work, this is a CATCH-ALL: the last route Next tries, so
+ *     it answers every scanner probing `/wp-login.php`, `/.env`, `/vendor/…`.
+ *     Each distinct URL would become its own on-disk ISR entry — a cache keyed
+ *     by a string an attacker chooses.
+ *
+ * So the cache is at the data layer, where the key space is bounded by the
+ * published index rather than by the request path, and it is flushed by TAG
+ * when an admin publishes, so an edit is live at once instead of up to an hour
+ * later. See the header comment in published.ts for the whole argument.
+ */
 export const dynamic = 'force-dynamic'
 
-interface StructuredSection {
-  heading?: string
-  html?: string
-  text?: string
-}
-interface FaqItem {
-  q: string
-  a: string
-}
 interface StructuredContent {
-  sections?: StructuredSection[]
-  faq?: FaqItem[]
+  faq?: { q: string; a: string }[]
   jsonLd?: unknown
 }
 
-interface ContentRow {
-  slug: string
-  title: string
-  meta_description: string | null
-  body_html: string | null
-  featured_image: string | null
-  keywords: string[] | null
-  page_type: string
-  structured: StructuredContent | null
-  published_at: string | null
-  updated_at: string
-}
-
-interface Published {
-  row: ContentRow
-  locale: Locale
-  slug: string
-}
-
-async function fetchPublished(rawSlug: string): Promise<Published | null> {
-  const { locale, slug, reserved } = parseLocaleSlug(rawSlug)
-  if (reserved || !slug) return null
-
-  try {
-    const supabase = getSupabase()
-    const { data } = await supabase
-      .from('website_content')
-      .select('slug, title, meta_description, body_html, featured_image, keywords, page_type, structured, published_at, updated_at')
-      .eq('slug', slug)
-      .eq('locale', locale)
-      .eq('status', 'published')
-      .maybeSingle()
-    if (!data) return null
-    return { row: data as ContentRow, locale, slug }
-  } catch {
-    return null
-  }
-}
-
-/** Which locales are published for a base slug — drives hreflang alternates. */
-async function publishedLocales(slug: string): Promise<Set<Locale>> {
-  try {
-    const supabase = getSupabase()
-    const { data } = await supabase
-      .from('website_content')
-      .select('locale')
-      .eq('slug', slug)
-      .eq('status', 'published')
-    return new Set((data || []).map((r: { locale: Locale }) => r.locale))
-  } catch {
-    return new Set()
-  }
+/** `structured` is `unknown` off the DB; read the two shapes we render. */
+function structuredOf(row: ContentRow): StructuredContent {
+  const s = row.structured
+  return s && typeof s === 'object' && !Array.isArray(s) ? (s as StructuredContent) : {}
 }
 
 export async function generateMetadata({ params }: { params: { slug: string[] } }): Promise<Metadata> {
   const rawSlug = (params.slug || []).join('/')
-  const published = await fetchPublished(rawSlug)
-  if (!published) return {}
-  const { row, locale, slug } = published
+  const { locale, slug, reserved } = parseLocaleSlug(rawSlug)
+  if (reserved || !slug) return {}
+
+  const found = await loadPublishedRow(slug, locale)
+  // `unavailable` returns empty metadata rather than throwing a second time —
+  // the page component below throws, which is what makes the response a 500.
+  // Metadata on an error page is not read by anyone.
+  if (found.state !== 'found') return {}
+  const row = found.value
 
   const url = localeUrl(slug, locale)
 
   // hreflang alternates: one entry per locale actually published for this slug.
-  const locales = await publishedLocales(slug)
+  // Taken from the cached index, which we have already loaded — the old code
+  // issued a second Supabase query per request for exactly this.
+  const index = await loadPublishedIndex()
+  const locales = index.state === 'found' ? localesForSlug(index.value, slug) : new Set<Locale>()
   const languages: Record<string, string> = {}
   if (locales.has('en')) languages['en'] = localeUrl(slug, 'en')
   if (locales.has('es')) languages['es'] = localeUrl(slug, 'es')
@@ -135,8 +120,9 @@ export async function generateMetadata({ params }: { params: { slug: string[] } 
 /** Build the JSON-LD graph: explicit structured.jsonLd wins; else derive. */
 function buildJsonLd(url: string, row: ContentRow): unknown[] {
   const graph: unknown[] = []
+  const structured = structuredOf(row)
 
-  const explicit = row.structured?.jsonLd
+  const explicit = structured.jsonLd
   if (explicit) {
     // `structured` is written by the COPY agent and the weekly town-drafts
     // cron, and this block is rendered verbatim into the page. A price in it is
@@ -168,8 +154,8 @@ function buildJsonLd(url: string, row: ContentRow): unknown[] {
     dateModified: row.updated_at,
   })
 
-  const faq = row.structured?.faq
-  if (faq && faq.length > 0) {
+  const faq = structured.faq
+  if (Array.isArray(faq) && faq.length > 0) {
     graph.push({
       '@context': 'https://schema.org',
       '@type': 'FAQPage',
@@ -186,10 +172,22 @@ function buildJsonLd(url: string, row: ContentRow): unknown[] {
 
 export default async function DynamicContentPage({ params }: { params: { slug: string[] } }) {
   const rawSlug = (params.slug || []).join('/')
-  const published = await fetchPublished(rawSlug)
-  if (!published) notFound()
-  const { row, locale, slug } = published
+  const { locale, slug, reserved } = parseLocaleSlug(rawSlug)
+  if (reserved || !slug) notFound()
 
+  const found = await loadPublishedRow(slug, locale)
+
+  // Rule 12 — three outcomes, not two. `absent` is a 404 (this URL is gone, and
+  // telling Google so is correct). `unavailable` must NOT be: a Supabase blip
+  // that 404s every published page tells Google the content was deleted, and
+  // the previous `catch { return null }` did exactly that. Throwing makes it a
+  // 500, which Google retries.
+  if (found.state === 'unavailable') {
+    throw new Error(`website_content read failed for ${locale}:${slug} — ${found.reason}`)
+  }
+  if (found.state === 'absent') notFound()
+
+  const row = found.value
   const jsonLd = buildJsonLd(localeUrl(slug, locale), row)
 
   return (
