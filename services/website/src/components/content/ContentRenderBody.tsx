@@ -101,6 +101,29 @@ export function ContentRenderBody({ row, locale = 'en' }: { row: ContentRenderRo
   const featured = safeImageUrl(row.featured_image)
   const galleryImages = gallery.map(safeImageUrl).filter((u): u is string => !!u)
 
+  // Rule 10: a guardrail that stops something must say that it stopped it.
+  // `safeImageUrl` returning null is INVISIBLE — the image simply is not there,
+  // which looks exactly like a row that never had one. Measured in production:
+  // a probe row with three hostile image URLs was correctly refused on all
+  // three and the container log said nothing at all about any of them.
+  //
+  // It matters more now that the screen is a host ALLOWLIST and not just a
+  // scheme check: the likeliest refusal is no longer an attack, it is a
+  // reviewer pasting a real image URL from a host we do not serve from, and
+  // then watching it quietly not appear.
+  if (row.featured_image && !featured) {
+    console.warn(
+      `[content] featured_image refused by safeImageUrl and not rendered: ${JSON.stringify(row.featured_image)}. ` +
+      `Images must be site-relative or on an allowed host (see ALLOWED_IMAGE_HOSTS).`,
+    )
+  }
+  if (galleryImages.length < gallery.length) {
+    console.warn(
+      `[content] ${gallery.length - galleryImages.length} of ${gallery.length} gallery image(s) refused by ` +
+      `safeImageUrl and not rendered.`,
+    )
+  }
+
   // `body_html` is only reached when there are no sections. Its name promises
   // HTML; this renderer promises text, and the column has never been populated.
   const bodyText = sections.length === 0 && row.body_html ? htmlToPlainText(row.body_html) : ''

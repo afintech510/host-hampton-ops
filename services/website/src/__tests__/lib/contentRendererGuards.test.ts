@@ -75,4 +75,23 @@ describe('the renderer body screens its own fields', () => {
     expect(BODY).toMatch(/safeImageUrl\(row\.featured_image\)/)
     expect(BODY).toMatch(/gallery\.map\(safeImageUrl\)/)
   })
+
+  /**
+   * Rule 10. A refused image is INVISIBLE — the picture is simply absent, which
+   * looks exactly like a row that never had one. Measured in production: a
+   * probe row whose `featured_image` and two `gallery` entries were all
+   * correctly refused produced ZERO log lines about any of them, while the
+   * section-html screen beside it reported itself normally.
+   *
+   * It matters more now that the screen is a host allowlist rather than a
+   * scheme check: the likeliest refusal is a reviewer pasting a real image URL
+   * from a host we do not serve from, then watching it quietly not appear.
+   */
+  it('a refused image is reported, not silently dropped', () => {
+    expect(BODY).toMatch(/row\.featured_image && !featured/)
+    expect(BODY).toMatch(/galleryImages\.length < gallery\.length/)
+    // Both branches must actually say something.
+    const warnings = BODY.match(/console\.warn\(/g) ?? []
+    expect(warnings.length).toBeGreaterThanOrEqual(4)
+  })
 })

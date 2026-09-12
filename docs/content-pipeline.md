@@ -614,9 +614,73 @@ quietly dead. A tripwire cannot see the DB, so closing it properly means a
 startup check or an admin sweep. Left as a known gap rather than built, because
 every surface that matters already tells the truth about it.
 
-## 11.9 Verification
+## 11.9 The fifth defect, found by the production probe itself
 
-- **1 452 tests** (was 1 437), all green — 15 added, 2 existing expectations
+The probe row (11.10) carried three hostile image URLs. All three were refused —
+and **the container log said nothing about any of them.** One line came back,
+from the section-html screen sitting a few lines away in the same component.
+
+`safeImageUrl` returning null is invisible by construction: the picture is
+simply absent, which is indistinguishable from a row that never had one. §6
+recorded that "the container log named the drops"; that was true of the priced
+JSON-LD and of `sections[].html`, and not true of the images.
+
+It matters more after 11.2 than before it. While the screen was a scheme check,
+a refusal meant an attack. Now that it is a host **allowlist**, the likeliest
+refusal is a reviewer pasting a perfectly real image URL from a host we do not
+serve from — and then watching it quietly not appear, with nothing anywhere to
+tell her why. That is rule 10 exactly: a guardrail that stops something must say
+that it stopped it, and silence is what success looks like.
+
+Both branches now report, and a source-level tripwire pins them.
+
+This is the second time in two links that the probe found something the diff
+did not: link 6 found two unscreened readers twenty minutes after writing them,
+and this one found a screen that worked perfectly and told nobody.
+
+## 11.10 Driven against production
+
+A single hostile `published` row was inserted **straight into production
+Postgres** — past the route, the normaliser and the slug gate — as in §6.
+Backslashes were built with `chr(92)` rather than typed, because this harness's
+shell eats a literal backslash in a heredoc, and a guardrail test that silently
+loses its payload proves the opposite of what it claims.
+
+The row carried the backslash protocol-relative image in `featured_image`, a
+second one plus a remote-host URL and a `//` URL in `gallery[]`, a `<script>`
+body in `sections[].html`, an `onerror` image in a section heading and in an FAQ
+answer, and a `<script>` inside an FAQ question.
+
+The cache was flushed **through the real PATCH route**, not by restarting
+anything — a direct SQL write bypasses `revalidateContent()` entirely, which is
+the trap §6 recorded.
+
+**Refused — 0 occurrences of each in the served HTML:** `evil.example.com` (all
+three image URLs, including the backslash one), `cdn.example.com`,
+`PAYLOADMARKER`, `FAQPAYLOAD`, `onerror`. `og:image` correctly fell back to the
+site default, and the only `<img>` tags left in the document were the two site
+logos from the layout.
+
+**Preserved — and this is the half that would have been missed by only checking
+for payloads:**
+
+```
+PROSEMARKER Groups of &lt;10 guests and &gt;4 adults are welcome, and 5 &lt; 10 is true.
+FAQPROSEMARKER Yes — parties for &lt;10 guests are our most common booking.
+```
+
+Intact in the visible DOM, correctly escaped by React, and correctly escaped
+again as `<` inside the `FAQPage` JSON-LD. Before 11.3 the first of those
+would have been served as *"PROSEMARKER Groups of 4 adults are welcome, and 5 3
+is true."*
+
+Two directions, not one (rule 6). The probe row was then deleted and its URL
+confirmed gone. It was in `sitemap.xml` while it was published, which is correct
+behaviour for a published row and the reason it was removed promptly.
+
+## 11.11 Verification
+
+- **1 453 tests** (was 1 437), all green — 16 added, 2 existing expectations
   deliberately rewritten (11.2).
 - **0 app-code `tsc` errors** (`grep -E "^src/" | grep -v "^src/__tests__"`).
 - `next build` clean; `/book` still `○ Static`; `[...slug]` still `ƒ Dynamic`.
