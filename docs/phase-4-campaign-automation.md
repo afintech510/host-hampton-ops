@@ -486,3 +486,76 @@ blocked on code.
    1 and 2, 2026-04-23 and 2026-07-06). Given §3, at least one may be a
    `created_not_sent` that the old code reported as delivered. Whether those
    campaigns actually reached anybody can only be answered in the Brevo dashboard.
+
+---
+
+## 9. The claim, proven in production — and the bug the probe found in it
+
+The double-send guard was exercised the way link 2 exercised the email-me
+cooldown: **five concurrent requests**, not two sequential ones. A throwaway
+campaign of type `marketing` was used, because that type passes the
+`scheduled_campaigns_campaign_type_check` and yet neither send branch handles it,
+so the route claims, falls through to "Unknown campaign type", and releases —
+**no provider is ever called, and 944 real people are never at risk.**
+
+```
+409  Another send for this campaign was already in flight …
+409  …
+400  {"error":"Unknown campaign type"}          ← exactly ONE winner
+409  …
+409  …
+404  (nonexistent id)
+```
+
+**One of five won the claim.** That is the guarantee, and it held first time.
+
+**What did not hold was my own fix from §3.** The winner left the row stuck at
+`sending`. `release()` restored `campaign.status`, and `campaign` is the row from
+`UPDATE … RETURNING` — which PostgREST hands back **after** the update, so its
+status is already `sending`. Releasing to it is not a release.
+
+Its unit test passed, because the mock returned a fixed pre-update row. **Rule 8,
+about a mock this time: a test that passes is not behaviour the database agrees
+with.** The mock now models what PostgREST actually returns, so the old code
+fails it. The pre-claim status is read separately; that read is *not* the gate —
+the conditional UPDATE still is — so a stale value there can only change which of
+`draft`/`scheduled` is restored, and the release is itself conditional on still
+holding the claim.
+
+Re-run after the fix: one winner, four 409s, row back at **`draft`** with no
+`sent_at`. Probe campaign deleted; `scheduled_campaigns` back to 7 sent / 103
+draft, unchanged.
+
+A third, smaller thing the probe surfaced: two of the four losers observed
+`draft`, because the winner had already released, and the 409 then read *"This
+campaign is 'draft' — it is not waiting to be sent"*, which is a confidently
+contradictory sentence of exactly the kind this chain keeps finding. A raced
+caller is now told it raced.
+
+**Known and not fixed, because it is pre-existing and Adam's call:** a campaign
+of type `marketing` — an allowed value of the CHECK — is handled by neither send
+branch, so it can never be sent through the admin route. There are none in the
+table.
+
+## 10. A deploy note for whoever is next
+
+`scripts/deploy.sh` printed, twice, a loud
+
+```
+Error response from daemon: Conflict. The container name "/<hash>_hampton_website"
+is already in use by container "<id>"
+```
+
+…**after having already recreated the container successfully.** The message reads
+like the trap `AGENTS.md` warns about (a stale name leaving the OLD container
+running), and it is not — it is a redundant second recreate attempt. Do not act
+on the message; settle it with the image hash:
+
+```
+docker inspect hampton_website --format '{{.Image}}'
+docker images --no-trunc hosthampton-website --format '{{.ID}}'
+```
+
+Equal means the deploy took. Both times here they were. The third deploy printed
+`Recreated` / `Started` cleanly with no change to the script, so it is
+intermittent.

@@ -115,8 +115,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const { data: existing } = await supabase
         .from('scheduled_campaigns').select('status').eq('id', id).maybeSingle()
       if (!existing) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+      // The row can legitimately read `draft` or `scheduled` here: the caller
+      // that won the claim may already have finished and released it. Saying
+      // "this campaign is draft — it is not waiting to be sent" would be a
+      // confidently contradictory sentence, so the two cases are separated.
+      const raced = existing.status === 'draft' || existing.status === 'scheduled'
       return NextResponse.json(
-        { error: `This campaign is "${existing.status}" — it is not waiting to be sent.`, status: existing.status },
+        {
+          error: raced
+            ? 'Another send for this campaign was already in flight — nothing was sent twice. Check its status before pressing Send again.'
+            : `This campaign is "${existing.status}" — it is not waiting to be sent.`,
+          status: existing.status,
+        },
         { status: 409 }
       )
     }
