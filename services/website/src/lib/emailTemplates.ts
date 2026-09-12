@@ -1,4 +1,3 @@
-import { escapeHtml } from '@/lib/escapeHtml'
 import { escapeFields, mailHref, mailHrefExternal, mailToHref, telHref } from '@/lib/emailSafety'
 
 /**
@@ -1039,7 +1038,7 @@ export function partyPaymentReceivedHtml(raw: { customerName: string; bookingRef
 
 export function partyBalanceReminderHtml(raw: { customerName: string; bookingRef: string; partyDate: string; balanceFormatted: string; payUrl: string }): string {
   const d = escapeFields(raw)
-  const firstName = escapeHtml(d.customerName.split(' ')[0] || 'there')
+  const firstName = d.customerName.split(' ')[0] || 'there'
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:${BRAND.bodyBg};">
@@ -1212,8 +1211,8 @@ export function partyAdminUnpaidDayOfHtml(raw: { bookingRef: string; customerNam
       <p style="color:#c00;font-size:28px;font-weight:bold;margin:0;">${d.balanceFormatted}</p>
     </div>
     <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
-      <tr><td style="padding:6px 0;color:${BRAND.gray};width:100px;">Customer</td><td style="padding:6px 0;color:${BRAND.navy};font-weight:bold;">${escapeHtml(d.customerName)}</td></tr>
-      ${d.customerPhone ? `<tr><td style="padding:6px 0;color:${BRAND.gray};">Phone</td><td style="padding:6px 0;color:${BRAND.navy};"><a href="${telHref(raw.customerPhone)}" style="color:${BRAND.navy};">${escapeHtml(d.customerPhone)}</a></td></tr>` : ''}
+      <tr><td style="padding:6px 0;color:${BRAND.gray};width:100px;">Customer</td><td style="padding:6px 0;color:${BRAND.navy};font-weight:bold;">${d.customerName}</td></tr>
+      ${d.customerPhone ? `<tr><td style="padding:6px 0;color:${BRAND.gray};">Phone</td><td style="padding:6px 0;color:${BRAND.navy};"><a href="${telHref(raw.customerPhone)}" style="color:${BRAND.navy};">${d.customerPhone}</a></td></tr>` : ''}
     </table>
     ${payButton(mailHref(raw.adminUrl), 'View Booking')}
   </div>
@@ -1267,8 +1266,8 @@ export function partyThankYouHtml(raw: {
   childName?: string | null
 }): string {
   const d = escapeFields(raw)
-  const firstName = escapeHtml(d.customerName.split(' ')[0] || 'there')
-  const celebrant = d.childName ? `${escapeHtml(d.childName)}'s ` : ''
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  const celebrant = d.childName ? `${d.childName}'s ` : ''
   const photoBlock = raw.photoGalleryUrl
     ? `<div style="background:${BRAND.bodyBg};border-radius:10px;padding:24px;margin:0 0 24px;text-align:center;">
         <h3 style="font-size:16px;color:${BRAND.navy};margin:0 0 8px;">📸 Your Party Photos</h3>
@@ -1324,8 +1323,8 @@ export function birthdayRebookHtml(raw: {
   bookLink: string
 }): string {
   const d = escapeFields(raw)
-  const firstName = escapeHtml(d.customerName.split(' ')[0] || 'there')
-  const who = d.childName ? escapeHtml(d.childName) : 'your little one'
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  const who = d.childName ? d.childName : 'your little one'
   const turning = d.nextAge != null ? ` turning ${d.nextAge}` : ''
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>

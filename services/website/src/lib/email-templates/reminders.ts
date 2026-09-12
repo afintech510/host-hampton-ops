@@ -1,4 +1,3 @@
-import { escapeHtml } from '@/lib/escapeHtml'
 import { escapeFields } from '@/lib/emailSafety'
 
 /**
@@ -84,7 +83,7 @@ export interface ReminderEvent3DayParams {
 
 export function reminderEvent3DayHtml(params: ReminderEvent3DayParams): string {
   const { customerName, eventDate, eventTitle, eventTime, location } = escapeFields(params)
-  const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
+  const firstName = customerName.split(' ')[0] || 'there'
 
   const headerContent = `
     <h1 style="color:${BRAND.navy};font-size:28px;margin:0 0 6px;font-weight:normal;">Your Event Is Coming Up!</h1>
@@ -126,7 +125,7 @@ export interface ReminderEventDayOfParams {
 
 export function reminderEventDayOfHtml(params: ReminderEventDayOfParams): string {
   const { customerName, eventTitle, eventTime, location } = escapeFields(params)
-  const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
+  const firstName = customerName.split(' ')[0] || 'there'
   const mapsUrl = `https://maps.google.com/?q=295+Montauk+Highway+Suite+7+Speonk+NY+11972`
 
   const headerContent = `
@@ -165,7 +164,7 @@ export interface ReminderBooking7DayParams {
 
 export function reminderBooking7DayHtml(params: ReminderBooking7DayParams): string {
   const { customerName, partyDate, balanceDueNote, bookingRef, partyTime, packageName } = escapeFields(params)
-  const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
+  const firstName = customerName.split(' ')[0] || 'there'
 
   const packageRow = packageName
     ? { label: 'Package', value: packageName }
@@ -219,7 +218,7 @@ export interface ReminderBooking1DayParams {
 
 export function reminderBooking1DayHtml(params: ReminderBooking1DayParams): string {
   const { customerName, partyTime, packageName } = escapeFields(params)
-  const firstName = escapeHtml(customerName.split(' ')[0] || 'there')
+  const firstName = customerName.split(' ')[0] || 'there'
   const mapsUrl = `https://maps.google.com/?q=295+Montauk+Highway+Suite+7+Speonk+NY+11972`
 
   const packageLine = packageName

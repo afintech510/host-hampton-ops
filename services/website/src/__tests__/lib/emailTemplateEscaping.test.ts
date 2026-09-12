@@ -259,7 +259,22 @@ function isEscapedBinding(src: string, sym: string): boolean {
     // both `d` and `name` and the check asks whether a method receiver was
     // escaped — which it never is.
     const roots = [...init.matchAll(/(?:^|[^A-Za-z0-9_$.])([A-Za-z_$][\w$]*)\./g)].map(r => r[1])
-    if (roots.length && roots.every(r => new RegExp(`const\\s+${r}\\s*=\\s*escapeFields\\(`).test(src))) return true
+    if (roots.length && roots.every(r => isEscapedRoot(src, r))) return true
+  }
+  return false
+}
+
+/**
+ * A name that arrives pre-escaped: bound directly by `escapeFields`, or
+ * destructured out of it. Both spellings are in use — `const d =
+ * escapeFields(raw)` in `emailTemplates.ts` and `const { customerName, … } =
+ * escapeFields(params)` in `reminders.ts` — and a check that knows only the
+ * first reports the second as a finding.
+ */
+function isEscapedRoot(src: string, name: string): boolean {
+  if (new RegExp(`const\\s+${name}\\s*=\\s*escapeFields\\(`).test(src)) return true
+  for (const m of src.matchAll(/const\s*\{([\s\S]{0,600}?)\}\s*=\s*escapeFields\(/g)) {
+    if (new RegExp(`(?:^|[^A-Za-z0-9_$])${name}(?:[^A-Za-z0-9_$]|$)`).test(m[1])) return true
   }
   return false
 }
@@ -450,6 +465,43 @@ describe('the file list cannot go stale', () => {
         if (/^export function [A-Za-z_$][\w$]*\s*\(\s*\)/.test(body)) continue
         if (body.includes('escapeFields(')) continue
         offenders.push(`${rel}  ${name}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  /**
+   * The mirror of every check above, and the one that caught a live regression.
+   *
+   * A file that escapes at ENTRY must not escape again. The production probe
+   * for this work delivered a real email whose greeting read
+   *
+   *     Hi &amp;quot;&amp;gt;&amp;lt;script&amp;gt;alert(1)…
+   *
+   * — the payload was dead, and the customer was shown entity gibberish instead
+   * of their name. The cause was `const firstName = escapeHtml(customerName…)`
+   * left in place after `customerName` started arriving pre-escaped: ten sites,
+   * all of them correct before the entry pattern and wrong after it.
+   *
+   * For "Adam" it is invisible. For `O'Brien` or `Smith & Sons` it is a
+   * customer-visible break in a live revenue email — which is the direction
+   * that matters more than the injection (Phase 5 review §11.12), and it was
+   * found by RENDERING the thing in production, not by reading the diff.
+   */
+  it('a file that escapes at entry does not escape a second time', () => {
+    const offenders: string[] = []
+    for (const rel of TEMPLATE_MODULES) {
+      const src = fs.readFileSync(path.join(WEBSITE_SRC, rel), 'utf8')
+      if (!src.includes('escapeFields(')) continue
+      // Names that arrive already escaped: the object bound by escapeFields, and
+      // anything destructured out of it.
+      const roots = new Set<string>()
+      for (const m of src.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*escapeFields\(/g)) roots.add(m[1])
+      for (const m of src.matchAll(/const\s*\{([\s\S]{0,600}?)\}\s*=\s*escapeFields\(/g)) {
+        for (const n of m[1].matchAll(/([A-Za-z_$][\w$]*)/g)) roots.add(n[1])
+      }
+      for (const m of src.matchAll(/escapeHtml\(\s*([A-Za-z_$][\w$]*)/g)) {
+        if (roots.has(m[1])) offenders.push(`${rel}  escapeHtml(${m[1]}…) — already escaped at entry`)
       }
     }
     expect(offenders).toEqual([])
