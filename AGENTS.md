@@ -187,11 +187,17 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **044**. (037 plan content, 038 + 039 per-user
+The next free migration number is **045**. (037 plan content, 038 + 039 per-user
 admin login, 040 payment idempotency, 041 the learning loop, 042 typed
 `draft_feedback`, **043 Phase 4 campaign automation** — `email_sequence_sends`
-plus the columns and slot index that extend the pre-existing `social_posts`.)
-Phase 4's **review** (link 9, 2026-09-12) took no migration; 044 is still free.
+plus the columns and slot index that extend the pre-existing `social_posts`;
+**044 the reminder-queue repair** — `scheduled_reminders.reference_id` widened
+from `uuid` to `text`, the `reference_type` CHECK corrected to `('event',
+'booking')`, a `'sending'` claim status, `attempts` / `last_outcome` /
+`last_error` / `claimed_at`, and **one** unique index
+`uniq_scheduled_reminder_once (contact_id, reminder_type, reference_id) WHERE
+status <> 'cancelled'` replacing the two partial ones.)
+Phase 4's **review** (link 9, 2026-09-12) took no migration.
 
 **No new environment variable was added for Phase 4.** The unsubscribe tokens
 reuse `PORTAL_LINK_SIGNING_SECRET`; the social calendar reuses
@@ -235,11 +241,12 @@ There is **no in-container scheduler**. Scheduled work is driven externally by *
 
 Cron routes (under `services/website/src/app/api/cron/`):
 
-- `/api/cron/send-reminders` — booking/event reminder emails + SMS
+- `/api/cron/send-reminders` — booking/event reminder emails + SMS. **The only deliverer**: it claims each row (`pending`→`sending`) before sending, re-reads consent at send time, and records a named outcome on every path. `?limit=N` (1…50, out of range is a 400) bounds a manual run to the N longest-waiting rows. **Not currently scheduled** — see `docs/reminder-engine-review.md` §10.
 - `/api/cron/send-campaigns` — outbound campaign sends
 - `/api/cron/draft-newsletter` — newsletter drafting
 - `/api/cron/process-sequences` — email sequence processing. **Not currently scheduled, and must not be rescheduled blind** (PLAN.md needs-Adam): its cron-job.org job disappeared on 2026-08-16 and **44 enrollments are frozen mid-sequence**, so turning it back on mails 44 real people at once, months late. `?limit=N` (1…50) caps one tick to the N longest-waiting enrollments — that is the drain: one real person per tick, checked in between. An out-of-range `limit` is a 400, never a silent full batch.
-- `/api/cron/event-reminders`
+- `/api/cron/event-reminders` — nightly sweep for tomorrow's ticketed events. **ENQUEUES into `scheduled_reminders`; it does not send.** (Until 2026-09-12 it texted `event_tickets` directly with no consent check and no cross-run idempotency.) It therefore depends on `send-reminders` also being scheduled. Not currently scheduled.
+- `/api/cron/birthday-rebooking` — scans bookings 8–10 months past and enqueues a pre-approved rebooking nudge. Marketing: opt-in checked at enqueue **and again at send**. Has run once, ever (2026-08-17), and found nothing. Not currently scheduled.
 - `/api/cron/booking-locks`
 - `/api/cron/agent-dispatch` — booking agent: claims new inbound events, drafts replies, texts the reviewers. Every 2 minutes. No-op unless `AGENT_ENABLED` is true.
 - `/api/cron/gmail-sync` — pulls new mail from `GMAIL_USER` into `ingested_messages` and applies the handled label. Every 3 minutes. No-op unless the `GMAIL_*` env is set. Read + label only; it has no send scope. `?backfill=1&pageToken=…` runs the bounded 12-month historical pull by hand (writes rows as `handled`, so it never triggers a draft).

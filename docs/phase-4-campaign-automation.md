@@ -981,3 +981,15 @@ drafts, so the new checks did not start flagging real copy.
 * **§8's items are unchanged.** Whether Brevo campaigns 1 and 2 reached anybody
   is still only answerable in the Brevo dashboard, and the two stale cron-job.org
   secrets still need Adam's login.
+
+---
+
+## 12. The other half of Phase 3B — see `docs/reminder-engine-review.md`
+
+Link 10 (2026-09-12, **migration 044**) reviewed the three cron routes Phase 4
+did not touch: `send-reminders`, `event-reminders`, `birthday-rebooking`. The
+headline is that §11.1's defect had a bigger sibling — **`scheduled_reminders`
+had never held a single row**, because the table refused every insert the code
+made (`reference_id` was `uuid` against a booking_ref, and the `reference_type`
+CHECK had no `'event'` label) and not one writer read the error. `.eq('email',
+…)` was there too, in seven more places.
