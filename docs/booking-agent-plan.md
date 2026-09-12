@@ -2484,11 +2484,32 @@ brief forbids outright. What was done instead, stated plainly:
   read failure at each step, and the status-constraint refusal. The route tests
   cover a portal cookie for a *different* plan, a customer attempting a `custom`
   amount, and an admin send without `confirm`.
-- **Production: minting only.** A link was minted against a test plan, the
-  `booking_pay_links` row checked against the server-derived figure, and the link
-  voided. Minting is not a charge.
+- **Production: everything except the payment itself**, on a throwaway plan
+  `HH-TEST-PAY1` (studio rental, $600 billed + a $200 Optional item), now
+  **cancelled with a note, both links deactivated at Stripe and voided, zero
+  `booking_payments` rows written**. Exercised, not read:
+  - the studio balance link minted at the **FULL $600**, not $350;
+  - the deposit at $250 + $7.50, as two Stripe line items;
+  - the admin custom cap reported **$850** (= $600 remaining + $250 deposit
+    owed), which also proves the $200 Optional item is not in the total;
+  - re-minting the deposit **voided the first link**, and its old URL now serves
+    Stripe's "Inactive / deactivated" page carrying no amount;
+  - a cancelled plan was refused **409** *and* wrote `pay_link_refused` to the
+    ledger;
+  - a portal cookie for `HH-TEST-PAY1` got **403** on another plan's pay link;
+  - a customer got **403** attempting `purpose: 'custom'`;
+  - "email me this" sent to the plan's own address while **ignoring a `to` in the
+    body**, and a second call inside a minute returned **429**;
+  - the Stripe API confirms `restrictions: {completed_sessions: {limit: 1}}` on
+    both links.
 - **NOT exercised in production: a real payment.** The recording path has never
   run against a live Stripe event.
+- **Invoice sequence:** the test plan consumed `444124-000118`, so
+  `last_value = 118`, `is_called = t` and the next number is `444124-000119`.
+  Read from `last_value`/`is_called`, never by calling `next_invoice_number()`.
+  116 and 118 are now gaps — the documented cheap half of `invoiceNumber.ts`'s
+  trade. **Leave them**: reclaiming 116 once already burnt another number,
+  because sequences ignore transactions.
 
 **Needs Adam:** a Stripe **test** secret + test webhook secret in the container
 (e.g. `STRIPE_TEST_SECRET_KEY` / `STRIPE_TEST_WEBHOOK_SECRET`) so the pay path
