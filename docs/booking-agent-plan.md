@@ -2322,3 +2322,43 @@ itself: *an elapsed time that is only implied by a date is not visible to
 anyone.* The data was on the page for days; the fact was not.
 
 897 tests, 896 passing.
+
+### The failing test that turned out to be a real bug (`16a8703`)
+
+**The suite is green: 898/898.** The `smsReviewRequest ... default review link`
+failure had been red long enough to become folklore — three sessions of handoff
+notes described it as "pre-existing, uncommitted WIP in another session's hands,
+do not fix it". It was none of those things. The files were committed, they were
+ours, and the test was a one-line symptom of a real defect.
+
+The Google review URL was written down **twice**: in `lib/marketing/reviewLink.ts`
+and again as `DEFAULT_REVIEW_URL` in `lib/sms-templates.ts`. `b422874` changed
+the first as a drive-by inside an unrelated triage fix — its commit message does
+not mention review links at all — and left the second, and the test asserting
+the second's old value, behind. Nothing compared them.
+
+That is the same shape as the two pricing divergences: **a constant declared in
+two files is a constant nothing is checking.**
+
+So the fix was not to update the expected string. `REVIEW_BASE_URL` is exported
+from `reviewLink.ts`, `sms-templates.ts` imports it, the SMS test asserts
+against the constant rather than a copy of its value, and a new test checks that
+the SMS and email paths send people to the same place — the comparison whose
+absence was the actual bug.
+
+Checked before changing anything, rather than assuming: the g.page short link
+302s to exactly the `search.google.com/local/writereview?placeid=ChIJv3k3iqn36IkRfD0Mkz2QWj4`
+the test expected. Same destination, shorter spelling — 40 characters cheaper
+and, measured with `lib/smsSegments`, no cheaper in money, since both forms sit
+in the 2-segment band.
+
+`reviewLink.test.ts` keeps its hardcoded literal deliberately and now says why.
+**A test that pins a value it OWNS is a tripwire — it makes changing where
+customers are sent to review the business a conscious act. A test that pins a
+value it borrowed from another file is rot.** The two look identical until one
+of them goes red for a week.
+
+The meta-lesson, which cost more than the bug did: **a red test nobody owns
+becomes folklore in about three sessions.** Each handoff note made the next
+session more confident it was someone else's problem. Chase it once instead of
+documenting it forever.
