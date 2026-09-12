@@ -3,6 +3,7 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { resolveCheckinToken, requiresRentalAgreement } from '@/lib/checkinLink'
 import { cancelCheckinReminders } from '@/lib/checkinReminders'
+import { findContactsByEmail, isPlausibleEmailAddress } from '@/lib/contactLookup'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,7 +75,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   if (!name || !email) {
     return NextResponse.json({ error: 'Name and email are required' }, { status: 400 })
   }
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+  // One definition of "looks like an email address", shared with the portal
+  // login — this regex was the third copy (rule 11).
+  if (!isPlausibleEmailAddress(email)) {
     return NextResponse.json({ error: 'Please enter a valid email address' }, { status: 400 })
   }
 
@@ -114,11 +117,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   // visit, or this booking doesn't require one at all (theme/mobile parties —
   // only room rentals carry the liability waiver).
   if (booking.checkin_agreement_signed_at || !requiresRentalAgreement(booking)) {
-    await supabase.from('bookings').update({
+    const { error: completeErr } = await supabase.from('bookings').update({
       checkin_status: 'complete',
       checkin_completed_at: new Date().toISOString(),
     }).eq('id', bookingId)
-    await cancelCheckinReminders(bookingRef)
+    // Rule 19. This write is what stops the pre-arrival texts; if it fails
+    // silently the customer has checked in and is texted anyway, and nothing
+    // anywhere says which of the two happened.
+    if (completeErr) {
+      console.error('checkin: could not mark complete for', bookingRef, '—', completeErr.message)
+    } else {
+      await cancelCheckinReminders(bookingRef)
+    }
   }
 
   return NextResponse.json({ ok: true })
@@ -149,11 +159,21 @@ async function recordCheckinConsent({
   try {
     const supabase = getSupabase()
 
-    const { data: existing } = await supabase
-      .from('contacts')
-      .select('id, status, source')
-      .eq('email', email)
-      .maybeSingle()
+    // Case-INSENSITIVE. `.eq('email', …)` against a lowercased input missed the
+    // 21 mixed-case contacts entirely, so `existing` came back null for them and
+    // the status/source restore below never ran — meaning a customer who checked
+    // in for a party they had already paid for was silently demoted back to
+    // `lead`. Same defect as `docs/phase-4-campaign-automation.md` §11.6, in a
+    // place that fix did not reach. See lib/contactLookup.ts.
+    const existingLookup = await findContactsByEmail(supabase, email, 'id, email, status, source')
+    const existing = existingLookup.kind === 'found'
+      ? (existingLookup.contacts[0] as unknown as { id: string; status?: string | null; source?: string | null })
+      : null
+    if (existingLookup.kind === 'unavailable') {
+      // Rule 12: we could not tell whether this person exists. Do NOT write the
+      // restore below on a guess — say so and let the upsert stand.
+      console.error('checkin:consent — contact lookup unavailable:', existingLookup.error)
+    }
 
     const contactId = await upsertContact({
       name,
@@ -173,22 +193,34 @@ async function recordCheckinConsent({
 
     // Undo the status/source clobber described above.
     if (existing && (existing.status !== 'lead' || existing.source !== 'direct')) {
-      await supabase
+      const { error: restoreErr } = await supabase
         .from('contacts')
         .update({ status: existing.status, source: existing.source })
         .eq('id', contactId)
+      if (restoreErr) {
+        console.error('checkin:consent — could not restore status/source for', bookingRef, '—', restoreErr.message)
+      }
     }
 
-    // Note: bookings has no contact_id column (migration 004 recreated the
-    // table without one) — booking↔contact is resolved by email everywhere
-    // else in this codebase, e.g. lib/reminders.ts. Don't add a second link.
+    // NOTE, corrected 2026-09-12: this comment used to read *"bookings has no
+    // contact_id column (migration 004 recreated the table without one)"* and
+    // tell the reader not to add one. **`bookings.contact_id` has existed since
+    // migration 035 §9** — it was added precisely because resolving
+    // booking↔contact by email had never worked. Rule 13: a constraint asserted
+    // in a comment and contradicted by the schema is worse than no comment.
+    // Linking here is left to `linkFirstTouchEvent`/`ensureLeadPlan`, which own
+    // that column; this route deliberately writes only consent.
 
-    await supabase.from('contact_interactions').insert({
+    const { error: interErr } = await supabase.from('contact_interactions').insert({
       contact_id: contactId,
       type: 'form_submission',
       summary: `Pre-arrival check-in — ${bookingRef}`,
       metadata: { bookingId, bookingRef, marketingConsent },
     })
+    // Rule 19: the consent record is the whole point of this function.
+    if (interErr) {
+      console.error('checkin:consent — interaction write FAILED for', bookingRef, '—', interErr.message)
+    }
   } catch (err) {
     console.error('checkin:consent error (non-fatal):', err)
   }

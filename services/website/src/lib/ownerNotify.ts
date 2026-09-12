@@ -40,20 +40,34 @@ export function reviewerPhones(): string[] {
  * number) regardless of SMS_PROVIDER, so the thread lives in the HH inbox
  * where replies are received by /api/webhooks/quo.
  *
- * Returns the number of sends attempted (0 when REVIEWER_PHONES is unset).
+ * Returns the number of sends that the provider actually ACCEPTED (0 when
+ * REVIEWER_PHONES is unset).
+ *
+ * It used to return `phones.length` — the number ATTEMPTED — and discard every
+ * per-send result. `sendSMSVia` resolves `null` on a provider rejection rather
+ * than throwing, so a caller checking this number was told a text had gone out
+ * when Quo had refused it. That is the same defect as the campaign sender's
+ * `total_recipients` (`docs/phase-4-campaign-automation.md` §11) and the reminder
+ * engine's `status='sent'`: a counter is only as good as what it is told.
  */
 export async function notifyOwnerSms(body: string): Promise<number> {
   const phones = reviewerPhones()
   if (phones.length === 0) return 0
   const text = body.length > 1500 ? body.slice(0, 1497) + '…' : body
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     phones.map(p =>
-      sendSMSVia('quo', p, text).catch(err =>
-        console.error('notifyOwnerSms failed (non-fatal):', p, err),
-      ),
+      sendSMSVia('quo', p, text).catch(err => {
+        console.error('notifyOwnerSms failed (non-fatal):', p, err)
+        return null
+      }),
     ),
   )
-  return phones.length
+  let delivered = 0
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled' && r.value) delivered++
+    else console.error('notifyOwnerSms: NOT delivered to', phones[i])
+  })
+  return delivered
 }
 
 /** One-line lead summary for an owner SMS. Keeps only the fields present. */

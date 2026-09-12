@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isLocalRequest } from '@/lib/publicOrigin'
+import { findBookingsByContactEmail } from '@/lib/contactLookup'
 import {
   getEmailFromCookie,
   clearEmailCookieHeader,
-  generatePortalToken,
-  buildPortalCookieValue,
   setPortalCookieHeader,
 } from '@/lib/portalAuth'
 
@@ -15,7 +14,33 @@ import {
  * POST { booking_ref } — switches the per-booking portal cookie to the chosen
  *   plan, so the planner loads it on next request. Verifies the booking
  *   belongs to the email session before switching.
+ *
+ * ── Two things this route got wrong, both measured in production ──────────
+ *
+ * 1. **The authorization filter was a LIKE pattern.** `.ilike('contact_email',
+ *    email)` with the cookie's own value as the pattern: a session for the
+ *    single character `%` returned **34 bookings** — every kids party in the
+ *    database, with the children's names on them. The POST handler three
+ *    functions below compared the same two addresses EXACTLY, in the same file,
+ *    and was right. It now goes through `findBookingsByContactEmail`, which
+ *    fetches candidates with `ilike` and then re-compares in JS — the rule
+ *    `findContactsByEmail` has stated since link 9.
+ *
+ * 2. **A hand-written `event_type` allowlist hid 15 live bookings.** It named
+ *    `kid-party`, `kids-party` and `kids_party`; the database holds **zero**
+ *    rows of the third and 8 kids parties spelled `Kids Birthday Party` /
+ *    `kids-birthday-party`, plus 9 room rentals, 4 mobile parties and 2 studio
+ *    rentals. A customer with a room rental signed in successfully and was shown
+ *    an empty list — a confident false statement (rule 10). The list is gone:
+ *    a customer is entitled to every booking under their own address, and the
+ *    only filter left is `cancelled`.
  */
+
+/** Columns the customer's own list may see. Not `select('*')` — see the GET in ./booking. */
+const LIST_COLUMNS =
+  'id, booking_ref, status, event_type, party_date, party_time, package_type, ' +
+  'child_name, child_age, total_cents, balance_due_cents, party_tags, paid_in_full_at, ' +
+  'created_at, contact_email'
 
 export async function GET(req: NextRequest) {
   const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
@@ -25,17 +50,32 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = getSupabase()
-  const { data: bookings } = await supabase
-    .from('bookings')
-    .select('id, booking_ref, status, event_type, party_date, party_time, package_type, child_name, child_age, total_cents, balance_due_cents, party_tags, paid_in_full_at, created_at')
-    .ilike('contact_email', email)
-    .in('event_type', ['kid-party', 'kids-party', 'kids_party'])
-    .order('party_date', { ascending: false, nullsFirst: false })
-    .order('created_at', { ascending: false })
-    .limit(50)
+  const lookup = await findBookingsByContactEmail(supabase, email, LIST_COLUMNS, {
+    excludeCancelled: true,
+  })
+
+  // Rule 12: a failed read is not "you have no parties with us". Saying that to
+  // a customer who has paid a deposit is the expensive direction.
+  if (lookup.kind === 'unavailable') {
+    console.error('portal my-bookings: booking read failed:', lookup.error)
+    return NextResponse.json(
+      { error: 'We could not load your bookings just now — please try again.' },
+      { status: 503 },
+    )
+  }
+
+  const bookings = (lookup.kind === 'found' ? lookup.bookings : [])
+    .slice()
+    .sort((a, b) => {
+      const ad = String(a.party_date ?? '')
+      const bd = String(b.party_date ?? '')
+      if (ad !== bd) return ad < bd ? 1 : -1
+      return String(b.created_at ?? '') < String(a.created_at ?? '') ? -1 : 1
+    })
+    .slice(0, 50) as unknown as Array<Record<string, any>>
 
   const today = new Date().toISOString().split('T')[0]
-  const enriched = (bookings || []).map(b => {
+  const enriched = bookings.map(b => {
     const tags = (b.party_tags as Record<string, unknown> | null) || {}
     const past = b.party_date && b.party_date < today
     const status: 'past' | 'upcoming' | 'draft' =
@@ -81,31 +121,35 @@ export async function POST(req: NextRequest) {
   if (!bookingRef) return NextResponse.json({ error: 'booking_ref required' }, { status: 400 })
 
   const supabase = getSupabase()
-  const { data: booking } = await supabase
+  const { data: booking, error: readErr } = await supabase
     .from('bookings')
     .select('id, contact_email')
     .eq('booking_ref', bookingRef)
     .maybeSingle()
 
-  if (!booking || (booking.contact_email || '').toLowerCase() !== email.toLowerCase()) {
+  // Rule 12, again: "could not read" told as "not your booking" sends a
+  // customer to look for a plan that is sitting right there.
+  if (readErr) {
+    console.error('portal my-bookings POST: booking read failed:', readErr.message)
+    return NextResponse.json({ error: 'Could not switch plans just now — try again.' }, { status: 503 })
+  }
+
+  // The exact, case-insensitive comparison. This was always right here; it was
+  // the GET above that trusted a LIKE pattern.
+  if (!booking || (booking.contact_email || '').trim().toLowerCase() !== email.trim().toLowerCase()) {
     return NextResponse.json({ error: 'Booking not found for this email' }, { status: 404 })
   }
 
-  // Also create a fresh portal token so admin/manual links keep working
-  const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, secret)
-  await supabase.from('portal_tokens').insert({
-    booking_id: booking.id,
-    token_hash: hash,
-    expires_at: expiresAt.toISOString(),
-  }).then(({ error }) => { if (error) console.error('Portal token insert (non-fatal):', error) })
+  // NOTE: this used to mint a `portal_tokens` row here "so admin/manual links
+  // keep working", and then discard the raw token (`void rawToken`). A token
+  // whose plaintext nobody kept can never be matched by `/api/portal/auth`, so
+  // the row was unreachable by construction — it made no link work and it is a
+  // large part of why one booking carried 15 live tokens. The cookie is set
+  // directly below, which is what actually signs the customer in.
 
   const isLocal = isLocalRequest(req)
 
   const response = NextResponse.json({ ok: true, bookingRef })
   response.headers.set('Set-Cookie', setPortalCookieHeader(bookingRef, secret, isLocal))
-  // Silence unused warnings: we generated the token to keep parity with the
-  // magic-link flow even though we set the cookie directly
-  void rawToken
-  void buildPortalCookieValue
   return response
 }

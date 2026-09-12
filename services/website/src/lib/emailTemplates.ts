@@ -1,4 +1,6 @@
 import { escapeFields, mailHref, mailHrefExternal, mailToHref, telHref } from '@/lib/emailSafety'
+import { escapeHtml } from '@/lib/escapeHtml'
+import { venmoHandle, zellePhone } from '@/lib/paymentContacts'
 
 /**
  * NOTE for whoever is next. Most templates in this file interpolate
@@ -1094,10 +1096,13 @@ export function partyPaymentInstructionsHtml(raw: { customerName: string; bookin
   const d = escapeFields(raw)
   const firstName = d.customerName.split(' ')[0] || 'there'
   let instructions = ''
+  // The Venmo/Zelle number is NOT the public line — it came from
+  // lib/paymentContacts.ts as of 2026-09-12, where it was two bare literals.
+  const payPhone = escapeHtml(zellePhone())
   if (d.paymentMethod === 'venmo') {
-    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Venmo:</strong> Send ${d.depositFormatted} to <strong>${d.venmoHandle || '@HostHampton'}</strong> (Venmo phone <strong>631-599-2469</strong>).</p><p style="color:${BRAND.gray};font-size:13px;margin:4px 0 0;">Include your booking ref <strong>${d.bookingRef}</strong> in the note.</p>`
+    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Venmo:</strong> Send ${d.depositFormatted} to <strong>${d.venmoHandle || escapeHtml(venmoHandle())}</strong> (Venmo phone <strong>${payPhone}</strong>).</p><p style="color:${BRAND.gray};font-size:13px;margin:4px 0 0;">Include your booking ref <strong>${d.bookingRef}</strong> in the note.</p>`
   } else if (d.paymentMethod === 'zelle') {
-    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Zelle:</strong> Send ${d.depositFormatted} to <strong>631-599-2469</strong> (Host Hampton).</p><p style="color:${BRAND.gray};font-size:13px;margin:4px 0 0;">Include your booking ref <strong>${d.bookingRef}</strong> in the memo.</p>`
+    instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Zelle:</strong> Send ${d.depositFormatted} to <strong>${payPhone}</strong> (Host Hampton).</p><p style="color:${BRAND.gray};font-size:13px;margin:4px 0 0;">Include your booking ref <strong>${d.bookingRef}</strong> in the memo.</p>`
   } else {
     instructions = `<p style="color:${BRAND.navy};font-size:15px;margin:0;"><strong>Cash:</strong> Bring ${d.depositFormatted} to Host Hampton before or on the day of your event.</p>`
   }

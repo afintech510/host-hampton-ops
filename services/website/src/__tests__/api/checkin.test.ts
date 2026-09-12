@@ -53,10 +53,32 @@ function makeSupabase(opts: { existingContact?: any } = {}) {
   const updates: { table: string; payload: any }[] = []
   const inserts: { table: string; payload: any }[] = []
 
+  // `ilike` models REAL LIKE semantics — `%` is a wildcard run and `_` is a
+  // single character — because that is the whole point: `findContactsByEmail`
+  // uses ilike to fetch CANDIDATES and then re-compares exactly, and a mock
+  // that treated ilike as equality could not see the difference. It is the same
+  // reasoning as `fakeReminderDb` modelling column types.
+  const likeMatches = (pattern: string, value: string): boolean => {
+    const rx = new RegExp(
+      '^' + pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.') + '$',
+      'i',
+    )
+    return rx.test(value)
+  }
+
   function chain(table: string): any {
     const c: any = {}
+    let ilikeResult: any[] | null = null
     ;['select', 'limit'].forEach(m => (c[m] = jest.fn(() => c)))
     c.eq = jest.fn(() => c)
+    c.ilike = jest.fn((col: string, pattern: string) => {
+      const pool = table === 'contacts' && opts.existingContact ? [opts.existingContact] : []
+      ilikeResult = pool.filter(r => likeMatches(pattern, String(r[col] ?? '')))
+      const p = Promise.resolve({ data: ilikeResult, error: null })
+      c.then = p.then.bind(p)
+      c.catch = p.catch.bind(p)
+      return c
+    })
     c.maybeSingle = jest.fn(() =>
       Promise.resolve({ data: table === 'contacts' ? (opts.existingContact ?? null) : null, error: null }),
     )
@@ -194,7 +216,7 @@ describe('POST /api/checkin/[token]', () => {
   it('does not demote an existing customer back to a lead', async () => {
     mockResolve.mockResolvedValue({ ok: true, booking: BOOKING })
     const { supabase, updates } = makeSupabase({
-      existingContact: { id: 'c-1', status: 'customer', source: 'referral' },
+      existingContact: { id: 'c-1', email: 'jane@example.com', status: 'customer', source: 'referral' },
     })
     mockGetSupabase.mockReturnValue(supabase)
 
@@ -203,6 +225,37 @@ describe('POST /api/checkin/[token]', () => {
     // upsertContact resets status→lead / source→direct; we must put them back.
     const restore = updates.find(u => u.table === 'contacts')
     expect(restore?.payload).toEqual({ status: 'customer', source: 'referral' })
+  })
+
+  it('does not demote a customer whose stored address is MIXED CASE', async () => {
+    // The bug this pins: the lookup was `.eq('email', lowercasedInput)`, so for
+    // the 21 mixed-case contacts `existing` came back null and the restore below
+    // never ran — a paying customer was silently reset to `lead` by checking in.
+    mockResolve.mockResolvedValue({ ok: true, booking: BOOKING })
+    const { supabase, updates } = makeSupabase({
+      existingContact: { id: 'c-1', email: 'Jane@Example.com', status: 'customer', source: 'referral' },
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+
+    await POST(makeReq({ name: 'Jane Doe', email: 'JANE@example.com', marketingConsent: true }), { params })
+
+    const restore = updates.find(u => u.table === 'contacts')
+    expect(restore?.payload).toEqual({ status: 'customer', source: 'referral' })
+  })
+
+  it('does NOT treat a LIKE-wildcard neighbour as the same person', async () => {
+    // `_` is a LIKE wildcard, so `jane_doe@example.com` also ilike-matches
+    // `janeXdoe@example.com`. The exact re-compare in findContactsByEmail is
+    // what stops a stranger's row being read — and written.
+    mockResolve.mockResolvedValue({ ok: true, booking: BOOKING })
+    const { supabase, updates } = makeSupabase({
+      existingContact: { id: 'c-other', email: 'janeXdoe@example.com', status: 'customer', source: 'referral' },
+    })
+    mockGetSupabase.mockReturnValue(supabase)
+
+    await POST(makeReq({ name: 'Jane Doe', email: 'jane_doe@example.com', marketingConsent: true }), { params })
+
+    expect(updates.find(u => u.table === 'contacts')).toBeUndefined()
   })
 
   it('completes the check-in and suppresses both texts when already signed', async () => {

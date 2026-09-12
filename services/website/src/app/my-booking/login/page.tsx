@@ -13,10 +13,15 @@ function LoginContent() {
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
 
+  // `expired` deliberately covers "no such booking" too — see the comment in
+  // /api/portal/auth: two different messages made this page an oracle for
+  // which booking refs exist. `unavailable` is the third outcome, and it must
+  // NOT tell the customer to get a fresh link: nothing is wrong with the one
+  // they have, we just could not read the database.
   const errorMessages: Record<string, string> = {
     invalid: "That link didn't work. Get a fresh one below — it takes a second.",
-    not_found: "We couldn't match that link to a booking. Get a fresh one below.",
-    expired: 'Your link has expired. Get a fresh one below.',
+    expired: "That link didn't work or has expired. Get a fresh one below.",
+    unavailable: 'We had trouble checking that link just now. Try it again in a moment — or get a fresh one below.',
   }
 
   async function handleSubmit(e: React.FormEvent) {

@@ -21,23 +21,35 @@ export async function POST(req: NextRequest) {
   if (!['venmo', 'zelle', 'cash', 'check'].includes(method)) return NextResponse.json({ error: 'Invalid method' }, { status: 400 })
 
   const supabase = getSupabase()
-  const { data: booking } = await supabase
+  const { data: booking, error: readErr } = await supabase
     .from('bookings')
     .select('id, booking_ref, contact_name, contact_email, contact_phone, balance_due_cents, party_date, party_time')
     .eq('booking_ref', bookingRef)
-    .single()
+    .maybeSingle()
 
+  // Rule 12 — and on this route the "not found" branch is worse than usual,
+  // because the customer has just told us they are sending money.
+  if (readErr) {
+    console.error('portal notify-payment: booking read failed for', bookingRef, '—', readErr.message)
+    return NextResponse.json({ error: 'We could not record that just now — try again.' }, { status: 503 })
+  }
   if (!booking) return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
 
-  // Log the notification as a booking_modification (admin reconciles later)
-  await supabase.from('booking_modifications').insert({
+  // Log the notification as a booking_modification (admin reconciles later).
+  // Rule 19: this insert IS the record of a customer's payment pledge. If it
+  // fails and nobody reads the error, the money arrives and nothing says why.
+  const { error: auditErr } = await supabase.from('booking_modifications').insert({
     booking_id: booking.id,
     modified_by: 'customer',
     change_summary: `Customer pledged ${formatMoney(amountCents)} via ${method} — awaiting admin reconciliation`,
     new_data: { type: 'payment_pledge', amount_cents: amountCents, method },
   })
+  if (auditErr) {
+    console.error('portal notify-payment: pledge record FAILED for', bookingRef, '—', auditErr.message)
+  }
 
   // Email admin to reconcile
+  let emailed = false
   if (process.env.RESEND_API_KEY) {
     const origin = publicOrigin(req)
     const adminUrl = `${origin}/admin?tab=parties&ref=${bookingRef}`
@@ -72,14 +84,33 @@ export async function POST(req: NextRequest) {
   </div>
 </body></html>`
 
-    await resend.emails.send({
+    const res = await resend.emails.send({
       from,
       to: ownerEmail(),
       subject: `${methodLabel} payment pledged: ${formatMoney(amountCents)} — ${booking.booking_ref}`,
       html,
-    }).catch(err => console.error('Notify-payment email error:', err))
+    }).catch(err => ({ error: err }))
+    if ((res as { error?: unknown }).error) {
+      console.error('portal notify-payment: owner email FAILED for', bookingRef, (res as { error?: unknown }).error)
+    } else {
+      emailed = true
+    }
+  } else {
+    console.error('portal notify-payment: RESEND_API_KEY unset — owner email NOT sent for', bookingRef)
   }
-  await notifyOwnerSms(`${method} payment pledged: ${formatMoney(amountCents)} from ${booking.contact_name} (${booking.booking_ref}). Record it in admin once received.`)
+  const texted = await notifyOwnerSms(
+    `${method} payment pledged: ${formatMoney(amountCents)} from ${booking.contact_name} (${booking.booking_ref}). Record it in admin once received.`
+  )
 
-  return NextResponse.json({ ok: true })
+  // Rule 10. "We've let them know" over a notification that never left is how a
+  // customer sends $250 by Venmo that nobody is expecting.
+  if (!emailed && !texted) {
+    console.error('portal notify-payment: NOTHING was delivered for', bookingRef)
+    return NextResponse.json({
+      error: 'We recorded that but could not reach the team — please text us so the payment is expected.',
+      recorded: !auditErr,
+    }, { status: 502 })
+  }
+
+  return NextResponse.json({ ok: true, emailed, texted, recorded: !auditErr })
 }

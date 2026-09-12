@@ -28,25 +28,38 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getSupabase()
-  const { data: booking } = await supabase
+  const { data: booking, error: readErr } = await supabase
     .from('bookings')
     .select('id, booking_ref, contact_name, contact_email, contact_phone, party_date, party_time, package_type')
     .eq('booking_ref', bookingRef)
-    .single()
+    .maybeSingle()
 
+  // Rule 12, flagged by link 13 and left here deliberately: `.single()` with the
+  // error discarded reported a Supabase blip as "Booking not found" — to a
+  // customer holding a valid session for a booking that is sitting right there.
+  if (readErr) {
+    console.error('portal send-message: booking read failed for', bookingRef, '—', readErr.message)
+    return NextResponse.json({ error: 'We could not send that just now — try again.' }, { status: 503 })
+  }
   if (!booking) {
     return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
   }
 
-  // Audit-log it on the booking
-  await supabase.from('booking_modifications').insert({
+  // Audit-log it on the booking. Rule 19, the other one link 13 left: this
+  // insert's error was discarded, so the record of what a customer asked for
+  // could silently never have been written.
+  const { error: auditErr } = await supabase.from('booking_modifications').insert({
     booking_id: booking.id,
     modified_by: 'customer',
     change_summary: `Customer message: ${message.slice(0, 200)}${message.length > 200 ? '…' : ''}`,
     new_data: { type: 'customer_message', body: message },
   })
+  if (auditErr) {
+    console.error('portal send-message: audit log write FAILED for', bookingRef, '—', auditErr.message)
+  }
 
   // Email admin
+  let emailed = false
   if (process.env.RESEND_API_KEY) {
     const origin = publicOrigin(req)
     const adminUrl = `${origin}/admin?tab=parties&ref=${bookingRef}`
@@ -83,15 +96,42 @@ export async function POST(req: NextRequest) {
   </div>
 </body></html>`
 
-    await resend.emails.send({
-      from,
-      to: ownerEmail(),
-      replyTo: booking.contact_email || undefined,
-      subject: `Customer message: ${booking.contact_name || booking.booking_ref} — ${booking.booking_ref}`,
-      html,
-    }).catch(err => console.error('send-message email error (non-fatal):', err))
+    const res = await resend.emails
+      .send({
+        from,
+        to: ownerEmail(),
+        replyTo: booking.contact_email || undefined,
+        subject: `Customer message: ${booking.contact_name || booking.booking_ref} — ${booking.booking_ref}`,
+        html,
+      })
+      .catch(err => ({ error: err }))
+    if ((res as { error?: unknown }).error) {
+      console.error('portal send-message: email to the owner FAILED for', bookingRef,
+        (res as { error?: unknown }).error)
+    } else {
+      emailed = true
+    }
+  } else {
+    console.error('portal send-message: RESEND_API_KEY unset — owner email NOT sent for', bookingRef)
   }
-  await notifyOwnerSms(`Portal message from ${booking.contact_name || 'customer'} (${booking.booking_ref}): ${message.slice(0, 200)}`)
+  const texted = await notifyOwnerSms(
+    `Portal message from ${booking.contact_name || 'customer'} (${booking.booking_ref}): ${message.slice(0, 200)}`
+  )
 
-  return NextResponse.json({ ok: true })
+  // Rule 10's expensive half. The portal says "Message sent!" on `ok:true`, and
+  // this used to be unconditional — over an unset API key, a Resend rejection,
+  // or an SMS the provider refused. A customer who believes Adam has their
+  // question and then hears nothing is the whole failure.
+  //
+  // The message IS recorded on the booking either way, so a delivered:false is
+  // not a lost message — but it must not be reported as a delivered one.
+  if (!emailed && !texted) {
+    console.error('portal send-message: NOTHING was delivered for', bookingRef)
+    return NextResponse.json({
+      error: 'We saved your message but could not get it through just now — please call or text us.',
+      recorded: !auditErr,
+    }, { status: 502 })
+  }
+
+  return NextResponse.json({ ok: true, emailed, texted, recorded: !auditErr })
 }
