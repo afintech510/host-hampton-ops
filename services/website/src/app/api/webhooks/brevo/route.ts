@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { findContactsByEmail } from '@/lib/contactLookup'
 import { logInteraction, type ContactInteractionType } from '@/lib/contactInteractions'
+import { guardRate, webhookRule } from '@/lib/rateLimit'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +23,13 @@ export const dynamic = 'force-dynamic'
  * is by `id` — see `lib/contactLookup.ts`.
  */
 export async function POST(req: NextRequest) {
+  // Brevo offers no request signature, so this route is authenticated by
+  // nothing at all — and it writes `email_opt_in = false` for an address the
+  // caller names. The ceiling is therefore the only bound there is. Sized from
+  // the measured ten-day volume (ONE request, a GET) and still far above it.
+  const limited = guardRate(req, webhookRule('webhooks/brevo'))
+  if (limited) return limited
+
   const supabase = getSupabase()
 
   let body: any

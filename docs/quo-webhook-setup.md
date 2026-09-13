@@ -1,15 +1,49 @@
 # Quo inbound-SMS webhook — setup and recovery runbook
 
-The booking agent's review loop depends on this. Without a webhook subscription,
-`POST /api/webhooks/quo` is never called: reviewer replies never arrive, and
-customer **STOP opt-outs are never processed**. That was the live state until
-2026-09-11 — `GET /v1/webhooks` returned `{"data":[]}` and the endpoint had never
-once been hit in production.
+The booking agent's review loop depends on this. Without a working webhook,
+`POST /api/webhooks/quo` does nothing: reviewer replies never arrive, and
+customer **STOP opt-outs are never processed**.
 
 **The signing key and the box are coupled.** `/api/webhooks/quo` fails closed
 (401 on a bad or missing signature), so if you recreate the webhook in Quo you
 MUST copy its new key into `QUO_WEBHOOK_SECRET` on the box or every inbound SMS
 starts rejecting.
+
+---
+
+## ⚠ Two corrections this document got wrong, and what they cost
+
+**1. "The endpoint had never once been hit in production" was false.** The nginx
+log (read 2026-09-13) holds successful `POST /api/webhooks/quo` deliveries from
+**2026-09-02 onward**, and `contact_interactions` holds **30 real inbound
+customer SMS** from 8 real people between 2026-08-27 and 2026-09-10, every one
+of them `provider: quo`. Something was already delivering. See §6.
+
+**2. §4's verification proved nothing.** It signed a payload the way the route
+checks it — which can only ever show that the verifier agrees with itself. The
+route implemented **Standard Webhooks** (`webhook-id` / `webhook-timestamp` /
+`webhook-signature` over `id.timestamp.body`). **Quo does not sign that way.**
+
+> Quo signs ONE header:
+> `openphone-signature: hmac;1;<ms-timestamp>;<base64sig>`,
+> HMAC-SHA256 over `` `${timestamp}.${rawBody}` ``, keyed by the
+> **base64-decoded** signing key.
+> <https://support.quo.com/core-concepts/integrations/webhooks>
+
+So every genuine delivery arrived carrying none of the headers being looked for
+and was refused. **Every POST to this route answered 401 from 2026-09-11 12:00
+UTC until it was fixed on 2026-09-13 — 38 deliveries across 2.5 days.** The SMS
+review loop was dead with 16 drafts waiting, inbound customer texts reached
+nothing, and no customer STOP could be recorded. Nothing watched the 401s.
+
+`lib/inboundWebhookVerify.ts` now accepts **both** schemes and names which one
+verified, and a refusal names the reason and the signature headers that were
+present — `signature verification FAILED` cannot tell a wrong key from a wrong
+scheme, and that is what cost the 2.5 days.
+
+**The lesson for this runbook: a webhook is verified when a REAL delivery from
+the provider returns 200, never when your own signed request does.** §4 below is
+a liveness check, not a verification.
 
 ---
 
@@ -107,11 +141,17 @@ ssh hampton-vps 'docker exec hampton_website sh -c "echo \${#QUO_WEBHOOK_SECRET}
 > env inside the container afterwards; if it is stale, run
 > `ssh hampton-vps 'cd /opt/hosthampton && docker compose up -d --force-recreate website'`.
 
-## 4. Verify
+## 4. Verify — and understand what this does NOT prove
 
-Fail-closed first, then a valid signature. Standard Webhooks signs
-`{webhook-id}.{webhook-timestamp}.{rawBody}` with HMAC-SHA256 over the
-**base64-decoded** secret, and sends the base64 digest as `v1,<sig>`:
+**This is a liveness check, not a verification.** It signs a payload the way the
+route checks it, so a route that verifies the wrong scheme entirely will pass it
+— which is exactly what happened between 2026-09-11 and 2026-09-13. The only
+real verification is **a genuine Quo delivery answering 200**; see §6.
+
+Fail-closed first, then a valid signature. The route still accepts Standard
+Webhooks — `{webhook-id}.{webhook-timestamp}.{rawBody}` with HMAC-SHA256 over
+the **base64-decoded** secret, base64 digest as `v1,<sig>` — alongside Quo's own
+`openphone-signature` scheme:
 
 ```bash
 python - <<'PY'
@@ -152,12 +192,45 @@ curl -s -X DELETE https://api.quo.com/v1/webhooks/WHc7b78b376fd743ab9bfc10365f5d
 
 ### If inbound SMS stops working
 
-1. `docker logs hampton_website | grep quo:webhook` — no lines at all means Quo
+1. `docker logs hampton_nginx | grep webhooks/quo` — **filter by STATUS, not just
+   by path.** A stream of `401` reads exactly like a stream of `200` if you only
+   count lines, and that is how 2.5 days of refusals went unnoticed.
+2. `docker logs hampton_website | grep quo:webhook` — no lines at all means Quo
    is not calling us (subscription deleted/disabled, or the URL changed).
-2. Lines saying `signature verification FAILED — rejecting` mean the
-   subscription exists but `QUO_WEBHOOK_SECRET` no longer matches its key. Redo
-   step 3.
-3. As an emergency unblock you can clear `QUO_WEBHOOK_SECRET` (empty =
-   verification disabled, the route accepts anything) — but an unsigned inbound
-   SMS can then impersonate a reviewer phone and approve a draft, so treat that
-   as minutes, not days.
+3. A line saying `signature verification FAILED (<reason>) — rejecting. signature
+   headers present: …` now tells you which of two things is wrong:
+   * **`headers present: NONE`** — Quo is sending a scheme we do not read, or
+     something other than Quo is calling the URL.
+   * **`headers present: openphone-signature`, reason `bad-signature`** — the
+     scheme is right and the KEY is wrong. Redo step 3.
+     The line also carries `bodyFp` / `theirSigFp` / `ourSigFp` fingerprints
+     (never the values), which is how you tell two deliveries of one message
+     apart.
+4. **Do NOT clear `QUO_WEBHOOK_SECRET`.** An earlier version of this document
+   offered that as an emergency unblock. It no longer works — an unset secret
+   fails CLOSED in production (link 22) — and it never should have: an unsigned
+   inbound SMS can impersonate a reviewer phone and approve a draft.
+
+## 6. A second delivery stream we cannot see
+
+Measured 2026-09-13: **every inbound message arrives at this route TWICE**, from
+two Cloudflare edges a second or two apart, with **different bodies** (605 bytes
+vs 519 for the same 45-character text) and only one of the pair verifying.
+
+* `GET /v1/webhooks` lists exactly **one** subscription
+  (`WHc7b78b376fd743ab9bfc10365f5d241f`) and its key fingerprint matches
+  `QUO_WEBHOOK_SECRET` exactly.
+* The refused copy is `type=message.received direction=incoming` — the same
+  event — signed with a key the API does not expose.
+
+So there is a second subscription, almost certainly created in the **Quo app UI**
+rather than through the API (the API has no list endpoint that shows it —
+`/v1/webhooks/{messages,calls,contacts}` all 400 with `Expected string to match
+'^WH(.*)$'`). It is the one that delivered the 30 real customer messages of
+2026-08-27…09-10, back when this route had no secret set and accepted anything.
+
+**Today this is harmless**: the API subscription delivers the same message and it
+verifies, so every message lands exactly once. **It is not harmless tomorrow** —
+it means this route runs a permanent ~50% 401 rate, which is precisely the noise
+a real outage hides in. **needs Adam**: find it on the Quo app's webhooks /
+integrations page and either delete it or put its key on the box.

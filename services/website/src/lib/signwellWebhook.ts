@@ -49,11 +49,16 @@ export type SignwellVerifyResult =
 /**
  * Verify `event.hash`.
  *
- * FAILS CLOSED when SIGNWELL_WEBHOOK_ID is unset. This deliberately differs
- * from /api/webhooks/quo, which skips verification when its secret is missing:
- * quo's unverified actions were logging and opt-out, whereas an unverified
- * event here marks a LEGAL DOCUMENT signed. "Not configured yet" must not be a
- * bypass on this surface.
+ * FAILS CLOSED when SIGNWELL_WEBHOOK_ID is unset.
+ *
+ * This used to say it "deliberately differs from /api/webhooks/quo, which skips
+ * verification when its secret is missing". That stopped being true when link 22
+ * closed the unset-secret hole there, and the whole inbound edge now fails closed
+ * in production through `lib/inboundWebhookVerify.ts` — so the rule is uniform
+ * rather than special to this surface. A comment describing ANOTHER module's
+ * behaviour is a fact nothing is checking (rule 11's shape, rule 8's failure
+ * mode); this one was stale for a day and was found by the next person to read
+ * it, which is exactly how long it takes.
  */
 export function verifySignwellEvent(
   payload: unknown,
