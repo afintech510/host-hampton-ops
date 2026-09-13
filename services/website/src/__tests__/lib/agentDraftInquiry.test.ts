@@ -69,7 +69,16 @@ function makeSupabase(opts: SupaOpts = {}) {
       ops.some(o => o[0] === name && args.every((a, i) => o[i + 1] === a))
 
     if (table === 'contacts') {
-      return { data: opts.contactId ? { id: opts.contactId } : null, error: null }
+      // An ARRAY, because the lookup is `findContactsByEmail` — `.ilike()` over
+      // the whole table followed by an exact re-compare in JS. A mock that
+      // answers with a single object cannot see that the old `.eq('email', …)`
+      // was case-sensitive, which is the bug this call site had.
+      return {
+        data: opts.contactId
+          ? [{ id: opts.contactId, email: 'jess@example.com', created_at: '2026-01-01T00:00:00Z' }]
+          : [],
+        error: null,
+      }
     }
     if (table === 'inquiry_drafts') {
       const insertOp = ops.find(o => o[0] === 'insert')
@@ -89,7 +98,7 @@ function makeSupabase(opts: SupaOpts = {}) {
     const chain: any = {
       then: (res: any, rej: any) => Promise.resolve(resolve(table, ops)).then(res, rej),
     }
-    for (const m of ['select', 'eq', 'not', 'in', 'order', 'gte', 'limit', 'single', 'maybeSingle', 'update']) {
+    for (const m of ['select', 'eq', 'not', 'in', 'order', 'gte', 'limit', 'single', 'maybeSingle', 'update', 'ilike']) {
       chain[m] = jest.fn((...args: unknown[]) => {
         ops.push([m, ...args])
         return chain

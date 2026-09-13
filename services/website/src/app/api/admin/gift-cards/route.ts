@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { orIlikeFilter } from '@/lib/postgrestFilter'
 
 export async function GET(req: NextRequest) {
   const token = req.headers.get('authorization')?.replace('Bearer ', '')
@@ -22,7 +23,12 @@ export async function GET(req: NextRequest) {
   }
 
   if (search) {
-    query = query.or(`code.ilike.%${search}%,purchaser_name.ilike.%${search}%,purchaser_email.ilike.%${search}%,recipient_name.ilike.%${search}%,recipient_email.ilike.%${search}%`)
+    query = query.or(
+      orIlikeFilter(
+        ['code', 'purchaser_name', 'purchaser_email', 'recipient_name', 'recipient_email'],
+        search,
+      ),
+    )
   }
 
   const { data, error } = await query.limit(200)

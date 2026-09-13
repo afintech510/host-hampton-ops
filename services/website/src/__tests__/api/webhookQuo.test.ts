@@ -6,17 +6,16 @@
  * Phase 2 scope: FAIL CLOSED on a bad signature, every inbound written to
  * ingested_messages with external_id='quo:<id>' (the dedupe), unknown numbers
  * becoming contacts instead of being dropped, and reviewer classification.
+ *
+ * DRIVEN AGAINST `makeContactsDb`, NOT a chain mock (link 17). The old mock
+ * answered `{ data: { id: 'c-1' } }` to every read, so it could not see that
+ * the contact lookup was a RAW PostgREST `.or()` of three guessed phone
+ * spellings read through `.maybeSingle()` — which ERRORS when two rows share a
+ * number. 21 numbers in production do, and the discarded error made the route
+ * believe a texter it already knew was a stranger.
  */
 
-function buildChain(resolveValue: any) {
-  const chain: any = {}
-  const methods = ['select', 'ilike', 'insert', 'update', 'delete', 'eq', 'neq', 'gte', 'lte', 'or', 'order', 'single', 'maybeSingle', 'in', 'range', 'limit']
-  for (const m of methods) chain[m] = jest.fn().mockReturnValue(chain)
-  const p = Promise.resolve(resolveValue)
-  chain.then = p.then.bind(p)
-  chain.catch = p.catch.bind(p)
-  return chain
-}
+import { makeContactsDb } from '../helpers/fakeContactsDb'
 
 const mockGetSupabase = jest.fn()
 jest.mock('@/lib/supabase', () => ({ getSupabase: (...a: any[]) => mockGetSupabase(...a) }))
@@ -26,7 +25,8 @@ jest.mock('@/lib/agent/events', () => ({
   recordInboundEvent: (...a: any[]) => mockRecordInboundEvent(...a),
 }))
 
-const mockUpsertContactByPhone = jest.fn().mockResolvedValue('new-contact-1')
+const NEW_CONTACT = '00000000-0000-4000-8000-0000000000f9'
+const mockUpsertContactByPhone = jest.fn().mockResolvedValue(NEW_CONTACT)
 jest.mock('@/lib/contacts', () => ({
   upsertContactByPhone: (...a: any[]) => mockUpsertContactByPhone(...a),
 }))
@@ -39,6 +39,9 @@ jest.mock('next/server', () => ({
 
 import { POST } from '@/app/api/webhooks/quo/route'
 
+const C1 = '00000000-0000-4000-8000-0000000000c1'
+const C2 = '00000000-0000-4000-8000-0000000000c2'
+
 function makeReq(jsonBody: string, headers: Record<string, string> = {}) {
   return {
     text: jest.fn().mockResolvedValue(jsonBody),
@@ -50,15 +53,36 @@ function event(obj: Record<string, any>, type = 'message.received') {
   return JSON.stringify({ type, data: { object: obj } })
 }
 
+function contact(id: string, phone: string, extra: Record<string, any> = {}) {
+  return {
+    id,
+    phone,
+    email: `${id.slice(-4)}@x.com`,
+    status: 'lead',
+    email_opt_in: false,
+    sms_opt_in: true,
+    created_at: '2026-01-01T00:00:00Z',
+    ...extra,
+  }
+}
+
 describe('POST /api/webhooks/quo', () => {
   const originalEnv = process.env
+  let fake: ReturnType<typeof makeContactsDb>
+
+  function db(seed: Record<string, any[]> = {}) {
+    fake = makeContactsDb(seed)
+    mockGetSupabase.mockReturnValue(fake.supabase)
+    return fake
+  }
 
   beforeEach(() => {
     jest.clearAllMocks()
     process.env = { ...originalEnv, REVIEWER_PHONES: '+16314008080' }
     delete process.env.QUO_WEBHOOK_SECRET
     mockRecordInboundEvent.mockResolvedValue('event-1')
-    mockUpsertContactByPhone.mockResolvedValue('new-contact-1')
+    mockUpsertContactByPhone.mockResolvedValue(NEW_CONTACT)
+    db()
   })
   afterAll(() => { process.env = originalEnv })
 
@@ -74,57 +98,71 @@ describe('POST /api/webhooks/quo', () => {
   })
 
   it('handles STOP — opts out and cancels pending SMS reminders', async () => {
-    const contactChain = buildChain({ data: { id: 'c-1' }, error: null })
-    const genericChain = buildChain({ data: null, error: null })
-    let contactsCalls = 0
-    const fromMock = jest.fn().mockImplementation((table: string) => {
-      if (table === 'contacts') { contactsCalls++; return contactsCalls <= 1 ? contactChain : genericChain }
-      return genericChain
+    db({
+      contacts: [contact(C1, '6315551234')],
+      scheduled_reminders: [
+        { id: '00000000-0000-4000-8000-00000000ee01', contact_id: C1, channel: 'sms', status: 'pending' },
+      ],
     })
-    mockGetSupabase.mockReturnValue({ from: fromMock })
 
     const res = await POST(makeReq(event({ from: '+16315551234', text: 'STOP', direction: 'incoming', id: 'AC1' })))
 
     expect(res.json()).toMatchObject({ action: 'opt_out' })
-    expect(fromMock).toHaveBeenCalledWith('contacts')
-    expect(fromMock).toHaveBeenCalledWith('scheduled_reminders')
-    expect(fromMock).toHaveBeenCalledWith('contact_interactions')
+    expect(fake.tables.contacts[0].sms_opt_in).toBe(false)
+    expect(fake.tables.scheduled_reminders[0].status).toBe('cancelled')
+    expect(fake.tables.contact_interactions[0].type).toBe('sms_unsubscribed')
+  })
+
+  it('a STOP reaches EVERY row holding the number, whatever format each is stored in', async () => {
+    db({
+      contacts: [
+        contact(C1, '(631) 555-1234'),
+        contact(C2, '+16315551234', { created_at: '2026-02-01T00:00:00Z' }),
+      ],
+    })
+
+    await POST(makeReq(event({ from: '+16315551234', text: 'STOP', direction: 'incoming', id: 'AC1b' })))
+
+    expect(fake.tables.contacts.map(c => c.sms_opt_in)).toEqual([false, false])
+  })
+
+  it('a contact read failure answers 503 so Quo redelivers, rather than swallowing a STOP', async () => {
+    db({ contacts: [contact(C1, '6315551234')] })
+    fake.failReads('contacts')
+
+    const res = await POST(makeReq(event({ from: '+16315551234', text: 'STOP', direction: 'incoming', id: 'AC1c' })))
+
+    expect(res.status).toBe(503)
+    expect(fake.tables.contacts[0].sms_opt_in).toBe(true)
+    expect(mockRecordInboundEvent).not.toHaveBeenCalled()
   })
 
   it('logs a non-STOP inbound message for a known contact', async () => {
-    const contactChain = buildChain({ data: { id: 'c-2' }, error: null })
-    const insertChain = buildChain({ data: null, error: null })
-    const fromMock = jest.fn().mockImplementation((table: string) =>
-      table === 'contacts' ? contactChain : insertChain)
-    mockGetSupabase.mockReturnValue({ from: fromMock })
+    db({ contacts: [contact(C2, '631-555-9999')] })
 
     const res = await POST(makeReq(event({ from: '+16315559999', text: 'thanks!', direction: 'incoming', id: 'AC2' })))
 
     expect(res.json()).toMatchObject({ received: true })
-    expect(fromMock).toHaveBeenCalledWith('contact_interactions')
-    expect(insertChain.insert).toHaveBeenCalledWith(expect.objectContaining({
-      contact_id: 'c-2',
+    expect(fake.tables.contact_interactions).toHaveLength(1)
+    expect(fake.tables.contact_interactions[0]).toMatchObject({
+      contact_id: C2,
       type: 'sms_received',
       metadata: expect.objectContaining({ provider: 'quo' }),
-    }))
+    })
+    // It must NOT have created a second row for a number it already holds.
+    expect(mockUpsertContactByPhone).not.toHaveBeenCalled()
   })
 
   it('ignores non-inbound events without touching the DB', async () => {
-    const fromMock = jest.fn()
-    mockGetSupabase.mockReturnValue({ from: fromMock })
-
     const res = await POST(makeReq(event({ from: '+1631', text: 'x', direction: 'outgoing' }, 'message.delivered')))
-
     expect(res.json()).toMatchObject({ received: true })
-    expect(fromMock).not.toHaveBeenCalled()
+    expect(fake.tables.contact_interactions).toHaveLength(0)
   })
 
   /* ── Phase 2 ──────────────────────────────────────────────────────── */
 
   it('FAILS CLOSED: a bad signature is rejected with 401, not processed', async () => {
     process.env.QUO_WEBHOOK_SECRET = Buffer.from('shhh').toString('base64')
-    const fromMock = jest.fn()
-    mockGetSupabase.mockReturnValue({ from: fromMock })
 
     const res = await POST(
       makeReq(event({ from: '+16314008080', text: 'SEND', direction: 'incoming', id: 'AC9' }), {
@@ -136,13 +174,12 @@ describe('POST /api/webhooks/quo', () => {
 
     expect(res.status).toBe(401)
     // Nothing was read, nothing recorded — a forged SEND cannot reach the loop.
-    expect(fromMock).not.toHaveBeenCalled()
+    expect(fake.tables.contact_interactions).toHaveLength(0)
     expect(mockRecordInboundEvent).not.toHaveBeenCalled()
   })
 
   it('FAILS CLOSED: signature headers missing entirely is also a 401', async () => {
     process.env.QUO_WEBHOOK_SECRET = Buffer.from('shhh').toString('base64')
-    mockGetSupabase.mockReturnValue({ from: jest.fn() })
 
     const res = await POST(makeReq(event({ from: '+16314008080', text: 'SEND', direction: 'incoming', id: 'AC9' })))
 
@@ -151,8 +188,7 @@ describe('POST /api/webhooks/quo', () => {
   })
 
   it('records every inbound message with external_id=quo:<id> so a redelivery dedupes', async () => {
-    const chain = buildChain({ data: { id: 'c-3' }, error: null })
-    mockGetSupabase.mockReturnValue({ from: jest.fn().mockReturnValue(chain) })
+    db({ contacts: [contact(C1, '5165550000')] })
 
     await POST(makeReq(event({ from: '+15165550000', text: 'do you have Nov 8?', direction: 'incoming', id: 'ACX' })))
 
@@ -168,9 +204,7 @@ describe('POST /api/webhooks/quo', () => {
   })
 
   it('creates a contact for an unknown texter instead of dropping the message', async () => {
-    // No contact matches the number.
-    const chain = buildChain({ data: null, error: null })
-    mockGetSupabase.mockReturnValue({ from: jest.fn().mockReturnValue(chain) })
+    db({ contacts: [] })
 
     const res = await POST(makeReq(event({ from: '+15165551111', text: 'hi!', direction: 'incoming', id: 'ACY' })))
 
@@ -178,14 +212,13 @@ describe('POST /api/webhooks/quo', () => {
       expect.objectContaining({ phone: '+15165551111', sourceDetail: 'quo-inbound-sms' }),
     )
     expect(mockRecordInboundEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ contactId: 'new-contact-1' }),
+      expect.objectContaining({ contactId: NEW_CONTACT }),
     )
     expect(res.json()).toMatchObject({ received: true })
   })
 
   it('flags a reviewer phone on the event, and only the phone number decides it', async () => {
-    const chain = buildChain({ data: { id: 'c-4' }, error: null })
-    mockGetSupabase.mockReturnValue({ from: jest.fn().mockReturnValue(chain) })
+    db({ contacts: [contact(C1, '6314008080'), contact(C2, '5165552222', { created_at: '2026-02-01T00:00:00Z' })] })
 
     await POST(makeReq(event({ from: '+16314008080', text: 'SEND', direction: 'incoming', id: 'AC-R' })))
     expect(mockRecordInboundEvent).toHaveBeenCalledWith(
@@ -201,8 +234,7 @@ describe('POST /api/webhooks/quo', () => {
   })
 
   it('still records a STOP so the reviewer loop can read it as "drop that draft"', async () => {
-    const chain = buildChain({ data: { id: 'c-5' }, error: null })
-    mockGetSupabase.mockReturnValue({ from: jest.fn().mockReturnValue(chain) })
+    db({ contacts: [contact(C1, '6314008080')] })
 
     const res = await POST(makeReq(event({ from: '+16314008080', text: 'STOP', direction: 'incoming', id: 'AC-S' })))
 
@@ -213,11 +245,11 @@ describe('POST /api/webhooks/quo', () => {
   })
 
   it('does not manufacture a contact for a STOP from a number we have never seen', async () => {
-    const chain = buildChain({ data: null, error: null })
-    mockGetSupabase.mockReturnValue({ from: jest.fn().mockReturnValue(chain) })
+    db({ contacts: [] })
 
     await POST(makeReq(event({ from: '+15165553333', text: 'STOP', direction: 'incoming', id: 'AC-S2' })))
 
     expect(mockUpsertContactByPhone).not.toHaveBeenCalled()
+    expect(fake.tables.contact_interactions).toHaveLength(0)
   })
 })

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { orIlikeFilter } from '@/lib/postgrestFilter'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 
 export const dynamic = 'force-dynamic'
@@ -28,7 +29,8 @@ export async function GET(req: NextRequest) {
   if (category && category !== 'all') query = query.eq('category', category)
   if (startDate) query = query.gte('date', startDate)
   if (endDate) query = query.lte('date', endDate)
-  if (search) query = query.or(`description.ilike.%${search}%,customer_name.ilike.%${search}%,reference.ilike.%${search}%`)
+  // A raw PostgREST expression — a comma in the box used to add a disjunct.
+  if (search) query = query.or(orIlikeFilter(['description', 'customer_name', 'reference'], search))
 
   query = query.range(offset, offset + limit - 1)
 

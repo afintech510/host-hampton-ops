@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContactByPhone } from '@/lib/contacts'
+import { findContactsByPhone } from '@/lib/contactLookup'
+import { recordSmsOptOut } from '@/lib/smsOptOut'
 import { recordInboundEvent } from '@/lib/agent/events'
 // Deliberately lib/agent/reviewers, NOT lib/agent/reviewLoop: this route must
 // not be able to reach the customer-send path, even transitively.
@@ -110,8 +112,6 @@ export async function POST(req: NextRequest) {
   if (!from) return NextResponse.json({ received: true })
 
   const supabase = getSupabase()
-  const normalizedPhone = from.replace(/^\+1/, '').replace(/\D/g, '')
-  const contactMatch = `phone.eq.${normalizedPhone},phone.eq.+1${normalizedPhone},phone.eq.${from}`
 
   const isStop = ['STOP', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'].includes(body)
 
@@ -119,9 +119,23 @@ export async function POST(req: NextRequest) {
   // Unknown numbers used to be dropped on the floor: no contact, no record, no
   // notification. Now they become a real contact (mirrored to Brevo and Quo by
   // contactSync) so the agent can answer them.
+  //
+  // THIS USED TO BE `.or(\`phone.eq.${normalizedPhone},…\`).maybeSingle()`, and
+  // both halves were wrong. `.or()` takes a RAW PostgREST filter expression
+  // built here out of the provider's own `From` field (AGENTS.md §11), and
+  // `.maybeSingle()` ERRORS when more than one row matches — which 21
+  // normalised numbers in the live table do — so the error was discarded, the
+  // contact read as absent, and a texter we already knew got a THIRD row.
   let contactId: string | null = null
-  const { data: contact } = await supabase.from('contacts').select('id').or(contactMatch).maybeSingle()
-  contactId = contact?.id ?? null
+  const byPhone = await findContactsByPhone(supabase, from, 'id, phone, sms_opt_in')
+  if (byPhone.kind === 'unavailable') {
+    // Do not manufacture a contact, and do not silently swallow a STOP,
+    // because we could not read the table. Quo retries a non-2xx.
+    console.error('quo:webhook contact lookup failed:', byPhone.error)
+    return NextResponse.json({ error: 'contact lookup failed' }, { status: 503 })
+  }
+  const phoneRows = byPhone.kind === 'found' ? byPhone.contacts : []
+  contactId = byPhone.kind === 'found' ? byPhone.primary.id : null
 
   if (!contactId && !isStop) {
     // Don't manufacture a contact just to record an opt-out from a number we
@@ -133,33 +147,28 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // ── Opt-out handling, unchanged (carrier compliance).
+  // ── Opt-out handling (carrier compliance). Every row holding this number,
+  // not just the one the lookup happened to return — see lib/smsOptOut.ts.
   if (isStop) {
-    if (contactId) {
-      await supabase.from('contacts').update({ sms_opt_in: false }).eq('id', contactId)
-      await supabase
-        .from('scheduled_reminders')
-        .update({ status: 'cancelled' })
-        .eq('contact_id', contactId)
-        .eq('channel', 'sms')
-        .eq('status', 'pending')
-      await supabase.from('contact_interactions').insert({
-        contact_id: contactId,
-        type: 'sms_unsubscribed',
-        metadata: { phone: from, message_id: messageId, provider: 'quo' },
-      })
-      console.log(`quo:webhook SMS opt-out for ${from}`)
+    if (phoneRows.length > 0) {
+      const res = await recordSmsOptOut(supabase, from, 'quo', { message_id: messageId })
+      if (res.kind === 'unavailable') {
+        // Answer non-2xx so Quo redelivers. A 200 over an unrecorded STOP means
+        // it never comes back and the opt-out is gone (rule 10).
+        return NextResponse.json({ error: 'could not record opt-out' }, { status: 503 })
+      }
     }
     // A reviewer texting a bare STOP/CANCEL is also a review command ("drop that
     // draft"), so the message is still recorded below and the dispatcher acts on
     // it. The opt-out above is harmless for reviewers: reviewer SMS goes out
     // through sendSMSViaQuo directly and does not consult sms_opt_in.
   } else if (contactId) {
-    await supabase.from('contact_interactions').insert({
+    const { error: logErr } = await supabase.from('contact_interactions').insert({
       contact_id: contactId,
       type: 'sms_received',
       metadata: { phone: from, body: text, message_id: messageId, provider: 'quo' },
     })
+    if (logErr) console.error('quo:webhook interaction log refused:', logErr.message)
   }
 
   // ── Record the event for the agent. `external_id = 'quo:<id>'` against the

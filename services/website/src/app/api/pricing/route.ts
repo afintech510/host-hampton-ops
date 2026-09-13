@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { arrayContainsOrNullFilter } from '@/lib/postgrestFilter'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,8 +20,16 @@ export async function GET(req: NextRequest) {
   }
 
   // Filter by event type: return items where event_types contains the value OR is null (universal)
+  //
+  // `.or()` takes a RAW PostgREST expression and this route is PUBLIC and
+  // unauthenticated, so `?event_type=` used to be able to rewrite its own
+  // filter: `}` ends the array literal and `,` starts a new disjunct
+  // (AGENTS.md §11). An event type is an identifier, so anything that is not
+  // one is dropped — and a value that reduces to nothing matches nothing,
+  // rather than quietly returning the unfiltered catalogue.
   if (eventType) {
-    query = query.or(`event_types.cs.{${eventType}},event_types.is.null`)
+    const filter = arrayContainsOrNullFilter('event_types', eventType)
+    query = filter ? query.or(filter) : query.is('event_types', null)
   }
 
   const { data, error } = await query

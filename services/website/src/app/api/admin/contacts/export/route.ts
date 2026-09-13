@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import { optedOutReason } from '@/lib/sequences/processor'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,10 +12,18 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
   const format = searchParams.get('format') || 'google-ads'
 
-  // Fetch all opted-in contacts with email
-  const { data: contacts, error } = await supabase
+  // Fetch all opted-in contacts with email.
+  //
+  // `status` is selected so `optedOutReason()` can be applied (rule 11): this
+  // file is uploaded to Google Ads and Meta for retargeting and it was the
+  // FIFTH reader of "may we market to this person", reading only
+  // `email_opt_in` while the other four also read `status = 'unsubscribed'`.
+  // Nothing carries that status today, so nothing has leaked — but an admin
+  // setting it in the Contacts tab would not have kept that person out of the
+  // next upload.
+  const { data: rows, error } = await supabase
     .from('contacts')
-    .select('first_name, last_name, email, phone')
+    .select('first_name, last_name, email, phone, status, email_opt_in')
     .eq('email_opt_in', true)
     .not('email', 'is', null)
     .order('created_at', { ascending: false })
@@ -23,7 +32,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  if (!contacts || contacts.length === 0) {
+  // One line per PERSON. Eight real people have two `contacts` rows with the
+  // same address in different cases, and both lowercase to the same string —
+  // so the old export uploaded them to an ad platform twice.
+  const seen = new Set<string>()
+  const contacts = (rows || [])
+    .filter(c => optedOutReason(c) === null)
+    .filter(c => {
+      const key = String(c.email || '').trim().toLowerCase()
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+
+  if (contacts.length === 0) {
     return NextResponse.json({ error: 'No contacts to export' }, { status: 404 })
   }
 

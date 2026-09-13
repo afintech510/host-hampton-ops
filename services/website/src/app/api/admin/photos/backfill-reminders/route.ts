@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import { findContactsByEmail } from '@/lib/contactLookup'
 
 /**
  * One-shot backfill: insert a `party_thank_you_t1` reminder for any kid-party
@@ -47,18 +48,21 @@ export async function POST(req: NextRequest) {
         continue
       }
 
-      // Resolve contact for the reminder FK
-      const { data: contact } = await supabase
-        .from('contacts')
-        .select('id')
-        .eq('email', b.contact_email)
-        .maybeSingle()
-
-      if (!contact) {
+      // Resolve contact for the reminder FK. Case-INSENSITIVE: `.eq('email',…)`
+      // missed the mixed-case rows, so those bookings were reported as "no
+      // contact row for email" when there plainly was one.
+      const lookup = await findContactsByEmail(supabase, b.contact_email, 'id, email')
+      if (lookup.kind === 'unavailable') {
+        skipped++
+        errors.push({ booking_ref: b.booking_ref, reason: `contact read failed: ${lookup.error}` })
+        continue
+      }
+      if (lookup.kind === 'absent') {
         skipped++
         errors.push({ booking_ref: b.booking_ref, reason: 'no contact row for email' })
         continue
       }
+      const contact = lookup.primary
 
       // Skip if already enqueued
       const { data: existing } = await supabase

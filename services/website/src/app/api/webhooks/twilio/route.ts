@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { findContactsByPhone } from '@/lib/contactLookup'
+import { recordSmsOptOut } from '@/lib/smsOptOut'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,41 +26,17 @@ export async function POST(req: NextRequest) {
 
   // ── Inbound SMS handling ──
   if (body && from) {
-    // Normalize phone: strip +1, keep digits only
-    const normalizedPhone = from.replace(/^\+1/, '').replace(/\D/g, '')
-
     if (['STOP', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'].includes(body)) {
-      // Opt out of SMS
-      const { data: contact } = await supabase
-        .from('contacts')
-        .select('id')
-        .or(`phone.eq.${normalizedPhone},phone.eq.+1${normalizedPhone},phone.eq.${from}`)
-        .single()
+      // Every contact row holding this number, not the one row a raw `.or()`
+      // over three guessed spellings happened to match — and `.single()` on
+      // that filter ERRORED whenever two rows shared a number, which 21
+      // normalised numbers in the live table do, so the STOP was dropped.
+      // See lib/smsOptOut.ts.
+      await recordSmsOptOut(supabase, from, 'twilio', { message_sid: messageSid })
 
-      if (contact) {
-        await supabase
-          .from('contacts')
-          .update({ sms_opt_in: false })
-          .eq('id', contact.id)
-
-        // Cancel any pending SMS reminders
-        await supabase
-          .from('scheduled_reminders')
-          .update({ status: 'cancelled' })
-          .eq('contact_id', contact.id)
-          .eq('channel', 'sms')
-          .eq('status', 'pending')
-
-        await supabase.from('contact_interactions').insert({
-          contact_id: contact.id,
-          type: 'sms_unsubscribed',
-          metadata: { phone: from, message_sid: messageSid },
-        })
-
-        console.log(`twilio:webhook SMS opt-out for ${from}`)
-      }
-
-      // Twilio handles STOP auto-response automatically
+      // Twilio handles STOP auto-response automatically. The reply is the same
+      // either way — a customer must never be told their opt-out failed — but
+      // the outcome is in the log, where a human can find it.
       return new Response('<Response></Response>', {
         headers: { 'Content-Type': 'text/xml' },
       })
@@ -73,18 +51,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Log other inbound messages
-    const { data: contact } = await supabase
-      .from('contacts')
-      .select('id')
-      .or(`phone.eq.${normalizedPhone},phone.eq.+1${normalizedPhone},phone.eq.${from}`)
-      .single()
-
-    if (contact) {
-      await supabase.from('contact_interactions').insert({
-        contact_id: contact.id,
+    const lookup = await findContactsByPhone(supabase, from, 'id, phone')
+    if (lookup.kind === 'unavailable') {
+      console.error('twilio:webhook contact lookup failed, message not logged:', lookup.error)
+    } else if (lookup.kind === 'found') {
+      const { error: logErr } = await supabase.from('contact_interactions').insert({
+        contact_id: lookup.primary.id,
         type: 'sms_received',
         metadata: { phone: from, body: formData.get('Body'), message_sid: messageSid },
       })
+      if (logErr) console.error('twilio:webhook interaction log refused:', logErr.message)
     }
 
     return new Response('<Response></Response>', {

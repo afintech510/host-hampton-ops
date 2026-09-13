@@ -26,34 +26,58 @@ export interface BrevoContactAttributes {
 
 /**
  * Create or update a Brevo contact by email.
- * Uses PUT /contacts/{email} which is idempotent (upsert semantics).
- * Returns the contact email on success, null on error.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THIS USED TO BE `PUT /contacts/{email}`, under a comment reading *"which is
+ * idempotent (upsert semantics)"*. It is not. Measured against the live Brevo
+ * API on 2026-09-12 with a throwaway address:
+ *
+ *     PUT /v3/contacts/hh-link17-probe@example.com  ->  404
+ *     {"code":"document_not_found","message":"Contact does not exist"}
+ *
+ * — six times, with and without the PHONE attribute, with and without names.
+ * **`PUT` is UPDATE-ONLY.** So this function could never create a contact, and
+ * every new lead this business has ever captured failed to reach Brevo and was
+ * logged `brevo:upsert` into `contacts.sync_error`, where nothing read it.
+ * Measured the same day: Brevo holds **956** contacts, all created in one of two
+ * bulk import batches (869 on 2026-03-09, 87 on 2026-08-27), and **253 of the
+ * 1209 people in our own table are addresses Brevo has never heard of.**
+ *
+ * `POST /contacts` with `updateEnabled: true` is the real upsert, and that was
+ * measured too: **201** on a fresh address, **204** on a repeat of the same one.
+ * Rule 8 — do not trust a stated guarantee, ask the provider.
+ *
+ * Brevo normalises addresses to lower case (0 of its 956 are mixed), so it is
+ * already immune to the duplicate this codebase was creating locally. Nothing
+ * here may lowercase on the way out and then write that back to `contacts`.
  */
-export async function syncContactToBrevo(
+export type BrevoUpsertResult =
+  | { kind: 'synced'; email: string; created: boolean }
+  | { kind: 'error'; status: number | null; error: string }
+
+export async function upsertBrevoContact(
   email: string,
   attributes: BrevoContactAttributes
-): Promise<string | null> {
+): Promise<BrevoUpsertResult> {
   try {
-    const res = await fetch(
-      `${BREVO_BASE}/contacts/${encodeURIComponent(email)}`,
-      {
-        method: 'PUT',
-        headers: brevoHeaders(),
-        body: JSON.stringify({ attributes }),
-      }
-    )
+    const res = await fetch(`${BREVO_BASE}/contacts`, {
+      method: 'POST',
+      headers: brevoHeaders(),
+      body: JSON.stringify({ email, attributes, updateEnabled: true }),
+    })
 
-    // 204 No Content = updated, 201 Created = new contact
+    // 201 Created = new contact, 204 No Content = existing contact updated.
     if (!res.ok && res.status !== 204) {
       const body = await res.text()
-      console.error('brevo:syncContact error:', res.status, body)
-      return null
+      console.error('brevo:upsertContact error:', res.status, body.slice(0, 300))
+      return { kind: 'error', status: res.status, error: `${res.status}: ${body.slice(0, 200)}` }
     }
 
-    return email
+    return { kind: 'synced', email, created: res.status === 201 }
   } catch (err) {
-    console.error('brevo:syncContact exception:', err)
-    return null
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('brevo:upsertContact exception:', error)
+    return { kind: 'error', status: null, error }
   }
 }
 

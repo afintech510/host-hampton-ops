@@ -89,26 +89,24 @@ describe('POST /api/fundraiser-inquiry', () => {
     expect(response.json().error).toContain('Invalid email')
   })
 
-  it('upserts contact and returns 200 on valid request', async () => {
-    const contactsChain = buildChain({ data: null, error: null })
-    const contactSelectChain = buildChain({ data: { id: 'contact-uuid-1' }, error: null })
+  it('creates the contact with an INSERT — never an upsert keyed on a raw address', async () => {
+    // `upsertContact` reads case-insensitively and then INSERTs or UPDATES BY
+    // ID. It must never go back to `upsert(record, {onConflict: 'email'})`:
+    // `contacts_email_key` is unique on the RAW value, so that conflict target
+    // is case-sensitive and `Foo@x.com` simply became a second row. Eight real
+    // people (docs/contact-identity-review.md §1).
+    const priorLookupChain = buildChain({ data: [], error: null })
+    const insertChain = buildChain({ data: { id: 'contact-uuid-1' }, error: null })
+    const updateChain = buildChain({ data: [{ id: 'contact-uuid-1' }], error: null })
     const interactionsChain = buildChain({ data: null, error: null })
 
-    // `upsertContact` now READS before it writes — it must not overwrite an
-    // existing contact's `status` (a `customer`, or an admin-set
-    // `unsubscribed`, which is half of what the sequencer's opt-out check
-    // reads). So the contacts table is touched three times: the prior lookup,
-    // the upsert, the id read. Keyed on which one it is rather than on call
-    // order, so the next change to that function does not silently move the
-    // assertions onto the wrong chain.
-    const priorLookupChain = buildChain({ data: [], error: null })
     let contactsCalls = 0
     const fromMock = jest.fn().mockImplementation((table: string) => {
       if (table === 'contacts') {
         contactsCalls++
         if (contactsCalls === 1) return priorLookupChain
-        if (contactsCalls === 2) return contactsChain
-        return contactSelectChain
+        if (contactsCalls === 2) return insertChain
+        return updateChain
       }
       return interactionsChain
     })
@@ -118,25 +116,26 @@ describe('POST /api/fundraiser-inquiry', () => {
     const response = await POST(makeReq(validBody))
     expect(response.status).toBe(200)
     expect(response.json().success).toBe(true)
-    expect(fromMock).toHaveBeenCalledWith('contacts')
     expect(priorLookupChain.ilike).toHaveBeenCalledWith('email', 'sarah@lincoln.edu')
-    expect(contactsChain.upsert).toHaveBeenCalled()
-    // A brand-new contact IS a lead; an existing one keeps what it had.
-    expect(contactsChain.upsert.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ status: 'lead' })
+    expect(insertChain.insert).toHaveBeenCalled()
+    expect(priorLookupChain.upsert).not.toHaveBeenCalled()
+    expect(insertChain.upsert).not.toHaveBeenCalled()
+    // A brand-new contact IS a lead, and carries the address as typed.
+    expect(insertChain.insert.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ status: 'lead', email: 'sarah@lincoln.edu' })
     )
   })
 
-  it('does not rewrite an existing contact\'s status', async () => {
-    // The row already exists as a `customer`. The old code upserted
+  it('updates an existing contact BY ID, writing neither status nor the stored spelling', async () => {
+    // The row already exists as `unsubscribed`. The old code upserted
     // `status: 'lead'` unconditionally, which demoted paying customers and —
-    // the reason it matters here — erased `unsubscribed`.
+    // the reason it matters here — erased the opt-out. And rewriting `email`
+    // would change the stored spelling under a unique index on the raw value.
     const priorLookupChain = buildChain({
-      data: [{ id: 'contact-uuid-1', email: 'sarah@lincoln.edu', status: 'unsubscribed' }],
+      data: [{ id: 'contact-uuid-1', email: 'Sarah@lincoln.edu', status: 'unsubscribed', created_at: '2026-01-01T00:00:00Z' }],
       error: null,
     })
-    const contactsChain = buildChain({ data: null, error: null })
-    const contactSelectChain = buildChain({ data: { id: 'contact-uuid-1' }, error: null })
+    const updateChain = buildChain({ data: [{ id: 'contact-uuid-1' }], error: null })
     const interactionsChain = buildChain({ data: null, error: null })
 
     let contactsCalls = 0
@@ -144,18 +143,24 @@ describe('POST /api/fundraiser-inquiry', () => {
       from: jest.fn().mockImplementation((table: string) => {
         if (table === 'contacts') {
           contactsCalls++
-          if (contactsCalls === 1) return priorLookupChain
-          if (contactsCalls === 2) return contactsChain
-          return contactSelectChain
+          return updateChain
         }
+        return interactionsChain
+      }).mockImplementationOnce((table: string) => {
+        if (table === 'contacts') { contactsCalls++; return priorLookupChain }
         return interactionsChain
       }),
     })
 
     const response = await POST(makeReq(validBody))
     expect(response.status).toBe(200)
-    expect(contactsChain.upsert).toHaveBeenCalled()
-    expect(contactsChain.upsert.mock.calls[0][0]).not.toHaveProperty('status')
+    expect(updateChain.insert).not.toHaveBeenCalled()
+    expect(updateChain.upsert).not.toHaveBeenCalled()
+    expect(updateChain.update).toHaveBeenCalled()
+    const payload = updateChain.update.mock.calls[0][0]
+    expect(payload).not.toHaveProperty('status')
+    expect(payload).not.toHaveProperty('email')
+    expect(updateChain.eq).toHaveBeenCalledWith('id', 'contact-uuid-1')
   })
 
   it('inserts contact_interaction with form_submission type', async () => {

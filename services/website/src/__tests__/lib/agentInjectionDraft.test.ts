@@ -55,7 +55,11 @@ import { draftForInquiry, containsFabricatedTerms } from '@/lib/agent/draftInqui
 function makeSupabase() {
   const inserted: Record<string, unknown>[] = []
   function resolve(table: string, ops: [string, ...unknown[]][]) {
-    if (table === 'contacts') return { data: { id: 'contact-9' }, error: null }
+    // An ARRAY: the contact lookup is `findContactsByEmail`, which reads
+    // candidates with `.ilike()` and re-compares them exactly in JS.
+    if (table === 'contacts') {
+      return { data: [{ id: 'contact-9', email: 'jess@example.com', created_at: '2026-01-01T00:00:00Z' }], error: null }
+    }
     if (table === 'inquiry_drafts') {
       if (ops.some(o => o[0] === 'insert')) return { data: { id: 'draft-1' }, error: null }
       return { data: [], error: null }
@@ -65,7 +69,7 @@ function makeSupabase() {
   const from = jest.fn((table: string) => {
     const ops: [string, ...unknown[]][] = []
     const chain: any = { then: (r: any, j: any) => Promise.resolve(resolve(table, ops)).then(r, j) }
-    for (const m of ['select', 'eq', 'not', 'in', 'order', 'gte', 'limit', 'single', 'maybeSingle', 'update']) {
+    for (const m of ['select', 'eq', 'not', 'in', 'order', 'gte', 'limit', 'single', 'maybeSingle', 'update', 'ilike']) {
       chain[m] = jest.fn((...a: unknown[]) => (ops.push([m, ...a]), chain))
     }
     chain.insert = jest.fn((row: Record<string, unknown>) => (ops.push(['insert', row]), inserted.push(row), chain))

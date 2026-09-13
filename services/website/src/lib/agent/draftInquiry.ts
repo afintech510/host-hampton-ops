@@ -20,6 +20,7 @@
  */
 
 import { getSupabase } from '@/lib/supabase'
+import { findContactsByEmail } from '@/lib/contactLookup'
 import { assertLlmBudget, recordLlmSpend, BudgetExceededError } from '@/lib/marketing/budget'
 import { writeLedger } from '@/lib/marketing/graph'
 import {
@@ -708,12 +709,15 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
   // Resolve a contact so the draft is addressable even without a plan row.
   let contactId = event?.contact_id ?? null
   if (!contactId && inquiry.contact_email) {
-    const { data } = await supabase
-      .from('contacts')
-      .select('id')
-      .eq('email', inquiry.contact_email)
-      .maybeSingle()
-    contactId = data?.id ?? null
+    // Case-INSENSITIVE. `.eq('email', …)` missed the 21 mixed-case addresses,
+    // so a returning customer's draft was written without a contact to hang it
+    // on; and `.maybeSingle()` ERRORS when two rows match, which is exactly
+    // what the eight duplicated people produce.
+    const lookup = await findContactsByEmail(supabase, inquiry.contact_email, 'id, email')
+    contactId = lookup.kind === 'found' ? lookup.primary.id : null
+    if (lookup.kind === 'unavailable') {
+      console.error('draftInquiry: contact lookup failed, drafting without one:', lookup.error)
+    }
   }
 
   // ── One live draft per booking and per event (the DB has partial unique

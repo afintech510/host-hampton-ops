@@ -158,7 +158,11 @@ export function makeFakeDb(
   seed: Record<string, Row[]> = {}
 ): FakeDb {
   const tables: Record<string, Row[]> = {}
-  for (const t of Object.keys({ ...specs, ...seed })) tables[t] = [...(seed[t] ?? [])]
+  // The seed rows are COPIED, not aliased. `[...rows]` copies the array and
+  // shares every object in it, so a test that mutates a row through the fake
+  // silently edits the next test's fixture — which is how a suite starts
+  // passing or failing on the order jest happens to run it in.
+  for (const t of Object.keys({ ...specs, ...seed })) tables[t] = (seed[t] ?? []).map(r => ({ ...r }))
   const refusals: FakeDb['refusals'] = []
   const readFailures: Record<string, PgError> = {}
   const writeFailures: Record<string, PgError> = {}
@@ -175,9 +179,10 @@ export function makeFakeDb(
     return null
   }
 
-  function validate(table: string, row: Row): PgError | null {
+  function validate(table: string, row: Row, opts: { skipUnique?: boolean } = {}): PgError | null {
     const spec = specs[table]
     if (!spec) return null
+    const { skipUnique } = opts
 
     for (const [col, value] of Object.entries(row)) {
       const type = spec.columns[col]
@@ -197,7 +202,7 @@ export function makeFakeDb(
       }
     }
 
-    for (const uq of spec.uniques ?? []) {
+    for (const uq of skipUnique ? [] : spec.uniques ?? []) {
       if (uq.where && !uq.where(row)) continue
       const clash = tables[table].some(
         existing =>
@@ -221,8 +226,33 @@ export function makeFakeDb(
     let orderKey: string | null = null
     let orderAsc = true
 
+    /**
+     * The columns `.select()` asked for, or null for "everything".
+     *
+     * PROJECTION IS MODELLED, and it had to be. `findContactsByEmail` appends
+     * `created_at` to whatever the caller asked for, because the canonical-row
+     * rule needs it — and against a fake that returns whole rows regardless of
+     * the select list, deleting that append changed nothing and the test stayed
+     * green. That was the one hole the attack in
+     * `docs/contact-identity-review.md` §7 found: a fake that hands back a
+     * column the query never asked for cannot see a query that forgot to ask.
+     */
+    let projection: string[] | null = null
+
+    function project(row: Row): Row {
+      if (!projection) return { ...row }
+      const out: Row = {}
+      for (const c of projection) if (c in row) out[c] = row[c]
+      return out
+    }
+
     const q: any = {
-      select(_cols?: string) { return q },
+      select(cols?: string) {
+        if (cols && cols.trim() && !cols.includes('*') && !cols.includes('(')) {
+          projection = cols.split(',').map(c => c.trim()).filter(Boolean)
+        }
+        return q
+      },
       // Case-SENSITIVE, exactly like Postgres on a text column.
       eq(k: string, v: any) { preds.push(r => r[k] === v); return q },
       neq(k: string, v: any) { preds.push(r => r[k] !== v); return q },
@@ -268,18 +298,62 @@ export function makeFakeDb(
           )
         }
         if (limit !== null) out = out.slice(0, limit)
-        return { data: out.map(r => ({ ...r })), error: null }
+        return { data: out.map(project), error: null }
       },
+      /**
+       * PostgREST's `or=` takes a RAW filter expression, which is exactly why
+       * interpolating a value into one is a defect: a comma starts a new
+       * disjunct. Modelled so a test can SEE that widening, rather than a mock
+       * that swallows the string and returns whatever it was primed with.
+       * Supports the `col.op.value` forms this codebase actually writes.
+       */
+      or(expr: string) {
+        const terms = String(expr).split(',').map(t => t.trim()).filter(Boolean)
+        preds.push(r =>
+          terms.some(t => {
+            const [col, op, ...rest] = t.split('.')
+            const value = rest.join('.')
+            if (op === 'eq') return String(r[col] ?? '') === value
+            if (op === 'ilike') return likeToRegExp(value.replace(/\*/g, '%')).test(String(r[col] ?? ''))
+            if (op === 'is' && value === 'null') return r[col] === null || r[col] === undefined
+            if (op === 'not') return true
+            return false
+          })
+        )
+        return q
+      },
+      /**
+       * PostgREST answers PGRST116 when `maybeSingle()` matches MORE than one
+       * row — it does not quietly hand back the first. That distinction is not
+       * cosmetic: both SMS webhooks read a phone number this way, 21 numbers in
+       * production match two or more rows, the error was discarded, and the
+       * STOP was therefore dropped. A fake that returns `data[0]` cannot see it.
+       */
       maybeSingle() {
         const { data, error } = q.rows()
         if (error) return Promise.resolve({ data: null, error })
+        if (data!.length > 1) {
+          return Promise.resolve({
+            data: null,
+            error: {
+              code: 'PGRST116',
+              message: `JSON object requested, multiple (or no) rows returned`,
+            },
+          })
+        }
         return Promise.resolve({ data: data!.length ? data![0] : null, error: null })
       },
       single() {
         const { data, error } = q.rows()
         if (error) return Promise.resolve({ data: null, error })
-        if (!data!.length) {
-          return Promise.resolve({ data: null, error: { code: 'PGRST116', message: 'no rows returned' } })
+        if (data!.length !== 1) {
+          return Promise.resolve({
+            data: null,
+            error: {
+              code: 'PGRST116',
+              message: data!.length === 0 ? 'no rows returned' : 'multiple rows returned',
+            },
+          })
         }
         return Promise.resolve({ data: data![0], error: null })
       },
@@ -334,27 +408,100 @@ export function makeFakeDb(
         return makeThenable({ data: staged.map(r => ({ ...r })), error: null })
       },
 
+      /**
+       * `upsert(row, { onConflict: 'email' })`, with the conflict resolved the
+       * way Postgres resolves it: by the RAW value of the named column(s),
+       * case-SENSITIVELY, against the unique index.
+       *
+       * This is the single most important thing in this file. `upsertContact`
+       * used `onConflict: 'email'` against `contacts_email_key`, which is
+       * unique on the raw value — so `Foo@x.com` did not conflict with
+       * `foo@x.com` and the same person was inserted twice. Eight real people.
+       * A fake whose `upsert` is "replace if any row matches, somehow" agrees
+       * with the broken code and with the fix equally, and is worth nothing.
+       */
+      upsert(rows: Row | Row[], opts?: { onConflict?: string; ignoreDuplicates?: boolean }) {
+        if (writeFailures[table]) {
+          const error = writeFailures[table]
+          delete writeFailures[table]
+          return makeThenable({ data: null, error })
+        }
+        const list = Array.isArray(rows) ? rows : [rows]
+        const spec = specs[table]
+        const keys = (opts?.onConflict ?? '').split(',').map(s => s.trim()).filter(Boolean)
+        const out: Row[] = []
+        for (const raw of list) {
+          const existing = keys.length
+            ? tables[table].find(r => keys.every(k => r[k] === raw[k]))
+            : undefined
+          if (existing) {
+            if (opts?.ignoreDuplicates) { out.push({ ...existing }); continue }
+            const merged = { ...existing, ...raw }
+            // The conflict target IS this row, so the unique index is not in
+            // play — but its column types and CHECKs still are.
+            const err = validate(table, merged, { skipUnique: true })
+            if (err) {
+              refusals.push({ table, error: err, row: merged })
+              return makeThenable({ data: null, error: err })
+            }
+            Object.assign(existing, raw)
+            out.push({ ...existing })
+            continue
+          }
+          const hasCreatedAt = !spec || 'created_at' in spec.columns
+          const row: Row = {
+            id: newUuid(),
+            ...(hasCreatedAt ? { created_at: new Date().toISOString() } : {}),
+            ...(spec?.defaults ?? {}),
+            ...raw,
+          }
+          const err = validate(table, row)
+          if (err) {
+            refusals.push({ table, error: err, row })
+            return makeThenable({ data: null, error: err })
+          }
+          tables[table].push(row)
+          out.push({ ...row })
+        }
+        return makeThenable({ data: out, error: null })
+      },
+
       update(payload: Row) {
         const preds: ((r: Row) => boolean)[] = []
         const u: any = {
           eq(k: string, v: any) { preds.push(r => r[k] === v); return u },
           in(k: string, vals: any[]) { preds.push(r => vals.includes(r[k])); return u },
           neq(k: string, v: any) { preds.push(r => r[k] !== v); return u },
-          apply() {
+          /** null on success, a PgError when the DB would have refused it. */
+          apply(): { rows: Row[]; error: PgError | null } {
+            if (writeFailures[table]) {
+              const error = writeFailures[table]
+              delete writeFailures[table]
+              return { rows: [], error }
+            }
             const hit = tables[table].filter(r => preds.every(p => p(r)))
+            // An UPDATE is still subject to the column types and CHECKs — a
+            // `status` outside the enum is a refusal, not a quiet write.
+            for (const r of hit) {
+              const err = validate(table, { ...r, ...payload }, { skipUnique: true })
+              if (err) {
+                refusals.push({ table, error: err, row: payload })
+                return { rows: [], error: err }
+              }
+            }
             for (const r of hit) Object.assign(r, payload)
-            return hit.map(r => ({ ...r }))
+            return { rows: hit.map(r => ({ ...r })), error: null }
           },
           // `.select()` after an update returns the rows that were REALLY
           // updated — zero of them when another writer got there first, which is
           // the whole basis of the claim.
           select(_cols?: string) {
-            const updated = u.apply()
-            return makeThenable({ data: updated, error: null })
+            const { rows, error } = u.apply()
+            return makeThenable({ data: error ? null : rows, error })
           },
           then(res: any, rej: any) {
-            const updated = u.apply()
-            return Promise.resolve({ data: updated, error: null }).then(res, rej)
+            const { rows, error } = u.apply()
+            return Promise.resolve({ data: error ? null : rows, error }).then(res, rej)
           },
         }
         return u

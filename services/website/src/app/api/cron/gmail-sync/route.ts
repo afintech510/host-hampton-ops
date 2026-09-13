@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { recordInboundEvent } from '@/lib/agent/events'
+import { findContactsByEmail } from '@/lib/contactLookup'
 import {
   applyLabel,
   ensureSeenLabel,
@@ -113,8 +114,16 @@ function displayName(msg: GmailMessage): string {
  */
 async function existingContactFor(supabase: Supa, msg: GmailMessage): Promise<string | null> {
   if (!msg.fromEmail) return null
-  const { data } = await supabase.from('contacts').select('id').eq('email', msg.fromEmail).maybeSingle()
-  return data?.id ? String(data.id) : null
+  // Case-INSENSITIVE: a `From:` header carries whatever the sender's client
+  // wrote, and `.eq('email', …)` missed every one of the 21 mixed-case rows —
+  // so a returning customer's mail was ingested unlinked to the person who sent
+  // it, and the thread timeline could not show it.
+  const lookup = await findContactsByEmail(supabase, msg.fromEmail, 'id, email')
+  if (lookup.kind === 'unavailable') {
+    console.error('gmail-sync: contact lookup failed, ingesting unlinked:', lookup.error)
+    return null
+  }
+  return lookup.kind === 'found' ? String(lookup.primary.id) : null
 }
 
 /**

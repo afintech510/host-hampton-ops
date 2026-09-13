@@ -39,6 +39,7 @@
  */
 
 import type { getSupabase } from '@/lib/supabase'
+import { orIlikeFilter } from '@/lib/postgrestFilter'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -76,20 +77,58 @@ export interface ContactByEmail {
   email: string | null
   email_opt_in?: boolean | null
   status?: string | null
+  created_at?: string | null
 }
 
 export type ContactEmailLookup =
-  | { kind: 'found'; contacts: ContactByEmail[] }
+  | {
+      kind: 'found'
+      /** Oldest row first. See `CANONICAL_ROW_RULE`. */
+      contacts: ContactByEmail[]
+      /**
+       * The one row that IS this person, for a caller that can only hold one.
+       * Always `contacts[0]`; named so a caller cannot accidentally mean
+       * "whichever row Postgres happened to return".
+       */
+      primary: ContactByEmail
+    }
   | { kind: 'absent' }
   /** Rule 12: "could not read" is not "there is nobody by that name". */
   | { kind: 'unavailable'; error: string }
 
 /**
- * Every contact row whose email equals `email`, compared case-insensitively.
+ * WHICH ROW IS THE PERSON, when there is more than one.
  *
- * `columns` lets a caller ask for more than the defaults; `id` and `email` are
- * always included because the exact-match filter below needs the second and
- * every caller needs the first.
+ * `contacts_email_key` is unique on the RAW value, so `Foo@x.com` and
+ * `foo@x.com` are two rows, and on 2026-09-12 **eight real people had exactly
+ * that** (`docs/contact-identity-review.md` §1). A caller that takes
+ * `contacts[0]` off an unordered PostgREST read is taking whichever row
+ * happened to be earlier in the heap — measured live, that is the lowercase row
+ * for `jeberhardt517@` (ctid 16,5 before 17,19) and the MIXED-case row for
+ * `haleybelmonte94@` (9,12 before 10,9). Two callers can therefore disagree
+ * about who somebody is, in the same request, for no reason anybody can see.
+ *
+ * **Oldest row wins.** It is deterministic, it is what `lib/reminders.ts` had
+ * already decided for itself (rule 11 — that decision now lives here, once),
+ * and measured against the eight real pairs it picks the row carrying the
+ * history in seven of eight cases: the `customer` row with the lifetime value,
+ * the row the bookings' `contact_id` points at, the row holding the
+ * `contact_interactions`.
+ *
+ * It is a tie-break, NOT a merge. Merging the eight pairs touches eighteen
+ * foreign keys and is needs-Adam 31.
+ */
+export const CANONICAL_ROW_RULE = 'oldest created_at wins' as const
+
+/**
+ * Every contact row whose email equals `email`, compared case-insensitively,
+ * **oldest first**.
+ *
+ * `columns` lets a caller ask for more than the defaults; `email` and
+ * `created_at` are appended if absent, because the exact re-compare needs the
+ * first and the canonical-row rule needs the second — a caller that omitted
+ * either would silently get an unordered list, which is the defect this
+ * function exists to remove.
  */
 export async function findContactsByEmail(
   supabase: Supa,
@@ -99,7 +138,8 @@ export async function findContactsByEmail(
   const normalized = String(email || '').trim().toLowerCase()
   if (!normalized) return { kind: 'absent' }
 
-  const { data, error } = await supabase.from('contacts').select(columns).ilike('email', normalized)
+  const select = withColumns(columns, ['email', 'created_at'])
+  const { data, error } = await supabase.from('contacts').select(select).ilike('email', normalized)
 
   if (error) return { kind: 'unavailable', error: error.message }
 
@@ -107,7 +147,138 @@ export async function findContactsByEmail(
     c => String(c.email ?? '').trim().toLowerCase() === normalized
   )
   if (rows.length === 0) return { kind: 'absent' }
-  return { kind: 'found', contacts: rows }
+  const ordered = orderCanonically(rows)
+  return { kind: 'found', contacts: ordered, primary: ordered[0] }
+}
+
+/** Append any of `needed` that `columns` does not already name. */
+function withColumns(columns: string, needed: string[]): string {
+  let out = columns
+  for (const col of needed) {
+    if (!new RegExp(`(^|[\\s,])${col}([\\s,]|$)`).test(out)) out = `${out}, ${col}`
+  }
+  return out
+}
+
+/** `CANONICAL_ROW_RULE`, applied. A row with no readable clock sorts LAST. */
+function orderCanonically<T extends { created_at?: string | null }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const ta = Date.parse(String(a.created_at ?? ''))
+    const tb = Date.parse(String(b.created_at ?? ''))
+    const va = Number.isFinite(ta)
+    const vb = Number.isFinite(tb)
+    if (va && vb) return ta - tb
+    if (va) return -1
+    if (vb) return 1
+    return 0
+  })
+}
+
+/**
+ * The `contact_status` enum, read out of `pg_enum` on 2026-09-12 rather than
+ * remembered (rule 13). Two labels are load-bearing: `customer` (429 rows) and
+ * `unsubscribed`, which is half of what `optedOutReason()` reads before every
+ * marketing send. Live distribution: 791 `lead`, 429 `customer`, **0 of
+ * everything else** — including `unsubscribed`, which nothing has ever written.
+ */
+export const CONTACT_STATUSES = [
+  'lead',
+  'warm_lead',
+  'hot_lead',
+  'customer',
+  'vip',
+  'inactive',
+  'unsubscribed',
+] as const
+
+/**
+ * A PostgREST `or=` group for the admin Contacts search box, built so the term
+ * cannot escape its own filter.
+ *
+ * `.or()` takes a RAW PostgREST filter expression: a comma starts a new
+ * disjunct and `)` closes the group, so interpolating a search term into
+ * `first_name.ilike.%${term}%,…` let the box rewrite the query. It is
+ * admin-only, which bounds the damage without making it correct — and `%`/`_`
+ * were silently wildcards either way. Everything structural is REMOVED rather
+ * than escaped: a search term is free text typed into a box, not a filter, and
+ * no character in that set belongs in a name or a phone number. Same family as
+ * link 15's `.or()` finding (AGENTS.md §11).
+ */
+export const CONTACT_SEARCH_COLUMNS = ['first_name', 'last_name', 'email', 'phone']
+
+export function contactSearchFilter(term: string): string {
+  return orIlikeFilter(CONTACT_SEARCH_COLUMNS, term)
+}
+
+/* ── The same question, asked of a PHONE NUMBER ───────────────────────────── */
+
+/**
+ * WHY A PHONE NUMBER NEEDS THIS TOO. `contacts.phone` is plain `text` holding
+ * whatever was typed or whatever a provider sent, and the live table holds the
+ * same number as `6314008080`, `+16314008080`, `631-400-8080`, `16318338149`
+ * and `(631) 400-8080`. `.eq('phone', phone)` therefore misses, which is how
+ * `upsertContactByPhone` created a SECOND row for a number it already had:
+ * measured 2026-09-12, **21 normalised numbers have more than one contact row**,
+ * one of them six.
+ *
+ * Two things this must get right, and they pull in opposite directions:
+ *
+ *   - A number is not a person. Two of those 21 groups are two DIFFERENT people
+ *     sharing a phone (a household), so a lookup by number may legitimately
+ *     return several rows and a caller must not assume they are one human.
+ *   - An inbound STOP is a statement about the NUMBER, so it must reach every
+ *     row holding it. Opting out one row and leaving the other is how a carrier
+ *     STOP becomes a database that still thinks it may text.
+ *
+ * Candidates are fetched on the last FOUR digits, which are contiguous in every
+ * format observed in the live table, and are digits so they carry no LIKE
+ * metacharacter. The answer is then an exact re-compare on the normalised
+ * number — never the pattern (the `.ilike()` lesson), and never a RAW
+ * PostgREST `.or()` built from the provider's own `From` field, which is what
+ * both SMS webhooks used to do.
+ */
+export interface ContactByPhone {
+  id: string
+  phone: string | null
+  email?: string | null
+  sms_opt_in?: boolean | null
+  created_at?: string | null
+}
+
+export type ContactPhoneLookup =
+  | { kind: 'found'; contacts: ContactByPhone[]; primary: ContactByPhone }
+  | { kind: 'absent' }
+  | { kind: 'unavailable'; error: string }
+
+/** Digits only, last 10 — the comparable form of a US number. */
+export function normalizePhoneKey(raw: unknown): string {
+  const digits = String(raw ?? '').replace(/\D/g, '')
+  if (digits.length < 10) return ''
+  return digits.slice(-10)
+}
+
+export async function findContactsByPhone(
+  supabase: Supa,
+  phone: string,
+  columns = 'id, phone, email, sms_opt_in'
+): Promise<ContactPhoneLookup> {
+  const key = normalizePhoneKey(phone)
+  if (!key) return { kind: 'absent' }
+
+  const select = withColumns(columns, ['phone', 'created_at'])
+  const { data, error } = await supabase
+    .from('contacts')
+    .select(select)
+    .ilike('phone', `%${key.slice(-4)}%`)
+
+  if (error) return { kind: 'unavailable', error: error.message }
+
+  const rows = ((data ?? []) as unknown as ContactByPhone[]).filter(
+    c => normalizePhoneKey(c.phone) === key
+  )
+  if (rows.length === 0) return { kind: 'absent' }
+  const ordered = orderCanonically(rows)
+  return { kind: 'found', contacts: ordered, primary: ordered[0] }
 }
 
 /* ── The same question, asked of `bookings.contact_email` ─────────────────── */
@@ -169,9 +340,7 @@ export async function findBookingsByContactEmail(
   const normalized = String(email || '').trim().toLowerCase()
   if (!normalized) return { kind: 'absent' }
 
-  const select = /(^|[\s,])contact_email([\s,]|$)/.test(columns)
-    ? columns
-    : `${columns}, contact_email`
+  const select = withColumns(columns, ['contact_email'])
 
   let query = supabase.from('bookings').select(select).ilike('contact_email', normalized)
   if (opts.excludeCancelled) query = query.not('status', 'eq', 'cancelled')

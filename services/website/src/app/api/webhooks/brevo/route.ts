@@ -76,7 +76,13 @@ export async function POST(req: NextRequest) {
   }
 
   const touchEngagement = async (): Promise<void> => {
-    await supabase.from('contacts').update({ last_engaged_at: new Date().toISOString() }).in('id', ids)
+    const { error } = await supabase
+      .from('contacts')
+      .update({ last_engaged_at: new Date().toISOString() })
+      .in('id', ids)
+    // Not fatal — an open or a click is not consent state — but an error you do
+    // not read is an error that did not happen (rule 19).
+    if (error) console.error(`brevo:webhook last_engaged_at write failed: ${error.message}`)
   }
 
   try {

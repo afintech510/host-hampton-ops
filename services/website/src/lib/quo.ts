@@ -127,6 +127,18 @@ export async function upsertQuoContact(
       headers: { Authorization: quoAuthHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
+    if (res.status === 409 && !existingQuoId) {
+      // "A contact with this externalId already exists." Measured against the
+      // live API 2026-09-12: a second POST with the same externalId is 409, not
+      // an update — so the comment above ("re-syncs update, not duplicate") was
+      // only half true, and this branch is the other half. Reported as an error
+      // it was permanent: `quo_contact_id` could never be learned, so every
+      // later sync for that contact 409'd again, forever. Recover the id.
+      const found = await findQuoContactByExternalId(input.externalId)
+      if (found) return found
+      console.error('quo:upsertContact 409 but the contact could not be found by externalId')
+      return null
+    }
     if (!res.ok) {
       const text = await res.text()
       console.error('quo:upsertContact error:', res.status, text)
@@ -136,6 +148,40 @@ export async function upsertQuoContact(
     return data.data?.id ?? data.id ?? null
   } catch (err) {
     console.error('quo:upsertContact exception:', err)
+    return null
+  }
+}
+
+/**
+ * The Quo contact carrying `externalId`, or null.
+ *
+ * **The query parameter is `externalIds=`, NOT `externalIds[]=`.** Measured
+ * against the live API on 2026-09-12 with a real externalId:
+ *
+ *     GET /v1/contacts?externalIds=<id>     ->  200, 1 row, the right one
+ *     GET /v1/contacts?externalIds[]=<id>   ->  200, 10 rows — UNFILTERED
+ *
+ * Quo ignores the bracketed form rather than refusing it, so the OpenPhone
+ * idiom returns a page of strangers while looking like a filter that worked.
+ * The id is therefore re-compared here and never trusted to the query — the
+ * same rule `lib/contactLookup.ts` applies to `ilike`.
+ */
+export async function findQuoContactByExternalId(externalId: string): Promise<string | null> {
+  if (!process.env.QUO_API_KEY) return null
+  try {
+    const res = await fetch(
+      `${QUO_BASE}/contacts?externalIds=${encodeURIComponent(externalId)}&maxResults=50`,
+      { headers: { Authorization: quoAuthHeader() } }
+    )
+    if (!res.ok) {
+      console.error('quo:findByExternalId error:', res.status, (await res.text()).slice(0, 200))
+      return null
+    }
+    const body = (await res.json()) as { data?: { id?: string; externalId?: string }[] }
+    const match = (body.data ?? []).find(c => c.externalId === externalId)
+    return match?.id ?? null
+  } catch (err) {
+    console.error('quo:findByExternalId exception:', err)
     return null
   }
 }
