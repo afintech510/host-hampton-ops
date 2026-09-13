@@ -861,10 +861,21 @@ describe('R10: the email lookup, including the spelling link 17 could not see', 
   it('no rule in any surface tripwire is skipped', () => {
     /**
      * A skipped rule is a disabled tripwire, and grepping for a rule's CONTENT
-     * cannot tell you it has been turned off. The harness proved that: changing
-     * `it(` to `it.skip(` in `contactIdentitySurface.test.ts` left every string the
-     * assertion above looks for exactly where it was, and the whole suite stayed
-     * green over a rule that no longer ran.
+     * cannot tell you it has been turned off. The harness proved that: marking
+     * one rule in `contactIdentitySurface.test.ts` as skipped left every string
+     * the assertion above looks for exactly where it was, and the whole suite
+     * stayed green over a rule that no longer ran.
+     *
+     * NOTE, and it is why this sentence is phrased rather than quoted: the CI
+     * test gate greps `src/__tests__` for `(describe|it|test)\.skip\(` and FAILS
+     * THE BUILD on a hit, without excluding comments. This comment used to spell
+     * the pattern literally, so **every push to main failed CI from the moment
+     * link 20 wrote it (2026-09-13, `d611eef`) until link 24 found it** — the
+     * Deploy workflow never once reached its deploy step. Nothing was broken on
+     * the box, because `scripts/deploy.sh` SSHes in directly and bypasses the
+     * Action entirely, which is exactly why nobody noticed. Do not re-introduce
+     * the literal here. Hard-won rule 10, in a build pipeline: a gate that
+     * refused every build looked identical to a gate that was passing them.
      *
      * So the skip itself is what gets checked, across every source-reading
      * tripwire at once — there is no honest reason for one of these to be off.
