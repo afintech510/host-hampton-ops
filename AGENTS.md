@@ -731,3 +731,67 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
 **And the build pipeline itself:**
 
 - **The CI gate can be the thing that is broken, and it can be broken by its own documentation.** `.github/workflows/deploy.yml` greps `src/__tests__` for `(describe|it|test)\.skip\(` and fails the build on a hit, without excluding comments — and `publicIntakeSurface.test.ts`'s R10 comment spelled the pattern literally while explaining the rule that bans it. **Every push to main failed CI from `d611eef` until link 24 found it**, and nothing on the box was affected because `scripts/deploy.sh` SSHes in directly and bypasses the Action entirely. That is exactly why nobody noticed. **When a deploy is red, read `.github/workflows/` before assuming it is your code** — and remember that a gate refusing every build looks identical to a gate passing them (rule 10, in a pipeline).
+
+### Link 25 — the outbound send path
+
+- **The box is UTC, and `setHours()` means UTC.** `new Date(date + 'T12:00:00')`
+  parses as LOCAL time and `.setHours(10, 0, 0, 0)` sets a LOCAL hour; the
+  container has no `TZ` and node reports `UTC`. Anything that must fire at a
+  specific Eastern hour goes through **`etToUtc`** in `lib/partyTime.ts`, and
+  anything that shifts a calendar date goes through **`shiftEtDate`**. This bug
+  had already been fixed in THREE modules and left in the fourth — the one that
+  re-exported the helper.
+- **8am–9pm, in the recipient's local time.** The TCPA permits telephone
+  solicitations only in that window and the CTIA applies it to SMS. Every
+  outbound text goes through **`checkSmsQuietHours`** (`lib/quietHours.ts`).
+  A hit **DEFERS to the next 8am and never cancels** — a held reminder is still
+  true later; a dropped one is an outage.
+- **A deferral must not spend a retry attempt.** `finishReminder`'s `deferred`
+  outcome moves `scheduled_for` and leaves `attempts` alone. Folding it into
+  `retry` means a row due at 2am burns all four attempts against the clock and
+  reaches `failed` having never been handed to a provider.
+- **A fix at the enqueue end only protects rows enqueued after it.** The send is
+  where every path converges and the only place that can know the hour —
+  `event-reminders` enqueues `scheduled_for: now`, so its real send time is a
+  setting in the cron-job.org web console that this repository cannot see.
+- **The scheduler is cron-job.org, not the box.** `crontab -l` on `hampton-vps`
+  has no Host Hampton entries at all. Count scheduler traffic in the nginx log
+  by path **and user-agent** (`cron-job.org`), not by path alone — probes from
+  prior sessions otherwise look exactly like a schedule.
+- **`new Date('2026T12:00:00Z')` is not an Invalid Date — it is January 1st.**
+  A bare year parses, and a bare year-month parses to the 1st. An `isFinite`
+  check downstream cannot catch a truncated date, because the date IS finite.
+  Screen the SHAPE (`^\d{4}-\d{2}-\d{2}`) or accept invented dates.
+- **Check the container has real ICU before trusting any timezone fix.** A node
+  image without full ICU resolves every `timeZone` option to UTC *without
+  throwing*, so the fix goes silently inert in production while every test
+  passes locally. Ours has ICU 78.2 — verify, do not assume.
+- **Adding a shared consent helper can loosen a check.** `optedOutReason` tests
+  `sms_opt_in === false`; the column is nullable. REPLACING a `!== true` guard
+  with it turns a missing answer into consent. Add, do not substitute.
+- **A table shared by two senders needs each sender to classify what it owns.**
+  `send-campaigns` claimed every due `scheduled_campaigns` row regardless of
+  `campaign_type` and was stopped only by an accident of the data. Take the
+  allowlist from `pg_constraint`, not from the rows that happen to exist.
+
+**Tripwire lessons (both holes, and the false positives, were in my own rules):**
+
+- **`indexOf('foo')` finds the IMPORT, not the call site.** Three of five
+  first-run failures were ordering rules comparing two positions inside the
+  import block. Ordering rules read a body with imports blanked; presence rules
+  read the source. Assert the stripping worked, or the rules are void.
+- **A grep cannot see reachability.** A rule asserting the string
+  `created_not_sent` appears in a file still passes for
+  `if (false && result.kind === 'created_not_sent')`. When a rule needs to know
+  whether a branch RUNS, the answer is a test that runs it, not a better regex.
+- **Test the claim that a guard is redundant; do not reason it.** I judged a
+  date screen unnecessary because an `isFinite` check followed it, ran both
+  variants over a 30-input corpus, and found 8 inputs where they differ.
+- **A rule wrong in the FALSE-POSITIVE direction is found only by firing it on
+  correct code.** A blanket `setDate` ban and a blanket `new Date(x + 'T..')`
+  ban both flagged correct idioms (a now-anchored range query; the noon anchor
+  used for date-only display). Narrow such a rule — never suppress it, and
+  never leave it crying wolf, because that is the rule somebody deletes.
+- **A suite that stays green across the fix never guarded the thing.** 3048
+  green before, 3048 green after. Reinstate the defect and count the reds: this
+  scheduling tripwire turns 20 of 23 red, which is what makes it a tripwire.

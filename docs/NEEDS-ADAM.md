@@ -70,6 +70,13 @@ the learning loop captures corrections and distils nothing on its own.
 right now they are pure noise, and one of them (§ B3) you may not want running
 at all. `docs/cron-scheduling-review.md`.
 
+**Re-counted 2026-09-13: 11 × 401 each** in the current ten-day nginx window,
+filtered by the `cron-job.org` user-agent. For contrast, the two jobs that DO
+work — `agent-dispatch` and `gmail-sync` — logged 1834 and 1181 successes in the
+same window. Also worth knowing while you are in that console: **cron-job.org
+is the only scheduler.** `crontab -l` on the box has no Host Hampton entries at
+all, so those four jobs are the complete list of what runs on a schedule.
+
 ---
 
 ## B · Decisions only you can make
@@ -113,10 +120,19 @@ four, or should the rule change first?
 
 ### B4. Schedule the three reminder crons *(18)* — and backfill? *(19)*
 `scheduled_reminders` is live, repaired, proven… and **empty**. The three crons
-are not scheduled, so **~18–20 real upcoming bookings have no reminders at all**.
+are not scheduled, so **21 real upcoming bookings have no reminders at all**
+(re-measured 2026-09-13; it was reported as ~18–20).
 Scheduling them starts texting and emailing real customers about real parties,
 which is the designed behaviour but is still your call to switch on. Backfilling
 the existing bookings is a separate yes/no.
+
+**Updated 2026-09-13 — this is meaningfully safer than it was that morning.**
+Until link 25, switching these on would have texted customers at **6am Eastern**
+and emailed you at **3am**: every reminder was being scheduled in UTC, and two of
+the SMS types landed outside the 8am–9pm window the TCPA permits texting in.
+That is now fixed at the enqueue end and guarded again at the send end, so a text
+that would fall outside the window is held until 8am rather than sent or dropped.
+Nothing was scheduled — the decision is still yours. `docs/outbound-send-path-review.md`.
 
 ### B5. The 3% card fee on deposits *(50)*
 `docs/inquiry-response-flow.md` §4.4 says it twice, once with a padlock:
