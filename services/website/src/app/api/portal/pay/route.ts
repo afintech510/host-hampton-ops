@@ -4,11 +4,20 @@ import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { calculateCardFee, formatMoney } from '@/lib/partyPricing'
 import { venmoHandle, zellePhone, PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
+import { screenPortalPaymentType, isPayableStatus, PORTAL_PAYMENT_TYPES } from '@/lib/portalWrite'
 
 /** A gratuity, not a second invoice. $1,000 is generous and still a ceiling. */
 const MAX_TIP_CENTS = 100_000
 
 export async function POST(req: NextRequest) {
+  // Every call creates a Stripe PaymentIntent. `plannerRule` rather than
+  // `costlyRule` because this is an interactive surface: a customer whose card
+  // is declined retries, and a throttle that blocks the retry is worse than the
+  // flood it prevents.
+  const limited = guardRate(req, plannerRule('portal/pay'))
+  if (limited) return limited
+
   const secret = portalSigningSecret()
   const cookieHeader = req.headers.get('cookie')
   const bookingRef = getPortalBookingRef(cookieHeader, secret)
@@ -38,6 +47,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Enter a valid amount' }, { status: 400 })
   }
 
+  // ── The payment type, which was whatever the body said ───────────────────
+  //
+  // This value is copied into `metadata.payment_type` and is read back by the
+  // webhook as the ledger row's `payment_type`, which
+  // `booking_payments_payment_type_check` constrains to
+  // `deposit|partial|final|refund`. Unvalidated, `{"paymentType":"x"}` charged
+  // the card and then made the webhook's insert fail 23514 → 500 → Stripe
+  // retries forever → money collected and recorded nowhere. `"refund"` is worse
+  // because the CHECK ACCEPTS it and `sumPayments()` SUBTRACTS it: a customer
+  // could pay us and raise their own balance. See lib/portalWrite.ts.
+  const screenedType = screenPortalPaymentType(paymentType)
+  if (screenedType === null) {
+    return NextResponse.json(
+      { error: `Unknown payment type. Expected one of: ${PORTAL_PAYMENT_TYPES.join(', ')}.` },
+      { status: 400 },
+    )
+  }
+
   const { data: booking, error: readErr } = await supabase
     .from('bookings')
     .select('id, balance_due_cents, total_cents, contact_name, contact_email, booking_ref, package_type, status')
@@ -52,6 +79,22 @@ export async function POST(req: NextRequest) {
   }
   if (!booking) {
     return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
+  }
+
+  // ── A party that is not happening does not take money ───────────────────
+  //
+  // `status` was in the select list above and nothing read it. Measured
+  // 2026-09-13: **four real `cancelled` bookings carry a positive
+  // `balance_due_cents`, $47,470 between them**, so a customer holding a cookie
+  // for any of them saw a live Pay button. `recordPlanPayment` at least logs
+  // "payment received on CANCELLED plan"; the webhook branch this route feeds
+  // does not, so the charge would have been silent as well as wrong.
+  if (!isPayableStatus(booking.status)) {
+    console.warn(`portal pay: refused a payment on a ${String(booking.status)} booking — ${bookingRef}`)
+    return NextResponse.json(
+      { error: 'This booking is no longer taking payments. Please give us a call so we can sort it out.' },
+      { status: 409 },
+    )
   }
 
   // ── The ceiling, which had a hole in it ────────────────────────────────
@@ -76,7 +119,7 @@ export async function POST(req: NextRequest) {
   }
   const effectiveAmount = Math.min(Math.round(amountCents), balanceCents)
   const isFinalPayment = effectiveAmount >= balanceCents
-  const resolvedType = paymentType || (isFinalPayment ? 'final' : 'partial')
+  const resolvedType = screenedType ?? (isFinalPayment ? 'final' : 'partial')
 
   // Tip handling — added only on card payments. Tip lifts the Stripe charge
   // but doesn't count toward the booking balance (it's a gratuity for the
@@ -109,6 +152,29 @@ export async function POST(req: NextRequest) {
         booking_ref: booking.booking_ref,
         booking_id: booking.id,
         amountCents: String(effectiveAmount),
+        /**
+         * ── THE $0 RECEIPT ────────────────────────────────────────────────
+         *
+         * The webhook's `payment_intent.succeeded` / `party_builder` branch
+         * reads the credited figure as
+         *
+         *   paymentType === 'deposit' ? depositCents : amountCents
+         *
+         * and this route set `amountCents` and had NEVER set `depositCents`.
+         * `/my-booking` defaults `paymentType` to `'deposit'` on any
+         * `awaiting_deposit` booking (MyBookingContent.tsx:323) — 8 of those
+         * carry a live balance — so the default path charged the card for real
+         * and wrote `booking_payments.amount_cents = 0`: balance unmoved, status
+         * forced back to `pending_review`, and a *"Deposit Received — $0.00"*
+         * email to the customer. Rule 11 in its money form: one figure, two
+         * metadata keys, and only one of them written.
+         *
+         * Both keys now carry the same number, so whichever the reader picks is
+         * the amount Stripe actually collected. The webhook gained a fallback
+         * too — belt and braces, because a PaymentIntent created before this
+         * deploy is still out there and may yet succeed.
+         */
+        depositCents: String(effectiveAmount),
         tipCents: String(safeTipCents),
         cardFeeCents: String(cardFeeCents),
         contactName: booking.contact_name,

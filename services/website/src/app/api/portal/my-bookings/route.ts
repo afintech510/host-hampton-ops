@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isLocalRequest } from '@/lib/publicOrigin'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { findBookingsByContactEmail } from '@/lib/contactLookup'
 import {
   getEmailFromCookie,
@@ -112,7 +113,15 @@ export async function DELETE() {
 }
 
 export async function POST(req: NextRequest) {
-  // Switch the per-booking cookie to the booking_ref the user picked
+  // Switch the per-booking cookie to the booking_ref the user picked.
+  // This is a `bookings` read per call keyed on a caller-supplied ref, so it is
+  // the one handler here that a script could use to walk the ref space — and
+  // unlike `/api/portal/auth` it needs no token, only an email session. It does
+  // not leak (the answer is identical for "no such ref" and "not yours"), but a
+  // bound on it is cheap. One real request in the ten-day window.
+  const limited = guardRate(req, plannerRule('portal/my-bookings'))
+  if (limited) return limited
+
   const secret = portalSigningSecret()
   const email = getEmailFromCookie(req.headers.get('cookie'), secret)
   if (!email) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })

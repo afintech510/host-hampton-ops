@@ -27,7 +27,7 @@ import {
   type FinancialWrite,
 } from '@/lib/stripeSettlement'
 import { recordLedgerEntry } from '@/lib/financialLedger'
-import { readBalanceInputs } from '@/lib/bookingBalance'
+import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
 
 /**
  * Record a Stripe payment in the unified financial_transactions table.
@@ -222,15 +222,23 @@ export async function POST(req: NextRequest) {
         party_date: string | null; party_time: string | null; package_type: string | null
         guest_count_approx: number | null; agreement_pdf_url: string | null
       }
-      const newBal = Math.max(0, (bkRow.total_cents || 0) - paidSum)
+      // Third copy of the shape link 18 extracted `computeBalance` to kill, and
+      // the one my own tripwire found while aimed at the other two: a booking
+      // with no total yet makes `(null || 0) - anything` clamp to zero, which
+      // this branch reads as `paid_in_full` and stamps `paid_in_full_at` on a
+      // studio rental nobody has priced. The arithmetic for a PRICED booking is
+      // unchanged — see needs-Adam 41, which is about that arithmetic and is
+      // deliberately not settled here.
+      const bal = computeBalance(bkRow.total_cents, paidSum)
+      const newBal = bal.balanceCents
       const existingTags = bkRow.party_tags || {}
 
       const updateFields: Record<string, unknown> = {
         balance_due_cents: newBal,
-        status: newBal === 0 ? 'paid_in_full' : 'pending_review',
+        status: bal.paidInFull ? 'paid_in_full' : 'pending_review',
         party_tags: { ...existingTags, date_locked: true },
       }
-      if (newBal === 0) updateFields.paid_in_full_at = new Date().toISOString()
+      if (bal.paidInFull) updateFields.paid_in_full_at = new Date().toISOString()
       const { error: stuUpdErr } = await supabase.from('bookings').update(updateFields).eq('id', bookingId)
       if (stuUpdErr) {
         console.error('Studio rental PI: booking update failed —', stuUpdErr.message, '— asking Stripe to retry')
@@ -403,9 +411,34 @@ export async function POST(req: NextRequest) {
     const depositCents = parseInt(m.depositCents || '0', 10)
     const cardFeeCents = parseInt(m.cardFeeCents || '0', 10)
     const tipCents = parseInt(m.tipCents || '0', 10)
-    const amountCents = paymentType === 'deposit'
-      ? depositCents
-      : parseInt(m.amountCents || '0', 10)
+    /**
+     * Rule 11, and it cost a $0 receipt.
+     *
+     * The credited figure lived under TWO metadata keys and this branch picked
+     * one by payment type. `/api/checkout` writes `depositCents`;
+     * `/api/portal/pay` writes `amountCents` and — until 2026-09-13 — nothing
+     * else, so a `deposit` from the portal credited `parseInt('' || '0')` and
+     * the customer paid for nothing. portal/pay now writes both, but a
+     * PaymentIntent created before that deploy may still succeed, so this reads
+     * whichever key is present rather than trusting the one it used to.
+     *
+     * If NEITHER is present the branch must not write a $0 row: the unique
+     * `stripe_payment_intent_id` would swallow the corrected redelivery and the
+     * money would be permanently invisible (rule 14). Failing asks Stripe to
+     * come back and puts the problem in the log where somebody looks.
+     */
+    const namedAmount = paymentType === 'deposit'
+      ? (depositCents || parseInt(m.amountCents || '0', 10))
+      : (parseInt(m.amountCents || '0', 10) || depositCents)
+    if (!(namedAmount > 0)) {
+      console.error(
+        `Party builder PI ${pi.id} (${bookingRef}) names no credited amount:`,
+        `payment_type=${paymentType} depositCents=${m.depositCents ?? '-'} amountCents=${m.amountCents ?? '-'}`,
+        '— refusing to record a $0 payment; asking Stripe to retry',
+      )
+      return NextResponse.json({ error: 'payment metadata names no amount' }, { status: 500 })
+    }
+    const amountCents = namedAmount
     const totalCharged = pi.amount
 
     // Insert payment record. confirm-session may have already inserted; the
@@ -447,17 +480,25 @@ export async function POST(req: NextRequest) {
       party_date: string | null; party_time: string | null; package_type: string | null
       guest_count_approx: number | null
     }
-    const newBal = Math.max(0, (bkRow.total_cents || 0) - paidSum)
+    /**
+     * `Math.max(0, (total_cents || 0) - paidSum)` is the shape link 18 extracted
+     * `computeBalance` to kill: a booking with no total yet — every lead — makes
+     * `(null || 0) - anything` clamp to 0, which this branch then reads as
+     * `paid_in_full`. `computeBalance` tells an unpriced plan from a settled one
+     * and is the same function the admin panel now uses (rule 11).
+     */
+    const bal = computeBalance(bkRow.total_cents, paidSum)
+    const newBal = bal.balanceCents
     const existingTags = bkRow.party_tags || {}
 
     const updateFields: Record<string, unknown> = { balance_due_cents: newBal }
     if (paymentType === 'deposit') {
-      updateFields.status = newBal === 0 ? 'paid_in_full' : 'pending_review'
+      updateFields.status = bal.paidInFull ? 'paid_in_full' : 'pending_review'
       updateFields.party_tags = { ...existingTags, date_locked: true }
-    } else if (newBal === 0) {
+    } else if (bal.paidInFull) {
       updateFields.status = 'paid_in_full'
     }
-    if (newBal === 0) updateFields.paid_in_full_at = new Date().toISOString()
+    if (bal.paidInFull) updateFields.paid_in_full_at = new Date().toISOString()
     const { error: pbUpdErr } = await supabase.from('bookings').update(updateFields).eq('id', bookingId)
     if (pbUpdErr) {
       console.error('Party builder PI: booking update failed —', pbUpdErr.message, '— asking Stripe to retry')
@@ -1593,15 +1634,18 @@ export async function POST(req: NextRequest) {
         }
         const paidSum = inputs.paidSum
         const bkRow = inputs.row as { total_cents: number | null; party_tags: Record<string, unknown> | null }
-        const newBal = Math.max(0, (bkRow.total_cents || 0) - paidSum)
+        // See the note on the PaymentIntent branch: `(total_cents || 0)` marks an
+        // unpriced lead paid in full. `computeBalance` is the one definition.
+        const bal = computeBalance(bkRow.total_cents, paidSum)
+        const newBal = bal.balanceCents
         const existingTags = bkRow.party_tags || {}
         const { error: updateErr } = await supabase
           .from('bookings')
           .update({
-            status: newBal === 0 ? 'paid_in_full' : 'pending_review',
+            status: bal.paidInFull ? 'paid_in_full' : 'pending_review',
             balance_due_cents: newBal,
             party_tags: { ...existingTags, date_locked: true },
-            ...(newBal === 0 ? { paid_in_full_at: new Date().toISOString() } : {}),
+            ...(bal.paidInFull ? { paid_in_full_at: new Date().toISOString() } : {}),
           })
           .eq('id', bookingId)
         if (updateErr) {

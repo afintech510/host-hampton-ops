@@ -74,7 +74,31 @@ export async function POST(req: NextRequest) {
     const depositCents = parseInt(m.depositCents || '0', 10)
     const cardFeeCents = parseInt(m.cardFeeCents || '0', 10)
     const tipCents = parseInt(m.tipCents || '0', 10)
-    const amountCents = paymentType === 'deposit' ? depositCents : parseInt(m.amountCents || '0', 10)
+    /**
+     * The same two-keys-for-one-figure defect as `/api/webhook`'s PaymentIntent
+     * branch, and this is the copy that runs FIRST: the browser calls this route
+     * the moment the Payment Element confirms, so a $0 row written here takes
+     * the UNIQUE `stripe_payment_intent_id` and the webhook's corrected insert
+     * is then swallowed as a redelivery. `/api/portal/pay` sent
+     * `payment_type: 'deposit'` — the default for any `awaiting_deposit`
+     * booking — with `amountCents` set and `depositCents` absent, so
+     * `parseInt('' || '0')` credited nothing against a real charge.
+     *
+     * Read whichever key is present, and refuse to record a payment that names
+     * no amount at all rather than burning the id on a $0 row (rule 14).
+     */
+    const namedAmount = paymentType === 'deposit'
+      ? (depositCents || parseInt(m.amountCents || '0', 10))
+      : (parseInt(m.amountCents || '0', 10) || depositCents)
+    if (!(namedAmount > 0)) {
+      console.error(
+        `confirm-session: ${bookingRef} payment names no credited amount —`,
+        `payment_type=${paymentType} depositCents=${m.depositCents ?? '-'} amountCents=${m.amountCents ?? '-'}`,
+        '— not recording; the webhook will retry',
+      )
+      return NextResponse.json({ ok: false, error: 'payment metadata names no amount' }, { status: 500 })
+    }
+    const amountCents = namedAmount
     const totalCharged = amountTotal || amountCents + tipCents + cardFeeCents
 
     const supabase = getSupabase()

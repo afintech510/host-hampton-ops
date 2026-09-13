@@ -162,7 +162,7 @@ describe('POST /api/checkin/[token]', () => {
 
   it('saves details and moves the status to started', async () => {
     mockResolve.mockResolvedValue({ ok: true, booking: BOOKING })
-    const { supabase, updates } = makeSupabase()
+    const { supabase, updates, inserts } = makeSupabase()
     mockGetSupabase.mockReturnValue(supabase)
 
     const res: any = await POST(makeReq({
@@ -175,11 +175,79 @@ describe('POST /api/checkin/[token]', () => {
     const bookingUpdate = updates.find(u => u.table === 'bookings')!
     expect(bookingUpdate.payload).toMatchObject({
       contact_name: 'Jane Doe',
-      contact_email: 'jane@example.com', // normalized
       checkin_address_line1: '1 Main St',
       checkin_city: 'Speonk',
       checkin_status: 'started',
     })
+    // Submitting the SAME address is not a change, so nothing is written for it
+    // and no change request is logged. See the two tests below.
+    expect(bookingUpdate.payload).not.toHaveProperty('contact_email')
+    expect(inserts.some(u => u.table === 'booking_modifications')).toBe(false)
+  })
+
+  /* ── contact_email is an authorization key, not a form field ──────────────
+   *
+   * `bookings.contact_email` is what `/api/portal/email-auth/request` and
+   * `/api/portal/my-bookings` authorize on. A check-in token is a link in a text
+   * message, deliberately not a login — so it must not be able to move a real
+   * booking onto somebody else's address, which would hand over the portal, the
+   * receipts, the reminders and every future magic link at once.
+   */
+  it('does NOT move contact_email to a different address from a check-in token', async () => {
+    mockResolve.mockResolvedValue({ ok: true, booking: BOOKING })
+    const { supabase, updates } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+
+    const res: any = await POST(makeReq({
+      name: 'Jane Doe', email: 'attacker@evil.example', phone: '5551234567',
+    }), { params })
+
+    expect(res.status).toBe(200)
+    const bookingUpdate = updates.find(u => u.table === 'bookings')!
+    expect(bookingUpdate.payload).not.toHaveProperty('contact_email')
+    // …and consent is recorded against the address we already hold, so a
+    // rejected change cannot become a new contact claiming an opt-in.
+    expect(mockUpsertContact).toHaveBeenCalledWith(expect.objectContaining({
+      email: 'jane@example.com',
+    }))
+  })
+
+  it('records the refused email change where a human reads it (rule 10)', async () => {
+    mockResolve.mockResolvedValue({ ok: true, booking: BOOKING })
+    const { supabase, inserts } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+
+    await POST(makeReq({ name: 'Jane Doe', email: 'attacker@evil.example' }), { params })
+
+    const note = inserts.find(u => u.table === 'booking_modifications')!
+    expect(note).toBeDefined()
+    expect(note.payload.modified_by).toBe('customer')
+    expect(String(note.payload.change_summary)).toMatch(/NOT applied/i)
+    expect(note.payload.new_data).toMatchObject({ contact_email_requested: 'attacker@evil.example' })
+  })
+
+  it('bounds every free-text field so nothing unbounded reaches the row', async () => {
+    mockResolve.mockResolvedValue({ ok: true, booking: BOOKING })
+    const { supabase, updates } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+
+    await POST(makeReq({
+      name: 'J'.repeat(5000),
+      email: 'jane@example.com',
+      phone: '5'.repeat(5000),
+      addressLine1: 'A'.repeat(5000),
+      city: 'C'.repeat(5000),
+      state: 'S'.repeat(5000),
+      postalCode: 'P'.repeat(5000),
+    }), { params })
+
+    const payload = updates.find(u => u.table === 'bookings')!.payload as Record<string, string>
+    for (const key of [
+      'contact_name', 'contact_phone', 'checkin_address_line1',
+      'checkin_city', 'checkin_state', 'checkin_postal_code',
+    ]) {
+      expect(payload[key].length).toBeLessThanOrEqual(200)
+    }
   })
 
   it('records the marketing opt-in through upsertContact, not a booking column', async () => {

@@ -6,24 +6,41 @@ import { formatMoney } from '@/lib/partyPricing'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailHref } from '@/lib/emailSafety'
+import { guardRate, ownerNotifyRule } from '@/lib/rateLimit'
+import { screenPledgeCents, MAX_PLEDGE_CENTS, isPayableStatus } from '@/lib/portalWrite'
 
 export async function POST(req: NextRequest) {
+  // Email + billed SMS to Adam on every call, on a cookie alone. Four real
+  // requests in the ten-day nginx window; see `ownerNotifyRule` for the sizing.
+  const limited = guardRate(req, ownerNotifyRule('portal/notify-payment'))
+  if (limited) return limited
+
   const portalSecret = portalSigningSecret()
   const cookieHeader = req.headers.get('cookie')
   const bookingRef = getPortalBookingRef(cookieHeader, portalSecret)
   if (!bookingRef) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-  const body = await req.json()
-  const amountCents = body.amount_cents as number
+  const body = await req.json().catch(() => ({})) as Record<string, unknown>
   const method = body.method as 'venmo' | 'zelle' | 'cash' | 'check'
 
-  if (!amountCents || amountCents <= 0) return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
+  // `body.amount_cents as number` was the whole check, plus `> 0`. That figure
+  // goes through `formatMoney()` into an email to Adam and into
+  // `booking_modifications.new_data` as the record he reconciles a real bank
+  // transfer against: `0.5` printed as `$0.01` and `1e308` printed as a
+  // sentence. A pledge is a whole number of cents (lib/portalWrite.ts).
+  const amountCents = screenPledgeCents(body.amount_cents)
+  if (amountCents === null) {
+    return NextResponse.json(
+      { error: `Enter an amount between $0.01 and ${(MAX_PLEDGE_CENTS / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}.` },
+      { status: 400 },
+    )
+  }
   if (!['venmo', 'zelle', 'cash', 'check'].includes(method)) return NextResponse.json({ error: 'Invalid method' }, { status: 400 })
 
   const supabase = getSupabase()
   const { data: booking, error: readErr } = await supabase
     .from('bookings')
-    .select('id, booking_ref, contact_name, contact_email, contact_phone, balance_due_cents, party_date, party_time')
+    .select('id, booking_ref, status, contact_name, contact_email, contact_phone, balance_due_cents, party_date, party_time')
     .eq('booking_ref', bookingRef)
     .maybeSingle()
 
@@ -34,6 +51,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'We could not record that just now — try again.' }, { status: 503 })
   }
   if (!booking) return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
+
+  // Same rule as `/api/portal/pay`: a cancelled party does not take money, and
+  // four real cancelled bookings still carry a positive balance. Telling a
+  // customer "we'll expect your Venmo" for a party that is not happening is the
+  // worst version of this route's failure.
+  if (!isPayableStatus(booking.status)) {
+    console.warn(`portal notify-payment: refused a pledge on a ${String(booking.status)} booking — ${bookingRef}`)
+    return NextResponse.json(
+      { error: 'This booking is no longer taking payments. Please give us a call before sending anything.' },
+      { status: 409 },
+    )
+  }
 
   // Log the notification as a booking_modification (admin reconciles later).
   // Rule 19: this insert IS the record of a customer's payment pledge. If it

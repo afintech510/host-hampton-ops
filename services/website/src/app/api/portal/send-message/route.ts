@@ -5,12 +5,20 @@ import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref, mailHref } from '@/lib/emailSafety'
+import { guardRate, ownerNotifyRule } from '@/lib/rateLimit'
 
 /**
  * Customer-to-admin message about a specific booking. Auth via portal cookie.
  * Logs the message into booking_modifications for audit, then emails admin.
  */
 export async function POST(req: NextRequest) {
+  // Every call sends Adam an email AND a billed SMS, on a cookie alone, and
+  // nothing counted. Measured over the ten-day nginx window: this route took
+  // **zero** requests, so the bound below cannot refuse real use — but a stolen
+  // or shared cookie bought an unlimited text-bomb. See `ownerNotifyRule`.
+  const limited = guardRate(req, ownerNotifyRule('portal/send-message'))
+  if (limited) return limited
+
   const portalSecret = portalSigningSecret()
   const cookieHeader = req.headers.get('cookie')
   const bookingRef = getPortalBookingRef(cookieHeader, portalSecret)

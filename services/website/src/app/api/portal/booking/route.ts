@@ -2,6 +2,28 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { isModificationAllowed } from '@/lib/partyPricing'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
+import { screenPublicGuestCount, MAX_PUBLIC_GUEST_COUNT } from '@/lib/publicIntake'
+import { isEditableStatus, partyDateIsSet } from '@/lib/portalWrite'
+import { PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
+
+/**
+ * A plan with no date has no cutoff to be past.
+ *
+ * `isModificationAllowed` takes `partyDateStr: string` and immediately runs
+ * `partyDateStr.split('-')`. `bookings.party_date` is nullable — three rows are
+ * null today, one of them a live `lead` — and both handlers below passed the
+ * column in behind an `as string` cast, so a customer whose plan has no date yet
+ * got a **500** from their own portal. Rule 8: the cast asserted what the column
+ * denies.
+ */
+function modificationPermission(
+  partyDate: unknown,
+  changeType: 'full' | 'guest_count',
+): { allowed: boolean; reason?: string } {
+  if (!partyDateIsSet(partyDate)) return { allowed: true }
+  return isModificationAllowed(partyDate, changeType)
+}
 
 /**
  * Columns the customer's own portal may see.
@@ -40,6 +62,9 @@ const PORTAL_BOOKING_COLUMNS = [
   'checkin_agreement_signed_at', 'checkin_agreement_pdf_url',
   'created_at', 'updated_at',
 ].join(', ')
+
+const CANCELLED_REASON =
+  `This booking has been cancelled. Give us a call on ${PUBLIC_PHONE_DISPLAY} if that looks wrong.`
 
 export async function GET(req: NextRequest) {
   const secret = portalSigningSecret()
@@ -82,8 +107,9 @@ export async function GET(req: NextRequest) {
   // Compute modification permissions
   const unlocked = !!(booking.party_tags as Record<string, unknown> | null)?.modifications_unlocked
   const partyDate = (booking.party_date as string | null) ?? null
-  const fullMod = isModificationAllowed(partyDate as string, 'full')
-  const guestMod = isModificationAllowed(partyDate as string, 'guest_count')
+  const editable = isEditableStatus(booking.status)
+  const fullMod = modificationPermission(partyDate, 'full')
+  const guestMod = modificationPermission(partyDate, 'guest_count')
 
   return NextResponse.json({
     booking: {
@@ -93,15 +119,21 @@ export async function GET(req: NextRequest) {
       modifications: modificationsRes.data || [],
     },
     permissions: {
-      canEditFull: unlocked || fullMod.allowed,
-      canEditGuestCount: unlocked || guestMod.allowed,
-      fullReason: unlocked ? undefined : fullMod.reason,
-      guestCountReason: unlocked ? undefined : guestMod.reason,
+      // A cancelled booking is not editable however far off its date is, and
+      // the PATCH below refuses it — the page must not show an editor the
+      // server will reject (rule 10: the two have to say the same thing).
+      canEditFull: editable && (unlocked || fullMod.allowed),
+      canEditGuestCount: editable && (unlocked || guestMod.allowed),
+      fullReason: !editable ? CANCELLED_REASON : unlocked ? undefined : fullMod.reason,
+      guestCountReason: !editable ? CANCELLED_REASON : unlocked ? undefined : guestMod.reason,
     },
   })
 }
 
 export async function PATCH(req: NextRequest) {
+  const limited = guardRate(req, plannerRule('portal/booking'))
+  if (limited) return limited
+
   const secret = portalSigningSecret()
   const cookieHeader = req.headers.get('cookie')
   const bookingRef = getPortalBookingRef(cookieHeader, secret)
@@ -116,9 +148,14 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'No valid changes' }, { status: 400 })
   }
 
+  // The four editable columns are read back as well, so the audit row can say
+  // what the value WAS. `old_data` was hard-coded `null`, which makes
+  // `booking_modifications` a log of the fact that something changed and not of
+  // what changed from — the half a human actually needs when a customer rings up
+  // to ask why their headcount is wrong.
   const { data: booking, error: readErr } = await supabase
     .from('bookings')
-    .select('id, party_date, status, party_tags')
+    .select('id, party_date, status, party_tags, guest_count_approx, notes, child_name, child_age')
     .eq('booking_ref', bookingRef)
     .maybeSingle()
 
@@ -130,11 +167,18 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
   }
 
+  // A cancelled party is not one a customer edits. The date cutoff below does
+  // not catch this: a booking cancelled six months before its date is still
+  // inside every modification window.
+  if (!isEditableStatus(booking.status)) {
+    return NextResponse.json({ error: CANCELLED_REASON }, { status: 409 })
+  }
+
   // Check if the change type is allowed (admin unlock bypasses date cutoffs)
   const unlocked = !!(booking.party_tags as Record<string, unknown> | null)?.modifications_unlocked
   if (!unlocked) {
     const changeType = body.guest_count_approx !== undefined ? 'guest_count' : 'full'
-    const permission = isModificationAllowed(booking.party_date, changeType)
+    const permission = modificationPermission(booking.party_date, changeType)
     if (!permission.allowed) {
       return NextResponse.json({ error: permission.reason }, { status: 403 })
     }
@@ -152,9 +196,47 @@ export async function PATCH(req: NextRequest) {
   const asText = (v: unknown, max: number): string | null =>
     typeof v === 'string' && v.length <= max ? v : null
 
+  /**
+   * ── THE GUEST COUNT IS A MONEY INPUT ───────────────────────────────────
+   *
+   * Link 20 screened `unit_price_cents` because the browser chose it. The
+   * MULTIPLIER still came from the browser, through the one route link 20
+   * deliberately left out of its rules.
+   *
+   * `loadPlanInvoice()` computes a guest-multiplied line item as
+   * `unit_price_cents × quantity × guest_count_approx`, and
+   * `/api/plan/[ref]/pay-link` — which accepts a PORTAL COOKIE for
+   * `purpose: 'deposit' | 'balance'` — derives the Stripe charge from that
+   * invoice, as does `recordPlanPayment`'s `newBalanceCents`. So the chain was:
+   *
+   *   PATCH { guest_count_approx: 1 }  →  invoice total drops
+   *   POST /api/plan/<ref>/pay-link { purpose: 'balance' }  →  charge follows it
+   *   pay  →  `invoice.totalCents - paid === 0`  →  `paid_in_full`
+   *
+   * Five live bookings carry guest-multiplied items (measured 2026-09-13); the
+   * per-head component is $190–$200 on those, and unbounded on any future plan
+   * priced per head. The old bound was `0 ≤ n ≤ 10_000`: **zero** removes every
+   * per-head charge, and ten thousand multiplies a $20/head item to $200,000.
+   *
+   * `screenPublicGuestCount` is the bound the public intake routes already use
+   * (1…500, seven times the largest real party). Rule 11 — this concept had an
+   * owner and this route was not asking it. `lib/plan.ts` and
+   * `lib/inquiryDrafts.ts` independently treat `> 0` as the validity test, which
+   * is a third and fourth copy of the same idea.
+   *
+   * What this does NOT do is re-derive `total_cents` / `balance_due_cents` after
+   * the change. Those columns go stale against the invoice, which is the same
+   * disagreement as needs-Adam 41 and is Adam's to settle — so the delta is put
+   * in the audit row below instead, where the Parties tab renders it.
+   */
   if (body.guest_count_approx !== undefined) {
-    const n = asInt(body.guest_count_approx)
-    if (n === null) return NextResponse.json({ error: 'Guest count must be a whole number' }, { status: 400 })
+    const n = screenPublicGuestCount(body.guest_count_approx)
+    if (n === null) {
+      return NextResponse.json(
+        { error: `Guest count must be a whole number between 1 and ${MAX_PUBLIC_GUEST_COUNT}.` },
+        { status: 400 },
+      )
+    }
     allowed.guest_count_approx = n
   }
   if (body.notes !== undefined) {
@@ -179,6 +261,23 @@ export async function PATCH(req: NextRequest) {
 
   allowed.updated_at = new Date().toISOString()
 
+  /**
+   * Capture the BEFORE values before the write, not after it.
+   *
+   * Written after the UPDATE first, and the route-level test caught it: the
+   * audit row recorded the new value as the old one and the summary read
+   * *"guest count 2 → 2"*. Against a real PostgREST client `booking` is a
+   * freshly parsed object the update does not touch, so it would have been
+   * right in production and wrong in the one place that could tell me — which
+   * is the same trap from the other side, and exactly why the ordering should
+   * not depend on knowing that. Read the old values first and the question
+   * does not arise.
+   */
+  const changedKeys = Object.keys(allowed).filter(k => k !== 'updated_at')
+  const oldData: Record<string, unknown> = {}
+  for (const k of changedKeys) oldData[k] = (booking as Record<string, unknown>)[k]
+  const previousGuestCount = booking.guest_count_approx
+
   const { error: updateErr } = await supabase
     .from('bookings')
     .update(allowed)
@@ -190,11 +289,27 @@ export async function PATCH(req: NextRequest) {
 
   // Log modification. Rule 19: the audit trail's own write was unchecked, so an
   // edit could land on the booking with nothing recording who changed what.
+
+  /**
+   * Name the guest-count move explicitly, because it is the one field here that
+   * moves what the plan costs — see the note on the screen above. `change_summary`
+   * is what the Parties tab and the customer's own portal render, so this is the
+   * line a human reads when the headcount and the invoice disagree.
+   */
+  const summary =
+    allowed.guest_count_approx !== undefined
+      ? `guest count ${String(previousGuestCount ?? '—')} → ${String(allowed.guest_count_approx)}` +
+        (changedKeys.length > 1
+          ? `; ${changedKeys.filter(k => k !== 'guest_count_approx').join(', ')} updated`
+          : '') +
+        ' (customer, via portal — per-head pricing follows this number)'
+      : changedKeys.join(', ') + ' updated'
+
   const { error: auditErr } = await supabase.from('booking_modifications').insert({
     booking_id: booking.id,
     modified_by: 'customer',
-    change_summary: Object.keys(allowed).filter(k => k !== 'updated_at').join(', ') + ' updated',
-    old_data: null,
+    change_summary: summary,
+    old_data: oldData,
     new_data: allowed,
   })
   if (auditErr) {

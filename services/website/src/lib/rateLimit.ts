@@ -94,6 +94,26 @@ export function costlyRule(route: string, perCaller = 3, perRoute = 30): RateLim
   return { route, perCaller, perRoute, windowMs: HOUR_MS }
 }
 
+/**
+ * For a route whose whole job is to interrupt Adam — an email to the owner
+ * inbox AND a billed SMS to his phone, on every call.
+ *
+ * `/api/portal/send-message` and `/api/portal/notify-payment` each do both, on a
+ * portal cookie alone, and neither counted anything. Measured over the ten-day
+ * nginx window: **four** notify-payment requests (all real customers, all 200)
+ * and **zero** send-message requests. 8 per caller per hour is 2× the real
+ * ten-day total in a single hour for one person, so it cannot refuse a customer
+ * who is genuinely going back and forth; 60 per route per hour bounds the
+ * text-bomb, which is what a stolen or shared cookie buys today.
+ *
+ * The per-caller half is forgeable (see the header) — the route ceiling is the
+ * half that holds, and on this surface that ceiling is what stops Adam's phone
+ * from ringing all night.
+ */
+export function ownerNotifyRule(route: string): RateLimitRule {
+  return { route, perCaller: 8, perRoute: 60, windowMs: HOUR_MS }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Caller identity
 // ───────────────────────────────────────────────────────────────────────────
@@ -320,6 +340,48 @@ export function rateLimitedResponse(outcome: Extract<RateLimitOutcome, { allowed
 export function guardRate(req: NextRequest, rule: RateLimitRule): NextResponse | null {
   const outcome = checkRateLimit(req, rule)
   return outcome.allowed ? null : rateLimitedResponse(outcome)
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// The other axis: how often we will contact ONE recipient
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * A bound on how many times we will mail or text one ADDRESS, regardless of who
+ * asked.
+ *
+ * This is a different question from `checkRateLimit`, which bounds a CALLER and
+ * a ROUTE. `/api/portal/resend-link` is the case that needs both: the caller
+ * bucket stops one script, the route bucket stops a flood, and neither stops
+ * somebody cycling through open proxies to text one real customer's phone forty
+ * times. The recipient bucket does.
+ *
+ * It already existed — as a private `Map<string, number[]>` inside
+ * `resend-link/route.ts` with its own window constants and, because nothing ever
+ * deleted a key, as an unbounded memory leak keyed by any string a caller cared
+ * to submit. Rule 11: a second implementation of "how often may this happen" is
+ * one nothing is checking. Folding it in here gives it the sweep, the cap and
+ * the logging the caller/route buckets already have.
+ *
+ * Keys are namespaced by the caller (`email:`, `sms:`) and are NOT logged: the
+ * identifier is a real person's address or phone number.
+ */
+export function guardRecipient(
+  identifier: string,
+  opts: { label: string; max: number; windowMs: number },
+  nowMs?: number,
+): boolean {
+  const s = store()
+  const now = nowMs ?? Date.now()
+  sweep(s, now)
+  const outcome = hit(s, `p:${opts.label}:${identifier}`, opts.max, opts.windowMs, now)
+  if (!outcome.allowed) {
+    // Rule 10: a refusal says it refused. The recipient is not named.
+    console.warn(
+      `rateLimit: suppressed ${opts.label} — recipient bucket (${opts.max}/${Math.round(opts.windowMs / 1000)}s) exhausted`,
+    )
+  }
+  return !outcome.allowed
 }
 
 /** Test-only: forget every bucket. */

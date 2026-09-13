@@ -3,6 +3,7 @@ import { getSupabase } from '@/lib/supabase'
 import { generateEmailLoginCode, hashEmailLoginCode, portalSigningSecret } from '@/lib/portalAuth'
 import { emailAuthCodeHtml } from '@/lib/emailTemplates'
 import { findBookingsByContactEmail, isPlausibleEmailAddress } from '@/lib/contactLookup'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
 
 /**
  * Request a 6-digit email login code.
@@ -13,6 +14,13 @@ import { findBookingsByContactEmail, isPlausibleEmailAddress } from '@/lib/conta
  * Rate limit: max 3 codes per email per hour.
  */
 export async function POST(req: NextRequest) {
+  // The 3-per-hour limit below is durable and keyed on the EMAIL — it is the
+  // right bound on mailing one person, and the wrong one on a caller walking a
+  // list of addresses, which costs a `bookings` scan and a Resend call each.
+  // Both axes are needed (see `guardRecipient` in lib/rateLimit.ts).
+  const limited = guardRate(req, intakeRule('portal/email-auth/request'))
+  if (limited) return limited
+
   try {
     const body = await req.json().catch(() => ({}))
     const rawEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''

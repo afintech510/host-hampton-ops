@@ -22,6 +22,9 @@ function LoginContent() {
     invalid: "That link didn't work. Get a fresh one below — it takes a second.",
     expired: "That link didn't work or has expired. Get a fresh one below.",
     unavailable: 'We had trouble checking that link just now. Try it again in a moment — or get a fresh one below.',
+    // The rate limiter on /api/portal/auth. Same rule as `unavailable`: there is
+    // nothing wrong with their link, so do not send them for a new one.
+    busy: 'That link is being opened a lot right now. Give it a moment and try again.',
   }
 
   async function handleSubmit(e: React.FormEvent) {

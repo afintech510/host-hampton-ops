@@ -3,6 +3,7 @@ import { getSupabase } from '@/lib/supabase'
 import { verifyEmailLoginCode, setEmailCookieHeader, getEmailCodeMaxAttempts, portalSigningSecret } from '@/lib/portalAuth'
 import { isLocalRequest } from '@/lib/publicOrigin'
 import { isPlausibleEmailAddress } from '@/lib/contactLookup'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 
 /**
  * Verify a 6-digit email login code.
@@ -31,6 +32,20 @@ import { isPlausibleEmailAddress } from '@/lib/contactLookup'
  * is harmless: a correct code is consumed on the same request.
  */
 export async function POST(req: NextRequest) {
+  /**
+   * The five-attempt claim below is the real lock on GUESSING, and it is
+   * durable. This is a bound on CHURN: each call is a select and a conditional
+   * update whatever the answer, and the claim's own comment notes that a fresh
+   * email string buys a fresh bucket for free.
+   *
+   * `plannerRule` (30 per caller per 10 minutes) and not `intakeRule`: a
+   * customer who mistypes a six-digit code twice and pastes it wrong once is at
+   * three, and a login throttle that fires on a real person is worse than the
+   * churn it saves.
+   */
+  const limited = guardRate(req, plannerRule('portal/email-auth/verify'))
+  if (limited) return limited
+
   try {
     const body = await req.json().catch(() => ({}))
     const rawEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''

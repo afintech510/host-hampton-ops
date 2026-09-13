@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { validatePortalToken, setPortalCookieHeader, portalSigningSecret } from '@/lib/portalAuth'
 import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
+import { checkRateLimit, plannerRule } from '@/lib/rateLimit'
+
+// Reads no cookie but DOES set one and write `portal_tokens.used_at`, so it must
+// run per request rather than being prerendered.
+export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   // Behind nginx + Docker, req.url carries the CONTAINER's host (e.g.
@@ -41,6 +46,21 @@ export async function GET(req: NextRequest) {
   const linkFailed = () => loginRedirect('expired')
   /** Rule 12: a failed read is not a wrong link, and must not look like one. */
   const unavailable = () => loginRedirect('unavailable')
+
+  /**
+   * Unauthenticated by design — the token IS the credential — and two reads and
+   * a write per call, on a route whose failure answer is deliberately identical
+   * for every kind of bad link. That makes a scripted sweep of the structured
+   * `HH-2026-` ref space uninformative but not free.
+   *
+   * 140 requests in the ten-day nginx window, so 30 per caller per 10 minutes
+   * cannot refuse a customer re-opening the link in their email. The refusal is
+   * a REDIRECT and not `rateLimitedResponse`'s JSON: every other exit from this
+   * handler lands the browser on a page, and a raw 429 body on a magic link is
+   * a dead end for a real customer who double-clicked.
+   */
+  const rate = checkRateLimit(req, plannerRule('portal/auth'))
+  if (!rate.allowed) return loginRedirect('busy')
 
   const ref = req.nextUrl.searchParams.get('ref')
   const token = req.nextUrl.searchParams.get('token')
@@ -103,16 +123,16 @@ export async function GET(req: NextRequest) {
   // re-opens, and burning it on first click turns every second visit into a
   // support call. What single-use would have bought is visibility, and stamping
   // the column buys that without the cost.
-  await supabase
+  // Non-fatal: a customer with a valid token gets in either way. But the failure
+  // is named rather than discarded (rule 19) — and destructured rather than
+  // read inside a `.then`, so it reads as a checked write to a human and to the
+  // surface tripwire, which cannot tell the two apart from the outside.
+  const { error: stampErr } = await supabase
     .from('portal_tokens')
     .update({ used_at: new Date().toISOString() })
     .eq('id', matched.id)
     .is('used_at', null)
-    .then(({ error }) => {
-      // Non-fatal: a customer with a valid token gets in either way. But the
-      // failure is named rather than discarded (rule 19).
-      if (error) console.error('portal auth: could not stamp used_at:', error.message)
-    })
+  if (stampErr) console.error('portal auth: could not stamp used_at:', stampErr.message)
 
   // Set cookie and redirect to portal (or custom redirect)
   const redirectTo = req.nextUrl.searchParams.get('redirect')

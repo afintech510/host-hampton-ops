@@ -9,6 +9,14 @@ import { findContactsByEmail, isPlausibleEmailAddress } from '@/lib/contactLooku
 
 export const dynamic = 'force-dynamic'
 
+/** Bounds for a form somebody fills in on a phone outside a party venue. */
+const MAX_NAME_CHARS = 200
+const MAX_PHONE_CHARS = 40
+const MAX_ADDRESS_CHARS = 200
+const MAX_CITY_CHARS = 100
+const MAX_STATE_CHARS = 40
+const MAX_POSTAL_CHARS = 20
+
 /**
  * Public, token-gated check-in endpoint.
  *
@@ -88,19 +96,54 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
   const supabase = getSupabase()
 
-  // Repeat submissions are expected — the link is shared and texted twice.
-  // Last write wins; there is no reason to reject a correction.
+  /**
+   * ── THE ADDRESS ON THE BOOKING IS AN AUTHORIZATION KEY ────────────────────
+   *
+   * This handler wrote `contact_email` from the form, unconditionally. But
+   * `bookings.contact_email` is exactly what `/api/portal/email-auth/request`
+   * and `/api/portal/my-bookings` authorize on — a customer signs in with an
+   * address and is handed every booking carrying it. So a check-in token, which
+   * is a link in a text message and is deliberately NOT a login, could move a
+   * real booking onto an attacker's address: the attacker then has portal
+   * access, the receipts, the reminders and the magic links, and the real
+   * customer silently loses all four.
+   *
+   * The check-in form is for confirming details before arrival. The token was
+   * sent TO the address on the row, so the address is the one thing on this form
+   * that is already known-good, and nothing about arriving at a party requires
+   * changing it. A requested change is recorded for Adam instead of applied —
+   * rule 10: a guardrail that stops something must say that it stopped it.
+   *
+   * Name, phone and the address fields are still last-write-wins; repeat
+   * submissions are expected because the link is shared and texted twice.
+   */
+  const existingEmail = String(booking.contact_email ?? '').trim()
+  const emailChangeRequested = !!existingEmail && email !== existingEmail.toLowerCase()
+
+  /**
+   * Bounds. Every one of these was `String(body.x ?? '').trim()` with no length
+   * limit, straight into a `text` column and then into the SignWell agreement's
+   * `address` field and the party sheet. Nothing on a check-in form is long.
+   */
+  const bounded = (v: unknown, max: number): string | null => {
+    const s = String(v ?? '').trim()
+    if (!s) return null
+    return s.length > max ? s.slice(0, max) : s
+  }
+
   const updates: Record<string, unknown> = {
-    contact_name: name,
-    contact_email: email,
-    contact_phone: phone || null,
-    checkin_address_line1: String(body.addressLine1 ?? '').trim() || null,
-    checkin_address_line2: String(body.addressLine2 ?? '').trim() || null,
-    checkin_city: String(body.city ?? '').trim() || null,
-    checkin_state: String(body.state ?? '').trim() || null,
-    checkin_postal_code: String(body.postalCode ?? '').trim() || null,
+    contact_name: name.slice(0, MAX_NAME_CHARS),
+    contact_phone: bounded(phone, MAX_PHONE_CHARS),
+    checkin_address_line1: bounded(body.addressLine1, MAX_ADDRESS_CHARS),
+    checkin_address_line2: bounded(body.addressLine2, MAX_ADDRESS_CHARS),
+    checkin_city: bounded(body.city, MAX_CITY_CHARS),
+    checkin_state: bounded(body.state, MAX_STATE_CHARS),
+    checkin_postal_code: bounded(body.postalCode, MAX_POSTAL_CHARS),
     updated_at: new Date().toISOString(),
   }
+  // Only ever SET the address, never CHANGE it. A booking that has none yet
+  // (nothing in production, but the column is nullable) still gets one.
+  if (!existingEmail) updates.contact_email = email
 
   // Details are in, but the agreement may not be signed yet — that flips the
   // status to 'complete' from the SignWell webhook, not from here.
@@ -115,7 +158,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     return NextResponse.json({ error: 'Could not save your details' }, { status: 500 })
   }
 
-  await recordCheckinConsent({ name, email, phone, bookingId, bookingRef, marketingConsent, booking })
+  // Rule 10's other half: the refusal above is invisible unless something says
+  // it happened. This is the only record that somebody asked us to move a
+  // booking's contact address, and it is on the booking where Adam reads it.
+  if (emailChangeRequested) {
+    console.warn(`checkin: contact_email change REQUESTED and NOT applied for ${bookingRef}`)
+    const { error: noteErr } = await supabase.from('booking_modifications').insert({
+      booking_id: bookingId,
+      modified_by: 'customer',
+      change_summary:
+        'Check-in form asked to change the contact email — NOT applied automatically ' +
+        '(that address is what the portal sign-in authorizes on). Change it in admin if it is genuine.',
+      old_data: { contact_email: existingEmail },
+      new_data: { contact_email_requested: email },
+    })
+    if (noteErr) {
+      console.error('checkin: could not record the email-change request for', bookingRef, '—', noteErr.message)
+    }
+  }
+
+  // Consent is recorded against the address we actually hold for this person,
+  // not the one the form typed — otherwise a rejected address change becomes a
+  // brand-new `contacts` row claiming a marketing opt-in nobody gave.
+  await recordCheckinConsent({
+    name,
+    email: existingEmail ? existingEmail.toLowerCase() : email,
+    phone,
+    bookingId,
+    bookingRef,
+    marketingConsent,
+    booking,
+  })
 
   // Complete the check-in (and stop the pending texts) once there's nothing
   // left to collect: either the agreement was already signed on an earlier

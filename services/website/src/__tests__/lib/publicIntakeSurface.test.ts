@@ -84,17 +84,16 @@ const ALL_ROUTE_FILES = walkRoutes(API_ROOT).map(rel)
 const SURFACE_FILES = ALL_ROUTE_FILES.filter(f => !OWNED_ELSEWHERE.test(f.replace(/\/route\.ts$/, '')))
 
 /**
- * `/api/portal/*` is CLASSIFIED here but not governed by the behavioural rules.
+ * `DEFERRED_TO_NEXT_LINK` used to live here.
  *
- * Link 14 audited what those routes AUTHENTICATE; nobody has yet audited what
- * they WRITE, and it is the next link's scope. They are deliberately inside R0's
- * walker — so a new portal route still has to be accounted for, and the count
- * below fails if the surface changes size — and deliberately outside R1/R3/R5, so
- * this file does not claim to have checked something it has not. The alternative
- * is an exclusion nobody can see, which is how a rule ends up matching nothing
- * and passing.
+ * Link 20 put `/api/portal/*` inside R0's walker and deliberately outside
+ * R1/R3/R5, because link 14 had audited what those routes AUTHENTICATE and
+ * nobody had audited what they WRITE — an exclusion written down rather than an
+ * exclusion nobody can see. Link 21 did that audit
+ * (`docs/portal-write-surface-review.md` and `lib/portalWriteSurface.test.ts`),
+ * so the exemption is gone and every rule below now governs the portal routes
+ * like any other. Do not reintroduce it.
  */
-const DEFERRED_TO_NEXT_LINK = (route: string) => route.startsWith('portal/')
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const
 
@@ -269,15 +268,37 @@ describe('R1: every public write is rate-limited', () => {
    */
   const RATE_EXEMPT = new Set(['POST unsubscribe'])
 
+  /**
+   * Counted through `lib/rateLimit`, by either entry point.
+   *
+   * `guardRate` is the usual form — it returns the 429 to return. `/api/portal/auth`
+   * uses `checkRateLimit` directly because every other exit from that handler is a
+   * REDIRECT: a customer who double-clicks a magic link must land on the login page,
+   * not on a raw JSON body. The requirement is that the request is counted by the
+   * one limiter, not that one particular helper is called — asserting the helper
+   * would be a rule satisfied by spelling rather than by behaviour.
+   */
+  const COUNTED = /guardRate\s*\(|checkRateLimit\s*\(/
+
   it('is guarded, or exempt on the record', () => {
     const offenders = HANDLERS.filter(h => {
-      if (DEFERRED_TO_NEXT_LINK(h.route)) return false
       if (gateOf(h) !== 'public' && gateOf(h) !== 'portal-required') return false
       if (!isWriter(h)) return false
       if (RATE_EXEMPT.has(id(h))) return false
-      return !/guardRate\s*\(/.test(h.body)
+      return !COUNTED.test(h.body)
     })
     expect(offenders.map(id)).toEqual([])
+  })
+
+  it('the redirecting exception really does redirect, and really is counted', () => {
+    // The negative half of the widening above. If `/api/portal/auth` ever starts
+    // answering JSON, it should use `guardRate` like everything else — and if it
+    // stops calling the limiter at all, this says so rather than the widened
+    // regex quietly covering for it.
+    const h = HANDLERS.find(x => id(x) === 'GET portal/auth')!
+    expect(h.body).toMatch(/checkRateLimit\s*\(/)
+    expect(h.body).not.toMatch(/guardRate\s*\(/)
+    expect(h.body).toMatch(/NextResponse\.redirect|loginRedirect\s*\(/)
   })
 
   it('the exemption still names a handler that exists and still writes', () => {
@@ -545,7 +566,6 @@ describe('R5: every write on this surface reads its result', () => {
   it('no bare `await …insert/update/upsert/delete(...)` statement', () => {
     const offenders: string[] = []
     for (const h of HANDLERS) {
-      if (DEFERRED_TO_NEXT_LINK(h.route)) continue
       const re = /(^|[\n;{}])\s*await\s+[\w.]*supabase[\s\S]{0,400}?\.(insert|update|upsert|delete)\s*\(/g
       let m: RegExpExecArray | null
       while ((m = re.exec(h.body))) {
@@ -573,7 +593,7 @@ describe('R5: every write on this surface reads its result', () => {
     // thrown away. Six intake routes each held their own raw insert inside a
     // try/catch that discarded the SQLSTATE.
     const offenders = HANDLERS.filter(
-      h => !DEFERRED_TO_NEXT_LINK(h.route) && /from\('contact_interactions'\)\s*\r?\n?\s*\.?\s*insert/.test(h.body),
+      h => /from\('contact_interactions'\)\s*\r?\n?\s*\.?\s*insert/.test(h.body),
     )
     expect(offenders.map(id)).toEqual([])
   })
