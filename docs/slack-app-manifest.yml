@@ -1,0 +1,49 @@
+# Host Hampton — Slack app manifest (plan §21.4)
+#
+# Paste into https://api.slack.com/apps -> Create New App -> From a manifest.
+# See slack-app-setup.md for the rest of the handover.
+#
+# Scopes are the minimum the reviewer loop needs. Deliberately ABSENT:
+#   channels:history / groups:history — the app does not read the channel. It
+#     posts, and it receives the specific events subscribed below. A bot that
+#     can read every message in a workspace channel is a much larger blast
+#     radius than "post a draft and take a button press".
+#   chat:write.customize — no custom username/icon. The app posting as itself
+#     is what makes "who approved this" answerable.
+#   users:read.email — the Slack user_id maps to an admin_users row by an id we
+#     configure, not by harvesting email addresses.
+display_information:
+  name: Host Hampton
+  description: Lead drafts for review, one thread per lead.
+  background_color: "#1a2744"
+
+features:
+  bot_user:
+    display_name: Host Hampton
+    # The app posts and responds; it does not need to look online.
+    always_online: false
+
+oauth_config:
+  scopes:
+    bot:
+      # Post the draft, and post revisions into its thread.
+      - chat:write
+      # Post to #hh-leads without the app having to be re-invited after a
+      # channel is recreated. Does NOT grant reading the channel.
+      - chat:write.public
+      # Resolve a verified user_id to a display name for the ledger actor.
+      - users:read
+
+settings:
+  interactivity:
+    is_enabled: true
+    # Approve / Cancel / Test buttons and the edit modal.
+    request_url: https://www.hosthampton.com/api/slack/interactions
+  event_subscriptions:
+    # A reply in a lead's thread is a free-text revision.
+    request_url: https://www.hosthampton.com/api/slack/events
+    bot_events:
+      - message.channels
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
