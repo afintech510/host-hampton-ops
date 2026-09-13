@@ -194,8 +194,39 @@ function failureDetail(input: {
 }): string {
   return (
     `scheme=${input.scheme} ts=${input.timestamp} bodyLen=${input.rawBody.length} ` +
-    `bodyFp=${fp(input.rawBody)} theirSigFp=${fp(input.signature)} ourSigFp=${fp(input.expected)}`
+    `bodyFp=${fp(input.rawBody)} theirSigFp=${fp(input.signature)} ourSigFp=${fp(input.expected)} ` +
+    `${describeRefusedEnvelope(input.rawBody)}`
   )
+}
+
+/**
+ * The event TYPE of a body we just refused — and nothing else from it.
+ *
+ * Parsing an unverified body is safe precisely because of what is taken from
+ * it: two enum-shaped fields, each truncated, into a log line. Not the sender,
+ * not the text. The request is still refused.
+ *
+ * It earns its place because of what it found. Every inbound Quo message
+ * arrives at this route TWICE, from two Cloudflare edges seconds apart, with
+ * DIFFERENT bodies (604 bytes vs 518 for the same 44-character text) — and only
+ * one of the pair verifies against `QUO_WEBHOOK_SECRET`. `GET /v1/webhooks`
+ * lists exactly one subscription and its key fingerprint matches ours, so the
+ * other stream is signed with a key the API does not expose: a second
+ * subscription created in the Quo app rather than through the API. It is the
+ * one that delivered the 30 real customer messages of 2026-08-27..09-10, back
+ * when this route had no secret set and accepted everything. See needs-Adam.
+ */
+function describeRefusedEnvelope(rawBody: string): string {
+  try {
+    const parsed = JSON.parse(rawBody) as { type?: unknown; data?: { object?: { direction?: unknown } } }
+    const type = typeof parsed?.type === 'string' ? parsed.type.slice(0, 40) : 'unknown'
+    const dir = typeof parsed?.data?.object?.direction === 'string'
+      ? parsed.data.object.direction.slice(0, 16)
+      : 'unknown'
+    return `refusedType=${type} refusedDirection=${dir}`
+  } catch {
+    return 'refusedType=unparseable'
+  }
 }
 
 /**
