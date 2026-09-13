@@ -3,6 +3,7 @@ import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { sendCampaign, sendTransactionalEmail, cancelCampaign } from '@/lib/brevo'
 import { sendBulkSMS } from '@/lib/twilio'
+import { optedOutReason } from '@/lib/sequences/processor'
 
 export const dynamic = 'force-dynamic'
 
@@ -215,17 +216,41 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
       const { data: contacts, error: contactsErr } = await supabase
         .from('contacts')
-        .select('phone')
+        .select('phone, sms_opt_in, status')
         .eq(segmentFilter, true)
         .not('phone', 'is', null)
 
-      if (contactsErr || !contacts?.length) {
+      // Three outcomes, not two. "The contacts table could not be read" and
+      // "nobody has opted in" were collapsed into one 400 reading *"No
+      // SMS-opted-in contacts found"*, and the campaign was marked `failed` —
+      // a confident, wrong sentence about 944 real people, over a Supabase
+      // blip. Rule 12; and the claim must go back so the campaign is retryable.
+      if (contactsErr) {
+        await release()
+        console.error(`admin:campaigns SMS campaign ${id} — contacts read failed:`, contactsErr.message)
+        return NextResponse.json(
+          { error: `Could not read the contact list (${contactsErr.message}) — nothing was sent. Try again.` },
+          { status: 503 },
+        )
+      }
+
+      // `optedOutReason` is the ONE definition of "may we market to this
+      // person" and it reads `status = 'unsubscribed'` as well as the channel
+      // flag. This send read `sms_opt_in` alone — the fifth reader of that
+      // question disagreeing with the other four (link 17's known exception).
+      const consenting = (contacts || []).filter(c => !optedOutReason(c, 'sms'))
+      const suppressed = (contacts || []).length - consenting.length
+      if (suppressed > 0) {
+        console.warn(`admin:campaigns SMS campaign ${id} — ${suppressed} contact(s) suppressed by optedOutReason`)
+      }
+
+      if (!consenting.length) {
         await supabase.from('scheduled_campaigns').update({ status: 'failed' }).eq('id', id)
         return NextResponse.json({ error: 'No SMS-opted-in contacts found' }, { status: 400 })
       }
 
       const seen = new Set<string>()
-      const smsContacts = contacts
+      const smsContacts = consenting
         .filter(c => c.phone)
         .map(c => {
           const normalized = c.phone!.replace(/[^\d+]/g, '')

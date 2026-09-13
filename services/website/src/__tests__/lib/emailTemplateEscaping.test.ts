@@ -510,7 +510,15 @@ describe('the file list cannot go stale', () => {
   it('every file that sends mail is either audited or listed as template-free', () => {
     const unlisted: string[] = []
     for (const abs of walk(WEBSITE_SRC)) {
+      // Comments stripped first. A file that merely DESCRIBES a send — a header
+      // explaining why a helper exists, quoting the `resend.emails.send(…)` it
+      // replaced — is not a sender, and listing it as one turns the exemption
+      // list into noise. Link 16 lost two migration rules to a file's own prose
+      // and link 17 strips comments before every rule for the same reason; this
+      // walker had not caught up.
       const src = fs.readFileSync(abs, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:'"`])\/\/[^\n\r]*/g, '$1')
       if (!/resend\.emails\.send|new Resend\(/.test(src)) continue
       const rel = path.relative(WEBSITE_SRC, abs).split(path.sep).join('/')
       if (TEMPLATE_SOURCES.includes(rel)) continue

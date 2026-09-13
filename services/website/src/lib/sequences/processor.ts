@@ -726,11 +726,27 @@ async function processOne(
  * and an admin sets `contacts.status`. A field read by two writers and checked
  * in only one place is a check nobody is applying (hard-won rule 11).
  */
-export function optedOutReason(contact: {
-  email_opt_in?: boolean | null
-  status?: string | null
-}): string | null {
-  if (contact.email_opt_in === false) return 'contacts.email_opt_in is false'
+export function optedOutReason(
+  contact: {
+    email_opt_in?: boolean | null
+    sms_opt_in?: boolean | null
+    status?: string | null
+  },
+  channel: 'email' | 'sms' = 'email',
+): string | null {
+  // The per-channel consent flag.
+  if (channel === 'sms') {
+    if (contact.sms_opt_in === false) return 'contacts.sms_opt_in is false'
+  } else if (contact.email_opt_in === false) {
+    return 'contacts.email_opt_in is false'
+  }
+  // `status = 'unsubscribed'` is a statement about the PERSON, not a channel:
+  // somebody an admin marks unsubscribed in the Contacts tab has not asked to
+  // stop receiving email and keep receiving texts. The admin SMS campaign send
+  // was the fifth reader of "may we market to this person" and read
+  // `sms_opt_in` alone — link 17 measured it and left it named as a known
+  // exception because nothing carries that status today. It is closed here
+  // rather than left to a sixth reader.
   if (contact.status === 'unsubscribed') return "contacts.status is 'unsubscribed'"
   return null
 }

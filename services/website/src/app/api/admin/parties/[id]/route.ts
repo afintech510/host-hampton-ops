@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
-import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
+import { mintPortalLink } from '@/lib/portalLinkMint'
 import { formatMoney } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
@@ -189,10 +189,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Generate portal link & send approval email
-    const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
-    const { token: rawToken, hash, expiresAt } = generatePortalToken(booking.booking_ref, secret)
-    await supabase.from('portal_tokens').insert({ booking_id: id, token_hash: hash, expires_at: expiresAt.toISOString() })
-    const portalUrl = buildPortalUrl(booking.booking_ref, rawToken)
+    const minted = await mintPortalLink(supabase, id, booking.booking_ref)
+    if (!minted.ok) return NextResponse.json({ error: `Could not mint a portal link (${minted.reason}) — nothing was sent.` }, { status: 503 })
+    const portalUrl = minted.url
 
     const partyDateFormatted = booking.party_date
       ? new Date(booking.party_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -223,10 +222,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const message = body.message || 'Please review your booking details.'
 
     if (process.env.RESEND_API_KEY) {
-      const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
-      const { token: rawToken, hash, expiresAt } = generatePortalToken(booking.booking_ref, secret)
-      await supabase.from('portal_tokens').insert({ booking_id: id, token_hash: hash, expires_at: expiresAt.toISOString() })
-      const portalUrl = buildPortalUrl(booking.booking_ref, rawToken)
+      const minted = await mintPortalLink(supabase, id, booking.booking_ref)
+      if (!minted.ok) return NextResponse.json({ error: `Could not mint a portal link (${minted.reason}) — nothing was sent.` }, { status: 503 })
+      const portalUrl = minted.url
 
       const { Resend } = await import('resend')
       const resend = new Resend(process.env.RESEND_API_KEY)
@@ -389,17 +387,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Send customer receipt — only now, with a real payment row behind it.
     if (process.env.RESEND_API_KEY && booking.contact_email) {
-      const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
-      const { token: rawToken, hash, expiresAt } = generatePortalToken(booking.booking_ref, secret)
-      const { error: tokErr } = await supabase
-        .from('portal_tokens')
-        .insert({ booking_id: id, token_hash: hash, expires_at: expiresAt.toISOString() })
-      if (tokErr) {
-        // A link whose token row was refused is a dead link in a customer's
-        // inbox. Say so rather than mailing it.
-        console.error(`record_payment: portal token NOT stored for ${booking.booking_ref}:`, tokErr.message)
-      } else {
-        const portalUrl = buildPortalUrl(booking.booking_ref, rawToken)
+      // A link whose token row was refused is a dead link in a customer's
+      // inbox, so the mint decides whether the email goes at all.
+      const minted = await mintPortalLink(supabase, id, booking.booking_ref)
+      if (minted.ok) {
+        const portalUrl = minted.url
         const { Resend } = await import('resend')
         const resend = new Resend(process.env.RESEND_API_KEY)
         const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
@@ -432,10 +424,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (action === 'send_portal_link' || action === 'generate_portal_url') {
-    const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
-    const { token: rawToken, hash, expiresAt } = generatePortalToken(booking.booking_ref, secret)
-    await supabase.from('portal_tokens').insert({ booking_id: id, token_hash: hash, expires_at: expiresAt.toISOString() })
-    const portalUrl = buildPortalUrl(booking.booking_ref, rawToken)
+    const minted = await mintPortalLink(supabase, id, booking.booking_ref)
+    if (!minted.ok) return NextResponse.json({ error: `Could not mint a portal link (${minted.reason}) — nothing was sent.` }, { status: 503 })
+    const portalUrl = minted.url
 
     // send_portal_link delivers the link to the customer by BOTH email and SMS
     // (sharing this single token); generate_portal_url just mints the URL.
@@ -484,10 +475,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'No phone number on file for this booking' }, { status: 400 })
     }
 
-    const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
-    const { token: rawToken, hash, expiresAt } = generatePortalToken(booking.booking_ref, secret)
-    await supabase.from('portal_tokens').insert({ booking_id: id, token_hash: hash, expires_at: expiresAt.toISOString() })
-    const portalUrl = buildPortalUrl(booking.booking_ref, rawToken)
+    const minted = await mintPortalLink(supabase, id, booking.booking_ref)
+    if (!minted.ok) return NextResponse.json({ error: `Could not mint a portal link (${minted.reason}) — nothing was sent.` }, { status: 503 })
+    const portalUrl = minted.url
 
     const firstName = (booking.contact_name || '').trim().split(/\s+/)[0] || 'there'
     const smsBody = `Hi ${firstName}! Here's your Host Hampton party booking link to review details & pay your deposit: ${portalUrl} Reply STOP to opt out`
