@@ -540,6 +540,75 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
   each read `email_opt_in` alone until 2026-09-12. The export also emitted one
   line per ROW, so the eight duplicated people were uploaded to an ad platform
   twice under the same lowercased address.
+- **The books have ONE writer: `lib/financialLedger.ts`.** `financial_transactions`
+  is what the admin Financials tab reads, so it is what this business believes
+  about its own revenue. That writer used to be a `function` declared *inside*
+  `src/app/api/webhook/route.ts` — private to the Stripe webhook — which is why
+  **$2,256 of hand-entered customer money ($1,608 of it cash, Venmo and Zelle)
+  and $312.01 of refunds never appeared in the tab.** `source in ('cash','other')`
+  had **zero rows, ever**, though the CHECK has always permitted both and there
+  is no trigger: not "never ran", not "could not have run" — the code path did
+  not exist. Admin money goes through `lib/adminMoney.ts`
+  (`recordAdminPayment` / `recordAdminRefund`); a refund is a NEGATIVE row.
+  `adminSurface.test.ts` R4 lists every direct writer and fails if the list
+  grows. `docs/admin-surface-review.md` §1.
+- **Recording a hand-entered payment checks the books first.** Four of the twelve
+  live admin payments are a human re-typing a Stripe deposit the webhook already
+  recorded as `stripe-bk-<booking_ref>`. `findCoveringLedgerRow` declines with
+  `already-in-books` rather than double-counting — matched by REFERENCE and exact
+  cents, never by amount+date proximity, which on the live table matched two rows
+  for two of those four because $99 is the default deposit. A failed coverage
+  read does not record: that is the direction that double-counts.
+- **A refund CLAIMS before it spends.** Both ticket-refund routes did
+  `if (status === 'refunded') return 400` → `stripe.refunds.create(…)` →
+  **unchecked** UPDATE, so the guard depended on a write whose failure was
+  discarded and a second click issued a second real Stripe refund. `lib/adminRefund.ts`
+  takes the claim first (conditional, read back), calls Stripe only for the
+  winner, and releases the claim if Stripe declines. Capture the prior status
+  BEFORE the claim — reading it back afterwards restores the value the claim just
+  wrote. And a ticket's inventory is restored against **`ticket.event_id`**, never
+  an id from the URL: the event-scoped route used `params.id` and never checked
+  the two agreed, so refunding ticket B through event A's URL gave A a free seat.
+- **`adminActorId(req)` everywhere, and migration 047 is what permits it.**
+  It returns `admin:<email>` from a signed `hh_admin` cookie or the historical
+  **`'ADMIN'`** on the shared password. `booking_payments.recorded_by` and
+  `booking_modifications.modified_by` carried CHECKs that refused **both**
+  spellings — the capitalised one included — so nine sessions' worth of
+  hardcoded `'admin'` could not simply be replaced until 047 relaxed them. Read
+  the CHECK before writing an actor.
+- **`isAdminAuthorized(req)` is the only admin credential check.** Four routes
+  carried a hand-rolled copy — `token !== process.env.ADMIN_PASSWORD` — missing
+  the guard the real one spells out in a comment (`if (!expected) return false`),
+  so an unset `ADMIN_PASSWORD` makes `undefined !== undefined` false and **the
+  check passes**, on a route that mints Stripe Payment Links. The copies also
+  **reject the `hh_admin` session cookie**, so an admin signed in per-person
+  could not use those tools at all — measured in production: `cookie` went
+  401 → 200 on all four after the fix while an unauthenticated call stayed 401.
+- **A portal link is minted through `lib/portalLinkMint.ts` or it is not mailed.**
+  Seven copies wrote the `portal_tokens` row with the error discarded and sent the
+  email regardless; `parties/create` read the error, logged it *"non-fatal"* and
+  mailed the link anyway. A token row that was refused means the URL in that
+  email cannot work — non-fatal to the booking, fatal to the email.
+- **`recalcTotals` must never write a total it could not read.** It discarded both
+  read errors, so a failed `booking_line_items` read left the loop with nothing to
+  add and it **wrote `total_cents: 0` over a real customer's invoice**, then
+  answered `{ok:true}`. Link 16 found the read-becomes-a-balance shape on four
+  webhook branches; this is the same defect with an overwrite behind it. One
+  balance definition now lives in `lib/bookingBalance.ts`, shared with the webhook,
+  and `computeBalance` refuses to call an **unpriced** booking paid in full —
+  `(null || 0) - paid` clamps to 0, which marked every lead `paid_in_full` on its
+  first deposit.
+- **A rule that greps a file can be satisfied by a different occurrence than the
+  one that broke.** Link 16 named this family; it cost three of link 18's
+  twenty-six attack mutations. A migration with two `ADD CONSTRAINT` blocks, and a
+  function with two error guards, each kept their rule green when one of the pair
+  was deleted. Scope every source-reading rule to the specific site — slice the
+  block, brace-match the guard — and never ask "does this file contain X".
+- **An attack harness must refuse to run on a red tree.** Link 17's returned
+  false for every input and reported all 34 mutations "caught". Link 18's refused
+  once for real, because a repair to the tripwire had turned it red — which is
+  exactly what that refusal is for. Check the checker first, verify each mutation
+  landed on disk (CRLF *and* LF anchors), and restore on every path.
 - **Never `docker compose restart`** to deploy — always `up -d --build` (restart ignores `.env` and new images).
 - **`NEXT_PUBLIC_*` changes require a rebuild** (`--build`); they are baked at build time, not read at runtime.
 - **Stripe is LIVE** — deposits/payments are real money. **`SIGNWELL_TEST_MODE=false` is live e-sign.** Be careful testing payment/contract flows against production.
