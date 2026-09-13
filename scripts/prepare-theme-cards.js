@@ -11,6 +11,7 @@ const sharp = require('./node_modules/sharp');
 
 const CONVERTED_DIR = path.join(__dirname, '..', 'photos', 'converted');
 const OPTIMIZED_DIR = path.join(__dirname, '..', 'photos', 'optimized');
+const SOURCE_DIR = path.join(__dirname, '..', 'photos', 'source');
 const OUTPUT_DIR = path.join(__dirname, '..', 'services', 'website', 'public', 'images');
 
 // ── Existing graphics → theme card mapping ──
@@ -31,7 +32,8 @@ const graphics = [
 // ── Missing theme cards to generate ──
 const generated = [
   { photo: 'IMG_8107_optimized.jpg', name: 'theme-spa.webp',        text: ['SPA', 'PARTY'] },
-  { photo: 'IMG_8109_optimized.jpg', name: 'theme-sleepunder.webp', text: ['SLEEP', 'UNDER', 'PARTY'] },
+  // Real sleep-under setup (styled tents). Top 14% trimmed to crop out the ceiling.
+  { photo: 'sleep-under-party.jpg', dir: SOURCE_DIR, trimTopPct: 0.14, name: 'theme-sleepunder.webp', text: ['SLEEP', 'UNDER', 'PARTY'] },
 ];
 
 function makeTextOverlaySvg(width, height, lines) {
@@ -75,8 +77,8 @@ async function convertGraphic({ src, name }) {
   console.log(`  ✅ ${name} — ${meta.width}x${meta.height}, ${(stat.size / 1024).toFixed(0)} KB`);
 }
 
-async function generateCard({ photo, name, text }) {
-  const inputPath = path.join(OPTIMIZED_DIR, photo);
+async function generateCard({ photo, name, text, dir = OPTIMIZED_DIR, trimTopPct = 0 }) {
+  const inputPath = path.join(dir, photo);
   const outputPath = path.join(OUTPUT_DIR, name);
 
   if (!fs.existsSync(inputPath)) {
@@ -84,8 +86,14 @@ async function generateCard({ photo, name, text }) {
     return;
   }
 
-  // Resize photo to target, then overlay text
-  const resized = await sharp(inputPath).resize(900).toBuffer();
+  // Optionally trim off the top of the frame, resize to target, then overlay text
+  let pipeline = sharp(inputPath);
+  if (trimTopPct > 0) {
+    const src = await sharp(inputPath).metadata();
+    const top = Math.round(src.height * trimTopPct);
+    pipeline = pipeline.extract({ left: 0, top, width: src.width, height: src.height - top });
+  }
+  const resized = await pipeline.resize(900).toBuffer();
   const meta = await sharp(resized).metadata();
 
   const svg = makeTextOverlaySvg(meta.width, meta.height, text);
