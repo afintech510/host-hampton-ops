@@ -344,7 +344,16 @@ export async function slackThreadFor(
     .select('slack_channel, slack_ts')
     .eq('id', draftId)
     .maybeSingle()
-  if (error || !data) return null
+  // Rule 12: "this lead has no thread yet" and "I could not ask" both end up
+  // returning null here, because the caller's only sensible move either way is
+  // to post a new message. But they are not the same event, and collapsing them
+  // silently is how a lead's thread quietly splits in two — so the failure is
+  // named in the log even though the return value cannot distinguish it.
+  if (error) {
+    console.error(`[notify-reviewers] slack thread lookup failed for ${draftId} (non-fatal):`, error.message)
+    return null
+  }
+  if (!data) return null
   const row = data as { slack_channel: string | null; slack_ts: string | null }
   if (!row.slack_channel || !row.slack_ts) return null
   return { channel: row.slack_channel, ts: row.slack_ts }

@@ -44,12 +44,29 @@ settings:
   interactivity:
     is_enabled: true
     # Approve / Cancel / Test buttons and the edit modal.
+    #
+    # Safe to set here: Slack does NOT send a verification handshake to an
+    # interactivity URL. It is only called when somebody presses a button.
     request_url: https://www.hosthampton.com/api/slack/interactions
-  event_subscriptions:
-    # A reply in a lead's thread is a free-text revision.
-    request_url: https://www.hosthampton.com/api/slack/events
-    bot_events:
-      - message.channels
+  #
+  # event_subscriptions IS DELIBERATELY ABSENT. Add it in step 6, not here.
+  #
+  # Slack verifies an events URL the moment the manifest is saved, by POSTing a
+  # SIGNED `url_verification` challenge. `/api/slack/events` gives that
+  # handshake no exemption from the fail-closed signature check — an unset
+  # SLACK_SIGNING_SECRET is a rejection, not a skip — so at app-creation time,
+  # before the secret is on the box, it answers 401 and Slack marks the URL
+  # unverified. That reads exactly like a broken endpoint and it is not one.
+  #
+  # The previous version of this file included the block and documented the
+  # trap in prose. Prose loses: leaving it out means the wrong order cannot be
+  # taken. Paste this, get the signing secret deployed, THEN add:
+  #
+  #   Event Subscriptions -> Enable Events
+  #   Request URL: https://www.hosthampton.com/api/slack/events
+  #   Subscribe to bot events: message.channels
+  #
+  # It goes green first time, because by then the secret is live.
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false

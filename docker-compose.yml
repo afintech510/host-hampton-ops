@@ -167,6 +167,24 @@ services:
       # empty = no owner SMS.
       - OWNER_NOTIFY_EMAIL=${OWNER_NOTIFY_EMAIL:-hosthampton295@gmail.com}
       - REVIEWER_PHONES=${REVIEWER_PHONES:-}
+      # Slack reviewer channel (plan §25, lib/slack/*, /api/slack/*).
+      #
+      # REVIEWER_CHANNEL picks where a draft is ANNOUNCED: sms | slack | both.
+      # It defaults to sms and an unrecognised value also reads as sms, so a
+      # typo cannot switch off the channel that is known to work. With `slack`,
+      # the SMS still sends on every Slack failure path — it just carries a
+      # one-segment link to the thread instead of the whole draft.
+      #
+      # All four SLACK_* values are REQUIRED before REVIEWER_CHANNEL=slack is
+      # useful, and every one of them fails CLOSED when unset:
+      #   SIGNING_SECRET unset   -> /api/slack/* answer 401 'unconfigured'
+      #   BOT_TOKEN/CHANNEL unset-> notifyReviewers takes the SMS path directly
+      #   REVIEWER_USER_IDS empty-> nobody may approve anything
+      - REVIEWER_CHANNEL=${REVIEWER_CHANNEL:-sms}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET:-}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - SLACK_LEADS_CHANNEL=${SLACK_LEADS_CHANNEL:-}
+      - SLACK_REVIEWER_USER_IDS=${SLACK_REVIEWER_USER_IDS:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       # Booking agent (lib/agent/*, /api/cron/agent-dispatch). AGENT_ENABLED is
       # the kill switch: with it off the dispatcher claims nothing, spends

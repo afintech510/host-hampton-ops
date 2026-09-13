@@ -24,18 +24,31 @@ on the box, the handshake fails with a 401 and Slack marks the URL unverified.
 Weakening the check to make setup smoother would trade a five-minute ordering
 constraint for a permanently open door, so it is not going to be weakened.
 
+**The manifest no longer contains the events URL at all**, which is what makes
+the wrong order impossible rather than merely documented. (It used to contain
+it, with this warning in prose next to it. Prose loses.) The interactivity URL
+*is* in the manifest and is safe there: Slack never handshakes an interactivity
+URL, it only calls it when somebody presses a button.
+
 The practical sequence:
 
-1. Create the app (§1 below) but **do not enable event subscriptions yet** —
-   if you paste the manifest, Slack will try to verify immediately, so expect
-   that one to fail and re-verify it in §6.
-2. Copy the Signing Secret into `/opt/hosthampton/.env`.
-3. Deploy (`ssh hampton-vps`, `cd /opt/hosthampton && docker compose up -d website`).
-4. Back in the Slack app → **Event Subscriptions** → **Retry** next to the
-   request URL. It goes green.
+1. Create the app from the manifest (§1). Nothing is verified at this point, so
+   nothing can fail.
+2. Install it (§2), create `#hh-leads` and invite the app (§3).
+3. Send Adam's four values to the session working on this. **A session puts the
+   secret on the box and deploys it** — you do not run commands for this, and
+   the secret is never printed anywhere, only fingerprinted with SHA-256 on
+   both sides.
+4. **Only once that session confirms the secret is live in the container**, go
+   to **Event Subscriptions** → **Enable Events**, paste
+   `https://www.hosthampton.com/api/slack/events`, and subscribe the bot to
+   `message.channels`. It verifies green first time.
 
-A local `.env.local` does not reach the container. The value has to be in
-`/opt/hosthampton/.env`.
+A local `.env.local` does not reach the container, and an env var added to
+`docker-compose.yml` does not reach a *running* one. The value has to be in
+`/opt/hosthampton/.env` **and** the container recreated — settled with
+`docker exec hampton_website printenv | grep -o 'SLACK_[A-Z_]*'`, which prints
+names only.
 
 ## 1. Create the app from the manifest
 
@@ -44,9 +57,9 @@ A local `.env.local` does not reach the container. The value has to be in
 3. Paste `slack-app-manifest.yml` (next to this file)
 4. Create
 
-The manifest sets the name, scopes, and both request URLs, so there is nothing
-to configure by hand afterwards — except re-verifying the events URL once the
-secret is deployed, per §0.
+The manifest sets the name, the scopes and the **interactivity** URL. The
+events URL is added by hand in §6, after the secret is deployed — see §0 for
+why that is not an oversight.
 
 ## 2. Install it
 
@@ -82,8 +95,17 @@ has one.
 It is the fix for the thing §11.1 names as a blocker: today an admin-UI approval
 writes the anonymous actor `'ADMIN'`, so with two people working leads the
 ledger cannot say **who** approved a message to a customer. A verified Slack
-`user_id` maps to an `admin_users` row (migration 048 added
-`admin_users.slack_user_id`), and the approval gets a name.
+`user_id` maps to an `admin_users` row, and the approval gets a name.
+
+`admin_users.slack_user_id` is live, together with
+`inquiry_drafts.slack_channel` / `.slack_ts` and the indexes
+`idx_admin_users_slack_user_id` and `idx_inquiry_drafts_slack_ts`. (An earlier
+version of this line credited **migration 048**; the Slack migration is **049**,
+confirmed against `pg_indexes` and `pg_constraint` rather than against a
+migration file. 049 also added `'slack'` to `ingested_messages_source_check` —
+without it every insert would have been refused with 23514 and
+`recordInboundEvent` swallows that, so a reviewer would have read "Sending
+HH-2026-0042" over nothing at all.)
 
 ## 5. Env block
 
@@ -95,10 +117,16 @@ SLACK_REVIEWER_USER_IDS=U...
 REVIEWER_CHANNEL=sms
 ```
 
-**Leave `REVIEWER_CHANNEL=sms` until the handlers are built.** Flip it to
-`slack` when §25.8 steps 3–5 are green — the cutover is on completion, not after
-a soak week (Adam, 2026-09-12), because §25.5's per-send fallback already proves
-continuously what a soak would have proved once.
+The handlers ARE built, tested and deployed (§25.11, 2026-09-13). **Leave
+`REVIEWER_CHANNEL=sms` until the loop has been driven end to end in production**
+— the handshake, a real Block Kit post, a button press, a thread reply, and a
+throwaway draft actually reaching `approved` through the dispatcher. Flipping it
+changes where a real human is told about a real customer, so it is Adam's
+explicit go-ahead, not a session's judgement call.
+
+`both` exists as an operational lever if you want full redundancy for a while:
+the complete SMS *and* the Slack post. It is not a schedule — §25.5's per-send
+fallback already proves continuously what a soak week would have proved once.
 
 ---
 

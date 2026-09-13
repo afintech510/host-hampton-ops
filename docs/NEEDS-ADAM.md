@@ -26,14 +26,39 @@ never been created. The code is deployed and inert (`/api/slack/*` answers 401
 | `#hh-leads` channel ID (`C…`) | channel → View channel details → bottom |
 | your Slack member ID (`U…`) | your profile → ⋮ → Copy member ID |
 
-**⚠ Ordering trap, and it will look like our bug if you get it wrong:** the
-signing secret must be on the box **and deployed** *before* you enable Event
-Subscriptions. Slack signs the `url_verification` handshake and it gets no
-exemption from fail-closed. Enable events early and the handshake 401s.
+**The ordering trap is GONE — you can no longer get it wrong.** The manifest no
+longer contains the events URL at all, so nothing is verified when you paste it.
+(It used to, with a warning in prose next to it. Prose loses.) The order is now:
 
-Full steps: `docs/slack-app-setup.md` §0. Manifest: `docs/slack-app-manifest.yml`.
-**Why it is worth doing: it replaces the per-message SMS cost of the reviewer
-loop with nothing.** See § B7 — it also fixes the single-handset problem.
+1. Create the app from `docs/slack-app-manifest.yml`, install it, create
+   `#hh-leads`, `/invite` the app.
+2. Send me the four values. **I put the secret on the box and deploy it** — you
+   never run a command, and the secret is never printed anywhere, only
+   fingerprinted with SHA-256 on both sides.
+3. **Once I confirm the secret is live in the container**, you enable Event
+   Subscriptions by hand: URL `https://www.hosthampton.com/api/slack/events`,
+   bot event `message.channels`. It verifies green first time.
+
+Why step 3 waits: Slack signs the `url_verification` handshake, and
+`/api/slack/events` gives it no exemption from fail-closed. Enabled early it
+401s and reads exactly like a broken endpoint of ours.
+
+Full steps: `docs/slack-app-setup.md` §0. Review: `docs/slack-reviewer-review.md`.
+
+**What it is actually worth, measured rather than asserted (2026-09-13).** The
+reviewer loop is **6 SMS segments per lead today and 1 on Slack** — ~80 segments
+a month at your lead volume, so on the order of **a dollar a month**, doubling
+if Allie's number joins. That is real but small, and it is not the reason:
+
+* revising a draft stops costing anything at all (every one of your 24 drafts
+  has at least one revision; 16 of 24 were also nudged, a segment each);
+* **the ledger can finally say WHICH of you approved a message to a customer**
+  instead of an anonymous `ADMIN` — that is the capability win;
+* it dissolves § B7: the reviewer loop stops being a single handset.
+
+**Nothing flips without your explicit go-ahead** — `REVIEWER_CHANNEL=slack`
+changes where a real human is told about a real customer, and only after the
+whole loop has been driven end to end in production on a throwaway draft.
 
 ### A2. Delete the second Quo webhook *(52)*
 Every inbound SMS is delivered to us **twice** and one copy is refused, because

@@ -376,6 +376,29 @@ export async function GET(req: NextRequest) {
     // customer message. Same shape as the Quo branch above.
     if (event.source === 'slack') {
       const action = await handleSlackAction({ supabase, event })
+
+      // "Could not decide" is not "decided no" (rule 3). A transient Supabase
+      // failure while looking up the draft used to be finalised as 'ignored',
+      // which threw the reviewer's button press away — a pressed Approve that
+      // never sent and never said it had not. Re-queue it on the same bounded
+      // counter the drafting path uses, so it retries and then gives up loudly.
+      if (action.retryable) {
+        const attempts = attemptsOf(event) + 1
+        if (attempts < MAX_DRAFT_ATTEMPTS) {
+          await requeueEvent(
+            supabase,
+            event,
+            `slack action: ${action.error ?? action.outcome} (attempt ${attempts}/${MAX_DRAFT_ATTEMPTS})`,
+            attempts,
+          )
+          results.push({ kind: 'event', id: event.id, outcome: 'requeued_slack_retry', error: action.error })
+          continue
+        }
+        // Out of attempts. Fall through and finalise, so it stops being retried
+        // and starts being visible in Admin → Inbox with the reason attached.
+        console.error(`cron:agent-dispatch slack event ${event.id} failed ${attempts} times — giving up`)
+      }
+
       await finishEvent(supabase, event.id, action.handled ? 'handled' : 'ignored', {
         draftId: action.draftId ?? null,
         classification: `reviewer_${action.intent ?? 'action'}`,

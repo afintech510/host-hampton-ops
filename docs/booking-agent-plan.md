@@ -3320,7 +3320,16 @@ still Adam's and Allie's to judge.
 
 ---
 
-## 25. Phase 7 — Slack as the reviewer surface (Adam, 2026-09-12) — SPEC, NOT BUILT
+## 25. Phase 7 — Slack as the reviewer surface (Adam, 2026-09-12) — BUILT, DEPLOYED, NOT CUT OVER
+
+> **Status, 2026-09-13 (link 26).** Everything in this section is built, tested,
+> attacked and deployed. It is **inert by configuration, not by omission**:
+> `REVIEWER_CHANNEL` is `sms` and `/opt/hosthampton/.env` has zero `SLACK_*`
+> values, so both routes answer 401 `unconfigured` — which is what fail-closed
+> looks like, not a fault. The remaining work is **four values only Adam can
+> get** (needs-Adam A1) and the flip, which is his call because it changes where
+> a real human is told about a real customer. See §25.11 (as built) and §25.12
+> (read, attacked, corrected), and `docs/slack-reviewer-review.md`.
 
 **§12 is hereby un-deferred.** Its reasoning stands unchanged and is not
 re-argued here; what changed is that Quo now bills $0.01 per SMS *segment*, and
@@ -3718,3 +3727,142 @@ Do the browser steps in `docs/slack-app-setup.md`, put the four values in
 `SLACK_SIGNING_SECRET` must be on the box and deployed *before* event
 subscriptions are enabled, because Slack signs the `url_verification` handshake
 and it gets no exemption from the fail-closed check.
+
+### 25.12 Read, attacked and corrected (link 26, 2026-09-13)
+
+`docs/slack-reviewer-review.md`. Worktree `molten-finch`. **No migration — 049's
+artefacts were verified live against `pg_constraint` / `pg_indexes` rather than
+against the migration file, and 050 is still free.** Nothing was cut over:
+`REVIEWER_CHANNEL` is still `sms` and the four values are still needs-Adam A1.
+
+**Measured first.** Migration 049 is fully applied (`'slack'` in
+`ingested_messages_source_check`, both indexes, all three columns). 24 drafts,
+16 `sent_for_review`. Both routes answer 401 `unconfigured` in production, which
+is correct. **And the dispatcher is healthy** — zero pending events, `handled_at`
+thirty seconds behind `created_at` — which had to be checked, because the whole
+design routes a button press through it and this project has several silently
+stopped crons.
+
+**THE HEADLINE: a transient Supabase failure told the reviewer their draft was
+deleted, and ate the button press.** `handleSlackAction` read the draft with
+`const { data } = …` and no `error`, so "the draft is gone" and "I could not ask
+the database" arrived identically — and the reviewer was told *"I cannot find
+that draft any more. Nothing was sent."* about a draft still sitting in the
+queue. Worse, the dispatcher finalises a Slack event whether or not it was
+handled, so **the press was consumed and never retried**: rules 3, 10, 12 and 19
+in one expression. Now the error is destructured, a transient failure returns
+`retryable: true` and says nothing, and the dispatcher re-queues through
+`requeueEvent` on the **same `agent_attempts` counter the drafting path uses** —
+not a second one.
+
+**SECOND: approving a draft ERASED it from Slack.** `settle()` called
+`settledBlocks({ original: [], … })`, and that function keeps everything that is
+not an `actions` block — so an empty array replaced the whole lead (customer,
+date, guests, the drafted email) with one line reading *"Sent to Sarah — Adam"*.
+The channel is meant to be the record of what went to a customer; approving was
+what deleted it. Sharpest detail: `slackBlocks.test.ts:185` passes a **real**
+`original` and asserts the buttons are stripped — a green test over a path the
+single production call site did not take. The interaction payload's
+`message.blocks` are now carried through `parsed.slack_message_blocks`, bounded
+at 24 KB and **dropped rather than truncated** (half a block array makes
+`chat.update` fail with `invalid_blocks`, which the fail-soft client reports as
+"Slack was down").
+
+**THIRD: the ack said `Sending HH-2026-0042` before anything had been sent** —
+verbatim the sentence this project keeps paying for. At that instant the route
+has written one row; the dispatcher acts minutes later. Now: *"Queued … I'll
+confirm in this thread when it's actually done — if nothing appears within a few
+minutes, it did NOT happen."* Rule 10 in both directions, including **saying
+what silence means**. Same correction to the events route's "Re-drafting…".
+
+**FOURTH, and it reaches past this surface: the tripwire's own instrument was
+blind.** The inherited `decomment` strips `/* */` **before** `//`, which corrupts
+any file whose line comment contains an open-block marker — and
+`interactions/route.ts` opens with `// lib/slack/*, and NOTHING from …`. The
+`/*` inside `lib/slack/*` opened a block match that ran to the next `*/` and
+**blanked three `import` statements**, so the module-graph rule was walking a
+route it believed imported nothing, and *"this route cannot reach sendApproved"*
+passed because the walker could no longer see. Fixed to a single left-to-right
+alternation. **The same two-pass helper was in six other surface tripwires**
+(`adminSurface`, `cronSurface`, `inboundSurface`, `planMoneySurface`,
+`portalWriteSurface`, `publicIntakeSurface`) — all corrected, all still green.
+Only three files under `src/` trip it and all three are on this surface, but one
+is `agent-dispatch/route.ts`, which `cronSurface` reads.
+
+**WHAT HELD, and is now pinned.** The signature scheme is **character-for-
+character Slack's own**, checked against `docs.slack.dev` and not against our own
+harness: `x-slack-signature` / `x-slack-request-timestamp`, base string
+`v0:{timestamp}:{rawBody}`, HMAC-SHA256 hex with the `v0=` prefix, and a
+300-second window checked with `Math.abs` in **both** directions — Slack's own
+example uses `abs()`. That is the exact opposite of link 24's finding. Fail-closed
+is complete and the `url_verification` handshake gets no exemption (which is why
+the setup ORDER exists). The client reads `ok` out of the **body** at every Web
+API call site. And the fallback was already right: **every branch of
+`notifyReviewers` reaches `notifyOwnerSms`**, so Slack having a bad afternoon
+costs the formatting and never the lead.
+
+**THE COST, measured, because that is why Adam asked.** The brief's premise did
+not hold: there is **no `sms_send` action in `marketing_ledger`** — it has only
+`note`/`llm_call`/`transition`/`send` — and the only trace of reviewer SMS cost
+anywhere is a `console.log` in `ownerNotify.ts` that lives in `docker logs`, a
+window that a recreate erases and which was empty. **The cost this phase exists
+to remove is recorded nowhere durable**, so there will be no before-and-after to
+point at. Measured instead with the real `reviewerSmsBody` / `reviewerPingBody` /
+`smsSegmentInfo` against the 16 open drafts, after **verifying the counter
+itself** against GSM-7 boundaries including the two-unit extended characters
+(link 19's 1-for-3 bug is not present): the five-message loop is **6 segments per
+lead today and 1 on Slack** — ~80 segments/month, on the order of **$1/month**,
+doubling if Allie's number joins. Real, small, and **not the reason**: revising
+stops costing anything (all 24 drafts carry a revision, 16 of 24 were nudged),
+and the ledger can finally name **which human** approved a customer message
+instead of the anonymous `'ADMIN'` (§11.1). That is the capability win.
+
+**Tripwire:** `slackSurface.test.ts` went from **4 rule groups to 17, 86
+assertions**, now comment-stripped, CRLF-tolerant, sliced to the next declaration
+and counting what it examined. `scripts/attack-slack-tripwire.js` (untracked)
+applies **82 mutations** and **refuses to run unless two controls pass first** —
+green on a clean tree *and* red on a deliberate break — because a previous link's
+harness had a detector that could not run and reported 34/34 caught over nothing.
+**First run: 67 applied, 58 caught, 10 through.** Fifteen did not apply, mostly
+`\n` patterns matching nothing in a CRLF repo — link 23's trap, surfaced because
+a non-applying mutation is reported as NOT-APPLIED and never as a pass. **Seven
+were real holes in my own rules**: a counted check that matched the other call
+site; `if (lookupError)` surviving a `const lookupError = null`; one
+`actor.label` matching while another settle site said `"someone"`; a size limiter
+that existed and was **never called**; one `warnings.push` matching while the
+Slack-post failure specifically stopped being recorded; `SECTION_TEXT_MAX`
+asserted by NAME so a mutation raised it to 100000; and `MAX_DRAFT_ATTEMPTS`
+still appearing **in the error string that reads "(attempt 2/3)"**, so a
+name-presence rule passed over an `if (true)` — an unbounded retry loop described
+by a message claiming it was bounded. **Second run: 82 applied, 82 caught, 0
+through.** Also: my own no-skip rule spelled two banned tokens literally, making
+this file its own offender under `publicIntakeSurface`'s R10 walker.
+
+**Suite 3048 → 3117 green**, `tsc` 0 app-code errors, `next build` clean with
+`/book` still `○ Static` 7.15 kB and `/plan/[ref]/summary` still `ƒ`.
+
+**What could NOT be verified, and it is the important part: nothing has ever
+talked to real Slack.** No app exists. Every claim about `chat.postMessage`,
+`chat.getPermalink`, the modal, the Block Kit rendering and the signature over a
+real Slack delivery is checked against Slack's published spec and our own tests,
+**not against a request Slack actually sent** — and link 24's whole lesson is
+that those are different things. The end-to-end drive (handshake, real post,
+button press, thread reply, a throwaway draft reaching `approved`) is blocked on
+the four values, as is setting `admin_users.slack_user_id` so the ledger records
+a name rather than `SLACK:U…`.
+
+**The ordering trap is now structural rather than documented:**
+`docs/slack-app-manifest.yml` no longer contains the events URL at all, so
+pasting it verifies nothing and cannot fail. Adam creates the app, installs it,
+makes `#hh-leads` and invites the bot; a session puts the secret on the box,
+deploys, and confirms it live by SHA-256 fingerprint; **only then** is Event
+Subscriptions enabled by hand. `docs/slack-app-setup.md` was corrected against
+what actually happened — it credited **migration 048** for
+`admin_users.slack_user_id` (it is **049**) and still said the handlers were
+unbuilt.
+
+**Left for Adam:** needs-Adam **A1** (the four values, unchanged) and the flip
+itself, which stays his call because `REVIEWER_CHANNEL=slack` changes where a
+real human is told about a real customer. Plus a new instance of the standing
+systemic risk (item 48): **the reviewer SMS cost is recorded in no table**.
+

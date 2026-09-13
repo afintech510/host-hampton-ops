@@ -38,9 +38,16 @@ const WEBSITE_SRC = path.join(process.cwd(), 'src')
 const ADMIN_ROOT = path.join(WEBSITE_SRC, 'app', 'api', 'admin')
 
 function decomment(s: string): string {
-  return s
-    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n\r]/g, ' '))
-    .replace(/(^|[^:'"`\\])\/\/[^\n\r]*/g, (m, p) => p + ' '.repeat(m.length - p.length))
+  // ONE left-to-right pass. Two passes with block comments FIRST corrupts any
+  // file whose LINE comment contains an open-block marker: three files under
+  // src/ do (the two /api/slack routes and agent-dispatch, all saying
+  // "lib/slack/*"), and there the block match ran on to the next close marker
+  // and blanked real code — including import statements a module-graph rule
+  // then could not see. Leftmost-match makes the line-comment branch win.
+  return s.replace(/\/\*[\s\S]*?\*\/|(^|[^:'"`\\])\/\/[^\n\r]*/g, (m, p) => {
+    const keep = p ?? ''
+    return keep + m.slice(keep.length).replace(/[^\n\r]/g, ' ')
+  })
 }
 
 function walkRoutes(dir: string): string[] {

@@ -184,12 +184,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, queued: false })
   }
 
-  // A reaction rather than a message: the reviewer knows it landed, and the
-  // thread does not fill with "got it" between the request and the re-draft.
+  // What is true at this instant is that the note is QUEUED — the re-draft
+  // itself happens in the dispatcher, minutes later. Saying "Re-drafting" would
+  // describe work that has not started, and if the dispatcher is not running
+  // that sentence is the last word the reviewer gets. Same rule as the
+  // interactions route's ack.
   await postMessage({
     channel,
     threadTs,
-    text: `Re-drafting ${draft.review_code} with that. Nothing has gone to the customer.`,
+    text:
+      `Got it — queued a re-draft of ${draft.review_code}. Nothing has gone to the customer. ` +
+      `The new version appears in this thread; if it does not turn up in a few minutes, it did not run.`,
   })
 
   return NextResponse.json({ ok: true, queued: true, draftId: draft.id })

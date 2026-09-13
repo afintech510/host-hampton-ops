@@ -148,7 +148,7 @@ async function handleBlockAction(
     return ack()
   }
 
-  const message = (payload.message ?? {}) as { ts?: string; thread_ts?: string }
+  const message = (payload.message ?? {}) as { ts?: string; thread_ts?: string; blocks?: unknown[] }
   const container = (payload.container ?? {}) as { channel_id?: string; message_ts?: string }
   const channelObj = (payload.channel ?? {}) as { id?: string }
   const channel = channelObj.id || container.channel_id || null
@@ -198,6 +198,13 @@ async function handleBlockAction(
     channel,
     threadTs: message.thread_ts || messageTs,
     messageTs,
+    // The blocks the reviewer was looking at when they pressed. Carried so that
+    // settling the message can strike the BUTTONS off and keep the draft: the
+    // settle path used to rebuild from an empty array, which replaced the whole
+    // lead — customer, date, guests, the drafted email — with one line of
+    // "Sent — Adam". Slack is meant to be the record of what went out; it cannot
+    // be that if approving is what deletes it.
+    messageBlocks: Array.isArray(message.blocks) ? message.blocks : null,
     responseUrl: who.responseUrl,
     // UNIQUE, and it is what makes a Slack retry safe: the same press produces
     // the same id, the insert is refused with 23505, and nothing runs twice.
@@ -216,10 +223,27 @@ async function handleBlockAction(
   return ack()
 }
 
+/**
+ * What the reviewer is told the instant they press — and this route knows
+ * exactly one thing at that moment: the press is IN THE QUEUE. It has not been
+ * acted on. The dispatcher does that, on its own schedule, minutes later.
+ *
+ * So none of these say "Sending". They said "Sending ${code} — I'll confirm in
+ * this thread when it's out", which is a statement about a transition that has
+ * not happened yet and might not: if the dispatch cron stops — and in this
+ * system a cron has silently stopped for a month, two have 401ed daily, and a
+ * webhook refused every message for two and a half days — then that sentence is
+ * the last thing the reviewer ever hears, and it says the customer was emailed.
+ *
+ * Rule 10 in both directions: claim only what is true NOW, and say what the
+ * ABSENCE of the follow-up means, because silence is otherwise indistinguishable
+ * from success. The confirmation in the thread is the real receipt.
+ */
 function ackText(intent: string, code: string): string {
-  if (intent === 'approve') return `Sending ${code} — I'll confirm in this thread when it's out.`
-  if (intent === 'cancel') return `Dropping ${code}. Nothing goes to the customer.`
-  return `Sending you a test copy of ${code}. The customer still gets nothing.`
+  const receipt = " I'll confirm in this thread when it's actually done — if nothing appears within a few minutes, it did NOT happen."
+  if (intent === 'approve') return `Queued ${code} to send.${receipt}`
+  if (intent === 'cancel') return `Queued ${code} to be dropped. Nothing goes to the customer.${receipt}`
+  return `Queued a test copy of ${code} to you. The customer still gets nothing.${receipt}`
 }
 
 /* ── The edit modal's submission ────────────────────────────────────────── */
@@ -297,6 +321,7 @@ async function enqueue(opts: {
   channel: string | null
   threadTs: string | null
   messageTs: string | null
+  messageBlocks?: unknown[] | null
   responseUrl: string
   externalId: string
   body: string
@@ -320,8 +345,34 @@ async function enqueue(opts: {
       slack_channel: opts.channel,
       slack_thread_ts: opts.threadTs,
       slack_message_ts: opts.messageTs,
+      // Bounded: `parsed` is a jsonb column on a table that already holds every
+      // inbound message, and an unbounded copy of a Slack message on every press
+      // is how a row size becomes an outage. A draft's blocks are ~5 KB; a
+      // payload past the cap is dropped rather than truncated, because HALF a
+      // block array would make chat.update fail with invalid_blocks — which the
+      // fail-soft client reports as "Slack was down".
+      slack_message_blocks: blocksWithinLimit(opts.messageBlocks),
       response_url: opts.responseUrl || null,
     },
   })
   return !!id
+}
+
+/** Roughly 24 KB of JSON — comfortably above a real draft, far below a problem. */
+const MAX_STORED_BLOCKS_BYTES = 24 * 1024
+
+function blocksWithinLimit(blocks: unknown[] | null | undefined): unknown[] | null {
+  if (!Array.isArray(blocks) || blocks.length === 0) return null
+  try {
+    const json = JSON.stringify(blocks)
+    if (json.length > MAX_STORED_BLOCKS_BYTES) {
+      console.warn(`[slack:interactions] message blocks are ${json.length} bytes — not storing them`)
+      return null
+    }
+    return blocks
+  } catch {
+    // Circular or otherwise unserialisable. Not fatal: the settle path falls
+    // back to the same one-line message it produced before.
+    return null
+  }
 }

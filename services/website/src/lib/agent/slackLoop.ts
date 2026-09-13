@@ -58,6 +58,7 @@ export interface SlackActionResult {
   outcome:
     | 'not_a_reviewer'
     | 'no_draft'
+    | 'lookup_failed'
     | 'approved_and_sent'
     | 'approved_send_failed'
     | 'cancelled'
@@ -65,6 +66,16 @@ export interface SlackActionResult {
     | 'tested'
     | 'already_sent'
     | 'error'
+  /**
+   * "Could not decide", as distinct from "decided no" (rule 3).
+   *
+   * The dispatcher finalises a Slack event either way, so without this flag a
+   * transient Supabase timeout on the draft lookup below CONSUMED the reviewer's
+   * button press permanently — and told them the draft no longer existed. The
+   * dispatcher re-queues a retryable outcome through `requeueEvent`, bounded by
+   * the same `agent_attempts` counter the drafting path uses.
+   */
+  retryable?: boolean
   error?: string
 }
 
@@ -78,6 +89,8 @@ interface SlackEventMeta {
   slack_channel?: string | null
   slack_thread_ts?: string | null
   slack_message_ts?: string | null
+  /** The blocks the reviewer pressed the button on, so settling keeps the draft. */
+  slack_message_blocks?: unknown[] | null
 }
 
 /** Post into the lead's thread. Never throws — a lost reply is not a lost send. */
@@ -91,21 +104,46 @@ async function replyInThread(meta: SlackEventMeta, text: string): Promise<void> 
 }
 
 /**
- * Take the buttons off a message that has been decided.
+ * Take the buttons off a message that has been decided — and NOTHING else.
  *
  * Slack has no disabled state for a button, so removing it is the only way to
  * stop a second press. The handler refuses the second press anyway — this is so
  * the reviewer is never offered it, because a button that does nothing is a
  * worse answer than a button that is not there.
+ *
+ * `settledBlocks` keeps everything that is not an `actions` block, so passing
+ * the ORIGINAL blocks is what makes this a strike-through rather than a delete.
+ * It was passing `[]`, which replaced the whole lead — the customer, the date,
+ * the guest count, the email that was about to go out — with a single line
+ * reading "Sent — Adam". The channel is supposed to be the record of what was
+ * sent to a customer, and approving cannot be the thing that erases it.
+ *
+ * A missing `slack_message_blocks` (an old queued row, or a payload over the
+ * storage cap) degrades to the previous one-line behaviour rather than failing.
  */
 async function settle(meta: SlackEventMeta, outcome: string, by: string): Promise<void> {
   if (!meta.slack_channel || !meta.slack_message_ts) return
-  await updateMessage({
+  const original = Array.isArray(meta.slack_message_blocks) ? meta.slack_message_blocks : []
+  if (original.length === 0) {
+    console.warn(
+      `[slack-action] settling ${meta.review_code ?? '(unknown)'} with no original blocks — ` +
+        'the message will be replaced by a one-line summary rather than struck through',
+    )
+  }
+  const ok = await updateMessage({
     channel: meta.slack_channel,
     ts: meta.slack_message_ts,
     text: `${meta.review_code ?? ''} - ${outcome} (${by})`,
-    blocks: settledBlocks({ original: [], outcome, by }),
+    blocks: settledBlocks({ original, outcome, by }),
   })
+  // Rule 19, and it matters here: a failed chat.update leaves a LIVE Approve
+  // button under a draft that has already gone to the customer.
+  if (!ok) {
+    console.error(
+      `[slack-action] could not settle ${meta.review_code ?? '(unknown)'} — ` +
+        'its buttons are still live in the channel. A second press is refused by the status check.',
+    )
+  }
 }
 
 export async function handleSlackAction(input: { supabase: Supa; event: InboundEvent }): Promise<SlackActionResult> {
@@ -122,7 +160,24 @@ export async function handleSlackAction(input: { supabase: Supa; event: InboundE
   const draftId = meta.draft_id
   if (!draftId) return { handled: false, outcome: 'no_draft' }
 
-  const { data } = await supabase.from('inquiry_drafts').select(OPEN_COLUMNS).eq('id', draftId).maybeSingle()
+  // THREE OUTCOMES, not two (rule 12). "The draft is gone" and "I could not ask
+  // the database" are different facts and the reviewer is owed the true one:
+  // saying "I cannot find that draft any more" over a Supabase timeout is a
+  // definite statement about a draft that is, in fact, still sitting there
+  // waiting to be sent (rule 10).
+  const { data, error: lookupError } = await supabase
+    .from('inquiry_drafts')
+    .select(OPEN_COLUMNS)
+    .eq('id', draftId)
+    .maybeSingle()
+  if (lookupError) {
+    console.error(`[slack-action] draft lookup failed for ${draftId} (retryable):`, lookupError.message)
+    // Deliberately NO thread reply: the dispatcher will try again within a
+    // couple of minutes, and "something went wrong" followed by a successful
+    // send two minutes later is worse than saying nothing at all. If it runs out
+    // of attempts the reviewer hears about it from the SMS thread and the Inbox.
+    return { handled: false, outcome: 'lookup_failed', retryable: true, error: lookupError.message }
+  }
   if (!data) {
     await replyInThread(meta, 'I cannot find that draft any more. Nothing was sent.')
     return { handled: false, outcome: 'no_draft' }
