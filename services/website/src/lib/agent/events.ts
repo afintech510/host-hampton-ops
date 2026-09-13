@@ -24,7 +24,13 @@ import { getSupabase } from '@/lib/supabase'
 
 type Supa = ReturnType<typeof getSupabase>
 
-export type InboundSource = 'website_form' | 'quo' | 'gmail' | 'system'
+/**
+ * Every value here must also be in `ingested_messages_source_check`. Adding one
+ * to this union without adding it to the constraint produces a 23514 that
+ * `recordInboundEvent` swallows non-fatally — a writer that records nothing and
+ * says nothing. That is migration 049's whole story.
+ */
+export type InboundSource = 'website_form' | 'quo' | 'gmail' | 'slack' | 'system'
 
 export interface RecordInboundEventInput {
   /** Where this came from, used to build external_id, e.g. 'mobile-party-inquiry'. */

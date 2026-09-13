@@ -3,11 +3,14 @@
 # Paste into https://api.slack.com/apps -> Create New App -> From a manifest.
 # See slack-app-setup.md for the rest of the handover.
 #
-# Scopes are the minimum the reviewer loop needs. Deliberately ABSENT:
-#   channels:history / groups:history — the app does not read the channel. It
-#     posts, and it receives the specific events subscribed below. A bot that
-#     can read every message in a workspace channel is a much larger blast
-#     radius than "post a draft and take a button press".
+# Scopes are the minimum the reviewer loop needs.
+#   channels:history — REQUIRED by Slack for the message.channels event below;
+#     there is no way to receive a thread reply as a free-text revision without
+#     it (confirmed against Slack's own manifest validator, 2026-09-13). The
+#     blast radius is smaller than it looks: the bot is only ever invited to
+#     #hh-leads, so in practice this reads that one channel, not the workspace.
+# Deliberately ABSENT:
+#   groups:history — no private-channel reading; #hh-leads is public.
 #   chat:write.customize — no custom username/icon. The app posting as itself
 #     is what makes "who approved this" answerable.
 #   users:read.email — the Slack user_id maps to an admin_users row by an id we
@@ -33,6 +36,9 @@ oauth_config:
       - chat:write.public
       # Resolve a verified user_id to a display name for the ledger actor.
       - users:read
+      # Required by Slack for the message.channels event subscription — reads
+      # only #hh-leads, the one channel the bot is ever invited to.
+      - channels:history
 
 settings:
   interactivity:

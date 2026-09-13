@@ -4,6 +4,7 @@ import { draftForInquiry, AGENT_ACTOR, DRAFT_ENTITY } from '@/lib/agent/draftInq
 import { finishEvent, claimInboundEvent, type InboundEvent } from '@/lib/agent/events'
 import { agentEnabled, dailyUsdCap, isBusinessHours, NUDGE_AFTER_MS } from '@/lib/agent/config'
 import { handleReviewerReply } from '@/lib/agent/reviewLoop'
+import { handleSlackAction } from '@/lib/agent/slackLoop'
 import { triageMessage } from '@/lib/agent/triage'
 import { notifyOwnerSms } from '@/lib/ownerNotify'
 import { upsertContact } from '@/lib/contacts'
@@ -290,6 +291,21 @@ export async function GET(req: NextRequest) {
         })
         results.push({ kind: 'event', id: event.id, outcome: 'sms_awaiting_triage' })
       }
+      continue
+    }
+
+    // ── Slack (Phase 7). A button press or a thread reply, recorded by
+    // /api/slack/* and executed here — the routes deliberately cannot reach
+    // sendApproved.ts, so this is the only place a Slack approval becomes a
+    // customer message. Same shape as the Quo branch above.
+    if (event.source === 'slack') {
+      const action = await handleSlackAction({ supabase, event })
+      await finishEvent(supabase, event.id, action.handled ? 'handled' : 'ignored', {
+        draftId: action.draftId ?? null,
+        classification: `reviewer_${action.intent ?? 'action'}`,
+        error: action.error ?? (action.handled ? null : `slack action refused: ${action.outcome}`),
+      })
+      results.push({ kind: 'event', id: event.id, outcome: `slack_${action.outcome}`, draftId: action.draftId })
       continue
     }
 

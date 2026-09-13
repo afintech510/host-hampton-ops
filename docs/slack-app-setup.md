@@ -10,6 +10,33 @@ SMS exactly as it is today.
 
 ---
 
+## 0. First, put the signing secret on the box — and only then step 1
+
+**This is the one step whose ORDER matters, and doing it late looks like a bug
+in our code rather than a sequencing mistake.**
+
+Slack signs the `url_verification` handshake it sends when event subscriptions
+are enabled, and `/api/slack/events` gives that handshake **no exemption** from
+the fail-closed check — an unset `SLACK_SIGNING_SECRET` is a rejection, not a
+skip. So if the app is created and its events URL enabled before the secret is
+on the box, the handshake fails with a 401 and Slack marks the URL unverified.
+
+Weakening the check to make setup smoother would trade a five-minute ordering
+constraint for a permanently open door, so it is not going to be weakened.
+
+The practical sequence:
+
+1. Create the app (§1 below) but **do not enable event subscriptions yet** —
+   if you paste the manifest, Slack will try to verify immediately, so expect
+   that one to fail and re-verify it in §6.
+2. Copy the Signing Secret into `/opt/hosthampton/.env`.
+3. Deploy (`ssh hampton-vps`, `cd /opt/hosthampton && docker compose up -d website`).
+4. Back in the Slack app → **Event Subscriptions** → **Retry** next to the
+   request URL. It goes green.
+
+A local `.env.local` does not reach the container. The value has to be in
+`/opt/hosthampton/.env`.
+
 ## 1. Create the app from the manifest
 
 1. Go to <https://api.slack.com/apps> → **Create New App** → **From a manifest**
@@ -18,7 +45,8 @@ SMS exactly as it is today.
 4. Create
 
 The manifest sets the name, scopes, and both request URLs, so there is nothing
-to configure by hand afterwards.
+to configure by hand afterwards — except re-verifying the events URL once the
+secret is deployed, per §0.
 
 ## 2. Install it
 
@@ -89,19 +117,46 @@ Already built and tested (`lib/slack/signature.ts`, 12 tests):
   reads as "no authority", the same direction as an unset `REVIEWER_PHONES`
   meaning "text nobody".
 
-Still to build (§25.8 steps 3–5):
+Also built and tested (§25.8 steps 3–5, deployed 2026-09-13 — see plan §25.11):
 
 - `/api/slack/interactions` and `/api/slack/events`
 - Block Kit message + the edit modal
 - `chat.postMessage` → `chat.getPermalink` → `/s/` code → one-segment SMS ping
 
-Two rules those must not break:
+Two rules those do not break, and a test enforces each:
 
-1. **`/api/slack/*` must never import `sendApproved.ts`.** The guardrail is
-   enforced by the module graph, not by discipline — that is why
-   `lib/agent/reviewers.ts` is its own module. Slack gets the same treatment.
-2. **Approval gates on the verified `user.id`**, never on message content. §4.2
-   does not change because the channel changed.
+1. **`/api/slack/*` never imports `sendApproved.ts`.** The routes record an
+   `ingested_messages` row; the dispatcher claims it and runs the transition.
+   `slackSurface.test.ts` walks the import graph transitively — and asserts that
+   the dispatcher DOES reach `sendApproved`, so the walker cannot pass by
+   failing to resolve anything.
+2. **Approval gates on the verified `user.id`**, never on message content,
+   checked in the route AND again in `handleSlackAction` — because by the time
+   the dispatcher reads it, the evidence of who pressed the button is a string
+   in a table row.
+
+## What "done" looks like once the four values are in
+
+- A new lead posts to `#hh-leads` with the draft and four buttons, and you get
+  a one-segment text with a `/s/` link to it.
+- **Slack being down does not cost you the lead.** The text still sends,
+  carrying the `/review/` link instead. Every failure path is tested.
+- Pressing **Send it** confirms, then sends within ~2 minutes (the same
+  dispatcher that has always run the SMS path), and the thread says who
+  approved it.
+- Replying in a lead's thread re-drafts it, with no code to quote.
+
+### One thing that will look wrong at first, and is not
+
+The ledger will record `SLACK:U012ABCDEF` rather than your name until
+`admin_users.slack_user_id` is set. That is deliberate — it is still a verified,
+specific person, and it is better than the anonymous `'ADMIN'` it replaces. To
+get the name, run one statement per reviewer:
+
+```sql
+UPDATE admin_users SET slack_user_id = 'U012ABCDEF'
+ WHERE email = 'adam@easternbuilding.supply';
+```
 
 ## The one operational limit worth knowing
 

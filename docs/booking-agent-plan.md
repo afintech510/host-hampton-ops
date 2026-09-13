@@ -3603,3 +3603,118 @@ The ones that would have caught the defects this section found:
 - Slack for customer messages. Ever.
 - Retiring SMS. It is the fallback and the urgency ping.
 - A paid Slack plan. Free is sufficient; Supabase holds the history.
+
+### 25.11 As built (2026-09-13) — steps 3-5
+
+Built, tested, deployed. **Not cut over**: see "What Adam still has to do" below.
+The suite is **2541/2541** (was 2434) and `next build` passes — which matters,
+because `tsc` is what failed to catch the `/r/` route collision.
+
+**Files.** `lib/slack/client.ts` (the four Web API calls), `lib/slack/blocks.ts`
+(Block Kit + the edit modal), `lib/slack/actor.ts` (user_id → `admin_users`),
+`lib/agent/notifyReviewers.ts` (the seam), `lib/agent/slackLoop.ts`
+(`handleSlackAction`), `app/api/slack/interactions/route.ts`,
+`app/api/slack/events/route.ts`, and a `source === 'slack'` branch in
+agent-dispatch. `draftInquiry.ts`'s two `notifyOwnerSms` call sites now go
+through the seam.
+
+#### The shape: the routes cannot reach a customer
+
+`/api/slack/interactions` records an `ingested_messages` row and answers Slack.
+The **dispatcher** claims it and runs `handleSlackAction`, which is where
+`sendApproved.ts` lives. That is exactly what /api/webhooks/quo already does,
+and it buys three things at once: the module-graph guardrail (§25.6) is
+structural rather than remembered, `external_id` being UNIQUE makes a Slack
+retry idempotent for free, and a defect in a public handler has no route to a
+customer. The cost is that Slack inherits the SMS path's ≤2-minute latency; the
+reviewer gets an immediate ephemeral ack, so it does not read as a hang.
+
+#### What §25.7 missed, and it was the one that would have failed silently
+
+**`ingested_messages_source_check` did not allow `'slack'`.** §25.7 enumerated
+every column Slack needs and got all of them right. It did not look at the
+CHECK constraint on a table the new code only writes a ROW to. Every Slack
+insert would have been refused with 23514 — and `recordInboundEvent` is
+non-fatal by contract, so it logs, returns null, and never throws. The route
+would have answered Slack 200, the reviewer would have read "Sending
+HH-2026-0042", and nothing would have happened to the draft.
+
+That is the reminder engine exactly (migration 044): a table that refused every
+insert while no writer read the error. It would have been found by a customer
+not getting an answer. **Migration 049** fixes it, and was proven by inserting a
+`source='slack'` row in production inside a transaction and rolling it back —
+"applied" and "accepts the write" are different claims.
+
+The lesson that generalises: grep for CHECK constraints on every table a new
+code path WRITES to, not only the ones it alters.
+
+#### Three defects the tests found that reading did not
+
+- **The bot-loop guard ignored every human.** The events handler's guard
+  included `body.api_app_id === event.app_id`. Both are absent on a human
+  message, so `undefined === undefined` was true for **every reviewer reply**.
+  The guard against an unbounded re-draft loop was instead ignoring all real
+  input — which from outside is indistinguishable from the feature being off.
+- **A revision would have broken its own thread.** The seam persists
+  `slack_ts`, and a revision posts *into* the thread, which returns the reply's
+  own `ts`. Storing that would move `slack_ts` off the thread parent, after
+  which `/api/slack/events` — which finds the draft with
+  `.eq('slack_ts', thread_ts)` — would stop matching. It now writes only for the
+  ROOT message. The symptom would have been "thread replies stopped working,
+  but only on leads that had been revised".
+- **"The SMS always sends" was a property of another file.** The first version
+  relied on `lib/slack/client.ts` never throwing. True, and tested — but the
+  rule is absolute, so the seam now catches around the Slack calls itself, and
+  a test breaks the client's contract on purpose to prove the ping survives it.
+
+#### The escaper the suite refused
+
+`esc()` in `blocks.ts` tripped the staleness walker in
+`emailTemplateEscaping.test.ts` — correctly, because a second HTML escaper is
+rule 11. It is exempted with a reason, on the same grounds as
+`sitemap.xml/route.ts`: Slack mrkdwn is a **third grammar**, whose structural
+set is exactly `&`, `<`, `>` (because `<url|label>` is a link) and in which `"`
+and `'` are ordinary text. Pointing it at `escapeHtml` would be the real
+violation. The reason this matters at all: a draft is model-written text about a
+customer, and `<https://evil.test|our secure payment page>` in a summary is the
+same shape as the injected payment handle §24 found in a live voice profile.
+
+#### The actor, which is the point (§11.1)
+
+A verified Slack `user_id` resolves to an `admin_users` row and the ledger
+records `ADMIN:adam@easternbuilding.supply` instead of the anonymous `'ADMIN'`.
+All three `admin_users` rows have a NULL `slack_user_id` today, so the mapping
+will miss at first — and the fallback is `SLACK:U012ABCDEF`, **never `'ADMIN'`**.
+An unmapped reviewer is still a specific, verified, non-repudiable person;
+falling back to the anonymous string would throw away the only thing this phase
+was built to capture. `meta.actor_unmapped` records which kind it was.
+
+#### Smaller decisions worth not re-litigating
+
+- A **parked draft gets no Approve button.** `parkedSmsBody`'s reasoning applies
+  harder in Slack: a button is one thumb away, and the reason the draft was held
+  is that a human has to read WHY first.
+- Approve carries Slack's **confirm sheet** — one tap in front of the only
+  irreversible action on the message.
+- Buttons are **removed** after a decision, not disabled (Slack has no disabled
+  state). The handler refuses a second press anyway; this is so it is never
+  offered, because a button that does nothing is worse than no button.
+- `unfurl_links: false`. A review URL is a bearer token, and Slack unfurling it
+  would paste a preview of the review PAGE into the channel as an image.
+- **Slack's failures are HTTP 200** with `{"ok":false,"error":"not_in_channel"}`.
+  The client reads the body, never the status. A client that trusted the status
+  would mark a draft posted, skip the SMS fallback, and lose the lead with a 200
+  in the logs.
+
+#### What Adam still has to do — this is NOT cut over
+
+`/opt/hosthampton/.env` has **zero** `SLACK_*` variables: the Slack app has not
+been created yet, so §25.8 step 6 cannot be done by anybody but Adam. The code
+is deployed and inert — `REVIEWER_CHANNEL` defaults to `sms`, and every Slack
+path fails closed with no secret.
+
+Do the browser steps in `docs/slack-app-setup.md`, put the four values in
+`.env`, and flip `REVIEWER_CHANNEL=slack`. **Order matters for one of them:**
+`SLACK_SIGNING_SECRET` must be on the box and deployed *before* event
+subscriptions are enabled, because Slack signs the `url_verification` handshake
+and it gets no exemption from the fail-closed check.

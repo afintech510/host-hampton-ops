@@ -528,7 +528,18 @@ describe('the file list cannot go stale', () => {
      * Two screens for two languages is not rule 11; one screen used for both
      * would be.
      */
-    const NOT_AN_HTML_ESCAPER = ['app/sitemap.xml/route.ts']
+    /**
+     * `lib/slack/blocks.ts` escapes for Slack MRKDWN, not HTML. Slack's
+     * structural set is exactly three characters — `&`, `<`, `>` — because
+     * `<url|label>` is how mrkdwn writes a LINK; `"` and `'` are ordinary text
+     * there, and escaping them would print `&quot;` at a reviewer.
+     *
+     * So this is the sitemap case again, not rule 11: a third reader with a
+     * third grammar gets a third screen. Pointing it at `escapeHtml` would be
+     * the actual violation — one screen used for three languages, which is how
+     * you end up escaping the wrong things in two of them.
+     */
+    const NOT_AN_HTML_ESCAPER = ['app/sitemap.xml/route.ts', 'lib/slack/blocks.ts']
     for (const abs of walk(WEBSITE_SRC)) {
       const rel = path.relative(WEBSITE_SRC, abs).split(path.sep).join('/')
       if (rel === 'lib/escapeHtml.ts') continue

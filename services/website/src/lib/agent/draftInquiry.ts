@@ -29,7 +29,12 @@ import {
   type InquiryBooking,
   type InquiryEvaluation,
 } from '@/lib/inquiryDrafts'
-import { notifyOwnerSms, reviewerPhones } from '@/lib/ownerNotify'
+import { reviewerPhones } from '@/lib/ownerNotify'
+// The CHANNEL decision is notifyReviewers' (§25.5), not this node's. This
+// module builds the text and hands it over; it no longer calls notifyOwnerSms
+// directly, because "which channel" stopped being a property of the draft the
+// moment there was more than one.
+import { notifyReviewers, slackThreadFor } from './notifyReviewers'
 import { loadVoiceProfile, voicePromptAddendum, type LoadedVoiceProfile } from './voice'
 import { loadActiveLearnings, learningsPromptAddendum, type LoadedLearnings } from './learnings'
 import { generateReviewCode, generateReviewToken, buildReviewUrl } from './reviewLink'
@@ -1037,30 +1042,45 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
       )?.url ?? null
     : null
 
+  // The CHANNEL is notifyReviewers' decision, not this node's (§25.5). The SMS
+  // body is still built here because it is this node's text either way: under
+  // REVIEWER_CHANNEL=sms it is what goes out, and under `slack` it is the
+  // fallback that carries the /review/ link when Slack cannot be reached.
   let reviewersTexted = 0
-  if (draftStatus === 'sent_for_review') {
-    reviewersTexted = await notifyOwnerSms(
-      reviewerSmsBody({
-        reviewCode,
-        partyType: evaluation.partyType,
-        path: evaluation.path,
-        summary: draft.summaryForReviewer,
-        missing: evaluation.missing,
-        previewToken,
-        shortUrl,
-      }),
-    )
-  } else if (guardrailError) {
-    reviewersTexted = await notifyOwnerSms(
-      parkedSmsBody({
-        reviewCode,
-        partyType: evaluation.partyType,
-        reason: guardrailError,
-        summary: draft.summaryForReviewer,
-        previewToken,
-        shortUrl,
-      }),
-    )
+  if (draftStatus === 'sent_for_review' || guardrailError) {
+    const parked = draftStatus !== 'sent_for_review'
+    const notified = await notifyReviewers({
+      supabase,
+      draftId,
+      reviewCode,
+      partyType: evaluation.partyType,
+      path: evaluation.path,
+      summary: draft.summaryForReviewer,
+      emailDraft: draft.emailDraft,
+      smsDraft: draft.smsDraft,
+      missing: evaluation.missing,
+      warning: parked ? guardrailError : null,
+      previewToken,
+      smsBody: parked
+        ? parkedSmsBody({
+            reviewCode,
+            partyType: evaluation.partyType,
+            reason: guardrailError as string,
+            summary: draft.summaryForReviewer,
+            previewToken,
+            shortUrl,
+          })
+        : reviewerSmsBody({
+            reviewCode,
+            partyType: evaluation.partyType,
+            path: evaluation.path,
+            summary: draft.summaryForReviewer,
+            missing: evaluation.missing,
+            previewToken,
+            shortUrl,
+          }),
+    })
+    reviewersTexted = notified.reviewersTexted
   }
 
   // ── Customer send: STUBBED in Phase 1. This is the only place a customer
@@ -1298,8 +1318,27 @@ export async function redraftForReviewer(args: {
       )?.url ?? null
     : null
 
-  const reviewersTexted = await notifyOwnerSms(
-    reviewerSmsBody({
+  // A revision REPLIES in the lead's existing Slack thread rather than starting
+  // a new one — that is what makes "thread per lead" real rather than cosmetic,
+  // and it is why migration 048 persists slack_channel/slack_ts at all. A draft
+  // that predates the feature has no thread, reads as null, and starts one.
+  const thread = await slackThreadFor(supabase, draftId)
+
+  const notified = await notifyReviewers({
+    supabase,
+    draftId,
+    reviewCode: row.review_code as string,
+    partyType: evaluation.partyType,
+    path: evaluation.path,
+    summary: draft.summaryForReviewer,
+    emailDraft,
+    smsDraft,
+    missing: evaluation.missing,
+    warning: guardrailError,
+    previewToken: minted?.token ?? '',
+    revision: true,
+    threadTs: thread?.ts ?? null,
+    smsBody: reviewerSmsBody({
       reviewCode: row.review_code as string,
       partyType: evaluation.partyType,
       path: evaluation.path,
@@ -1310,7 +1349,13 @@ export async function redraftForReviewer(args: {
       revision: true,
       warning: guardrailError,
     }),
-  )
+  })
 
-  return { ok: true, status: 200, reviewCode: row.review_code as string, reviewersTexted, costUsd: usd }
+  return {
+    ok: true,
+    status: 200,
+    reviewCode: row.review_code as string,
+    reviewersTexted: notified.reviewersTexted,
+    costUsd: usd,
+  }
 }
