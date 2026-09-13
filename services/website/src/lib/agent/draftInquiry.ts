@@ -33,6 +33,7 @@ import { notifyOwnerSms, reviewerPhones } from '@/lib/ownerNotify'
 import { loadVoiceProfile, voicePromptAddendum, type LoadedVoiceProfile } from './voice'
 import { loadActiveLearnings, learningsPromptAddendum, type LoadedLearnings } from './learnings'
 import { generateReviewCode, generateReviewToken, buildReviewUrl } from './reviewLink'
+import { createShortLink } from '@/lib/shortLink'
 import { costUsd, draftModel, reviewLinkSecret, siteUrl, AGENT_ACTOR, DRAFT_ENTITY } from './config'
 import {
   extractPlanFields,
@@ -610,11 +611,19 @@ export function reviewerSmsBody(opts: {
   summary: string
   missing: string[]
   previewToken: string
+  /**
+   * A /r/<code> short link for the same page (§21.3). When minting it failed,
+   * this is absent and the full-length URL is used — 64 more characters and one
+   * more segment, which is the right way to fail.
+   */
+  shortUrl?: string | null
   revision?: boolean
   /** A guardrail hit the reviewer must see BEFORE they read the draft. */
   warning?: string | null
 }): string {
-  const previewUrl = opts.previewToken ? buildReviewUrl(opts.previewToken, siteUrl()) : `${siteUrl()}/admin`
+  const previewUrl =
+    opts.shortUrl ||
+    (opts.previewToken ? buildReviewUrl(opts.previewToken, siteUrl()) : `${siteUrl()}/admin`)
   const missingLine = opts.missing.length ? `Missing: ${describeMissing(opts.missing).join(', ')}\n` : ''
   // A revision is re-texted even when a guardrail fired — the reviewer asked
   // for a change and silence would be worse — so the warning leads, because a
@@ -655,8 +664,12 @@ export function parkedSmsBody(opts: {
   reason: string
   summary: string
   previewToken: string
+  shortUrl?: string | null
 }): string {
-  const previewUrl = opts.previewToken ? buildReviewUrl(opts.previewToken, siteUrl()) : `${siteUrl()}/admin`
+  const previewUrl =
+    opts.previewToken || opts.shortUrl
+      ? opts.shortUrl || buildReviewUrl(opts.previewToken, siteUrl())
+      : `${siteUrl()}/admin`
   return (
     `[${opts.reviewCode} - ${opts.partyType.replace(/_/g, ' ')}] !! DRAFT HELD - needs you\n` +
     `${opts.summary}\n` +
@@ -1009,6 +1022,21 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
   // to Adam exactly like no lead arriving — which is how a real inquiry sat
   // unanswered. Whether the park was right or wrong, the lead is real and
   // somebody has to know it is waiting.
+  // One /r/ code for whichever text goes out (§21.3): 112 characters of URL
+  // becomes 48, which is a whole segment on every draft. Non-fatal — a null
+  // here just means the long link is used.
+  const shortUrl = previewToken
+    ? (
+        await createShortLink(supabase, {
+          target: buildReviewUrl(previewToken, siteUrl()),
+          secret,
+          kind: 'review',
+          entityType: 'inquiry_draft',
+          entityId: draftId,
+        })
+      )?.url ?? null
+    : null
+
   let reviewersTexted = 0
   if (draftStatus === 'sent_for_review') {
     reviewersTexted = await notifyOwnerSms(
@@ -1019,6 +1047,7 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
         summary: draft.summaryForReviewer,
         missing: evaluation.missing,
         previewToken,
+        shortUrl,
       }),
     )
   } else if (guardrailError) {
@@ -1029,6 +1058,7 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
         reason: guardrailError,
         summary: draft.summaryForReviewer,
         previewToken,
+        shortUrl,
       }),
     )
   }
@@ -1256,6 +1286,18 @@ export async function redraftForReviewer(args: {
     },
   })
 
+  const revisionShortUrl = minted?.token
+    ? (
+        await createShortLink(supabase, {
+          target: buildReviewUrl(minted.token, siteUrl()),
+          secret,
+          kind: 'review',
+          entityType: 'inquiry_draft',
+          entityId: draftId,
+        })
+      )?.url ?? null
+    : null
+
   const reviewersTexted = await notifyOwnerSms(
     reviewerSmsBody({
       reviewCode: row.review_code as string,
@@ -1264,6 +1306,7 @@ export async function redraftForReviewer(args: {
       summary: draft.summaryForReviewer,
       missing: evaluation.missing,
       previewToken: minted?.token ?? '',
+      shortUrl: revisionShortUrl,
       revision: true,
       warning: guardrailError,
     }),

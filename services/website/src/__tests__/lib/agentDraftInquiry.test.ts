@@ -63,6 +63,7 @@ interface SupaOpts {
 
 function makeSupabase(opts: SupaOpts = {}) {
   const inserted: Record<string, unknown>[] = []
+  const allInserts: { table: string; row: Record<string, unknown> }[] = []
 
   function resolve(table: string, ops: [string, ...unknown[]][]) {
     const has = (name: string, ...args: unknown[]) =>
@@ -106,13 +107,18 @@ function makeSupabase(opts: SupaOpts = {}) {
     }
     chain.insert = jest.fn((row: Record<string, unknown>) => {
       ops.push(['insert', row])
-      inserted.push(row)
+      allInserts.push({ table, row })
+      // `inserted` is inquiry_drafts ONLY. It used to pool every table, which
+      // made "exactly one draft row" quietly mean "exactly one insert anywhere"
+      // — and that broke the moment §21.3 started minting a short_links row on
+      // the same path.
+      if (table === 'inquiry_drafts') inserted.push(row)
       return chain
     })
     return chain
   })
 
-  return { supabase: { from } as any, inserted }
+  return { supabase: { from } as any, inserted, allInserts }
 }
 
 /* ── Claude double ───────────────────────────────────────────────────── */
@@ -201,7 +207,7 @@ describe('draftForInquiry', () => {
   })
 
   it('turns the model JSON into one sent_for_review draft and texts the reviewers', async () => {
-    const { supabase, inserted } = makeSupabase({ contactId: 'contact-1' })
+    const { supabase, inserted, allInserts } = makeSupabase({ contactId: 'contact-1' })
     global.fetch = jest.fn().mockResolvedValue(anthropicReply(INFO_GATHER_REPLY)) as any
 
     const outcome = await draftForInquiry({ supabase, event: EVENT as any })
@@ -234,12 +240,27 @@ describe('draftForInquiry', () => {
     expect(String(row.preview_token_hash)).toHaveLength(64)
     expect(JSON.stringify(row)).not.toContain('https://www.hosthampton.com/review/')
 
-    // Reviewer SMS carries the code and a working preview link.
+    // Reviewer SMS carries the code and a working preview link — now the SHORT
+    // one (§21.3). The full 112-character URL is what the short_links row
+    // points AT; putting it in the SMS as well would defeat the point.
     expect(mockNotifyOwnerSms).toHaveBeenCalledTimes(1)
     const sms = mockNotifyOwnerSms.mock.calls[0][0] as string
     expect(sms).toContain(outcome.reviewCode)
-    expect(sms).toContain('https://www.hosthampton.com/review/')
+    expect(sms).toMatch(/https:\/\/hosthampton\.com\/r\/[A-Za-z0-9_-]{22}/)
+    expect(sms).not.toContain('/review/')
     expect(sms).toContain('Nothing has gone to the customer.')
+
+    // Exactly one short link, pointing at this draft's real preview URL, and
+    // storing only the hash.
+    const links = allInserts.filter(i => i.table === 'short_links').map(i => i.row)
+    expect(links).toHaveLength(1)
+    expect(String(links[0].target)).toContain('https://www.hosthampton.com/review/')
+    expect(links[0].entity_id).toBe('draft-uuid-1')
+    expect(links[0].kind).toBe('review')
+    expect(String(links[0].code_hash)).toHaveLength(64)
+    // The raw code is in the SMS and nowhere else.
+    const rawCode = sms.match(/\/r\/([A-Za-z0-9_-]{22})/)![1]
+    expect(JSON.stringify(links[0])).not.toContain(rawCode)
     // The reply commands the Phase 2 review loop understands.
     expect(sms).toContain('Reply SEND')
     expect(sms).toContain('CANCEL')
