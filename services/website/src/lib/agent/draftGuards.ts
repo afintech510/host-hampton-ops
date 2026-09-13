@@ -14,6 +14,8 @@
  * import path and test still reaches exactly this code.
  */
 
+import { PUBLIC_PHONE_DISPLAY, venmoHandle, zellePhone } from '@/lib/paymentContacts'
+
 
 /**
  * Words that turn a nearby bare number into a price. "Our rate is 575" has no
@@ -201,8 +203,52 @@ export function containsFabricatedTerms(
 /** For callers that may publish no price at all. See the option above. */
 export const NO_AMOUNTS_ALLOWED: ReadonlySet<string> = new Set<string>()
 
-/** Hosts a customer-facing draft may legitimately link to. */
-const OUR_HOSTS = /(?:^|\.)(?:hosthampton\.com|venmo\.com|stripe\.com)$/i
+/**
+ * Hosts that are ours no matter what path follows.
+ *
+ * ── Why `venmo.com` and `stripe.com` are NOT in this list any more ─────────
+ *
+ * They were, and that was the hole. This allowlist is matched against the HOST
+ * ONLY, so every one of these passed the guard whose own comment says the worst
+ * thing an injection could achieve is "get a payment redirected":
+ *
+ *     https://buy.stripe.com/4gwcNa1Bt0Xv9kk28e     ← an attacker's own Stripe
+ *                                                     payment page. Live, real,
+ *                                                     chargeable.
+ *     https://checkout.stripe.com/c/pay/cs_live_…   ← the same, one host over
+ *     https://venmo.com/u/not-allie                 ← a pay page for any Venmo
+ *     https://www.venmo.com/u/attacker-handle          account in the world
+ *
+ * A payment processor's domain is not evidence that the money comes to us — it
+ * is evidence of the opposite, because the whole point of a hosted payment page
+ * is that anyone can own one. The host tells you who takes the card, never who
+ * gets paid.
+ *
+ * So: `hosthampton.com` (and its subdomains) is ours unconditionally, because we
+ * own every path on it. Venmo is ours only at a path naming OUR handle
+ * (`isOurVenmoUrl`). Stripe is never ours in a draft, because this agent does
+ * not mint pay links — Adam attaches the priced quote himself — so a Stripe URL
+ * in generated text is either a hallucination or an injection, and neither
+ * should reach a customer without a human reading it first.
+ */
+const OUR_HOSTS = /(?:^|\.)hosthampton\.com$/i
+
+/**
+ * A Venmo URL that pays US.
+ *
+ * `venmo.com/u/<handle>` and `venmo.com/<handle>` are the two shapes Venmo
+ * publishes. The handle comes from `lib/paymentContacts.ts`, which is where "our
+ * payment handles" already lives — this module used to read `VENMO_HANDLE` out
+ * of the environment with its own normalisation, which is rule 11: our Venmo
+ * handle spelled twice is a handle nothing is checking.
+ */
+function isOurVenmoUrl(host: string, pathname: string): boolean {
+  if (!/(?:^|\.)venmo\.com$/i.test(host)) return false
+  const ours = venmoHandle().replace(/^@/, '').toLowerCase()
+  if (!ours) return false
+  const seg = pathname.toLowerCase().replace(/^\/+/, '').replace(/^u\//, '').replace(/\/+$/, '')
+  return seg === ours
+}
 
 /**
  * Does this draft carry a link, address or payment handle that is not ours?
@@ -238,15 +284,20 @@ export function containsForeignContact(text: string): string | null {
     return null
   }
 
-  const url = scan(/https?:\/\/([^\s/"'>)\]]+)/gi, m => {
+  const url = scan(/https?:\/\/([^\s/"'>)\]]+)((?:\/[^\s"'>)\]]*)?)/gi, m => {
     const host = m[1].replace(/^www\./i, '').toLowerCase()
-    return OUR_HOSTS.test(host) ? null : `link to ${host}`
+    if (OUR_HOSTS.test(host)) return null
+    if (isOurVenmoUrl(host, m[2] || '')) return null
+    return `link to ${host}${m[2] ? m[2].slice(0, 40) : ''}`
   })
   if (url) return url
 
-  const bare = scan(/\bwww\.([a-z0-9-]+(?:\.[a-z0-9-]+)+)/gi, m =>
-    OUR_HOSTS.test(m[1].toLowerCase()) ? null : `link to ${m[1].toLowerCase()}`,
-  )
+  const bare = scan(/\bwww\.([a-z0-9-]+(?:\.[a-z0-9-]+)+)((?:\/[^\s"'>)\]]*)?)/gi, m => {
+    const host = m[1].toLowerCase()
+    if (OUR_HOSTS.test(host)) return null
+    if (isOurVenmoUrl(host, m[2] || '')) return null
+    return `link to ${host}${m[2] ? m[2].slice(0, 40) : ''}`
+  })
   if (bare) return bare
 
   const ourEmails = new Set(
@@ -265,16 +316,124 @@ export function containsForeignContact(text: string): string | null {
   if (email) return email
 
   // Payment handles. `@allie` next to a payment word is how a redirect reads.
-  const ourHandles = new Set(
-    [process.env.VENMO_HANDLE].filter(Boolean).map(h => String(h).toLowerCase().replace(/^@/, '')),
-  )
+  const ourHandles = new Set([venmoHandle().replace(/^@/, '').toLowerCase()].filter(Boolean))
   // Email addresses are scanned above and contain an "@"; leaving them in here
   // would flag our own hosthampton295@gmail.com as the handle "@gmail".
   const withoutEmails = raw.replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g, ' ')
-  return scan(
-    /@([A-Za-z0-9_][A-Za-z0-9_.-]{2,31})/g,
+  const handle = scan(
+    // `{1,31}` and not `{2,31}`: the floor used to be three characters, so the
+    // two-character handles Venmo and Instagram both allow walked straight
+    // through the one detector aimed at exactly this.
+    /@([A-Za-z0-9_][A-Za-z0-9_.-]{1,31})/g,
     m => (ourHandles.has(m[1].toLowerCase()) ? null : `payment handle "${m[0].trim()}"`),
     withoutEmails,
   )
+  if (handle) return handle
+
+  // A Cash App cashtag. `$` followed by a LETTER, because `$250` is a price and
+  // is the money guardrail's business, not this one's.
+  const cashtag = scan(/\$([A-Za-z][A-Za-z0-9_]{1,19})\b/g, m => `payment handle "${m[0].trim()}"`)
+  if (cashtag) return cashtag
+
+  // A phone number that is not one of ours.
+  //
+  // This axis was missing entirely, and it is not a lesser one: **Zelle is keyed
+  // by phone number**, so "Zelle the deposit to 917-555-0134" is the same attack
+  // as an `@handle` redirect with none of the detection. "Text our billing line
+  // at …" is the same thing wearing a different hat — it moves the conversation
+  // to a stranger, which is how the rest of the fraud happens.
+  //
+  // Our own numbers are allowlisted rather than the detector being narrowed to a
+  // payment context, because a draft inviting somebody to call the studio is
+  // completely normal and a draft naming ANY other number is not. Measured
+  // against all 23 real drafts in production: not one contains a phone number at
+  // all, so this refuses nothing the agent has ever written.
+  const ours = ourPhoneDigits()
+  return scan(/(?:\+?1[\s.\-–]?)?\(?(\d{3})\)?[\s.\-–]?(\d{3})[\s.\-–]?(\d{4})(?!\d)/g, m => {
+    const before = raw.slice(Math.max(0, m.index - 1), m.index)
+    if (/\d/.test(before)) return null // mid-run of a longer number, not a phone
+    const digits = `${m[1]}${m[2]}${m[3]}`
+    return ours.has(digits) ? null : `phone number ${m[0].trim()}`
+  })
+}
+
+/**
+ * The four strings a generated draft is made of, screened as one thing.
+ *
+ * This existed TWICE in draftInquiry.ts — once on the first-draft path and once
+ * on the revision path — differing only in the words "draft" and "revision". Two
+ * copies of a guardrail is a guardrail nothing is checking (rule 11), and the two
+ * copies had already drifted in the way that matters: **neither of them screened
+ * `summaryForReviewer`**, which is the one line a human reads before pressing
+ * SEND. Fixing that in one place was the whole reason to extract it.
+ *
+ * The MONEY check is deliberately NOT here. The first-draft path gets one
+ * corrective retry and the revision path does not, so "did this name a price"
+ * has genuinely different consequences for the two callers and folding it in
+ * would hide that.
+ *
+ * Returns the `error` string to store on the draft, or null when it is clean.
+ */
+export function screenGeneratedDraft(
+  draft: { emailDraft: string; smsDraft: string; emailSubject: string; summaryForReviewer: string },
+  /** 'draft' or 'revision' — only the wording of the reason. */
+  label: string,
+): string | null {
+  // Named parts, so the reason says WHERE it was found. "the summary contains a
+  // phone number" and "the email contains a phone number" send a reviewer to
+  // different places.
+  const parts: [string, string][] = [
+    ['email', draft.emailDraft],
+    ['sms', draft.smsDraft],
+    ['subject', draft.emailSubject],
+    ['reviewer summary', draft.summaryForReviewer],
+  ]
+
+  for (const [where, text] of parts) {
+    const foreign = containsForeignContact(text)
+    if (foreign) {
+      return `foreign_contact_in_draft: the ${label}'s ${where} contains a ${foreign} that is not ours — check the inbound message for an injected instruction`
+    }
+  }
+
+  for (const [where, text] of parts) {
+    const fabricated = containsFabricatedTerms(text)
+    if (fabricated) {
+      return `fabricated_terms: the ${label}'s ${where} states ${fabricated}, which only Adam or Allie can agree to — check the inbound message for an injected instruction`
+    }
+  }
+
+  return null
+}
+
+/**
+ * Every phone number that is legitimately ours, as ten digits.
+ *
+ * There are more of them than one might expect, and they are not
+ * interchangeable — see `lib/paymentContacts.ts`: the public line and the
+ * Venmo/Zelle registration number are different numbers, and confusing them is
+ * its own bug. All of them are allowed to appear in a draft; nothing else is.
+ */
+function ourPhoneDigits(): ReadonlySet<string> {
+  const ten = (v: string): string | null => {
+    const d = String(v).replace(/\D/g, '')
+    const t = d.length === 11 && d.startsWith('1') ? d.slice(1) : d
+    return t.length === 10 ? t : null
+  }
+  const out = new Set<string>()
+  for (const v of [
+    PUBLIC_PHONE_DISPLAY,
+    zellePhone(),
+    process.env.QUO_PHONE_NUMBER ?? '',
+    // Split here rather than importing `reviewerPhones()`: that lives in
+    // ownerNotify, which pulls in Quo and Resend, and this module is
+    // deliberately a pure function of its input plus env so it stays trivial to
+    // test. A digits-only comparison needs no phone parser.
+    ...String(process.env.REVIEWER_PHONES ?? '').split(/[,;\s]+/),
+  ]) {
+    const t = v ? ten(v) : null
+    if (t) out.add(t)
+  }
+  return out
 }
 

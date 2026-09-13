@@ -22,7 +22,14 @@ jest.mock('@/lib/agent/sendApproved', () => ({
 }))
 
 const mockRedraft = jest.fn()
+// `requireActual` spread, not a bare object (hard-won rule 7). This mock used to
+// return ONLY `redraftForReviewer`, so the day reviewLoop started importing
+// `planStatusOf` from the same module, nine tests died with "is not a function" —
+// a guardrail moved between modules breaking its own test, for the second time in
+// this chain. Spreading the real module means a new export is available by
+// default and only the one function under control is replaced.
 jest.mock('@/lib/agent/draftInquiry', () => ({
+  ...jest.requireActual('@/lib/agent/draftInquiry'),
   redraftForReviewer: (...a: any[]) => mockRedraft(...a),
 }))
 

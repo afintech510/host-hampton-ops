@@ -40,8 +40,16 @@ import { getSupabase } from '@/lib/supabase'
 import { assertLlmBudget, recordLlmSpend, BudgetExceededError } from '@/lib/marketing/budget'
 import { writeLedger } from '@/lib/marketing/graph'
 import { coerceIsoDate } from '@/lib/plan'
+import { screenPublicGuestCount } from '@/lib/publicIntake'
 import { costUsd, triageModel, AGENT_ACTOR, DRAFT_ENTITY } from './config'
 import type { InquiryBooking } from '@/lib/inquiryDrafts'
+
+/**
+ * The agent's own ceiling on a guest count it read out of a stranger's prose,
+ * applied ON TOP of `screenPublicGuestCount`. The studio's standing capacity with
+ * room to spare for a mobile party; the largest real party in the table is 65.
+ */
+export const MAX_EXTRACTED_GUESTS = 200
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -302,9 +310,13 @@ function coerceText(v: unknown, max: number): string | null {
 export function sanitizeExtracted(
   raw: Record<string, unknown>,
   allowed: readonly ExtractableField[],
+  /** Injectable so the past-date rule is testable without mocking the clock. */
+  today: string = todayInNewYork(),
 ): { fields: ExtractedFields; requestedDateText: string | null } {
   const ok = new Set<string>(allowed)
   const fields: ExtractedFields = {}
+  /** A rejected date that is still real information — see below. */
+  let rejectedDate: string | null = null
 
   if (ok.has('contact_name')) {
     const v = coerceText(raw.contact_name, 120)
@@ -313,17 +325,42 @@ export function sanitizeExtracted(
   if (ok.has('party_date')) {
     // Strict: a date that is not a real calendar day is no date at all.
     const v = coerceIsoDate(typeof raw.party_date === 'string' ? raw.party_date : null)
-    if (v) fields.party_date = v
+    // And a real calendar day IN THE PAST is not a party date either.
+    //
+    // `coerceIsoDate` checks that a date EXISTS, not that it could be a party.
+    // The model is asked to resolve "this Saturday" and "the 14th" against today,
+    // and the failure mode of a relative-date resolver is to land in the wrong
+    // month or the wrong year — which `coerceIsoDate` cannot see, because
+    // 2025-10-14 is a perfectly good Tuesday.
+    //
+    // Writing one onto a real plan is rule 15 exactly: a guessed date STOPS THE
+    // AGENT ASKING, and it is worse than that here, because `party_date` arriving
+    // is what computes `modification_cutoff` and `guest_count_cutoff` — so a past
+    // date locks a live booking's modification windows the moment it lands, and
+    // the customer is told their date is fixed for a day that has already been.
+    //
+    // Dropped as a FIELD and kept as free text, because "October 14th" is a real
+    // thing the customer said and the draft node quotes it back when it asks
+    // again. A blank keeps us asking; a wrong date makes us confident.
+    if (v && v >= today) fields.party_date = v
+    else if (v) rejectedDate = v
   }
   if (ok.has('party_time')) {
     const v = coerceTime(raw.party_time)
     if (v) fields.party_time = v
   }
   if (ok.has('guest_count')) {
-    const n = typeof raw.guest_count === 'number' ? raw.guest_count : Number(raw.guest_count)
-    // A 400-child party is a misread headcount, not a booking. The ceiling is
-    // the studio's standing capacity with room to spare for a mobile party.
-    if (Number.isInteger(n) && n > 0 && n <= 200) fields.guest_count = n
+    // ONE definition of "is this a guest count at all", shared with every public
+    // writer (`lib/publicIntake.ts`). It used to be a fourth hand-rolled
+    // `Number.isInteger(n) && n > 0 && n <= 200` beside three others — and link
+    // 21 established that this column is the MULTIPLIER in `loadPlanInvoice`'s
+    // per-head arithmetic, so it is a money input whichever door it comes
+    // through. The agent's tighter ceiling is kept, and stated as a tightening
+    // rather than as a second screen: a model reading a stranger's prose has no
+    // business writing a 400-child party, while a human filling in a form for a
+    // school fundraiser might.
+    const screened = screenPublicGuestCount(raw.guest_count)
+    if (screened !== null && screened <= MAX_EXTRACTED_GUESTS) fields.guest_count = screened
   }
   if (ok.has('rental_duration')) {
     const v = coerceText(raw.rental_duration, 80)
@@ -335,8 +372,11 @@ export function sanitizeExtracted(
   }
 
   // Kept whatever happens to party_date: "mid-March" is real information the
-  // draft node should quote back when it asks again.
-  const requestedDateText = ok.has('party_date') ? coerceText(raw.requestedDateText, 120) : null
+  // draft node should quote back when it asks again. A date the model resolved
+  // into the past falls back to here too, so the evidence survives the refusal.
+  const requestedDateText = ok.has('party_date')
+    ? coerceText(raw.requestedDateText, 120) ?? rejectedDate
+    : null
 
   return { fields, requestedDateText }
 }
@@ -511,11 +551,19 @@ export async function applyExtractedFields(args: {
 
   const { data: row, error: readErr } = await supabase
     .from('bookings')
-    .select('id, party_date, party_time, guest_count_approx, contact_name, party_tags')
+    .select('id, status, party_date, party_time, guest_count_approx, contact_name, party_tags')
     .eq('id', bookingId)
     .maybeSingle()
-  if (readErr || !row) {
-    return { updated: [], error: readErr?.message ?? 'plan not found' }
+  // Three outcomes, not two (rule 12): "I could not read the plan" is not "there
+  // is no plan", and only the second is a conclusion about this booking.
+  if (readErr) return { updated: [], error: `could not read the plan: ${readErr.message}` }
+  if (!row) return { updated: [], error: 'plan not found' }
+
+  // A cancelled party does not get its fields filled in from a stranger's prose.
+  // Same stand-down as the draft node (plan §4.6) — this is the WRITE half of it,
+  // and it is reachable independently because `applyExtractedFields` is exported.
+  if (typeof row.status === 'string' && row.status === 'cancelled') {
+    return { updated: [], error: 'plan is cancelled — nothing written (plan §4.6)' }
   }
 
   const blank = (v: unknown) => v == null || (typeof v === 'string' && v.trim() === '')
@@ -591,7 +639,14 @@ export async function applyExtractedFields(args: {
   // turn a legitimate fill into a silent no-op, so they keep the old behaviour.
   let write = supabase.from('bookings').update(patch).eq('id', bookingId)
   const guard = (col: 'contact_name' | 'party_date' | 'party_time' | 'guest_count_approx', was: unknown) => {
-    if (patch[col] !== undefined && was == null) write = write.is(col, null)
+    if (patch[col] === undefined) return
+    if (was == null) write = write.is(col, null)
+    // `guest_count_approx` has a SECOND fillable value: `blank()` for it is
+    // `!(Number(x) > 0)`, so a literal 0 is treated as blank — and `.is(col,
+    // null)` would not match a 0, so this column alone was written
+    // unconditionally in that case, losing the compare-and-swap the rest of the
+    // function depends on. `.eq(col, 0)` restores it precisely.
+    else if (col === 'guest_count_approx' && Number(was) === 0) write = write.eq(col, 0)
   }
   guard('contact_name', row.contact_name)
   guard('party_date', row.party_date)

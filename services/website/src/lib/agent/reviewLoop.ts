@@ -23,7 +23,7 @@ import { normalizePhone } from '@/lib/sms'
 import { ownerEmail } from '@/lib/ownerNotify'
 import { sendSMSViaQuo } from '@/lib/quo'
 import { advance, writeLedger } from '@/lib/marketing/graph'
-import { redraftForReviewer } from './draftInquiry'
+import { redraftForReviewer, planStatusOf } from './draftInquiry'
 import { sendApprovedDraft, resolveRecipient, SEND_COLUMNS, type SendableDraft } from './sendApproved'
 import { isReviewerPhone } from './reviewers'
 
@@ -184,9 +184,15 @@ export interface OpenDraft {
   status: string
   party_type: string
   created_at: string
+  /** Non-null when a guardrail PARKED this draft. See `approve`. */
+  error: string | null
+  booking_id: string | null
 }
 
-const OPEN_COLUMNS = 'id, review_code, status, party_type, created_at'
+const OPEN_COLUMNS = 'id, review_code, status, party_type, created_at, error, booking_id'
+
+/** How many open drafts the ambiguity list reads, and therefore counts. */
+const OPEN_LIST_LIMIT = 10
 
 export type Resolution =
   | {
@@ -202,19 +208,44 @@ export type Resolution =
       outOfContext?: boolean
     }
   | { kind: 'none' }
-  | { kind: 'ambiguous'; drafts: OpenDraft[] }
+  | {
+      kind: 'ambiguous'
+      drafts: OpenDraft[]
+      /** True when there are MORE open drafts than `drafts` holds. */
+      truncated: boolean
+    }
   | { kind: 'unknown_code'; code: string }
+  /** Could not look it up. NOT the same as "no such code" (rule 12). */
+  | { kind: 'unavailable'; error: string }
 
-/** The draft most recently texted to the reviewers — their working context. */
-async function mostRecentlyTexted(supabase: Supa): Promise<string | null> {
-  const { data } = await supabase
+/**
+ * The draft most recently texted to the reviewers — their working context.
+ *
+ * Three outcomes, not two. This used to return `string | null`, and the caller
+ * computed `outOfContext: !!top && top !== draft.id` — so a failed read produced
+ * `null`, which produced `outOfContext: false`, which SILENTLY SKIPPED the
+ * confirmation prompt. The one guard standing between a reviewer's typo and a
+ * real quote going to the wrong real customer disappeared on a Supabase blip, and
+ * nothing anywhere said so.
+ *
+ * `unavailable` now means CONFIRM. Asking once when we did not need to costs one
+ * text; not asking when we did costs a customer relationship.
+ */
+async function mostRecentlyTexted(
+  supabase: Supa,
+): Promise<{ ok: true; id: string | null } | { ok: false; error: string }> {
+  const { data, error } = await supabase
     .from('inquiry_drafts')
     .select('id')
     .in('status', OPEN_STATUSES)
     .not('sent_for_review_at', 'is', null)
     .order('sent_for_review_at', { ascending: false })
     .limit(1)
-  return ((data ?? [])[0] as { id: string } | undefined)?.id ?? null
+  if (error) {
+    console.error('reviewLoop mostRecentlyTexted failed — will ask for confirmation:', error.message)
+    return { ok: false, error: error.message }
+  }
+  return { ok: true, id: ((data ?? [])[0] as { id: string } | undefined)?.id ?? null }
 }
 
 /**
@@ -223,35 +254,47 @@ async function mostRecentlyTexted(supabase: Supa): Promise<string | null> {
  */
 export async function resolveDraft(supabase: Supa, parsed: ParsedReply): Promise<Resolution> {
   if (parsed.code) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('inquiry_drafts')
       .select(OPEN_COLUMNS)
       .eq('review_code', parsed.code)
       .maybeSingle()
+    // A read that FAILED is not evidence the code does not exist. Telling a
+    // reviewer "I can't find a draft matching HH-2026-0042" over a Supabase
+    // timeout is a confident false statement about a row that is sitting right
+    // there (rules 10 and 12), and it is the kind a human acts on.
+    if (error) return { kind: 'unavailable', error: error.message }
     if (!data) return { kind: 'unknown_code', code: parsed.code }
     const draft = data as unknown as OpenDraft
     const top = await mostRecentlyTexted(supabase)
-    return { kind: 'one', draft, outOfContext: !!top && top !== draft.id }
+    return { kind: 'one', draft, outOfContext: !top.ok || (!!top.id && top.id !== draft.id) }
   }
 
-  const { data } = await supabase
+  // One more than we show, so "are there others?" is answered by the read rather
+  // than assumed. The message used to say "There are 10 open drafts" whenever
+  // there were ten or more — production has fifteen — which is a number a human
+  // reads as a fact.
+  const { data, error } = await supabase
     .from('inquiry_drafts')
     .select(OPEN_COLUMNS)
     .in('status', OPEN_STATUSES)
     .order('created_at', { ascending: false })
-    .limit(10)
-  const open = (data ?? []) as unknown as OpenDraft[]
+    .limit(OPEN_LIST_LIMIT + 1)
+  if (error) return { kind: 'unavailable', error: error.message }
+  const all = (data ?? []) as unknown as OpenDraft[]
+  const truncated = all.length > OPEN_LIST_LIMIT
+  const open = all.slice(0, OPEN_LIST_LIMIT)
 
   if (parsed.shortCode) {
     const hits = open.filter(d => d.review_code.endsWith(parsed.shortCode as string))
     if (hits.length === 1) return { kind: 'one', draft: hits[0] }
     if (hits.length === 0) return { kind: 'unknown_code', code: parsed.shortCode }
-    return { kind: 'ambiguous', drafts: hits }
+    return { kind: 'ambiguous', drafts: hits, truncated: false }
   }
 
   if (open.length === 0) return { kind: 'none' }
   if (open.length === 1) return { kind: 'one', draft: open[0] }
-  return { kind: 'ambiguous', drafts: open }
+  return { kind: 'ambiguous', drafts: open, truncated }
 }
 
 /* ── The loop ───────────────────────────────────────────────────────── */
@@ -279,6 +322,7 @@ export interface ReviewReplyResult {
     | 'ambiguous'
     | 'unknown_code'
     | 'needs_confirmation'
+    | 'plan_stood_down'
     | 'approved_and_sent'
     | 'approved_send_failed'
     | 'cancelled'
@@ -367,12 +411,24 @@ export async function handleReviewerReply(input: ReviewReplyInput): Promise<Revi
     return { handled: true, intent: parsed.intent, outcome: 'unknown_code', reply }
   }
 
+  if (resolution.kind === 'unavailable') {
+    // Say what actually happened. The alternative — "I can't find that draft" —
+    // is a statement about the data when the truth is a statement about us, and
+    // the reviewer would go looking for a row that is fine.
+    const reply = `I couldn't look that up just now (${resolution.error.slice(0, 60)}). Nothing was changed and nothing went to the customer — try again in a minute.`
+    await replyToReviewer(from, reply)
+    return { handled: true, intent: parsed.intent, outcome: 'error', reply, error: resolution.error }
+  }
+
   if (resolution.kind === 'ambiguous') {
     const list = resolution.drafts
       .slice(0, 5)
       .map(d => `${d.review_code} (${d.party_type.replace(/_/g, ' ')})`)
       .join('\n')
-    const reply = `There are ${resolution.drafts.length} open drafts — which one?\n${list}\nReply with the code, e.g. "SEND HH-2026-0042".`
+    const howMany = resolution.truncated
+      ? `more than ${resolution.drafts.length} open drafts`
+      : `${resolution.drafts.length} open drafts`
+    const reply = `There are ${howMany} — which one?\n${list}\nReply with the code, e.g. "SEND HH-2026-0042".`
     await replyToReviewer(from, reply)
     return { handled: true, intent: parsed.intent, outcome: 'ambiguous', reply }
   }
@@ -380,10 +436,51 @@ export async function handleReviewerReply(input: ReviewReplyInput): Promise<Revi
   const draft = resolution.draft
   const actor = { id: `REVIEWER:${from}`, isAdmin: true }
 
+  // ── A cancelled PARTY does not get a reply sent about it.
+  //
+  // Plan §4.6's stand-down is implemented in the draft node now, but drafts that
+  // predate it are still sitting in the queue: production held THREE open
+  // `sent_for_review` drafts whose plan was cancelled, two of them real customers
+  // whose parties had been called off. Approving one texts and emails a real
+  // person about a party that is not happening, and there is no undo. The Admin
+  // Inbox already SURFACED this hazard ("an OPEN draft whose plan has been
+  // cancelled is a live hazard, not a curiosity") and neither surface refused it.
+  //
+  // Refused outright rather than confirmed: unlike a wrong-code typo, there is no
+  // version of this that the reviewer meant. Cancel the draft, or re-open the
+  // plan.
+  if (parsed.intent === 'approve' || parsed.intent === 'test') {
+    const plan = await planStatusOf(supabase, draft.booking_id)
+    if (plan.standDown) {
+      const reply =
+        `${draft.review_code} is for a ${plan.status} party (${plan.ref ?? 'no ref'}), so I didn't send it. ` +
+        `Reply CANCEL ${draft.review_code} to drop it, or re-open the plan in Admin first.`
+      await replyToReviewer(from, reply)
+      return {
+        handled: true,
+        intent: parsed.intent,
+        draftId: draft.id,
+        reviewCode: draft.review_code,
+        outcome: 'plan_stood_down',
+        reply,
+      }
+    }
+  }
+
   // ── One confirmation when an approval names a draft that is not the one we
-  // last texted. See Resolution.outOfContext. Only `approve` asks: cancel, test
-  // and revise are all recoverable, and a send is not.
-  if (parsed.intent === 'approve' && resolution.outOfContext && draft.status !== 'sent') {
+  // last texted, OR when a guardrail PARKED it. See Resolution.outOfContext.
+  // Only `approve` asks: cancel, test and revise are all recoverable, and a send
+  // is not.
+  //
+  // The PARKED half is new, and it is the one that mattered. A parked draft is by
+  // definition the one class of draft a human must read before approving — the
+  // whole reason `parkedSmsBody` exists and deliberately does NOT end with "Reply
+  // SEND" — and it was the one class of draft whose approval was completely
+  // unguarded. `SEND HH-2026-4295` on a draft held for `foreign_contact_in_draft`
+  // went straight to the customer without the reason being mentioned once.
+  const parkedReason = typeof draft.error === 'string' && draft.error.trim() !== '' ? draft.error.trim() : null
+  const needsConfirm = parsed.intent === 'approve' && draft.status !== 'sent' && (resolution.outOfContext || !!parkedReason)
+  if (needsConfirm) {
     if (!(await hasPendingConfirm(supabase, draft.id, from))) {
       const who = await describeRecipient(supabase, draft.id)
       await writeLedger(supabase, {
@@ -391,10 +488,21 @@ export async function handleReviewerReply(input: ReviewReplyInput): Promise<Revi
         entityId: draft.id,
         action: 'note',
         actor: actor.id,
-        meta: { job: CONFIRM_JOB, review_code: draft.review_code, reviewer: from },
+        meta: {
+          job: CONFIRM_JOB,
+          review_code: draft.review_code,
+          reviewer: from,
+          // Which of the two reasons asked, so the audit trail can tell a typo
+          // guard from a guardrail override.
+          because: parkedReason ? 'parked' : 'out_of_context',
+          parked_reason: parkedReason,
+        },
       })
+      const because = parkedReason
+        ? `${draft.review_code} was HELD BACK: ${parkedReason.slice(0, 160)}`
+        : `${draft.review_code} is not the draft I last sent you`
       const reply =
-        `Just checking — ${draft.review_code} is not the draft I last sent you. ` +
+        `Just checking — ${because}. ` +
         `It goes to ${who}. Reply SEND ${draft.review_code} again to confirm.`
       await replyToReviewer(from, reply)
       return {

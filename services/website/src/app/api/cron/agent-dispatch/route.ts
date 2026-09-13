@@ -61,6 +61,44 @@ const CLAIM_REAP_MS = 15 * 60 * 1000
  */
 const MAX_DRAFT_ATTEMPTS = 3
 
+/**
+ * Put a claimed event back in the queue, and SAY SO when that fails.
+ *
+ * This existed three times inline — the triage retry, the budget refusal and the
+ * 5xx retry — and all three were bare `await supabase.from(…).update(…)` with the
+ * error discarded and no `.select()`, so neither "the write was refused" nor "it
+ * matched no rows" was visible to anything (rule 19, both halves). The failure is
+ * survivable — `reapStaleClaims` recovers a stuck `claimed` row after fifteen
+ * minutes — but a lead sitting fifteen minutes longer than it should, for a
+ * reason nothing recorded, is exactly the silence §18 cost a real lead over.
+ *
+ * `attempts` omitted means "no attempt was burned": nothing was wrong with the
+ * event, only with us. That is the budget case.
+ */
+async function requeueEvent(
+  supabase: Supa,
+  event: InboundEvent,
+  errorText: string,
+  attempts?: number,
+): Promise<void> {
+  const patch: Record<string, unknown> = { status: 'new', claimed_at: null, error: errorText }
+  if (attempts !== undefined) {
+    patch.classification_meta = { ...(event.classification_meta ?? {}), agent_attempts: attempts }
+  }
+  const { data, error } = await supabase
+    .from('ingested_messages')
+    .update(patch)
+    .eq('id', event.id)
+    .select('id')
+  if (error) {
+    console.error(`cron:agent-dispatch could not requeue ${event.id}:`, error.message)
+    return
+  }
+  if ((data ?? []).length !== 1) {
+    console.error(`cron:agent-dispatch requeue of ${event.id} matched no rows — it will be reaped instead`)
+  }
+}
+
 /** Draft attempts already spent on this event. */
 function attemptsOf(event: InboundEvent): number {
   const n = Number((event.classification_meta as { agent_attempts?: unknown } | null)?.agent_attempts)
@@ -72,17 +110,50 @@ const BOOKING_COLUMNS =
 
 type Supa = ReturnType<typeof getSupabase>
 
-/** Agent LLM spend so far today (UTC), in USD. */
-async function spentTodayUsd(supabase: Supa): Promise<number> {
+/**
+ * Entity types whose LLM calls are the AGENT's spend.
+ *
+ * `inquiry_draft` covers triage, extraction, the draft node and every re-draft;
+ * `agent_learning` covers the weekly distiller. Both are this subsystem's money
+ * and both must count against its ceiling.
+ */
+const AGENT_SPEND_ENTITIES = [DRAFT_ENTITY, 'agent_learning'] as const
+
+/**
+ * Agent LLM spend so far today (UTC), in USD. Null when it could not be read.
+ *
+ * ── Two defects, both of which unbounded the ceiling ──────────────────────
+ *
+ * 1. **It filtered on `actor = 'AGENT'`.** The agent's nodes bill under three
+ *    other actors: `agent:distill` (the weekly run), `admin:<email>` / `'ADMIN'`
+ *    (the Inbox's "Draft now" and the chat composer) and `REVIEWER:+1…` (an SMS
+ *    revision). Production already held SIX `llm_call` rows the cap could not
+ *    see, one of them a single $0.025 distiller call — 0.5% of the day's ceiling
+ *    in one invisible call. Filtering by ENTITY instead counts the subsystem's
+ *    spend however it was triggered, which is what a budget is for, and still
+ *    excludes the marketing and social nodes, which have their own.
+ *
+ * 2. **A failed read returned 0**, i.e. "nothing spent today", i.e. the ceiling
+ *    is off. `spent >= cap` then never fires and the dispatcher drafts freely.
+ *    The MONTHLY breaker in `lib/marketing/budget.ts` throws rather than guessing
+ *    and is the hard stop, so this was never unbounded in the large — but a daily
+ *    cap that silently reads zero is rule 12's exact shape, and the honest answer
+ *    to "how much have we spent" is sometimes "I cannot tell".
+ */
+async function spentTodayUsd(supabase: Supa): Promise<number | null> {
   const startOfDay = new Date()
   startOfDay.setUTCHours(0, 0, 0, 0)
   const { data, error } = await supabase
     .from('marketing_ledger')
     .select('cost_usd')
     .eq('action', 'llm_call')
-    .eq('actor', AGENT_ACTOR)
+    .in('entity_type', AGENT_SPEND_ENTITIES as unknown as string[])
     .gte('created_at', startOfDay.toISOString())
-  if (error || !data) return 0
+  if (error) {
+    console.error('cron:agent-dispatch could not read today’s spend:', error.message)
+    return null
+  }
+  if (!data) return null
   return data.reduce((sum, r) => sum + Number((r as { cost_usd: number | null }).cost_usd ?? 0), 0)
 }
 
@@ -228,6 +299,15 @@ export async function GET(req: NextRequest) {
 
   const cap = dailyUsdCap()
   const spent = await spentTodayUsd(supabase)
+  if (spent === null) {
+    // Cannot price the day, so do not spend it. The monthly breaker would still
+    // hold, but "I don't know what we've spent" is not a licence to keep going,
+    // and this reads as a 503 an operator can see rather than a clean run.
+    return NextResponse.json(
+      { enabled: true, claimed: 0, drafted: 0, error: 'could not read today’s LLM spend — standing down this run' },
+      { status: 503 },
+    )
+  }
   if (spent >= cap) {
     await noticeCapOnce(supabase, spent, cap)
     return NextResponse.json({ enabled: true, claimed: 0, drafted: 0, capped: true, spentUsd: spent, capUsd: cap })
@@ -329,15 +409,7 @@ export async function GET(req: NextRequest) {
       if (triage.error) {
         const attempts = attemptsOf(event) + 1
         if (attempts < MAX_DRAFT_ATTEMPTS) {
-          await supabase
-            .from('ingested_messages')
-            .update({
-              status: 'new',
-              claimed_at: null,
-              error: `triage: ${triage.error} (attempt ${attempts}/${MAX_DRAFT_ATTEMPTS})`,
-              classification_meta: { ...(event.classification_meta ?? {}), agent_attempts: attempts },
-            })
-            .eq('id', event.id)
+          await requeueEvent(supabase, event, `triage: ${triage.error} (attempt ${attempts}/${MAX_DRAFT_ATTEMPTS})`, attempts)
           results.push({ kind: 'event', id: event.id, outcome: 'requeued_triage_retry', error: triage.error })
         } else {
           await finishEvent(supabase, event.id, 'error', { error: `triage: ${triage.error}` })
@@ -373,7 +445,18 @@ export async function GET(req: NextRequest) {
         }).catch(() => null)
         if (newContactId) {
           gmailEvent.contact_id = newContactId
-          await supabase.from('ingested_messages').update({ contact_id: newContactId }).eq('id', gmailEvent.id)
+          // Read the error (rule 19). If this write is lost the in-memory event
+          // carries a contact id the ROW does not, so the draft is anchored to a
+          // contact the event cannot be traced to — and `isFirstTouch`, which
+          // queries by `contact_id`, would answer for a different history next
+          // time round.
+          const { error: linkErr } = await supabase
+            .from('ingested_messages')
+            .update({ contact_id: newContactId })
+            .eq('id', gmailEvent.id)
+          if (linkErr) {
+            console.error(`cron:agent-dispatch could not link contact to event ${gmailEvent.id}:`, linkErr.message)
+          }
         }
       }
 
@@ -433,10 +516,7 @@ export async function GET(req: NextRequest) {
         // queue (marking it 'error' would silently drop the lead for good) and
         // stop the batch rather than fail every remaining item. No attempt is
         // burned — nothing was wrong with the event.
-        await supabase
-          .from('ingested_messages')
-          .update({ status: 'new', claimed_at: null, error: outcome.error })
-          .eq('id', event.id)
+        await requeueEvent(supabase, event, outcome.error)
         results.push({ kind: 'event', id: event.id, outcome: 'requeued_budget', error: outcome.error })
         break
       } else if (outcome.status >= 500 && attemptsOf(event) + 1 < MAX_DRAFT_ATTEMPTS) {
@@ -445,15 +525,7 @@ export async function GET(req: NextRequest) {
         // deploy shipped a broken Claude call, and the first cron run marked
         // every waiting lead 'error' permanently. Re-queue, bounded.
         const attempts = attemptsOf(event) + 1
-        await supabase
-          .from('ingested_messages')
-          .update({
-            status: 'new',
-            claimed_at: null,
-            error: `${outcome.error} (attempt ${attempts}/${MAX_DRAFT_ATTEMPTS})`,
-            classification_meta: { ...(event.classification_meta ?? {}), agent_attempts: attempts },
-          })
-          .eq('id', event.id)
+        await requeueEvent(supabase, event, `${outcome.error} (attempt ${attempts}/${MAX_DRAFT_ATTEMPTS})`, attempts)
         results.push({ kind: 'event', id: event.id, outcome: 'requeued_retry', error: outcome.error })
       } else {
         await finishEvent(supabase, event.id, 'error', { error: outcome.error })

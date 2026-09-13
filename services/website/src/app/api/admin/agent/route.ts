@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
-import { draftForInquiry, redraftForReviewer, DRAFT_ENTITY } from '@/lib/agent/draftInquiry'
+import { draftForInquiry, redraftForReviewer, planStatusOf, DRAFT_ENTITY } from '@/lib/agent/draftInquiry'
 import { tonePresetNote } from '@/lib/agent/tonePresets'
 import { finishEvent, type InboundEvent } from '@/lib/agent/events'
 import { agentEnabled, draftModel, reviewLinkSecret } from '@/lib/agent/config'
@@ -208,11 +208,38 @@ export async function POST(req: NextRequest) {
   // ── Draft actions.
   const { data: draft, error: readErr } = await supabase
     .from('inquiry_drafts')
-    .select('id, status, review_code, email_draft, sms_draft, revisions')
+    .select('id, status, review_code, email_draft, sms_draft, revisions, error, booking_id')
     .eq('id', body.id)
     .maybeSingle()
 
-  if (readErr || !draft) return NextResponse.json({ error: 'Draft not found' }, { status: 404 })
+  // Three outcomes, not two (rule 12).
+  if (readErr) return NextResponse.json({ error: `Could not read the draft: ${readErr.message}` }, { status: 503 })
+  if (!draft) return NextResponse.json({ error: 'Draft not found' }, { status: 404 })
+
+  // ── A cancelled PARTY does not get a reply approved or sent about it.
+  //
+  // This route's own GET already says it: "an OPEN draft whose plan has been
+  // cancelled is a live hazard, not a curiosity: approving it sends a customer a
+  // quote for a party that was called off. Production had two of these the day
+  // this was written." It surfaced `booking_status` for the UI and then refused
+  // nothing — so the hazard was displayed to a human and left executable by the
+  // same request. Plan §4.6's stand-down now binds this surface too.
+  //
+  // `edit`, `dismiss` and `revise` are deliberately still allowed: dropping such
+  // a draft or tidying it up is exactly what somebody should be able to do.
+  if (body.action === 'approve' || body.action === 'send' || body.action === 'test') {
+    const plan = await planStatusOf(supabase, draft.booking_id as string | null)
+    if (plan.standDown) {
+      return NextResponse.json(
+        {
+          error: `This draft is for a ${plan.status} party (${plan.ref ?? 'no ref'}). Dismiss the draft, or re-open the plan first.`,
+          planStatus: plan.status,
+          bookingRef: plan.ref,
+        },
+        { status: 409 },
+      )
+    }
+  }
 
   const from = draft.status as string
   const revisions = Array.isArray(draft.revisions) ? draft.revisions : []
@@ -365,13 +392,34 @@ export async function POST(req: NextRequest) {
       // rather than left to discover a 404 later. A guardrail that retires
       // something has to say that it retired it.
       mintedPreviewPath = minted ? `/review/${encodeURIComponent(minted.token)}` : null
+      // The guardrail hold is cleared by a human taking ownership of the TEXT —
+      // and that means the text has to have actually changed.
+      //
+      // It used to be cleared unconditionally, which made `{action:'edit', id}`
+      // with no fields at all — or with only a new `subject` — launder a parked
+      // draft: `error` went null, the status went to `sent_for_review`, and the
+      // flagged bytes were never touched. The one class of draft that exists
+      // because a human must read it first could be released without reading it,
+      // by a request that edited nothing. Rule 10 in miniature: the guardrail
+      // stopped saying it had stopped anything, over a change that changed
+      // nothing.
+      const textChanged = emailDraft !== draft.email_draft || smsDraft !== draft.sms_draft
+      const heldBack = typeof draft.error === 'string' && draft.error.trim() !== ''
+      if (heldBack && !textChanged) {
+        return NextResponse.json(
+          {
+            error: `This draft is held back (${String(draft.error).slice(0, 160)}). Change the email or SMS text to release it — editing the subject alone does not clear the hold.`,
+            heldBack: true,
+          },
+          { status: 409 },
+        )
+      }
       patch = {
         status: to,
         ...(minted ? { preview_token_hash: minted.hash } : {}),
         email_draft: emailDraft,
         sms_draft: smsDraft,
         reviewer_note: body.note ?? null,
-        // The guardrail hold is cleared by a human taking ownership of the text.
         error: null,
         // Editing an already-approved draft un-approves it: the approval was for
         // the old words. And the edited text gets a fresh 2-hour nudge clock.

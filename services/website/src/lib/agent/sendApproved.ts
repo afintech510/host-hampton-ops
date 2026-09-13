@@ -22,6 +22,7 @@ import { advance, writeLedger, type Actor } from '@/lib/marketing/graph'
 import { sendSMSViaQuo } from '@/lib/quo'
 import { normalizePhone } from '@/lib/sms'
 import { applySignatureRule } from './draftInquiry'
+import { containsForeignContact } from './draftGuards'
 import { siteUrl } from './config'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailHref } from '@/lib/emailSafety'
@@ -274,6 +275,48 @@ export async function sendApprovedDraft(input: SendApprovedInput): Promise<SendR
     ? { email: input.testTo?.email ?? null, phone: input.testTo?.phone ?? null, name: real.name }
     : real
 
+  // ── THE LAST POINT AT WHICH REFUSING IS FREE.
+  //
+  // Re-screen the exact bytes about to leave, for the money-redirect axis only.
+  // The draft node already screened them, and that is the argument for doing it
+  // again rather than against it (rule 8): between then and now the text has been
+  // through an admin `edit` (free text, no screen), a re-draft, and a human
+  // skimming SMS on a phone — and `containsForeignContact` itself was found to
+  // have let `https://buy.stripe.com/<attacker>` and a bare Zelle phone number
+  // straight through, so drafts approved before that fix are sitting in the queue
+  // having passed a screen that did not work.
+  //
+  // Only the FOREIGN-CONTACT axis, not the money or concession checks: a
+  // quote-path draft legitimately discusses the deposit, and an admin who has
+  // edited the text is allowed to have the last word on its wording. Nobody is
+  // allowed to have the last word on where the money goes.
+  const redirect =
+    containsForeignContact(draft.email_draft || '') ||
+    containsForeignContact(draft.sms_draft || '') ||
+    containsForeignContact(draft.subject || '')
+  if (redirect) {
+    const why = `refusing to send: this draft contains a ${redirect} that is not ours. Edit it in Admin → Inbox to remove it.`
+    console.error(`sendApproved ${draft.review_code}: ${why}`)
+    await writeLedger(supabase, {
+      entityType: DRAFT_ENTITY,
+      entityId: draftId,
+      action: 'note',
+      actor: input.actor.id,
+      meta: { job: 'send_refused', review_code: draft.review_code, reason: redirect, test: isTest },
+    }).catch(() => undefined)
+    return {
+      ok: false,
+      draftId,
+      reviewCode: draft.review_code,
+      emailSent: false,
+      smsSent: false,
+      closed: false,
+      ...(isTest ? { test: true } : {}),
+      recipient: { email: null, phone: null, name: null },
+      errors: [why],
+    }
+  }
+
   const channel = draft.channel || 'both'
   const wantEmail = channel !== 'sms' && !!draft.email_draft
   const wantSms = channel !== 'email' && !!draft.sms_draft
@@ -369,7 +412,15 @@ export async function sendApprovedDraft(input: SendApprovedInput): Promise<SendR
   if (emailSent) stamp.customer_email_message_id = emailMessageId
   if (smsSent) stamp.customer_sms_message_id = smsMessageId
   stamp.send_error = errors.length ? errors.join('; ') : null
-  await supabase.from('inquiry_drafts').update(stamp).eq('id', draftId)
+  // Read the error. This was the one write on the whole agent surface that did
+  // not (rule 19), and it is the write that records `send_error` and the two
+  // provider message ids — so a failure here is precisely a send whose outcome
+  // nobody can reconstruct.
+  const { error: stampErr } = await supabase.from('inquiry_drafts').update(stamp).eq('id', draftId)
+  if (stampErr) {
+    console.error(`sendApproved ${draft.review_code}: could not record the send result:`, stampErr.message)
+    errors.push(`bookkeeping: ${stampErr.message}`)
+  }
 
   // ── Close the draft only when every channel it covers is done. A partial
   // failure stays 'approved' so it is visibly unfinished and can be retried.

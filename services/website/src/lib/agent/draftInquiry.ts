@@ -129,7 +129,7 @@ export type DraftOutcome =
  * moved between modules from silently breaking its own test (hard-won rule 7).
  */
 export { containsMoney, containsFabricatedTerms, containsForeignContact } from './draftGuards'
-import { containsMoney, containsFabricatedTerms, containsForeignContact } from './draftGuards'
+import { containsMoney, screenGeneratedDraft } from './draftGuards'
 
 /**
  * What the learned-rules load left unsaid, for the ledger.
@@ -252,8 +252,61 @@ export function inquiryFromEvent(event: Pick<InboundEvent, 'parsed' | 'subject' 
 
 /** The `bookings` columns the draft node reads as an `InquiryBooking`. */
 export const PLAN_COLUMNS =
-  'id, booking_ref, event_type, package_type, notes, party_tags, contact_name, contact_email, ' +
+  'id, booking_ref, status, event_type, package_type, notes, party_tags, contact_name, contact_email, ' +
   'contact_phone, party_date, party_time, guest_count_approx, child_name, child_age'
+
+/**
+ * Plan statuses the agent stands down on.
+ *
+ * Plan §4.6 has said since the first version of this document: "If a human
+ * already replied on the thread, **or the plan is `cancelled`**, no draft." The
+ * first half was implemented in triage (`humanAlreadyReplied`). The second half
+ * was never implemented anywhere — `PLAN_COLUMNS` did not even select `status` —
+ * and production had grown three open `sent_for_review` drafts hanging off
+ * cancelled plans, two of them real customers whose parties had been called off.
+ * A reviewer approving one of those texts and emails a real person a reply about
+ * a party that is not happening.
+ *
+ * Rule 8: a guarantee stated in the plan and implemented nowhere.
+ */
+export const STAND_DOWN_PLAN_STATUSES: readonly string[] = ['cancelled']
+
+/** True when this plan's status means the agent must not draft for it. */
+export function planIsStoodDown(status: unknown): boolean {
+  return typeof status === 'string' && STAND_DOWN_PLAN_STATUSES.includes(status)
+}
+
+/**
+ * Is the plan behind a draft stood down (plan §4.6)?
+ *
+ * Lives here, next to `planIsStoodDown`, because THREE surfaces need it — the
+ * SMS review loop, the admin Inbox, and the Slack loop if it ever grows one — and
+ * three copies of "is this party still happening" is exactly the rule-11 shape
+ * this chain keeps finding.
+ *
+ * Three outcomes, and the unreadable one does NOT stand down: refusing a
+ * perfectly good draft because Supabase blinked would break the review loop with
+ * no way for a reviewer to tell why. The draft node's own check runs BEFORE the
+ * model call on a row it has to read anyway and is the primary gate; this one
+ * catches drafts written before that gate existed.
+ */
+export async function planStatusOf(
+  supabase: Supa,
+  bookingId: string | null,
+): Promise<{ standDown: boolean; status: string | null; ref: string | null }> {
+  if (!bookingId) return { standDown: false, status: null, ref: null }
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('status, booking_ref')
+    .eq('id', bookingId)
+    .maybeSingle()
+  if (error || !data) {
+    if (error) console.error('planStatusOf failed (not standing down):', error.message)
+    return { standDown: false, status: null, ref: null }
+  }
+  const row = data as { status: string | null; booking_ref: string | null }
+  return { standDown: planIsStoodDown(row.status), status: row.status ?? null, ref: row.booking_ref ?? null }
+}
 
 /**
  * Merge a plan with the current message's own fields.
@@ -716,6 +769,19 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
   let plan: (InquiryBooking & { booking_ref?: string | null }) | null = booking ?? null
   if (!plan && bookingId) plan = await loadPlan(supabase, bookingId)
 
+  // ── STAND DOWN on a cancelled plan (plan §4.6). Before the model call, before
+  // extraction, before anything is written: a party that was called off does not
+  // get a reply drafted for it, and the reviewer must not be handed one to
+  // approve. `skipped` rather than an error — this is a decision, not a failure.
+  if (plan && planIsStoodDown((plan as { status?: unknown }).status)) {
+    return {
+      ok: false,
+      status: 409,
+      skipped: true,
+      error: `plan is ${String((plan as { status?: unknown }).status)} — standing down, no draft (plan §4.6)`,
+    }
+  }
+
   const fromEvent = event ? inquiryFromEvent(event) : null
   let inquiry: InquiryBooking =
     plan && fromEvent ? mergeInquiry(plan, fromEvent) : (plan ?? fromEvent!)
@@ -884,29 +950,15 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
       }
     }
 
-    // Injection guardrail, checked on the OUTPUT and on every path — the
+    // Injection guardrails, checked on the OUTPUT and on every path — the
     // inbound body is a stranger's text and a redirected payment handle is the
     // thing worth spending a park on. No corrective retry: if a foreign handle
     // or link got into the draft at all, a human should read why.
-    const foreign =
-      containsForeignContact(draft.emailDraft) ||
-      containsForeignContact(draft.smsDraft) ||
-      containsForeignContact(draft.emailSubject)
-    if (foreign && !guardrailError) {
-      guardrailError = `foreign_contact_in_draft: the draft contains a ${foreign} that is not ours — check the inbound message for an injected instruction`
-    }
-
-    // Runs on BOTH paths, unlike the money check above. Info-gather already
-    // bans every figure, but "your deposit is waived" carries no figure at all
-    // — and on the quote path, where we do talk about money, nothing was
-    // checking the content at all until now.
-    const fabricated =
-      containsFabricatedTerms(draft.emailDraft) ||
-      containsFabricatedTerms(draft.smsDraft) ||
-      containsFabricatedTerms(draft.emailSubject)
-    if (fabricated && !guardrailError) {
-      guardrailError = `fabricated_terms: the draft states ${fabricated}, which only Adam or Allie can agree to — check the inbound message for an injected instruction`
-    }
+    //
+    // ONE implementation, shared with the revision path below, and it screens
+    // `summaryForReviewer` as well as the two drafts and the subject — see
+    // `screenGeneratedDraft`.
+    if (!guardrailError) guardrailError = screenGeneratedDraft(draft, 'draft')
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'draft generation failed'
     console.error('draftForInquiry:', msg)
@@ -1161,6 +1213,16 @@ export async function redraftForReviewer(args: {
   if (row.booking_id) {
     plan = await loadPlan(supabase, row.booking_id as string)
     bookingRef = plan?.booking_ref ?? null
+    // Same stand-down as the first draft (plan §4.6). Re-drafting a reply for a
+    // cancelled party is the same mistake as drafting one, and this path is
+    // reachable from both the SMS loop and the admin composer.
+    if (plan && planIsStoodDown((plan as { status?: unknown }).status)) {
+      return {
+        ok: false,
+        status: 409,
+        error: `plan is ${String((plan as { status?: unknown }).status)} — standing down, nothing re-drafted (plan §4.6)`,
+      }
+    }
   }
   let fromEvent: InquiryBooking | null = null
   if (row.inbound_event_id) {
@@ -1223,22 +1285,10 @@ export async function redraftForReviewer(args: {
     if (evaluation.path === 'info_gather' && (containsMoney(draft.emailDraft) || containsMoney(draft.smsDraft))) {
       guardrailError = 'pricing_in_info_gather: revision included a dollar amount on an info-gather draft'
     }
-    const foreign =
-      containsForeignContact(draft.emailDraft) ||
-      containsForeignContact(draft.smsDraft) ||
-      containsForeignContact(draft.emailSubject)
-    if (foreign && !guardrailError) {
-      guardrailError = `foreign_contact_in_draft: the revision contains a ${foreign} that is not ours`
-    }
-    const fabricated =
-      containsFabricatedTerms(draft.emailDraft) ||
-      containsFabricatedTerms(draft.smsDraft) ||
-      containsFabricatedTerms(draft.emailSubject)
-    if (fabricated && !guardrailError) {
-      // A revision is still texted back — the reviewer asked for a change and
-      // silence would be worse — but the warning leads the message.
-      guardrailError = `fabricated_terms: the revision states ${fabricated}, which only Adam or Allie can agree to`
-    }
+    // A revision is still texted back whatever this returns — the reviewer asked
+    // for a change and silence would be worse — but the warning leads the
+    // message. Same implementation as the first-draft path (rule 11).
+    if (!guardrailError) guardrailError = screenGeneratedDraft(draft, 'revision')
   } catch (err) {
     console.error('redraftForReviewer:', err instanceof Error ? err.message : err)
     return { ok: false, status: 502, error: 'Re-draft generation failed' }

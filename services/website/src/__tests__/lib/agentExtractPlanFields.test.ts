@@ -57,7 +57,7 @@ describe('sanitizeExtracted', () => {
     const { fields } = sanitizeExtracted(
       {
         contact_name: 'Jess Miller',
-        party_date: '2026-03-14',
+        party_date: '2099-03-14',
         party_time: '14:00',
         guest_count: 12,
         venue_address: '41 Montauk Hwy, Speonk NY',
@@ -67,7 +67,7 @@ describe('sanitizeExtracted', () => {
 
     expect(fields).toEqual({
       contact_name: 'Jess Miller',
-      party_date: '2026-03-14',
+      party_date: '2099-03-14',
       party_time: '14:00',
       guest_count: 12,
       venue_address: '41 Montauk Hwy, Speonk NY',
@@ -78,7 +78,7 @@ describe('sanitizeExtracted', () => {
     // Rule 1, enforced in code rather than asked for in the prompt: a reply may
     // only fill a blank. It can never move a date Adam already set.
     const { fields } = sanitizeExtracted(
-      { party_date: '2026-03-14', guest_count: 12, contact_name: 'Someone Else' },
+      { party_date: '2099-03-14', guest_count: 12, contact_name: 'Someone Else' },
       ['guest_count'],
     )
     expect(fields).toEqual({ guest_count: 12 })
@@ -243,11 +243,11 @@ describe('applyExtractedFields', () => {
     const res = await applyExtractedFields({
       supabase,
       bookingId: 'bk-1',
-      fields: { party_date: '2026-03-14', guest_count: 12, venue_address: '41 Montauk Hwy' },
+      fields: { party_date: '2099-03-14', guest_count: 12, venue_address: '41 Montauk Hwy' },
     })
 
     expect(res.updated.sort()).toEqual(['guest_count', 'party_date', 'venue_address'])
-    expect(updates[0]).toMatchObject({ party_date: '2026-03-14', guest_count_approx: 12 })
+    expect(updates[0]).toMatchObject({ party_date: '2099-03-14', guest_count_approx: 12 })
     // hasVenueAddress() looks the address up in party_tags by keyword, which is
     // why it has to land under exactly this key.
     expect((updates[0].party_tags as Record<string, unknown>).location_address).toBe('41 Montauk Hwy')
@@ -269,7 +269,7 @@ describe('applyExtractedFields', () => {
       supabase,
       bookingId: 'bk-1',
       fields: {
-        party_date: '2026-03-14',
+        party_date: '2099-03-14',
         guest_count: 12,
         contact_name: 'Jess',
         venue_address: '41 Montauk Hwy',
@@ -289,7 +289,7 @@ describe('applyExtractedFields', () => {
     })
     expect((updates[0].party_tags as Record<string, unknown>).requested_date_text).toBe('mid-March')
 
-    const withDate = makeSupabase({ ...BLANK, party_date: '2026-03-14' })
+    const withDate = makeSupabase({ ...BLANK, party_date: '2099-03-14' })
     const res = await applyExtractedFields({
       supabase: withDate.supabase, bookingId: 'bk-1', fields: {}, requestedDateText: 'mid-March',
     })
@@ -321,7 +321,7 @@ describe('applyExtractedFields', () => {
     await applyExtractedFields({
       supabase,
       bookingId: 'bk-1',
-      fields: { party_date: '2026-03-14', guest_count: 12 },
+      fields: { party_date: '2099-03-14', guest_count: 12 },
     })
     expect(guards.sort()).toEqual(['guest_count_approx', 'party_date'])
   })
@@ -329,7 +329,7 @@ describe('applyExtractedFields', () => {
   it('writes nothing and says so when someone filled the field first', async () => {
     const { supabase } = makeSupabase(BLANK, null, true)
     const res = await applyExtractedFields({
-      supabase, bookingId: 'bk-1', fields: { party_date: '2026-03-14' },
+      supabase, bookingId: 'bk-1', fields: { party_date: '2099-03-14' },
     })
     // A dropped extraction costs one more "what date works?"; a clobbered one
     // quotes against a day nobody agreed to.

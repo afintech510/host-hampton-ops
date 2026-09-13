@@ -30,14 +30,38 @@ export const dynamic = 'force-dynamic'
  * FAIL CLOSED (plan §4.1, changed in Phase 2): an inbound SMS can now trigger an
  * LLM call and a customer-facing send, so an unsigned or wrongly-signed request
  * is REJECTED with 401 rather than logged-and-processed. It used to fail open
- * because the only actions here were opt-out and logging. Verification is still
- * skipped entirely when QUO_WEBHOOK_SECRET is unset, which is the documented
- * "not configured yet" state — set the secret and this endpoint is authenticated.
+ * because the only actions here were opt-out and logging.
+ *
+ * And UNCONFIGURED is also closed, in production. This used to skip verification
+ * entirely when `QUO_WEBHOOK_SECRET` was unset — the documented "not configured
+ * yet" state, which was honest in Phase 2 and became a latent hole the moment an
+ * inbound SMS could approve a draft. See `unsignedRequestsAllowed`. The secret is
+ * set in production today; this is about the day it is not.
  */
+
+/**
+ * Is "no secret configured" allowed to mean "skip verification"?
+ *
+ * Only outside production. The route header below documents the unset state as
+ * "not configured yet", which was the right reading in Phase 2 when this endpoint
+ * only logged an opt-out — but it stopped being true the moment an inbound SMS
+ * could approve a draft and send a real customer an email and a text. `.env`
+ * losing a line, or a secret rotation landing out of order, would turn this into
+ * an unauthenticated endpoint that anyone who knows the URL can use to
+ * impersonate a reviewer phone. Nothing would look wrong; it would just work.
+ *
+ * Same shape as `portalSigningSecret()`: the BUILD is not a request, so a
+ * prerender with no `.env` is exempt, and every real request is not.
+ */
+function unsignedRequestsAllowed(): boolean {
+  const isBuild = process.env.NEXT_PHASE === 'phase-production-build'
+  return process.env.NODE_ENV !== 'production' || isBuild
+}
 
 function verifySignature(req: NextRequest, rawBody: string): boolean | null {
   const secret = process.env.QUO_WEBHOOK_SECRET
-  if (!secret) return null // verification disabled (secret not configured)
+  // FAIL CLOSED when unconfigured in production: `false`, not `null`.
+  if (!secret) return unsignedRequestsAllowed() ? null : false
 
   const id = req.headers.get('webhook-id') || ''
   const timestamp = req.headers.get('webhook-timestamp') || ''
