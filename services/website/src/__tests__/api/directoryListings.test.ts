@@ -14,7 +14,11 @@ jest.mock('next/server', () => ({
 const mockGetSupabase = jest.fn()
 jest.mock('@/lib/supabase', () => ({ getSupabase: () => mockGetSupabase() }))
 
+// requireActual, so `adminActorId` is the REAL one (it returns the anonymous
+// 'ADMIN' with no cookie, which is what these tests want). A whole-module mock
+// silently drops any function the route later starts using — hard-won rule 7.
 jest.mock('@/lib/adminAuth', () => ({
+  ...jest.requireActual('@/lib/adminAuth'),
   isAdminAuthorized: jest.fn(() => true),
   unauthorizedResponse: () => ({ status: 401, json: () => ({ error: 'Unauthorized' }) }),
 }))

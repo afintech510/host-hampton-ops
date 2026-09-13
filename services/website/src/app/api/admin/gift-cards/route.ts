@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { getSupabase } from '@/lib/supabase'
 import { orIlikeFilter } from '@/lib/postgrestFilter'
 
 export async function GET(req: NextRequest) {
-  const token = req.headers.get('authorization')?.replace('Bearer ', '')
-  if (token !== process.env.ADMIN_PASSWORD) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
   const supabase = getSupabase()
   const url = new URL(req.url)
@@ -59,10 +57,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const token = req.headers.get('authorization')?.replace('Bearer ', '')
-  if (token !== process.env.ADMIN_PASSWORD) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
   const { id, status } = await req.json()
   if (!id || !status) {

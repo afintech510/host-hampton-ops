@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import {adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { createConsentRelease, isConsentConfigured } from '@/lib/marketing/consent'
 
 export const dynamic = 'force-dynamic'
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       childName: body.childName ?? null,
       signerName: body.signerName,
       signerEmail: body.signerEmail,
-      actor: 'admin',
+      actor: adminActorId(req),
     })
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {

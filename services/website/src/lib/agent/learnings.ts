@@ -273,6 +273,14 @@ export async function proposeLearning(args: {
   confidence?: number | null
   sourceDraftId?: string | null
   sourceEventId?: string | null
+  /**
+   * The retired `agent_memory` row a human promoted into this learning.
+   *
+   * Written HERE, at insert time, rather than by a later UPDATE on
+   * `agent_memory` — that table carries an unconditional `updated_at` trigger,
+   * and `updated_at` is the only evidence its 44 rows are dead. Migration 047.
+   */
+  sourceMemoryId?: string | null
 }): Promise<ProposeResult> {
   const { supabase, createdBy } = args
   if (!isLearningKind(args.kind)) {
@@ -295,6 +303,7 @@ export async function proposeLearning(args: {
       confidence,
       source_draft_id: args.sourceDraftId ?? null,
       source_event_id: args.sourceEventId ?? null,
+      source_memory_id: args.sourceMemoryId ?? null,
       created_by: createdBy,
     })
     .select('id')

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import {adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { writeLedger } from '@/lib/marketing/graph'
 
 export const dynamic = 'force-dynamic'
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
   await writeLedger(supabase, {
     entityType: 'marketing_task',
     action: 'note',
-    actor: 'admin',
+    actor: adminActorId(req),
     meta: { job: 'directory_listing_seed', scanned: DIRECTORIES.length, created, skipped },
   })
 

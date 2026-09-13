@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { upsertContact } from '@/lib/contacts'
 import { computeCutoffDates, generatePartyRef, formatMoney } from '@/lib/partyPricing'
 import { buildPlanSnapshot, planTotals, writeLineItems } from '@/lib/plan'
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
 
     const partyTags = {
       date_locked: !!lockDate,
-      created_by: 'admin',
+      created_by: adminActorId(req),
       created_at: new Date().toISOString(),
     }
 
@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
     // Log creation
     await supabase.from('booking_modifications').insert({
       booking_id: booking.id,
-      modified_by: 'admin',
+      modified_by: adminActorId(req),
       change_summary: 'Party Plan created by admin',
       new_data: { contactName, contactEmail, partyDate, partyTime, guestCount: guests, packageType, lockDate },
     })

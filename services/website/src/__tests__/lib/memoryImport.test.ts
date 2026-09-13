@@ -36,6 +36,9 @@ function memoryDb(rows: Record<string, any>[] = [], learnings: Record<string, an
           is_active: 'bool',
           source_draft_id: 'uuid',
           source_event_id: 'uuid',
+          // Migration 047. The provenance lives HERE, written at insert time,
+          // so promoting a memory never UPDATEs `agent_memory`.
+          source_memory_id: 'uuid',
           created_by: 'text',
           created_at: 'timestamptz',
         },
@@ -177,7 +180,28 @@ describe('promoteMemory — the one door, and it lands INACTIVE', () => {
     // THE FENCE. Promoting is not activating.
     expect(db.tables.agent_learnings[0].is_active).toBe(false)
     expect(db.tables.agent_learnings[0].created_by).toBe('admin:allie@example.com')
-    expect(db.tables.agent_memory[0].promoted_learning_id).toBeTruthy()
+    // The back-reference lives on the LEARNING (migration 047), written at
+    // insert time...
+    expect(db.tables.agent_learnings[0].source_memory_id).toBe(MEM_ID)
+    // ...and `agent_memory` is NOT touched. `trg_memory_updated_at` fires
+    // unconditionally, and `updated_at` is the only evidence those 44 rows are
+    // dead — an UPDATE here would make the retired store look freshly
+    // maintained, destroying the measurement that justifies retiring it.
+    // docs/phase-5-memory-learning.md §11.13.
+    expect(db.tables.agent_memory[0].promoted_learning_id).toBeNull()
+    expect(db.tables.agent_memory[0].updated_at).toBe('2026-02-18T00:00:00Z')
+  })
+
+  it('promoting NEVER writes to agent_memory — asserted against the source, too', () => {
+    // A behaviour test can only see the fake. This one reads the module off disk
+    // so a future edit cannot quietly put the UPDATE back: the evidence it
+    // destroys is not recoverable, so "we would notice" is not good enough.
+    const src: string = require('fs').readFileSync(
+      require('path').join(process.cwd(), 'src', 'lib', 'agent', 'memoryImport.ts'),
+      'utf8'
+    )
+    const decommented = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    expect(decommented).not.toMatch(/from\(\s*['"]agent_memory['"]\s*\)\s*[\s\S]{0,40}?\.update\(/)
   })
 
   it('the insert has no `is_active` key at all — the column default decides', async () => {

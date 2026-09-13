@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { sendSMSVia } from '@/lib/sms'
@@ -55,10 +56,7 @@ function payLinkSms(firstName: string, description: string, amountFormatted: str
 }
 
 export async function POST(req: NextRequest) {
-  const token = req.headers.get('authorization')?.replace('Bearer ', '')
-  if (token !== process.env.ADMIN_PASSWORD) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
   const { name, email, phone, channel, amountDollars, description, category, linkType } = await req.json()
 

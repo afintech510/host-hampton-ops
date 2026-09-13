@@ -11,6 +11,16 @@ import { draftForBookingByHand } from '@/lib/agent/manualDraft'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
 import { sendCheckinLinkSms } from '@/lib/checkinLink'
 import { enqueueCheckinReminders, cancelCheckinReminders } from '@/lib/checkinReminders'
+import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
+import {
+  recordAdminPayment,
+  describeLedgerOutcome,
+  ledgerCategoryForBooking,
+  ADMIN_PAYMENT_METHODS,
+  PAYMENT_TYPES,
+  type AdminPaymentMethod,
+  type PaymentType,
+} from '@/lib/adminMoney'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
@@ -62,7 +72,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   await supabase.from('booking_modifications').insert({
     booking_id: id,
-    modified_by: 'admin',
+    modified_by: adminActorId(req),
     change_summary: 'Admin edit: ' + Object.keys(updates).filter(k => k !== 'updated_at').join(', '),
     new_data: updates,
   })
@@ -99,7 +109,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json()
   const action = body.action as string
 
-  const { data: booking } = await supabase.from('bookings').select('*').eq('id', id).single()
+  // Three outcomes, not two. This one read gates every admin action below —
+  // approve, cancel, record a payment, send a portal link, edit a line item — and
+  // it used to discard its error, so a transient Supabase failure answered a
+  // confident **404 "Not found"** about a party that is sitting right there.
+  // Hard-won rule 12; link 14 found eleven of these in one surface.
+  const { data: booking, error: bookingErr } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+  if (bookingErr) {
+    console.error(`admin/parties/${id}: booking read failed:`, bookingErr.message)
+    return NextResponse.json(
+      { error: 'Could not load this party right now — please try again.' },
+      { status: 503 },
+    )
+  }
   if (!booking) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
 
@@ -142,12 +168,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await supabase.from('bookings').update({
       status: 'approved',
       approved_at: new Date().toISOString(),
-      approved_by: 'admin',
+      approved_by: adminActorId(req),
       updated_at: new Date().toISOString(),
     }).eq('id', id)
 
     await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: 'admin', change_summary: 'Booking approved',
+      booking_id: id, modified_by: adminActorId(req), change_summary: 'Booking approved',
     })
 
     // Create GCal event
@@ -218,7 +244,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: 'admin', change_summary: `Changes requested: ${message}`,
+      booking_id: id, modified_by: adminActorId(req), change_summary: `Changes requested: ${message}`,
     })
 
     return NextResponse.json({ ok: true, action: 'changes_requested' })
@@ -230,7 +256,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }).eq('id', id)
 
     await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: 'admin', change_summary: 'Booking cancelled by admin',
+      booking_id: id, modified_by: adminActorId(req), change_summary: 'Booking cancelled by admin',
     })
 
     // Don't text a cancelled party's customer asking them to check in.
@@ -239,72 +265,170 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, action: 'cancelled' })
   }
 
+  // ── "Record a payment" — the one place a human puts money in the books ──
+  //
+  // This is where the cash, Venmo, Zelle and cheque money arrives: Stripe never
+  // sees it, so the webhook cannot record it and the rule "only the webhook
+  // records a payment" cannot apply. Before link 18 this action wrote a
+  // `booking_payments` row and NOTHING ELSE — no `financial_transactions` row,
+  // ever — so $2,256 of real customer money, $1,608 of it non-card, is in the
+  // database and has never appeared in the Financials tab Adam reads.
+  //
+  // Four failure modes were live here and all four are fixed below:
+  //   * the INSERT's error was discarded, and the customer was then emailed
+  //     "Payment Received — $X, balance $Y" over a write that may have been
+  //     refused (rule 19, then rule 10's expensive half);
+  //   * the balance came from `booking.total_cents || 0` over a read whose error
+  //     was also discarded, so an UNQUOTED LEAD — most of the pipeline since
+  //     Phase 4 — was marked `paid_in_full` by its first deposit (rule 12);
+  //   * `recorded_by` was the literal `'admin'`, so the money row could not name
+  //     the human who entered it (migration 047 relaxes the CHECK);
+  //   * `amount_cents` reached the column unvalidated.
   if (action === 'record_payment') {
-    const { amount_cents, payment_method, notes: payNotes } = body
-    if (!amount_cents || !payment_method) {
-      return NextResponse.json({ error: 'amount_cents and payment_method required' }, { status: 400 })
+    const { amount_cents, payment_method, notes: payNotes, force_ledger } = body
+
+    if (!Number.isSafeInteger(amount_cents) || amount_cents <= 0) {
+      return NextResponse.json(
+        { error: 'amount_cents must be a positive whole number of cents' },
+        { status: 400 },
+      )
     }
+    if (typeof payment_method !== 'string' || !ADMIN_PAYMENT_METHODS.includes(payment_method as AdminPaymentMethod)) {
+      return NextResponse.json(
+        { error: `payment_method must be one of: ${ADMIN_PAYMENT_METHODS.join(', ')}` },
+        { status: 400 },
+      )
+    }
+    const paymentType: PaymentType =
+      typeof body.payment_type === 'string' && PAYMENT_TYPES.includes(body.payment_type as PaymentType)
+        ? (body.payment_type as PaymentType)
+        : 'partial'
 
-    await supabase.from('booking_payments').insert({
-      booking_id: id,
-      payment_type: 'partial',
-      payment_method,
-      amount_cents,
-      card_fee_cents: 0,
-      total_charged_cents: amount_cents,
-      recorded_by: 'admin',
-      notes: payNotes || null,
-    })
-
-    // Recalculate balance
-    const { data: payments } = await supabase
+    // `.select()` so a refused INSERT is a refusal and not a silent success. The
+    // customer receipt below depends on this row existing.
+    const { data: paymentRow, error: payErr } = await supabase
       .from('booking_payments')
-      .select('amount_cents, payment_type')
-      .eq('booking_id', id)
+      .insert({
+        booking_id: id,
+        payment_type: paymentType,
+        payment_method,
+        amount_cents,
+        card_fee_cents: 0,
+        total_charged_cents: amount_cents,
+        recorded_by: adminActorId(req),
+        notes: payNotes || null,
+      })
+      .select('id, paid_at')
+      .single()
 
-    let paid = 0
-    for (const p of (payments || [])) {
-      if (p.payment_type === 'refund') paid -= p.amount_cents
-      else paid += p.amount_cents
+    if (payErr || !paymentRow) {
+      console.error(`record_payment: booking_payments insert failed for ${booking.booking_ref}:`, payErr?.message)
+      return NextResponse.json(
+        { error: `Payment NOT recorded: ${payErr?.message || 'insert returned no row'}` },
+        { status: 500 },
+      )
     }
-    const newBalance = Math.max(0, (booking.total_cents || 0) - paid)
-    const updateFields: Record<string, unknown> = { balance_due_cents: newBalance, updated_at: new Date().toISOString() }
-    if (newBalance === 0) {
-      updateFields.paid_in_full_at = new Date().toISOString()
-      updateFields.status = 'paid_in_full'
-    }
-    await supabase.from('bookings').update(updateFields).eq('id', id)
 
-    await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: 'admin',
-      change_summary: `${payment_method} payment of ${formatMoney(amount_cents)} recorded. Balance: ${formatMoney(newBalance)}`,
+    // Recalculate the balance from the shared reader (lib/bookingBalance.ts),
+    // which the Stripe webhook also uses. A failed read is reported, never
+    // treated as a zero total.
+    const inputs = await readBalanceInputs(supabase, id, 'total_cents')
+    let newBalance: number | null = null
+    let balanceNote = ''
+    if (!inputs.ok) {
+      console.error(`record_payment: balance NOT updated for ${booking.booking_ref}: ${inputs.message}`)
+      balanceNote = ` Balance NOT recalculated (${inputs.message}).`
+    } else {
+      const bal = computeBalance(inputs.row.total_cents as number | null, inputs.paidSum)
+      newBalance = bal.balanceCents
+      const updateFields: Record<string, unknown> = {
+        balance_due_cents: bal.balanceCents,
+        updated_at: new Date().toISOString(),
+      }
+      if (bal.paidInFull) {
+        updateFields.paid_in_full_at = new Date().toISOString()
+        updateFields.status = 'paid_in_full'
+      }
+      const { data: updated, error: updErr } = await supabase
+        .from('bookings')
+        .update(updateFields)
+        .eq('id', id)
+        .select('id')
+      if (updErr || !updated?.length) {
+        console.error(`record_payment: bookings update matched nothing for ${booking.booking_ref}:`, updErr?.message)
+        balanceNote = ` Balance NOT saved (${updErr?.message || 'no row matched'}).`
+        newBalance = null
+      } else if (bal.overpaidCents > 0) {
+        balanceNote = ` OVERPAID by ${formatMoney(bal.overpaidCents)}.`
+      }
+    }
+
+    // Into the books. Declines rather than double-counting when a Stripe row
+    // already records this amount for this booking — see lib/adminMoney.ts.
+    const ledger = await recordAdminPayment(supabase, {
+      paymentId: paymentRow.id,
+      bookingRef: booking.booking_ref,
+      amountCents: amount_cents,
+      method: payment_method,
+      paidAt: paymentRow.paid_at || new Date().toISOString(),
+      customerName: booking.contact_name || null,
+      category: ledgerCategoryForBooking(booking.party_type, booking.event_type),
+      notes: payNotes || null,
+      force: force_ledger === true,
     })
+    const ledgerNote = describeLedgerOutcome(ledger)
 
-    // Send customer receipt
-    if (process.env.RESEND_API_KEY) {
+    const { error: modErr } = await supabase.from('booking_modifications').insert({
+      booking_id: id,
+      modified_by: adminActorId(req),
+      change_summary:
+        `${payment_method} payment of ${formatMoney(amount_cents)} recorded. ` +
+        `Balance: ${newBalance === null ? 'unchanged' : formatMoney(newBalance)}.${balanceNote} ${ledgerNote}`,
+    })
+    if (modErr) console.error('record_payment: booking_modifications insert failed:', modErr.message)
+
+    // Send customer receipt — only now, with a real payment row behind it.
+    if (process.env.RESEND_API_KEY && booking.contact_email) {
       const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
       const { token: rawToken, hash, expiresAt } = generatePortalToken(booking.booking_ref, secret)
-      await supabase.from('portal_tokens').insert({ booking_id: id, token_hash: hash, expires_at: expiresAt.toISOString() })
-      const portalUrl = buildPortalUrl(booking.booking_ref, rawToken)
-
-      const { Resend } = await import('resend')
-      const resend = new Resend(process.env.RESEND_API_KEY)
-      const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
-      await resend.emails.send({
-        from, to: booking.contact_email,
-        subject: `Payment Received — ${booking.booking_ref}`,
-        html: partyPaymentReceivedHtml({
-          customerName: booking.contact_name,
-          bookingRef: booking.booking_ref,
-          amountFormatted: formatMoney(amount_cents),
-          paymentMethod: payment_method,
-          newBalanceFormatted: formatMoney(newBalance),
-          portalUrl,
-        }),
-      })
+      const { error: tokErr } = await supabase
+        .from('portal_tokens')
+        .insert({ booking_id: id, token_hash: hash, expires_at: expiresAt.toISOString() })
+      if (tokErr) {
+        // A link whose token row was refused is a dead link in a customer's
+        // inbox. Say so rather than mailing it.
+        console.error(`record_payment: portal token NOT stored for ${booking.booking_ref}:`, tokErr.message)
+      } else {
+        const portalUrl = buildPortalUrl(booking.booking_ref, rawToken)
+        const { Resend } = await import('resend')
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        const { error: mailErr } = await resend.emails.send({
+          from, to: booking.contact_email,
+          subject: `Payment Received — ${booking.booking_ref}`,
+          html: partyPaymentReceivedHtml({
+            customerName: booking.contact_name,
+            bookingRef: booking.booking_ref,
+            amountFormatted: formatMoney(amount_cents),
+            paymentMethod: payment_method,
+            newBalanceFormatted: newBalance === null ? 'see your portal' : formatMoney(newBalance),
+            portalUrl,
+          }),
+        })
+        if (mailErr) console.error('record_payment: receipt email failed:', mailErr.message)
+      }
     }
 
-    return NextResponse.json({ ok: true, action: 'payment_recorded', newBalance })
+    return NextResponse.json({
+      ok: true,
+      action: 'payment_recorded',
+      paymentId: paymentRow.id,
+      newBalance,
+      balanceUpdated: newBalance !== null,
+      ledger: ledger.kind,
+      ledgerReference: ledger.reference,
+      message: `Payment of ${formatMoney(amount_cents)} recorded.${balanceNote} ${ledgerNote}`,
+    })
   }
 
   if (action === 'send_portal_link' || action === 'generate_portal_url') {
@@ -342,7 +466,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
 
       await supabase.from('booking_modifications').insert({
-        booking_id: id, modified_by: 'admin',
+        booking_id: id, modified_by: adminActorId(req),
         change_summary: sentVia.length
           ? `Portal link sent to customer via ${sentVia.join(' + ')}`
           : 'Portal link generated (no email/SMS delivery — check contact info & config)',
@@ -374,7 +498,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: 'admin',
+      booking_id: id, modified_by: adminActorId(req),
       change_summary: `Portal link texted to ${booking.contact_phone}`,
     })
 
@@ -412,7 +536,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
 
     await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: 'admin',
+      booking_id: id, modified_by: adminActorId(req),
       change_summary: `Check-in link texted to ${booking.contact_phone}`,
     })
 
@@ -460,7 +584,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await recalcTotals(supabase, id, booking)
 
     await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: 'admin',
+      booking_id: id, modified_by: adminActorId(req),
       change_summary: `Added line item: ${name} (${formatMoney(unit_price_cents)})`,
     })
 
@@ -484,7 +608,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await recalcTotals(supabase, id, booking)
 
     await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: 'admin',
+      booking_id: id, modified_by: adminActorId(req),
       change_summary: `Removed line item: ${li.name}`,
     })
 
@@ -542,7 +666,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: 'admin',
+      booking_id: id, modified_by: adminActorId(req),
       change_summary: `Rental time → ${startTime}–${endTime} (${rate.hours} hrs); rental fee ${formatMoney(rate.rentalCents)}`,
     })
 

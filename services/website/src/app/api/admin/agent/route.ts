@@ -385,7 +385,7 @@ export async function POST(req: NextRequest) {
           ...revisions,
           {
             at: new Date().toISOString(),
-            actor: 'admin',
+            actor: adminActorId(req),
             note: body.note ?? 'edited in admin',
             email_draft: emailDraft,
             sms_draft: smsDraft,

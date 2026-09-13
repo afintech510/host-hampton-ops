@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   }
 
   const patch: Record<string, unknown> = {
-    reviewed_by: 'admin',
+    reviewed_by: adminActorId(req),
     reviewed_at: new Date().toISOString(),
   }
   if (to === 'rejected' && reason) patch.rejection_reason = reason

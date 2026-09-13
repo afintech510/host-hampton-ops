@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { Resend } from 'resend'
 import { sendSMS } from '@/lib/twilio'
 import { escapeHtml } from '@/lib/escapeHtml'
@@ -69,10 +70,7 @@ function giftCardPromoSms(firstName: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  const token = req.headers.get('authorization')?.replace('Bearer ', '')
-  if (token !== process.env.ADMIN_PASSWORD) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
   const { name, email, phone, channel } = await req.json()
 

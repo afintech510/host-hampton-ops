@@ -26,6 +26,8 @@ import {
   isLegacyBookingSession,
   type FinancialWrite,
 } from '@/lib/stripeSettlement'
+import { recordLedgerEntry } from '@/lib/financialLedger'
+import { readBalanceInputs } from '@/lib/bookingBalance'
 
 /**
  * Record a Stripe payment in the unified financial_transactions table.
@@ -41,24 +43,22 @@ async function recordFinancialTransaction(supabase: ReturnType<typeof getSupabas
   date: string; description: string; amountCents: number; category: string;
   customerName: string | null; reference: string; notes?: string | null;
 }): Promise<FinancialWrite> {
-  const { error } = await supabase.from('financial_transactions').insert({
+  // The body of this function moved to lib/financialLedger.ts (link 18) so the
+  // ADMIN surface can record the cash, Venmo and Zelle money that never goes
+  // through Stripe at all. It was private to this route, which is precisely why
+  // $2,256 of hand-entered customer payments had no ledger row. The Stripe
+  // `source` and the `stripe-` reference prefix stay HERE, because they are what
+  // makes this the webhook's own reference space.
+  return recordLedgerEntry(supabase, {
     date: opts.date,
     description: opts.description,
-    amount_cents: opts.amountCents,
+    amountCents: opts.amountCents,
     source: 'stripe',
     category: opts.category,
-    customer_name: opts.customerName,
+    customerName: opts.customerName,
     reference: `stripe-${opts.reference}`,
     notes: opts.notes || null,
   })
-  if (!error) return 'written'
-  if (isUniqueViolation(error)) return 'duplicate'
-  console.error(
-    `FINANCIAL ROW NOT WRITTEN for stripe-${opts.reference} (${opts.amountCents}c, ${opts.category}):`,
-    error.message,
-    '— this payment will be missing from the Financials tab.',
-  )
-  return 'failed'
 }
 
 /**
@@ -71,32 +71,12 @@ async function recordFinancialTransaction(supabase: ReturnType<typeof getSupabas
  * review found exactly that shape on the plan path and fixed it there; the
  * non-plan branches kept it. Hard-won rule 12, in its money form.
  */
-async function readBalanceInputs(
-  supabase: ReturnType<typeof getSupabase>,
-  bookingId: string,
-  columns: string,
-): Promise<{ ok: true; paidSum: number; row: Record<string, unknown> } | { ok: false; message: string }> {
-  const { data: payRows, error: payErr } = await supabase
-    .from('booking_payments')
-    .select('amount_cents, payment_type')
-    .eq('booking_id', bookingId)
-  if (payErr) return { ok: false, message: `booking_payments read failed: ${payErr.message}` }
-
-  const { data: bkRow, error: bkErr } = await supabase
-    .from('bookings')
-    .select(columns)
-    .eq('id', bookingId)
-    .maybeSingle()
-  if (bkErr) return { ok: false, message: `bookings read failed: ${bkErr.message}` }
-  if (!bkRow) return { ok: false, message: `no booking row for id ${bookingId}` }
-
-  let paidSum = 0
-  for (const p of (payRows || []) as { amount_cents: number; payment_type: string }[]) {
-    if (p.payment_type === 'refund') paidSum -= p.amount_cents
-    else paidSum += p.amount_cents
-  }
-  return { ok: true, paidSum, row: bkRow as unknown as Record<string, unknown> }
-}
+// Moved to lib/bookingBalance.ts by link 18, unchanged in behaviour, so that
+// /api/admin/parties/[id] stops computing a balance its own way — it had the
+// pre-link-16 shape (`booking.total_cents || 0` over a discarded read error),
+// which marked an UNQUOTED LEAD `paid_in_full` the moment a deposit was
+// recorded against it. Hard-won rule 11.
+// (No `export {}` here: a Next route file may export only its handler names.)
 
 /**
  * Is this Checkout Session a plan pay-link payment, and if so, deal with it.

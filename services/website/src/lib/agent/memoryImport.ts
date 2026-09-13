@@ -308,10 +308,10 @@ export async function promoteMemory(args: {
     kind: args.kind as LearningKind,
     text: args.text,
     createdBy: actor,
-    // The provenance. `source_draft_id`/`source_event_id` are uuid columns for
-    // a different lineage, so this goes where it belongs: in the text's own
-    // audit trail via `created_by`, and in `agent_memory.promoted_learning_id`
-    // below, which is the FK that makes the link readable from either side.
+    // The provenance, written at INSERT time on the learning itself
+    // (migration 047). It used to be an UPDATE on `agent_memory` AFTER this
+    // call — see below for why that had to go.
+    sourceMemoryId: row.id,
   })
 
   if (!proposed.ok) {
@@ -324,18 +324,18 @@ export async function promoteMemory(args: {
     return { ok: true, learningId: null, duplicate: true }
   }
 
-  // Record the link back. A failure here is reported and does NOT undo the
-  // learning: the learning is inert either way, and losing the back-reference
-  // is a smaller problem than a half-applied promote nobody can see.
-  const { error: linkErr } = await supabase
-    .from('agent_memory')
-    .update({ promoted_learning_id: proposed.id })
-    .eq('id', memoryId)
-  if (linkErr) {
-    console.error(
-      `memoryImport: learning ${proposed.id} was created from agent_memory ${memoryId} but the back-reference could not be written: ${linkErr.message}`
-    )
-  }
-
+  // The back-reference is already written, on the learning row, by the INSERT
+  // above. There is deliberately NO `UPDATE agent_memory SET
+  // promoted_learning_id = …` here any more.
+  //
+  // `agent_memory` carries `trg_memory_updated_at`, an unconditional trigger, so
+  // that UPDATE stamped `updated_at` with today's date — and `updated_at` is the
+  // one column proving those 44 rows are dead (43 seeded 2026-02-18…21 and never
+  // touched, the 44th last written 2026-04-22). Promoting a row would have made
+  // the dead store look freshly maintained, destroying the measurement that
+  // justifies calling it retired. Link 12 recorded this and deliberately did not
+  // exercise it in production, because proving it destroys the evidence;
+  // migration 047 is the fix, and `agent_learnings.source_memory_id` makes the
+  // link readable from either side, which is what the old comment said it wanted.
   return { ok: true, learningId: proposed.id, duplicate: false }
 }
