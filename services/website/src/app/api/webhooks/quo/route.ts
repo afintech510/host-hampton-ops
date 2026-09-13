@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContactByPhone } from '@/lib/contacts'
 import { findContactsByPhone } from '@/lib/contactLookup'
-import { recordSmsOptOut } from '@/lib/smsOptOut'
-import { recordInboundEvent } from '@/lib/agent/events'
+import { recordSmsOptOut, recordSmsOptIn, smsKeywordIntent } from '@/lib/smsOptOut'
+import { recordInboundEventResult } from '@/lib/agent/events'
+import { verifyQuoWebhook } from '@/lib/inboundWebhookVerify'
+import { guardRate, webhookRule } from '@/lib/rateLimit'
 // Deliberately lib/agent/reviewers, NOT lib/agent/reviewLoop: this route must
 // not be able to reach the customer-send path, even transitively.
 import { isReviewerPhone } from '@/lib/agent/reviewers'
@@ -30,68 +31,32 @@ export const dynamic = 'force-dynamic'
  * FAIL CLOSED (plan §4.1, changed in Phase 2): an inbound SMS can now trigger an
  * LLM call and a customer-facing send, so an unsigned or wrongly-signed request
  * is REJECTED with 401 rather than logged-and-processed. It used to fail open
- * because the only actions here were opt-out and logging.
+ * because the only actions here were opt-out and logging. UNCONFIGURED is closed
+ * too, in production — see `unsignedRequestsAllowed` in lib/inboundWebhookVerify.
  *
- * And UNCONFIGURED is also closed, in production. This used to skip verification
- * entirely when `QUO_WEBHOOK_SECRET` was unset — the documented "not configured
- * yet" state, which was honest in Phase 2 and became a latent hole the moment an
- * inbound SMS could approve a draft. See `unsignedRequestsAllowed`. The secret is
- * set in production today; this is about the day it is not.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * AND IT WAS CLOSED AGAINST QUO ITSELF FOR 2.5 DAYS.
+ *
+ * The verifier implemented Standard Webhooks (`webhook-id` / `webhook-timestamp`
+ * / `webhook-signature`). Quo signs `openphone-signature: hmac;1;<ms>;<b64>`
+ * over `<ms>.<rawBody>`. So every real delivery arrived with none of the headers
+ * being looked for and was refused: **every POST here answered 401 from
+ * 2026-09-11 12:00 UTC until 2026-09-13**, 38 of them, and 200 on every delivery
+ * before that. The SMS review loop was dead, inbound customer texts reached
+ * nothing, and a customer STOP could not be recorded. Nothing watched the 401s.
+ * `lib/inboundWebhookVerify.ts` has the full account and now accepts both
+ * schemes; the log line below names WHY a request was refused and which
+ * signature headers it carried, because "verification FAILED" cannot tell a
+ * wrong key from a wrong scheme and that is what cost the 2.5 days.
  */
-
-/**
- * Is "no secret configured" allowed to mean "skip verification"?
- *
- * Only outside production. The route header below documents the unset state as
- * "not configured yet", which was the right reading in Phase 2 when this endpoint
- * only logged an opt-out — but it stopped being true the moment an inbound SMS
- * could approve a draft and send a real customer an email and a text. `.env`
- * losing a line, or a secret rotation landing out of order, would turn this into
- * an unauthenticated endpoint that anyone who knows the URL can use to
- * impersonate a reviewer phone. Nothing would look wrong; it would just work.
- *
- * Same shape as `portalSigningSecret()`: the BUILD is not a request, so a
- * prerender with no `.env` is exempt, and every real request is not.
- */
-function unsignedRequestsAllowed(): boolean {
-  const isBuild = process.env.NEXT_PHASE === 'phase-production-build'
-  return process.env.NODE_ENV !== 'production' || isBuild
-}
-
-function verifySignature(req: NextRequest, rawBody: string): boolean | null {
-  const secret = process.env.QUO_WEBHOOK_SECRET
-  // FAIL CLOSED when unconfigured in production: `false`, not `null`.
-  if (!secret) return unsignedRequestsAllowed() ? null : false
-
-  const id = req.headers.get('webhook-id') || ''
-  const timestamp = req.headers.get('webhook-timestamp') || ''
-  const sigHeader = req.headers.get('webhook-signature') || ''
-  if (!id || !timestamp || !sigHeader) return false
-
-  // Standard Webhooks: base64 secret, optionally prefixed with "whsec_".
-  const keyB64 = secret.startsWith('whsec_') ? secret.slice(6) : secret
-  let key: Buffer
-  try {
-    key = Buffer.from(keyB64, 'base64')
-  } catch {
-    key = Buffer.from(secret)
-  }
-  const signedContent = `${id}.${timestamp}.${rawBody}`
-  const expected = crypto.createHmac('sha256', key).update(signedContent).digest('base64')
-
-  // Header is space-delimited "v1,<sig> v1,<sig2>"; compare against each.
-  return sigHeader.split(' ').some(part => {
-    const sig = part.includes(',') ? part.split(',')[1] : part
-    try {
-      return sig.length === expected.length &&
-        crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
-    } catch {
-      return false
-    }
-  })
-}
 
 export async function POST(req: NextRequest) {
+  // A webhook is a public write door. The signature is the real gate; this is
+  // the bound on how much work an unsigned flood can make us do, and it is
+  // sized far above any real delivery rate (see webhookRule).
+  const limited = guardRate(req, webhookRule('webhooks/quo'))
+  if (limited) return limited
+
   let rawBody: string
   try {
     rawBody = await req.text()
@@ -99,12 +64,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
   }
 
-  const verified = verifySignature(req, rawBody)
-  if (verified === false) {
+  const verified = verifyQuoWebhook(req.headers, rawBody)
+  if (!verified.ok) {
     // FAIL CLOSED. A forged inbound SMS could otherwise impersonate a reviewer
     // phone and approve a draft.
-    console.error('quo:webhook signature verification FAILED — rejecting')
+    console.error(
+      `quo:webhook signature verification FAILED (${verified.reason}) — rejecting. ` +
+        `signature headers present: ${verified.headersSeen.join(', ') || 'NONE'}`,
+    )
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  }
+  if (verified.scheme === 'skipped') {
+    console.warn('quo:webhook QUO_WEBHOOK_SECRET is unset — verification skipped (non-production only)')
   }
 
   let event: any
@@ -127,17 +98,24 @@ export async function POST(req: NextRequest) {
   const from: string = msg?.from || ''
   const to: string = Array.isArray(msg?.to) ? msg.to[0] || '' : msg?.to || ''
   const text: string = (msg?.text ?? msg?.body ?? '').toString()
-  const body = text.trim().toUpperCase()
   const messageId: string = msg?.id || ''
   const threadId: string = msg?.conversationId || msg?.threadId || ''
 
-  console.log(`quo:webhook from=${from} body="${body}" id=${messageId}`)
+  // The number is masked and the body is NOT logged. Both are a real person's
+  // data, this log is read by humans and shipped nowhere, and the body is a
+  // string a stranger wrote — a newline in it forges a log line. Only the
+  // carrier keyword, which is a closed set, is printed.
+  const intent = smsKeywordIntent(text)
+  console.log(
+    `quo:webhook from=…${String(from).replace(/\D/g, '').slice(-4)} id=${String(messageId).slice(0, 40)} ` +
+      `keyword=${intent ?? 'none'} chars=${text.length}`,
+  )
 
   if (!from) return NextResponse.json({ received: true })
 
   const supabase = getSupabase()
 
-  const isStop = ['STOP', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'].includes(body)
+  const isStop = intent === 'stop'
 
   // ── Find the contact, creating one for an unknown texter.
   // Unknown numbers used to be dropped on the floor: no contact, no record, no
@@ -186,6 +164,12 @@ export async function POST(req: NextRequest) {
     // draft"), so the message is still recorded below and the dispatcher acts on
     // it. The opt-out above is harmless for reviewers: reviewer SMS goes out
     // through sendSMSViaQuo directly and does not consult sms_opt_in.
+  } else if (intent === 'start') {
+    // Recorded, said out loud, and NOT written as consent. See recordSmsOptIn.
+    const res = await recordSmsOptIn(supabase, from, 'quo', { message_id: messageId })
+    if (res.kind === 'unavailable') {
+      return NextResponse.json({ error: 'could not record opt-in' }, { status: 503 })
+    }
   } else if (contactId) {
     const { error: logErr } = await supabase.from('contact_interactions').insert({
       contact_id: contactId,
@@ -199,7 +183,7 @@ export async function POST(req: NextRequest) {
   // UNIQUE column is the dedupe: Quo retries a webhook it thinks failed, and a
   // redelivered approval must not send the customer a second message.
   const reviewer = isReviewerPhone(from)
-  const eventId = await recordInboundEvent({
+  const recorded = await recordInboundEventResult({
     supabase,
     route: 'quo-webhook',
     source: 'quo',
@@ -217,13 +201,25 @@ export async function POST(req: NextRequest) {
       thread_id: threadId || null,
       reviewer,
       stop: isStop,
+      carrier_keyword: intent,
     },
   })
+
+  // A REFUSED insert is not a duplicate, and answering 200 to one means Quo
+  // never redelivers — so a reviewer's approval, or a customer asking to book,
+  // simply stops existing. `duplicate` is the idempotency guarantee working and
+  // really is a 200. Rules 10 and 12.
+  if (recorded.kind === 'failed') {
+    console.error(`quo:webhook could not record the message — asking Quo to retry: ${recorded.error}`)
+    return NextResponse.json({ error: 'could not record message' }, { status: 503 })
+  }
 
   return NextResponse.json({
     received: true,
     ...(isStop ? { action: 'opt_out' } : {}),
-    eventId,
+    ...(intent === 'start' ? { action: 'start_recorded_consent_unchanged' } : {}),
+    eventId: recorded.kind === 'recorded' ? recorded.id : null,
+    duplicate: recorded.kind === 'duplicate',
     reviewer,
   })
 }

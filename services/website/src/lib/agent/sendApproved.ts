@@ -77,21 +77,64 @@ export interface SendResult {
 
 /* ── Recipient resolution ───────────────────────────────────────────── */
 
+/** One source's idea of who this draft is for. */
+interface RecipientCandidate {
+  source: 'plan' | 'contact' | 'message'
+  email: string | null
+  phone: string | null
+  name: string | null
+}
+
+function candidate(source: RecipientCandidate['source'], e?: unknown, p?: unknown, n?: unknown): RecipientCandidate {
+  return {
+    source,
+    email: typeof e === 'string' && e.includes('@') ? e.trim() : null,
+    phone: typeof p === 'string' && p.replace(/\D/g, '').length >= 10 ? normalizePhone(p.trim()) : null,
+    name: typeof n === 'string' && n.trim() ? n.trim() : null,
+  }
+}
+
+const sameEmail = (a: string | null, b: string | null): boolean =>
+  !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase()
+const samePhone = (a: string | null, b: string | null): boolean =>
+  !!a && !!b && a.replace(/\D/g, '').slice(-10) === b.replace(/\D/g, '').slice(-10)
+
 /**
  * Who this draft is for. Most specific source first: the party plan (a human
  * has usually corrected it), then the contact record, then whatever the inbound
  * form/message carried.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE EMAIL AND THE PHONE MUST BE THE SAME PERSON.
+ *
+ * This used to fill the two fields INDEPENDENTLY — first source with an email
+ * wins the email, first source with a phone wins the phone — so a draft could
+ * in principle be emailed to one human and texted to another about the same
+ * conversation. `docs/agent-surface-review.md` §10 named it and left it here.
+ *
+ * It is not paranoid. `contacts.phone` is plain text and **21 normalised numbers
+ * carry more than one contact row, two of them two DIFFERENT PEOPLE sharing a
+ * household phone** (`docs/contact-identity-review.md` §1); eight real people
+ * have two `contacts` rows each; and `bookings.contact_id` differs from
+ * `inquiry_drafts.contact_id` on **14 of the 24 live drafts**. Every ingredient
+ * for a mismatch is in the table.
+ *
+ * Measured before this was written, over all 24 real drafts: **22 take both
+ * handles from one source, and the 2 that split (`HH-2026-0492`,
+ * `HH-2026-2247`: email from the contact row, phone from the inbound message)
+ * are LINKED — the message's own address is that contact's address. Zero are
+ * unlinked.** So the rule below costs nothing today, which is exactly when to
+ * put it in.
+ *
+ * The rule: a second source may supply the channel the first did not, but only
+ * if it demonstrably describes the same person — it names the handle we already
+ * have, on either side. When it cannot be shown, the higher-priority source
+ * keeps both fields and the other channel is DROPPED, loudly. A draft that goes
+ * out by email only is something the reviewer is told about (`emailSent` /
+ * `smsSent` are in the reply); a text to a stranger is not undoable.
  */
 export async function resolveRecipient(supabase: Supa, draft: SendableDraft): Promise<Recipient> {
-  let email: string | null = null
-  let phone: string | null = null
-  let name: string | null = null
-
-  const take = (e?: unknown, p?: unknown, n?: unknown) => {
-    if (!email && typeof e === 'string' && e.includes('@')) email = e.trim()
-    if (!phone && typeof p === 'string' && p.replace(/\D/g, '').length >= 10) phone = normalizePhone(p.trim())
-    if (!name && typeof n === 'string' && n.trim()) name = n.trim()
-  }
+  const candidates: RecipientCandidate[] = []
 
   if (draft.booking_id) {
     const { data } = await supabase
@@ -99,7 +142,7 @@ export async function resolveRecipient(supabase: Supa, draft: SendableDraft): Pr
       .select('contact_email, contact_phone, contact_name')
       .eq('id', draft.booking_id)
       .maybeSingle()
-    take(data?.contact_email, data?.contact_phone, data?.contact_name)
+    candidates.push(candidate('plan', data?.contact_email, data?.contact_phone, data?.contact_name))
   }
 
   if (draft.contact_id) {
@@ -109,20 +152,37 @@ export async function resolveRecipient(supabase: Supa, draft: SendableDraft): Pr
       .eq('id', draft.contact_id)
       .maybeSingle()
     const full = [data?.first_name, data?.last_name].filter(Boolean).join(' ') || null
-    take(data?.email, data?.phone, full)
+    candidates.push(candidate('contact', data?.email, data?.phone, full))
   }
 
-  if (draft.inbound_event_id && (!email || !phone)) {
+  if (draft.inbound_event_id) {
     const { data } = await supabase
       .from('ingested_messages')
       .select('from_address, parsed')
       .eq('id', draft.inbound_event_id)
       .maybeSingle()
     const p = (data?.parsed ?? {}) as Record<string, unknown>
-    take(p.email ?? data?.from_address, p.phone, p.name)
+    candidates.push(candidate('message', p.email ?? data?.from_address, p.phone, p.name))
   }
 
-  return { email, phone, name }
+  const emailFrom = candidates.find(c => c.email) ?? null
+  let phoneFrom = candidates.find(c => c.phone) ?? null
+  const name = candidates.find(c => c.name)?.name ?? null
+
+  if (emailFrom && phoneFrom && emailFrom.source !== phoneFrom.source) {
+    const linked =
+      sameEmail(phoneFrom.email, emailFrom.email) || samePhone(emailFrom.phone, phoneFrom.phone)
+    if (!linked) {
+      console.error(
+        `sendApproved: refusing to text ${draft.review_code} — the phone comes from the ${phoneFrom.source} ` +
+          `and the email from the ${emailFrom.source}, and nothing links them to the same person. ` +
+          `Sending by email only. Fix the contact details on the plan in Admin → Inbox.`,
+      )
+      phoneFrom = null
+    }
+  }
+
+  return { email: emailFrom?.email ?? null, phone: phoneFrom?.phone ?? null, name }
 }
 
 /* ── Delivery ───────────────────────────────────────────────────────── */

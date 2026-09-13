@@ -69,10 +69,51 @@ export interface RecordInboundEventInput {
 }
 
 /**
- * Insert one inbound event. Returns the new row id, or null when the insert
- * was skipped, deduped, or failed (all non-fatal).
+ * What happened to one `recordInboundEvent` call.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WHY THIS IS THREE OUTCOMES AND NOT A NULLABLE STRING.
+ *
+ * `recordInboundEvent` used to return `string | null`, and `null` meant three
+ * genuinely different facts: **we already have this message** (23505 on
+ * `external_id`, which is the idempotency guarantee working), **the insert was
+ * REFUSED** (a CHECK violation, a type error, a timeout), and **it threw**. Both
+ * callers read the union as "duplicate", and both did real damage with it:
+ *
+ *   - `/api/cron/gmail-sync` counts a `null` in its `duplicates` column, leaves
+ *     `failure` unset, and therefore **ADVANCES THE HISTORY CHECKPOINT past the
+ *     message**. Gmail is never asked about it again. The route's own comment
+ *     three lines below reads *"Only advance the checkpoint when the batch came
+ *     through cleanly. Moving it past a message we failed to read would lose
+ *     that message permanently"* — hard-won rule 8: the comment describes the
+ *     guarantee, and the code hands it back through a collapsed return type.
+ *   - `/api/webhooks/quo` answers **200** on a `null`, so Quo never redelivers.
+ *     A reviewer's SEND approval, or a customer's text, simply ceases to exist.
+ *
+ * And this module's own header, a few lines up, names the failure mode exactly:
+ * a source missing from `ingested_messages_source_check` "produces a 23514 that
+ * `recordInboundEvent` swallows non-fatally — a writer that records nothing and
+ * says nothing. That is migration 049's whole story." It was right, and nothing
+ * acted on it. Rule 12.
  */
-export async function recordInboundEvent(input: RecordInboundEventInput): Promise<string | null> {
+export type RecordInboundEventResult =
+  | { kind: 'recorded'; id: string }
+  /** `external_id` is already in the table. Idempotency working, not a failure. */
+  | { kind: 'duplicate' }
+  /** The write was refused or threw. The caller must NOT treat this as done. */
+  | { kind: 'failed'; error: string }
+
+/**
+ * Insert one inbound event.
+ *
+ * Still never throws — a website form must succeed even when the agent tables
+ * are missing — but the caller is now told which of the three things happened.
+ * `recordInboundEvent` narrows it to the historical `string | null` for the
+ * callers that genuinely only need the id.
+ */
+export async function recordInboundEventResult(
+  input: RecordInboundEventInput,
+): Promise<RecordInboundEventResult> {
   try {
     const supabase = input.supabase ?? getSupabase()
     const source: InboundSource = input.source ?? 'website_form'
@@ -107,18 +148,40 @@ export async function recordInboundEvent(input: RecordInboundEventInput): Promis
 
     if (error) {
       // 23505 = duplicate external_id, i.e. we already have this message. That
-      // is the idempotency guarantee working, not a failure.
-      if ((error as { code?: string }).code !== '23505') {
-        console.error('recordInboundEvent insert error (non-fatal):', error.message)
-      }
-      return null
+      // is the idempotency guarantee working, not a failure. By CODE, never by
+      // message text (AGENTS.md §11).
+      if ((error as { code?: string }).code === '23505') return { kind: 'duplicate' }
+      console.error('recordInboundEvent insert REFUSED:', error.message, `(source=${source}, external_id=${externalId})`)
+      return { kind: 'failed', error: error.message }
     }
 
-    return data?.id ?? null
+    const id = data?.id ?? null
+    if (!id) {
+      // `.single()` with no error and no row should be impossible on an INSERT,
+      // but "impossible" is how the last several of these started. It is not a
+      // duplicate and it is not a success.
+      console.error('recordInboundEvent: insert reported no error and no row', `(external_id=${externalId})`)
+      return { kind: 'failed', error: 'insert returned no row' }
+    }
+    return { kind: 'recorded', id }
   } catch (err) {
-    console.error('recordInboundEvent error (non-fatal):', err)
-    return null
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('recordInboundEvent threw:', message)
+    return { kind: 'failed', error: message }
   }
+}
+
+/**
+ * The id of the new row, or null when it was deduped OR refused.
+ *
+ * Kept for the callers that genuinely cannot act on the difference — a public
+ * form has already answered the customer by the time this runs. Anything that
+ * decides whether to RETRY (the Quo webhook's status code, gmail-sync's
+ * checkpoint) must use `recordInboundEventResult` instead.
+ */
+export async function recordInboundEvent(input: RecordInboundEventInput): Promise<string | null> {
+  const res = await recordInboundEventResult(input)
+  return res.kind === 'recorded' ? res.id : null
 }
 
 /** The subset of an `ingested_messages` row the agent reads. */

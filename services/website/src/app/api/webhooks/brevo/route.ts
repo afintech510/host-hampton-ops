@@ -59,11 +59,22 @@ export async function POST(req: NextRequest) {
 
   const ids = lookup.contacts.map(c => c.id)
 
-  /** Opt every matched row out of marketing email, by id. */
+  /**
+   * Opt every matched row out of marketing email, by id.
+   *
+   * Returns whether it LANDED, because the caller has to answer Brevo with it.
+   * It used to log the failure and return, and the route then answered 200 — so
+   * an `unsubscribed` event whose write was refused was never redelivered and
+   * the opt-out was gone. That is the exact reasoning the `unavailable` branch
+   * above already applies to a failed READ, applied to the write it guards
+   * (rule 10).
+   */
+  let optOutFailed: string | null = null
   const optOut = async (why: string): Promise<void> => {
     const { error } = await supabase.from('contacts').update({ email_opt_in: false }).in('id', ids)
     if (error) {
       console.error(`brevo:webhook FAILED to opt out ${maskEmail(String(email))} (${why}): ${error.message}`)
+      optOutFailed = error.message
       return
     }
     console.log(`brevo:webhook opted out ${maskEmail(String(email))} (${why}, ${ids.length} row(s))`)
@@ -128,6 +139,13 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     console.error('brevo:webhook error:', err)
+    return NextResponse.json({ error: 'Could not process' }, { status: 500 })
+  }
+
+  // A 200 here is a promise that we recorded the event. If the consent write was
+  // refused we did not, and only a non-2xx gets it redelivered.
+  if (optOutFailed) {
+    return NextResponse.json({ error: 'Could not record opt-out' }, { status: 500 })
   }
 
   return NextResponse.json({ received: true, matched: ids.length })

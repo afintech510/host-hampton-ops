@@ -20,9 +20,20 @@ import { makeContactsDb } from '../helpers/fakeContactsDb'
 const mockGetSupabase = jest.fn()
 jest.mock('@/lib/supabase', () => ({ getSupabase: (...a: any[]) => mockGetSupabase(...a) }))
 
-const mockRecordInboundEvent = jest.fn().mockResolvedValue('event-1')
+/**
+ * `...requireActual` deliberately (hard-won rule 7, FOURTH occurrence in this
+ * chain): a whole-module `jest.mock` silently drops every function the module
+ * later starts exporting, and this file died with "recordInboundEventResult is
+ * not a function" the day `events.ts` grew the three-outcome writer.
+ */
+const mockRecordInboundEventResult = jest.fn().mockResolvedValue({ kind: 'recorded', id: 'event-1' })
 jest.mock('@/lib/agent/events', () => ({
-  recordInboundEvent: (...a: any[]) => mockRecordInboundEvent(...a),
+  ...jest.requireActual('@/lib/agent/events'),
+  recordInboundEventResult: (...a: any[]) => mockRecordInboundEventResult(...a),
+  recordInboundEvent: async (...a: any[]) => {
+    const r = await mockRecordInboundEventResult(...a)
+    return r?.kind === 'recorded' ? r.id : null
+  },
 }))
 
 const NEW_CONTACT = '00000000-0000-4000-8000-0000000000f9'
@@ -80,7 +91,7 @@ describe('POST /api/webhooks/quo', () => {
     jest.clearAllMocks()
     process.env = { ...originalEnv, REVIEWER_PHONES: '+16314008080' }
     delete process.env.QUO_WEBHOOK_SECRET
-    mockRecordInboundEvent.mockResolvedValue('event-1')
+    mockRecordInboundEventResult.mockResolvedValue({ kind: 'recorded', id: 'event-1' })
     mockUpsertContactByPhone.mockResolvedValue(NEW_CONTACT)
     db()
   })
@@ -134,7 +145,7 @@ describe('POST /api/webhooks/quo', () => {
 
     expect(res.status).toBe(503)
     expect(fake.tables.contacts[0].sms_opt_in).toBe(true)
-    expect(mockRecordInboundEvent).not.toHaveBeenCalled()
+    expect(mockRecordInboundEventResult).not.toHaveBeenCalled()
   })
 
   it('logs a non-STOP inbound message for a known contact', async () => {
@@ -175,7 +186,7 @@ describe('POST /api/webhooks/quo', () => {
     expect(res.status).toBe(401)
     // Nothing was read, nothing recorded — a forged SEND cannot reach the loop.
     expect(fake.tables.contact_interactions).toHaveLength(0)
-    expect(mockRecordInboundEvent).not.toHaveBeenCalled()
+    expect(mockRecordInboundEventResult).not.toHaveBeenCalled()
   })
 
   it('FAILS CLOSED: signature headers missing entirely is also a 401', async () => {
@@ -184,7 +195,7 @@ describe('POST /api/webhooks/quo', () => {
     const res = await POST(makeReq(event({ from: '+16314008080', text: 'SEND', direction: 'incoming', id: 'AC9' })))
 
     expect(res.status).toBe(401)
-    expect(mockRecordInboundEvent).not.toHaveBeenCalled()
+    expect(mockRecordInboundEventResult).not.toHaveBeenCalled()
   })
 
   it('records every inbound message with external_id=quo:<id> so a redelivery dedupes', async () => {
@@ -192,7 +203,7 @@ describe('POST /api/webhooks/quo', () => {
 
     await POST(makeReq(event({ from: '+15165550000', text: 'do you have Nov 8?', direction: 'incoming', id: 'ACX' })))
 
-    expect(mockRecordInboundEvent).toHaveBeenCalledWith(
+    expect(mockRecordInboundEventResult).toHaveBeenCalledWith(
       expect.objectContaining({
         source: 'quo',
         externalId: 'quo:ACX',
@@ -211,7 +222,7 @@ describe('POST /api/webhooks/quo', () => {
     expect(mockUpsertContactByPhone).toHaveBeenCalledWith(
       expect.objectContaining({ phone: '+15165551111', sourceDetail: 'quo-inbound-sms' }),
     )
-    expect(mockRecordInboundEvent).toHaveBeenCalledWith(
+    expect(mockRecordInboundEventResult).toHaveBeenCalledWith(
       expect.objectContaining({ contactId: NEW_CONTACT }),
     )
     expect(res.json()).toMatchObject({ received: true })
@@ -221,14 +232,14 @@ describe('POST /api/webhooks/quo', () => {
     db({ contacts: [contact(C1, '6314008080'), contact(C2, '5165552222', { created_at: '2026-02-01T00:00:00Z' })] })
 
     await POST(makeReq(event({ from: '+16314008080', text: 'SEND', direction: 'incoming', id: 'AC-R' })))
-    expect(mockRecordInboundEvent).toHaveBeenCalledWith(
+    expect(mockRecordInboundEventResult).toHaveBeenCalledWith(
       expect.objectContaining({ classification: 'reviewer_reply' }),
     )
 
-    mockRecordInboundEvent.mockClear()
+    mockRecordInboundEventResult.mockClear()
     // Same words, different number → not a reviewer.
     await POST(makeReq(event({ from: '+15165552222', text: 'SEND', direction: 'incoming', id: 'AC-C' })))
-    expect(mockRecordInboundEvent).toHaveBeenCalledWith(
+    expect(mockRecordInboundEventResult).toHaveBeenCalledWith(
       expect.objectContaining({ classification: 'sms_inbound' }),
     )
   })
@@ -239,7 +250,7 @@ describe('POST /api/webhooks/quo', () => {
     const res = await POST(makeReq(event({ from: '+16314008080', text: 'STOP', direction: 'incoming', id: 'AC-S' })))
 
     expect(res.json()).toMatchObject({ action: 'opt_out' })
-    expect(mockRecordInboundEvent).toHaveBeenCalledWith(
+    expect(mockRecordInboundEventResult).toHaveBeenCalledWith(
       expect.objectContaining({ classification: 'reviewer_reply', parsed: expect.objectContaining({ stop: true }) }),
     )
   })

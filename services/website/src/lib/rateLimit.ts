@@ -114,6 +114,33 @@ export function ownerNotifyRule(route: string): RateLimitRule {
   return { route, perCaller: 8, perRoute: 60, windowMs: HOUR_MS }
 }
 
+/**
+ * For a PROVIDER webhook — Quo, Twilio, Brevo.
+ *
+ * Sized very differently from every other rule in this file, on purpose, and
+ * the reason is the defect this ceiling sits beside: `/api/webhooks/quo`
+ * rejected **every real inbound SMS for 2.5 days** because a check nobody had
+ * tested against a real delivery was too strict, and nothing noticed. A
+ * throttle that drops a provider delivery is the same failure with a different
+ * cause — most providers retry a handful of times and then give up forever — so
+ * the numbers here are deliberately far above anything real.
+ *
+ * Measured over the ten-day nginx window on 2026-09-13: `/api/webhooks/quo`
+ * **96** requests total, busiest hour **8**; `/api/webhooks/twilio` **1**;
+ * `/api/webhooks/brevo` **1**. 240 per 10 minutes is thirty times the busiest
+ * real hour, inside a window six times shorter.
+ *
+ * `perCaller` is nearly the same number as `perRoute` on purpose: every
+ * delivery arrives from a small pool of Cloudflare addresses, so the caller key
+ * does not separate a provider from itself. **The route ceiling is the half
+ * that holds** (`docs/public-intake-review.md` §4) — and the SIGNATURE is what
+ * actually authorises the request. This bounds the work an unsigned flood can
+ * make us do; it is not the gate.
+ */
+export function webhookRule(route: string): RateLimitRule {
+  return { route, perCaller: 240, perRoute: 300, windowMs: 10 * MINUTE_MS }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Caller identity
 // ───────────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isCronAuthorized } from '@/lib/cronAuth'
 import { getSupabase } from '@/lib/supabase'
-import { recordInboundEvent } from '@/lib/agent/events'
+import { recordInboundEventResult } from '@/lib/agent/events'
 import { findContactsByEmail } from '@/lib/contactLookup'
 import {
   applyLabel,
@@ -144,8 +144,38 @@ async function bookingFor(supabase: Supa, contactId: string | null): Promise<str
 
 interface IngestOutcome {
   id: string
-  outcome: 'recorded' | 'ignored' | 'duplicate' | 'unreadable'
+  outcome: 'recorded' | 'ignored' | 'duplicate' | 'unreadable' | 'write_failed'
   reason?: string
+}
+
+/**
+ * Did this outcome LEAVE THE MESSAGE UNREAD? If so the checkpoint must not move
+ * past it.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The route's own comment below says *"Only advance the checkpoint when the
+ * batch came through cleanly. Moving it past a message we failed to read would
+ * lose that message permanently."* It was true of a THROWN error and of nothing
+ * else, and two ordinary failures did not throw:
+ *
+ *   - `getMessage()` returns `null` for a Gmail API 429/500/timeout exactly as
+ *     it does for a message that no longer exists. That became `unreadable`,
+ *     which was not a `failure`, so the checkpoint advanced and Gmail was never
+ *     asked about the message again. Rule 12: "could not read" is not "not
+ *     there".
+ *   - `recordInboundEvent()` returned `null` for a REFUSED insert as well as
+ *     for a duplicate, so a row Postgres rejected was counted in the
+ *     `duplicates` column and the checkpoint advanced. Rule 12 again, one layer
+ *     down — now `recordInboundEventResult` distinguishes them.
+ *
+ * Rule 17, asked and answered in the harmless direction: `gmail_sync_state` on
+ * 2026-09-13 holds `fail_streak = 0`, `last_error` empty and
+ * `skipped_message_ids = {}`, so neither of these has fired in production. The
+ * MAX_FAIL_STREAK escape below is what stops this becoming the permanent stall
+ * it replaced, and it now covers both.
+ */
+function leftUnread(outcome: IngestOutcome['outcome']): boolean {
+  return outcome === 'unreadable' || outcome === 'write_failed'
 }
 
 /**
@@ -165,7 +195,7 @@ async function ingestOne(supabase: Supa, id: string, labelId: string | null, for
   const contactId = await existingContactFor(supabase, msg)
   const bookingId = await bookingFor(supabase, contactId)
 
-  const eventId = await recordInboundEvent({
+  const recorded = await recordInboundEventResult({
     supabase,
     route: 'gmail-sync',
     source: 'gmail',
@@ -202,13 +232,20 @@ async function ingestOne(supabase: Supa, id: string, labelId: string | null, for
     },
   })
 
+  // A REFUSED write is not a duplicate, and it must not be labelled SEEN: the
+  // label claims the message is in `ingested_messages` and it is not.
+  if (recorded.kind === 'failed') {
+    console.error(`gmail-sync: ingest of ${id} was REFUSED by the database: ${recorded.error}`)
+    return { id, outcome: 'write_failed', reason: recorded.error }
+  }
+
   // The SEEN label, whatever happened — including on a duplicate, which just
   // means a previous run recorded it but did not get as far as the label. SEEN
   // claims only that the message is in `ingested_messages`. The HANDLED label
   // is the dispatcher's to apply, once a message has actually produced a draft.
   if (labelId) await applyLabel(msg.id, labelId)
 
-  if (!eventId) return { id, outcome: 'duplicate' }
+  if (recorded.kind === 'duplicate') return { id, outcome: 'duplicate' }
   return { id, outcome: ignore || forceHandled ? 'ignored' : 'recorded', reason: ignore ?? undefined }
 }
 
@@ -235,11 +272,16 @@ async function runBackfill(supabase: Supa, pageToken: string | null) {
     results.push(await ingestOne(supabase, id, null, true))
   }
   await writeState(supabase, { last_full_sync_at: new Date().toISOString() })
+  // Counted by what HAPPENED, not by "everything that was not a duplicate" — a
+  // refused insert and an unreadable message were both being reported as
+  // recorded, which is rule 10 in a progress counter.
   return {
     mode: 'backfill' as const,
     scanned: ids.length,
-    recorded: results.filter(r => r.outcome !== 'duplicate').length,
+    recorded: results.filter(r => r.outcome === 'recorded' || r.outcome === 'ignored').length,
     duplicates: results.filter(r => r.outcome === 'duplicate').length,
+    unreadable: results.filter(r => r.outcome === 'unreadable').length,
+    writeFailed: results.filter(r => r.outcome === 'write_failed').length,
     nextPageToken,
     done: !nextPageToken,
   }
@@ -293,7 +335,15 @@ export async function GET(req: NextRequest) {
   const failedIds: string[] = []
   for (const id of ids) {
     try {
-      results.push(await ingestOne(supabase, id, labelId))
+      const outcome = await ingestOne(supabase, id, labelId)
+      results.push(outcome)
+      // A message we could not READ and a message the DB would not ACCEPT both
+      // leave the mailbox with something we have not got. Neither throws, and
+      // both used to let the checkpoint move past them. See `leftUnread`.
+      if (leftUnread(outcome.outcome)) {
+        failure = outcome.reason || `message ${outcome.outcome}`
+        failedIds.push(id)
+      }
     } catch (err) {
       failure = err instanceof Error ? err.message : 'ingest failed'
       failedIds.push(id)
@@ -341,6 +391,7 @@ export async function GET(req: NextRequest) {
     ignored: results.filter(r => r.outcome === 'ignored').length,
     duplicates: results.filter(r => r.outcome === 'duplicate').length,
     unreadable: results.filter(r => r.outcome === 'unreadable').length,
+    writeFailed: results.filter(r => r.outcome === 'write_failed').length,
     labelled: !!labelId,
     error: failure,
   }

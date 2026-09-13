@@ -496,20 +496,55 @@ describe('R7 · the daily cap counts all of the agent’s spend and fails closed
 
 describe('R8 · an unsigned inbound SMS cannot approve a draft', () => {
   const quo = stripComments(read('app/api/webhooks/quo/route.ts'))
+  // The verification moved to lib/inboundWebhookVerify.ts when /api/webhooks/
+  // twilio needed it too, so this rule FOLLOWED IT rather than being relaxed —
+  // hard-won rule 7, from the tripwire's side. `verifyQuoWebhook` is the whole
+  // answer now, and both halves are asserted: the route refuses on `!ok`, and
+  // the module fails closed when unconfigured in production.
+  const verify = stripComments(read('lib/inboundWebhookVerify.ts'))
 
   it('an unset secret is closed in production', () => {
     // `if (!secret) return null` meant SKIP VERIFICATION. That was honest in
     // Phase 2, when this route only logged an opt-out. It became a latent hole
     // the moment an inbound SMS could approve a draft and send a real customer
     // an email and a text.
-    expect(bodyOf(quo, 'unsignedRequestsAllowed')).not.toBe('')
-    expect(quo).toMatch(/unsignedRequestsAllowed\(\) \? null : false/)
-    expect(bodyOf(quo, 'unsignedRequestsAllowed')).toMatch(/phase-production-build/)
+    expect(bodyOf(verify, 'unsignedRequestsAllowed')).not.toBe('')
+    expect(bodyOf(verify, 'unsignedRequestsAllowed')).toMatch(/phase-production-build/)
+    // The unconfigured branch of the Quo verifier must REFUSE, not skip, when
+    // `unsignedRequestsAllowed()` is false — and the refusal must come before
+    // any signature is compared.
+    const body = bodyOf(verify, 'verifyQuoWebhook')
+    expect(body).not.toBe('')
+    expect(body).toMatch(/if \(!secret\)[\s\S]{0,240}reason: 'unconfigured'/)
   })
 
   it('still rejects a present-but-wrong signature', () => {
-    expect(quo).toMatch(/verified === false/)
+    expect(quo).toMatch(/verifyQuoWebhook\(/)
+    expect(quo).toMatch(/if \(!verified\.ok\)/)
     expect(quo).toMatch(/status: 401/)
+    // Both schemes are real HMACs over the RAW body. A rule that only checked
+    // "a signature is compared" would pass over a verifier that compared the
+    // wrong bytes, which is precisely what took this edge down for 2.5 days.
+    const body = bodyOf(verify, 'verifyQuoWebhook')
+    expect(body).toMatch(/createHmac\('sha256', key\)\.update\(`\$\{timestamp\}\.\$\{rawBody\}`\)/)
+    expect(body).toMatch(/createHmac\('sha256', key\)\.update\(`\$\{id\}\.\$\{ts\}\.\$\{rawBody\}`\)/)
+  })
+
+  it('the Twilio door is verified too, and the signature covers the parameters', () => {
+    const twilio = stripComments(read('app/api/webhooks/twilio/route.ts'))
+    expect(twilio).toMatch(/verifyTwilioWebhook\(/)
+    expect(twilio).toMatch(/if \(!verified\.ok\)/)
+    expect(twilio).toMatch(/status: 401/)
+    // Verified BEFORE any parameter is read as a fact about a person: `From`
+    // decides whose consent gets written.
+    expect(twilio.indexOf('verifyTwilioWebhook(')).toBeLessThan(twilio.indexOf("formData.get('From')"))
+    const body = bodyOf(verify, 'verifyTwilioWebhook')
+    expect(body).toMatch(/createHmac\('sha1', token\)/)
+    expect(body).toMatch(/params\.getAll\(k\)/)
+    // The signed URL is the PUBLIC one, never `req.url` as seen in the
+    // container, and never a raw forwarded header (AGENTS.md §11).
+    expect(bodyOf(verify, 'twilioSignedUrls')).toMatch(/publicOrigin\(/)
+    expect(verify).not.toMatch(/x-forwarded-host/)
   })
 
   it('the webhook cannot reach the customer-send path, even transitively', () => {
