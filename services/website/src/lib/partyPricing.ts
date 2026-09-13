@@ -1,4 +1,5 @@
 import type { BookingLineItem, BookingPayment } from '@/types/booking-flow'
+import { billedTotalCents } from '@/lib/planBalance'
 
 const DEFAULT_CARD_FEE_RATE = 0.03
 
@@ -17,13 +18,18 @@ export function calculateCardFee(amountCents: number, rate = DEFAULT_CARD_FEE_RA
   return Math.round(amountCents * rate)
 }
 
+/**
+ * The billed total of a set of line items.
+ *
+ * Delegates to `billedTotalCents`, which is the same function `loadPlanInvoice`
+ * totals the customer's document with. It is one line rather than two
+ * implementations on purpose: this loop used to be its own copy and it did not
+ * know `is_optional` existed, so every caller of it — the studio checkout, the
+ * studio edit route, `buildPlanSnapshot` and the kids-menu summary — wrote or
+ * displayed a total that INCLUDED add-ons the invoice deliberately excludes.
+ */
 export function calculateLineItemTotal(items: BookingLineItem[], guestCount: number): number {
-  let total = 0
-  for (const item of items) {
-    const unitTotal = item.unit_price_cents * item.quantity
-    total += item.guest_multiplied ? unitTotal * guestCount : unitTotal
-  }
-  return total
+  return billedTotalCents(items, guestCount)
 }
 
 export function calculateBalanceDue(totalCents: number, payments: Pick<BookingPayment, 'amount_cents' | 'payment_type'>[]): number {

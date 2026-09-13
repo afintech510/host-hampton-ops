@@ -48,13 +48,11 @@ import { loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
 import { mailHref } from '@/lib/emailSafety'
 import {
   isPayPurpose,
-  paidTowardTotalCents,
-  remainingBalanceCents,
   PAY_LINK_COLUMNS,
   type PayPurpose,
-  type PaymentRow,
   type PayLinkRow,
 } from '@/lib/planPayLinks'
+import { planMoney, type PaymentRow } from '@/lib/planBalance'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -298,15 +296,11 @@ export async function recordPlanPayment(
   const invoice: PlanInvoice = loaded.invoice
   const bookingId = invoice.booking.id
 
-  const { data: beforeRows, error: payReadErr } = await supabase
-    .from('booking_payments')
-    .select('amount_cents, payment_type')
-    .eq('booking_id', bookingId)
-  if (payReadErr) {
-    return { ok: false, retryable: true, message: `payments read failed: ${payReadErr.message}` }
-  }
-  const before = (beforeRows ?? []) as PaymentRow[]
-  const remainingBefore = remainingBalanceCents(invoice, before)
+  // `loadPlanInvoice` reads the payment rows itself and fails closed if it
+  // cannot, so the invoice already carries them and the figures derived from
+  // them. One read, one answer — this used to be a second read of the same rows.
+  const before = invoice.payments
+  const remainingBefore = invoice.outstandingCents
 
   // ── What was actually collected ──────────────────────────────────────────
   // Rule 3 in the header: the truth is Stripe's figure, not ours. The recorded
@@ -398,15 +392,21 @@ export async function recordPlanPayment(
     .select('amount_cents, payment_type')
     .eq('booking_id', bookingId)
   const after = (afterRows ?? before.concat([{ amount_cents: creditCents, payment_type: paymentType }])) as PaymentRow[]
-  const paid = paidTowardTotalCents(after, invoice.depositIsSeparate)
-  const newBalanceCents = Math.max(0, invoice.totalCents - paid)
+  const recomputed = planMoney({
+    totalCents: invoice.totalCents,
+    depositCents: invoice.depositCents,
+    depositIsSeparate: invoice.depositIsSeparate,
+    payments: after,
+  })
+  const paid = recomputed.paidCents
+  const newBalanceCents = recomputed.outstandingCents
 
   // The clamp above is right for the balance the customer reads — nobody owes a
   // negative number — but it is also where an overpayment disappears. Say it.
   // `mismatch` cannot catch this case: it compares what Stripe collected against
   // what the LINK expected, and those agree exactly when a stale link is paid
   // after the plan was re-priced downwards.
-  const overpaidCents = Math.max(0, paid - invoice.totalCents)
+  const overpaidCents = recomputed.overpaidCents
   if (overpaidCents > 0) {
     console.error(
       `recordPlanPayment: ${ref} is OVERPAID by ${money(overpaidCents)} (credited ${money(paid)} against a total of ${money(invoice.totalCents)}) — a refund may be due`,

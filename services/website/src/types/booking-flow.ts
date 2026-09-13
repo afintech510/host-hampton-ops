@@ -9,6 +9,14 @@ export interface BookingLineItem {
   price_type: 'flat' | 'per_person'
   guest_multiplied: boolean
   sort_order?: number
+  description?: string | null
+  is_featured?: boolean
+  /**
+   * Quoted but NOT charged. The column has existed since the invoice template
+   * was ported, and `loadPlanInvoice` was the only one of five money totals that
+   * honoured it — because it was the only one whose type admitted it existed.
+   */
+  is_optional?: boolean
 }
 
 export interface BookingPayment {

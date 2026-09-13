@@ -10,15 +10,12 @@
 
 import {
   quoteFor,
-  paidTowardTotalCents,
-  remainingBalanceCents,
-  depositOwedCents,
   isPayPurpose,
   createPlanPayLink,
   voidLivePayLinks,
   MIN_CHARGE_CENTS,
-  type PaymentRow,
 } from '@/lib/planPayLinks'
+import { paidTowardTotalCents, planMoney, type PaymentRow } from '@/lib/planBalance'
 import type { PlanInvoice } from '@/lib/planInvoice'
 import { contentFromRows, FALLBACK_CONTENT_ROWS } from '@/lib/planContent'
 import { makePlanDb, writesTo } from '../mocks/planDb'
@@ -27,11 +24,20 @@ import { makePlanDb, writesTo } from '../mocks/planDb'
  * An invoice as `loadPlanInvoice` would return it. Only the fields the pay path
  * reads are meaningful; the rest exists so the type is satisfied honestly rather
  * than with an `as any`.
+ *
+ * The money fields are derived by `planMoney()` — the same function production
+ * derives them with — rather than hand-written here. A factory that computes the
+ * answer its own way is a factory that can agree with a broken implementation,
+ * which is hard-won rule 8 pointed at the test rather than the code. `payments`
+ * is the input that moves them, because since link 23 the invoice carries the
+ * payment rows and `quoteFor` no longer takes them separately.
  */
-function invoice(over: Partial<PlanInvoice> = {}): PlanInvoice {
+function invoice(over: Partial<PlanInvoice> & { payments?: PaymentRow[] } = {}): PlanInvoice {
   const totalCents = over.totalCents ?? 100000
   const depositIsSeparate = over.depositIsSeparate ?? false
   const depositCents = over.depositCents ?? Math.min(25000, totalCents)
+  const payments = over.payments ?? []
+  const m = planMoney({ totalCents, depositCents, depositIsSeparate, payments })
   return {
     booking: {
       id: 'bk-1',
@@ -64,7 +70,12 @@ function invoice(over: Partial<PlanInvoice> = {}): PlanInvoice {
     lineItems: [],
     totalCents,
     depositCents,
-    balanceDueCents: depositIsSeparate ? totalCents : Math.max(0, totalCents - depositCents),
+    balanceDueCents: m.balanceDueCents,
+    depositOwedCents: m.depositOwedCents,
+    outstandingCents: m.outstandingCents,
+    paidCents: m.paidCents,
+    overpaidCents: m.overpaidCents,
+    payments,
     depositIsSeparate,
     securityHoldCents: depositIsSeparate ? 50000 : null,
     content: contentFromRows(FALLBACK_CONTENT_ROWS, 'all'),
@@ -110,31 +121,43 @@ describe('paidTowardTotalCents — the studio rule as arithmetic', () => {
   })
 })
 
-describe('remainingBalanceCents / depositOwedCents', () => {
+describe('planMoney — outstanding, deposit owed and the balance the document prints', () => {
   it('STUDIO: the balance stays the FULL total after the security deposit is paid', () => {
     const inv = invoice({ totalCents: 60000, depositIsSeparate: true })
     expect(inv.balanceDueCents).toBe(60000)
-    expect(remainingBalanceCents(inv, [pay('deposit', 25000)])).toBe(60000)
+    const paid = invoice({ totalCents: 60000, depositIsSeparate: true, payments: [pay('deposit', 25000)] })
+    expect(paid.outstandingCents).toBe(60000)
     // …and the deposit itself is then settled, so it must not be asked for again.
-    expect(depositOwedCents(inv, [pay('deposit', 25000)])).toBe(0)
+    expect(paid.depositOwedCents).toBe(0)
   })
 
   it('PARTY: the balance drops by the deposit once it is paid', () => {
-    const inv = invoice({ totalCents: 100000 })
-    expect(remainingBalanceCents(inv, [])).toBe(100000)
-    expect(remainingBalanceCents(inv, [pay('deposit', 25000)])).toBe(75000)
-    expect(remainingBalanceCents(inv, [pay('deposit', 25000)])).toBe(inv.balanceDueCents)
+    expect(invoice({ totalCents: 100000 }).outstandingCents).toBe(100000)
+    const paid = invoice({ totalCents: 100000, payments: [pay('deposit', 25000)] })
+    expect(paid.outstandingCents).toBe(75000)
+    expect(paid.balanceDueCents).toBe(75000)
   })
 
-  it('never goes negative on an overpayment', () => {
-    const inv = invoice({ totalCents: 50000 })
-    expect(remainingBalanceCents(inv, [pay('final', 90000)])).toBe(0)
+  it('never goes negative on an overpayment, and names the overpayment', () => {
+    const inv = invoice({ totalCents: 50000, payments: [pay('final', 90000)] })
+    expect(inv.outstandingCents).toBe(0)
+    expect(inv.overpaidCents).toBe(40000)
+  })
+
+  it('deposit owed + balance due === everything outstanding, when the deposit comes off the total', () => {
+    // The invariant the document's own layout promises: the callout and the
+    // "Balance Due" line add up to what the customer actually still owes. It did
+    // not hold before link 23 — "Balance Due" was a quote-time figure.
+    for (const payments of [[], [pay('partial', 9900)], [pay('deposit', 10000)], [pay('partial', 60000)]]) {
+      const inv = invoice({ totalCents: 159000, payments })
+      expect(inv.depositOwedCents + inv.balanceDueCents).toBe(inv.outstandingCents)
+    }
   })
 })
 
 describe('quoteFor — deposit', () => {
   it('charges the flat $250 plus the 3% the invoice page promises', () => {
-    const q = quoteFor(invoice({ totalCents: 100000 }), [], 'deposit')
+    const q = quoteFor(invoice({ totalCents: 100000 }), 'deposit')
     if (!q.ok) throw new Error(q.reason)
     expect(q.quote.amountCents).toBe(25000)
     expect(q.quote.feeCents).toBe(750)
@@ -142,54 +165,96 @@ describe('quoteFor — deposit', () => {
   })
 
   it('refuses once the deposit is paid — this is the double-charge case', () => {
-    const q = quoteFor(invoice({ totalCents: 100000 }), [pay('deposit', 25000)], 'deposit')
+    const q = quoteFor(invoice({ totalCents: 100000, payments: [pay('deposit', 25000)] }), 'deposit')
     expect(q.ok).toBe(false)
     if (q.ok) return
     expect(q.reason).toMatch(/already paid/i)
   })
 
   it('asks only for the shortfall when a partial deposit was taken', () => {
-    const q = quoteFor(invoice({ totalCents: 100000 }), [pay('deposit', 10000)], 'deposit')
+    const q = quoteFor(invoice({ totalCents: 100000, payments: [pay('deposit', 10000)] }), 'deposit')
     if (!q.ok) throw new Error(q.reason)
     expect(q.quote.amountCents).toBe(15000)
   })
 
   it('is capped at the total on a plan smaller than the deposit', () => {
     // getDepositCents is min($250, total): a $120 add-on must not be charged $250.
-    const q = quoteFor(invoice({ totalCents: 12000 }), [], 'deposit')
+    const q = quoteFor(invoice({ totalCents: 12000 }), 'deposit')
     if (!q.ok) throw new Error(q.reason)
     expect(q.quote.amountCents).toBe(12000)
   })
 
   it('refuses on an unpriced lead rather than charging $0', () => {
-    const q = quoteFor(invoice({ totalCents: 0, depositCents: 0 }), [], 'deposit')
+    const q = quoteFor(invoice({ totalCents: 0, depositCents: 0 }), 'deposit')
     expect(q.ok).toBe(false)
+  })
+
+  /**
+   * THE $257.50 BUTTON ON A SETTLED PLAN.
+   *
+   * `depositOwedCents` used to ask only "has a `payment_type = 'deposit'` row
+   * been recorded". Only 2 of the 18 real payments in production carry that
+   * type — every hand-entered one is `partial` — so a plan paid IN FULL by
+   * `partial` rows still owed its whole notional deposit. Measured in
+   * production 2026-09-13 on a throwaway plan paid $600.00 of $600.00:
+   * `/plan/<ref>/summary` rendered a live "Pay $250.00 deposit" button and
+   * `POST /api/plan/<ref>/pay-link {"purpose":"deposit"}` answered 200 with a
+   * real chargeable Stripe Payment Link.
+   */
+  it('refuses on a plan paid in full by payments typed anything but `deposit`', () => {
+    const inv = invoice({ totalCents: 60000, payments: [pay('partial', 60000)] })
+    expect(inv.outstandingCents).toBe(0)
+    const q = quoteFor(inv, 'deposit')
+    expect(q.ok).toBe(false)
+    if (q.ok) return
+    expect(q.reason).toMatch(/paid in full/i)
+  })
+
+  it('is capped by what is left, so it can never exceed the outstanding amount', () => {
+    // $550 paid of $600: only $50 is left, so the "deposit" cannot be $250.
+    const q = quoteFor(invoice({ totalCents: 60000, payments: [pay('partial', 55000)] }), 'deposit')
+    if (!q.ok) throw new Error(q.reason)
+    expect(q.quote.amountCents).toBe(5000)
+  })
+
+  it('STUDIO: the security deposit is NOT capped by the total, because it is not part of it', () => {
+    // A fully-paid studio rental still owes its refundable $250 hold. This is
+    // the half of the cap that must NOT fire, and it is what
+    // STUDIO_DEPOSIT_IS_SEPARATE selects.
+    const inv = invoice({ totalCents: 47500, depositIsSeparate: true, payments: [pay('final', 47500)] })
+    expect(inv.outstandingCents).toBe(0)
+    const q = quoteFor(inv, 'deposit')
+    if (!q.ok) throw new Error(q.reason)
+    expect(q.quote.amountCents).toBe(25000)
   })
 })
 
 describe('quoteFor — balance', () => {
   it('STUDIO: asks for the FULL total, deposit not deducted', () => {
-    const inv = invoice({ totalCents: 60000, depositIsSeparate: true })
-    const q = quoteFor(inv, [pay('deposit', 25000)], 'balance')
+    const inv = invoice({ totalCents: 60000, depositIsSeparate: true, payments: [pay('deposit', 25000)] })
+    const q = quoteFor(inv, 'balance')
     if (!q.ok) throw new Error(q.reason)
     expect(q.quote.amountCents).toBe(60000)
   })
 
   it('PARTY: asks for what is left after the deposit', () => {
-    const q = quoteFor(invoice({ totalCents: 100000 }), [pay('deposit', 25000)], 'balance')
+    const q = quoteFor(invoice({ totalCents: 100000, payments: [pay('deposit', 25000)] }), 'balance')
     if (!q.ok) throw new Error(q.reason)
     expect(q.quote.amountCents).toBe(75000)
   })
 
   it('refuses when the plan is paid in full', () => {
-    const q = quoteFor(invoice({ totalCents: 100000 }), [pay('deposit', 25000), pay('final', 75000)], 'balance')
+    const q = quoteFor(
+      invoice({ totalCents: 100000, payments: [pay('deposit', 25000), pay('final', 75000)] }),
+      'balance',
+    )
     expect(q.ok).toBe(false)
     if (q.ok) return
     expect(q.reason).toMatch(/paid in full/i)
   })
 
   it('refuses on a plan with no priced items', () => {
-    const q = quoteFor(invoice({ totalCents: 0, depositCents: 0 }), [], 'balance')
+    const q = quoteFor(invoice({ totalCents: 0, depositCents: 0 }), 'balance')
     expect(q.ok).toBe(false)
     if (q.ok) return
     expect(q.reason).toMatch(/no priced items/i)
@@ -199,7 +264,7 @@ describe('quoteFor — balance', () => {
     // planInvoice.ts excludes optional items from totalCents; this asserts the
     // consequence rather than trusting the comment that says so.
     const withOptional = invoice({ totalCents: 60000 }) // total already excludes the $200 optional arch
-    const q = quoteFor(withOptional, [], 'balance')
+    const q = quoteFor(withOptional, 'balance')
     if (!q.ok) throw new Error(q.reason)
     expect(q.quote.amountCents).toBe(60000)
   })
@@ -207,7 +272,7 @@ describe('quoteFor — balance', () => {
 
 describe('quoteFor — custom (admin)', () => {
   it('charges what was asked when it is within what the plan owes', () => {
-    const q = quoteFor(invoice({ totalCents: 100000 }), [], 'custom', 30000)
+    const q = quoteFor(invoice({ totalCents: 100000 }), 'custom', 30000)
     if (!q.ok) throw new Error(q.reason)
     expect(q.quote.amountCents).toBe(30000)
     expect(q.quote.feeCents).toBe(900)
@@ -215,27 +280,27 @@ describe('quoteFor — custom (admin)', () => {
 
   it('refuses more than the plan owes — the fat-finger guard', () => {
     // Cap is remaining + depositOwed = 100000 + 25000.
-    const q = quoteFor(invoice({ totalCents: 100000 }), [], 'custom', 125001)
+    const q = quoteFor(invoice({ totalCents: 100000 }), 'custom', 125001)
     expect(q.ok).toBe(false)
     if (q.ok) return
     expect(q.reason).toMatch(/more than this plan owes/i)
   })
 
   it('allows exactly the cap', () => {
-    const q = quoteFor(invoice({ totalCents: 100000 }), [], 'custom', 125000)
+    const q = quoteFor(invoice({ totalCents: 100000 }), 'custom', 125000)
     expect(q.ok).toBe(true)
   })
 
   it('refuses zero, negatives and nonsense', () => {
     const inv = invoice({ totalCents: 100000 })
-    expect(quoteFor(inv, [], 'custom', 0).ok).toBe(false)
-    expect(quoteFor(inv, [], 'custom', -5000).ok).toBe(false)
-    expect(quoteFor(inv, [], 'custom', Number.NaN).ok).toBe(false)
-    expect(quoteFor(inv, [], 'custom').ok).toBe(false)
+    expect(quoteFor(inv, 'custom', 0).ok).toBe(false)
+    expect(quoteFor(inv, 'custom', -5000).ok).toBe(false)
+    expect(quoteFor(inv, 'custom', Number.NaN).ok).toBe(false)
+    expect(quoteFor(inv, 'custom').ok).toBe(false)
   })
 
   it('refuses anything below Stripe’s floor', () => {
-    const q = quoteFor(invoice({ totalCents: 100000 }), [], 'custom', MIN_CHARGE_CENTS - 50)
+    const q = quoteFor(invoice({ totalCents: 100000 }), 'custom', MIN_CHARGE_CENTS - 50)
     expect(q.ok).toBe(false)
   })
 })
@@ -299,7 +364,7 @@ describe('createPlanPayLink', () => {
     const db = makePlanDb(base())
     const { stripe, created } = makeStripe()
     await createPlanPayLink({
-      invoice: invoice(), payments: [], purpose: 'deposit', actor: 'ADMIN',
+      invoice: invoice(), purpose: 'deposit', actor: 'ADMIN',
       stripe, db: db as never, origin: 'https://x',
     })
     const link = created.links[0] as Record<string, unknown>
@@ -310,7 +375,7 @@ describe('createPlanPayLink', () => {
     const db = makePlanDb(base())
     const { stripe, created } = makeStripe()
     const res = await createPlanPayLink({
-      invoice: invoice(), payments: [], purpose: 'balance', actor: 'ADMIN',
+      invoice: invoice(), purpose: 'balance', actor: 'ADMIN',
       stripe, db: db as never, origin: 'https://x',
     })
     if (!res.ok) throw new Error(res.reason)
@@ -327,7 +392,7 @@ describe('createPlanPayLink', () => {
     const { stripe, created } = makeStripe()
     const res = await createPlanPayLink({
       invoice: invoice({ booking: { ...invoice().booking, status: 'cancelled' } }),
-      payments: [], purpose: 'deposit', actor: 'ADMIN',
+      purpose: 'deposit', actor: 'ADMIN',
       stripe, db: db as never, origin: 'https://x',
     })
     expect(res.ok).toBe(false)
@@ -350,7 +415,7 @@ describe('createPlanPayLink', () => {
     })
     const { stripe, created } = makeStripe()
     const res = await createPlanPayLink({
-      invoice: invoice(), payments: [], purpose: 'deposit', actor: 'ADMIN',
+      invoice: invoice(), purpose: 'deposit', actor: 'ADMIN',
       stripe, db: db as never, origin: 'https://x',
     })
     if (!res.ok) throw new Error(res.reason)
@@ -374,7 +439,7 @@ describe('createPlanPayLink', () => {
     })
     const { stripe, created } = makeStripe()
     const res = await createPlanPayLink({
-      invoice: invoice(), payments: [], purpose: 'deposit', actor: 'ADMIN',
+      invoice: invoice(), purpose: 'deposit', actor: 'ADMIN',
       stripe, db: db as never, origin: 'https://x',
     })
     expect(res.ok).toBe(false)
@@ -389,7 +454,7 @@ describe('createPlanPayLink', () => {
     })
     const { stripe, created } = makeStripe()
     const res = await createPlanPayLink({
-      invoice: invoice(), payments: [], purpose: 'deposit', actor: 'ADMIN',
+      invoice: invoice(), purpose: 'deposit', actor: 'ADMIN',
       stripe, db: db as never, origin: 'https://x',
     })
     expect(res.ok).toBe(false)
@@ -402,7 +467,7 @@ describe('createPlanPayLink', () => {
     const db = makePlanDb(base())
     const { stripe, created } = makeStripe()
     await createPlanPayLink({
-      invoice: invoice(), payments: [], purpose: 'deposit', actor: 'ADMIN',
+      invoice: invoice(), purpose: 'deposit', actor: 'ADMIN',
       stripe, db: db as never, origin: 'https://www.hosthampton.com',
     })
     expect((created.links[0] as Record<string, unknown>).after_completion).toEqual({

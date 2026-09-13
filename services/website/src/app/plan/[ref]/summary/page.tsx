@@ -56,7 +56,7 @@ import { getSupabase } from '@/lib/supabase'
 import { loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
 import { ensureInvoiceNumber } from '@/lib/invoiceNumber'
 import { planAccess } from '@/lib/planAccess'
-import { quoteFor, type PaymentRow } from '@/lib/planPayLinks'
+import { quoteFor } from '@/lib/planPayLinks'
 import { PayPanel, PlanShareBar, AdminCustomCharge, type PayOption } from './PayPanel'
 import './invoice.css'
 
@@ -103,7 +103,13 @@ function InvoiceBody({
   isAdminView: boolean
 }) {
   const { booking, content, partyType } = invoice
-  const venmoAmount = (invoice.depositCents / 100).toFixed(2)
+  // What we should actually ask this customer for right now: the deposit while
+  // one is owed, otherwise whatever is left. It used to be the full deposit
+  // unconditionally, so a plan that had paid its deposit — or paid everything —
+  // still invited a second $250 by Venmo.
+  const askCents = invoice.depositOwedCents > 0 ? invoice.depositOwedCents : invoice.outstandingCents
+  const settled = askCents <= 0 && invoice.totalCents > 0
+  const venmoAmount = (askCents / 100).toFixed(2)
   const venmoNote = `${(booking.contact_name || 'Party').split(' ')[0]} — ${
     partyType === 'studio_rental' ? 'Studio Rental' : 'Party'
   }${booking.party_date ? ` ${booking.party_date.slice(5).replace('-', '/')}` : ''}`
@@ -230,14 +236,25 @@ function InvoiceBody({
             </div>
           </div>
 
-          {/* DEPOSIT CALLOUT — outside totals-section on purpose. */}
+          {/*
+            DEPOSIT CALLOUT — outside totals-section on purpose.
+
+            The figure is what is STILL OWED on the deposit, so that
+            `deposit owed + Balance Due === everything outstanding` on every
+            product whose deposit comes off the total. It used to print the full
+            deposit unconditionally, which on a plan that had already paid one
+            asked for it a second time. A deposit that is settled says so rather
+            than showing $0.00, which reads like a pricing error.
+          */}
           {invoice.depositCents > 0 && (
             <div className="deposit-callout">
               <div>
                 <div className="label">{content.depositLabel}</div>
                 <div className="deposit-note">{content.depositNote}</div>
               </div>
-              <div className="amount">{money(invoice.depositCents)}</div>
+              <div className="amount">
+                {invoice.depositOwedCents > 0 ? money(invoice.depositOwedCents) : 'Paid'}
+              </div>
             </div>
           )}
         </div>
@@ -288,14 +305,31 @@ function InvoiceBody({
           </div>
         )}
 
+        {/* ============ PAID IN FULL ============ */}
+        {settled && (
+          <div className="pay-section invoice-section" style={{ textAlign: 'center' }}>
+            <h2>Paid in Full</h2>
+            <p className="section-sub">
+              Thank you &mdash; there is nothing outstanding on this {partyType === 'studio_rental' ? 'rental' : 'party'}.
+              We can&rsquo;t wait to celebrate with you!
+            </p>
+            <Link className="action" href={`/my-booking?ref=${encodeURIComponent(ref_)}`}>
+              View your booking
+            </Link>
+            {isAdminView && <AdminCustomCharge ref_={ref_} />}
+          </div>
+        )}
+
         {/* ============ LOCKED PAYMENT SECTION ============ */}
-        {invoice.depositCents > 0 && (
+        {!settled && askCents > 0 && (
           <div className="pay-section invoice-section" style={{ textAlign: 'center' }}>
             <h2>Reserve Your Date</h2>
             <p className="section-sub">
-              A <strong>{money(invoice.depositCents)}</strong> {content.depositLabel.split(' — ')[0].toLowerCase()} is
-              required to book &mdash; separate from your total, see above. A 3% processing fee applies to
-              card payments; Venmo and Zelle avoid it.
+              A <strong>{money(invoice.depositOwedCents > 0 ? invoice.depositOwedCents : askCents)}</strong>{' '}
+              {invoice.depositOwedCents > 0
+                ? `${content.depositLabel.split(' — ')[0].toLowerCase()} is required to book — separate from your total, see above.`
+                : 'payment is outstanding on this plan.'}{' '}
+              A 3% processing fee applies to card payments; Venmo and Zelle avoid it.
             </p>
             {/*
               The pay buttons post a `purpose`, never an amount — see PayPanel's
@@ -313,7 +347,7 @@ function InvoiceBody({
             {isAdminView && <AdminCustomCharge ref_={ref_} />}
             <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(174,182,194,0.2)' }}>
               <p className="section-sub" style={{ marginBottom: 6 }}>
-                Prefer Venmo? Send {money(invoice.depositCents)} &mdash; no card fee.
+                Prefer Venmo? Send {money(askCents)} &mdash; no card fee.
               </p>
               <a
                 href={`https://venmo.com/hosthampton?txn=pay&amount=${venmoAmount}&note=${encodeURIComponent(venmoNote)}`}
@@ -472,23 +506,16 @@ export default async function PlanSummaryPage({
 
   // ── What there is left to pay ────────────────────────────────────────────
   //
-  // Priced here, on the server, from the invoice and the authoritative payment
-  // rows. The client gets formatted strings and a `purpose`; it never sees or
-  // sends a figure. A payments read failure shows NO pay buttons rather than
-  // buttons priced as if nothing had been paid — offering to charge a deposit
-  // that is already paid is the one mistake worth failing closed on.
-  const { data: payRows, error: payErr } = await supabase
-    .from('booking_payments')
-    .select('amount_cents, payment_type')
-    .eq('booking_id', invoice.booking.id)
-  if (payErr) console.error('plan summary: payments read failed:', payErr.message)
-  const payments = (payRows ?? []) as PaymentRow[]
-
+  // Priced here, on the server, from the invoice — which since link 23 reads the
+  // authoritative payment rows itself and fails closed if it cannot, so there is
+  // no second read to go stale and no branch where these buttons are priced as
+  // if nothing had been paid. The client gets formatted strings and a `purpose`;
+  // it never sees or sends a figure.
   const isCancelled = invoice.booking.status === 'cancelled'
   const payOptions: PayOption[] = []
-  if (!payErr && !isCancelled) {
+  if (!isCancelled) {
     for (const purpose of ['deposit', 'balance'] as const) {
-      const q = quoteFor(invoice, payments, purpose)
+      const q = quoteFor(invoice, purpose)
       if (!q.ok) continue
       // ── What the button is allowed to CALL the money ──────────────────────
       //

@@ -12,6 +12,7 @@ import { sendSMSVia, normalizePhone } from '@/lib/sms'
 import { sendCheckinLinkSms } from '@/lib/checkinLink'
 import { enqueueCheckinReminders, cancelCheckinReminders } from '@/lib/checkinReminders'
 import { readBalanceInputs, computeBalance, sumPayments } from '@/lib/bookingBalance'
+import { billedTotalCents } from '@/lib/planBalance'
 import { logBookingChange } from '@/lib/bookingAudit'
 import {
   recordAdminPayment,
@@ -752,20 +753,24 @@ async function recalcTotals(
 ): Promise<{ ok: true; totalCents: number; balanceCents: number } | { ok: false; message: string }> {
   const { data: items, error: itemsErr } = await supabase
     .from('booking_line_items')
-    .select('unit_price_cents, quantity, guest_multiplied')
+    .select('unit_price_cents, quantity, guest_multiplied, is_optional')
     .eq('booking_id', bookingId)
   if (itemsErr) {
     console.error(`recalcTotals: line items unreadable for ${bookingId} — totals NOT rewritten:`, itemsErr.message)
     return { ok: false, message: `line items unreadable: ${itemsErr.message}` }
   }
 
-  const guestCount = (booking.guest_count_approx as number) || 1
-  let total = 0
-  for (const li of items || []) {
-    total += li.guest_multiplied
-      ? li.unit_price_cents * li.quantity * guestCount
-      : li.unit_price_cents * li.quantity
-  }
+  // `billedTotalCents` is the same function `loadPlanInvoice` totals the
+  // document with. This loop used to be its own copy and it did not select
+  // `is_optional`, let alone honour it — so an admin saving a booking that
+  // carried a quoted-but-not-charged add-on rewrote `total_cents` to INCLUDE it,
+  // and the stored total then disagreed with the invoice the customer holds.
+  // Only the cancelled HH-TEST-PAY1/PAY2 rows carry optional items today, so no
+  // real booking has been inflated — but every writer on this surface could.
+  const total = billedTotalCents(
+    (items || []) as { unit_price_cents: number; quantity: number; guest_multiplied: boolean; is_optional?: boolean }[],
+    booking.guest_count_approx as number | null,
+  )
 
   const { data: payments, error: payErr } = await supabase
     .from('booking_payments')

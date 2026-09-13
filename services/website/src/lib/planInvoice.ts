@@ -29,6 +29,7 @@ import { getSupabase } from '@/lib/supabase'
 import { getDepositCents } from '@/lib/partyPricing'
 import { loadPricingCatalog, type PricingCatalog } from '@/lib/pricingCatalog'
 import { loadPlanContent, type PlanContent } from '@/lib/planContent'
+import { depositIsSeparateFor, guestMultiplier, planMoney, type PaymentRow } from '@/lib/planBalance'
 import type { BookingLineItem } from '@/types/booking-flow'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -81,8 +82,28 @@ export interface PlanInvoice {
   /** Featured first, then billed items, then optional ones. */
   lineItems: InvoiceLineItem[]
   totalCents: number
+  /** The FULL deposit for this plan, paid or not. What the callout prints. */
   depositCents: number
+  /**
+   * What the document prints beside "Balance Due" — and, since link 23, a figure
+   * that accounts for what has actually been paid.
+   *
+   * It used to be `total - the notional deposit`, fixed at quote time and never
+   * moved by a payment, which is why `/plan/[ref]/summary` told two customers who
+   * had paid in full that they still owed $1,475.00 and $1,560.00. See
+   * lib/planBalance.ts for the measurement.
+   */
   balanceDueCents: number
+  /** Still owed on the deposit. Capped by `outstandingCents` unless separate. */
+  depositOwedCents: number
+  /** Everything still owed against the total. `deposit + balance` for most plans. */
+  outstandingCents: number
+  /** Credited against the total so far. */
+  paidCents: number
+  /** Credited MORE than the total — a refund may be due. */
+  overpaidCents: number
+  /** The authoritative payment rows every figure above was derived from. */
+  payments: PaymentRow[]
   /** True for a studio rental: the deposit is NOT deducted from the balance. */
   depositIsSeparate: boolean
   /** The day-of refundable card hold, studio only. Never a charge. */
@@ -196,8 +217,9 @@ export async function loadPlanInvoice(
   const booking = bookingRow as unknown as InvoiceBooking
   const partyType = booking.party_type || 'unknown'
 
-  const [{ data: itemRows, error: itemErr }, catalog, content] = await Promise.all([
+  const [{ data: itemRows, error: itemErr }, { data: payRows, error: payErr }, catalog, content] = await Promise.all([
     db.from('booking_line_items').select('*').eq('booking_id', booking.id).order('sort_order', { ascending: true }),
+    db.from('booking_payments').select('amount_cents, payment_type').eq('booking_id', booking.id),
     loadPricingCatalog(db),
     loadPlanContent(partyType, db),
   ])
@@ -216,16 +238,26 @@ export async function loadPlanInvoice(
   // line items, because they are the plan.
   if (itemErr) return { ok: false, notFound: false, error: `line items: ${itemErr.message}` }
 
-  const guestCount = booking.guest_count_approx && booking.guest_count_approx > 0 ? booking.guest_count_approx : 0
-  const lineItems = orderLineItems((itemRows ?? []) as BookingLineItem[], guestCount || 1)
+  // The payments read is treated exactly like the line items, and for the same
+  // reason: since link 23 every figure below depends on it, so discarding the
+  // error would say "nothing has been paid" about a plan that has been. That is
+  // the rule-12 shape that told a paid-in-full customer they owed $1,475.00 —
+  // except it would now do it on a DB blip rather than by design. A caller that
+  // cannot read the payments gets no invoice at all; `/plan/[ref]/summary`
+  // renders "we couldn't load this plan", which states no balance and offers no
+  // pay button, and the pay route answers 503.
+  if (payErr) return { ok: false, notFound: false, error: `payments: ${payErr.message}` }
+  const payments = (payRows ?? []) as PaymentRow[]
+
+  const lineItems = orderLineItems((itemRows ?? []) as BookingLineItem[], guestMultiplier(booking.guest_count_approx))
 
   // Optional items are quoted, not charged — they must not move the total.
   const billed = lineItems.filter(i => !i.isOptional)
   const totalCents = billed.reduce((sum, i) => sum + i.amountCents, 0)
 
   const depositCents = getDepositCents(totalCents)
-  const depositIsSeparate = partyType === 'studio_rental'
-  const balanceDueCents = depositIsSeparate ? totalCents : Math.max(0, totalCents - depositCents)
+  const depositIsSeparate = depositIsSeparateFor(partyType)
+  const m = planMoney({ totalCents, depositCents, depositIsSeparate, payments })
 
   const tags = booking.party_tags ?? {}
   const venueAddress = typeof tags.location_address === 'string' ? tags.location_address : null
@@ -254,7 +286,12 @@ export async function loadPlanInvoice(
       lineItems,
       totalCents,
       depositCents,
-      balanceDueCents,
+      balanceDueCents: m.balanceDueCents,
+      depositOwedCents: m.depositOwedCents,
+      outstandingCents: m.outstandingCents,
+      paidCents: m.paidCents,
+      overpaidCents: m.overpaidCents,
+      payments,
       depositIsSeparate,
       securityHoldCents: depositIsSeparate ? catalog.studioRates.securityDepositCents : null,
       content,

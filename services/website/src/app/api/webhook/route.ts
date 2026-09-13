@@ -1808,11 +1808,18 @@ export async function POST(req: NextRequest) {
           console.error('Party builder payment: cannot recompute balance —', pInputs.message, '— asking Stripe to retry')
           return NextResponse.json({ error: pInputs.message }, { status: 500 })
         }
-        const paid = pInputs.paidSum
-        const newBalance = Math.max(0, ((pInputs.row as { total_cents: number | null }).total_cents || 0) - paid)
+        // `computeBalance`, not a third hand-rolled copy of it. Link 18
+        // extracted this exact arithmetic; link 21 found this branch still
+        // spelling it out, and it carried the defect the extraction exists to
+        // stop: `(total_cents || 0) - paid` clamps an UNPRICED lead — most of
+        // the pipeline since Phase 4 — to a balance of 0 and stamps it
+        // `paid_in_full`. `computeBalance` reports `paidInFull: false` when
+        // there is no total to be paid in full against.
+        const pBal = computeBalance((pInputs.row as { total_cents: number | null }).total_cents, pInputs.paidSum)
+        const newBalance = pBal.balanceCents
 
         const updateFields: Record<string, unknown> = { balance_due_cents: newBalance }
-        if (newBalance === 0) {
+        if (pBal.paidInFull) {
           updateFields.paid_in_full_at = new Date().toISOString()
           updateFields.status = 'paid_in_full'
         }

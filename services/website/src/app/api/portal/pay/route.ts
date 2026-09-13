@@ -2,13 +2,72 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
-import { calculateCardFee, formatMoney } from '@/lib/partyPricing'
+import { calculateCardFee, formatMoney, getDepositCents } from '@/lib/partyPricing'
+import {
+  billedTotalCents,
+  depositIsSeparateFor,
+  planMoney,
+  type BilledItem,
+  type PaymentRow,
+} from '@/lib/planBalance'
 import { venmoHandle, zellePhone, PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { screenPortalPaymentType, isPayableStatus, PORTAL_PAYMENT_TYPES } from '@/lib/portalWrite'
 
 /** A gratuity, not a second invoice. $1,000 is generous and still a ceiling. */
 const MAX_TIP_CENTS = 100_000
+
+/**
+ * What the INVOICE says is outstanding, from the same pure functions
+ * `loadPlanInvoice` uses — `null` when we could not work it out.
+ *
+ * Three outcomes, not two (hard-won rule 12): "the invoice says $X" and "we
+ * could not read the invoice" are different answers, and a failed read must not
+ * become a ceiling of zero (which would refuse a real customer's payment) or a
+ * ceiling of infinity (which would drop the guard). `null` falls back to the
+ * column, which is exactly the behaviour this route had before the guard
+ * existed — no better, and no worse.
+ *
+ * It deliberately does NOT call `loadPlanInvoice`: that also loads the pricing
+ * catalog and the plan content, neither of which moves a number here, and this
+ * is an interactive path a customer is waiting on.
+ */
+async function derivedOutstandingCents(
+  supabase: ReturnType<typeof getSupabase>,
+  booking: { id: string; booking_ref: string; party_type: string | null; guest_count_approx: number | null },
+): Promise<number | null> {
+  const [{ data: items, error: itemErr }, { data: pays, error: payErr }] = await Promise.all([
+    supabase
+      .from('booking_line_items')
+      .select('unit_price_cents, quantity, guest_multiplied, is_optional')
+      .eq('booking_id', booking.id),
+    supabase.from('booking_payments').select('amount_cents, payment_type').eq('booking_id', booking.id),
+  ])
+  if (itemErr || payErr) {
+    console.error(
+      `portal pay: could not derive the invoice balance for ${booking.booking_ref} — falling back to balance_due_cents:`,
+      itemErr?.message || payErr?.message,
+    )
+    return null
+  }
+  // No line items is not "owes nothing" — it is "there is no invoice to compare
+  // against". Twenty of the 62 bookings in production are in that state (leads,
+  // and the legacy studio rows), none of them with a positive balance, and
+  // returning 0 here would have refused a payment on any that ever gained one.
+  // The column is the only answer on such a booking, which is what `null`
+  // selects.
+  const rows = (items ?? []) as BilledItem[]
+  if (rows.length === 0) return null
+
+  const depositIsSeparate = depositIsSeparateFor(booking.party_type)
+  const totalCents = billedTotalCents(rows, booking.guest_count_approx)
+  return planMoney({
+    totalCents,
+    depositCents: getDepositCents(totalCents),
+    depositIsSeparate,
+    payments: (pays ?? []) as PaymentRow[],
+  }).outstandingCents
+}
 
 export async function POST(req: NextRequest) {
   // Every call creates a Stripe PaymentIntent. `plannerRule` rather than
@@ -67,7 +126,9 @@ export async function POST(req: NextRequest) {
 
   const { data: booking, error: readErr } = await supabase
     .from('bookings')
-    .select('id, balance_due_cents, total_cents, contact_name, contact_email, booking_ref, package_type, status')
+    .select(
+      'id, balance_due_cents, total_cents, contact_name, contact_email, booking_ref, package_type, status, party_type, guest_count_approx',
+    )
     .eq('booking_ref', bookingRef)
     .maybeSingle()
 
@@ -110,8 +171,40 @@ export async function POST(req: NextRequest) {
   // away at the balance however you want" — so the rule here is: a customer may
   // choose any amount UP TO what is owed, and if nothing is owed there is
   // nothing to pay. `/api/plan/[ref]/pay-link` is the derived-amount path.
-  const balanceCents = booking.balance_due_cents
-  if (typeof balanceCents !== 'number' || !Number.isFinite(balanceCents) || balanceCents <= 0) {
+  const columnBalance = booking.balance_due_cents
+  if (typeof columnBalance !== 'number' || !Number.isFinite(columnBalance) || columnBalance <= 0) {
+    return NextResponse.json(
+      { error: 'There is no balance to pay on this booking right now. Give us a call if that looks wrong.' },
+      { status: 409 },
+    )
+  }
+
+  // ── The column and the invoice do not agree, and neither may overcharge ──
+  //
+  // `bookings.balance_due_cents` and `loadPlanInvoice()` answer "what does this
+  // party owe" differently, and have since the plan surface was built. Measured
+  // 2026-09-13 across all 62 bookings: they disagree on 21 rows, and on both
+  // live studio rentals the column is exactly $250 LOWER, because it treats the
+  // studio deposit as a part payment while every line of lib/planInvoice.ts says
+  // it is a refundable security hold. Proven here: this route was asked for the
+  // full $475.00 on a studio invoice and answered **"Send $225 via Venmo"**.
+  //
+  // Which of the two is right is an ACCOUNTING decision and it is Adam's —
+  // needs-Adam 41, recorded three times now. What this route can do without
+  // pre-empting him is refuse to be the surface that charges too MUCH: the
+  // ceiling is the LOWER of the two answers. That is a no-op on every row in
+  // production today (the column is never the higher one), and it means a stale
+  // column can never authorise a charge the invoice would not.
+  const derived = await derivedOutstandingCents(supabase, booking)
+  const balanceCents =
+    derived === null ? columnBalance : Math.min(columnBalance, derived)
+  if (derived !== null && derived !== columnBalance) {
+    // Rule 10: a guardrail that stops something must say that it stopped it.
+    console.warn(
+      `portal pay: ${bookingRef} balance disagreement — balance_due_cents=${columnBalance}c, invoice outstanding=${derived}c; charging against ${balanceCents}c (needs-Adam 41)`,
+    )
+  }
+  if (balanceCents <= 0) {
     return NextResponse.json(
       { error: 'There is no balance to pay on this booking right now. Give us a call if that looks wrong.' },
       { status: 409 },

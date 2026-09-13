@@ -96,7 +96,8 @@ describe('orderLineItems', () => {
 function makeSupabase(
   booking: Record<string, unknown> | null,
   items: unknown[] = [],
-  errors: { booking?: { message: string }; items?: { message: string } } = {},
+  errors: { booking?: { message: string }; items?: { message: string }; payments?: { message: string } } = {},
+  payments: unknown[] = [],
 ) {
   const from = jest.fn((table: string) => {
     const chain: Record<string, unknown> = {
@@ -106,6 +107,12 @@ function makeSupabase(
         }
         if (table === 'booking_line_items') {
           return Promise.resolve({ data: errors.items ? null : items, error: errors.items ?? null }).then(res, rej)
+        }
+        if (table === 'booking_payments') {
+          return Promise.resolve({
+            data: errors.payments ? null : payments,
+            error: errors.payments ?? null,
+          }).then(res, rej)
         }
         // pricing_items / plan_content: empty, so both fall back to their
         // compiled seed — which is exactly the state this must still render in.
@@ -229,6 +236,72 @@ describe('loadPlanInvoice', () => {
       if (!res.ok) throw new Error('expected ok')
       expect(res.invoice.totalCents).toBe(0)
       expect(res.invoice.depositCents).toBe(0)
+    })
+
+    it('reports a failed PAYMENTS read rather than saying nothing has been paid', async () => {
+      // Since link 23 every figure on the document derives from these rows too.
+      // Discarding the error would reproduce the exact statement that was live —
+      // "Balance Due: $1,475.00" to a customer who had paid in full — on a blip
+      // rather than by design, and the pay buttons would be priced as if nothing
+      // had been paid. `notFound: false`, so the page says "we couldn't load
+      // this" and the pay route answers 503 rather than 404.
+      const res = await loadPlanInvoice(
+        'HH-PTY-AAA',
+        makeSupabase(STUDIO, [item({ unit_price_cents: 60000 })], { payments: { message: 'connection reset' } }),
+      )
+      expect(res.ok).toBe(false)
+      if (res.ok) throw new Error('expected failure')
+      expect(res.notFound).toBe(false)
+      expect(res.error).toMatch(/payments/)
+    })
+  })
+
+  describe('the Balance Due a customer reads accounts for what they have paid', () => {
+    const PARTY = { ...STUDIO, party_type: 'in_studio_theme', guest_count_approx: 10 }
+    const load = (payments: unknown[]) =>
+      loadPlanInvoice('HH-PTY-AAA', makeSupabase(PARTY, [item({ unit_price_cents: 60000 })], {}, payments))
+
+    it('a fresh quote still reads total minus deposit, as the template lays it out', async () => {
+      const res = await load([])
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.totalCents).toBe(60000)
+      expect(res.invoice.depositOwedCents).toBe(25000)
+      expect(res.invoice.balanceDueCents).toBe(35000)
+    })
+
+    /**
+     * The headline defect, at its own source. `balanceDueCents` was
+     * `total - the notional deposit` and no payment ever moved it. HH-PTY-6GGMB
+     * and HH-PTY-PF3LJ — both real, both paid in full — were shown $1,475.00 and
+     * $1,560.00 outstanding.
+     */
+    it('a plan paid IN FULL shows a zero balance, not the quote-time figure', async () => {
+      const res = await load([{ payment_type: 'partial', amount_cents: 60000 }])
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.outstandingCents).toBe(0)
+      expect(res.invoice.balanceDueCents).toBe(0)
+      expect(res.invoice.depositOwedCents).toBe(0)
+    })
+
+    it('a part payment moves it by exactly what was paid', async () => {
+      // HH-2026-1052's shape: $99 paid against a $1,590 party. The column holds
+      // $1,491 and the document used to print $1,340 — $151 apart.
+      const res = await loadPlanInvoice(
+        'HH-PTY-AAA',
+        makeSupabase(PARTY, [item({ unit_price_cents: 159000 })], {}, [
+          { payment_type: 'partial', amount_cents: 9900 },
+        ]),
+      )
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.outstandingCents).toBe(149100)
+      expect(res.invoice.depositOwedCents + res.invoice.balanceDueCents).toBe(149100)
+    })
+
+    it('carries the payment rows it derived them from, so nothing re-reads them', async () => {
+      const res = await load([{ payment_type: 'partial', amount_cents: 1000 }])
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.payments).toEqual([{ payment_type: 'partial', amount_cents: 1000 }])
+      expect(res.invoice.paidCents).toBe(1000)
     })
   })
 

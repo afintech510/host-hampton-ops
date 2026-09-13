@@ -33,7 +33,8 @@
  */
 
 import { getSupabase } from '@/lib/supabase'
-import { generatePartyRef, calculateLineItemTotal, getDepositCents, computeCutoffDates } from '@/lib/partyPricing'
+import { generatePartyRef, getDepositCents, computeCutoffDates } from '@/lib/partyPricing'
+import { billedTotalCents, quoteTimeBalanceCents } from '@/lib/planBalance'
 import { classifyPartyType, type PartyType } from '@/lib/inquiryDrafts'
 import { findBookingsByContactEmail } from '@/lib/contactLookup'
 import type { BookingLineItem } from '@/types/booking-flow'
@@ -56,6 +57,13 @@ export interface PlanSnapshotInput {
   lineItems?: BookingLineItem[]
   guestCount?: number | null
   packageType?: string | null
+  /**
+   * Which product this is. Only the stored balance reads it, and only once
+   * needs-Adam 41 is ruled on — see `quoteTimeBalanceCents`. The planner does
+   * not set it (it builds parties, never studio rentals), so it defaults to the
+   * behaviour that has always been live.
+   */
+  partyType?: string | null
   /** Planner-specific structured selections, merged in so /load can restore the form. */
   extra?: Record<string, unknown>
 }
@@ -82,7 +90,10 @@ export function buildPlanSnapshot(input: PlanSnapshotInput): PlanSnapshot {
   // The planner sends 0 guests while the form is half-filled; 10 is the same
   // default admin/parties/create already used.
   const guestCount = input.guestCount && input.guestCount > 0 ? input.guestCount : 10
-  const totalCents = lineItems.length ? calculateLineItemTotal(lineItems, guestCount) : 0
+  // `billedTotalCents`, not `calculateLineItemTotal`: an optional add-on is
+  // quoted and not charged, and this total becomes `bookings.total_cents`, which
+  // the invoice recomputes from the same rows and would then disagree with.
+  const totalCents = lineItems.length ? billedTotalCents(lineItems, guestCount) : 0
   const depositCents = getDepositCents(totalCents)
 
   return {
@@ -91,7 +102,9 @@ export function buildPlanSnapshot(input: PlanSnapshotInput): PlanSnapshot {
     guestCount,
     totalCents,
     depositCents,
-    balanceDueCents: Math.max(0, totalCents - depositCents),
+    // Through the shared function, so needs-Adam 41's ruling reaches this writer
+    // by flipping `COLUMN_FOLLOWS_INVOICE` rather than by finding it again.
+    balanceDueCents: quoteTimeBalanceCents({ totalCents, depositCents, partyType: input.partyType ?? null }),
     packageType: input.packageType ?? null,
     version: 1,
   }

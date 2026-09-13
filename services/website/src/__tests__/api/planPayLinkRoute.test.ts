@@ -238,7 +238,14 @@ describe('POST /api/plan/[ref]/pay-link — the amount', () => {
   it('does NOT charge when the payment history cannot be read', async () => {
     // Without it the amount owed is unknown, and an unknown amount must never
     // become a charge.
-    paymentsResult.error = { message: 'connection reset' }
+    //
+    // The read itself moved into `loadPlanInvoice` (link 23), which fails closed
+    // on it exactly as it already did for the line items — so the route sees the
+    // same `{ ok: false, notFound: false }` it sees for any unreadable plan and
+    // answers 503, and there is no second copy of the payment rows to go stale
+    // against the ones the document was priced from. `planInvoice.test.ts`
+    // asserts the refusal at its new home.
+    loadSpy.mockResolvedValue({ ok: false, notFound: false, error: 'payments: connection reset' })
     const { POST } = await import('@/app/api/plan/[ref]/pay-link/route')
     const res = await POST(req({ cookie: portalCookie('HH-2026-MINE') }), { params: params('HH-2026-MINE') })
     expect(res.status).toBe(503)

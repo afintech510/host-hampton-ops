@@ -45,6 +45,7 @@ import { calculateCardFee } from '@/lib/partyPricing'
 import { money, type PlanInvoice } from '@/lib/planInvoice'
 import { getSupabase } from '@/lib/supabase'
 import { writeLedger } from '@/lib/marketing/graph'
+import type { PaymentRow } from '@/lib/planBalance'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -57,11 +58,11 @@ export function isPayPurpose(v: unknown): v is PayPurpose {
   return typeof v === 'string' && (PAY_PURPOSES as string[]).includes(v)
 }
 
-/** The columns of `booking_payments` this file's arithmetic depends on. */
-export interface PaymentRow {
-  amount_cents: number
-  payment_type: string
-}
+/**
+ * Re-exported for the callers that have always imported it from here. The type
+ * — and every figure derived from it — now lives in lib/planBalance.ts.
+ */
+export type { PaymentRow }
 
 export interface PayQuote {
   purpose: PayPurpose
@@ -80,12 +81,12 @@ export type QuoteResult = { ok: true; quote: PayQuote } | { ok: false; reason: s
 /** Stripe's own floor for a card charge. Below this the link cannot be created. */
 export const MIN_CHARGE_CENTS = 100
 
-/**
- * How much of what has been paid counts against the TOTAL.
- *
- * For a studio rental the security deposit does not, which is the whole of
- * `depositIsSeparate` expressed as arithmetic: counting it would make the
- * balance $250 short and we would undercharge every studio rental.
+/*
+ * `paidTowardTotalCents`, `remainingBalanceCents` and `depositOwedCents` used to
+ * live here. They are now lib/planBalance.ts's `planMoney()`, computed once by
+ * `loadPlanInvoice` and carried on the invoice as `outstandingCents` /
+ * `depositOwedCents` — so the figure this file quotes and the figure the
+ * document prints are the same object, not two agreeing implementations.
  *
  * A `refund` row always subtracts. Known limitation, stated rather than guessed
  * at: `booking_payments` does not record WHICH payment a refund reverses, so
@@ -93,35 +94,6 @@ export const MIN_CHARGE_CENTS = 100
  * the remaining balance reads $250 high. That errs towards asking for more, not
  * less, and it is a manual admin row either way — see PLAN.md "needs Adam".
  */
-export function paidTowardTotalCents(payments: PaymentRow[], depositIsSeparate: boolean): number {
-  let sum = 0
-  for (const p of payments) {
-    const amount = Number(p.amount_cents) || 0
-    if (p.payment_type === 'refund') {
-      sum -= amount
-      continue
-    }
-    if (depositIsSeparate && p.payment_type === 'deposit') continue
-    sum += amount
-  }
-  return sum
-}
-
-/** What is still owed against the total, after everything credited so far. */
-export function remainingBalanceCents(invoice: PlanInvoice, payments: PaymentRow[]): number {
-  const paid = paidTowardTotalCents(payments, invoice.depositIsSeparate)
-  return Math.max(0, invoice.totalCents - paid)
-}
-
-/** What is still owed on the deposit itself — 0 once it has been paid. */
-export function depositOwedCents(invoice: PlanInvoice, payments: PaymentRow[]): number {
-  if (invoice.depositCents <= 0) return 0
-  let paidDeposit = 0
-  for (const p of payments) {
-    if (p.payment_type === 'deposit') paidDeposit += Number(p.amount_cents) || 0
-  }
-  return Math.max(0, invoice.depositCents - paidDeposit)
-}
 
 function labelFor(invoice: PlanInvoice, purpose: PayPurpose): string {
   const doc = invoice.docTitle.replace(/ (Quotation|Invoice)$/, '')
@@ -140,20 +112,37 @@ function labelFor(invoice: PlanInvoice, purpose: PayPurpose): string {
  *
  * Pure: no IO, so the arithmetic that decides what a customer is charged is
  * testable without a database or a Stripe key.
+ *
+ * It no longer takes a `payments` array. It used to, and the array it was given
+ * was read separately from the one the invoice was built from — two reads of the
+ * same rows, either of which could be stale or fail on its own. Every figure now
+ * comes off the invoice, which is the same object the document was rendered
+ * from, so the button and the page cannot quote different money.
  */
 export function quoteFor(
   invoice: PlanInvoice,
-  payments: PaymentRow[],
   purpose: PayPurpose,
   customCents?: number,
 ): QuoteResult {
-  const remaining = remainingBalanceCents(invoice, payments)
-  const depositOwed = depositOwedCents(invoice, payments)
+  const remaining = invoice.outstandingCents
+  const depositOwed = invoice.depositOwedCents
 
   let amountCents: number
   if (purpose === 'deposit') {
     if (invoice.depositCents <= 0) return { ok: false, reason: 'This plan has no deposit due.' }
-    if (depositOwed <= 0) return { ok: false, reason: 'The deposit on this plan is already paid.' }
+    // `depositOwedCents` is capped by what the plan actually owes (unless the
+    // deposit is separate), so a paid-in-full plan lands here rather than
+    // minting a live $257.50 Payment Link — which it did, measured in
+    // production 2026-09-13. See lib/planBalance.ts.
+    if (depositOwed <= 0) {
+      return {
+        ok: false,
+        reason:
+          remaining <= 0 && invoice.totalCents > 0
+            ? 'This plan is paid in full.'
+            : 'The deposit on this plan is already paid.',
+      }
+    }
     amountCents = depositOwed
   } else if (purpose === 'balance') {
     if (invoice.totalCents <= 0) {
@@ -267,7 +256,6 @@ export async function voidLivePayLinks(
  */
 export async function createPlanPayLink(opts: {
   invoice: PlanInvoice
-  payments: PaymentRow[]
   purpose: PayPurpose
   customCents?: number
   actor: string
@@ -295,7 +283,7 @@ export async function createPlanPayLink(opts: {
     return { ok: false, reason: 'This plan is cancelled. Please contact us before paying.', retryable: false }
   }
 
-  const quoted = quoteFor(invoice, opts.payments, purpose, opts.customCents)
+  const quoted = quoteFor(invoice, purpose, opts.customCents)
   if (!quoted.ok) return { ok: false, reason: quoted.reason, retryable: false }
   const quote = quoted.quote
 

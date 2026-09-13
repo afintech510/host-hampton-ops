@@ -29,10 +29,21 @@ import { getSupabase } from '@/lib/supabase'
 import { planAccess } from '@/lib/planAccess'
 import { adminActorId, isAdminAuthorized } from '@/lib/adminAuth'
 import { loadPlanInvoice } from '@/lib/planInvoice'
-import { createPlanPayLink, isPayPurpose, type PaymentRow } from '@/lib/planPayLinks'
+import { createPlanPayLink, isPayPurpose } from '@/lib/planPayLinks'
 import { publicOrigin } from '@/lib/publicOrigin'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ ref: string }> }) {
+  // Every accepted call mints three to five Stripe objects (a product, a price,
+  // the fee product and price, the Payment Link) and updates one more per link
+  // it voids. This route had no ceiling at all while its neighbour
+  // `/api/plan/[ref]/email-me` has one — 13 real 429s from it in the current
+  // nginx window — so the omission was an oversight, not a policy.
+  // `plannerRule` rather than `costlyRule` for the reason `/api/portal/pay`
+  // gives: this is interactive, and a customer whose mint failed will retry.
+  const limited = guardRate(req, plannerRule('plan/pay-link'))
+  if (limited) return limited
+
   const { ref: rawRef } = await params
   const ref = decodeURIComponent(rawRef || '')
   if (!ref) return NextResponse.json({ error: 'Missing plan reference' }, { status: 400 })
@@ -86,18 +97,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
     }
     return NextResponse.json({ error: 'Plan not found' }, { status: 404 })
   }
+  // Without the payment history the amount owed is unknown, and an unknown
+  // amount must never become a charge. That read is now inside
+  // `loadPlanInvoice`, which fails closed on it — so the 503 above covers it and
+  // this route no longer holds a second copy of the same rows.
   const invoice = loaded.invoice
-
-  const { data: payRows, error: payErr } = await supabase
-    .from('booking_payments')
-    .select('amount_cents, payment_type')
-    .eq('booking_id', invoice.booking.id)
-  if (payErr) {
-    // Without the payment history the amount owed is unknown, and an unknown
-    // amount must never become a charge.
-    console.error('plan pay-link: payments read failed:', payErr.message)
-    return NextResponse.json({ error: 'Could not read this plan’s payments — try again.' }, { status: 503 })
-  }
 
   const origin = publicOrigin(req)
 
@@ -105,7 +109,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
 
   const minted = await createPlanPayLink({
     invoice,
-    payments: (payRows ?? []) as PaymentRow[],
     purpose,
     customCents,
     // `adminActorId` returns `admin:<email>` from the signed cookie, or the

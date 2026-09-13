@@ -6,6 +6,7 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { calculateCardFee, calculateLineItemTotal, computeCutoffDates, formatMoney, getDepositCents } from '@/lib/partyPricing'
+import { quoteTimeBalanceCents } from '@/lib/planBalance'
 import { studioRentalRateWith, hoursBetween, STUDIO_STANDING_CAPACITY } from '@/lib/studioRental'
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { createEmbeddedAgreement, isSignwellConfigured } from '@/lib/signwell'
@@ -106,7 +107,15 @@ export async function POST(req: NextRequest) {
     // price_type is cosmetic to the math (only guest_multiplied/quantity matter), so the cast is safe.
     const totalCents = calculateLineItemTotal(allLineItems as unknown as BookingLineItem[], guestCount)
     const depositCents = getDepositCents(totalCents)
-    const balanceDueCents = Math.max(0, totalCents - depositCents)
+    // THIS is the writer that put $225.00 into HH-STU-ZVM4U's
+    // `balance_due_cents` against a $475.00 invoice, and $850.00 into
+    // HH-STU-2CTJ3's against $1,100.00 — it deducts the deposit from a studio
+    // rental, which every line of lib/planInvoice.ts says is a refundable
+    // security hold and not a part payment. Routed through the shared function
+    // so needs-Adam 41's ruling reaches it by flipping `COLUMN_FOLLOWS_INVOICE`.
+    // Unchanged in value until that is flipped: changing it here would charge
+    // two real customers $250 more than they have been quoted.
+    const balanceDueCents = quoteTimeBalanceCents({ totalCents, depositCents, partyType: 'studio_rental' })
     const addOnTotalCents = totalCents - rate.rentalCents
     const balanceDueDate = minusDays(partyDate, 7)
     const { modificationCutoff, guestCountCutoff } = computeCutoffDates(partyDate)
