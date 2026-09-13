@@ -204,7 +204,11 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **047**. **046 was taken by link 16** — the
+The next free migration number is **047**. **Link 17 took none** — the
+contact-identity repair is entirely code, deliberately: the fix for eight
+duplicated people is the LOOKUP, and a functional unique index on `lower(email)`
+cannot be created until those eight are merged (needs-Adam 31), because they
+would collide on it. **046 was taken by link 16** — the
 webhook money-idempotency migration: `uniq_event_ticket_per_session_line`
 (`NULLS NOT DISTINCT`, so a redelivery of a single-event ticket really does
 collide), `uniq_bookings_stripe_session`, the **`nextval_event_ticket_seq()`
@@ -475,6 +479,67 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
   ticket away — and all four wrote `redeemed_at: newBal === 0 ? now : null`, which
   CLEARS the timestamp on a card that was already spent.
 - **Escaping vs URL-screening in mail bodies.** Text into an element body gets `escapeHtml`; a URL in an `href`/`src` gets a URL SCREEN (`mailHref` / `mailHrefExternal` in `lib/emailSafety.ts`) and *then* attribute encoding. `escapeHtml` alone on an href leaves `javascript:` working while looking screened, and an HTML-escaped URL handed to a URL parser is silently corrupted rather than refused. A number you computed and a nested template you built get neither. The plain-text half of an email must never be escaped. `src/__tests__/lib/emailTemplateEscaping.test.ts` enforces all of it off disk.
+- **A unique index on a raw text value makes `upsert(onConflict: …)` a
+  CASE-SENSITIVE WRITE.** `contacts_email_key` is `UNIQUE (email)` on the raw
+  value and there is no functional index on `lower(email)`, so
+  `upsert(record, { onConflict: 'email' })` did not conflict with a row spelled
+  differently and INSERTED a second one. **Eight real people had two `contacts`
+  rows each.** Link 9 had already made the READ in front of it case-insensitive,
+  which made this harder to see, not easier: `found` and a brand-new row in the
+  same call. `upsertContact` is now a lookup followed by an UPDATE BY ID or an
+  INSERT, with 23505 handled as "another writer got there first". The stored
+  spelling is never rewritten — lowercasing the 21 mixed-case rows would collide
+  for eight of them. `docs/contact-identity-review.md` §2.
+- **"Which row is this person" has ONE answer: the oldest.**
+  `findContactsByEmail` returns rows oldest-first and names a `primary`. Five
+  callers used to take `contacts[0]` off an *unordered* PostgREST read, which is
+  whichever row is earlier in the heap — measured live, that is the lowercase
+  row for one duplicated person and the MIXED-case row for another, so two
+  callers could disagree about who somebody is in one request. It is a
+  tie-break, not a merge; merging the eight pairs repoints eighteen foreign keys
+  and is needs-Adam 31.
+- **A phone number is normalised before it is compared, never matched raw.**
+  `contacts.phone` holds `6314008080`, `+16314008080`, `631-400-8080`,
+  `16318338149` and `(631) 400-8080` for the same numbers, and **21 normalised
+  numbers carry more than one contact row**. Use `findContactsByPhone` /
+  `normalizePhoneKey` in `lib/contactLookup.ts`. **An inbound STOP is a
+  statement about the NUMBER, so it reaches EVERY row holding it** —
+  `recordSmsOptOut` in `lib/smsOptOut.ts`, used by both SMS webhooks. Both used
+  to build a raw `.or()` of three guessed spellings and read it through
+  `.single()`, which **errors when more than one row matches**: the error was
+  discarded, the STOP was dropped, and the Quo route then created a third row
+  for a texter it already knew.
+- **Brevo's `PUT /v3/contacts/{identifier}` is UPDATE-ONLY.** It answers
+  `404 document_not_found` for an address Brevo does not already hold —
+  measured, against a comment claiming "upsert semantics". The mirror therefore
+  never created a single Brevo contact and **253 of our 1209 people are absent
+  from the marketing list**. `POST /v3/contacts` with `updateEnabled: true` is
+  the real upsert (201 new / 204 repeat). Two other measured facts about that
+  API: an attributes-only PUT does **not** clear `emailBlacklisted`, and
+  `POST /contacts/lists/{id}/contacts/add` **succeeds on a blacklisted contact
+  and leaves the blacklist in place** — so list membership is not a consent
+  record and must never be read as one.
+- **Quo answers 409 to a duplicate `externalId`, and its list filter is
+  `externalIds=`, NOT `externalIds[]=`.** The bracketed OpenPhone idiom is
+  IGNORED rather than refused, so it returns an unfiltered page of strangers.
+  `findQuoContactByExternalId` uses the working form and re-compares the id
+  anyway. A 409 used to be reported as a plain error, so `quo_contact_id` was
+  never learned and every later sync for that contact 409'd again forever.
+- **`.or()` takes a RAW PostgREST filter expression — build it with
+  `lib/postgrestFilter.ts`, never a template literal.** A comma starts a new
+  disjunct, `)` closes the group, `%`/`_` are LIKE wildcards inside an `ilike`
+  value, and `}` ends an array literal in `cs.{…}`. Four call sites interpolated
+  directly, one of them the **public, unauthenticated** `/api/pricing?event_type=`.
+  A value that reduces to nothing must match NOTHING, never drop the filter.
+  `contactIdentitySurface.test.ts` R4 fails the suite on any template literal
+  passed to `.or()`, with no exemptions — an exemption is what let link 13's and
+  link 14's tripwires excuse a whole file.
+- **"May we market to this person" is `optedOutReason()` and nothing else.** It
+  reads `email_opt_in` AND `status = 'unsubscribed'`. There have now been five
+  readers of that question; the outward mirror and the Google-Ads/Meta export
+  each read `email_opt_in` alone until 2026-09-12. The export also emitted one
+  line per ROW, so the eight duplicated people were uploaded to an ad platform
+  twice under the same lowercased address.
 - **Never `docker compose restart`** to deploy — always `up -d --build` (restart ignores `.env` and new images).
 - **`NEXT_PUBLIC_*` changes require a rebuild** (`--build`); they are baked at build time, not read at runtime.
 - **Stripe is LIVE** — deposits/payments are real money. **`SIGNWELL_TEST_MODE=false` is live e-sign.** Be careful testing payment/contract flows against production.
