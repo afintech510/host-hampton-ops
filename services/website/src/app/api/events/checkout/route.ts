@@ -10,6 +10,9 @@ import { enrollInSequence } from '@/lib/sequences'
 import { saleAdjustedCents } from '@/lib/sale'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { nextTicketRef, redeemGiftCard } from '@/lib/stripeSettlement'
+import { screenPublicCount } from '@/lib/publicIntake'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { MAX_TICKETS_PER_ORDER } from '@/lib/ticketLimits'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,12 +20,36 @@ const TAX_RATE = 0.0875
 const CC_RATE = 0.03
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('events/checkout'))
+  if (limited) return limited
+
   const supabase = getSupabase()
   const body = await req.json()
-  const { eventId, sessionId, sessionIds, quantity, variantLabel, customerName, customerEmail, customerPhone, marketingConsent, giftCardCode } = body
+  const { eventId, sessionId, sessionIds, variantLabel, customerName, customerEmail, customerPhone, marketingConsent, giftCardCode } = body
 
-  if (!eventId || !customerName || !customerEmail || !customerPhone || !quantity) {
+  if (!eventId || !customerName || !customerEmail || !customerPhone || !body.quantity) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+
+  /**
+   * `quantity` was never checked for being a positive whole number, and it is
+   * multiplied into the price, written to `event_tickets.quantity`, put in the
+   * Stripe metadata the webhook issues tickets from, and passed to
+   * `decrement_event_tickets(qty)`.
+   *
+   * A NEGATIVE quantity was the live hole. `available_tickets < -5` is false, so
+   * the inventory check passed; on a FREE event the route then skips Stripe
+   * entirely and issues tickets directly, and `decrement_*_tickets(qty: -5)`
+   * INCREMENTS the event's inventory by five. A paid event failed at Stripe
+   * instead (it refuses a negative amount), which is why this never showed up as
+   * anything but a 400 — a guard holding by accident, one door along.
+   */
+  const quantity = screenPublicCount(body.quantity, MAX_TICKETS_PER_ORDER)
+  if (quantity === null) {
+    return NextResponse.json(
+      { error: `Please choose between 1 and ${MAX_TICKETS_PER_ORDER} tickets.` },
+      { status: 400 },
+    )
   }
 
   // Fetch event

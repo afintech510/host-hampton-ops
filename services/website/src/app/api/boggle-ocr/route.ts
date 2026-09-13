@@ -1,6 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import { guardRate, costlyRule } from '@/lib/rateLimit'
+
+/**
+ * Read a word-game letter grid out of a screenshot.
+ *
+ * ── WHY THIS IS NOW ADMIN-ONLY ──
+ *
+ * It was completely unauthenticated and it spends `ANTHROPIC_API_KEY` on every
+ * call: an arbitrary caller-supplied base64 image, billed per image token, with no
+ * size limit, no call limit, no budget check and no ledger row. Nothing in the
+ * site links to `/boggle` — it is an unlisted utility page, not a customer
+ * feature — and the box it runs on took **222 probes for `/.env` in the last ten
+ * days**, so "nobody knows it is there" is not a control. Three requests reached
+ * it in that window and all three answered 502, which is how an open door to a
+ * paid API looks when it is not yet being used deliberately.
+ *
+ * Every other model call in this codebase goes through
+ * `lib/marketing/budget.ts`'s monthly cap. This one deliberately does not spend
+ * against that cap instead of being gated, because the cap exists for the
+ * marketing pipeline and letting strangers' OCR starve the real drafts would be a
+ * worse failure than a gate. `/boggle` now needs an admin session — sign in to
+ * `/admin` in the same browser and the page works. If Adam wants it public again
+ * that is a one-line decision, taken knowingly.
+ *
+ * Also fixed: the route returned the Anthropic API's raw error body to the caller,
+ * which is provider detail an unauthenticated caller has no business seeing.
+ */
+
+export const dynamic = 'force-dynamic'
+
+/** Roughly 1.5 MB of image after base64 expansion — far more than a screenshot. */
+const MAX_BASE64_CHARS = 2_000_000
+
+const ALLOWED_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 
 export async function POST(req: NextRequest) {
+  if (!isAdminAuthorized(req)) return unauthorizedResponse()
+
+  const limited = guardRate(req, costlyRule('boggle-ocr', 20, 60))
+  if (limited) return limited
+
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 })
@@ -10,6 +50,12 @@ export async function POST(req: NextRequest) {
     const { base64, mimeType } = await req.json()
     if (!base64 || !mimeType) {
       return NextResponse.json({ error: 'Missing base64 or mimeType' }, { status: 400 })
+    }
+    if (typeof base64 !== 'string' || base64.length > MAX_BASE64_CHARS) {
+      return NextResponse.json({ error: 'Image too large' }, { status: 413 })
+    }
+    if (typeof mimeType !== 'string' || !ALLOWED_MIME.includes(mimeType)) {
+      return NextResponse.json({ error: `mimeType must be one of ${ALLOWED_MIME.join(', ')}` }, { status: 400 })
     }
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -41,8 +87,10 @@ export async function POST(req: NextRequest) {
     })
 
     if (!res.ok) {
+      // Logged in full, returned as a status only.
       const err = await res.text()
-      return NextResponse.json({ error: `Anthropic API error (${res.status}): ${err}` }, { status: 502 })
+      console.error(`boggle-ocr: Anthropic API ${res.status}: ${err.slice(0, 500)}`)
+      return NextResponse.json({ error: `Could not read that image (upstream ${res.status})` }, { status: 502 })
     }
 
     const data = await res.json()
@@ -54,6 +102,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ grid: text.trim() })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unknown error'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    console.error('boggle-ocr error:', msg)
+    return NextResponse.json({ error: 'Could not read that image' }, { status: 500 })
   }
 }

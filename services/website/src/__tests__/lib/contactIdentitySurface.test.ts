@@ -145,12 +145,51 @@ describe('R1 — no file filters an email column except lib/contactLookup.ts', (
     expect(offenders).toEqual([])
   })
 
+  /**
+   * The same filter, spelled INSIDE a string.
+   *
+   * The rule above looks for `.eq('contact_email'` and `.ilike('contact_email'`,
+   * and it passed `lib/plan.ts` for two links while that file filtered
+   * `contact_email` case-sensitively — because a PostgREST `or()` expression is a
+   * string, so the filter was written `contact_email.eq.${value}` and no method
+   * call appeared at all. **Nine of 61 live `bookings` rows are not lowercase**, so
+   * every one of those customers' open plans was invisible to the lookup and each
+   * new enquiry forked a second plan, a second agent draft and a second text to
+   * Adam's phone.
+   *
+   * That is link 16's family — a rule satisfied by an occurrence other than the
+   * one that broke — arriving as a rule that was never looking at the right
+   * SPELLING. Both forms are checked now. `lib/postgrestFilter.ts` is exempt
+   * because building these expressions safely is its whole job.
+   */
+  it('no email filter written as a raw PostgREST expression either', () => {
+    const offenders: string[] = []
+    for (const file of ALL_FILES) {
+      const rel = relative(file)
+      if (EXEMPT.has(rel) || rel === 'lib/postgrestFilter.ts') continue
+      const src = code(rel)
+      for (const col of EMAIL_COLUMNS) {
+        const re = new RegExp(`${col}\\.(eq|ilike|like)\\.`, 'g')
+        const hits = src.match(re)
+        if (hits) offenders.push(`${rel}: ${hits.join(', ')}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
   it('the rule can still SEE such a filter (it is not vacuous)', () => {
     // A negative case. A rule that silently matches nothing passes forever —
     // link 16 lost one to a character class that never matched.
     const sample = `supabase.from('contacts').select('id').eq('email', x)`
     const re = new RegExp(`\\.\\s*(eq|ilike)\\s*\\(\\s*['"\`]email['"\`]`)
     expect(re.test(sample)).toBe(true)
+
+    // And the string spelling, which is the one that got through.
+    const orSample = 'handles.push(`contact_email.eq.${orValue(q.email)}`)'
+    expect(new RegExp('contact_email\\.(eq|ilike|like)\\.').test(orSample)).toBe(true)
+    // While the method-call rule above, on its own, does NOT see it — which is
+    // exactly why this is a second assertion and not a widened first one.
+    expect(new RegExp(`\\.\\s*(eq|ilike)\\s*\\(\\s*['"\`]contact_email['"\`]`).test(orSample)).toBe(false)
     expect(re.test(`supabase.from('contacts').select('id').eq?.('email', x)`)).toBe(false)
   })
 

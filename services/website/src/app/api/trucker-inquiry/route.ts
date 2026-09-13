@@ -8,10 +8,22 @@ import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
 import { Resend } from 'resend'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref, telHref } from '@/lib/emailSafety'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { logInteraction } from '@/lib/contactInteractions'
+import {
+  emptyIntakeRecord,
+  landedSomewhere,
+  missingFrom,
+  settledOk,
+} from '@/lib/publicIntake'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('trucker-inquiry'))
+  if (limited) return limited
+
+  const recorded = emptyIntakeRecord()
   const body = await req.json()
   const { name, email, phone, company, eventType, date, guests, vision, marketingConsent } = body
 
@@ -32,6 +44,7 @@ export async function POST(req: NextRequest) {
     serviceInterests: ['trucker-hat-bar'],
     marketingConsent: !!marketingConsent,
   })
+  recorded.contact = !!contactId
 
   if (contactId) {
     await enrollInSequence({
@@ -43,30 +56,32 @@ export async function POST(req: NextRequest) {
   }
 
   if (contactId) {
-    try {
-      const supabase = getSupabase()
-      if (company) {
-        await supabase.from('contacts').update({
-          is_business: true,
-          business_name: company,
-        }).eq('id', contactId)
-      }
-      await supabase.from('contact_interactions').insert({
-        contact_id: contactId,
-        type: 'form_submission',
-        summary: `Atelier Brim inquiry from ${name}${company ? ` (${company})` : ''}`,
-        metadata: {
-          page: 'trucker-hat-bar',
-          company: company || null,
-          eventType: eventType || null,
-          date: date || null,
-          guests: guests || null,
-          vision: vision || null,
-        },
-      })
-    } catch (err) {
-      console.error('Interaction insert error (non-fatal):', err)
+    const supabase = getSupabase()
+    if (company) {
+      // Unchecked, this silently failed to record that a lead is a business —
+      // and note WHAT it writes: `business_name` on a contact row resolved from
+      // an unverified email address, from a public form (rule 19).
+      const { error: bizErr } = await supabase.from('contacts').update({
+        is_business: true,
+        business_name: company,
+      }).eq('id', contactId)
+      if (bizErr) console.error('trucker-inquiry: business fields not stored —', bizErr.message)
     }
+    // Through `logInteraction` (rules 11 and 19) — this was a raw insert inside a
+    // try/catch that threw the SQLSTATE away.
+    recorded.interaction = await logInteraction(supabase, {
+      contactId,
+      type: 'form_submission',
+      summary: `Atelier Brim inquiry from ${name}${company ? ` (${company})` : ''}`,
+      metadata: {
+        page: 'trucker-hat-bar',
+        company: company || null,
+        eventType: eventType || null,
+        date: date || null,
+        guests: guests || null,
+        vision: vision || null,
+      },
+    })
   }
 
   // Booking agent: every lead is a Party Plan. The plan is created BEFORE the
@@ -83,6 +98,7 @@ export async function POST(req: NextRequest) {
     source: 'website_form',
     tags: { source_page: 'trucker-hat-bar', ...(company ? { company } : {}) },
   })
+  recorded.plan = !!plan.bookingId && plan.enriched !== false
 
   // Booking agent: one inbound event per inquiry (non-fatal, never blocks).
   const firstEventId = await recordInboundEvent({
@@ -104,6 +120,7 @@ export async function POST(req: NextRequest) {
       sourcePage: 'trucker-hat-bar',
     },
   })
+  recorded.event = !!firstEventId
 
   // Provenance: the plan is created before the event (the sweep depends on
   // that order), so first_touch_event_id can only be stamped now. Fill-once
@@ -115,7 +132,7 @@ export async function POST(req: NextRequest) {
     const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
     const firstName = name.trim().split(/\s+/)[0]
 
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       resend.emails.send({
         from,
         to: ownerEmail(),
@@ -147,8 +164,33 @@ export async function POST(req: NextRequest) {
         </div>`,
       }),
     ])
+    // The OWNER notification is the one that makes a lead recoverable by hand.
+
+    recorded.ownerNotified = settledOk(results[0])
+
+    if (!recorded.ownerNotified) console.error('trucker-inquiry: owner notification did NOT send —', JSON.stringify(results[0]).slice(0, 300))
+
     await notifyOwnerSms(leadSmsLine({ kind: 'Trucker Hat Bar inquiry', name: company ? `${name} (${company})` : name, phone, email, date, guests }))
   }
 
-  return NextResponse.json({ success: true })
+  const missing = missingFrom(recorded)
+
+  if (!landedSomewhere(recorded)) {
+
+    console.error(`trucker-inquiry: NOTHING recorded for a lead from ${email} — missing ${missing.join(', ')}`)
+
+    return NextResponse.json(
+
+      { error: 'We could not save your enquiry just now. Please try again, or call us on (631) 998-9325.' },
+
+      { status: 503 },
+
+    )
+
+  }
+
+  if (missing.length) console.warn(`trucker-inquiry: lead from ${email} recorded with gaps — missing ${missing.join(', ')}`)
+
+
+  return NextResponse.json({ success: true, recorded })
 }

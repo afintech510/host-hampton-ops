@@ -4,6 +4,9 @@ import { getSupabase } from '@/lib/supabase'
 import { saleAdjustedCents } from '@/lib/sale'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { STRIPE_METADATA_VALUE_LIMIT, nextTicketRef } from '@/lib/stripeSettlement'
+import { screenPublicCount } from '@/lib/publicIntake'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { MAX_TICKETS_PER_ORDER } from '@/lib/ticketLimits'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +22,9 @@ interface CartRequestItem {
 }
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('cart-checkout'))
+  if (limited) return limited
+
   const supabase = getSupabase()
   const body = await req.json()
   const { items, customerName, customerEmail, customerPhone } = body as {
@@ -35,6 +41,33 @@ export async function POST(req: NextRequest) {
 
   if (items.length > 10) {
     return NextResponse.json({ error: 'Maximum 10 items per cart' }, { status: 400 })
+  }
+
+  /**
+   * Every `quantity` is a whole number between 1 and the per-order ceiling before
+   * anything else runs.
+   *
+   * It was multiplied into the price, into `overallSubtotalCents` (which the tax
+   * and card-fee lines derive from), into `event_tickets.quantity` and into
+   * `decrement_*_tickets(qty)`. A NEGATIVE value passed the inventory check
+   * (`available_tickets < -5` is false) and inverts that decrement into an
+   * inventory INCREASE; a fractional one reaches Stripe, which refuses it — so the
+   * only thing standing between a stranger and a free seat on a free event was
+   * which branch they happened to hit. See the same note in `events/checkout`.
+   */
+  for (let i = 0; i < items.length; i++) {
+    const q = screenPublicCount(items[i]?.quantity, MAX_TICKETS_PER_ORDER)
+    if (q === null) {
+      return NextResponse.json(
+        { error: `Cart item ${i + 1}: please choose between 1 and ${MAX_TICKETS_PER_ORDER} tickets.` },
+        { status: 400 },
+      )
+    }
+    items[i].quantity = q
+    const sessionCount = items[i]?.sessionIds?.length ?? 0
+    if (sessionCount > 60) {
+      return NextResponse.json({ error: `Cart item ${i + 1}: too many sessions` }, { status: 400 })
+    }
   }
 
   // Collect unique event IDs

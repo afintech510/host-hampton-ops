@@ -6,6 +6,7 @@ import {
   getEmailFromCookie,
   clearEmailCookieHeader,
   setPortalCookieHeader,
+  portalSigningSecret,
 } from '@/lib/portalAuth'
 
 /**
@@ -43,7 +44,7 @@ const LIST_COLUMNS =
   'created_at, contact_email'
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  const secret = portalSigningSecret()
   const email = getEmailFromCookie(req.headers.get('cookie'), secret)
   if (!email) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
@@ -112,7 +113,7 @@ export async function DELETE() {
 
 export async function POST(req: NextRequest) {
   // Switch the per-booking cookie to the booking_ref the user picked
-  const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  const secret = portalSigningSecret()
   const email = getEmailFromCookie(req.headers.get('cookie'), secret)
   if (!email) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 

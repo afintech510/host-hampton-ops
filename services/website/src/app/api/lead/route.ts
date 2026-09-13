@@ -7,10 +7,24 @@ import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
 import { publicOrigin } from '@/lib/publicOrigin'
+import { logInteraction } from '@/lib/contactInteractions'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
+import {
+  boundedIntakeText,
+  emptyIntakeRecord,
+  landedSomewhere,
+  missingFrom,
+  settledOk,
+  screenPublicGuestCount,
+  MAX_INTAKE_NAME_CHARS,
+} from '@/lib/publicIntake'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('lead'))
+  if (limited) return limited
+
   const body = await req.json()
 
   const {
@@ -41,6 +55,16 @@ export async function POST(req: NextRequest) {
   if (!emailRegex.test(email)) {
     return NextResponse.json({ error: 'Invalid email address' }, { status: 400 })
   }
+  if (String(fullName).length > MAX_INTAKE_NAME_CHARS) {
+    return NextResponse.json({ error: 'That name is too long' }, { status: 400 })
+  }
+
+  // Bounded before they reach `bookings.notes`, two emails, an SMS billed per
+  // segment and the agent's draft prompt.
+  const boundedNotes = boundedIntakeText(notes)
+  const boundedTheme = boundedIntakeText(partyTheme, 200)
+  const screenedGuests = screenPublicGuestCount(guestCount)
+  const recorded = emptyIntakeRecord()
 
   // Split name into first/last for contacts table
   const nameParts = fullName.trim().split(/\s+/)
@@ -66,6 +90,7 @@ export async function POST(req: NextRequest) {
     serviceInterests,
     marketingConsent: !!marketingConsent,
   })
+  recorded.contact = !!contactId
 
   if (contactId) {
     await enrollInSequence({
@@ -77,29 +102,27 @@ export async function POST(req: NextRequest) {
   }
 
   if (contactId) {
-    try {
-      const { getSupabase } = await import('@/lib/supabase')
-      const supabase = getSupabase()
-      await supabase.from('contact_interactions').insert({
-        contact_id: contactId,
-        type: 'form_submission',
-        summary: `Lead inquiry: ${eventType} — ${partyTheme || 'no theme'}`,
-        metadata: {
-          page: sourcePage || 'party-packages',
-          eventType,
-          fullName,
-          childAge: childAge || null,
-          guestCount: guestCount || null,
-          partyTheme: partyTheme || null,
-          preferredDate: preferredDate || null,
-          timeOfDay: timeOfDay || null,
-          notes: notes || null,
-          utm: utm || null,
-        },
-      })
-    } catch (dbErr) {
-      console.error('Interaction insert error (non-fatal):', dbErr)
-    }
+    // Through `logInteraction`: this was a raw insert inside a try/catch that
+    // discarded the SQLSTATE, which is how five months of refused rows went
+    // unnoticed elsewhere (rule 19).
+    const { getSupabase } = await import('@/lib/supabase')
+    recorded.interaction = await logInteraction(getSupabase(), {
+      contactId,
+      type: 'form_submission',
+      summary: `Lead inquiry: ${eventType} — ${boundedTheme || 'no theme'}`,
+      metadata: {
+        page: sourcePage || 'party-packages',
+        eventType,
+        fullName,
+        childAge: childAge || null,
+        guestCount: screenedGuests,
+        partyTheme: boundedTheme,
+        preferredDate: preferredDate || null,
+        timeOfDay: timeOfDay || null,
+        notes: boundedNotes,
+        utm: utm || null,
+      },
+    })
   }
 
   // Booking agent: every lead is a Party Plan. The plan is created BEFORE the
@@ -111,13 +134,14 @@ export async function POST(req: NextRequest) {
     contactPhone: phone || null,
     partyDate: preferredDate || null,
     partyTime: timeOfDay || null,
-    guestCount: Number(guestCount) || null,
+    guestCount: screenedGuests,
     childAge: Number(childAge) || null,
-    notes: [partyTheme ? `Theme: ${partyTheme}` : null, notes].filter(Boolean).join('\n') || null,
+    notes: [boundedTheme ? `Theme: ${boundedTheme}` : null, boundedNotes].filter(Boolean).join('\n') || null,
     eventType: eventType || null,
     source: 'website_form',
-    tags: { source_page: sourcePage || 'party-packages', ...(partyTheme ? { party_theme: partyTheme } : {}) },
+    tags: { source_page: sourcePage || 'party-packages', ...(boundedTheme ? { party_theme: boundedTheme } : {}) },
   })
+  recorded.plan = !!plan.bookingId && plan.enriched !== false
 
   // Booking agent: one inbound event per lead (non-fatal, never blocks).
   const firstEventId = await recordInboundEvent({
@@ -126,7 +150,7 @@ export async function POST(req: NextRequest) {
     contactId,
     fromAddress: email,
     subject: `Lead: ${eventType} — ${fullName}`,
-    body: notes || null,
+    body: boundedNotes,
     classification: 'lead',
     parsed: {
       name: fullName,
@@ -135,12 +159,13 @@ export async function POST(req: NextRequest) {
       eventType,
       date: preferredDate || null,
       time: timeOfDay || null,
-      guests: guestCount || null,
+      guests: screenedGuests,
       childAge: childAge || null,
-      notes: [partyTheme ? `Theme: ${partyTheme}` : null, notes].filter(Boolean).join('\n') || null,
+      notes: [boundedTheme ? `Theme: ${boundedTheme}` : null, boundedNotes].filter(Boolean).join('\n') || null,
       sourcePage: sourcePage || 'party-packages',
     },
   })
+  recorded.event = !!firstEventId
 
   // Provenance: the plan is created before the event (the sweep depends on
   // that order), so first_touch_event_id can only be stamped now. Fill-once
@@ -212,14 +237,32 @@ export async function POST(req: NextRequest) {
       }),
     })
 
-    await Promise.allSettled(emails.map(e => resend.emails.send(e)))
+    const results = await Promise.allSettled(emails.map(e => resend.emails.send(e)))
+    // `emails[0]` is the owner notification — the one that makes a lead
+    // recoverable by hand if every table write failed.
+    recorded.ownerNotified = settledOk(results[0])
+    if (!recorded.ownerNotified) {
+      console.error('lead: owner notification did NOT send —', JSON.stringify(results[0]).slice(0, 300))
+    }
     await notifyOwnerSms(leadSmsLine({
       kind: `lead (${eventType})`, name: fullName, phone, email,
-      date: preferredDate, guests: guestCount, extra: partyTheme || null,
+      date: preferredDate, guests: screenedGuests ?? undefined, extra: boundedTheme,
     }))
   } else {
     console.warn('RESEND_API_KEY not set — skipping lead notification email')
   }
 
-  return NextResponse.json({ success: true })
+  const missing = missingFrom(recorded)
+  if (!landedSomewhere(recorded)) {
+    console.error(`lead: NOTHING recorded for a lead from ${email} — missing ${missing.join(', ')}`)
+    return NextResponse.json(
+      { error: 'We could not save your enquiry just now. Please try again, or call us on (631) 998-9325.' },
+      { status: 503 },
+    )
+  }
+  if (missing.length) {
+    console.warn(`lead: lead from ${email} recorded with gaps — missing ${missing.join(', ')}`)
+  }
+
+  return NextResponse.json({ success: true, recorded })
 }

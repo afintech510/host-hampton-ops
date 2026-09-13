@@ -9,6 +9,18 @@ import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailHref } from '@/lib/emailSafety'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { logInteraction } from '@/lib/contactInteractions'
+import {
+  emptyIntakeRecord,
+  landedSomewhere,
+  missingFrom,
+  settledOk,
+  MAX_INTAKE_NAME_CHARS,
+  screenPublicLineItems,
+  screenPublicGuestCount,
+  boundedIntakeText,
+} from '@/lib/publicIntake'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,12 +45,38 @@ function formatTime(timeStr: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('quote/save'))
+  if (limited) return limited
+
+  const recorded = emptyIntakeRecord()
   const body = await req.json()
   const { name, email, phone, quoteData, summary, partyDate, partyTime, sourcePage } = body
 
   if (!name || !email || !quoteData) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
+  if (String(name).length > MAX_INTAKE_NAME_CHARS) {
+    return NextResponse.json({ error: 'That name is too long' }, { status: 400 })
+  }
+
+  /**
+   * `quoteData.lineItems` is the money on this route. It is written to
+   * `booking_line_items` verbatim and summed into `bookings.total_cents` by
+   * `buildPlanSnapshot`, and `loadPlanInvoice` then derives the invoice and the
+   * pay-link amount from those rows — so an unscreened `unit_price_cents` here set
+   * what this business believes a party is worth. The comment fourteen lines below
+   * ("a saved quote is the one intake form that carries real selections") is
+   * exactly right, and that is why it needs the screen.
+   */
+  const screened = screenPublicLineItems(
+    Array.isArray((quoteData as { lineItems?: unknown })?.lineItems) ? (quoteData as { lineItems: unknown[] }).lineItems : [],
+    (quoteData as { guestCount?: unknown })?.guestCount,
+  )
+  if (!screened.ok) {
+    console.warn(`quote/save: refused line items for ${email} — ${screened.reason}`)
+    return NextResponse.json({ error: `We could not accept that quote: ${screened.reason}` }, { status: 400 })
+  }
+  const boundedSummary = boundedIntakeText(summary)
 
   // Build the quote link with encoded data
   const origin = publicOrigin(req)
@@ -66,6 +104,7 @@ export async function POST(req: NextRequest) {
     sourceDetail: 'Quote Builder — Save for Later',
     serviceInterests: ['kids-party'],
   })
+  recorded.contact = !!contactId
 
   if (contactId) {
     await enrollInSequence({
@@ -77,18 +116,13 @@ export async function POST(req: NextRequest) {
   }
 
   if (contactId) {
-    try {
-      const { getSupabase } = await import('@/lib/supabase')
-      const supabase = getSupabase()
-      await supabase.from('contact_interactions').insert({
-        contact_id: contactId,
-        type: 'form_submission',
-        summary: `Saved party quote: ${summary || 'no summary'}${slotDisplay ? ` — ${slotDisplay}` : ''}`,
-        metadata: { page: 'kids-party-menu', action: 'save_for_later', quoteData, partyDate, partyTime },
-      })
-    } catch (err) {
-      console.error('Interaction insert error (non-fatal):', err)
-    }
+    const { getSupabase } = await import('@/lib/supabase')
+    recorded.interaction = await logInteraction(getSupabase(), {
+      contactId,
+      type: 'form_submission',
+      summary: `Saved party quote: ${boundedSummary || 'no summary'}${slotDisplay ? ` — ${slotDisplay}` : ''}`,
+      metadata: { page: 'kids-party-menu', action: 'save_for_later', quoteData, partyDate, partyTime },
+    })
   }
 
   // Booking agent: every lead is a Party Plan. The plan is created BEFORE the
@@ -100,16 +134,18 @@ export async function POST(req: NextRequest) {
     contactPhone: phone || null,
     partyDate: partyDate || null,
     partyTime: partyTime || null,
-    guestCount: Number(quoteData?.guestCount) || null,
-    notes: summary || null,
+    guestCount: screenPublicGuestCount(quoteData?.guestCount),
+    notes: boundedSummary,
     eventType: 'kids birthday party',
     source: 'website_form',
     // A saved quote is the one intake form that carries real selections, so it
-    // writes booking_line_items instead of only the base64 URL it used to.
-    lineItems: Array.isArray(quoteData?.lineItems) ? quoteData.lineItems : [],
+    // writes booking_line_items instead of only the base64 URL it used to —
+    // SCREENED, because those rows are what every money path adds up.
+    lineItems: screened.lineItems,
     snapshotExtra: quoteData,
     tags: { source_page: sourcePage || 'kids-party-menu' },
   })
+  recorded.plan = !!plan.bookingId && plan.enriched !== false
 
   // Booking agent: a saved quote is a warm lead (non-fatal, never blocks).
   const firstEventId = await recordInboundEvent({
@@ -131,6 +167,7 @@ export async function POST(req: NextRequest) {
       sourcePage: sourcePage || 'kids-party-menu',
     },
   })
+  recorded.event = !!firstEventId
 
   // Provenance: the plan is created before the event (the sweep depends on
   // that order), so first_touch_event_id can only be stamped now. Fill-once
@@ -144,7 +181,7 @@ export async function POST(req: NextRequest) {
 
     const adminDateLine = slotDisplay ? `<p><strong>Selected slot:</strong> ${slotDisplay}</p>` : ''
 
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       resend.emails.send({
         from,
         to: email,
@@ -166,8 +203,23 @@ export async function POST(req: NextRequest) {
         html: `<p><strong>${escapeHtml(name)}</strong> (${escapeHtml(email)}, ${escapeHtml(phone || 'no phone')}) saved a party quote.</p>${adminDateLine}<pre>${escapeHtml(summary || 'No summary')}</pre><p><a href="${mailHref(quoteLink)}">View their quote</a></p>`,
       }),
     ])
+    // The OWNER notification is the one that makes a lead recoverable by hand.
+    recorded.ownerNotified = settledOk(results[1])
+    if (!recorded.ownerNotified) console.error('quote/save: owner notification did NOT send —', JSON.stringify(results[1]).slice(0, 300))
     await notifyOwnerSms(leadSmsLine({ kind: 'saved party quote', name, phone, email, date: slotDisplay, extra: summary ? String(summary).slice(0, 120) : null }))
   }
 
-  return NextResponse.json({ success: true, quoteLink })
+  const missing = missingFrom(recorded)
+  if (!landedSomewhere(recorded)) {
+    console.error(`quote/save: NOTHING recorded for a saved quote from ${email} — missing ${missing.join(', ')}`)
+    return NextResponse.json(
+      { error: 'We could not save your quote just now. Please try again, or call us on (631) 998-9325.' },
+      { status: 503 },
+    )
+  }
+  if (missing.length) {
+    console.warn(`quote/save: saved quote from ${email} recorded with gaps — missing ${missing.join(', ')}`)
+  }
+
+  return NextResponse.json({ success: true, quoteLink, recorded })
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { generateEmailLoginCode, hashEmailLoginCode } from '@/lib/portalAuth'
+import { generateEmailLoginCode, hashEmailLoginCode, portalSigningSecret } from '@/lib/portalAuth'
 import { emailAuthCodeHtml } from '@/lib/emailTemplates'
 import { findBookingsByContactEmail, isPlausibleEmailAddress } from '@/lib/contactLookup'
 
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabase()
-    const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+    const secret = portalSigningSecret()
 
     // Rate limit: count requests in the last hour
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()

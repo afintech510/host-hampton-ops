@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { screenPublicLineItems } from '@/lib/publicIntake'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
@@ -44,6 +46,9 @@ function minusDays(dateStr: string, days: number): string {
 }
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('studio-rental/checkout'))
+  if (limited) return limited
+
   try {
     const body = await req.json()
     const contactName = (body.contactName as string || '').trim()
@@ -67,6 +72,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Our studio holds up to ${STUDIO_STANDING_CAPACITY} guests. Please call us for larger events.` }, { status: 400 })
     }
 
+    /**
+     * The RENTAL line is derived server-side from the time window and always was.
+     * The ADD-ONS beside it were not, and they are summed into the same
+     * `totalCents` that `getDepositCents` turns into the Stripe charge — so a
+     * negative add-on lowered what this customer was asked to pay for a real
+     * studio booking. See `lib/publicIntake.ts`.
+     */
+    const screened = screenPublicLineItems(addOns, guestCount)
+    if (!screened.ok) {
+      console.warn(`studio-rental/checkout: refused add-ons for ${contactEmail} — ${screened.reason}`)
+      return NextResponse.json({ error: `We could not accept those add-ons: ${screened.reason}` }, { status: 400 })
+    }
+
     const hours = hoursBetween(startTime, endTime)
     // Rates from `pricing_items` (migration 036), not a compiled constant — this
     // is the figure the customer is actually charged, so it must be the live one.
@@ -83,7 +101,7 @@ export async function POST(req: NextRequest) {
       price_type: 'flat',
       guest_multiplied: false,
     }
-    const allLineItems = [rentalLineItem, ...addOns]
+    const allLineItems = [rentalLineItem, ...(screened.lineItems as unknown as IncomingLineItem[])]
 
     // price_type is cosmetic to the math (only guest_multiplied/quantity matter), so the cast is safe.
     const totalCents = calculateLineItemTotal(allLineItems as unknown as BookingLineItem[], guestCount)

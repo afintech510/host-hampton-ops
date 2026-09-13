@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
-import { getPortalBookingRef } from '@/lib/portalAuth'
+import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { calculateCardFee, formatMoney } from '@/lib/partyPricing'
 import { venmoHandle, zellePhone, PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
 
@@ -9,7 +9,7 @@ import { venmoHandle, zellePhone, PUBLIC_PHONE_DISPLAY } from '@/lib/paymentCont
 const MAX_TIP_CENTS = 100_000
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  const secret = portalSigningSecret()
   const cookieHeader = req.headers.get('cookie')
   const bookingRef = getPortalBookingRef(cookieHeader, secret)
 

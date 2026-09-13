@@ -1,7 +1,7 @@
 import { ownerEmail, notifyOwnerSms } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { getPortalBookingRef } from '@/lib/portalAuth'
+import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref, mailHref } from '@/lib/emailSafety'
@@ -11,7 +11,7 @@ import { mailToHref, mailHref } from '@/lib/emailSafety'
  * Logs the message into booking_modifications for audit, then emails admin.
  */
 export async function POST(req: NextRequest) {
-  const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  const portalSecret = portalSigningSecret()
   const cookieHeader = req.headers.get('cookie')
   const bookingRef = getPortalBookingRef(cookieHeader, portalSecret)
   if (!bookingRef) {

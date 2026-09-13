@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { getPortalBookingRef } from '@/lib/portalAuth'
+import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { isAdminAuthorized } from '@/lib/adminAuth'
+
+// Reads a cookie, so it must never be prerendered. Without this Next tried to
+// statically export it and evaluated the handler at BUILD time.
+export const dynamic = 'force-dynamic'
 
 /**
  * Load the plan the planner should render.
@@ -21,7 +25,7 @@ import { isAdminAuthorized } from '@/lib/adminAuth'
  * and the more permissive one would win.
  */
 export async function GET(req: NextRequest) {
-  const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  const portalSecret = portalSigningSecret()
   const cookieHeader = req.headers.get('cookie')
   const requestedRef = req.nextUrl.searchParams.get('ref')
   const bookingRef =

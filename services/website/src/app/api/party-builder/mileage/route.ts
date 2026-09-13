@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
 
 // Host Hampton — 295 Montauk Hwy, Speonk NY 11972
 const HH_LAT = 40.8294
@@ -13,6 +14,9 @@ const PER_MILE_CENTS = 500 // $5/mile, one-way — server-side, not disclosed to
 const FREE_RADIUS_MILES = 20
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('party-builder/mileage'))
+  if (limited) return limited
+
   try {
     const { address } = (await req.json()) as { address?: string }
     if (!address || address.trim().length < 4) {

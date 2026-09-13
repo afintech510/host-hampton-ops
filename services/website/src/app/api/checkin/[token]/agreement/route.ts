@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
 import { getSupabase } from '@/lib/supabase'
 import { createEmbeddedDocument } from '@/lib/signwell'
 import { resolveCheckinToken, requiresRentalAgreement, CHECKIN_DOC_TYPE } from '@/lib/checkinLink'
@@ -15,7 +16,10 @@ export const dynamic = 'force-dynamic'
  * set of columns. Sharing it would cross-wire the two flows.
  */
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const limited = guardRate(req, intakeRule('checkin/agreement'))
+  if (limited) return limited
+
   const { token } = await params
   const result = await resolveCheckinToken(token)
 

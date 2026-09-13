@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
+import { generatePortalToken, buildPortalUrl, portalSigningSecret } from '@/lib/portalAuth'
 import { partyPortalMagicLinkHtml } from '@/lib/emailTemplates'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
 import { publicOrigin } from '@/lib/publicOrigin'
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getSupabase()
-  const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  const secret = portalSigningSecret()
 
   // Phone path: contact_phone is stored as the customer typed it, so exact
   // matching is unreliable. Compare on trailing digits instead.

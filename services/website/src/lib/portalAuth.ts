@@ -9,6 +9,69 @@ const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 // 30 days in seconds
 // a fresh token, so this is a floor on "how long is an old email still good".
 const TOKEN_EXPIRY_HOURS = 30 * 24 // 30 days
 
+/**
+ * The portal signing secret. ONE definition, and it fails closed in production.
+ *
+ * `process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'` was written out
+ * **twenty-seven times** — in eleven portal routes, four webhook branches,
+ * `party-builder/save`, `party-builder/load`, `studio-rental/edit`,
+ * `admin/parties/create`, `cron/send-reminders`, a server page, `checkinAuth.ts`
+ * and `portalLinkMint.ts`. Hard-won rule 11 in its sharpest form: this value
+ * signs every portal session cookie, every magic link, every unsubscribe link,
+ * every tracked link and every check-in link, and it was spelled twenty-seven
+ * ways with a **publicly known default**.
+ *
+ * It is set in production (measured 2026-09-13: 64 characters), so nothing has
+ * ever been signed with `'dev-secret'` on the live site. But the shape is the one
+ * that had just been found live one door along: `/api/cm-cheer-orders` compared a
+ * Bearer token against `process.env.CM_CHEER_PASSWORD || 'cmcheer2026'` and that
+ * variable was NOT set, so the literal in the repository was the real credential
+ * over 21 customers' contact details. A default credential is a credential.
+ *
+ * In production an unset variable now THROWS rather than silently signing
+ * everything with a string anyone can read in the repository — the same
+ * fail-closed rule `isAdminAuthorized` and `isCronAuthorized` follow. Outside
+ * production the dev fallback stays, so `npm run dev` needs no setup, and it says
+ * so once rather than silently.
+ */
+let warnedAboutDevSecret = false
+
+export function portalSigningSecret(): string {
+  const secret = process.env.PORTAL_LINK_SIGNING_SECRET
+  if (secret) return secret
+
+  /**
+   * THE BUILD IS NOT A REQUEST.
+   *
+   * `next build` evaluates route handlers while prerendering, and the image is
+   * built with `docker compose up -d --build`, which passes `.env` at RUN time and
+   * not as a build arg — so the secret is legitimately absent during the build.
+   * Throwing there fails the deploy rather than protecting anything: the first
+   * version of this function did exactly that and `npx next build` reported
+   * `Export encountered errors on: /api/party-builder/load, /api/portal/session-status`.
+   * Neither jest nor `tsc --noEmit` sees it, which is the third time in this chain
+   * that only the build has caught something.
+   *
+   * `NEXT_PHASE` is what Next sets while prerendering. Signing anything with the
+   * fallback during a build is harmless, because nothing prerendered is handed to
+   * a customer — the routes that matter all carry `dynamic = 'force-dynamic'` and
+   * run per request, where the throw below does fire.
+   */
+  const isBuild = process.env.NEXT_PHASE === 'phase-production-build'
+
+  if (process.env.NODE_ENV === 'production' && !isBuild) {
+    throw new Error(
+      'PORTAL_LINK_SIGNING_SECRET is not set. Refusing to sign portal links, session ' +
+        'cookies, unsubscribe links or check-in links with a default value.',
+    )
+  }
+  if (!warnedAboutDevSecret) {
+    warnedAboutDevSecret = true
+    console.warn('PORTAL_LINK_SIGNING_SECRET is not set — using the development fallback. Not valid in production.')
+  }
+  return 'dev-secret'
+}
+
 export function generatePortalToken(
   bookingRef: string,
   secret: string,

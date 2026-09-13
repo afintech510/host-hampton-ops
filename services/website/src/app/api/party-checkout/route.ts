@@ -1,5 +1,7 @@
 import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { screenPublicLineItems, screenPublicGuestCount } from '@/lib/publicIntake'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
@@ -11,6 +13,9 @@ import type { BookingLineItem } from '@/types/booking-flow'
 import { publicOrigin } from '@/lib/publicOrigin'
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('party-checkout'))
+  if (limited) return limited
+
   try {
     const body = await req.json()
 
@@ -34,6 +39,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    // The comment below is right that `buildPlanSnapshot` recomputes the totals,
+    // and that is exactly why the LINE ITEMS have to be screened: they are what it
+    // recomputes from, and `unit_price_cents` arrived from the browser. See
+    // `lib/publicIntake.ts`.
+    const screened = screenPublicLineItems(lineItems, guestCount)
+    if (!screened.ok) {
+      console.warn(`party-checkout: refused line items for ${contactEmail} — ${screened.reason}`)
+      return NextResponse.json({ error: `We could not accept that request: ${screened.reason}` }, { status: 400 })
+    }
+    const screenedGuestCount = screenPublicGuestCount(guestCount)
+    if (screenedGuestCount === null) {
+      return NextResponse.json({ error: 'Please give us a realistic guest count' }, { status: 400 })
+    }
+
     const supabase = getSupabase()
     const origin = publicOrigin(req)
     const bookingRef = generatePartyRef()
@@ -43,8 +62,8 @@ export async function POST(req: NextRequest) {
     // fully restore the form. buildPlanSnapshot recomputes the totals from the
     // line items, so a stale client-side total in quoteData cannot be persisted.
     const quoteSnapshot = buildPlanSnapshot({
-      lineItems,
-      guestCount,
+      lineItems: screened.lineItems,
+      guestCount: screenedGuestCount,
       packageType,
       extra: (body.quoteData as Record<string, unknown> | undefined) || {},
     })
@@ -66,7 +85,7 @@ export async function POST(req: NextRequest) {
       party_date: partyDate,
       party_time: partyTime,
       package_type: packageType || null,
-      guest_count_approx: guestCount,
+      guest_count_approx: screenedGuestCount,
       child_name: childName || null,
       child_age: childAge ? parseInt(childAge, 10) : null,
       contact_name: contactName,
@@ -91,7 +110,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Booking failed' }, { status: 500 })
     }
 
-    await writeLineItems(supabase, booking.id, lineItems)
+    await writeLineItems(supabase, booking.id, screened.lineItems)
 
     // Upsert contact (non-fatal)
     const contactId = await upsertContact({
@@ -146,7 +165,7 @@ export async function POST(req: NextRequest) {
     await linkFirstTouchEvent(booking.id, firstEventId)
 
     // Prepare line items for the admin email
-    const emailLineItems = lineItems.map(item => ({
+    const emailLineItems = screened.lineItems.map(item => ({
       name: item.name,
       quantity: item.quantity,
       unit_price_cents: item.unit_price_cents,

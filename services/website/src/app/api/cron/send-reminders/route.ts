@@ -11,7 +11,7 @@ import {
 } from '@/lib/email-templates/reminders'
 import { partyBalanceReminderHtml, partyAdminUnpaidDayOfHtml, partyThankYouHtml, birthdayRebookHtml } from '@/lib/emailTemplates'
 import { formatMoney } from '@/lib/partyPricing'
-import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
+import { generatePortalToken, buildPortalUrl, portalSigningSecret } from '@/lib/portalAuth'
 import {
   smsEventReminder1Day,
   smsEventReminder2Hr,
@@ -364,7 +364,7 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any):
 
       // Generate a fresh portal magic link straight into the planner so the
       // customer lands on their plan with the payment section ready to go.
-      const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+      const portalSecret = portalSigningSecret()
       const { token: rawToken, hash, expiresAt } = generatePortalToken(booking.booking_ref, portalSecret)
       const { error: tokErr } = await supabase.from('portal_tokens').insert({
         booking_id: booking.id,

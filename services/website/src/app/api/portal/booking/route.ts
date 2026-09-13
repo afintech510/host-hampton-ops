@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { getPortalBookingRef } from '@/lib/portalAuth'
+import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { isModificationAllowed } from '@/lib/partyPricing'
 
 /**
@@ -42,7 +42,7 @@ const PORTAL_BOOKING_COLUMNS = [
 ].join(', ')
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  const secret = portalSigningSecret()
   const cookieHeader = req.headers.get('cookie')
   const bookingRef = getPortalBookingRef(cookieHeader, secret)
 
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  const secret = portalSigningSecret()
   const cookieHeader = req.headers.get('cookie')
   const bookingRef = getPortalBookingRef(cookieHeader, secret)
 

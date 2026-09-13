@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { validatePortalToken, setPortalCookieHeader } from '@/lib/portalAuth'
+import { validatePortalToken, setPortalCookieHeader, portalSigningSecret } from '@/lib/portalAuth'
 import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
 
 export async function GET(req: NextRequest) {
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = getSupabase()
-  const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  const secret = portalSigningSecret()
 
   // Look up the booking and its portal tokens
   const { data: booking, error: bookingErr } = await supabase

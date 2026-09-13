@@ -35,6 +35,7 @@
 import { getSupabase } from '@/lib/supabase'
 import { generatePartyRef, calculateLineItemTotal, getDepositCents, computeCutoffDates } from '@/lib/partyPricing'
 import { classifyPartyType, type PartyType } from '@/lib/inquiryDrafts'
+import { findBookingsByContactEmail } from '@/lib/contactLookup'
 import type { BookingLineItem } from '@/types/booking-flow'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -116,9 +117,30 @@ export interface WriteLineItemsOptions {
 }
 
 /**
+ * What a line-item write actually did.
+ *
+ * Three outcomes, because on a REPLACE the two failure modes are not the same
+ * thing and a caller that cannot tell them apart cannot tell a customer the
+ * truth (hard-won rule 12):
+ *
+ *   `delete-failed` — the old rows are still there. The plan is stale but intact.
+ *   `insert-failed` — the old rows are GONE and the new ones were refused. The
+ *                     invoice is now EMPTY, which `loadPlanInvoice` renders as
+ *                     $0. This is the one a human has to know about.
+ *
+ * `written` stays on every outcome so the old `=== lineItems.length` check keeps
+ * working.
+ */
+export type WriteLineItemsResult =
+  | { ok: true; written: number }
+  | { ok: false; written: 0; outcome: 'delete-failed' | 'insert-failed'; message: string }
+
+/**
  * Write `booking_line_items` for a plan. Non-fatal by contract: a failed line
  * item write must never lose the booking itself, which is how all three
  * previous call sites already behaved. Returns the number of rows written.
+ *
+ * Prefer `writeLineItemsResult` on any path a customer is told an outcome.
  */
 export async function writeLineItems(
   supabase: Supa,
@@ -126,6 +148,15 @@ export async function writeLineItems(
   lineItems: BookingLineItem[],
   options: WriteLineItemsOptions = {},
 ): Promise<number> {
+  return (await writeLineItemsResult(supabase, bookingId, lineItems, options)).written
+}
+
+export async function writeLineItemsResult(
+  supabase: Supa,
+  bookingId: string,
+  lineItems: BookingLineItem[],
+  options: WriteLineItemsOptions = {},
+): Promise<WriteLineItemsResult> {
   try {
     if (options.replace) {
       const { error } = await supabase.from('booking_line_items').delete().eq('booking_id', bookingId)
@@ -133,11 +164,11 @@ export async function writeLineItems(
       // customer's invoice is far worse than leaving the old plan in place.
       if (error) {
         console.error('writeLineItems delete error (non-fatal):', error.message)
-        return 0
+        return { ok: false, written: 0, outcome: 'delete-failed', message: error.message }
       }
     }
 
-    if (!lineItems.length) return 0
+    if (!lineItems.length) return { ok: true, written: 0 }
 
     const rows = lineItems.map((item, idx) => ({
       booking_id: bookingId,
@@ -157,13 +188,21 @@ export async function writeLineItems(
 
     const { error } = await supabase.from('booking_line_items').insert(rows)
     if (error) {
-      console.error('writeLineItems insert error (non-fatal):', error.message)
-      return 0
+      // On a REPLACE this is the expensive one: the delete above succeeded, so
+      // the booking now has NO line items and `loadPlanInvoice` will render it
+      // as $0. Say which booking, loudly, so it can be rebuilt.
+      console.error(
+        options.replace
+          ? `writeLineItems insert error after a successful delete — booking ${bookingId} now has NO line items: ${error.message}`
+          : `writeLineItems insert error (non-fatal): ${error.message}`,
+      )
+      return { ok: false, written: 0, outcome: 'insert-failed', message: error.message }
     }
-    return rows.length
+    return { ok: true, written: rows.length }
   } catch (err) {
     console.error('writeLineItems error (non-fatal):', err)
-    return 0
+    const message = err instanceof Error ? err.message : String(err)
+    return { ok: false, written: 0, outcome: options.replace ? 'insert-failed' : 'delete-failed', message }
   }
 }
 
@@ -201,6 +240,12 @@ export interface EnsureLeadPlanResult {
   partyType: PartyType
   /** True when an existing open plan absorbed this inquiry instead of a new row. */
   reused: boolean
+  /**
+   * On a REUSE, whether the enrichment write actually landed. A reused plan whose
+   * update was refused carries none of this inquiry's detail, and the route must
+   * not report that as recorded (rule 10).
+   */
+  enriched?: boolean
 }
 
 const NOT_CREATED: EnsureLeadPlanResult = {
@@ -256,8 +301,8 @@ export async function ensureLeadPlan(input: EnsureLeadPlanInput): Promise<Ensure
     if (!lookup.ok) return { ...NOT_CREATED, partyType }
     if (lookup.plan) {
       const plan = lookup.plan
-      await enrichPlan(supabase, plan, input, { partyType, partyDate, tags })
-      return { bookingId: plan.id, bookingRef: plan.booking_ref, partyType, reused: true }
+      const enriched = await enrichPlan(supabase, plan, input, { partyType, partyDate, tags })
+      return { bookingId: plan.id, bookingRef: plan.booking_ref, partyType, reused: true, enriched }
     }
 
     const snapshot = buildPlanSnapshot({
@@ -356,6 +401,8 @@ export async function linkFirstTouchEvent(
 interface OpenPlanRow {
   id: string
   booking_ref: string
+  status?: string | null
+  created_at?: string | null
   party_type: string | null
   party_date: string | null
   party_time: string | null
@@ -368,35 +415,10 @@ interface OpenPlanRow {
 }
 
 const OPEN_PLAN_COLUMNS =
-  'id, booking_ref, party_type, party_date, party_time, guest_count_approx, contact_name, contact_email, contact_phone, notes, party_tags'
+  'id, booking_ref, status, party_type, party_date, party_time, guest_count_approx, contact_name, contact_email, contact_phone, notes, party_tags, created_at'
 
 /** Discriminates "no open plan" from "the lookup did not work". */
 type PlanLookup = { ok: true; plan: OpenPlanRow | null } | { ok: false }
-
-/**
- * Quote a value for a PostgREST `or()` expression.
- *
- * The values here are typed by a stranger into a web form, and `or()` is a
- * STRUCTURED expression whose separator is a comma — so an unquoted value is an
- * injection point, not merely an escaping nicety. Confirmed against the live
- * PostgREST on 2026-09-11: a `contact_email` of
- *
- *     x@y.com,contact_phone.eq.6314008080
- *
- * turned `or=(contact_email.eq.<value>)` into a second, attacker-chosen
- * disjunct and returned two real production bookings that the intended filter
- * does not match. `findOpenPlan` would have handed one of them back as "this
- * person's open plan", and `enrichPlan` writes the new inquiry's name, notes and
- * tags onto whatever it is given — i.e. onto a stranger's booking, which then
- * feeds that stranger's next draft.
- *
- * Double quotes are PostgREST's own quoting; `"` and `\` inside the value are
- * backslash-escaped. Verified that the payload above returns no rows once
- * quoted.
- */
-function orValue(v: string): string {
-  return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
-}
 
 /**
  * The stored spellings of a phone number worth matching against.
@@ -428,52 +450,114 @@ export function phoneMatchVariants(phone: string | null): string[] {
   return Array.from(variants)
 }
 
+/**
+ * Find the open plan a new inquiry belongs to.
+ *
+ * ── TWO THINGS WERE WRONG WITH HOW THIS ASKED THE QUESTION ──
+ *
+ * **1. The email match was case-sensitive, and the tripwire could not see it.**
+ * The filter was built as a raw PostgREST string — `contact_email.eq."<value>"`
+ * inside an `.or()` — with the value lowercased on the way in. But
+ * `bookings.contact_email` is plain `text` holding whatever the customer typed and
+ * **9 of 61 live rows are not lowercase**, so an open plan belonging to one of
+ * those customers could never be found. The consequence is not cosmetic: a missed
+ * match creates a SECOND plan, which earns its own agent draft and its own text to
+ * Adam's phone — the exact failure the safety note at the top of this file exists
+ * to prevent, arriving through a different door. (Measured 2026-09-13: zero of the
+ * nine are currently in `lead`/`quoted`, so nobody has been hit by it yet. An
+ * admin typing a mixed-case address onto a lead is all it takes.)
+ *
+ * `contactIdentitySurface.test.ts` R1 fails the suite if any file outside
+ * `lib/contactLookup.ts` filters an email column — and it passed this file for
+ * two links, because R1 looks for `.eq('contact_email'`/`.ilike('contact_email'`
+ * and the filter here was spelled inside a string handed to `.or()`. A rule that
+ * greps for one spelling is satisfied by another. R1 now sees both, and this
+ * lookup goes through `findBookingsByContactEmail`, which fetches candidates with
+ * `ilike` and re-compares them exactly in JS.
+ *
+ * **2. `.or()` needed a hand-rolled quoter to be safe at all.** `orValue()` lived
+ * here, forty lines above its only caller: a second implementation of what
+ * `lib/postgrestFilter.ts` owns (rule 11), guarding against an injection that was
+ * real and measured — `x@y.com,contact_phone.eq.6314008080` as a `contact_email`
+ * added an attacker-chosen disjunct and returned two unrelated production
+ * bookings, which `enrichPlan` would then have written a stranger's name and notes
+ * onto. The `.or()` is gone entirely now. Phone variants go through `.in()`, which
+ * PostgREST parameter-encodes, so `(631) 400-8080`'s parentheses are data rather
+ * than syntax and there is nothing left to quote.
+ *
+ * Both handles are queried separately and merged, because "same contact" is an OR
+ * over email and phone — a lead who first texted (phone only) and later filled in
+ * the web form is one person and must land on one plan. If EITHER read fails the
+ * whole lookup fails: a partial answer here creates a duplicate.
+ */
 async function findOpenPlan(
   supabase: Supa,
   q: { email: string | null; phone: string | null; partyDate: string | null },
 ): Promise<PlanLookup> {
-  // "Same contact" is an OR over the two handles rather than an AND: a lead who
-  // first texted (phone only) and then filled in the web form (email + phone)
-  // is one person and must land on one plan.
-  const handles: string[] = []
-  if (q.email) handles.push(`contact_email.eq.${orValue(q.email)}`)
-  for (const v of phoneMatchVariants(q.phone)) handles.push(`contact_phone.eq.${orValue(v)}`)
-  if (!handles.length) return { ok: true, plan: null }
+  const phoneVariants = phoneMatchVariants(q.phone)
+  if (!q.email && !phoneVariants.length) return { ok: true, plan: null }
 
   const since = new Date(Date.now() - PLAN_REUSE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const openStatuses = OPEN_PLAN_STATUSES as unknown as string[]
+  const candidates: OpenPlanRow[] = []
 
-  // Rule (a): same contact + same date. Checked first and without the 30-day
-  // window — a party booked 8 months out is still obviously the same party.
-  if (q.partyDate) {
+  if (q.email) {
+    // The limit applies to CANDIDATES, which are a superset of the answer, so it
+    // is deliberately generous — a tight limit here hides a real row.
+    const lookup = await findBookingsByContactEmail(supabase, q.email, OPEN_PLAN_COLUMNS, { limit: 200 })
+    if (lookup.kind === 'unavailable') {
+      console.error('findOpenPlan email-match error (non-fatal):', lookup.error)
+      return { ok: false }
+    }
+    if (lookup.kind === 'found') {
+      candidates.push(...(lookup.bookings as unknown as OpenPlanRow[]))
+    }
+  }
+
+  if (phoneVariants.length) {
     const { data, error } = await supabase
       .from('bookings')
       .select(OPEN_PLAN_COLUMNS)
-      .in('status', OPEN_PLAN_STATUSES as unknown as string[])
-      .eq('party_date', q.partyDate)
-      .or(handles.join(','))
+      .in('status', openStatuses)
+      .in('contact_phone', phoneVariants)
       .order('created_at', { ascending: false })
-      .limit(1)
+      .limit(200)
     if (error) {
-      console.error('findOpenPlan date-match error (non-fatal):', error.message)
+      console.error('findOpenPlan phone-match error (non-fatal):', error.message)
       return { ok: false }
     }
-    if (data?.length) return { ok: true, plan: data[0] as OpenPlanRow }
+    candidates.push(...((data ?? []) as unknown as OpenPlanRow[]))
+  }
+
+  if (!candidates.length) return { ok: true, plan: null }
+
+  // De-duplicate: a lead whose email AND phone both match appears twice.
+  const byId = new Map<string, OpenPlanRow>()
+  for (const row of candidates) if (!byId.has(row.id)) byId.set(row.id, row)
+
+  // The status filter is applied in code as well as in the phone query, because
+  // the email candidates come back unfiltered by status by design.
+  const open = Array.from(byId.values())
+    .filter(row => openStatuses.includes(String((row as unknown as { status?: string }).status ?? '')))
+    .sort((a, b) => {
+      const ta = Date.parse(String((a as unknown as { created_at?: string }).created_at ?? ''))
+      const tb = Date.parse(String((b as unknown as { created_at?: string }).created_at ?? ''))
+      return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0)
+    })
+
+  // Rule (a): same contact + same date, checked first and WITHOUT the 30-day
+  // window — a party booked 8 months out is still obviously the same party.
+  if (q.partyDate) {
+    const sameDate = open.find(row => row.party_date === q.partyDate)
+    if (sameDate) return { ok: true, plan: sameDate }
   }
 
   // Rule (b): same contact, any open plan in the last 30 days.
-  const { data, error } = await supabase
-    .from('bookings')
-    .select(OPEN_PLAN_COLUMNS)
-    .in('status', OPEN_PLAN_STATUSES as unknown as string[])
-    .gte('created_at', since)
-    .or(handles.join(','))
-    .order('created_at', { ascending: false })
-    .limit(1)
-  if (error) {
-    console.error('findOpenPlan recent-match error (non-fatal):', error.message)
-    return { ok: false }
-  }
-  return { ok: true, plan: (data?.[0] as OpenPlanRow) ?? null }
+  const recent = open.find(row => {
+    const created = String((row as unknown as { created_at?: string }).created_at ?? '')
+    return created >= since
+  })
+  return { ok: true, plan: recent ?? null }
 }
 
 /**
@@ -486,7 +570,7 @@ async function enrichPlan(
   plan: OpenPlanRow,
   input: EnsureLeadPlanInput,
   incoming: { partyType: PartyType; partyDate: string | null; tags: Record<string, unknown> },
-): Promise<void> {
+): Promise<boolean> {
   const { partyType, partyDate, tags } = incoming
   const patch: Record<string, unknown> = {}
 
@@ -521,10 +605,22 @@ async function enrichPlan(
     patch.guest_count_cutoff = cutoffs.guestCountCutoff
   }
 
-  if (!Object.keys(patch).length) return
+  if (!Object.keys(patch).length) return true
 
-  const { error } = await supabase.from('bookings').update(patch).eq('id', plan.id)
-  if (error) console.error('enrichPlan update error (non-fatal):', error.message)
+  // `.select()` so a write that matched NOTHING cannot pass for a write that
+  // worked. `ensureLeadPlan` reports this to its caller as `enriched`, which is
+  // what lets an intake route say whether this inquiry actually reached the plan
+  // instead of answering `{ success: true }` either way (rules 10 and 19).
+  const { data, error } = await supabase.from('bookings').update(patch).eq('id', plan.id).select('id')
+  if (error) {
+    console.error('enrichPlan update error (non-fatal):', error.message)
+    return false
+  }
+  if ((data ?? []).length !== 1) {
+    console.error(`enrichPlan matched ${(data ?? []).length} rows for plan ${plan.booking_ref} — nothing was stored`)
+    return false
+  }
+  return true
 }
 
 function normalize(v: string | null | undefined): string | null {

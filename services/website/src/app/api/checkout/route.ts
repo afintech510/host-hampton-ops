@@ -1,5 +1,6 @@
 import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enqueueBookingReminders } from '@/lib/reminders'
@@ -9,6 +10,9 @@ import { partyRequestReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailT
 import { publicOrigin } from '@/lib/publicOrigin'
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('checkout'))
+  if (limited) return limited
+
   try {
     const body = await req.json()
     const {

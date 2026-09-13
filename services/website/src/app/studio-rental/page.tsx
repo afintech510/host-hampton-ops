@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { getSupabase } from '@/lib/supabase'
-import { getPortalBookingRef } from '@/lib/portalAuth'
+import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import StudioRentalContent from './StudioRentalContent'
 import StudioManageContent, { type ManageBooking } from './StudioManageContent'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
@@ -52,7 +52,7 @@ export default async function StudioRentalPage() {
   // Manage mode: if a valid portal cookie points at a studio booking, load it.
   let manageBooking: ManageBooking | null = null
   try {
-    const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+    const secret = portalSigningSecret()
     const cookieHeader = cookies().toString()
     const ref = getPortalBookingRef(cookieHeader, secret)
     if (ref) {

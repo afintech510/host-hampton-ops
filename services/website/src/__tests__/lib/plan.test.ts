@@ -39,6 +39,8 @@ function makeSupabase(opts: SupaOpts = {}) {
   const deleted: string[] = []
   /** Every `or=` expression `findOpenPlan` built, so a test can inspect it. */
   const orFilters: string[] = []
+  /** Every filter call made against `bookings`, as [method, column, value]. */
+  const filters: [string, unknown, unknown][] = []
   let lookupIdx = 0
 
   function resolve(table: string, ops: [string, ...unknown[]][]) {
@@ -66,10 +68,11 @@ function makeSupabase(opts: SupaOpts = {}) {
     const chain: any = {
       then: (res: any, rej: any) => Promise.resolve(resolve(table, ops)).then(res, rej),
     }
-    for (const m of ['select', 'eq', 'in', 'or', 'gte', 'order', 'limit', 'single', 'maybeSingle']) {
+    for (const m of ['select', 'eq', 'in', 'or', 'ilike', 'not', 'gte', 'order', 'limit', 'single', 'maybeSingle']) {
       chain[m] = jest.fn((...args: unknown[]) => {
         ops.push([m, ...args])
         if (m === 'or' && typeof args[0] === 'string') orFilters.push(args[0])
+        if (table === 'bookings') filters.push([m, args[0], args[1]])
         return chain
       })
     }
@@ -94,6 +97,7 @@ function makeSupabase(opts: SupaOpts = {}) {
   return {
     supabase: { from } as any,
     orFilters,
+    filters,
     inserted,
     updated,
     deleted,
@@ -309,9 +313,15 @@ describe('ensureLeadPlan — creating a plan', () => {
 /* ── ensureLeadPlan: matching ──────────────────────────────────────────── */
 
 describe('ensureLeadPlan — matching an open plan', () => {
+  // `status` and `created_at` are part of the fixture because the lookup now
+  // filters on both IN CODE: the email candidates come back unfiltered by status
+  // by design (they are fetched case-insensitively and re-compared), so a row
+  // without them is not an open plan.
   const openPlan = (over: Record<string, unknown> = {}) => ({
     id: 'existing-1',
     booking_ref: 'HH-2026-0042',
+    status: 'lead',
+    created_at: new Date().toISOString(),
     party_type: 'mobile_party',
     party_date: '2026-11-28',
     party_time: null,
@@ -337,22 +347,49 @@ describe('ensureLeadPlan — matching an open plan', () => {
   })
 
   it('reuses a recent open plan even when this touch carries no date', async () => {
-    // No date → the date rule is skipped entirely and only the 30-day rule runs.
     const s = makeSupabase({ planLookups: [{ data: [openPlan()] }] })
     const res = await ensureLeadPlan({ supabase: s.supabase, contactEmail: 'jess@example.com' })
     expect(res.reused).toBe(true)
+    // One read: the email candidates. No phone was given, so no phone query.
     expect(s.lookupCount()).toBe(1)
   })
 
-  it('falls back to the 30-day rule when the date does not match', async () => {
-    const s = makeSupabase({ planLookups: [{ data: [] }, { data: [openPlan()] }] })
+  it('applies the 30-day window in code when the date does not match', async () => {
+    // The date rule and the recent rule are now decided from ONE candidate set
+    // rather than two round trips, which is why this reuses with a single read.
+    const s = makeSupabase({ planLookups: [{ data: [openPlan()] }] })
     const res = await ensureLeadPlan({
       supabase: s.supabase,
       contactEmail: 'jess@example.com',
       partyDate: '2027-01-01',
     })
     expect(res.reused).toBe(true)
-    expect(s.lookupCount()).toBe(2)
+    expect(s.lookupCount()).toBe(1)
+  })
+
+  it('does NOT reuse a plan older than the 30-day window when the date differs', async () => {
+    const old = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
+    const s = makeSupabase({ planLookups: [{ data: [openPlan({ created_at: old })] }] })
+    const res = await ensureLeadPlan({
+      supabase: s.supabase,
+      contactEmail: 'jess@example.com',
+      partyDate: '2027-01-01',
+    })
+    expect(res.reused).toBe(false)
+    expect(s.bookingInserts()).toHaveLength(1)
+  })
+
+  it('ignores a candidate whose status is not open', async () => {
+    // The email candidates arrive unfiltered by status, so this is the guard that
+    // stops a paid booking absorbing a fresh enquiry.
+    const s = makeSupabase({ planLookups: [{ data: [openPlan({ status: 'deposit_paid' })] }] })
+    const res = await ensureLeadPlan({
+      supabase: s.supabase,
+      contactEmail: 'jess@example.com',
+      partyDate: '2026-11-28',
+    })
+    expect(res.reused).toBe(false)
+    expect(s.bookingInserts()).toHaveLength(1)
   })
 
   it('creates a new plan when nothing matches', async () => {
@@ -370,6 +407,39 @@ describe('ensureLeadPlan — matching an open plan', () => {
     const s = makeSupabase({ planLookups: [{ data: [openPlan({ contact_email: null, contact_phone: '+16315550100' })] }] })
     const res = await ensureLeadPlan({ supabase: s.supabase, contactPhone: '+16315550100', source: 'sms' })
     expect(res.reused).toBe(true)
+  })
+
+  it('matches an open plan whose stored email is a DIFFERENT CASE', async () => {
+    // The point of the rewrite. `bookings.contact_email` is plain `text` and 9 of
+    // 61 live rows are not lowercase; the old filter was
+    // `contact_email.eq."<lowercased>"` inside an `.or()`, so those customers'
+    // open plans could never be found and every new enquiry forked a second plan
+    // — a second agent draft and a second text to Adam's phone.
+    const s = makeSupabase({
+      planLookups: [{ data: [openPlan({ contact_email: 'Jess@Example.com' })] }],
+    })
+    const res = await ensureLeadPlan({
+      supabase: s.supabase,
+      contactEmail: 'jess@example.com',
+      partyDate: '2026-11-28',
+    })
+    expect(res).toMatchObject({ reused: true, bookingId: 'existing-1' })
+    expect(s.bookingInserts()).toHaveLength(0)
+  })
+
+  it('does not treat a DIFFERENT address as the same person', async () => {
+    // The candidate fetch is an `ilike`, so it can over-fetch; the exact
+    // re-compare is what makes that safe.
+    const s = makeSupabase({
+      planLookups: [{ data: [openPlan({ contact_email: 'someone-else@example.com' })] }],
+    })
+    const res = await ensureLeadPlan({
+      supabase: s.supabase,
+      contactEmail: 'jess@example.com',
+      partyDate: '2026-11-28',
+    })
+    expect(res.reused).toBe(false)
+    expect(s.bookingInserts()).toHaveLength(1)
   })
 
   it('does NOT create a duplicate plan when the lookup itself fails', async () => {
@@ -397,6 +467,10 @@ describe('ensureLeadPlan — enriching the plan it reused', () => {
   const base = {
     id: 'existing-1',
     booking_ref: 'HH-2026-0042',
+    // Both are load-bearing now: the candidate set is filtered on `status` and
+    // ordered/windowed on `created_at` in code.
+    status: 'lead',
+    created_at: new Date().toISOString(),
     party_type: 'unknown',
     party_date: null,
     party_time: null,
@@ -491,50 +565,73 @@ describe('ensureLeadPlan — enriching the plan it reused', () => {
  * 2026-09-11 rather than reasoned about.
  */
 describe('matching a contact to their open plan', () => {
-  it('quotes handles so a crafted value cannot add a disjunct', async () => {
-    const { supabase, orFilters } = makeSupabase()
+  it('builds NO raw filter expression at all — there is nothing left to quote', async () => {
+    const { supabase, orFilters, filters } = makeSupabase()
 
-    // Live probe: this value as an unquoted email turned
-    // `or=(contact_email.eq.<value>)` into a second, attacker-chosen condition
-    // and returned two real production bookings. `findOpenPlan` would have
-    // handed one back as "this person's open plan", and `enrichPlan` writes the
-    // new inquiry's name, notes and tags onto whatever plan it is given — i.e.
-    // onto a stranger's booking, which then feeds that stranger's next draft.
+    // Live probe from 2026-09-11: this value as an unquoted email turned
+    // `or=(contact_email.eq.<value>)` into a second, attacker-chosen disjunct and
+    // returned two real production bookings. `findOpenPlan` would have handed one
+    // back as "this person's open plan", and `enrichPlan` writes the new inquiry's
+    // name, notes and tags onto whatever plan it is given — i.e. onto a
+    // stranger's booking, which then feeds that stranger's next draft.
+    //
+    // It was fixed by a hand-rolled `orValue()` quoter living in `lib/plan.ts`:
+    // correct, but a second implementation of what `lib/postgrestFilter.ts` owns,
+    // AND the reason link 17's R1 rule could not see that the email match beside
+    // it was case-sensitive — the filter was spelled inside a string. The `.or()`
+    // is gone entirely now, so the injection has no surface to exist on.
     await ensureLeadPlan({
       supabase,
       contactEmail: 'x@y.com,contact_phone.eq.6314008080',
       contactName: 'Mallory',
     })
 
-    expect(orFilters.length).toBeGreaterThan(0)
-    for (const f of orFilters) {
-      // The payload survives only inside quotes, as a value.
-      expect(f).toContain('contact_email.eq."x@y.com,contact_phone.eq.6314008080"')
-      // Exactly one condition: the comma is data, not a separator.
-      expect(f.split('",').length).toBe(1)
+    expect(orFilters).toHaveLength(0)
+    // And the hostile value went in as a parameter-encoded VALUE, never as syntax.
+    const emailFilters = filters.filter(f => f[1] === 'contact_email')
+    expect(emailFilters.length).toBeGreaterThan(0)
+    for (const [method, , value] of emailFilters) {
+      expect(method).toBe('ilike')
+      expect(value).toBe('x@y.com,contact_phone.eq.6314008080')
     }
   })
 
-  it('matches the same number however it was typed', async () => {
+  it('matches the same number however it was typed, through .in() not .or()', async () => {
     // Phase 2 creates a `lead` plan for an unknown texter with an E.164 number;
     // that same person then fills in the web form typing 631-555-1234. Every
     // other module normalises before comparing — this one compared raw strings,
     // so the open plan was missed and the lead got a SECOND plan, which earns
     // its own draft and its own text to Adam's phone.
-    const { supabase, orFilters } = makeSupabase()
+    //
+    // `.in()` is the point: `(631) 555-1234` contains PostgREST metacharacters,
+    // which is why the old form needed quoting at all. As an `.in()` array member
+    // it is parameter-encoded and the parentheses are data.
+    const { supabase, orFilters, filters } = makeSupabase()
     await ensureLeadPlan({ supabase, contactPhone: '631-555-1234', contactName: 'Jo' })
 
-    const filter = orFilters[0]
-    expect(filter).toContain('contact_phone.eq."+16315551234"')
-    expect(filter).toContain('contact_phone.eq."6315551234"')
-    expect(filter).toContain('contact_phone.eq."631-555-1234"')
-    expect(filter).toContain('contact_phone.eq."(631) 555-1234"')
+    expect(orFilters).toHaveLength(0)
+    const phoneFilter = filters.find(f => f[0] === 'in' && f[1] === 'contact_phone')
+    expect(phoneFilter).toBeDefined()
+    const variants = phoneFilter![2] as string[]
+    expect(variants).toContain('+16315551234')
+    expect(variants).toContain('6315551234')
+    expect(variants).toContain('631-555-1234')
+    expect(variants).toContain('(631) 555-1234')
   })
 
   it('reuses the plan created when the same person texted in', async () => {
     const { supabase, bookingInserts } = makeSupabase({
       planLookups: [
-        { data: [{ id: 'plan-sms', booking_ref: 'HH-PTY-AAA', contact_phone: '+16315551234', party_tags: {} }] },
+        {
+          data: [{
+            id: 'plan-sms',
+            booking_ref: 'HH-PTY-AAA',
+            status: 'lead',
+            created_at: new Date().toISOString(),
+            contact_phone: '+16315551234',
+            party_tags: {},
+          }],
+        },
       ],
     })
     const res = await ensureLeadPlan({ supabase, contactPhone: '(631) 555-1234', contactName: 'Jo' })

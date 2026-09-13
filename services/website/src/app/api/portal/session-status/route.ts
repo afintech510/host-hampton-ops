@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { getPortalBookingRef } from '@/lib/portalAuth'
+import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
+
+// Reads a cookie, so it must never be prerendered. Without this Next tried to
+// statically export it and evaluated the handler at BUILD time.
+export const dynamic = 'force-dynamic'
 
 /**
  * "Did my card payment go through?" — polled by `/my-booking` after a Stripe
@@ -25,7 +29,7 @@ import { getPortalBookingRef } from '@/lib/portalAuth'
  * A bogus id also used to throw, giving an authenticated customer a bare 500.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  const secret = portalSigningSecret()
   const cookieHeader = req.headers.get('cookie')
   const bookingRef = getPortalBookingRef(cookieHeader, secret)
 

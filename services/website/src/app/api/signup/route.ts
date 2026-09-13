@@ -1,5 +1,6 @@
 import { ownerEmail } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
@@ -18,6 +19,9 @@ function generateCouponCode(): string {
 }
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('signup'))
+  if (limited) return limited
+
   try {
     const { firstName, lastName, email, phone } = await req.json()
 

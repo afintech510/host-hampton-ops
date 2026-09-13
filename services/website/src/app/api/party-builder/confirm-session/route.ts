@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
+import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
+import { isUniqueViolation } from '@/lib/planPayment'
 
 /**
  * UI reconciliation after embedded Stripe Checkout returns.
@@ -18,6 +21,9 @@ import { getSupabase } from '@/lib/supabase'
  * still be correct from this route alone.
  */
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('party-builder/confirm-session'))
+  if (limited) return limited
+
   try {
     const body = (await req.json()) as { session_id?: string; payment_intent?: string }
     const sessionId = body.session_id
@@ -80,7 +86,8 @@ export async function POST(req: NextRequest) {
     } else if (resolvedSessionId) {
       existingPaymentQuery = existingPaymentQuery.eq('stripe_session_id', resolvedSessionId)
     }
-    const { data: existing } = await existingPaymentQuery.maybeSingle()
+    const { data: existing, error: existingErr } = await existingPaymentQuery.maybeSingle()
+    if (existingErr) console.error('confirm-session: idempotency read failed —', existingErr.message)
     if (existing) {
       return NextResponse.json({ ok: true, alreadyRecorded: true, bookingRef })
     }
@@ -98,35 +105,46 @@ export async function POST(req: NextRequest) {
       recorded_by: 'system',
       notes: tipCents > 0 ? `Includes $${(tipCents / 100).toFixed(2)} tip for party helpers` : null,
     })
-    if (payErr) console.error('confirm-session payment insert error:', payErr)
-
-    // Recalculate balance from all payments
-    const { data: payments } = await supabase
-      .from('booking_payments')
-      .select('amount_cents, payment_type')
-      .eq('booking_id', bookingId)
-
-    let paid = 0
-    for (const p of payments || []) {
-      if (p.payment_type === 'refund') paid -= p.amount_cents
-      else paid += p.amount_cents
+    if (payErr && !isUniqueViolation(payErr)) {
+      // Not a redelivery: this money is NOT in `booking_payments`, so the balance
+      // below would be computed without it and understate what has been paid.
+      // The webhook is the authoritative writer; say what happened instead of
+      // storing a figure already known to be wrong.
+      console.error('confirm-session payment insert error:', payErr.message)
+      return NextResponse.json(
+        { ok: true, paid: true, bookingRef, recorded: false, note: 'Payment received; your plan will update shortly.' },
+      )
     }
+    if (payErr) console.log('confirm-session: payment already recorded (duplicate), reconciling balance')
 
-    const { data: bk } = await supabase
-      .from('bookings')
-      .select('total_cents, party_tags')
-      .eq('id', bookingId)
-      .single()
-
-    const newBalance = Math.max(0, (bk?.total_cents || 0) - paid)
+    // Recalculate balance from all payments — ONE definition of "what does this
+    // booking owe", shared with the webhook and the admin panel.
+    //
+    // This was four lines with both reads discarded and `(bk?.total_cents || 0)`,
+    // so a Supabase blip — or a plan nobody has priced, which is every lead —
+    // made `max(0, 0 - paid)` zero and wrote `status = 'paid_in_full'` plus
+    // `paid_in_full_at` on a party that had just paid a deposit. Rules 12 and 19,
+    // on the main kids-party money path. `computeBalance` will not call an
+    // unpriced booking settled.
+    const inputs = await readBalanceInputs(supabase, bookingId, 'total_cents, party_tags')
+    if (!inputs.ok) {
+      console.error('confirm-session: balance inputs unreadable —', inputs.message)
+      return NextResponse.json(
+        { ok: true, paid: true, bookingRef, paymentType, amountCents, balanceUnknown: true, note: 'Payment recorded; balance will update shortly.' },
+      )
+    }
+    const { balanceCents: newBalance, paidInFull } = computeBalance(
+      inputs.row.total_cents as number | null,
+      inputs.paidSum,
+    )
     const updateFields: Record<string, unknown> = { balance_due_cents: newBalance }
 
     if (paymentType === 'deposit') {
       updateFields.status = 'pending_review'
-      const existingTags = (bk?.party_tags as Record<string, unknown> | null) || {}
+      const existingTags = (inputs.row.party_tags as Record<string, unknown> | null) || {}
       updateFields.party_tags = { ...existingTags, date_locked: true }
     }
-    if (newBalance === 0) {
+    if (paidInFull) {
       updateFields.paid_in_full_at = new Date().toISOString()
       updateFields.status = 'paid_in_full'
     }

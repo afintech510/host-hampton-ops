@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { verifyEmailLoginCode, setEmailCookieHeader, getEmailCodeMaxAttempts } from '@/lib/portalAuth'
+import { verifyEmailLoginCode, setEmailCookieHeader, getEmailCodeMaxAttempts, portalSigningSecret } from '@/lib/portalAuth'
 import { isLocalRequest } from '@/lib/publicOrigin'
 import { isPlausibleEmailAddress } from '@/lib/contactLookup'
 
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabase()
-    const secret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+    const secret = portalSigningSecret()
     const maxAttempts = getEmailCodeMaxAttempts()
 
     // Find the newest unconsumed unexpired code for this email

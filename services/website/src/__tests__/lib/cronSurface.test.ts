@@ -356,9 +356,21 @@ describe('R5: the mutating jobs claim before they act', () => {
 
   it('summer-hair-reminders claims the row BEFORE it texts, and releases on failure', () => {
     const body = ALL_HANDLERS.find(h => h.file === 'summer-hair-reminders/route.ts' && h.method === 'GET')!.body
-    const claimAt = body.indexOf(".eq('reminder_sent', false)\n      .select('id')")
+    /**
+     * Matched with a REGEX, not `indexOf`, because the literal it used to search
+     * for embedded a bare `\n` and this repository is checked out with
+     * `core.autocrlf=true`. The main checkout happens to hold this file with LF
+     * endings, so the rule passed there; a FRESH git worktree gets CRLF on
+     * checkout and the same anchor found nothing — a tripwire that silently
+     * stopped checking, in the one environment every session in this chain works
+     * in. Link 19 wrote down exactly this trap for its attack harness ("verify
+     * each mutation landed with CRLF *and* LF anchors") and then left it in its
+     * own rule. Line endings and indentation are never the property under test.
+     */
+    const claimMatch = /\.eq\('reminder_sent', false\)\s*\r?\n\s*\.select\('id'\)/.exec(body)
+    expect(claimMatch).not.toBeNull()
+    const claimAt = claimMatch!.index
     const sendAt = body.indexOf('sendSMSVia(')
-    expect(claimAt).toBeGreaterThan(-1)
     expect(sendAt).toBeGreaterThan(claimAt)
     expect(body).toMatch(/reminder_sent: false \}\)\s*\r?\n\s*\.eq\('id', b\.id\)/) // the release
   })

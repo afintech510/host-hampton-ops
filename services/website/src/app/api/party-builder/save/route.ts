@@ -4,17 +4,16 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { computeCutoffDates, generatePartyRef, formatMoney } from '@/lib/partyPricing'
-import { buildPlanSnapshot, planTotals, writeLineItems } from '@/lib/plan'
-import {
-  generatePortalToken,
-  buildPortalUrl,
-  getPortalBookingRef,
-  setPortalCookieHeader,
-} from '@/lib/portalAuth'
+import { buildPlanSnapshot, planTotals, writeLineItems, writeLineItemsResult } from '@/lib/plan'
+import { getPortalBookingRef, setPortalCookieHeader, portalSigningSecret } from '@/lib/portalAuth'
+import { mintPortalLink } from '@/lib/portalLinkMint'
 import { partyQuoteSentHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
 import { findBookingsByContactEmail } from '@/lib/contactLookup'
+import { screenPublicLineItems, screenPublicGuestCount, boundedIntakeText, MAX_INTAKE_NAME_CHARS } from '@/lib/publicIntake'
+import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
 
 function formatDate(dateStr: string): string {
   try {
@@ -32,11 +31,36 @@ function formatTime(timeStr: string): string {
   } catch { return timeStr }
 }
 
+/**
+ * Save (or update) the customer's party plan from the planner.
+ *
+ * UNAUTHENTICATED. The portal cookie is a signal about WHICH plan this is, not a
+ * credential — a first-time visitor has none and must still be able to save. Two
+ * things followed from that and both were live:
+ *
+ *  1. **The prices were the caller's to choose.** `lineItems[].unit_price_cents`
+ *     went into `booking_line_items` verbatim and into `bookings.total_cents` /
+ *     `deposit_amount` / `balance_due_cents` through `buildPlanSnapshot`. Every
+ *     downstream money path — `loadPlanInvoice`, the pay panel, the pay link —
+ *     re-derives the figure from those rows, so "computed server-side" was true
+ *     of the arithmetic and false of the inputs. `screenPublicLineItems` bounds
+ *     them and refuses a negative price outright.
+ *
+ *  2. **The "never fold into a plan money has landed on" guard was on ONE of the
+ *     three paths.** It sat inside the `if (!existingRef)` prior-plan scan, so a
+ *     ref taken from the cookie — or from `body.bookingRef`, which only has to
+ *     match the booking's own email — skipped it entirely. That path replaces the
+ *     line items (`replace: true`) and overwrites `total_cents`. Production holds
+ *     7 `deposit_paid`, 2 `paid_in_full` and 5 `modifications_locked` bookings.
+ *     The guard is now applied to whichever ref wins, on every path.
+ */
 export async function POST(req: NextRequest) {
   try {
+    const limited = guardRate(req, intakeRule('party-builder/save'))
+    if (limited) return limited
+
     const body = await req.json()
     const {
-      lineItems,
       contactName,
       contactEmail,
       contactPhone,
@@ -80,13 +104,29 @@ export async function POST(req: NextRequest) {
     if (!contactName || !contactEmail) {
       return NextResponse.json({ error: 'Name and email are required' }, { status: 400 })
     }
+    if (String(contactName).length > MAX_INTAKE_NAME_CHARS) {
+      return NextResponse.json({ error: 'That name is too long' }, { status: 400 })
+    }
+
+    // The screen runs BEFORE buildPlanSnapshot, because the snapshot is where the
+    // client's numbers become `bookings.total_cents`.
+    const screenedGuestCount = screenPublicGuestCount(guestCount)
+    const screened = screenPublicLineItems(body.lineItems, screenedGuestCount)
+    if (!screened.ok) {
+      console.warn(`party-builder/save: refused line items for ${contactEmail} — ${screened.reason}`)
+      return NextResponse.json({ error: `We could not accept that quote: ${screened.reason}` }, { status: 400 })
+    }
+    const lineItems = screened.lineItems
+    // These reach bookings.notes, the customer email and (through the plan) the
+    // agent draft prompt. Nothing here needs a megabyte.
+    const boundedNotes = boundedIntakeText(notes)
 
     const supabase = getSupabase()
     const origin = publicOrigin(req)
     const isLocal = isLocalRequest(req)
-    const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+    const portalSecret = portalSigningSecret()
     // buildPlanSnapshot owns the arithmetic for all three plan writers.
-    const planSnapshot = buildPlanSnapshot({ lineItems, guestCount, packageType, extra: quoteData })
+    const planSnapshot = buildPlanSnapshot({ lineItems, guestCount: screenedGuestCount, packageType, extra: quoteData })
     const { total_cents: totalCents, deposit_amount: depositCents, balance_due_cents: balanceDueCents } =
       planTotals(planSnapshot)
 
@@ -106,12 +146,35 @@ export async function POST(req: NextRequest) {
     let existingRef = getPortalBookingRef(cookieHeader, portalSecret)
 
     const refBelongsToCustomer = async (ref: string): Promise<boolean> => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('bookings')
         .select('contact_email')
         .eq('booking_ref', ref)
-        .single()
+        .maybeSingle()
+      // A failed read must not read as "yes" — it already read as "no", which is
+      // the safe direction, but an unread error is an error that did not happen.
+      if (error) console.error('party-builder/save: ref ownership read failed —', error.message)
       return !!data && (data.contact_email || '').toLowerCase().trim() === normalizedEmail
+    }
+
+    /**
+     * Has money landed on this plan? THREE outcomes.
+     *
+     * This was `const { count } = await …` with the error discarded, so an
+     * unreadable `booking_payments` made `count` undefined, `count && count > 0`
+     * false, and the save folded itself into a plan that may well have been paid
+     * — rules 12 and 19 inside the one guard that existed to prevent exactly that.
+     */
+    const moneyHasLanded = async (bookingId: string): Promise<'yes' | 'no' | 'unknown'> => {
+      const { count, error } = await supabase
+        .from('booking_payments')
+        .select('id', { count: 'exact', head: true })
+        .eq('booking_id', bookingId)
+      if (error) {
+        console.error(`party-builder/save: payment check failed for ${bookingId} —`, error.message)
+        return 'unknown'
+      }
+      return (count ?? 0) > 0 ? 'yes' : 'no'
     }
 
     if (!existingRef && clientBookingRef && (await refBelongsToCustomer(clientBookingRef))) {
@@ -158,12 +221,8 @@ export async function POST(req: NextRequest) {
         if (!datesAgree) continue
 
         // Never fold a new save into a plan money has already landed on —
-        // that plan is a real booking, not a draft.
-        const { count } = await supabase
-          .from('booking_payments')
-          .select('id', { count: 'exact', head: true })
-          .eq('booking_id', plan.id)
-        if (count && count > 0) continue
+        // that plan is a real booking, not a draft. "Could not tell" skips too.
+        if ((await moneyHasLanded(plan.id)) !== 'no') continue
 
         existingRef = plan.booking_ref
         break
@@ -202,7 +261,7 @@ export async function POST(req: NextRequest) {
         party_date: partyDate || null,
         party_time: partyTime || null,
         package_type: packageType || null,
-        guest_count_approx: guestCount || 10,
+        guest_count_approx: screenedGuestCount ?? 10,
         child_name: childName || null,
         child_age: parsedChildAge,
         contact_name: contactName,
@@ -217,7 +276,7 @@ export async function POST(req: NextRequest) {
         guest_count_cutoff: cutoffs?.guestCountCutoff || null,
         quote_snapshot: snapshotData,
         payment_method_preference: 'card',
-        notes: notes || null,
+        notes: boundedNotes,
         party_type: 'in_studio_theme',
         source: 'website_form',
         party_tags: buildPartyTags(null),
@@ -233,33 +292,75 @@ export async function POST(req: NextRequest) {
     }
 
     if (existingRef) {
-      // Update existing booking
-      const { data: existing } = await supabase
+      // Update existing booking. One read, with its error read: `existing` being
+      // null used to mean BOTH "no such ref" and "the read failed", and the else
+      // branch below creates a brand-new plan — so a Supabase blip forked a
+      // duplicate for a returning customer, the exact defect the whole
+      // plan-matching block exists to prevent (rule 12).
+      const { data: existing, error: existingErr } = await supabase
         .from('bookings')
-        .select('id, status')
+        .select('id, status, total_cents, party_tags')
         .eq('booking_ref', existingRef)
-        .single()
+        .maybeSingle()
+
+      if (existingErr) {
+        console.error('party-builder/save: existing-plan read failed —', existingErr.message)
+        return NextResponse.json({ error: 'Could not load your plan. Please try again.' }, { status: 503 })
+      }
 
       if (existing) {
         bookingRef = existingRef
         bookingId = existing.id
 
-        const { data: existingFull } = await supabase
-          .from('bookings').select('party_tags').eq('id', bookingId).single()
+        // ── The guard that was only on one of three paths ──
+        //
+        // A public caller reaching this branch through the cookie or through
+        // `body.bookingRef` used to skip the payment check entirely, and this
+        // branch REPLACES the line items and overwrites `total_cents`. Editing a
+        // paid party to add a cupcake is the product and stays allowed; editing
+        // it DOWNWARD is not, because the money is already in.
+        const landed = await moneyHasLanded(bookingId)
+        if (landed === 'unknown') {
+          return NextResponse.json(
+            { error: 'Could not check your payments. Please try again in a moment.' },
+            { status: 503 },
+          )
+        }
+        if (landed === 'yes') {
+          const priorTotal = typeof existing.total_cents === 'number' ? existing.total_cents : null
+          if (priorTotal !== null && totalCents < priorTotal) {
+            console.warn(
+              `party-builder/save: refused a REDUCTION on paid plan ${bookingRef} ` +
+                `(${priorTotal}c → ${totalCents}c) from a public request`,
+            )
+            return NextResponse.json(
+              {
+                error:
+                  'This party already has a payment on it, so we cannot lower the total from here. ' +
+                  'Call us on (631) 998-9325 and we will sort it out.',
+              },
+              { status: 409 },
+            )
+          }
+          if (['cancelled', 'completed'].includes(String(existing.status))) {
+            return NextResponse.json(
+              { error: 'This party is closed. Please call us on (631) 998-9325.' },
+              { status: 409 },
+            )
+          }
+        }
 
         // Balance must reflect what's actually been paid on this booking, not a
         // fresh 25% deposit. Without this, editing add-ons on a paid booking
         // understates the balance by (25% of total − amount actually paid).
-        const { data: payRows } = await supabase
-          .from('booking_payments')
-          .select('amount_cents, payment_type')
-          .eq('booking_id', bookingId)
-        let paidCents = 0
-        for (const p of payRows || []) {
-          if (p.payment_type === 'refund') paidCents -= p.amount_cents
-          else paidCents += p.amount_cents
+        // Through the one definition: a discarded `booking_payments` read made
+        // `paidCents` 0 and asked a customer who had paid for the whole total.
+        const inputs = await readBalanceInputs(supabase, bookingId, 'id')
+        if (!inputs.ok) {
+          console.error('party-builder/save: balance inputs unreadable —', inputs.message)
+          return NextResponse.json({ error: 'Could not read your payments. Please try again.' }, { status: 503 })
         }
-        finalBalanceDueCents = Math.max(0, totalCents - paidCents)
+        finalBalanceDueCents = computeBalance(totalCents, inputs.paidSum).balanceCents
 
         const updateData: Record<string, unknown> = {
           contact_name: contactName,
@@ -267,13 +368,15 @@ export async function POST(req: NextRequest) {
           contact_phone: contactPhone || null,
           child_name: childName || null,
           child_age: parsedChildAge,
-          guest_count_approx: guestCount || 10,
+          guest_count_approx: screenedGuestCount ?? 10,
           total_cents: totalCents,
           balance_due_cents: finalBalanceDueCents,
           package_type: packageType || null,
-          notes: notes || null,
+          notes: boundedNotes,
           quote_snapshot: snapshotData,
-          party_tags: buildPartyTags(existingFull?.party_tags as Record<string, unknown> | null),
+          // Read in the same statement as `status` above, so a failed read can no
+          // longer hand `undefined` here and WIPE location_address and the rest.
+          party_tags: buildPartyTags(existing.party_tags as Record<string, unknown> | null),
         }
 
         if (partyDate) {
@@ -284,20 +387,43 @@ export async function POST(req: NextRequest) {
         }
         if (partyTime) updateData.party_time = partyTime
 
-        await supabase.from('bookings').update(updateData).eq('id', bookingId)
+        const { data: updatedRows, error: updateErr } = await supabase
+          .from('bookings').update(updateData).eq('id', bookingId).select('id')
+        if (updateErr || (updatedRows ?? []).length !== 1) {
+          // The email below quotes this total. Sending it over a write that did
+          // not happen is rule 10's expensive half.
+          console.error(
+            `party-builder/save: update wrote ${(updatedRows ?? []).length} rows for ${bookingRef} —`,
+            updateErr?.message ?? 'no error reported',
+          )
+          return NextResponse.json({ error: 'Could not save your plan. Please try again.' }, { status: 503 })
+        }
 
         // Replace line items
         if (lineItems?.length) {
-          await writeLineItems(supabase, bookingId, lineItems, { replace: true })
+          const write = await writeLineItemsResult(supabase, bookingId, lineItems, { replace: true })
+          if (!write.ok) {
+            console.error(`party-builder/save: ${write.outcome} for ${bookingRef} — ${write.message}`)
+            return NextResponse.json(
+              {
+                error:
+                  write.outcome === 'delete-failed'
+                    ? 'Could not update your selections. Please try again.'
+                    : 'Something went wrong saving your selections. Please call us on (631) 998-9325.',
+              },
+              { status: 503 },
+            )
+          }
         }
 
         // Log modification
-        await supabase.from('booking_modifications').insert({
+        const { error: modErr } = await supabase.from('booking_modifications').insert({
           booking_id: bookingId,
           modified_by: 'customer',
           change_summary: 'Quote updated via party builder',
-          new_data: { lineItems, guestCount, partyDate, partyTime, packageType },
+          new_data: { lineItems, guestCount: screenedGuestCount, partyDate, partyTime, packageType },
         })
+        if (modErr) console.error('party-builder/save: modification log insert failed —', modErr.message)
       } else {
         bookingRef = generatePartyRef()
         bookingId = await createNew(bookingRef)
@@ -330,17 +456,12 @@ export async function POST(req: NextRequest) {
       }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
     }
 
-    // Generate portal token
-    const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
-    await supabase.from('portal_tokens').insert({
-      booking_id: bookingId,
-      token_hash: hash,
-      expires_at: expiresAt.toISOString(),
-    }).then(({ error }) => {
-      if (error) console.error('Portal token insert error (non-fatal):', error)
-    })
-
-    const builderUrl = buildPortalUrl(bookingRef, rawToken, '/party-planner')
+    // Generate portal token — through the ONE minter. This route was the eighth
+    // copy of `generatePortalToken` → raw `portal_tokens` insert → error logged
+    // "non-fatal" → email the link anyway. A refused token row means the URL in
+    // that email cannot work: non-fatal to the booking, fatal to the email.
+    const minted = await mintPortalLink(supabase, bookingId, bookingRef, '/party-planner')
+    const builderUrl = minted.ok ? minted.url : null
 
     // Prepare email line items
     const emailLineItems = (lineItems || []).map(item => ({
@@ -349,7 +470,7 @@ export async function POST(req: NextRequest) {
       unit_price_cents: item.unit_price_cents,
       guest_multiplied: item.guest_multiplied,
       totalCents: item.guest_multiplied
-        ? item.unit_price_cents * item.quantity * (guestCount || 10)
+        ? item.unit_price_cents * item.quantity * (screenedGuestCount ?? 10)
         : item.unit_price_cents * item.quantity,
     }))
 
@@ -359,6 +480,13 @@ export async function POST(req: NextRequest) {
     let emailDiagnostic: string | undefined
     if (!sendEmail) {
       emailDiagnostic = 'Skipped — admin saved silently'
+    } else if (!builderUrl) {
+      // The whole customer email IS the link ("View & Customize Your Party Plan").
+      // A token row that was refused means that button cannot work, so the email
+      // is not sent and the plan is still saved — which is the accurate outcome
+      // and the one the planner UI can act on.
+      emailDiagnostic = 'Plan saved, but the personal link could not be issued — no email sent'
+      console.error(`party-builder/save: ${bookingRef} saved without a portal link; customer email suppressed`)
     } else if (process.env.RESEND_API_KEY) {
       const { Resend } = await import('resend')
       const resend = new Resend(process.env.RESEND_API_KEY)
@@ -381,7 +509,7 @@ export async function POST(req: NextRequest) {
             bookingRef,
             partyDate: dateDisplay,
             partyTime: timeDisplay,
-            guestCount: guestCount || 10,
+            guestCount: screenedGuestCount ?? 10,
             packageType: packageType || 'Kids Party',
             childName,
             totalFormatted: formatMoney(totalCents),
@@ -389,7 +517,7 @@ export async function POST(req: NextRequest) {
             balanceFormatted: formatMoney(finalBalanceDueCents),
             lineItems: emailLineItems,
             builderUrl,
-            notes,
+            notes: boundedNotes ?? undefined,
           }),
         }),
       ]
@@ -407,13 +535,13 @@ export async function POST(req: NextRequest) {
               customerPhone: contactPhone,
               partyDate: dateDisplay || 'TBD',
               partyTime: timeDisplay || 'TBD',
-              guestCount: guestCount || 10,
+              guestCount: screenedGuestCount ?? 10,
               packageType: packageType || 'Kids Party',
               depositFormatted: formatMoney(depositCents),
               totalFormatted: formatMoney(totalCents),
               paymentMethod: 'pending',
               lineItems: emailLineItems,
-              notes,
+              notes: boundedNotes ?? undefined,
               adminUrl: `${origin}/admin?tab=parties&ref=${bookingRef}`,
             }),
           }),

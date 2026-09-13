@@ -34,7 +34,12 @@ jest.mock('@/lib/checkinLink', () => ({
 }))
 
 jest.mock('@/lib/marketing/graph', () => ({ writeLedger: jest.fn().mockResolvedValue(undefined) }))
+// Rule 7: spread the REAL module. A whole-module mock silently drops every
+// function the route later starts using — this one lost `portalSigningSecret`
+// the moment the 27 inline copies of the secret were consolidated, and the
+// failure was a TypeError inside the handler, not a missing assertion.
 jest.mock('@/lib/portalAuth', () => ({
+  ...jest.requireActual('@/lib/portalAuth'),
   generatePortalToken: () => ({ token: 'raw', hash: 'hash', expiresAt: new Date('2027-01-01') }),
   buildPortalUrl: () => 'https://www.hosthampton.com/portal/x',
 }))

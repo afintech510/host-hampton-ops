@@ -25,7 +25,7 @@
  * this" — rule 12.
  */
 
-import { generatePortalToken, buildPortalUrl } from './portalAuth'
+import { generatePortalToken, buildPortalUrl, portalSigningSecret } from './portalAuth'
 
 type MinimalClient = { from: (table: string) => any }
 
@@ -33,9 +33,12 @@ export type MintedLink =
   | { ok: true; url: string; expiresAt: Date }
   | { ok: false; reason: string }
 
-export function portalSigningSecret(): string {
-  return process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
-}
+/**
+ * Re-exported, not re-implemented. The definition lives in `lib/portalAuth.ts`
+ * alongside the signing functions that consume it; this export exists only so the
+ * callers that already import from here do not need a second import.
+ */
+export { portalSigningSecret }
 
 /**
  * Mint a portal link for a booking, writing its token row first.

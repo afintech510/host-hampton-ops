@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { portalSigningSecret } from '@/lib/portalAuth'
 import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { logBookingChange } from '@/lib/bookingAudit'
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabase()
     const origin = publicOrigin(req)
-    const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+    const portalSecret = portalSigningSecret()
     const guests = guestCount || 10
     const cutoffs = partyDate ? computeCutoffDates(partyDate) : null
     const bookingRef = generatePartyRef()

@@ -5,6 +5,8 @@ import { upsertContact } from '@/lib/contacts'
 import { getSupabase } from '@/lib/supabase'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref } from '@/lib/emailSafety'
+import { screenCmCheerTotals, VALID_PAYMENT_METHODS } from '@/lib/cmCheerOrder'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +19,9 @@ interface OrderItem {
 }
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('cm-cheer-order'))
+  if (limited) return limited
+
   const body = await req.json()
   const {
     athleteName,
@@ -37,6 +42,40 @@ export async function POST(req: NextRequest) {
   if (!itemsData || !Array.isArray(itemsData) || itemsData.length === 0) {
     return NextResponse.json({ error: 'No items in order' }, { status: 400 })
   }
+  if (itemsData.length > 40) {
+    return NextResponse.json({ error: 'Too many items in one order' }, { status: 400 })
+  }
+  if (!VALID_PAYMENT_METHODS.includes(String(paymentMethod))) {
+    return NextResponse.json({ error: 'Invalid payment method' }, { status: 400 })
+  }
+
+  /**
+   * THE TOTAL, THE COST AND THE PROFIT ALL ARRIVE FROM THE BROWSER.
+   *
+   * `total`, `totalCost` and `totalProfit` were written to `subtotal_cents`,
+   * `cost_cents` and `profit_cents` exactly as posted, and `itemsData` carries a
+   * `unit_price` and a `cost_per_unit` per line. The prices live in
+   * `data-price` / `data-cost` attributes in TWO page components
+   * (`/cm-cheer` and `/li-high`) and nowhere on the server — so there is no
+   * catalogue to re-derive from, and the table already holds 21 real orders
+   * priced this way.
+   *
+   * Re-pricing would mean porting two live order forms' markup into a server
+   * catalogue, which is a change to somebody else's storefront, so it is recorded
+   * as needs-Adam instead. What is done here is the part that is unambiguously
+   * ours: the numbers are bounded and CROSS-CHECKED against the line items, and a
+   * disagreement is written where a human looks (`status_note`) rather than
+   * accepted in silence. Rule 14 — a mismatch nobody records is invisible, and an
+   * invisible bookkeeping error is a loss.
+   */
+  const money = screenCmCheerTotals(total, totalCost, totalProfit, itemsData)
+  if (!money.ok) {
+    console.warn(`cm-cheer-order: refused totals from ${email} — ${money.reason}`)
+    return NextResponse.json({ error: `We could not accept that order: ${money.reason}` }, { status: 400 })
+  }
+  if (money.note) {
+    console.warn(`cm-cheer-order: total mismatch from ${email} — ${money.note}`)
+  }
 
   const supabase = getSupabase()
 
@@ -51,10 +90,11 @@ export async function POST(req: NextRequest) {
       phone,
       payment_method: paymentMethod,
       items: itemsData,
-      subtotal_cents: Math.round(total * 100),
-      cost_cents: Math.round(totalCost * 100),
-      profit_cents: Math.round(totalProfit * 100),
+      subtotal_cents: money.subtotalCents,
+      cost_cents: money.costCents,
+      profit_cents: money.profitCents,
       status: 'pending_payment',
+      status_note: money.note,
     })
     .select('id, order_ref')
     .single()
@@ -82,8 +122,11 @@ export async function POST(req: NextRequest) {
       ? '<span style="background:#008CFF;color:#fff;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;">VENMO</span>'
       : '<span style="background:#22c55e;color:#fff;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;">CASH TO COACH</span>'
 
+    // The emails quote the STORED total, not the posted one. Asking a customer
+    // for a number the order book does not hold is rule 10 with money on it.
+    const storedTotal = (money.subtotalCents / 100).toFixed(2)
     const itemRows = (itemsData as OrderItem[])
-      .map(i => `<tr><td style="padding:6px 0;color:#555;font-size:14px;">${i.qty}x ${escapeHtml(i.name)}</td><td style="padding:6px 0;text-align:right;font-weight:600;font-size:14px;">$${i.line_total.toFixed(2)}</td></tr>`)
+      .map(i => `<tr><td style="padding:6px 0;color:#555;font-size:14px;">${i.qty}x ${escapeHtml(i.name)}</td><td style="padding:6px 0;text-align:right;font-weight:600;font-size:14px;">${Number(i.line_total).toFixed(2)}</td></tr>`)
       .join('')
 
     await Promise.allSettled([
@@ -110,7 +153,7 @@ export async function POST(req: NextRequest) {
     <div style="background:#f9f9f9;border-radius:8px;padding:14px 16px;border:1px solid #eee;">
       <table style="width:100%;">${itemRows}
         <tr><td colspan="2" style="border-top:1px solid #ddd;padding-top:8px;"></td></tr>
-        <tr><td style="font-weight:700;font-size:15px;">Total</td><td style="text-align:right;font-weight:800;font-size:18px;color:#CE1126;">$${total.toFixed(2)}</td></tr>
+        <tr><td style="font-weight:700;font-size:15px;">Total</td><td style="text-align:right;font-weight:800;font-size:18px;color:#CE1126;">$${storedTotal}</td></tr>
       </table>
     </div>
     <p style="margin-top:16px;font-size:12px;color:#aaa;">Order ID: ${escapeHtml(order.order_ref)} · Manage at hosthampton.com/cm-cheer/orders</p>
@@ -137,17 +180,17 @@ export async function POST(req: NextRequest) {
       <p style="font-size:12px;font-weight:700;text-transform:uppercase;color:#888;margin:0 0 8px;">Athlete: ${escapeHtml(athleteName)}</p>
       <table style="width:100%;">${itemRows}
         <tr><td colspan="2" style="border-top:1px solid #ddd;padding-top:8px;"></td></tr>
-        <tr><td style="font-weight:700;">Total</td><td style="text-align:right;font-weight:800;color:#CE1126;">$${total.toFixed(2)}</td></tr>
+        <tr><td style="font-weight:700;">Total</td><td style="text-align:right;font-weight:800;color:#CE1126;">$${storedTotal}</td></tr>
       </table>
     </div>
     ${paymentMethod === 'venmo' ? `
     <div style="background:#e8f4ff;border-radius:8px;padding:14px;border:1px solid #bde0ff;margin-bottom:16px;">
       <p style="margin:0;font-size:14px;font-weight:700;">💳 Payment Reminder</p>
-      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please complete your Venmo payment of <strong>$${total.toFixed(2)}</strong> to <strong>@CM-PAL-Red-Devils-Football</strong> and include <strong>${escapeHtml(athleteName)}</strong> in the memo.</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please complete your Venmo payment of <strong>$${storedTotal}</strong> to <strong>@CM-PAL-Red-Devils-Football</strong> and include <strong>${escapeHtml(athleteName)}</strong> in the memo.</p>
     </div>` : `
     <div style="background:#f0fdf4;border-radius:8px;padding:14px;border:1px solid #bbf7d0;margin-bottom:16px;">
       <p style="margin:0;font-size:14px;font-weight:700;">💵 Payment Reminder</p>
-      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please bring <strong>$${total.toFixed(2)} cash</strong> to your coach. Reference order <strong>${escapeHtml(order.order_ref)}</strong>.</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please bring <strong>$${storedTotal} cash</strong> to your coach. Reference order <strong>${escapeHtml(order.order_ref)}</strong>.</p>
     </div>`}
     <p style="font-size:12px;color:#aaa;text-align:center;margin-top:16px;">Questions? Contact your coach or reply to this email.</p>
   </div>

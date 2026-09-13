@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { logInteraction } from '@/lib/contactInteractions'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { resolveCheckinToken, requiresRentalAgreement } from '@/lib/checkinLink'
@@ -53,6 +55,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const limited = guardRate(req, intakeRule('checkin'))
+  if (limited) return limited
+
   const { token } = await params
   const result = await resolveCheckinToken(token)
 
@@ -211,15 +216,20 @@ async function recordCheckinConsent({
     // Linking here is left to `linkFirstTouchEvent`/`ensureLeadPlan`, which own
     // that column; this route deliberately writes only consent.
 
-    const { error: interErr } = await supabase.from('contact_interactions').insert({
-      contact_id: contactId,
+    // Through `logInteraction`, which is typed against
+    // `contact_interactions_type_check` and reports a refusal itself. This route
+    // already read its error — it was the only one on the surface that did — but a
+    // raw insert is still a second implementation of a constrained write, and the
+    // type is checked at the call site rather than at 2am (rules 11 and 13).
+    const logged = await logInteraction(supabase, {
+      contactId,
       type: 'form_submission',
       summary: `Pre-arrival check-in — ${bookingRef}`,
       metadata: { bookingId, bookingRef, marketingConsent },
     })
     // Rule 19: the consent record is the whole point of this function.
-    if (interErr) {
-      console.error('checkin:consent — interaction write FAILED for', bookingRef, '—', interErr.message)
+    if (!logged) {
+      console.error('checkin:consent — interaction write FAILED for', bookingRef)
     }
   } catch (err) {
     console.error('checkin:consent error (non-fatal):', err)

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
@@ -85,6 +86,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('summer-hair/book'))
+  if (limited) return limited
+
   const body = await req.json()
   const { name, email, phone, timeSlot, services, partySize, notes } = body
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
 import Stripe from 'stripe'
 import { publicOrigin } from '@/lib/publicOrigin'
 
@@ -9,6 +10,9 @@ const REGISTRATION_CENTS = 4500
 const SERVICE_FEE_CENTS = 135
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('vendor-registration'))
+  if (limited) return limited
+
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
 
   let body: {

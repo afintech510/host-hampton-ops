@@ -3,7 +3,22 @@
 import { useState, useEffect, useCallback } from 'react'
 import { CheckCircle, XCircle, ChevronDown, ChevronUp, Download, RefreshCw, LogOut } from 'lucide-react'
 
-const CM_PASSWORD = process.env.NEXT_PUBLIC_CM_CHEER_PASSWORD || 'cmcheer2026'
+/**
+ * The password is NOT in this bundle, and the server is the only judge of it.
+ *
+ * This used to be a module constant read from a NEXT_PUBLIC_ environment
+ * variable with a literal default. Two things followed. A NEXT_PUBLIC_ variable
+ * is baked into the JavaScript every visitor downloads, so whatever value it held
+ * was published; and CM_CHEER_PASSWORD was not set in production, so the
+ * published value was the hard-coded default — over a
+ * table holding 21 real customers' names, emails and phone numbers, with a PATCH
+ * beside it that marks an order paid.
+ *
+ * Now the typed password is sent to the API and the SERVER decides (see
+ * lib/cmCheerAuth.ts, which fails closed when the variable is unset). The login
+ * box is a real check rather than a client-side comparison against a constant
+ * anybody could read, and the value lives in sessionStorage for the tab only.
+ */
 const TOKEN_KEY = 'cm_cheer_token'
 
 interface OrderItem { name: string; qty: number; unit_price: number; line_total: number }
@@ -35,6 +50,7 @@ function paymentBadge(method: string) {
 export default function CMCheerOrdersPage() {
   const [authed, setAuthed] = useState(false)
   const [pwInput, setPwInput] = useState('')
+  const [token, setToken] = useState('')
   const [pwError, setPwError] = useState('')
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
@@ -50,20 +66,30 @@ export default function CMCheerOrdersPage() {
   const [savingNotes, setSavingNotes] = useState(false)
 
   useEffect(() => {
-    if (localStorage.getItem(TOKEN_KEY) === CM_PASSWORD) setAuthed(true)
+    const saved = sessionStorage.getItem(TOKEN_KEY)
+    if (saved) { setToken(saved); setAuthed(true) }
   }, [])
 
-  function login(e: React.FormEvent) {
+  async function login(e: React.FormEvent) {
     e.preventDefault()
-    if (pwInput === CM_PASSWORD) {
-      localStorage.setItem(TOKEN_KEY, CM_PASSWORD)
+    setPwError('')
+    // Ask the server. A 401 is the only thing that means 'wrong password', and a
+    // network or server fault must not read as one (rule 12).
+    try {
+      const res = await fetch('/api/cm-cheer-orders', {
+        headers: { Authorization: 'Bearer ' + pwInput },
+      })
+      if (res.status === 401) { setPwError('Incorrect password.'); return }
+      if (!res.ok) { setPwError('Could not reach the order book — please try again.'); return }
+      sessionStorage.setItem(TOKEN_KEY, pwInput)
+      setToken(pwInput)
       setAuthed(true)
-    } else {
-      setPwError('Incorrect password.')
+    } catch {
+      setPwError('Could not reach the order book — please try again.')
     }
   }
 
-  function logout() { localStorage.removeItem(TOKEN_KEY); setAuthed(false) }
+  function logout() { sessionStorage.removeItem(TOKEN_KEY); setToken(''); setAuthed(false) }
 
   const fetchOrders = useCallback(async () => {
     setLoading(true)
@@ -71,12 +97,12 @@ export default function CMCheerOrdersPage() {
     if (statusFilter) params.set('status', statusFilter)
     if (paymentFilter) params.set('payment_method', paymentFilter)
     const res = await fetch(`/api/cm-cheer-orders?${params}`, {
-      headers: { Authorization: `Bearer ${CM_PASSWORD}` },
+      headers: { Authorization: `Bearer ${token}` },
     })
     const data = await res.json()
     setOrders(data.orders || [])
     setLoading(false)
-  }, [statusFilter, paymentFilter])
+  }, [statusFilter, paymentFilter, token])
 
   useEffect(() => { if (authed) fetchOrders() }, [authed, fetchOrders])
 
@@ -84,7 +110,7 @@ export default function CMCheerOrdersPage() {
     setUpdating(id)
     await fetch(`/api/cm-cheer-orders/${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CM_PASSWORD}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ status, status_note: note || null }),
     })
     await fetchOrders()
@@ -97,7 +123,7 @@ export default function CMCheerOrdersPage() {
     setSavingNotes(true)
     await fetch(`/api/cm-cheer-orders/${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CM_PASSWORD}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ notes: notesInput }),
     })
     await fetchOrders()

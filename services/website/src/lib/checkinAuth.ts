@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { portalSigningSecret } from './portalAuth'
 import { etToUtc } from '@/lib/partyTime'
 import { CANONICAL_ORIGIN } from './publicOrigin'
 
@@ -23,7 +24,7 @@ const TOKEN_EXPIRY_HOURS = 45 * 24 // 45 days
 
 export function getCheckinSecret(): string {
   // Reuses the portal link secret so there is one signing key to rotate, not two.
-  return process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+  return portalSigningSecret()
 }
 
 export function hashCheckinToken(rawToken: string, secret: string): string {

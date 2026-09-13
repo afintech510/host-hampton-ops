@@ -8,10 +8,22 @@ import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
 import { Resend } from 'resend'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref, telHref } from '@/lib/emailSafety'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { logInteraction } from '@/lib/contactInteractions'
+import {
+  emptyIntakeRecord,
+  landedSomewhere,
+  missingFrom,
+  settledOk,
+} from '@/lib/publicIntake'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('canvas-bag-inquiry'))
+  if (limited) return limited
+
+  const recorded = emptyIntakeRecord()
   const body = await req.json()
   const { name, email, phone, product, colorPreference, quantity, patchIdea, occasion, marketingConsent } = body
 
@@ -44,6 +56,7 @@ export async function POST(req: NextRequest) {
     serviceInterests: ['canvas-bags'],
     marketingConsent: !!marketingConsent,
   })
+  recorded.contact = !!contactId
 
   if (contactId) {
     await enrollInSequence({
@@ -55,24 +68,20 @@ export async function POST(req: NextRequest) {
   }
 
   if (contactId) {
-    try {
-      const supabase = getSupabase()
-      await supabase.from('contact_interactions').insert({
-        contact_id: contactId,
-        type: 'form_submission',
-        summary: `Canvas bag inquiry from ${name} — ${product} x${Number(quantity)}`,
-        metadata: {
-          page: 'canvas-bags',
-          product: product || null,
-          colorPreference: colorPreference || null,
-          quantity: Number(quantity),
-          patchIdea: patchIdea || null,
-          occasion: occasion || null,
-        },
-      })
-    } catch (err) {
-      console.error('Canvas bag interaction insert error (non-fatal):', err)
-    }
+    // Through `logInteraction` (rules 11 and 19).
+    recorded.interaction = await logInteraction(getSupabase(), {
+      contactId,
+      type: 'form_submission',
+      summary: `Canvas bag inquiry from ${name} — ${product} x${Number(quantity)}`,
+      metadata: {
+        page: 'canvas-bags',
+        product: product || null,
+        colorPreference: colorPreference || null,
+        quantity: Number(quantity),
+        patchIdea: patchIdea || null,
+        occasion: occasion || null,
+      },
+    })
   }
 
   // Booking agent: every lead is a Party Plan. The plan is created BEFORE the
@@ -90,6 +99,7 @@ export async function POST(req: NextRequest) {
     source: 'website_form',
     tags: { source_page: 'canvas-bags', product: product || null },
   })
+  recorded.plan = !!plan.bookingId && plan.enriched !== false
 
   // Booking agent: one inbound event per inquiry (non-fatal, never blocks).
   const firstEventId = await recordInboundEvent({
@@ -112,6 +122,7 @@ export async function POST(req: NextRequest) {
       sourcePage: 'canvas-bags',
     },
   })
+  recorded.event = !!firstEventId
 
   // Provenance: the plan is created before the event (the sweep depends on
   // that order), so first_touch_event_id can only be stamped now. Fill-once
@@ -123,7 +134,7 @@ export async function POST(req: NextRequest) {
     const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
     const firstName = name.trim().split(/\s+/)[0]
 
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       resend.emails.send({
         from,
         to: ownerEmail(),
@@ -166,8 +177,33 @@ export async function POST(req: NextRequest) {
         </div>`,
       }),
     ])
+    // The OWNER notification is the one that makes a lead recoverable by hand.
+
+    recorded.ownerNotified = settledOk(results[0])
+
+    if (!recorded.ownerNotified) console.error('canvas-bag-inquiry: owner notification did NOT send —', JSON.stringify(results[0]).slice(0, 300))
+
     await notifyOwnerSms(leadSmsLine({ kind: 'canvas bag inquiry', name, phone, email, extra: `${product} x${Number(quantity)}` }))
   }
 
-  return NextResponse.json({ success: true })
+  const missing = missingFrom(recorded)
+
+  if (!landedSomewhere(recorded)) {
+
+    console.error(`canvas-bag-inquiry: NOTHING recorded for a lead from ${email} — missing ${missing.join(', ')}`)
+
+    return NextResponse.json(
+
+      { error: 'We could not save your enquiry just now. Please try again, or call us on (631) 998-9325.' },
+
+      { status: 503 },
+
+    )
+
+  }
+
+  if (missing.length) console.warn(`canvas-bag-inquiry: lead from ${email} recorded with gaps — missing ${missing.join(', ')}`)
+
+
+  return NextResponse.json({ success: true, recorded })
 }

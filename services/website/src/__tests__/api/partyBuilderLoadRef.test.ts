@@ -23,7 +23,12 @@ const mockIsAdmin = jest.fn(() => false)
 jest.mock('@/lib/adminAuth', () => ({ isAdminAuthorized: () => mockIsAdmin() }))
 
 const mockPortalRef = jest.fn<string | null, []>(() => null)
-jest.mock('@/lib/portalAuth', () => ({ getPortalBookingRef: () => mockPortalRef() }))
+// Rule 7: spread the REAL module, so a function the route starts using later is
+// not silently replaced by `undefined`.
+jest.mock('@/lib/portalAuth', () => ({
+  ...jest.requireActual('@/lib/portalAuth'),
+  getPortalBookingRef: () => mockPortalRef(),
+}))
 
 import { GET } from '@/app/api/party-builder/load/route'
 

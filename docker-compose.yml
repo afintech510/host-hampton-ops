@@ -141,6 +141,13 @@ services:
       - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - CRON_SECRET=${CRON_SECRET}
+      # The CM Cheer / LI High order book (/cm-cheer/orders). MUST be set: the
+      # routes fail closed without it, deliberately. Until 2026-09-13 the check was
+      # `process.env.CM_CHEER_PASSWORD || 'cmcheer2026'` and this variable was
+      # unset, so a literal in the public repository was the live credential over
+      # 21 real customers' contact details. Adam's own ADMIN_PASSWORD / hh_admin
+      # cookie also works on those routes.
+      - CM_CHEER_PASSWORD=${CM_CHEER_PASSWORD}
       - BREVO_API_KEY=${BREVO_API_KEY}
       - BREVO_DEFAULT_LIST_ID=${BREVO_DEFAULT_LIST_ID:-}
       - BREVO_SENDER_EMAIL=${BREVO_SENDER_EMAIL:-hosthampton295@gmail.com}

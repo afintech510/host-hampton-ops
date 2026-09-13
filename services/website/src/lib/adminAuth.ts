@@ -45,6 +45,7 @@
  */
 
 import crypto from 'crypto'
+import { portalSigningSecret } from './portalAuth'
 import { NextRequest, NextResponse } from 'next/server'
 
 const COOKIE_NAME = 'hh_admin'
@@ -58,11 +59,12 @@ const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECONDS * 1000
  * var having to reach a running container to work.
  */
 export function adminSessionSecret(): string {
-  return (
-    process.env.ADMIN_SESSION_SECRET ||
-    process.env.PORTAL_LINK_SIGNING_SECRET ||
-    'dev-secret'
-  )
+  // The final fallback goes through `portalSigningSecret()` rather than repeating
+  // the literal: one definition of "the default signing secret", and it THROWS in
+  // production rather than signing admin sessions with a string printed in the
+  // repository. See the note on that function — the same shape was found live on
+  // `/api/cm-cheer-orders`, where the published default really was the credential.
+  return process.env.ADMIN_SESSION_SECRET || portalSigningSecret()
 }
 
 /* ── Password hashing ──────────────────────────────────────────────────── */

@@ -10,10 +10,22 @@ import {
   fundraiserInquiryAutoReplyHtml,
   fundraiserInquiryNotifyHtml,
 } from '@/lib/emailTemplates'
+import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { logInteraction } from '@/lib/contactInteractions'
+import {
+  emptyIntakeRecord,
+  landedSomewhere,
+  missingFrom,
+  settledOk,
+} from '@/lib/publicIntake'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  const limited = guardRate(req, intakeRule('fundraiser-inquiry'))
+  if (limited) return limited
+
+  const recorded = emptyIntakeRecord()
   const supabase = getSupabase()
   const body = await req.json()
 
@@ -53,6 +65,7 @@ export async function POST(req: NextRequest) {
     serviceInterests: ['fundraiser'],
     marketingConsent: !!marketingConsent,
   })
+  recorded.contact = !!contactId
 
   if (contactId) {
     await enrollInSequence({
@@ -65,7 +78,9 @@ export async function POST(req: NextRequest) {
 
   // Set business fields separately (upsertContact doesn't handle these)
   if (contactId) {
-    await supabase
+    // Unchecked, so a refused write silently failed to record that this lead is
+    // an organisation — the one field the fundraiser pipeline keys on (rule 19).
+    const { error: bizErr } = await supabase
       .from('contacts')
       .update({
         is_business: true,
@@ -73,25 +88,24 @@ export async function POST(req: NextRequest) {
         business_type: organizationType || null,
       })
       .eq('id', contactId)
+    if (bizErr) console.error('fundraiser-inquiry: business fields not stored —', bizErr.message)
 
-    const { error: interactionErr } = await supabase
-      .from('contact_interactions')
-      .insert({
-        contact_id: contactId,
-        type: 'form_submission',
-        summary: `Fundraiser inquiry from ${organizationName}`,
-        metadata: {
-          page: 'fundraiser',
-          organizationName,
-          organizationType: organizationType || null,
-          estimatedQuantity: estimatedQuantity || null,
-          message: message || null,
-        },
-      })
-
-    if (interactionErr) {
-      console.error('Interaction insert error:', interactionErr)
-    }
+    // Through `logInteraction`, which is typed against
+    // `contact_interactions_type_check` (rule 11). This one already read its
+    // error, which is why it is the only interaction insert on the surface that
+    // could ever have told anybody it failed.
+    recorded.interaction = await logInteraction(supabase, {
+      contactId,
+      type: 'form_submission',
+      summary: `Fundraiser inquiry from ${organizationName}`,
+      metadata: {
+        page: 'fundraiser',
+        organizationName,
+        organizationType: organizationType || null,
+        estimatedQuantity: estimatedQuantity || null,
+        message: message || null,
+      },
+    })
   }
 
   // Booking agent: every lead is a Party Plan. The plan is created BEFORE the
@@ -107,6 +121,7 @@ export async function POST(req: NextRequest) {
     source: 'website_form',
     tags: { source_page: 'fundraiser', organization_name: organizationName, organization_type: organizationType || null },
   })
+  recorded.plan = !!plan.bookingId && plan.enriched !== false
 
   // Booking agent: one inbound event per inquiry (non-fatal, never blocks).
   const firstEventId = await recordInboundEvent({
@@ -127,6 +142,7 @@ export async function POST(req: NextRequest) {
       sourcePage: 'fundraiser',
     },
   })
+  recorded.event = !!firstEventId
 
   // Provenance: the plan is created before the event (the sweep depends on
   // that order), so first_touch_event_id can only be stamped now. Fill-once
@@ -138,7 +154,7 @@ export async function POST(req: NextRequest) {
     const resend = new Resend(process.env.RESEND_API_KEY)
     const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
 
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       resend.emails.send({
         from,
         to: email,
@@ -165,10 +181,24 @@ export async function POST(req: NextRequest) {
         }),
       }),
     ])
+    // The OWNER notification is the one that makes a lead recoverable by hand.
+    recorded.ownerNotified = settledOk(results[1])
+    if (!recorded.ownerNotified) console.error('fundraiser-inquiry: owner notification did NOT send —', JSON.stringify(results[1]).slice(0, 300))
     await notifyOwnerSms(leadSmsLine({ kind: 'fundraiser lead', name: `${contactName} (${organizationName})`, phone, email, extra: estimatedQuantity ? `qty ${estimatedQuantity}` : null }))
   } else {
     console.warn('RESEND_API_KEY not set — skipping fundraiser inquiry emails')
   }
 
-  return NextResponse.json({ success: true })
+  const missing = missingFrom(recorded)
+  if (!landedSomewhere(recorded)) {
+    console.error(`fundraiser-inquiry: NOTHING recorded for a lead from ${email} — missing ${missing.join(', ')}`)
+    return NextResponse.json(
+      { error: 'We could not save your enquiry just now. Please try again, or call us on (631) 998-9325.' },
+      { status: 503 },
+    )
+  }
+
+  if (missing.length) console.warn(`fundraiser-inquiry: lead from ${email} recorded with gaps — missing ${missing.join(', ')}`)
+
+  return NextResponse.json({ success: true, recorded })
 }

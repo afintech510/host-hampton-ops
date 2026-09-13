@@ -6,7 +6,7 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { ticketConfirmationHtml, ticketPurchaseNotifyHtml, bookingConfirmationHtml, giftCardHtml, giftCardNotifyHtml, giftCardPurchaseConfirmHtml, partyDepositReceivedHtml, partyAdminNewBookingHtml, partyPaymentReceivedHtml, studioRentalConfirmationHtml } from '@/lib/emailTemplates'
 import { calculateCardFee, formatMoney } from '@/lib/partyPricing'
-import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
+import { generatePortalToken, buildPortalUrl, portalSigningSecret } from '@/lib/portalAuth'
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest, enqueuePartyReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
@@ -270,7 +270,7 @@ export async function POST(req: NextRequest) {
       // Portal magic link. Minted only when the email that carries it is going to
       // be sent — one booking already holds 15 live tokens (link 14, §1) and a
       // redelivery minting another is pure token sprawl.
-      const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+      const portalSecret = portalSigningSecret()
       const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
       if (stuFirstTime) {
         const { error: tokErr } = await supabase.from('portal_tokens').insert({
@@ -500,7 +500,7 @@ export async function POST(req: NextRequest) {
 
     // Portal magic link for the receipt email — minted only when that email is
     // going to be sent.
-    const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+    const portalSecret = portalSigningSecret()
     const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
     if (pbFirstTime) {
       const { error: tokErr } = await supabase.from('portal_tokens').insert({
@@ -1640,7 +1640,7 @@ export async function POST(req: NextRequest) {
         if (pbcModErr) console.error('Modification log error (non-fatal):', pbcModErr.message)
 
         // Generate portal link
-        const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+        const portalSecret = portalSigningSecret()
         const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
         const { error: pbcTokErr } = await supabase.from('portal_tokens').insert({
           booking_id: bookingId,
@@ -1803,7 +1803,7 @@ export async function POST(req: NextRequest) {
 
         // Send payment receipt to customer (confirm-session no longer sends emails)
         if (process.env.RESEND_API_KEY && m.contactEmail) {
-          const portalSecret = process.env.PORTAL_LINK_SIGNING_SECRET || 'dev-secret'
+          const portalSecret = portalSigningSecret()
           const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret)
           const { error: pbpTokErr } = await supabase.from('portal_tokens').insert({
             booking_id: bookingId,
