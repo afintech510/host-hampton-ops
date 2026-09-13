@@ -49,6 +49,14 @@ export const dynamic = 'force-dynamic'
  */
 const MAX_PER_TICK = 5
 
+/**
+ * The `campaign_type` values this route may send. Everything else on the shared
+ * `scheduled_campaigns` table belongs to a different sender.
+ *
+ * Not exported, for the same reason MAX_PER_TICK is not.
+ */
+const EMAIL_CAMPAIGN_TYPES = new Set(['email', 'event_update', 'marketing'])
+
 export async function GET(req: NextRequest) {
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -124,6 +132,42 @@ export async function GET(req: NextRequest) {
         await supabase.from('scheduled_campaigns').update({ status: 'scheduled' }).eq('id', campaign.id)
         deferred++
         notes.push(`${campaign.id}: BREVO_DEFAULT_LIST_ID is not configured — returned to scheduled`)
+        continue
+      }
+
+      /**
+       * This route is an EMAIL sender — `sendCampaign` builds a Brevo email
+       * campaign against list 3. `scheduled_campaigns` is shared with the admin
+       * SMS blast, which has its own sender in `/api/admin/campaigns/[id]` and
+       * its own consent filter; measured 2026-09-13, the table holds 6 rows with
+       * `campaign_type = 'sms'` (5 sent, 1 draft).
+       *
+       * Nothing here used to look at `campaign_type` at all. An SMS row that
+       * reached `status = 'scheduled'` would have been claimed by this loop and
+       * emailed to 944 people. It was saved only by an accident of the data —
+       * every SMS row has a NULL `body_html`, so it hit the empty-body guard
+       * below and was recorded `failed` with the note "no body_html", which is
+       * a true sentence about the wrong problem (rule 10's expensive half: a
+       * guardrail must not say it stopped something it did not).
+       *
+       * Classified, not inferred (rule 4). An unrecognised type is refused
+       * rather than assumed to be email.
+       *
+       * The allowlist is taken from `scheduled_campaigns_campaign_type_check`,
+       * read out of `pg_constraint` rather than guessed (rule 13): the column
+       * permits 'event_update', 'marketing', 'email' and 'sms'. Only the data
+       * carries the first two today, and an allowlist written from the DATA
+       * would have refused a perfectly good 'marketing' campaign the first time
+       * anybody created one.
+       */
+      if (!EMAIL_CAMPAIGN_TYPES.has(campaign.campaign_type)) {
+        await supabase.from('scheduled_campaigns').update({ status: 'draft' }).eq('id', campaign.id)
+        failed++
+        notes.push(
+          `${campaign.id}: campaign_type "${campaign.campaign_type}" is not an email campaign — ` +
+            `this route only sends email. Returned to draft, NOT emailed.`
+        )
+        console.warn(`cron:campaigns refused non-email type "${campaign.campaign_type}" on ${campaign.id}`)
         continue
       }
 

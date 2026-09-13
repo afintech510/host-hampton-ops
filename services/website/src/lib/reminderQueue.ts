@@ -160,6 +160,16 @@ export type SendOutcome =
   | { kind: 'skipped'; reason: string }
   | { kind: 'retry'; reason: string }
   | { kind: 'failed'; reason: string }
+  /**
+   * Not now, but not wrong either — try again at `until`.
+   *
+   * Distinct from `retry` in the one way that matters: it does NOT spend an
+   * attempt. A reminder that comes due at 2am and is held for quiet hours would
+   * otherwise burn all four attempts against the clock and reach `failed`
+   * having never been handed to a provider. `scheduled_for` moves, so the row
+   * is not re-read until the reason to defer has actually passed.
+   */
+  | { kind: 'deferred'; reason: string; until: Date }
 
 export const MAX_ATTEMPTS = 4
 
@@ -174,7 +184,9 @@ export async function finishReminder(
   reminder: { id: string; attempts?: number | null },
   outcome: SendOutcome
 ): Promise<void> {
-  const attempts = (reminder.attempts ?? 0) + 1
+  // A deferral is not an attempt (see SendOutcome.deferred), so it is the one
+  // outcome that leaves the counter where it found it.
+  const attempts = outcome.kind === 'deferred' ? (reminder.attempts ?? 0) : (reminder.attempts ?? 0) + 1
 
   let status: string
   let lastError: string | null = null
@@ -185,6 +197,9 @@ export async function finishReminder(
       break
     case 'skipped':
       status = 'cancelled'
+      break
+    case 'deferred':
+      status = 'pending'
       break
     case 'retry':
       // Back into the queue until the budget of attempts runs out.
@@ -204,6 +219,9 @@ export async function finishReminder(
     last_error: lastError,
   }
   if (outcome.kind === 'delivered') payload.sent_at = new Date().toISOString()
+  // A deferred row must not come back until its reason has passed, or the next
+  // tick simply defers it again and the queue spins.
+  if (outcome.kind === 'deferred') payload.scheduled_for = outcome.until.toISOString()
   // A row going back to 'pending' must not look claimed, or nothing re-reads it.
   if (status === 'pending') payload.claimed_at = null
 

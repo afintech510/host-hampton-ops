@@ -45,6 +45,7 @@ import { loadActiveExperiment, sequenceTargetKey } from '@/lib/experiments/load'
 import { assignVariant, recordVariantEvent } from '@/lib/experiments/assign'
 import { rewriteTrackedLinks } from '@/lib/experiments/track'
 import { checkFreshness, sequenceMaxLatenessMs } from '@/lib/scheduleFreshness'
+import { etToUtc } from '@/lib/partyTime'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -868,7 +869,24 @@ export function dueAt(
   if (step.delay_reference === 'event_date' && meta.event_date) {
     field = 'metadata.event_date'
     raw = String(meta.event_date)
-    reference = new Date(`${raw}T12:00:00`)
+    /**
+     * `new Date(`${raw}T12:00:00`)` parses in the PROCESS timezone, which on
+     * this container is UTC — the same defect that put every reminder four to
+     * five hours early. Milder here (a sequence step is relationship-anchored
+     * and the cron runs every fifteen minutes), but it is the same shape, and
+     * one instance left behind is the one the next person copies.
+     *
+     * The strict `YYYY-MM-DD` test is load-bearing, not decoration. The old
+     * expression produced an Invalid Date for anything that was not a bare
+     * date — a full timestamp in this field concatenated into
+     * `…+00:00T12:00:00` — and `phase4Review.test.ts` asserts that such a value
+     * is reported `unreadable` for a human to look at. `etToUtc` slices the
+     * first ten characters, so converting without this guard would have
+     * silently started INTERPRETING anomalous data that the surface had
+     * deliberately been refusing (rule 15: an input that cannot be interpreted
+     * is dropped, never guessed at). Same instant, same refusals.
+     */
+    reference = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? etToUtc(raw, 12, 0) : new Date(NaN)
   } else if (stepNumber === 1) {
     field = 'enrolled_at'
     raw = String(enrollment.enrolled_at)

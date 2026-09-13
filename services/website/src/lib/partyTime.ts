@@ -62,6 +62,28 @@ export function etDateString(instant: Date = new Date()): string {
 }
 
 /**
+ * The Eastern calendar date `offsetDays` away from `dateStr` (YYYY-MM-DD).
+ *
+ * Pure calendar arithmetic, deliberately done on a NOON-UTC anchor: adding days
+ * to a midnight anchor can land on the far side of a DST change and come back
+ * with the wrong calendar day, and adding them to a local-time `Date` reopens
+ * exactly the UTC-box bug `etToUtc` exists to close. Noon is twelve hours from
+ * either boundary, so a ±n-day shift can never cross one.
+ *
+ * Returns '' for an unreadable date rather than an Invalid Date, because the
+ * callers' next move is to build a `scheduled_for` out of it and
+ * `Invalid Date.toISOString()` THROWS — which, inside the non-fatal try/catch
+ * every enqueuer has, silently drops the customer's whole reminder set.
+ */
+export function shiftEtDate(dateStr: string, offsetDays: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(String(dateStr ?? ''))) return ''
+  const anchor = new Date(`${String(dateStr).slice(0, 10)}T12:00:00Z`)
+  if (!Number.isFinite(anchor.getTime())) return ''
+  anchor.setUTCDate(anchor.getUTCDate() + offsetDays)
+  return anchor.toISOString().slice(0, 10)
+}
+
+/**
  * Convert an Eastern wall-clock date + time to the correct UTC instant.
  *
  * This exists because the server runs in UTC (see lib/googleCalendar.ts), so

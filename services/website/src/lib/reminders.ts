@@ -2,6 +2,7 @@ import { getSupabase } from '@/lib/supabase'
 import { enqueueCheckinReminders } from '@/lib/checkinReminders'
 import { findContactsByEmail } from '@/lib/contactLookup'
 import { enqueueReminders, type ReminderRow } from '@/lib/reminderQueue'
+import { etToUtc, shiftEtDate } from '@/lib/partyTime'
 
 // Time parsing / timezone conversion lives in lib/partyTime.ts so the check-in
 // scheduler can share it without a circular import. Re-exported here because
@@ -66,6 +67,62 @@ async function resolveContact(supabase: Supa, email: string, label: string): Pro
   return { kind: 'found', contact: rows[0] }
 }
 
+/**
+ * When a reminder `offsetDays` from `dateStr` should fire, at `hourEt` EASTERN.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WHY THIS REPLACED `setHours`. Every enqueuer in this file used to build its
+ * times as `new Date(dateStr + 'T12:00:00')` followed by `.setDate()` and
+ * `.setHours(10, 0, 0, 0)`. On a UTC box — and the container IS UTC, verified
+ * 2026-09-13 with no `TZ` set — `setHours(10)` means 10:00 **UTC**, which is
+ * 6am Eastern in summer and 5am in winter. All ten reminder types were
+ * scheduled four to five hours before the hour they were written for:
+ *
+ *   booking_email_1day   "Tomorrow's the big day!"      → 6am ET, not 10am
+ *   party_balance_t1/t2  balance chase                  → 6am ET, not 10am
+ *   party_thank_you_t1   thank-you + review link        → 6am ET, not 10am
+ *   party_admin_unpaid_dayof  owner's unpaid alert      → 3am ET, not 7am
+ *   event_email_dayof    "See you today!"               → 4am ET, not 8am
+ *   event_sms_1day       an SMS                         → 6am ET (5am in EST)
+ *   booking_sms_1day     an SMS                         → 8am EDT, 7am in EST
+ *
+ * The last two are the reason this is not cosmetic. The TCPA's quiet-hours rule
+ * permits marketing calls and texts only between 8am and 9pm in the RECIPIENT'S
+ * local time; `event_sms_1day` broke it year-round and `booking_sms_1day` broke
+ * it for the half of the year the US is on standard time — a bug that is legal
+ * in summer and unlawful in winter, which is precisely what hard-coding an
+ * offset instead of converting a timezone buys you.
+ *
+ * `lib/partyTime.ts` has documented this exact hazard since link 12 ("the
+ * `new Date(date + 'T12:00:00')` + `setHours()` pattern used elsewhere silently
+ * schedules in UTC"), and `checkinReminders.ts`, `checkinAuth.ts` and
+ * `birthday-rebooking` were each fixed to use `etToUtc`. This file — which
+ * RE-EXPORTS `etToUtc` on line 10 and is the enqueuer every party, booking and
+ * ticket reminder passes through — was the one that never was. Hard-won rule 11
+ * in its sharpest form: a concept implemented twice, one right and one wrong,
+ * and the wrong one is the one that runs.
+ *
+ * Returns `null` rather than an Invalid Date when the date cannot be read: the
+ * old code pushed `Invalid Date.toISOString()`, which THROWS, and the throw was
+ * swallowed by the "non-fatal" try/catch every caller wraps this in — so one
+ * malformed `party_date` silently cost a customer their entire reminder set
+ * (rule 12: "could not work out when" is not "no reminders needed").
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+function etAt(dateStr: string, offsetDays: number, hourEt: number, label: string): Date | null {
+  const shifted = shiftEtDate(dateStr, offsetDays)
+  if (!shifted) {
+    console.error(`${label}: unreadable date "${dateStr}" — cannot schedule this reminder`)
+    return null
+  }
+  const at = etToUtc(shifted, hourEt, 0)
+  if (!Number.isFinite(at.getTime())) {
+    console.error(`${label}: could not convert ${shifted} ${hourEt}:00 ET to an instant`)
+    return null
+  }
+  return at
+}
+
 /** Log what the queue did, so a refused insert is never silent again. */
 async function flush(supabase: Supa, rows: ReminderRow[], label: string): Promise<void> {
   if (rows.length === 0) {
@@ -99,12 +156,12 @@ export async function enqueueEventReminders({
     if (resolved.kind !== 'found') return
     const contact = resolved.contact
 
-    const eventDateObj = new Date(eventDate + 'T12:00:00')
     const now = new Date()
     const rows: ReminderRow[] = []
 
-    const push = (type: string, when: Date, channel: 'email' | 'sms') => {
-      if (when <= now) return
+    const push = (type: string, offsetDays: number, hourEt: number, channel: 'email' | 'sms') => {
+      const when = etAt(eventDate, offsetDays, hourEt, `reminders:event ${eventId} ${type}`)
+      if (!when || when <= now) return
       rows.push({
         contact_id: contact.id,
         reminder_type: type,
@@ -115,24 +172,16 @@ export async function enqueueEventReminders({
       })
     }
 
-    // 3 days before (email)
-    const threeDaysBefore = new Date(eventDateObj)
-    threeDaysBefore.setDate(threeDaysBefore.getDate() - 3)
-    threeDaysBefore.setHours(10, 0, 0, 0)
-    push('event_email_3day', threeDaysBefore, 'email')
+    // 3 days before, 10am Eastern (email)
+    push('event_email_3day', -3, 10, 'email')
 
-    // Day of (email) — morning of event
-    const dayOf = new Date(eventDateObj)
-    dayOf.setHours(8, 0, 0, 0)
-    push('event_email_dayof', dayOf, 'email')
+    // Day of, 8am Eastern (email) — morning of event
+    push('event_email_dayof', 0, 8, 'email')
 
-    // 1 day before (SMS) — only if opted in. Re-checked at SEND time too: this
-    // row is written up to months before it is delivered.
+    // 1 day before, 10am Eastern (SMS) — only if opted in. Re-checked at SEND
+    // time too: this row is written up to months before it is delivered.
     if (contact.sms_opt_in) {
-      const oneDayBefore = new Date(eventDateObj)
-      oneDayBefore.setDate(oneDayBefore.getDate() - 1)
-      oneDayBefore.setHours(10, 0, 0, 0)
-      push('event_sms_1day', oneDayBefore, 'sms')
+      push('event_sms_1day', -1, 10, 'sms')
     }
 
     await flush(supabase, rows, `reminders:event ${eventId}`)
@@ -159,12 +208,12 @@ export async function enqueueBookingReminders({
     if (resolved.kind !== 'found') return
     const contact = resolved.contact
 
-    const partyDateObj = new Date(partyDate + 'T12:00:00')
     const now = new Date()
     const rows: ReminderRow[] = []
 
-    const push = (type: string, when: Date, channel: 'email' | 'sms') => {
-      if (when <= now) return
+    const push = (type: string, offsetDays: number, hourEt: number, channel: 'email' | 'sms') => {
+      const when = etAt(partyDate, offsetDays, hourEt, `reminders:booking ${bookingRef} ${type}`)
+      if (!when || when <= now) return
       rows.push({
         contact_id: contact.id,
         reminder_type: type,
@@ -175,21 +224,11 @@ export async function enqueueBookingReminders({
       })
     }
 
-    const sevenDaysBefore = new Date(partyDateObj)
-    sevenDaysBefore.setDate(sevenDaysBefore.getDate() - 7)
-    sevenDaysBefore.setHours(10, 0, 0, 0)
-    push('booking_email_7day', sevenDaysBefore, 'email')
-
-    const oneDayBefore = new Date(partyDateObj)
-    oneDayBefore.setDate(oneDayBefore.getDate() - 1)
-    oneDayBefore.setHours(10, 0, 0, 0)
-    push('booking_email_1day', oneDayBefore, 'email')
+    push('booking_email_7day', -7, 10, 'email')
+    push('booking_email_1day', -1, 10, 'email')
 
     if (contact.sms_opt_in) {
-      const smsOneDayBefore = new Date(partyDateObj)
-      smsOneDayBefore.setDate(smsOneDayBefore.getDate() - 1)
-      smsOneDayBefore.setHours(12, 0, 0, 0)
-      push('booking_sms_1day', smsOneDayBefore, 'sms')
+      push('booking_sms_1day', -1, 12, 'sms')
     }
 
     await flush(supabase, rows, `reminders:booking ${bookingRef}`)
@@ -223,9 +262,10 @@ export async function enqueueReviewRequest({
 
     if (!contact.sms_opt_in) return
 
-    const reviewDate = new Date(eventDate + 'T14:00:00')
-    reviewDate.setDate(reviewDate.getDate() + 1)
-    if (reviewDate <= new Date()) return
+    // The day after, 2pm EASTERN. This one was `new Date(eventDate + 'T14:00:00')`,
+    // i.e. 2pm UTC — 10am ET — so the review text went out four hours early.
+    const reviewDate = etAt(eventDate, 1, 14, `reminders:review ${referenceId}`)
+    if (!reviewDate || reviewDate <= new Date()) return
 
     await flush(
       supabase,
@@ -261,12 +301,12 @@ export async function enqueuePartyReminders({
     if (resolved.kind !== 'found') return
     const contact = resolved.contact
 
-    const partyDateObj = new Date(partyDate + 'T12:00:00')
     const now = new Date()
     const rows: ReminderRow[] = []
 
-    const push = (type: string, when: Date) => {
-      if (when <= now) return
+    const push = (type: string, offsetDays: number, hourEt: number) => {
+      const when = etAt(partyDate, offsetDays, hourEt, `reminders:party ${bookingRef} ${type}`)
+      if (!when || when <= now) return
       rows.push({
         contact_id: contact.id,
         reminder_type: type,
@@ -277,28 +317,17 @@ export async function enqueuePartyReminders({
       })
     }
 
-    // T-2 and T-1 balance reminders. Both re-check the balance at SEND time —
-    // a customer who pays in between is not chased.
-    const twoDaysBefore = new Date(partyDateObj)
-    twoDaysBefore.setDate(twoDaysBefore.getDate() - 2)
-    twoDaysBefore.setHours(10, 0, 0, 0)
-    push('party_balance_t2', twoDaysBefore)
+    // T-2 and T-1 balance reminders, 10am Eastern. Both re-check the balance at
+    // SEND time — a customer who pays in between is not chased.
+    push('party_balance_t2', -2, 10)
+    push('party_balance_t1', -1, 10)
 
-    const oneDayBefore = new Date(partyDateObj)
-    oneDayBefore.setDate(oneDayBefore.getDate() - 1)
-    oneDayBefore.setHours(10, 0, 0, 0)
-    push('party_balance_t1', oneDayBefore)
+    // Day-of admin alert, 7am Eastern — goes to the owner, not the customer.
+    // This was firing at 3am local, which is a phone call nobody wants.
+    push('party_admin_unpaid_dayof', 0, 7)
 
-    // Day-of admin alert — goes to the owner, not the customer.
-    const dayOf = new Date(partyDateObj)
-    dayOf.setHours(7, 0, 0, 0)
-    push('party_admin_unpaid_dayof', dayOf)
-
-    // T+1 thank-you.
-    const dayAfter = new Date(partyDateObj)
-    dayAfter.setDate(dayAfter.getDate() + 1)
-    dayAfter.setHours(10, 0, 0, 0)
-    push('party_thank_you_t1', dayAfter)
+    // T+1 thank-you, 10am Eastern.
+    push('party_thank_you_t1', 1, 10)
 
     await flush(supabase, rows, `reminders:party ${bookingRef}`)
 

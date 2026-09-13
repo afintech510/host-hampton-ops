@@ -293,6 +293,55 @@ describe('finishReminder', () => {
     )
     expect(fake.tables.scheduled_reminders[0].status).toBe('failed')
   })
+
+  /**
+   * `deferred` — the quiet-hours outcome. It is deliberately NOT `retry`, and
+   * these three properties are the whole reason it is its own kind.
+   */
+  it('deferred → pending, UNCLAIMED, and scheduled_for moved to the window opening', async () => {
+    const { finishReminder } = await import('@/lib/reminderQueue')
+    const fake = await row()
+    fake.tables.scheduled_reminders[0].claimed_at = '2026-10-01T14:00:00.000Z'
+    const until = new Date('2026-10-09T12:00:00.000Z')
+    await finishReminder(fake.supabase, { id: 'aaaaaaaa-0000-4000-8000-000000000001', attempts: 0 }, {
+      kind: 'deferred', reason: 'quiet_hours: 06:00 local …', until,
+    })
+    const r = fake.tables.scheduled_reminders[0]
+    expect(r.status).toBe('pending')
+    expect(r.claimed_at).toBeNull()
+    expect(r.scheduled_for).toBe(until.toISOString())
+    expect(r.last_outcome).toContain('quiet_hours')
+  })
+
+  it('deferred does NOT spend an attempt — a 2am row must not exhaust its budget on the clock', async () => {
+    const { finishReminder } = await import('@/lib/reminderQueue')
+    const fake = await row(2)
+    await finishReminder(fake.supabase, { id: 'aaaaaaaa-0000-4000-8000-000000000001', attempts: 2 }, {
+      kind: 'deferred', reason: 'quiet_hours', until: new Date('2026-10-09T12:00:00.000Z'),
+    })
+    expect(fake.tables.scheduled_reminders[0].attempts).toBe(2)
+  })
+
+  it('deferred never reaches "failed", however many times it happens', async () => {
+    const { finishReminder, MAX_ATTEMPTS } = await import('@/lib/reminderQueue')
+    const fake = await row(MAX_ATTEMPTS)
+    await finishReminder(
+      fake.supabase,
+      { id: 'aaaaaaaa-0000-4000-8000-000000000001', attempts: MAX_ATTEMPTS },
+      { kind: 'deferred', reason: 'quiet_hours', until: new Date('2026-10-09T12:00:00.000Z') }
+    )
+    expect(fake.tables.scheduled_reminders[0].status).toBe('pending')
+  })
+
+  it('a deferral is not recorded as an error — it is not a failure', async () => {
+    const { finishReminder } = await import('@/lib/reminderQueue')
+    const fake = await row()
+    await finishReminder(fake.supabase, { id: 'aaaaaaaa-0000-4000-8000-000000000001', attempts: 0 }, {
+      kind: 'deferred', reason: 'quiet_hours', until: new Date('2026-10-09T12:00:00.000Z'),
+    })
+    expect(fake.tables.scheduled_reminders[0].last_error).toBeNull()
+    expect(fake.tables.scheduled_reminders[0].sent_at).toBeUndefined()
+  })
 })
 
 /* ───────────────────────────────────────────────────────────────────────────

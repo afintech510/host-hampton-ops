@@ -27,6 +27,8 @@ import { isCheckinReminderType } from '@/lib/checkinReminders'
 import { asLedgerEntityId, claimReminder, finishReminder, isMarketingReminder, type SendOutcome } from '@/lib/reminderQueue'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { checkFreshness, reminderMaxLatenessMs } from '@/lib/scheduleFreshness'
+import { checkSmsQuietHours } from '@/lib/quietHours'
+import { optedOutReason } from '@/lib/sequences/processor'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,7 +117,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, due: 0, message: 'no reminders due', configured })
   }
 
-  const tally: Record<string, number> = { delivered: 0, skipped: 0, retry: 0, failed: 0, lost: 0, unavailable: 0 }
+  // `deferred` is counted here rather than folded into `skipped`: a tick that
+  // held six texts for quiet hours and a tick that suppressed six for opt-out
+  // must not report the same number (rule 10).
+  const tally: Record<string, number> = { delivered: 0, skipped: 0, deferred: 0, retry: 0, failed: 0, lost: 0, unavailable: 0 }
   /** Of the skips, how many were "too late to be true" rather than a consent stop. */
   let stale = 0
   const reasons: string[] = []
@@ -176,7 +181,8 @@ export async function GET(req: NextRequest) {
 
   console.log(
     `cron:reminders due=${reminders.length} delivered=${tally.delivered} skipped=${tally.skipped} ` +
-      `stale=${stale} retry=${tally.retry} failed=${tally.failed} lost=${tally.lost} unavailable=${tally.unavailable}`
+      `deferred=${tally.deferred} stale=${stale} retry=${tally.retry} failed=${tally.failed} ` +
+      `lost=${tally.lost} unavailable=${tally.unavailable}`
   )
 
   return NextResponse.json({ ok: true, due: reminders.length, ...tally, stale, reasons, configured })
@@ -222,6 +228,24 @@ async function dispatch(
   if (reminder.channel === 'sms') {
     if (!configured.sms) return { kind: 'retry', reason: 'unconfigured: no SMS provider credential' }
 
+    /**
+     * Quiet hours, before any consent branch and before any provider call.
+     *
+     * This is the last point every SMS path converges on, and the only one that
+     * can be sure of the hour: `event-reminders` enqueues `scheduled_for: now`,
+     * so its send time is whatever time of day that job is scheduled at
+     * cron-job.org — a value this repository cannot see. Deferred, never
+     * cancelled, and without spending an attempt. See `lib/quietHours.ts`.
+     */
+    const window = checkSmsQuietHours(new Date())
+    if (window.kind === 'quiet') {
+      return { kind: 'deferred', reason: window.reason, until: window.until }
+    }
+    if (window.kind === 'unreadable') {
+      // Rule 12: an hour we could not resolve is not an hour we may text in.
+      return { kind: 'retry', reason: window.reason }
+    }
+
     // The check-in link is TRANSACTIONAL — it is about a party the customer has
     // already booked and paid a deposit on, so it is not gated on the marketing
     // sms_opt_in flag (most customers never tick that box, and gating on it
@@ -237,7 +261,32 @@ async function dispatch(
         return { kind: 'skipped', reason: 'opted_out: explicit STOP on file' }
       }
     } else {
-      if (!contact?.sms_opt_in) return { kind: 'skipped', reason: 'opted_out: sms_opt_in is not true' }
+      /**
+       * `optedOutReason` is IMPORTED, not restated (rule 11). It is the one
+       * definition of "may we message this person", and this branch was the
+       * sixth reader of that question: it checked `sms_opt_in` alone and never
+       * `contacts.status`, so somebody an admin had marked `unsubscribed` would
+       * still have been texted — the exact defect link 17 found in the admin SMS
+       * campaign send and the sequence processor's comment claims was "closed
+       * here rather than left to a sixth reader".
+       *
+       * Measured 2026-09-13 before changing it: `contacts.status` holds only
+       * 'lead' (791) and 'customer' (429) and has NEVER held 'unsubscribed', so
+       * this had wronged nobody. It is the first admin unsubscribe that would
+       * have found it, silently, by texting someone who had asked us not to.
+       *
+       * Both checks, in this order, and the first one is NOT redundant:
+       * `optedOutReason` tests `sms_opt_in === false`, so on a nullable column
+       * it passes a NULL straight through as consent. `sms_opt_in` is nullable
+       * (706 false / 514 true / 0 null today — but "0 null today" is a fact
+       * about the data, not a constraint, and a new row can be inserted without
+       * it). An absent answer is not a yes.
+       */
+      if (contact?.sms_opt_in !== true) {
+        return { kind: 'skipped', reason: 'opted_out: sms_opt_in is not true' }
+      }
+      const stop = optedOutReason(contact, 'sms')
+      if (stop) return { kind: 'skipped', reason: `opted_out: ${stop}` }
       if (!contact?.phone) return { kind: 'skipped', reason: 'no_phone' }
     }
 
