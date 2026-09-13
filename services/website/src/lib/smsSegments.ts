@@ -79,6 +79,81 @@ export function smsUnits(text: string, encoding: SmsEncoding = smsEncodingOf(tex
   return units
 }
 
+/* ── Sanitising into GSM-7 (plan §21.2) ────────────────────────────────────
+ *
+ * The counter above has been right since §20 and nothing called it. Meanwhile
+ * `leadSmsLine` joined its parts with ' · ' and `reviewerSmsBody` opened with
+ * `[code · type]` — U+00B7, one character, outside the alphabet, and every
+ * owner SMS in the system has been billed at 67 characters per segment instead
+ * of 160 ever since. Roughly 2.3x, across sixteen call sites, invisibly.
+ *
+ * So this is a converter, not another counter. It is applied at the ONE choke
+ * point every owner SMS passes through (`notifyOwnerSms`), for the reason the
+ * mail-template work landed on: fixing the sixteen literals is a fix, fixing
+ * the choke point is a guarantee. The literals are fixed too — but a model
+ * writes "kid's" with a curly apostrophe and no literal fix can reach that.
+ *
+ * Deliberately NOT applied to customer-facing sends. Changing what a customer
+ * reads is a different decision from changing what it costs to tell Adam.
+ */
+
+/** Non-GSM characters we can say something sensible about. */
+const GSM_REPLACEMENTS: Record<string, string> = {
+  '·': '-', '•': '-', '‣': '-', '▪': '-', '●': '-',
+  '‘': "'", '’': "'", '‚': "'", '‛': "'", '′': "'",
+  '“': '"', '”': '"', '„': '"', '″': '"',
+  '«': '"', '»': '"',
+  '–': '-', '—': '-', '‒': '-', '―': '-', '−': '-',
+  '…': '...',
+  '⚠': '!!', '⚠️': '!!', '‼': '!!', '❗': '!',
+  '✓': 'OK', '✔': 'OK', '✅': 'OK',
+  '✗': 'X', '✘': 'X', '✕': 'X', '❌': 'X',
+  '→': '->', '⇒': '->', '←': '<-', '⇐': '<-',
+  ' ': ' ', ' ': ' ', ' ': ' ', ' ': ' ', ' ': ' ',
+  '​': '', '﻿': '',
+  '°': 'deg', '™': '(TM)', '©': '(c)', '®': '(R)',
+  '½': '1/2', '¼': '1/4', '¾': '3/4',
+  '––': '-', '×': 'x', '⁄': '/',
+}
+
+function isGsm(ch: string): boolean {
+  return GSM_BASIC_SET.has(ch) || GSM_EXTENDED_SET.has(ch)
+}
+
+/** Every code point of `s` is GSM. Written as a loop, not `[...s].every`, so
+ *  the module keeps compiling under the repo's ES5 downlevel target. */
+function allGsm(s: string): boolean {
+  for (const ch of s) if (!isGsm(ch)) return false
+  return true
+}
+
+/**
+ * Rewrite `text` so every character is GSM-03.38, keeping the meaning where a
+ * sensible substitute exists.
+ *
+ * Three passes per character, cheapest first:
+ *   1. Already GSM — keep it. (é, ö, à, £ and € all survive; they are legal.)
+ *   2. A known substitute — '·' becomes '-', '…' becomes '...'.
+ *   3. A letter carrying a diacritic we cannot spend — decompose and drop the
+ *      accent, so 'Zoë Kovačić' becomes 'Zoe Kovacic' rather than 'Zo Kovai'.
+ *      Deleting letters out of the middle of a customer's name is the failure
+ *      mode this pass exists to avoid.
+ * Anything left (an emoji, a CJK character) is dropped: it cannot be rendered
+ * in GSM at all, and it is not worth 2.3x the bill for the rest of the message.
+ */
+export function gsm7Sanitize(text: string): string {
+  if (!text) return ''
+  let out = ''
+  for (const ch of text) {
+    if (isGsm(ch)) { out += ch; continue }
+    const mapped = GSM_REPLACEMENTS[ch]
+    if (mapped !== undefined) { out += mapped; continue }
+    const folded = ch.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    if (folded && allGsm(folded)) { out += folded; continue }
+  }
+  return out
+}
+
 export function smsSegmentInfo(text: string): SmsSegmentInfo {
   const body = text ?? ''
   const encoding = smsEncodingOf(body)

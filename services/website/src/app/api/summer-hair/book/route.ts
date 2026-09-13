@@ -138,7 +138,9 @@ export async function POST(req: NextRequest) {
   }
 
   const endTime = TIME_SLOTS[endIdx]
-  const duration = `${timeSlot} – ${endIdx + 1 < TIME_SLOTS.length ? TIME_SLOTS[endIdx + 1] : '3:00 PM'}`
+  // '-', not the en dash this used to be: it lands in an SMS, and one non-GSM
+  // character costs the WHOLE message 160 characters per segment down to 70.
+  const duration = `${timeSlot} - ${endIdx + 1 < TIME_SLOTS.length ? TIME_SLOTS[endIdx + 1] : '3:00 PM'}`
 
   // Insert booking
   const { data: booking, error } = await supabase
@@ -208,14 +210,17 @@ export async function POST(req: NextRequest) {
   const firstName = name.split(' ')[0]
 
   // SMS to the reviewers (REVIEWER_PHONES)
-  const adminSms = `New Summer Hair booking!\n${name} — ${duration}\n${partySize} ${partySize === 1 ? 'person' : 'people'} (${slotsNeeded} slots)\nServices: ${serviceList}\nEst. total: $${estimatedTotal}\nPhone: ${phone}`
+  const adminSms = `New Summer Hair booking!\n${name} - ${duration}\n${partySize} ${partySize === 1 ? 'person' : 'people'} (${slotsNeeded} slots)\nServices: ${serviceList}\nEst. total: $${estimatedTotal}\nPhone: ${phone}`
   notifyPromises.push(
     notifyOwnerSms(adminSms).catch(err => console.error('SMS to reviewers failed (non-fatal):', err))
   )
 
   // Confirmation SMS to client
   const normalizedPhone = normalizePhone(phone)
-  const clientSms = `Hi ${firstName}! You're booked for Summer Hair at Host Hampton on July 3rd, ${duration}.\n\nServices: ${serviceList}\nEst. total: $${estimatedTotal} (pay in person)\n\nSee you there! ✨`
+  // No emoji, by Adam's call (plan §21.2): a single '✨' is outside GSM-03.38
+  // and flipped this whole message to UCS-2 at 70 characters per segment, which
+  // cost an extra segment on every confirmation we have ever sent.
+  const clientSms = `Hi ${firstName}! You're booked for Summer Hair at Host Hampton on July 3rd, ${duration}.\n\nServices: ${serviceList}\nEst. total: $${estimatedTotal} (pay in person)\n\nSee you there!`
   notifyPromises.push(
     sendSMSVia('quo', normalizedPhone, clientSms).catch(err => console.error('SMS to client failed (non-fatal):', err))
   )

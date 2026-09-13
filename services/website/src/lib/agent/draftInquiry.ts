@@ -609,7 +609,6 @@ export function reviewerSmsBody(opts: {
   path: 'info_gather' | 'quote'
   summary: string
   missing: string[]
-  smsDraft: string
   previewToken: string
   revision?: boolean
   /** A guardrail hit the reviewer must see BEFORE they read the draft. */
@@ -621,17 +620,15 @@ export function reviewerSmsBody(opts: {
   // for a change and silence would be worse — so the warning leads, because a
   // reviewer skimming on a phone is exactly who an injected payment handle is
   // aimed at.
-  const warningLine = opts.warning ? `⚠ CHECK THIS: ${opts.warning}\n` : ''
+  const warningLine = opts.warning ? `!! CHECK THIS: ${opts.warning}\n` : ''
   const head = opts.revision ? 'revised draft ready' : `${opts.path === 'quote' ? 'quote' : 'info-gather'} draft ready`
   return (
-    `[${opts.reviewCode} · ${opts.partyType.replace(/_/g, ' ')}] ${head}\n` +
+    `[${opts.reviewCode} - ${opts.partyType.replace(/_/g, ' ')}] ${head}\n` +
     warningLine +
     `${opts.summary}\n` +
     missingLine +
-    `SMS: ${opts.smsDraft.slice(0, 320)}\n` +
     `Review: ${previewUrl}\n` +
-    `Reply SEND to send it, CANCEL to drop it, TEST to see it as the customer would, or just say what to change. ` +
-    `(Nothing has gone to the customer.)`
+    `Reply SEND, CANCEL, TEST, or say what to change. (Nothing has gone to the customer.)`
   )
 }
 
@@ -661,12 +658,12 @@ export function parkedSmsBody(opts: {
 }): string {
   const previewUrl = opts.previewToken ? buildReviewUrl(opts.previewToken, siteUrl()) : `${siteUrl()}/admin`
   return (
-    `[${opts.reviewCode} · ${opts.partyType.replace(/_/g, ' ')}] ⚠ DRAFT HELD — needs you\n` +
+    `[${opts.reviewCode} - ${opts.partyType.replace(/_/g, ' ')}] !! DRAFT HELD - needs you\n` +
     `${opts.summary}\n` +
     `Held because: ${opts.reason}\n` +
     `Read it: ${previewUrl}\n` +
     `It was NOT sent for approval and nothing has gone to the customer. ` +
-    `Open Admin → Inbox to edit or release it.`
+    `Open Admin > Inbox to edit or release it.`
   )
 }
 
@@ -1021,7 +1018,6 @@ export async function draftForInquiry(input: DraftForInquiryInput): Promise<Draf
         path: evaluation.path,
         summary: draft.summaryForReviewer,
         missing: evaluation.missing,
-        smsDraft,
         previewToken,
       }),
     )
@@ -1267,7 +1263,6 @@ export async function redraftForReviewer(args: {
       path: evaluation.path,
       summary: draft.summaryForReviewer,
       missing: evaluation.missing,
-      smsDraft,
       previewToken: minted?.token ?? '',
       revision: true,
       warning: guardrailError,

@@ -15,8 +15,25 @@
  */
 
 import { sendSMSVia, normalizePhone } from './sms'
+import { gsm7Sanitize, smsSegmentInfo } from './smsSegments'
 
 export const DEFAULT_OWNER_EMAIL = 'hosthampton295@gmail.com'
+
+/**
+ * Segment count above which a body is logged as an error (plan §21.2).
+ *
+ * The 1500-character truncation below is a LENGTH guard, not a COST guard, and
+ * the two are not the same thing: 1500 UCS-2 characters is 23 segments, which
+ * at Quo's $0.01/segment is $0.23 a text with nothing anywhere saying so. Rule
+ * 17 applies to money as much as to cron — "cost a cent" and "cost a quarter"
+ * look identical from outside unless something counts and says.
+ */
+const SEGMENT_WARN_DEFAULT = 3
+
+function segmentWarnThreshold(): number {
+  const n = Number(process.env.SMS_SEGMENT_WARN)
+  return Number.isFinite(n) && n > 0 ? n : SEGMENT_WARN_DEFAULT
+}
 
 /** Email address that receives owner notifications. */
 export function ownerEmail(): string {
@@ -53,7 +70,7 @@ export function reviewerPhones(): string[] {
 export async function notifyOwnerSms(body: string): Promise<number> {
   const phones = reviewerPhones()
   if (phones.length === 0) return 0
-  const text = body.length > 1500 ? body.slice(0, 1497) + '…' : body
+  const text = prepareOwnerSms(body, phones.length)
   const results = await Promise.allSettled(
     phones.map(p =>
       sendSMSVia('quo', p, text).catch(err => {
@@ -68,6 +85,31 @@ export async function notifyOwnerSms(body: string): Promise<number> {
     else console.error('notifyOwnerSms: NOT delivered to', phones[i])
   })
   return delivered
+}
+
+/**
+ * Sanitise, truncate, and cost the body of an owner SMS. Exported for tests —
+ * the guarantee this phase claims is "an owner SMS is GSM-7", and a guarantee
+ * that is not exercised is a comment.
+ *
+ * Order matters: sanitise BEFORE truncating, because sanitising changes the
+ * length (both ways — '…' becomes '...'), and truncating a UCS-2 string at 1500
+ * then converting would leave the cut in the wrong place.
+ *
+ * The truncation marker is '...' rather than the '…' it used to be, because a
+ * single ellipsis character was enough to force the whole message to UCS-2 —
+ * the truncation guard was itself doubling the bill on the messages it fired on.
+ */
+export function prepareOwnerSms(body: string, recipients = 1): string {
+  const clean = gsm7Sanitize(body ?? '')
+  const text = clean.length > 1500 ? clean.slice(0, 1497) + '...' : clean
+  const info = smsSegmentInfo(text)
+  const line =
+    `[sms-cost] ${info.segments} seg x ${recipients} recipient(s), ` +
+    `${info.encoding}, ${info.units} units: ${text.slice(0, 60).replace(/\n/g, ' ')}`
+  if (info.segments > segmentWarnThreshold()) console.error(line)
+  else console.log(line)
+  return text
 }
 
 /** One-line lead summary for an owner SMS. Keeps only the fields present. */
@@ -86,5 +128,8 @@ export function leadSmsLine(parts: {
   if (parts.phone) bits.push(parts.phone)
   if (parts.email) bits.push(parts.email)
   if (parts.extra) bits.push(parts.extra)
-  return bits.join(' · ')
+  // ' - ', not the ' · ' this used to be. U+00B7 is outside GSM-03.38, so that
+  // one separator flipped EVERY lead ping in the system to 67 characters per
+  // segment — sixteen call sites, all of them, since the day it was written.
+  return bits.join(' - ')
 }

@@ -3317,3 +3317,289 @@ still Adam's and Allie's to judge.
    rewrite those three strings as a **v3 profile**, and what Allie's voice is
    belongs to Allie. The figures are already gone.
 3. **The three proposals** from §23, unchanged and still inert.
+
+---
+
+## 25. Phase 7 — Slack as the reviewer surface (Adam, 2026-09-12) — SPEC, NOT BUILT
+
+**§12 is hereby un-deferred.** Its reasoning stands unchanged and is not
+re-argued here; what changed is that Quo now bills $0.01 per SMS *segment*, and
+measuring the actual segment count turned up a bill nobody had costed and two
+defects that would be worth fixing even if Slack were never built.
+
+Read §12 first. This section is the build.
+
+### 25.1 The arithmetic that reopened the question
+
+Three measurements, all from the code as it stands today:
+
+**Every reviewer SMS is billed as UCS-2.** `reviewerSmsBody`
+(`draftInquiry.ts:782`) opens with `[${reviewCode} · ${partyType}]`. That middle
+dot is U+00B7, and it is not in the GSM-03.38 set that our own
+`lib/smsSegments.ts` defines. One such character flips the **whole** message from
+160 characters per segment to 67. `parkedSmsBody` does the same with `⚠`, and
+`reviewerSmsBody`'s warning line adds a second one. The module's own header
+comment predicted exactly this failure — "a naive counter would have told Allie a
+150-character message was one segment when the carrier was about to bill and
+split it as three" — and then the two callers that matter most walked into it.
+
+**The preview URL is 112 characters.** `generateReviewToken` mints
+`HH-2026-0042` + `.` + `randomBytes(32).toString('hex')` — 64 hex characters
+carrying 256 bits, i.e. half the string is waste, because hex spends 8 bits of
+string on 4 bits of entropy. Add `https://www.hosthampton.com/review/` and the
+link alone is **1.7 UCS-2 segments** before a single word of the draft.
+
+**The draft is sent twice.** The message carries `SMS: ${smsDraft.slice(0,320)}`
+*and* `Review: ${previewUrl}`, which renders the same draft better.
+
+Together: a reviewer notification is ~750 characters ≈ **12 segments ≈ $0.12**,
+doubled by `REVIEWER_PHONES` having two entries. At ~16 leads/month with
+revisions, that is roughly **$15–25/month**.
+
+Note the honest size of that number. **This phase is not justified by $20/month**
+— it is justified by §12's robustness argument, and the money is what made us
+measure. If the cost were the only reason, 25.2 alone would close it.
+
+### 25.2 The four fixes that ship first, independent of Slack
+
+These are worth doing on their own and must land before any Slack code, so that
+the SMS fallback path is already cheap and correct when it becomes a fallback.
+
+1. **Make both reviewer bodies GSM-7 safe.** `·` → `-`, `⚠` → `!!`, and any
+   curly apostrophe or em dash the model produced. This is ~2.3× the bill on
+   every draft text for a one-line change.
+2. **Drop the inline `SMS: <320 chars>`** from `reviewerSmsBody`. Replace with a
+   one-line summary. The link already renders the draft, and `/review/[token]`
+   has been a real page since §20.
+3. **Shorten the link** — 25.3. This one needs migration 048 and a new route, so
+   it lands in step 2 of 25.8, not step 1 with the other three. Listed here
+   because it is still a cost fix, not a Slack fix.
+4. **Guard the cost at the choke point.** `notifyOwnerSms` truncates at 1500
+   characters, which is a *length* guard, not a *cost* guard: 1500 UCS-2
+   characters is 23 segments. Make it compute `smsSegmentInfo(text).segments`,
+   log it with the review code, and `console.error` above a
+   `SMS_SEGMENT_WARN` threshold (default 3). A long body must never again bill
+   twenty segments with nothing in the logs saying so — rule 17: "never ran" and
+   "could not have run" look identical from outside, and so do "cost $0.01" and
+   "cost $0.23".
+
+Then audit the other ~15 `notifyOwnerSms` call sites for the same two traps.
+`leadSmsLine` joins with ` · ` — **the same U+00B7** — so *every* lead ping in
+the system is UCS-2 too. One character, sixteen call sites.
+
+#### 25.2 as built (2026-09-12) — measured
+
+Done. Measured on a realistic mobile-party draft, not estimated:
+
+| | chars | encoding | segments | per recipient |
+|---|---|---|---|---|
+| before | 718 | UCS-2 | **11** | $0.11 |
+| after | 406 | GSM-7 | **3** | $0.03 |
+| lead ping (`leadSmsLine`) | 102 | GSM-7 | **1** | $0.01 |
+
+**73% off the reviewer text**, before the shortener has been built. The
+remaining 3 segments are mostly the 112-character preview URL, so 25.3 should
+take it to 2.
+
+The shape that matters: `gsm7Sanitize()` lives in `smsSegments.ts` (still a leaf
+module) and is applied **once**, in `prepareOwnerSms()`, which every owner SMS
+passes through. The sixteen literals were fixed too, but the choke point is the
+guarantee — a model writes "kid's" with a curly apostrophe and no literal fix
+reaches interpolated draft text. Same lesson as escaping at entry.
+
+The sanitiser folds a diacritic it cannot spend (`Zoë` → `Zoe`) rather than
+deleting the letter, because `Zo` out of the middle of a customer's name is a
+worse bug than the one being fixed. `é ö ü à £ €` are all legal GSM and survive
+untouched — **`ë` is not**, which a test established rather than assumed.
+
+Two things the audit turned up that the four fixes did not predict:
+
+- **`parkedSmsBody` had a second non-GSM character** — `Open Admin → Inbox`.
+  Fixing the `⚠` and the em dash left it UCS-2 anyway, and only the test
+  asserting on the real output caught it. Fixing the characters you thought of
+  is not the same as asserting the property you want.
+- **`prepareOwnerSms`'s own truncation marker was `'…'`** — the guard against an
+  over-long message was itself forcing UCS-2 on precisely the messages it fired
+  on. Now `'...'`.
+- Also fixed at source: the nudge in `agent-dispatch` (em dash) and
+  `summer-hair/book`'s `adminSms` + `duration` (em and en dash).
+
+**The one customer-facing change, and it was Adam's to make.** `summer-hair/book`'s
+*customer* SMS ended in `✨`, which made that whole message UCS-2 — an extra
+segment on every confirmation ever sent. Adam said drop it, so it is dropped. The
+sanitiser is still **not** applied to customer sends: what a customer reads is a
+brand decision, and a helper that silently rewrites it would be making that
+decision on his behalf every time a model reached for an emoji.
+
+### 25.3 Short links: `/r/<code>`
+
+**Yes, links can be shortened, and the win is a full segment.** But the answer is
+not a shortener service.
+
+**Do not use bit.ly, tinyurl, or any shared shortener.** Under US 10DLC rules,
+public shortener domains are a well-known spam signal and carriers filter
+messages containing them. Every carrier guideline says the same thing: use a link
+on a domain you own. We own one.
+
+The saving is not in the domain, it is in the token. Two changes:
+
+- **Encode the secret properly.** `randomBytes(16).toString('base64url')` is 22
+  characters carrying 128 bits, against 64 characters carrying 256. For a bearer
+  link with a 7-day TTL (§20) and rate limiting, 128 bits is not the weak part of
+  anything.
+- **Drop the review-code prefix from the URL.** It exists only so the page can
+  find the row without a lookup table. Index `preview_token_hash` instead and
+  look up by hash directly — which is a *better* shape anyway, because the prefix
+  currently leaks the review code to anyone who sees the URL.
+
+| | length | UCS-2 segs | GSM-7 segs |
+|---|---|---|---|
+| today `https://www.hosthampton.com/review/HH-2026-0042.<64 hex>` | 112 | 1.7 | 0.7 |
+| `https://hosthampton.com/r/<22 base64url>` | 48 | 0.7 | 0.3 |
+
+Route: `/r/[code]` → validate → 302 to the real destination. It is a **redirect,
+not a second credential system**: the code *is* the token, stored as an HMAC
+exactly as `reviewLink.ts` does today, so a DB read still cannot reconstruct a
+working link. Rate-limit by IP (the entropy is lower than it was; the TTL and the
+limiter are what make that safe). Drop `www.` — the site already serves both.
+
+The same route shortens a Slack permalink (25.5), which is ~78 characters raw.
+
+### 25.4 The Slack app
+
+Free plan: 90-day history, **10 app integrations workspace-wide**, 5 GB. Block
+Kit, modals, the Events API and interactivity are platform features, not plan
+features — all available on Free. Our app is 1 of the 10; that cap is the only
+thing to watch as Adam adds Drive/Calendar/Stripe apps later. §12 already
+accepted the 90-day limit: Supabase is the system of record, Slack is a view.
+
+**One channel, `#hh-leads`**, party type as a tag in the message — not three
+channels. §12's arithmetic: at ~16 leads/month, three channels is ~5 leads each.
+Split later if volume ever justifies it.
+
+Scopes (bot): `chat:write`, `chat:write.public`, `commands`, `users:read`.
+Endpoints, all new, all under `/api/slack/`:
+
+| route | purpose |
+|---|---|
+| `POST /api/slack/interactions` | Block Kit button + modal submissions |
+| `POST /api/slack/events` | thread replies as free-text revisions |
+
+**Signature verification is the first line of both handlers, and it fails closed
+when `SLACK_SIGNING_SECRET` is unset.** Same shape as `/api/webhooks/quo`, and
+for the reason the SignWell review burned in: verify against the provider's
+documented base string — Slack signs `v0:${timestamp}:${rawBody}` with HMAC-SHA256
+— and reject a timestamp older than 5 minutes. The raw body must be read before
+any JSON parsing, which in the App Router means `await req.text()`.
+
+### 25.5 `REVIEWER_CHANNEL` and the delivery seam
+
+`notifyOwnerSms` becomes the *transport*, not the *decision*. A new
+`lib/agent/notifyReviewers.ts` owns the choice:
+
+```
+REVIEWER_CHANNEL = sms | slack | both     (default: sms)
+```
+
+`both` exists for the build, not for a soak: **the cutover to `slack` happens as
+soon as the phase is complete** (Adam, 2026-09-12), not after a trial week. The
+reason a soak looked attractive was fear of Slack being down, and 25.5's fallback
+already answers that on every single send — a week of `both` would only have
+doubled the bill while proving something the fallback proves continuously.
+`both` stays in the enum as an operational escape hatch, not a schedule.
+
+The delivery order matters and is the one piece of real sequencing in this phase:
+
+1. Post to Slack (`chat.postMessage`; `thread_ts` when the draft's lead already
+   has one).
+2. `chat.getPermalink` → mint a `/r/` code for it.
+3. Send the one-segment SMS ping carrying that short link.
+
+**If step 1 or 2 fails, the SMS still sends, carrying the `/review/[token]` link
+instead.** A lead must never go silent because Slack was down — that is the
+Eleonore failure in §18 and the whole reason `parkedSmsBody` exists. The Slack
+post is best-effort; the ping is not.
+
+The resulting ping, in GSM-7, one segment, $0.01:
+
+```
+[HH-4821 - mobile party] draft ready: Sarah, Oct 12, 24 guests
+https://hosthampton.com/r/8Kq2mXp7Ld3Rw9vTnY4bZc
+```
+
+Adam kept the ping deliberately (this section's decision): **Slack can be muted,
+a text is read**, and speed-to-lead is the point. That was §12's strongest
+objection to Slack and this is the answer to it — the ping costs one segment
+instead of twelve.
+
+### 25.6 What does not change
+
+The guardrail shape is **unchanged**, and that is a requirement, not an outcome:
+
+- Approvals gate on a `SLACK_REVIEWER_USER_IDS` allowlist, checked against the
+  **verified** `user.id` in the interaction payload — the exact analogue of
+  `isReviewerPhone`, and never by message content. §4.2 holds.
+- `/api/slack/*` must not import `sendApproved.ts`. The module-graph guardrail in
+  `reviewers.ts` exists for this reason; Slack gets the same treatment, and the
+  test that asserts it gets a second subject.
+- Customer delivery stays Resend + Quo. Slack replaces the **reviewer** channel
+  only. No new path to a customer is created by this phase.
+
+What Slack *does* change, and this is the point: the actor. A verified Slack
+`user_id` maps to an `admin_users` row, so the ledger finally records **who**
+approved a message instead of the anonymous `'ADMIN'` that §11.1 names as a
+blocker. That is the capability win; the rest is ergonomics.
+
+### 25.7 Data model — migration 048
+
+This section first reserved 047. **That reservation was wrong by the time it was
+written**: link 18 (the admin-surface review) wrote and *applied* 047 to
+production the same day. A reservation in a document is not a reservation in
+Postgres — check `supabase/migrations/` and the database, not this file. This
+phase is **048**.
+
+- `inquiry_drafts`: `slack_channel text`, `slack_ts text` — so a revision replies
+  in the thread instead of starting a new one, which is what makes "thread per
+  lead" real rather than cosmetic.
+- `admin_users`: `slack_user_id text unique` — the actor mapping.
+- `short_links`: `code_hash text primary key`, `target text not null`,
+  `kind text`, `created_at`, `expires_at`, `used_count int`. HMAC only, never the
+  raw code.
+- Index `inquiry_drafts (preview_token_hash)` for the prefix-free lookup in 25.3.
+
+### 25.8 Order of work
+
+1. 25.2's four fixes + the `leadSmsLine` audit. Ships alone, cuts ~70% of the
+   bill, needs no Slack account. **Do this first even if the rest slips.**
+2. Migration 047 + `/r/[code]` + short-token minting.
+3. Slack app, manifest, signature verification, `chat.postMessage` with Block Kit.
+4. Interactions handler: Approve / Cancel / Test / Edit-modal, allowlist-gated.
+5. Events handler: thread reply → revision.
+6. `REVIEWER_CHANNEL=slack` the moment 1–5 are done and green. No soak week.
+
+`parseReviewerReply` and `resolveDraft` are **not deleted** at the end of this —
+they remain the SMS path, which remains the fallback. §12 said "keep SMS behind a
+flag rather than replacing it" and that is still right.
+
+### 25.9 Tests
+
+The ones that would have caught the defects this section found:
+
+- `reviewerSmsBody` and `parkedSmsBody` and `leadSmsLine` each return **GSM-7**
+  (`smsEncodingOf(...) === 'GSM-7'`) — asserted on the real output, not on a
+  comment claiming it.
+- A realistic reviewer body is **≤ 3 segments**; a realistic ping is **1**.
+- Slack signature: a valid signature passes; a tampered body fails; a 6-minute-old
+  timestamp fails; an **unset** `SLACK_SIGNING_SECRET` fails closed.
+- An interaction from a `user.id` outside `SLACK_REVIEWER_USER_IDS` cannot approve.
+- `chat.postMessage` throwing still sends the SMS, and that SMS carries the
+  `/review/` link rather than a broken `/r/` one.
+- `/r/` on an expired, unknown, or already-consumed code 404s and does not redirect.
+- The module-graph assertion: `/api/slack/*` does not reach `sendApproved.ts`.
+
+### 25.10 Not doing
+
+- Three channels. One `#hh-leads` with a tag until volume argues otherwise.
+- Slack for customer messages. Ever.
+- Retiring SMS. It is the fallback and the urgency ping.
+- A paid Slack plan. Free is sufficient; Supabase holds the history.

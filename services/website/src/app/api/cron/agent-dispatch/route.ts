@@ -202,7 +202,7 @@ async function nudgeStaleReviews(supabase: Supa): Promise<number> {
 
     const hours = Math.round((Date.now() - new Date(row.sent_for_review_at as string).getTime()) / 3_600_000)
     await notifyOwnerSms(
-      `[${row.review_code}] still waiting — drafted ${hours}h ago for a ${String(row.party_type).replace(/_/g, ' ')} ` +
+      `[${row.review_code}] still waiting - drafted ${hours}h ago for a ${String(row.party_type).replace(/_/g, ' ')} ` +
         `${row.contact_path === 'quote' ? 'quote' : 'info-gather'} and nobody has replied. ` +
         `Reply SEND, CANCEL, or say what to change. This is the only reminder.`,
     )
