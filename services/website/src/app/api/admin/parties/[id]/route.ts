@@ -11,7 +11,8 @@ import { draftForBookingByHand } from '@/lib/agent/manualDraft'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
 import { sendCheckinLinkSms } from '@/lib/checkinLink'
 import { enqueueCheckinReminders, cancelCheckinReminders } from '@/lib/checkinReminders'
-import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
+import { readBalanceInputs, computeBalance, sumPayments } from '@/lib/bookingBalance'
+import { logBookingChange } from '@/lib/bookingAudit'
 import {
   recordAdminPayment,
   describeLedgerOutcome,
@@ -70,12 +71,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { error } = await supabase.from('bookings').update(updates).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  await supabase.from('booking_modifications').insert({
-    booking_id: id,
-    modified_by: adminActorId(req),
-    change_summary: 'Admin edit: ' + Object.keys(updates).filter(k => k !== 'updated_at').join(', '),
-    new_data: updates,
-  })
+  await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: 'Admin edit: ' + Object.keys(updates).filter(k => k !== 'updated_at').join(', '),
+      newData: updates,
+    })
 
   // Date changes are free, so they happen often. Both check-in texts are
   // scheduled off the party start, so they have to move with it — otherwise a
@@ -165,15 +165,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (action === 'approve') {
-    await supabase.from('bookings').update({
+    // Approving emails the customer "Your Party is Confirmed!". Doing that over
+    // a status write that was refused tells a real family their party is booked
+    // when the database still says it is pending (rule 10).
+    const { data: approved, error: approveErr } = await supabase.from('bookings').update({
       status: 'approved',
       approved_at: new Date().toISOString(),
       approved_by: adminActorId(req),
       updated_at: new Date().toISOString(),
-    }).eq('id', id)
+    }).eq('id', id).select('id')
+    if (approveErr || !approved?.length) {
+      return NextResponse.json(
+        { error: `Booking NOT approved: ${approveErr?.message || 'no row matched'}. Nothing was sent to the customer.` },
+        { status: 500 },
+      )
+    }
 
-    await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: adminActorId(req), change_summary: 'Booking approved',
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: 'Booking approved',
     })
 
     // Create GCal event
@@ -241,20 +251,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       })
     }
 
-    await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: adminActorId(req), change_summary: `Changes requested: ${message}`,
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: `Changes requested: ${message}`,
     })
 
     return NextResponse.json({ ok: true, action: 'changes_requested' })
   }
 
   if (action === 'cancel') {
-    await supabase.from('bookings').update({
+    // A cancel that reports success over a refused write leaves a party live in
+    // the calendar, in the pipeline and — since the check-in reminders are
+    // cancelled below on the strength of it — with its customer still due to be
+    // texted about a party that Allie believes is off.
+    const { data: cancelled, error: cancelErr } = await supabase.from('bookings').update({
       status: 'cancelled', updated_at: new Date().toISOString(),
-    }).eq('id', id)
+    }).eq('id', id).select('id')
+    if (cancelErr || !cancelled?.length) {
+      return NextResponse.json(
+        { error: `Booking NOT cancelled: ${cancelErr?.message || 'no row matched'}` },
+        { status: 500 },
+      )
+    }
 
-    await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: adminActorId(req), change_summary: 'Booking cancelled by admin',
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: 'Booking cancelled by admin',
     })
 
     // Don't text a cancelled party's customer asking them to check in.
@@ -376,14 +398,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
     const ledgerNote = describeLedgerOutcome(ledger)
 
-    const { error: modErr } = await supabase.from('booking_modifications').insert({
-      booking_id: id,
-      modified_by: adminActorId(req),
-      change_summary:
-        `${payment_method} payment of ${formatMoney(amount_cents)} recorded. ` +
+    // `logBookingChange` reports its own failure; the payment itself stands
+    // either way, so this is not a reason to refuse.
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: `${payment_method} payment of ${formatMoney(amount_cents)} recorded. ` +
         `Balance: ${newBalance === null ? 'unchanged' : formatMoney(newBalance)}.${balanceNote} ${ledgerNote}`,
     })
-    if (modErr) console.error('record_payment: booking_modifications insert failed:', modErr.message)
 
     // Send customer receipt — only now, with a real payment row behind it.
     if (process.env.RESEND_API_KEY && booking.contact_email) {
@@ -456,12 +477,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (sid) sentVia.push('sms')
       }
 
-      await supabase.from('booking_modifications').insert({
-        booking_id: id, modified_by: adminActorId(req),
-        change_summary: sentVia.length
+      await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: sentVia.length
           ? `Portal link sent to customer via ${sentVia.join(' + ')}`
           : 'Portal link generated (no email/SMS delivery — check contact info & config)',
-      })
+    })
 
       return NextResponse.json({ ok: true, action: 'portal_link_sent', portalUrl, sentVia })
     }
@@ -487,9 +508,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Failed to send SMS — check the phone number and Quo/SMS config' }, { status: 502 })
     }
 
-    await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: adminActorId(req),
-      change_summary: `Portal link texted to ${booking.contact_phone}`,
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: `Portal link texted to ${booking.contact_phone}`,
     })
 
     return NextResponse.json({ ok: true, action: 'portal_sms_sent', to: booking.contact_phone })
@@ -525,9 +546,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       partyTime: booking.party_time,
     })
 
-    await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: adminActorId(req),
-      change_summary: `Check-in link texted to ${booking.contact_phone}`,
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: `Check-in link texted to ${booking.contact_phone}`,
     })
 
     return NextResponse.json({ ok: true, action: 'checkin_link_sent', to: booking.contact_phone })
@@ -560,7 +581,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .single()
     ).data?.sort_order ?? 0
 
-    await supabase.from('booking_line_items').insert({
+    const { error: liErr } = await supabase.from('booking_line_items').insert({
       booking_id: id,
       name,
       category: category || (unit_price_cents < 0 ? 'discount' : 'add-on'),
@@ -570,39 +591,76 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       guest_multiplied: !!guest_multiplied,
       sort_order: maxSort + 1,
     })
+    // This changes the invoice. Answering `{ok:true}` over a refused insert is
+    // the version of rule 10 that costs money.
+    if (liErr) {
+      return NextResponse.json({ error: `Line item NOT added: ${liErr.message}` }, { status: 500 })
+    }
 
-    await recalcTotals(supabase, id, booking)
-
-    await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: adminActorId(req),
-      change_summary: `Added line item: ${name} (${formatMoney(unit_price_cents)})`,
+    const totals = await recalcTotals(supabase, id, booking)
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: `Added line item: ${name} (${formatMoney(unit_price_cents)})` +
+        (totals.ok ? ` — total now ${formatMoney(totals.totalCents)}` : ` — TOTAL NOT RECALCULATED (${totals.message})`),
     })
 
-    return NextResponse.json({ ok: true, action: 'line_item_added' })
+    return NextResponse.json({
+      ok: true,
+      action: 'line_item_added',
+      totalsUpdated: totals.ok,
+      ...(totals.ok ? { totalCents: totals.totalCents, balanceCents: totals.balanceCents } : { warning: `The line item was added but the invoice total could not be recalculated (${totals.message}). Reload before quoting this customer.` }),
+    })
   }
 
   if (action === 'remove_line_item') {
     const { line_item_id } = body
     if (!line_item_id) return NextResponse.json({ error: 'line_item_id required' }, { status: 400 })
 
-    const { data: li } = await supabase
+    // Three outcomes (rule 12): a failed read is not "no such line item".
+    const { data: li, error: liReadErr } = await supabase
       .from('booking_line_items')
       .select('name')
       .eq('id', line_item_id)
       .eq('booking_id', id)
-      .single()
+      .maybeSingle()
 
+    if (liReadErr) {
+      return NextResponse.json(
+        { error: `Could not load that line item (${liReadErr.message}) — nothing was removed.` },
+        { status: 503 },
+      )
+    }
     if (!li) return NextResponse.json({ error: 'Line item not found' }, { status: 404 })
 
-    await supabase.from('booking_line_items').delete().eq('id', line_item_id)
-    await recalcTotals(supabase, id, booking)
+    // Scoped to this booking as well as the id — the read was, and the delete
+    // was not, so a line_item_id belonging to another party would have been
+    // deleted by a caller who could not even see it.
+    const { data: removed, error: delErr } = await supabase
+      .from('booking_line_items')
+      .delete()
+      .eq('id', line_item_id)
+      .eq('booking_id', id)
+      .select('id')
+    if (delErr) {
+      return NextResponse.json({ error: `Line item NOT removed: ${delErr.message}` }, { status: 500 })
+    }
+    if (!removed?.length) {
+      return NextResponse.json({ error: 'Line item not found' }, { status: 404 })
+    }
 
-    await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: adminActorId(req),
-      change_summary: `Removed line item: ${li.name}`,
+    const totals = await recalcTotals(supabase, id, booking)
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: `Removed line item: ${li.name}` +
+        (totals.ok ? ` — total now ${formatMoney(totals.totalCents)}` : ` — TOTAL NOT RECALCULATED (${totals.message})`),
     })
 
-    return NextResponse.json({ ok: true, action: 'line_item_removed' })
+    return NextResponse.json({
+      ok: true,
+      action: 'line_item_removed',
+      totalsUpdated: totals.ok,
+      ...(totals.ok ? { totalCents: totals.totalCents, balanceCents: totals.balanceCents } : { warning: `The line item was removed but the invoice total could not be recalculated (${totals.message}).` }),
+    })
   }
 
   // Studio rental: change start/end time → re-price the rental fee + recompute balance.
@@ -623,15 +681,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Update (or create) the rental line item.
     const { data: rentalLi } = await supabase
       .from('booking_line_items').select('id').eq('booking_id', id).eq('category', 'rental').limit(1).maybeSingle()
-    if (rentalLi) {
-      await supabase.from('booking_line_items').update({
-        name: rate.lineItemLabel, unit_price_cents: rate.rentalCents, quantity: 1, guest_multiplied: false,
-      }).eq('id', rentalLi.id)
-    } else {
-      await supabase.from('booking_line_items').insert({
-        booking_id: id, name: rate.lineItemLabel, category: 'rental', quantity: 1,
-        unit_price_cents: rate.rentalCents, price_type: 'flat', guest_multiplied: false, sort_order: 0,
-      })
+    // Re-pricing a studio rental IS the quote. A refused write here with a
+    // `{ok:true}` answer means the admin believes they changed the price and the
+    // customer's invoice still says the old one.
+    const rentalWrite = rentalLi
+      ? await supabase.from('booking_line_items').update({
+          name: rate.lineItemLabel, unit_price_cents: rate.rentalCents, quantity: 1, guest_multiplied: false,
+        }).eq('id', rentalLi.id).select('id')
+      : await supabase.from('booking_line_items').insert({
+          booking_id: id, name: rate.lineItemLabel, category: 'rental', quantity: 1,
+          unit_price_cents: rate.rentalCents, price_type: 'flat', guest_multiplied: false, sort_order: 0,
+        }).select('id')
+    if (rentalWrite.error || !rentalWrite.data?.length) {
+      return NextResponse.json(
+        { error: `Rental fee NOT updated: ${rentalWrite.error?.message || 'no row matched'}` },
+        { status: 500 },
+      )
     }
 
     // Update times on the booking + party_tags.
@@ -655,9 +720,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (newId) await supabase.from('bookings').update({ google_calendar_event_id: newId }).eq('id', id)
     }
 
-    await supabase.from('booking_modifications').insert({
-      booking_id: id, modified_by: adminActorId(req),
-      change_summary: `Rental time → ${startTime}–${endTime} (${rate.hours} hrs); rental fee ${formatMoney(rate.rentalCents)}`,
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: `Rental time → ${startTime}–${endTime} (${rate.hours} hrs); rental fee ${formatMoney(rate.rentalCents)}`,
     })
 
     return NextResponse.json({ ok: true, action: 'rental_edited', rentalCents: rate.rentalCents, hours: rate.hours })
@@ -666,11 +731,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 }
 
-async function recalcTotals(supabase: ReturnType<typeof getSupabase>, bookingId: string, booking: Record<string, unknown>) {
-  const { data: items } = await supabase
+/**
+ * Re-derive `total_cents` and `balance_due_cents` from the line items.
+ *
+ * The version this replaces discarded BOTH read errors, and that is worse here
+ * than anywhere else on the surface: a failed `booking_line_items` read left
+ * `items` null, the loop added nothing, and the function then **wrote
+ * `total_cents: 0` and `balance_due_cents: 0` over the booking**. So a Supabase
+ * blip while an admin added a decoration line item did not merely mis-read the
+ * invoice — it ZEROED a real customer's invoice, and answered `{ok: true}`.
+ *
+ * Link 16 found the read-becomes-a-balance shape on four webhook branches; this
+ * is the same rule 12 defect with an overwrite behind it. Three outcomes now,
+ * and a failed read writes nothing at all.
+ */
+async function recalcTotals(
+  supabase: ReturnType<typeof getSupabase>,
+  bookingId: string,
+  booking: Record<string, unknown>,
+): Promise<{ ok: true; totalCents: number; balanceCents: number } | { ok: false; message: string }> {
+  const { data: items, error: itemsErr } = await supabase
     .from('booking_line_items')
     .select('unit_price_cents, quantity, guest_multiplied')
     .eq('booking_id', bookingId)
+  if (itemsErr) {
+    console.error(`recalcTotals: line items unreadable for ${bookingId} — totals NOT rewritten:`, itemsErr.message)
+    return { ok: false, message: `line items unreadable: ${itemsErr.message}` }
+  }
 
   const guestCount = (booking.guest_count_approx as number) || 1
   let total = 0
@@ -680,21 +767,25 @@ async function recalcTotals(supabase: ReturnType<typeof getSupabase>, bookingId:
       : li.unit_price_cents * li.quantity
   }
 
-  const { data: payments } = await supabase
+  const { data: payments, error: payErr } = await supabase
     .from('booking_payments')
     .select('amount_cents, payment_type')
     .eq('booking_id', bookingId)
-
-  let paid = 0
-  for (const p of payments || []) {
-    if (p.payment_type === 'refund') paid -= p.amount_cents
-    else paid += p.amount_cents
+  if (payErr) {
+    console.error(`recalcTotals: payments unreadable for ${bookingId} — totals NOT rewritten:`, payErr.message)
+    return { ok: false, message: `payments unreadable: ${payErr.message}` }
   }
 
-  const balance = Math.max(0, total - paid)
-  await supabase.from('bookings').update({
+  const balance = Math.max(0, total - sumPayments(payments))
+  const { data: updated, error: updErr } = await supabase.from('bookings').update({
     total_cents: total,
     balance_due_cents: balance,
     updated_at: new Date().toISOString(),
-  }).eq('id', bookingId)
+  }).eq('id', bookingId).select('id')
+  if (updErr || !updated?.length) {
+    console.error(`recalcTotals: totals NOT saved for ${bookingId}:`, updErr?.message || 'no row matched')
+    return { ok: false, message: updErr?.message || 'no booking row matched' }
+  }
+
+  return { ok: true, totalCents: total, balanceCents: balance }
 }

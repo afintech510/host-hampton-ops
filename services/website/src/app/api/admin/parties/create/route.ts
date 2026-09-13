@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import { logBookingChange } from '@/lib/bookingAudit'
 import { upsertContact } from '@/lib/contacts'
 import { computeCutoffDates, generatePartyRef, formatMoney } from '@/lib/partyPricing'
 import { buildPlanSnapshot, planTotals, writeLineItems } from '@/lib/plan'
-import { generatePortalToken, buildPortalUrl } from '@/lib/portalAuth'
+import { mintPortalLink } from '@/lib/portalLinkMint'
 import { partyQuoteSentHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 import { publicOrigin } from '@/lib/publicOrigin'
@@ -104,11 +105,9 @@ export async function POST(req: NextRequest) {
     await writeLineItems(supabase, booking.id, lineItems)
 
     // Log creation
-    await supabase.from('booking_modifications').insert({
-      booking_id: booking.id,
-      modified_by: adminActorId(req),
-      change_summary: 'Party Plan created by admin',
-      new_data: { contactName, contactEmail, partyDate, partyTime, guestCount: guests, packageType, lockDate },
+    await logBookingChange(supabase, {
+      bookingId: booking.id, actor: adminActorId(req),
+      summary: 'Party Plan created by admin',
     })
 
     // Upsert contact
@@ -120,20 +119,17 @@ export async function POST(req: NextRequest) {
       serviceInterests: ['kids_party'],
     })
 
-    // Generate portal token
-    const { token: rawToken, hash, expiresAt } = generatePortalToken(bookingRef, portalSecret) // default 30-day expiry
-    await supabase.from('portal_tokens').insert({
-      booking_id: booking.id,
-      token_hash: hash,
-      expires_at: expiresAt.toISOString(),
-    }).then(({ error }) => {
-      if (error) console.error('Portal token insert (non-fatal):', error)
-    })
-
-    const builderUrl = buildPortalUrl(bookingRef, rawToken, '/party-planner')
+    // Generate the portal token. This DID read its error — and then called it
+    // "non-fatal" and mailed the link anyway, which is precisely the failure:
+    // a token row that was refused means the URL in that email cannot work, so
+    // the customer clicks through to a locked door. Non-fatal to the booking,
+    // certainly; fatal to the email.
+    const minted = await mintPortalLink(supabase, booking.id as string, bookingRef, '/party-planner')
+    const builderUrl = minted.ok ? minted.url : null
 
     // Send email
-    if (sendEmail && process.env.RESEND_API_KEY) {
+    // No link, no email — see mintPortalLink.
+    if (sendEmail && builderUrl && process.env.RESEND_API_KEY) {
       const { Resend } = await import('resend')
       const resend = new Resend(process.env.RESEND_API_KEY)
       const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'

@@ -78,6 +78,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Reconcile sessions if provided
+  const sessionProblems: string[] = []
+
   if (body.sessions !== undefined && body.hasSessions) {
     const incomingSessions = body.sessions as any[]
     const incomingIds = incomingSessions.filter(s => s.id).map(s => s.id)
@@ -91,10 +93,17 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     const existingIds = (existing || []).map(s => s.id)
     const toDeactivate = existingIds.filter(id => !incomingIds.includes(id))
+    // Every write in this block decides whether a session — and therefore its
+    // ticket inventory — exists. A refused write used to be silent and the route
+    // still answered `{ok:true}`, so an admin could believe they had opened a
+    // second showing that no customer can buy, or closed one that is still
+    // selling. Collected and reported rather than thrown, because a partial
+    // failure mid-loop should still tell you which part failed.
     if (toDeactivate.length > 0) {
-      await supabase.from('event_sessions')
+      const { error } = await supabase.from('event_sessions')
         .update({ is_active: false })
         .in('id', toDeactivate)
+      if (error) sessionProblems.push(`could not close ${toDeactivate.length} removed session(s): ${error.message}`)
     }
 
     // Upsert sessions
@@ -111,20 +120,29 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           is_active: true,
         }
         // Adjust available_tickets when max_tickets changes
-        const { data: cur } = await supabase
+        // A failed read here leaves `available_tickets` out of the patch, so the
+        // old count survives rather than being recomputed from a guess — the
+        // safe direction, and now it says so instead of being silent.
+        const { data: cur, error: curErr } = await supabase
           .from('event_sessions')
           .select('max_tickets, available_tickets')
           .eq('id', s.id)
-          .single()
-        if (cur) {
+          .maybeSingle()
+        if (curErr) {
+          sessionProblems.push(`session ${s.id}: capacity not recalculated (${curErr.message}); remaining tickets left as they were`)
+        } else if (cur) {
           const newMax = s.max_tickets || 30
           const sold = cur.max_tickets - cur.available_tickets
           sessionUpdate.available_tickets = Math.max(0, newMax - sold)
         }
-        await supabase.from('event_sessions').update(sessionUpdate).eq('id', s.id)
+        const { data: updatedSession, error: updErr } = await supabase
+          .from('event_sessions').update(sessionUpdate).eq('id', s.id).select('id')
+        if (updErr || !updatedSession?.length) {
+          sessionProblems.push(`session ${s.id} NOT updated: ${updErr?.message || 'no row matched'}`)
+        }
       } else {
         // Insert new session
-        await supabase.from('event_sessions').insert({
+        const { error: insErr } = await supabase.from('event_sessions').insert({
           event_id: params.id,
           session_date: s.session_date,
           session_time: s.session_time,
@@ -135,18 +153,30 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           available_tickets: s.max_tickets || 30,
           is_active: true,
         })
+        if (insErr) {
+          sessionProblems.push(`new session ${s.session_date} ${s.session_time} NOT created: ${insErr.message}`)
+        }
       }
     }
   }
 
   // If sessions turned off, deactivate all
   if (body.hasSessions === false) {
-    await supabase.from('event_sessions')
+    const { error: offErr } = await supabase.from('event_sessions')
       .update({ is_active: false })
       .eq('event_id', params.id)
+    if (offErr) sessionProblems.push(`sessions NOT switched off: ${offErr.message}`)
   }
 
-  return NextResponse.json({ event })
+  return NextResponse.json({
+    event,
+    ...(sessionProblems.length
+      ? {
+          sessionProblems,
+          warning: `${sessionProblems.length} session change(s) did NOT save — reload before selling tickets for this event.`,
+        }
+      : {}),
+  })
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {

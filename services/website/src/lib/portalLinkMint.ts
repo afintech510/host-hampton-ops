@@ -47,6 +47,8 @@ export async function mintPortalLink(
   supabase: MinimalClient,
   bookingId: string,
   bookingRef: string,
+  /** Destination path, e.g. `/party-planner`. Defaults to the portal itself. */
+  destination?: string,
 ): Promise<MintedLink> {
   const { token, hash, expiresAt } = generatePortalToken(bookingRef, portalSigningSecret())
 
@@ -62,5 +64,5 @@ export async function mintPortalLink(
     return { ok: false, reason: error.message }
   }
 
-  return { ok: true, url: buildPortalUrl(bookingRef, token), expiresAt }
+  return { ok: true, url: buildPortalUrl(bookingRef, token, destination), expiresAt }
 }
