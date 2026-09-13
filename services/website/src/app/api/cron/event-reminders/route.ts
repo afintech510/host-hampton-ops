@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cronAuth'
 import { getSupabase } from '@/lib/supabase'
 import { findContactsByEmail } from '@/lib/contactLookup'
 import { enqueueReminders, type ReminderRow } from '@/lib/reminderQueue'
@@ -42,11 +43,6 @@ export const dynamic = 'force-dynamic'
  * NOTE: this route now depends on `/api/cron/send-reminders` also being
  * scheduled. Neither is currently scheduled at cron-job.org — see PLAN.md.
  */
-
-function isCronAuthorized(req: NextRequest): boolean {
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  return secret === process.env.CRON_SECRET
-}
 
 export async function GET(req: NextRequest) {
   if (!isCronAuthorized(req)) {

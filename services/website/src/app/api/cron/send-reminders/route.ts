@@ -1,5 +1,6 @@
 import { ownerEmail } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cronAuth'
 import { Resend } from 'resend'
 import { getSupabase } from '@/lib/supabase'
 import {
@@ -25,6 +26,7 @@ import { sendCheckinLinkSms, hasExplicitSmsOptOut } from '@/lib/checkinLink'
 import { isCheckinReminderType } from '@/lib/checkinReminders'
 import { asLedgerEntityId, claimReminder, finishReminder, isMarketingReminder, type SendOutcome } from '@/lib/reminderQueue'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
+import { checkFreshness, reminderMaxLatenessMs } from '@/lib/scheduleFreshness'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,10 +64,6 @@ export const dynamic = 'force-dynamic'
  */
 
 // Simple auth for cron endpoints — use a shared secret
-function isCronAuthorized(req: NextRequest): boolean {
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  return secret === process.env.CRON_SECRET
-}
 
 const BATCH_SIZE = 50
 
@@ -118,7 +116,10 @@ export async function GET(req: NextRequest) {
   }
 
   const tally: Record<string, number> = { delivered: 0, skipped: 0, retry: 0, failed: 0, lost: 0, unavailable: 0 }
+  /** Of the skips, how many were "too late to be true" rather than a consent stop. */
+  let stale = 0
   const reasons: string[] = []
+  const maxLatenessMs = reminderMaxLatenessMs()
 
   for (const reminder of reminders) {
     // CLAIM FIRST. Nothing below this line may send until the row is ours.
@@ -127,6 +128,35 @@ export async function GET(req: NextRequest) {
     if (claim.kind === 'unavailable') {
       tally.unavailable++
       reasons.push(`claim_failed: ${claim.error}`)
+      continue
+    }
+
+    /**
+     * How late is this?
+     *
+     * The scan is `scheduled_for <= now` with no lower bound, and every reminder
+     * type in the CHECK constraint is DATE-ANCHORED — the bodies say "tomorrow",
+     * "today", "in 7 days". This route is not scheduled and `event-reminders`,
+     * which fills the queue, can be scheduled without it. Two days of that and
+     * the queue is full of statements that are no longer true; switching the
+     * sender on then texts a customer that their party is tomorrow when it was
+     * last week, and there is no way to un-send an SMS.
+     *
+     * Cancelled with the reason on the row, never delivered. Taken AFTER the
+     * claim so two ticks cannot both decide it, and BEFORE dispatch so no
+     * channel can slip past it.
+     */
+    const freshness = checkFreshness(reminder.scheduled_for, new Date(), maxLatenessMs, reminder.reminder_type)
+    if (freshness.kind !== 'fresh') {
+      const reason =
+        freshness.kind === 'stale'
+          ? freshness.reason
+          : `unscheduled: scheduled_for is unreadable ("${freshness.raw}") — this row can never be due`
+      await finishReminder(supabase, reminder, { kind: 'skipped', reason })
+      tally.skipped++
+      if (freshness.kind === 'stale') stale++
+      reasons.push(`${reminder.reminder_type}: ${reason}`)
+      console.warn(`cron:reminders cancelled ${reminder.id} — ${reason}`)
       continue
     }
 
@@ -146,10 +176,10 @@ export async function GET(req: NextRequest) {
 
   console.log(
     `cron:reminders due=${reminders.length} delivered=${tally.delivered} skipped=${tally.skipped} ` +
-      `retry=${tally.retry} failed=${tally.failed} lost=${tally.lost} unavailable=${tally.unavailable}`
+      `stale=${stale} retry=${tally.retry} failed=${tally.failed} lost=${tally.lost} unavailable=${tally.unavailable}`
   )
 
-  return NextResponse.json({ ok: true, due: reminders.length, ...tally, reasons, configured })
+  return NextResponse.json({ ok: true, due: reminders.length, ...tally, stale, reasons, configured })
 }
 
 /**

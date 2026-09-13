@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cronAuth'
 import { getSupabase } from '@/lib/supabase'
 import { loadExperiment } from '@/lib/experiments/load'
 import { analyseExperiment, outcomeLabel, summarise, droppedArmsNote, type AnalysisResult } from '@/lib/experiments/analysis'
@@ -41,13 +42,6 @@ export const dynamic = 'force-dynamic'
  * asked an LLM what the numbers mean would be a model opining on a p-value it
  * cannot compute.
  */
-
-function isCronAuthorized(req: NextRequest): boolean {
-  // The same `!!CRON_SECRET` guard the other cron routes carry: without it an
-  // unset secret makes the route world-callable to anyone sending no header.
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  return !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
-}
 
 const LIVE_STATUSES = ['active', 'paused']
 

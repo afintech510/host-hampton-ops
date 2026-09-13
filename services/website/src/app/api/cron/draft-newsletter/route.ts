@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cronAuth'
 import { getSupabase } from '@/lib/supabase'
 import { eventNewsletterHtml } from '@/lib/email-templates/event-newsletter'
 import {
@@ -10,11 +11,6 @@ import { containsMarkup } from '@/lib/content/contentSafety'
 import { flattenToOneLine } from '@/lib/agent/extractPlanFields'
 
 export const dynamic = 'force-dynamic'
-
-function isCronAuthorized(req: NextRequest): boolean {
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  return secret === process.env.CRON_SECRET
-}
 
 const COPY_SYSTEM_PROMPT = `You are COPY, the content writing agent for Host Hampton — a boutique celebration studio in Speonk, NY run by Allie Larkin.
 
@@ -144,16 +140,25 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabase()
   const today = new Date().toISOString().split('T')[0]
 
-  // Archive past events (set is_active=false where event_date < today)
-  const { data: archivedRows } = await supabase
+  // Archive past events (set is_active=false where event_date < today).
+  //
+  // Rule 19: this UPDATE's error was discarded, so a refused archive was
+  // indistinguishable from "there was nothing to archive" — and it is the only
+  // thing that stops a finished event appearing in the newsletter. Reported and
+  // carried in the response, but NOT fatal: failing to archive is not a reason
+  // to refuse to draft.
+  const { data: archivedRows, error: archiveErr } = await supabase
     .from('events')
     .update({ is_active: false })
     .eq('is_active', true)
     .lt('event_date', today)
     .select('id')
   const archivedCount = archivedRows?.length ?? 0
+  const archiveError = archiveErr ? archiveErr.message : null
 
-  if (archivedCount) {
+  if (archiveError) {
+    console.error(`cron:newsletter could NOT archive past events: ${archiveError} — a finished event may be featured`)
+  } else if (archivedCount) {
     console.log(`cron:newsletter archived ${archivedCount} past event(s)`)
   }
 
@@ -176,17 +181,23 @@ export async function GET(req: NextRequest) {
   }
 
   if (!events?.length) {
-    return NextResponse.json({ message: 'No upcoming events to feature', drafted: false, archived: archivedCount || 0 })
+    return NextResponse.json({ message: 'No upcoming events to feature', drafted: false, archived: archivedCount, archiveError })
   }
 
   // Don't draft on top of a draft nobody has looked at.
   //
-  // Measured 2026-09-12: this job ran daily at 11:00 UTC and left **17
-  // `event_update` drafts** in `scheduled_campaigns` between 2026-07-01 and
-  // 2026-07-17, seven of them for the same Bitchy Bingo event with seven
-  // different subject lines. Not one was ever sent. A review queue that grows by
-  // one unread item a day is a review queue nobody reads — the same failure the
-  // Inbox triage fix (plan, `cf6ddcc`) was written for, one surface over.
+  // Measured 2026-09-12 over the July window: 17 `event_update` drafts, seven of
+  // them for the same Bitchy Bingo event with seven different subject lines.
+  // Re-measured over the WHOLE table 2026-09-13 and the number is much larger —
+  // **102 `event_update` drafts, 2026-03-08 to 2026-07-17**, against two ever
+  // sent. Not one was ever sent. A review queue that grows by one unread item a
+  // day is a review queue nobody reads — the same failure the Inbox triage fix
+  // (plan, `cf6ddcc`) was written for, one surface over.
+  //
+  // Note what that means for this throttle in practice: it is permanently
+  // engaged. Until somebody clears the pile, every run of this job archives past
+  // events and then skips, forever. That is honest (it says which draft is
+  // blocking it) but it is not a working newsletter — see PLAN.md needs-Adam.
   //
   // A read failure does NOT fall through to drafting: "could not tell" is not
   // "there is nothing there" (rule 12), and drafting on an unreadable table is
@@ -214,7 +225,7 @@ export async function GET(req: NextRequest) {
       skipped: 'an event_update draft is already waiting for review',
       existingDraftId: openDrafts[0].id,
       existingDraftCreatedAt: openDrafts[0].created_at,
-      archived: archivedCount || 0,
+      archived: archivedCount, archiveError,
     })
   }
 
@@ -283,6 +294,6 @@ export async function GET(req: NextRequest) {
     campaignId: campaign?.id,
     eventsCount: templateEvents.length,
     aiCopy: !!copy,
-    archived: archivedCount || 0,
+    archived: archivedCount, archiveError,
   })
 }

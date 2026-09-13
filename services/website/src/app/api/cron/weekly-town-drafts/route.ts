@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cronAuth'
 import { getSupabase } from '@/lib/supabase'
 import { createTownServiceDraft } from '@/lib/marketing/townDraft'
 
@@ -18,13 +19,26 @@ export const dynamic = 'force-dynamic'
  * Auth: x-cron-secret / ?secret= (matches the other cron routes).
  */
 
-function isCronAuthorized(req: NextRequest): boolean {
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  return secret === process.env.CRON_SECRET
-}
-
 const SERVICE = 'permanent jewelry'
-const BATCH_SIZE = Number(process.env.WEEKLY_TOWN_DRAFT_BATCH_SIZE || 2)
+
+/**
+ * `Number(process.env.X || 2)` read `'abc'` as NaN and `'0'` as 0 — and
+ * `slice(0, NaN)` and `slice(0, 0)` both return `[]`, so the route answered
+ * *"All towns already have a draft — nothing to do."* about eleven towns of
+ * which six have no draft at all. A misconfiguration that reports itself as
+ * success is rule 10's expensive half. An unusable value falls back to the
+ * default and says so.
+ */
+const BATCH_SIZE = (() => {
+  const raw = process.env.WEEKLY_TOWN_DRAFT_BATCH_SIZE
+  if (raw === undefined || raw === '') return 2
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 1) {
+    console.error(`cron:weekly-town-drafts WEEKLY_TOWN_DRAFT_BATCH_SIZE="${raw}" is unusable — using 2`)
+    return 2
+  }
+  return n
+})()
 
 // Priority order — tier 1 first, then tier 2, tier 3, watch-list last.
 const TOWNS = [

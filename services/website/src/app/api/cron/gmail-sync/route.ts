@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cronAuth'
 import { getSupabase } from '@/lib/supabase'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { findContactsByEmail } from '@/lib/contactLookup'
@@ -38,11 +39,6 @@ export const dynamic = 'force-dynamic'
  * Auth: x-cron-secret / ?secret=, matching the other cron routes.
  *   ?backfill=1  one-time bounded historical pull (see runBackfill).
  */
-
-function isCronAuthorized(req: NextRequest): boolean {
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  return !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
-}
 
 type Supa = ReturnType<typeof getSupabase>
 

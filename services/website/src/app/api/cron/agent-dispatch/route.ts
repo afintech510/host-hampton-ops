@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cronAuth'
 import { getSupabase } from '@/lib/supabase'
 import { draftForInquiry, AGENT_ACTOR, DRAFT_ENTITY } from '@/lib/agent/draftInquiry'
 import { finishEvent, claimInboundEvent, type InboundEvent } from '@/lib/agent/events'
@@ -35,11 +36,6 @@ export const dynamic = 'force-dynamic'
  *
  * Auth: x-cron-secret / ?secret= (matches the other cron routes).
  */
-
-function isCronAuthorized(req: NextRequest): boolean {
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  return !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
-}
 
 /** Events per run. Small — the cron fires every 2 minutes. */
 const EVENT_BATCH = 5

@@ -41,6 +41,7 @@ jest.mock('@/lib/portalAuth', () => ({
 
 import { GET } from '@/app/api/cron/send-reminders/route'
 import { makeFakeDb, scheduledRemindersSpec, type TableSpec } from '../helpers/fakeReminderDb'
+import { checkFreshness } from '@/lib/scheduleFreshness'
 
 const CRON_SECRET = 'test-cron-secret'
 const CONTACT_ID = '11111111-1111-4111-8111-111111111111'
@@ -86,6 +87,24 @@ function contact(over: Record<string, any> = {}) {
   }
 }
 
+/**
+ * These fixtures used to be dated `2000-01-01` — "long overdue, sorts first".
+ * Since the freshness bound (lib/scheduleFreshness.ts) that is no longer a due
+ * row, it is a CANCELLED one, and eighteen of these tests turned red the moment
+ * the bound landed. That is the bound working: a `booking_email_1day` twenty-six
+ * years late is not a late reminder, it is a false statement about a date.
+ *
+ * Overdue is now expressed in minutes, which is what "overdue" means for a job
+ * that ticks every fifteen. The same change applies to the production probe
+ * recipe in AGENTS.md.
+ */
+function minutesAgo(n: number): string {
+  return new Date(Date.now() - n * 60_000).toISOString()
+}
+function daysAgo(n: number): string {
+  return new Date(Date.now() - n * 24 * 60 * 60_000).toISOString()
+}
+
 function reminder(over: Record<string, any> = {}) {
   return {
     id: REMINDER_ID,
@@ -93,7 +112,7 @@ function reminder(over: Record<string, any> = {}) {
     reminder_type: 'booking_email_7day',
     reference_type: 'booking',
     reference_id: 'HH-2026-0001',
-    scheduled_for: '2000-01-01T00:00:00.000Z', // long overdue, sorts first
+    scheduled_for: minutesAgo(5), // overdue, inside the freshness bound
     status: 'pending',
     channel: 'email',
     attempts: 0,
@@ -406,10 +425,11 @@ describe('GET /api/cron/send-reminders', () => {
   })
 
   it('?limit=1 reads exactly one row, oldest first', async () => {
+    const oldest = minutesAgo(30)
     const fake = setup({
       reminders: [
-        reminder({ id: 'aaaaaaaa-0000-4000-8000-000000000002', scheduled_for: '2026-09-01T00:00:00.000Z', reminder_type: 'booking_email_1day' }),
-        reminder({ scheduled_for: '2000-01-01T00:00:00.000Z' }),
+        reminder({ id: 'aaaaaaaa-0000-4000-8000-000000000002', scheduled_for: minutesAgo(5), reminder_type: 'booking_email_1day' }),
+        reminder({ scheduled_for: oldest }),
       ],
     })
 
@@ -418,6 +438,67 @@ describe('GET /api/cron/send-reminders', () => {
     expect(res.json()).toMatchObject({ due: 1, delivered: 1 })
     const sent = fake.tables.scheduled_reminders.filter(r => r.status === 'sent')
     expect(sent).toHaveLength(1)
-    expect(sent[0].scheduled_for).toBe('2000-01-01T00:00:00.000Z')
+    expect(sent[0].scheduled_for).toBe(oldest)
+  })
+
+  /* ── the freshness bound ─────────────────────────────────────────────────
+   *
+   * The scan is `scheduled_for <= now` with no lower bound, and every reminder
+   * type is date-anchored. This route is not scheduled and `event-reminders`,
+   * which fills the queue, can be scheduled without it — so the queue accruing
+   * for days and then being drained is the expected failure, not an exotic one.
+   */
+
+  it('CANCELS a reminder that is past the freshness bound rather than sending it', async () => {
+    const fake = setup({ reminders: [reminder({ scheduled_for: daysAgo(20) })] })
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(res.json()).toMatchObject({ due: 1, delivered: 0, skipped: 1, stale: 1 })
+    expect(mockResendSend).not.toHaveBeenCalled()
+    const row = fake.tables.scheduled_reminders[0]
+    expect(row.status).toBe('cancelled')
+    expect(row.sent_at ?? null).toBeNull()
+    // Rule 10: it must say WHY, on the row, not only in a log line.
+    expect(String(row.last_outcome)).toMatch(/stale/)
+    expect(String(row.last_outcome)).toMatch(/freshness bound/)
+  })
+
+  it('still sends a reminder that is late but inside the bound', async () => {
+    mockResendSend.mockResolvedValue({ data: { id: 'resend-fresh' }, error: null })
+    const fake = setup({ reminders: [reminder({ scheduled_for: daysAgo(1) })] })
+
+    const res = await GET(makeReq(CRON_SECRET))
+
+    expect(res.json()).toMatchObject({ due: 1, delivered: 1, stale: 0 })
+    expect(fake.tables.scheduled_reminders[0].status).toBe('sent')
+  })
+
+  it('an SMS reminder past the bound is cancelled without touching the provider', async () => {
+    const fake = setup({
+      reminders: [reminder({ channel: 'sms', reminder_type: 'booking_sms_1day', scheduled_for: daysAgo(9) })],
+    })
+
+    await GET(makeReq(CRON_SECRET))
+
+    expect(mockSendSMSVia).not.toHaveBeenCalled()
+    expect(mockSendCheckinLinkSms).not.toHaveBeenCalled()
+    expect(fake.tables.scheduled_reminders[0].status).toBe('cancelled')
+  })
+
+  /**
+   * Rule 13, asked before claiming the branch was reachable: an unreadable
+   * `scheduled_for` CANNOT reach this route. `information_schema` says the
+   * column is `timestamp with time zone NOT NULL`, so Postgres refuses the row
+   * at write time, and `.lte('scheduled_for', now)` would exclude it even if it
+   * existed. The route's `unreadable` branch is defensive and is exercised
+   * against the function directly rather than against an impossible row —
+   * asserting it through the route would be asserting the fake, not Postgres.
+   */
+  it('the freshness check refuses an unreadable time rather than calling it fresh', () => {
+    const now = new Date('2026-09-13T12:00:00.000Z')
+    expect(checkFreshness('not-a-timestamp', now, 1000, 'x').kind).toBe('unreadable')
+    expect(checkFreshness(null, now, 1000, 'x').kind).toBe('unreadable')
+    expect(checkFreshness(undefined, now, 1000, 'x').kind).toBe('unreadable')
   })
 })

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cronAuth'
 import { getSupabase } from '@/lib/supabase'
 import { distillFeedback } from '@/lib/agent/distill'
 import { agentEnabled } from '@/lib/agent/config'
@@ -22,11 +23,6 @@ export const dynamic = 'force-dynamic'
  *
  * `?days=` overrides the window for a manual catch-up run.
  */
-
-function isCronAuthorized(req: NextRequest): boolean {
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  return !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
-}
 
 /** A window wider than this is somebody's typo, not a catch-up. */
 const MAX_DAYS = 120

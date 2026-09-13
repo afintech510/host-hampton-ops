@@ -44,6 +44,7 @@ import { renderStepEmail } from '@/lib/sequences/render'
 import { loadActiveExperiment, sequenceTargetKey } from '@/lib/experiments/load'
 import { assignVariant, recordVariantEvent } from '@/lib/experiments/assign'
 import { rewriteTrackedLinks } from '@/lib/experiments/track'
+import { checkFreshness, sequenceMaxLatenessMs } from '@/lib/scheduleFreshness'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -91,7 +92,25 @@ export interface ProcessOptions {
   supabase?: Supa
   sendEmail?: EmailSender
   now?: Date
+  /** How many enrollment ROWS this tick reads. */
   batchSize?: number
+  /**
+   * How many EMAILS this tick may send. This is what an operator means by
+   * "one real person per tick", and it is not the same thing as `batchSize`.
+   *
+   * Until 2026-09-13 `?limit=N` set `batchSize`, and PLAN.md and AGENTS.md both
+   * described `?limit=1` as "the drain: one real person per tick, checked in
+   * between" — the documented safe way to restart this job for 45 frozen
+   * enrollments. Measured against the live table, it drained nobody: the scan is
+   * `ORDER BY enrolled_at ASC`, the two oldest enrollments (2026-03-10) are on
+   * `Post-Booking Prep`, whose `is_active` is FALSE, so `?limit=1` read one row,
+   * skipped it, changed nothing, and answered 200. So did `?limit=2` … `?limit=5`.
+   * The first value that sends anything at all is `?limit=6`, and it sends one.
+   *
+   * A cap on rows READ is a cap on nothing an operator cares about. This one
+   * counts sends.
+   */
+  sendCap?: number
 }
 
 export interface ProcessSummary {
@@ -107,6 +126,15 @@ export interface ProcessSummary {
   unsubscribed: number
   completed: number
   paused: number
+  /**
+   * Due, but so long ago that sending it would be a false statement rather than
+   * a late one. Paused instead, and named. See `lib/scheduleFreshness.ts`.
+   */
+  stale: number
+  /** Read, but the send cap was already spent. Untouched; next tick gets them. */
+  capped: number
+  /** Active enrollments on a sequence whose `is_active` is false. Never progress. */
+  inactiveSequence: number
   notes: string[]
 }
 
@@ -121,6 +149,9 @@ function emptySummary(): ProcessSummary {
     unsubscribed: 0,
     completed: 0,
     paused: 0,
+    stale: 0,
+    capped: 0,
+    inactiveSequence: 0,
     notes: [],
   }
 }
@@ -412,7 +443,15 @@ export async function processSequences(opts: ProcessOptions = {}): Promise<Proce
     return summary
   }
 
+  // The cap counts SENDS, not rows (see ProcessOptions.sendCap). `Infinity` when
+  // the caller did not ask for one, so the default tick is unchanged.
+  const sendCap = opts.sendCap ?? Number.POSITIVE_INFINITY
+
   for (const enrollment of enrollments) {
+    if (summary.sent >= sendCap) {
+      summary.capped++
+      continue
+    }
     try {
       await processOne(supabase, enrollment, now, sender, summary)
     } catch (err) {
@@ -421,6 +460,21 @@ export async function processSequences(opts: ProcessOptions = {}): Promise<Proce
       summary.notes.push(`enrollment ${enrollment.id}: ${msg}`)
       console.error('cron:sequences unexpected error', enrollment.id, msg)
     }
+  }
+
+  if (summary.capped > 0) {
+    summary.notes.push(
+      `send cap of ${sendCap} reached — ${summary.capped} enrollment(s) were read and left untouched for the next tick`
+    )
+  }
+  if (summary.inactiveSequence > 0) {
+    // Aggregated rather than one note each: these rows are skipped on EVERY tick
+    // forever, so a per-row note would drown the run. The count is the signal.
+    summary.notes.push(
+      `${summary.inactiveSequence} active enrollment(s) are on a sequence whose is_active is false — ` +
+        `they will never progress and will be scanned again every tick. Reactivate the sequence or ` +
+        `set those enrollments to 'paused'.`
+    )
   }
 
   return summary
@@ -438,6 +492,11 @@ async function processOne(
     : enrollment.email_sequences
 
   if (!seq?.is_active) {
+    // Counted separately from `skipped`. An enrollment here is not "not due yet"
+    // — it can never become due, it stays `active` forever, and it sits at the
+    // TOP of the oldest-first scan. That is what made `?limit=1` a permanent
+    // no-op on the live table (see ProcessOptions.sendCap).
+    summary.inactiveSequence++
     summary.skipped++
     return
   }
@@ -489,6 +548,34 @@ async function processOne(
   }
   if (now < due.at) {
     summary.skipped++
+    return
+  }
+
+  /**
+   * Due — but how long ago?
+   *
+   * `now >= due` was the only question this processor asked about time, and it
+   * is the wrong one for a job that has been off since 2026-08-16. Measured on
+   * the live table on 2026-09-13: the first tick after switching the schedule
+   * back on sends about 34 emails at once, among them "Get ready for party day
+   * at Host Hampton!" to people whose party was three weeks ago and "Still
+   * thinking about your event?" to THIRTEEN people who have since booked and
+   * paid. `?limit=1` bounds the RATE of that; it does nothing about the CONTENT
+   * being wrong.
+   *
+   * A step this late is paused, not sent, and named in the summary — one SQL
+   * statement for a human to undo, instead of an email nobody can recall.
+   */
+  const freshness = checkFreshness(due.at, now, sequenceMaxLatenessMs(), `step ${nextStepNum} of "${seq.name}"`)
+  if (freshness.kind === 'stale') {
+    await setEnrollmentStatus(supabase, enrollment.id, 'paused')
+    summary.stale++
+    summary.paused++
+    summary.notes.push(
+      `enrollment ${enrollment.id}: ${freshness.reason}. PAUSED — a human decides whether this person ` +
+        `should still hear from us. Resume with: update contact_sequence_enrollments set status='active' where id='${enrollment.id}';`
+    )
+    console.warn(`cron:sequences PAUSED stale enrollment ${enrollment.id}: ${freshness.reason}`)
     return
   }
 

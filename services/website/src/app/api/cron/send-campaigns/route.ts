@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cronAuth'
 import { getSupabase } from '@/lib/supabase'
 import { sendCampaign } from '@/lib/brevo'
 
 export const dynamic = 'force-dynamic'
-
-function isCronAuthorized(req: NextRequest): boolean {
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  return Boolean(process.env.CRON_SECRET) && secret === process.env.CRON_SECRET
-}
 
 /**
  * Send campaigns an admin has scheduled.
@@ -29,22 +25,77 @@ function isCronAuthorized(req: NextRequest): boolean {
  *    `failed` forever (rule 3). `failed` is now written only when Brevo said no
  *    in a way that repeats; a network blip leaves the row `scheduled` for the
  *    next tick.
+ *
+ * And a fourth, added 2026-09-13: **the claim had no cap.** It took EVERY row
+ * that was `scheduled` with a past `scheduled_for`, in one statement, and then
+ * sent them all. `scheduled_campaigns` holds **103 drafts today, 102 of them
+ * `event_update` rows about a Bitchy Bingo night in July**; the whole pile is
+ * one bulk status change away from being claimable, and each one is 944 people.
+ * `?limit=N` (1…`MAX_PER_TICK`) is the drain, and the default cap is small
+ * enough that a mistake is a mistake and not a mailing. `ORDER BY` cannot be
+ * combined with the claiming UPDATE, so the cap is applied by claiming the
+ * oldest N ids read in a separate ordered pass — the read is advisory, the
+ * conditional UPDATE is still what decides ownership.
  */
+
+/**
+ * One tick's ceiling. Each campaign is 944 real inboxes.
+ *
+ * NOT exported. A Next App Router route file may export only the handler names
+ * and the framework's own config keys; `export const MAX_PER_TICK` is a
+ * build-time type error that neither jest nor `tsc --noEmit` reports. Link 17
+ * nearly shipped one and this session did, caught only by `next build` — which
+ * is why that build is not optional.
+ */
+const MAX_PER_TICK = 5
+
 export async function GET(req: NextRequest) {
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const rawLimit = req.nextUrl.searchParams.get('limit')
+  let perTick = MAX_PER_TICK
+  if (rawLimit !== null) {
+    const n = Number(rawLimit)
+    if (!Number.isInteger(n) || n < 1 || n > MAX_PER_TICK) {
+      // Rule 10: a cap that was silently ignored is a cap the operator thinks is
+      // protecting them.
+      return NextResponse.json({ error: `limit must be an integer 1..${MAX_PER_TICK}` }, { status: 400 })
+    }
+    perTick = n
+  }
+
   const supabase = getSupabase()
   const now = new Date().toISOString()
 
-  // The claim and the read are one statement. `.in('status', …)` is the guard:
+  // Which rows are due, oldest first. Advisory only — the UPDATE below is what
+  // takes ownership, so a row that changes underneath us simply is not claimed.
+  const { data: due, error: dueErr } = await supabase
+    .from('scheduled_campaigns')
+    .select('id')
+    .eq('status', 'scheduled')
+    .lte('scheduled_for', now)
+    .order('scheduled_for', { ascending: true })
+    .limit(perTick)
+
+  if (dueErr) {
+    console.error('cron:campaigns due-read error:', dueErr.message)
+    return NextResponse.json({ error: `Could not read scheduled campaigns: ${dueErr.message}` }, { status: 500 })
+  }
+
+  if (!due || due.length === 0) {
+    return NextResponse.json({ processed: 0, sent: 0, failed: 0, deferred: 0, cap: perTick, notes: [] })
+  }
+
+  // The claim and the read are one statement. `.eq('status', …)` is the guard:
   // a row already at 'sending' or 'sent' cannot be claimed twice.
   const { data: campaigns, error } = await supabase
     .from('scheduled_campaigns')
     .update({ status: 'sending' })
     .eq('status', 'scheduled')
     .lte('scheduled_for', now)
+    .in('id', due.map(d => d.id))
     .select('*')
 
   if (error) {
@@ -53,7 +104,10 @@ export async function GET(req: NextRequest) {
   }
 
   if (!campaigns || campaigns.length === 0) {
-    return NextResponse.json({ processed: 0, sent: 0, failed: 0, deferred: 0, notes: [] })
+    return NextResponse.json({
+      processed: 0, sent: 0, failed: 0, deferred: 0, cap: perTick,
+      notes: [`${due.length} row(s) were due but none could be claimed — another tick has them`],
+    })
   }
 
   let sent = 0
@@ -122,7 +176,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  console.log(`cron:campaigns processed=${campaigns.length} sent=${sent} failed=${failed} deferred=${deferred}`)
+  console.log(
+    `cron:campaigns cap=${perTick} processed=${campaigns.length} sent=${sent} failed=${failed} deferred=${deferred}`
+  )
   for (const n of notes) console.log(`cron:campaigns note — ${n}`)
-  return NextResponse.json({ processed: campaigns.length, sent, failed, deferred, notes })
+  return NextResponse.json({ processed: campaigns.length, sent, failed, deferred, cap: perTick, notes })
 }

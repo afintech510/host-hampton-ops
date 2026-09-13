@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cronAuth'
 import { getSupabase } from '@/lib/supabase'
 import { checkSmsBudget, recordSmsSent } from '@/lib/marketing/budget'
 import { writeLedger } from '@/lib/marketing/graph'
@@ -35,11 +36,6 @@ export const dynamic = 'force-dynamic'
  * enqueue shape was the only one in the whole reminder engine that the table
  * would actually accept.
  */
-
-function isCronAuthorized(req: NextRequest): boolean {
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  return secret === process.env.CRON_SECRET
-}
 
 const MAX_PER_RUN = Number(process.env.BIRTHDAY_REBOOK_MAX_PER_RUN || 100)
 
