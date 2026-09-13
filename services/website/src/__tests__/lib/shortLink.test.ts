@@ -1,5 +1,5 @@
 /**
- * Plan §21.3 / §21.9 — the short-link layer.
+ * Plan §25.3 / §25.9 — the short-link layer.
  *
  * The properties worth asserting are the ones that make a 128-bit bearer code
  * safe: it expires, it is screened on both sides, and failing to mint one costs

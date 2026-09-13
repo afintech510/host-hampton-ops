@@ -1,19 +1,27 @@
 -- ===========================================================================
 -- Migration 048 — short links, and the columns Slack needs
 --
--- Plan §21.7 of docs/booking-agent-plan.md.
+-- Plan §25.7 of docs/booking-agent-plan.md.
 --
 -- ── Why 048 and not 047 ──────────────────────────────────────────────────
 --
--- §21.7 originally reserved 047. That reservation was wrong the day it was
+-- §25.7 originally reserved 047. That reservation was wrong the day it was
 -- written: another session applied its own 047 to production the same
 -- afternoon (`agent_learnings.source_memory_id`, verified present in
 -- information_schema before this file was numbered). A reservation in a
 -- document is not a reservation in Postgres.
 --
--- Note also that 040-047 exist in the DATABASE but not as files, here or on
--- the box — the repo's record of the schema stops at 039. So the only honest
--- way to pick a number is to ask the database, which is what was done.
+-- A correction to what this header first said. It claimed 040-047 exist in the
+-- database "but not as files, here or on the box — the repo's record stops at
+-- 039". That was false: 040-046 are on origin/main. The checkout it was written
+-- in was 57 commits behind, so "not in the repo" actually meant "not in my copy
+-- of it" — a different fact, and the more embarrassing one. (047 does genuinely
+-- have no file anywhere.)
+--
+-- The conclusion survives the correction, for a better reason than the one
+-- originally given: a stale checkout and a missing file are indistinguishable
+-- from inside a working tree, so the DATABASE is the only thing that can answer
+-- "what is the next free number". Ask it, as was done here.
 --
 -- ── What this is for ─────────────────────────────────────────────────────
 --

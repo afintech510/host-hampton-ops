@@ -1,5 +1,5 @@
 /**
- * Plan §21.2 / §21.9 — an owner SMS is GSM-7, and it is cheap.
+ * Plan §25.2 / §25.9 — an owner SMS is GSM-7, and it is cheap.
  *
  * These assert on the REAL output of the real builders. The defect they exist
  * to prevent was invisible for exactly this reason: `lib/smsSegments.ts` had
@@ -119,7 +119,7 @@ describe('reviewer SMS cost', () => {
       missing: ['party_time', 'venue_address'],
       previewToken: TOKEN,
     })
-    // Before §21.2 this was ~12 segments: UCS-2 at 67/segment, carrying the
+    // Before §25.2 this was ~12 segments: UCS-2 at 67/segment, carrying the
     // whole draft inline alongside the link that already renders it.
     expect(smsSegmentInfo(body).segments).toBeLessThanOrEqual(3)
   })

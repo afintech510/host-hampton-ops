@@ -1,6 +1,6 @@
 # Slack app setup — Host Hampton reviewer channel
 
-Plan §21.4. **The browser steps are Adam's; everything else is code.** Slack
+Plan §25.4. **The browser steps are Adam's; everything else is code.** Slack
 will not issue an app or its tokens to a script, so this file is the handover:
 do the numbered steps, put the four values in `.env` on the box, and the rest is
 already written or will be.
@@ -68,8 +68,8 @@ REVIEWER_CHANNEL=sms
 ```
 
 **Leave `REVIEWER_CHANNEL=sms` until the handlers are built.** Flip it to
-`slack` when §21.8 steps 3–5 are green — the cutover is on completion, not after
-a soak week (Adam, 2026-09-12), because §21.5's per-send fallback already proves
+`slack` when §25.8 steps 3–5 are green — the cutover is on completion, not after
+a soak week (Adam, 2026-09-12), because §25.5's per-send fallback already proves
 continuously what a soak would have proved once.
 
 ---
@@ -89,7 +89,7 @@ Already built and tested (`lib/slack/signature.ts`, 12 tests):
   reads as "no authority", the same direction as an unset `REVIEWER_PHONES`
   meaning "text nobody".
 
-Still to build (§21.8 steps 3–5):
+Still to build (§25.8 steps 3–5):
 
 - `/api/slack/interactions` and `/api/slack/events`
 - Block Kit message + the edit modal

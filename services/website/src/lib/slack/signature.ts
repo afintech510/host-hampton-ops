@@ -1,5 +1,5 @@
 /**
- * Slack request signing (plan §21.4).
+ * Slack request signing (plan §25.4).
  *
  * This is the first line of every Slack handler, before the body is parsed and
  * long before anything is approved. `/api/slack/interactions` is a public URL

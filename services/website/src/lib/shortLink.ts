@@ -1,5 +1,5 @@
 /**
- * Short links — /r/<code> (plan §21.3).
+ * Short links — /r/<code> (plan §25.3).
  *
  * Quo bills $0.01 per SMS SEGMENT, and a preview URL is 112 characters:
  *
@@ -164,7 +164,7 @@ interface ShortLinkDb {
  * Non-fatal by contract, and the callers depend on that: the reviewer SMS falls
  * back to the full-length URL rather than going out without a link. A lead
  * going unseen because the shortener had a bad day would be a far worse bug
- * than the two segments this saves — the same reasoning as §21.5's Slack
+ * than the two segments this saves — the same reasoning as §25.5's Slack
  * fallback, and the §18 lesson underneath both.
  */
 export async function createShortLink(

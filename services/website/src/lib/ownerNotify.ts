@@ -20,7 +20,7 @@ import { gsm7Sanitize, smsSegmentInfo } from './smsSegments'
 export const DEFAULT_OWNER_EMAIL = 'hosthampton295@gmail.com'
 
 /**
- * Segment count above which a body is logged as an error (plan §21.2).
+ * Segment count above which a body is logged as an error (plan §25.2).
  *
  * The 1500-character truncation below is a LENGTH guard, not a COST guard, and
  * the two are not the same thing: 1500 UCS-2 characters is 23 segments, which

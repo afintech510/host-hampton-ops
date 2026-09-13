@@ -11,7 +11,7 @@ import {
 export const dynamic = 'force-dynamic'
 
 /**
- * /r/<code> — the short-link redirector (plan §21.3).
+ * /r/<code> — the short-link redirector (plan §25.3).
  *
  * Exists to take a 112-character preview URL down to 48, which is the
  * difference between a 3-segment and a 2-segment reviewer SMS on every draft.
@@ -117,7 +117,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ code: strin
     return new NextResponse('Not found', { status: 404 })
   }
 
-  // Evidence, not a limit (§21.7). A preview link is forwardable by design; a
+  // Evidence, not a limit (§25.7). A preview link is forwardable by design; a
   // count climbing past 1 is how you notice it being forwarded. Best-effort:
   // failing to record a use must never cost the reviewer their redirect.
   void supabase

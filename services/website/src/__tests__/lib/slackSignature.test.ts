@@ -1,5 +1,5 @@
 /**
- * Plan §21.4 / §21.9 — Slack request signing.
+ * Plan §25.4 / §25.9 — Slack request signing.
  *
  * `/api/slack/interactions` will be a public URL that can approve a message to
  * a customer. Every assertion here is about what must NOT get through.
