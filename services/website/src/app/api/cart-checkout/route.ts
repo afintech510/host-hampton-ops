@@ -5,7 +5,7 @@ import { saleAdjustedCents } from '@/lib/sale'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { STRIPE_METADATA_VALUE_LIMIT, nextTicketRef } from '@/lib/stripeSettlement'
 import { screenPublicCount } from '@/lib/publicIntake'
-import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/ticketLimits'
 
 export const dynamic = 'force-dynamic'
@@ -22,7 +22,7 @@ interface CartRequestItem {
 }
 
 export async function POST(req: NextRequest) {
-  const limited = guardRate(req, intakeRule('cart-checkout'))
+  const limited = guardRate(req, plannerRule('cart-checkout'))
   if (limited) return limited
 
   const supabase = getSupabase()

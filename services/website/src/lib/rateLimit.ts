@@ -70,6 +70,25 @@ export function intakeRule(route: string): RateLimitRule {
   return { route, perCaller: 5, perRoute: 120, windowMs: 10 * MINUTE_MS }
 }
 
+/**
+ * For an INTERACTIVE surface a customer works in — the party planner, the studio
+ * edit form, the mileage lookup, a payment page that reconciles itself.
+ *
+ * Measured before it was chosen, and it is why this function exists. The nginx log
+ * for `/api/party-builder/save` holds **five saves from one visitor in 6m22s** on
+ * 10 September (22:35:02 → 22:41:24) and four in 51 seconds on the same day.
+ * `intakeRule`'s 5-per-10-minutes would have refused that customer's fifth save
+ * mid-plan, which is worse than having no limiter at all: a throttle that blocks a
+ * paying customer is the outage this module's own header warns about, and I only
+ * found it by firing the thing in production and then going back to the log.
+ *
+ * 30 per 10 minutes is six times the busiest real session and still three orders
+ * of magnitude below what a script does.
+ */
+export function plannerRule(route: string): RateLimitRule {
+  return { route, perCaller: 30, perRoute: 400, windowMs: 10 * MINUTE_MS }
+}
+
 /** For a route that spends money at a third party on every call. */
 export function costlyRule(route: string, perCaller = 3, perRoute = 30): RateLimitRule {
   return { route, perCaller, perRoute, windowMs: HOUR_MS }

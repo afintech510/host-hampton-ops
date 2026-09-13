@@ -11,7 +11,7 @@ import { escapeHtml } from '@/lib/escapeHtml'
 import { screenPublicLineItems, screenPublicGuestCount, screenPublicCount } from '@/lib/publicIntake'
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
 import { writeLineItemsResult } from '@/lib/plan'
-import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 
 function to12hr(t: string): string {
   const [h, m] = t.split(':').map(Number)
@@ -48,7 +48,7 @@ function to12hr(t: string): string {
  */
 export async function POST(req: NextRequest) {
   try {
-    const limited = guardRate(req, intakeRule('studio-rental/edit'))
+    const limited = guardRate(req, plannerRule('studio-rental/edit'))
     if (limited) return limited
 
     const secret = portalSigningSecret()

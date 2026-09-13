@@ -1,6 +1,6 @@
 import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
-import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { screenPublicLineItems, screenPublicGuestCount } from '@/lib/publicIntake'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
@@ -13,7 +13,7 @@ import type { BookingLineItem } from '@/types/booking-flow'
 import { publicOrigin } from '@/lib/publicOrigin'
 
 export async function POST(req: NextRequest) {
-  const limited = guardRate(req, intakeRule('party-checkout'))
+  const limited = guardRate(req, plannerRule('party-checkout'))
   if (limited) return limited
 
   try {

@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
 import { isUniqueViolation } from '@/lib/planPayment'
-import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 
 /**
  * UI reconciliation after the in-page Studio Rental Payment Element succeeds.
@@ -31,7 +31,7 @@ import { guardRate, intakeRule } from '@/lib/rateLimit'
  * `readBalanceInputs` has no outcome that means "treat a failure as zero".
  */
 export async function POST(req: NextRequest) {
-  const limited = guardRate(req, intakeRule('studio-rental/confirm-session'))
+  const limited = guardRate(req, plannerRule('studio-rental/confirm-session'))
   if (limited) return limited
 
   try {

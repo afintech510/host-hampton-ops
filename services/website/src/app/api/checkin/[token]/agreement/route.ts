@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { getSupabase } from '@/lib/supabase'
 import { createEmbeddedDocument } from '@/lib/signwell'
 import { resolveCheckinToken, requiresRentalAgreement, CHECKIN_DOC_TYPE } from '@/lib/checkinLink'
@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic'
  */
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
-  const limited = guardRate(req, intakeRule('checkin/agreement'))
+  const limited = guardRate(req, plannerRule('checkin/agreement'))
   if (limited) return limited
 
   const { token } = await params

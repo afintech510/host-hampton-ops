@@ -13,7 +13,7 @@ import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
 import { findBookingsByContactEmail } from '@/lib/contactLookup'
 import { screenPublicLineItems, screenPublicGuestCount, boundedIntakeText, MAX_INTAKE_NAME_CHARS } from '@/lib/publicIntake'
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
-import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 
 function formatDate(dateStr: string): string {
   try {
@@ -56,7 +56,7 @@ function formatTime(timeStr: string): string {
  */
 export async function POST(req: NextRequest) {
   try {
-    const limited = guardRate(req, intakeRule('party-builder/save'))
+    const limited = guardRate(req, plannerRule('party-builder/save'))
     if (limited) return limited
 
     const body = await req.json()

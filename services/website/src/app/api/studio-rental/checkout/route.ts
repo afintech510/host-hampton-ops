@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { screenPublicLineItems } from '@/lib/publicIntake'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
@@ -46,7 +46,7 @@ function minusDays(dateStr: string, days: number): string {
 }
 
 export async function POST(req: NextRequest) {
-  const limited = guardRate(req, intakeRule('studio-rental/checkout'))
+  const limited = guardRate(req, plannerRule('studio-rental/checkout'))
   if (limited) return limited
 
   try {

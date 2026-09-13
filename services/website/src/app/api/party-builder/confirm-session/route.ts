@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
@@ -21,7 +21,7 @@ import { isUniqueViolation } from '@/lib/planPayment'
  * still be correct from this route alone.
  */
 export async function POST(req: NextRequest) {
-  const limited = guardRate(req, intakeRule('party-builder/confirm-session'))
+  const limited = guardRate(req, plannerRule('party-builder/confirm-session'))
   if (limited) return limited
 
   try {

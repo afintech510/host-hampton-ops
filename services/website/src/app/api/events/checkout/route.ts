@@ -11,7 +11,7 @@ import { saleAdjustedCents } from '@/lib/sale'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { nextTicketRef, redeemGiftCard } from '@/lib/stripeSettlement'
 import { screenPublicCount } from '@/lib/publicIntake'
-import { guardRate, intakeRule } from '@/lib/rateLimit'
+import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/ticketLimits'
 
 export const dynamic = 'force-dynamic'
@@ -20,7 +20,7 @@ const TAX_RATE = 0.0875
 const CC_RATE = 0.03
 
 export async function POST(req: NextRequest) {
-  const limited = guardRate(req, intakeRule('events/checkout'))
+  const limited = guardRate(req, plannerRule('events/checkout'))
   if (limited) return limited
 
   const supabase = getSupabase()
