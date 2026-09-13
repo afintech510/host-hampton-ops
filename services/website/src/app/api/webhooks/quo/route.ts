@@ -70,7 +70,8 @@ export async function POST(req: NextRequest) {
     // phone and approve a draft.
     console.error(
       `quo:webhook signature verification FAILED (${verified.reason}) — rejecting. ` +
-        `signature headers present: ${verified.headersSeen.join(', ') || 'NONE'}`,
+        `signature headers present: ${verified.headersSeen.join(', ') || 'NONE'}` +
+        (verified.detail ? ` | ${verified.detail}` : ''),
     )
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
   const intent = smsKeywordIntent(text)
   console.log(
     `quo:webhook from=…${String(from).replace(/\D/g, '').slice(-4)} id=${String(messageId).slice(0, 40)} ` +
-      `keyword=${intent ?? 'none'} chars=${text.length}`,
+      `keyword=${intent ?? 'none'} chars=${text.length} sig=${verified.scheme} rawLen=${rawBody.length}`,
   )
 
   if (!from) return NextResponse.json({ received: true })

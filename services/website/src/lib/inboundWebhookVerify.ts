@@ -94,7 +94,23 @@ export type InboundVerifyResult =
   | { ok: true; scheme: 'openphone' | 'standard-webhooks' | 'twilio'; unverified?: false }
   /** Verification is genuinely disabled (non-production, or a build). */
   | { ok: true; scheme: 'skipped'; unverified: true }
-  | { ok: false; reason: VerifyFailReason; headersSeen: string[] }
+  | {
+      ok: false
+      reason: VerifyFailReason
+      headersSeen: string[]
+      /**
+       * Enough to tell WHICH delivery this was and what differed, with nothing
+       * in it that is worth keeping secret: the signed timestamp, the body
+       * length, and SHA-256 fingerprints of the body and of the two digests.
+       *
+       * `bad-signature` on its own cannot distinguish "the key is wrong" from
+       * "we are hashing the wrong bytes", and that distinction is the whole
+       * reason this edge stayed down for 2.5 days. It is also how the surviving
+       * anomaly was diagnosed: Quo delivers every message TWICE, and comparing
+       * these fields across the pair is the only way to see what differs.
+       */
+      detail?: string
+    }
 
 /**
  * Is "no secret configured" allowed to mean "skip verification"?
@@ -156,6 +172,32 @@ export function decodeSigningKey(secret: string): Buffer {
   return Buffer.from(raw, 'utf8')
 }
 
+/** A short, non-secret fingerprint. Never a digest, never a key. */
+function fp(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex').slice(0, 8)
+}
+
+/**
+ * The evidence a human needs to tell one failing delivery from another.
+ *
+ * Deliberately fingerprints rather than prefixes: a prefix of a real HMAC is a
+ * piece of a real HMAC, and nothing here needs to be. A SHA-256 fingerprint is
+ * enough to say "these two deliveries carried the same body" or "the signature
+ * we computed is not the one they sent", which is the whole question.
+ */
+function failureDetail(input: {
+  scheme: string
+  timestamp: string
+  rawBody: string
+  signature: string
+  expected: string
+}): string {
+  return (
+    `scheme=${input.scheme} ts=${input.timestamp} bodyLen=${input.rawBody.length} ` +
+    `bodyFp=${fp(input.rawBody)} theirSigFp=${fp(input.signature)} ourSigFp=${fp(input.expected)}`
+  )
+}
+
 /**
  * Verify one inbound Quo (OpenPhone) webhook delivery.
  *
@@ -185,7 +227,14 @@ export function verifyQuoWebhook(
     if (!timestamp || !signature) return { ok: false, reason: 'malformed-header', headersSeen: seen }
 
     const expected = crypto.createHmac('sha256', key).update(`${timestamp}.${rawBody}`).digest('base64')
-    if (!sameDigest(signature, expected)) return { ok: false, reason: 'bad-signature', headersSeen: seen }
+    if (!sameDigest(signature, expected)) {
+      return {
+        ok: false,
+        reason: 'bad-signature',
+        headersSeen: seen,
+        detail: failureDetail({ scheme: 'openphone', timestamp, rawBody, signature, expected }),
+      }
+    }
     if (!withinAge(timestamp, now)) return { ok: false, reason: 'stale', headersSeen: seen }
     return { ok: true, scheme: 'openphone' }
   }
