@@ -11,7 +11,7 @@ import {
 export const dynamic = 'force-dynamic'
 
 /**
- * /r/<code> — the short-link redirector (plan §25.3).
+ * /s/<code> — the short-link redirector (plan §25.3).
  *
  * Exists to take a 112-character preview URL down to 48, which is the
  * difference between a 3-segment and a 2-segment reviewer SMS on every draft.

@@ -3431,7 +3431,7 @@ sanitiser is still **not** applied to customer sends: what a customer reads is a
 brand decision, and a helper that silently rewrites it would be making that
 decision on his behalf every time a model reached for an emoji.
 
-### 25.3 Short links: `/r/<code>`
+### 25.3 Short links: `/s/<code>`
 
 **Yes, links can be shortened, and the win is a full segment.** But the answer is
 not a shortener service.
@@ -3455,9 +3455,9 @@ The saving is not in the domain, it is in the token. Two changes:
 | | length | UCS-2 segs | GSM-7 segs |
 |---|---|---|---|
 | today `https://www.hosthampton.com/review/HH-2026-0042.<64 hex>` | 112 | 1.7 | 0.7 |
-| `https://hosthampton.com/r/<22 base64url>` | 48 | 0.7 | 0.3 |
+| `https://hosthampton.com/s/<22 base64url>` | 48 | 0.7 | 0.3 |
 
-Route: `/r/[code]` → validate → 302 to the real destination. It is a **redirect,
+Route: `/s/[code]` → validate → 302 to the real destination. It is a **redirect,
 not a second credential system**: the code *is* the token, stored as an HMAC
 exactly as `reviewLink.ts` does today, so a DB read still cannot reconstruct a
 working link. Rate-limit by IP (the entropy is lower than it was; the TTL and the
@@ -3512,7 +3512,7 @@ The delivery order matters and is the one piece of real sequencing in this phase
 
 1. Post to Slack (`chat.postMessage`; `thread_ts` when the draft's lead already
    has one).
-2. `chat.getPermalink` → mint a `/r/` code for it.
+2. `chat.getPermalink` → mint a `/s/` code for it.
 3. Send the one-segment SMS ping carrying that short link.
 
 **If step 1 or 2 fails, the SMS still sends, carrying the `/review/[token]` link
@@ -3524,7 +3524,7 @@ The resulting ping, in GSM-7, one segment, $0.01:
 
 ```
 [HH-4821 - mobile party] draft ready: Sarah, Oct 12, 24 guests
-https://hosthampton.com/r/8Kq2mXp7Ld3Rw9vTnY4bZc
+https://hosthampton.com/s/8Kq2mXp7Ld3Rw9vTnY4bZc
 ```
 
 Adam kept the ping deliberately (this section's decision): **Slack can be muted,
@@ -3571,7 +3571,7 @@ phase is **048**.
 
 1. 25.2's four fixes + the `leadSmsLine` audit. Ships alone, cuts ~70% of the
    bill, needs no Slack account. **Do this first even if the rest slips.**
-2. Migration 047 + `/r/[code]` + short-token minting.
+2. Migration 047 + `/s/[code]` + short-token minting.
 3. Slack app, manifest, signature verification, `chat.postMessage` with Block Kit.
 4. Interactions handler: Approve / Cancel / Test / Edit-modal, allowlist-gated.
 5. Events handler: thread reply → revision.
@@ -3593,8 +3593,8 @@ The ones that would have caught the defects this section found:
   timestamp fails; an **unset** `SLACK_SIGNING_SECRET` fails closed.
 - An interaction from a `user.id` outside `SLACK_REVIEWER_USER_IDS` cannot approve.
 - `chat.postMessage` throwing still sends the SMS, and that SMS carries the
-  `/review/` link rather than a broken `/r/` one.
-- `/r/` on an expired, unknown, or already-consumed code 404s and does not redirect.
+  `/review/` link rather than a broken `/s/` one.
+- `/s/` on an expired, unknown, or already-consumed code 404s and does not redirect.
 - The module-graph assertion: `/api/slack/*` does not reach `sendApproved.ts`.
 
 ### 25.10 Not doing

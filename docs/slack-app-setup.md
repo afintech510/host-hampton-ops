@@ -93,7 +93,7 @@ Still to build (§25.8 steps 3–5):
 
 - `/api/slack/interactions` and `/api/slack/events`
 - Block Kit message + the edit modal
-- `chat.postMessage` → `chat.getPermalink` → `/r/` code → one-segment SMS ping
+- `chat.postMessage` → `chat.getPermalink` → `/s/` code → one-segment SMS ping
 
 Two rules those must not break:
 

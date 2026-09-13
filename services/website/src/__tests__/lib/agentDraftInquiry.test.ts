@@ -246,7 +246,7 @@ describe('draftForInquiry', () => {
     expect(mockNotifyOwnerSms).toHaveBeenCalledTimes(1)
     const sms = mockNotifyOwnerSms.mock.calls[0][0] as string
     expect(sms).toContain(outcome.reviewCode)
-    expect(sms).toMatch(/https:\/\/hosthampton\.com\/r\/[A-Za-z0-9_-]{22}/)
+    expect(sms).toMatch(/https:\/\/hosthampton\.com\/s\/[A-Za-z0-9_-]{22}/)
     expect(sms).not.toContain('/review/')
     expect(sms).toContain('Nothing has gone to the customer.')
 
@@ -259,7 +259,7 @@ describe('draftForInquiry', () => {
     expect(links[0].kind).toBe('review')
     expect(String(links[0].code_hash)).toHaveLength(64)
     // The raw code is in the SMS and nowhere else.
-    const rawCode = sms.match(/\/r\/([A-Za-z0-9_-]{22})/)![1]
+    const rawCode = sms.match(/\/s\/([A-Za-z0-9_-]{22})/)![1]
     expect(JSON.stringify(links[0])).not.toContain(rawCode)
     // The reply commands the Phase 2 review loop understands.
     expect(sms).toContain('Reply SEND')

@@ -32,7 +32,7 @@ describe('code shape and length', () => {
   })
 
   it('drops www. but keeps the scheme', () => {
-    expect(buildShortUrl('a'.repeat(22))).toMatch(/^https:\/\/hosthampton\.com\/r\//)
+    expect(buildShortUrl('a'.repeat(22))).toMatch(/^https:\/\/hosthampton\.com\/s\//)
   })
 
   it('rejects anything that is not a code we could have minted', () => {
@@ -148,7 +148,7 @@ describe('createShortLink', () => {
     expect(rows[0].expires_at).toEqual(expect.any(String))
   })
 
-  it('refuses to mint for a target that /r/ would refuse to serve', async () => {
+  it('refuses to mint for a target that /s/ would refuse to serve', async () => {
     const rows: Record<string, unknown>[] = []
     const minted = await createShortLink(okDb(rows), {
       target: 'https://evil.test/phish',

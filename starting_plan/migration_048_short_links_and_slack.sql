@@ -25,14 +25,14 @@
 --
 -- ── What this is for ─────────────────────────────────────────────────────
 --
--- Quo bills $0.01 per SMS SEGMENT. §21.2 took the reviewer text from 11
+-- Quo bills $0.01 per SMS SEGMENT. §25.2 took the reviewer text from 11
 -- segments to 3; what is left is mostly the link, because a preview URL is
 -- 112 characters:
 --
 --   https://www.hosthampton.com/review/HH-2026-0042.<64 hex chars>
 --
 -- 64 hex characters carry 256 bits — hex spends 8 bits of string on 4 bits of
--- entropy, so half of that URL is waste. `short_links` plus a /r/<code> route
+-- entropy, so half of that URL is waste. `short_links` plus a /s/<code> route
 -- gets it to 48 characters, which is the difference between a 2-segment and a
 -- 3-segment text on every draft, forever.
 --
@@ -61,7 +61,7 @@
 -- ── The Slack columns ────────────────────────────────────────────────────
 --
 -- Added here rather than in a later migration because they are the same
--- phase and both additive. They are unused until §21.8 step 3 ships; a NULL
+-- phase and both additive. They are unused until §25.8 step 3 ships; a NULL
 -- slack_ts simply means "this draft was never posted to Slack", which is also
 -- the correct reading for every row that predates the feature.
 --
@@ -106,7 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_short_links_entity
   ON public.short_links (entity_type, entity_id)
   WHERE entity_id IS NOT NULL;
 
--- Same posture as 028/031/032/037/038: service_role only. The /r/ route is a
+-- Same posture as 028/031/032/037/038: service_role only. The /s/ route is a
 -- server route; nothing client-side may read this table, because the target
 -- of a link is the thing the code is protecting.
 ALTER TABLE public.short_links ENABLE ROW LEVEL SECURITY;
@@ -115,7 +115,7 @@ CREATE POLICY short_links_service_role ON public.short_links
   FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
 
 -- ─────────────────────────────────────────────────────────────────────────
--- Prefix-free preview-token lookup (§21.3)
+-- Prefix-free preview-token lookup (§25.3)
 -- ─────────────────────────────────────────────────────────────────────────
 -- The token currently carries its review code as a prefix ONLY so the page can
 -- find the row without a lookup. That prefix costs 13 characters of every SMS
@@ -126,7 +126,7 @@ CREATE INDEX IF NOT EXISTS idx_inquiry_drafts_preview_token_hash
   WHERE preview_token_hash IS NOT NULL;
 
 -- ─────────────────────────────────────────────────────────────────────────
--- Slack (§21.4, §21.5) — additive, unused until step 3
+-- Slack (§25.4, §25.5) — additive, unused until step 3
 -- ─────────────────────────────────────────────────────────────────────────
 ALTER TABLE public.inquiry_drafts
   ADD COLUMN IF NOT EXISTS slack_channel TEXT,

@@ -1,5 +1,5 @@
 /**
- * Short links — /r/<code> (plan §25.3).
+ * Short links — /s/<code> (plan §25.3).
  *
  * Quo bills $0.01 per SMS SEGMENT, and a preview URL is 112 characters:
  *
@@ -21,6 +21,20 @@
  * the two things standing beside it — `expires_at`, enforced on every read, and
  * the fact that the route is rate-limited. A bearer link that never expired
  * would not have earned the shorter code.
+ *
+ * ── Why `/s/` and not `/r/` ──────────────────────────────────────────────
+ *
+ * `/r/[token]` was already taken by the A/B tracked-link redirect Phase 5 added
+ * (`app/r/[token]/route.ts`). Next refuses two different slug names on the same
+ * dynamic path — `'code' !== 'token'` — so this was a BUILD failure, and it was
+ * caught by the production image build rather than by anything local, because
+ * the checkout this was written in predated that route.
+ *
+ * Keeping them separate beats one `/r/` handler that sniffs which kind of token
+ * it got. They are different credentials with different lifetimes: a tracking
+ * token is signed and stateless, a short code is a database row with a TTL and
+ * a use count. One route resolving either is one route where a bug in the cheap
+ * path reaches the expensive one. `/s/` is the same three characters.
  *
  * ── Never use a public shortener ─────────────────────────────────────────
  *
@@ -86,7 +100,7 @@ function allowedHost(hostname: string): boolean {
  * screen learned, and it is cheap to get right with the URL parser.
  *
  * Exported because a guarantee that is only enforced on the write path is not a
- * guarantee: the /r/ route re-screens what it read back out of the table.
+ * guarantee: the /s/ route re-screens what it read back out of the table.
  */
 export function isAllowedTarget(target: string): boolean {
   let u: URL
@@ -119,7 +133,7 @@ export function generateShortCode(secret: string): MintedShortLink {
  */
 export function buildShortUrl(code: string): string {
   const base = siteUrl().replace(/^https:\/\/www\./, 'https://')
-  return `${base}/r/${code}`
+  return `${base}/s/${code}`
 }
 
 /** Constant-time check of a presented code against a stored hash. */
@@ -143,7 +157,7 @@ export function hashShortCode(code: string, secret: string): string {
  *
  * base64url of 16 bytes is always 22 characters from [A-Za-z0-9_-]. Anything
  * else is not a code we minted, so it is rejected without a query — which
- * keeps a scan of `/r/<sql injection>` off the database entirely.
+ * keeps a scan of `/s/<sql injection>` off the database entirely.
  */
 export function isWellFormedCode(code: string): boolean {
   return typeof code === 'string' && /^[A-Za-z0-9_-]{22}$/.test(code)
@@ -184,7 +198,7 @@ export async function createShortLink(
     return null
   }
   // Screen on the way IN as well as on the way out. A target that would be
-  // refused by /r/ has no business being stored in the first place.
+  // refused by /s/ has no business being stored in the first place.
   if (!isAllowedTarget(opts.target)) {
     console.error('[short-link] refusing to mint for target:', opts.target.slice(0, 80))
     return null
