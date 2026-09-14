@@ -340,6 +340,34 @@ export default function PartiesTab({
     }
   }
 
+  /**
+   * Open the clean, printable invoice for this party.
+   *
+   * NOT a plain `<a href="/plan/…/summary">`. That page is gated by
+   * `planAccess`, which accepts an `hh_admin` session cookie or the customer's
+   * own `hh_portal` cookie for that exact ref — and deliberately NOT the shared
+   * admin password, which arrives as a Bearer header a browser never sends on a
+   * navigation. An admin signed in with the shared password would therefore get
+   * a 404 from a direct link. Minting a portal link works for both doors, and it
+   * is the same URL you would hand the customer.
+   */
+  async function openInvoice() {
+    const data = await doAction('generate_portal_url', { destination: 'invoice' })
+    if (data?.portalUrl) window.open(data.portalUrl, '_blank')
+  }
+
+  async function copyInvoiceLink() {
+    const data = await doAction('generate_portal_url', { destination: 'invoice' })
+    if (!data?.portalUrl) return
+    try {
+      await navigator.clipboard.writeText(data.portalUrl)
+      setCopyToast('Invoice link copied — send this to the customer')
+    } catch {
+      window.prompt('Copy this invoice link:', data.portalUrl)
+    }
+    setTimeout(() => setCopyToast(''), 2500)
+  }
+
   async function copyPortalLink() {
     // Generates a fresh portal token + URL, copies to clipboard. Same backend
     // action as Open Portal — just a different post-success behavior.
@@ -1105,6 +1133,27 @@ export default function PartiesTab({
               >
                 {copyToast || 'Copy Portal Link'}
               </button>
+
+              {/* ── The clean quote/invoice ──────────────────────
+                  Same document the customer sees and can print, rendered from
+                  this booking's own line items. See openInvoice() on why these
+                  mint a link instead of linking to /plan/<ref>/summary. */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={openInvoice}
+                  disabled={!!actionLoading}
+                  className="border-2 border-hampton-blue text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-hampton-blue/10 disabled:opacity-50"
+                >
+                  🧾 View Invoice
+                </button>
+                <button
+                  onClick={copyInvoiceLink}
+                  disabled={!!actionLoading}
+                  className="border-2 border-hampton-blue/40 text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-hampton-blue/10 disabled:opacity-50"
+                >
+                  Copy Invoice Link
+                </button>
+              </div>
 
               {/* ── Pre-arrival check-in ─────────────────────── */}
               <div className="p-3 bg-gray-50 rounded-lg space-y-2">

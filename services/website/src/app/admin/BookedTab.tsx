@@ -145,6 +145,40 @@ export default function BookedTab({ headers, onLogout }: { headers: HeadersInit;
 
   const [selected, setSelected] = useState<PartyDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [invoiceBusy, setInvoiceBusy] = useState(false)
+
+  /**
+   * Open the clean printable invoice.
+   *
+   * NOT a plain link to `/plan/<ref>/summary`: that page is gated by
+   * `planAccess`, which takes an `hh_admin` session cookie or the customer's own
+   * `hh_portal` cookie for that exact ref, and deliberately NOT the shared admin
+   * password — a Bearer header a browser never sends on a navigation. Half of
+   * the ways into this panel would have got a 404 from an href. Minting a portal
+   * link works from both doors and hands back the same URL you would give the
+   * customer.
+   */
+  async function openInvoice(p: BookedParty) {
+    setInvoiceBusy(true)
+    // Opened before the await: a popup blocker only trusts a window opened
+    // inside the click's own task, and this one is two round-trips away.
+    const win = window.open('', '_blank')
+    try {
+      const r = await fetch(`/api/admin/parties/${p.id}`, {
+        method: 'POST',
+        headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate_portal_url', destination: 'invoice' }),
+      })
+      if (r.status === 401) { win?.close(); onLogout(); return }
+      const data = await r.json().catch(() => ({}))
+      if (data?.portalUrl && win) win.location.href = data.portalUrl
+      else win?.close()
+    } catch {
+      win?.close()
+    } finally {
+      setInvoiceBusy(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -451,6 +485,8 @@ export default function BookedTab({ headers, onLogout }: { headers: HeadersInit;
           party={selected}
           loading={detailLoading}
           onClose={() => setSelected(null)}
+          onOpenInvoice={() => openInvoice(selected)}
+          invoiceBusy={invoiceBusy}
         />
       )}
     </div>
@@ -497,7 +533,15 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
   )
 }
 
-function DetailPanel({ party, loading, onClose }: { party: PartyDetail; loading: boolean; onClose: () => void }) {
+function DetailPanel({
+  party, loading, onClose, onOpenInvoice, invoiceBusy,
+}: {
+  party: PartyDetail
+  loading: boolean
+  onClose: () => void
+  onOpenInvoice: () => void
+  invoiceBusy: boolean
+}) {
   const guests = party.guest_count_approx || 1
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -509,15 +553,14 @@ function DetailPanel({ party, loading, onClose }: { party: PartyDetail; loading:
             <p className="text-xs text-gray-400 font-mono">{party.booking_ref}</p>
           </div>
           <div className="flex items-center gap-2">
-            <a
-              href={`/plan/${party.booking_ref}/summary`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-gray-300"
+            <button
+              onClick={onOpenInvoice}
+              disabled={invoiceBusy}
+              className="text-xs inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-gray-300 disabled:opacity-50"
               title="Open the customer-facing invoice for this party"
             >
-              Invoice <ExternalLink className="w-3 h-3" />
-            </a>
+              {invoiceBusy ? 'Opening…' : <>Invoice <ExternalLink className="w-3 h-3" /></>}
+            </button>
             <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700">
               <X className="w-5 h-5" />
             </button>

@@ -25,6 +25,29 @@ import {
 } from '@/lib/adminMoney'
 import { isPartyType } from '@/lib/pipelineStages'
 
+/**
+ * Where a minted portal link should land the customer.
+ *
+ * A NAMED destination, never a caller-supplied path. `buildPortalUrl` puts this
+ * straight into `?redirect=` on `/api/portal/auth`, so a free-form string here
+ * is an open redirect wearing an authentication token — and the customer
+ * arrives at it already signed in. The three names below map to three constants
+ * in this file and nothing else crosses the boundary; an unknown name falls back
+ * to the portal rather than being honoured or refused, because the caller is an
+ * authenticated admin and the worst case is "the link went to the wrong one of
+ * our own pages".
+ *
+ * `invoice` is the clean, printable quote at /plan/<ref>/summary — the view Adam
+ * asked to be able to hand a customer without them having to walk the planner.
+ */
+function portalDestination(name: unknown, bookingRef: string): string | undefined {
+  switch (name) {
+    case 'planner': return '/party-planner'
+    case 'invoice': return `/plan/${encodeURIComponent(bookingRef)}/summary`
+    default: return undefined // the portal itself
+  }
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
@@ -462,7 +485,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (action === 'send_portal_link' || action === 'generate_portal_url') {
-    const minted = await mintPortalLink(supabase, id, booking.booking_ref)
+    const minted = await mintPortalLink(
+      supabase, id, booking.booking_ref, portalDestination(body.destination, booking.booking_ref),
+    )
     if (!minted.ok) return NextResponse.json({ error: `Could not mint a portal link (${minted.reason}) — nothing was sent.` }, { status: 503 })
     const portalUrl = minted.url
 
