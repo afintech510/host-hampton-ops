@@ -5,7 +5,7 @@ import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
   DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors, Rocket, TrendingUp, Inbox,
-  Instagram
+  Instagram, ClipboardCheck
 } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
@@ -20,6 +20,7 @@ import RevenueTab from './RevenueTab'
 import MediaTab from './MediaTab'
 import GiftCardsTab from './GiftCardsTab'
 import PartiesTab from './PartiesTab'
+import BookedTab from './BookedTab'
 import PhotosTab from './PhotosTab'
 import SummerHairTab from './SummerHairTab'
 import MarketingTab from './MarketingTab'
@@ -28,7 +29,7 @@ import InboxTab from './InboxTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'inbox' | 'events' | 'calendar' | 'orders' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'social' | 'financials' | 'revenue' | 'gift-cards' | 'summer-hair'
+type TabKey = 'dashboard' | 'inbox' | 'events' | 'calendar' | 'orders' | 'booked' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'social' | 'financials' | 'revenue' | 'gift-cards' | 'summer-hair'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
@@ -37,6 +38,9 @@ const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[]
   { key: 'events',     label: 'Events',     Icon: Ticket,          group: 'manage' },
   { key: 'calendar',   label: 'Calendar',   Icon: Calendar,        group: 'manage' },
   { key: 'orders',     label: 'Orders',     Icon: Receipt,         group: 'manage' },
+  // Booked sits above Parties deliberately: Parties is the pipeline (every lead),
+  // Booked is the operational list of parties money has actually landed on.
+  { key: 'booked',     label: 'Booked',     Icon: ClipboardCheck,  group: 'manage' },
   { key: 'parties',    label: 'Parties',    Icon: Sparkles,        group: 'manage' },
   { key: 'photos',     label: 'Photos',     Icon: Camera,          group: 'manage' },
   { key: 'financials', label: 'Financials', Icon: DollarSign,      group: 'manage' },
@@ -445,6 +449,9 @@ function AdminDashboard({
           )}
           {activeTab === 'social' && (
             <SocialTab key={`social-${refreshKey}`} headers={headers} onLogout={onLogout} />
+          )}
+          {activeTab === 'booked' && (
+            <BookedTab key={`booked-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
           {activeTab === 'parties' && (
             <PartiesTab

@@ -32,10 +32,21 @@ import { loadPricingCatalog } from '@/lib/pricingCatalog'
  */
 const NON_PARTY_EVENT_TYPES = ['vendor_registration']
 
+/**
+ * The last three are jsonb reads, not columns: the customer's pizza-or-bagels and
+ * cupcake-flavour choices live inside `quote_snapshot` (see lib/partyFood.ts).
+ * They are pulled out with `->>` rather than selecting the whole snapshot
+ * because a snapshot carries its full line-item array — 25 of them is a payload
+ * nobody needs to page a table. Adam asked for these on the summary so the
+ * morning-of question is answerable without opening the customer's portal.
+ */
 const LIST_COLUMNS =
   'id, booking_ref, status, party_type, source, event_type, party_date, party_time, package_type, ' +
   'guest_count_approx, child_name, contact_name, contact_email, contact_phone, total_cents, ' +
-  'balance_due_cents, payment_method_preference, approved_at, paid_in_full_at, photo_gallery_url, created_at'
+  'balance_due_cents, payment_method_preference, approved_at, paid_in_full_at, photo_gallery_url, created_at, ' +
+  'pizza_or_bagels:quote_snapshot->>pizzaOrBagels, ' +
+  'cupcake_flavor:quote_snapshot->>cupcakeFlavor, ' +
+  'add_mobile_cupcakes:quote_snapshot->>addMobileCupcakes'
 
 /**
  * Cap on the rows scanned to build the pipeline counts. The business runs ~16

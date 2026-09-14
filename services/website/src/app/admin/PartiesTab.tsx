@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { formatMoney } from '@/lib/partyPricing'
 import { PIPELINE_STAGES, PARTY_TYPES, PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
 import { FALLBACK_STUDIO_RATES, type StudioRates } from '@/lib/pricingCatalog'
+import { foodSelectionsFromColumns, readFoodSelections } from '@/lib/partyFood'
 
 interface PartyBookingSummary {
   id: string
@@ -24,9 +25,81 @@ interface PartyBookingSummary {
   balance_due_cents: number
   payment_method_preference: string
   created_at: string
+  /**
+   * The customer's food choices, read out of `quote_snapshot` by the list route
+   * (`quote_snapshot->>pizzaOrBagels` etc). Strings, not booleans/enums, because
+   * that is what a PostgREST `->>` select returns — `lib/partyFood.ts` turns
+   * them back into a typed selection and knows which values are the planner's
+   * untouched defaults. Absent on any booking that never went through the
+   * planner.
+   */
+  pizza_or_bagels?: string | null
+  cupcake_flavor?: string | null
+  add_mobile_cupcakes?: string | null
+}
+
+/**
+ * Pizza-or-bagels and cupcake flavour, at a glance.
+ *
+ * Adam asked for this on the summary so the morning-of question does not need
+ * the customer's portal opened. The `default` marker is load-bearing and is
+ * explained in lib/partyFood.ts: the planner pre-selects pizza + vanilla, so a
+ * row reading "Pizza · Vanilla" may be a choice or may be an untouched control,
+ * and 34 of 38 snapshots in production read exactly that.
+ */
+function FoodCell({ booking }: { booking: PartyBookingSummary }) {
+  const food = foodSelectionsFromColumns(
+    booking.pizza_or_bagels,
+    booking.cupcake_flavor,
+    booking.add_mobile_cupcakes,
+  )
+  if (!food.main && !food.cupcake) return <span className="text-gray-300 text-xs">—</span>
+  const untouched = (food.main?.isDefault ?? true) && (food.cupcake?.isDefault ?? true)
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs"
+      title={untouched ? 'Planner defaults — the customer may not have picked these. Confirm before ordering.' : undefined}
+    >
+      {food.main && (
+        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-100">
+          {food.main.value === 'bagels' ? '🥯' : '🍕'} {food.main.label}
+        </span>
+      )}
+      {food.cupcake && (
+        <span className={`px-1.5 py-0.5 rounded border ${food.cupcake.value === 'chocolate' ? 'bg-stone-100 text-stone-800 border-stone-200' : 'bg-yellow-50 text-yellow-800 border-yellow-100'}`}>
+          🧁 {food.cupcake.label}
+        </span>
+      )}
+      {food.mobileCupcakes && <span className="text-gray-400">+mob</span>}
+      {untouched && <span className="text-gray-300">·def</span>}
+    </span>
+  )
+}
+
+/**
+ * The full food line for the drawer. The detail endpoint selects `*`, so the
+ * whole `quote_snapshot` is on hand here and this reads it directly rather than
+ * through the flattened list columns.
+ */
+function FoodDetailLine({ snapshot }: { snapshot: unknown }) {
+  const food = readFoodSelections(snapshot)
+  if (!food.main && !food.cupcake) {
+    return <p className="text-gray-400 text-xs">Food: no planner snapshot on this booking</p>
+  }
+  const mark = (isDefault: boolean) => (isDefault ? <span className="text-gray-400 text-xs font-normal"> (default)</span> : null)
+  return (
+    <p>
+      Food:{' '}
+      {food.main && <strong>{food.main.label}{mark(food.main.isDefault)}</strong>}
+      {food.main && food.cupcake && ' · '}
+      {food.cupcake && <strong>{food.cupcake.label} cupcakes{mark(food.cupcake.isDefault)}</strong>}
+      {food.mobileCupcakes && <span className="text-gray-500 text-xs"> · + mobile cupcake add-on</span>}
+    </p>
+  )
 }
 
 interface PartyDetail extends PartyBookingSummary {
+  quote_snapshot?: unknown
   checkin_status?: string | null
   checkin_started_at?: string | null
   checkin_completed_at?: string | null
@@ -597,6 +670,7 @@ export default function PartiesTab({
                   <th className="pb-2 pr-4">Date</th>
                   <th className="pb-2 pr-4">Type</th>
                   <th className="pb-2 pr-4">Theme</th>
+                  <th className="pb-2 pr-4">Food</th>
                   <th className="pb-2 pr-4">Guests</th>
                   <th className="pb-2 pr-4">Total</th>
                   <th className="pb-2 pr-4">Balance</th>
@@ -637,6 +711,7 @@ export default function PartiesTab({
                         )}
                       </td>
                       <td className="py-3 pr-4">{b.package_type || '—'}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap"><FoodCell booking={b} /></td>
                       <td className="py-3 pr-4 text-center">{b.guest_count_approx || '—'}</td>
                       <td className="py-3 pr-4">{formatMoney(b.total_cents || 0)}</td>
                       <td className="py-3 pr-4 font-medium">{formatMoney(b.balance_due_cents || 0)}</td>
@@ -746,6 +821,7 @@ export default function PartiesTab({
                 <p>Time: <strong>{selected.party_time || 'TBD'}</strong></p>
                 <p>Guests: <strong>{selected.guest_count_approx || '—'}</strong></p>
                 <p>Theme: <strong>{selected.package_type || '—'}</strong></p>
+                <FoodDetailLine snapshot={(selected as PartyDetail).quote_snapshot} />
                 {selected.child_name && <p>Child: <strong>{selected.child_name}{(selected as PartyDetail).child_age ? `, age ${(selected as PartyDetail).child_age}` : ''}</strong></p>}
                 {selected.notes && <p className="text-gray-400 mt-2">Notes: {selected.notes}</p>}
                 {(selected as PartyDetail).admin_notes && <p className="text-amber-600 mt-1 text-xs">Admin: {(selected as PartyDetail).admin_notes}</p>}
