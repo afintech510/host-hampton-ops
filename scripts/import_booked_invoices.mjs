@@ -18,6 +18,39 @@
  * receipt the payment is simply not written (see Katie Graham) rather than
  * inferred from the arithmetic.
  *
+ * ── The triage, for all twenty (completed 2026-09-14) ────────────────────
+ *
+ * The FIRST pass of this script checked Venmo only and parked seven invoices as
+ * "unconfirmed". That was wrong, and the fix is that these files share a
+ * vocabulary which is the reliable signal:
+ *
+ *   "Deposit Paid" / "was received on <date>"   → money landed
+ *   "Deposit to Book" / "Required to Book"      → a quote nobody has paid
+ *   "Reserve Your Date" + a Pay button          → same
+ *
+ * BOOKED: aimee, katie, nikki, dina, jessica-mobile, blair (the six below);
+ *   alexandra (PAID IN FULL, $4,400, both charges already in the Stripe ledger
+ *   and attached to no booking — the largest single orphan found);
+ *   anne ($400, invoice-asserted only); holly (security deposit received 8/31);
+ *   holloway + kristin-sparks (already in `bookings`).
+ * NOT BOOKED: maggie, samantha, mollie, dune-deck (+options), and the
+ *   natalie / sophia security deposits — all still asking for the deposit.
+ *   lindsey says it outright: "the original date (8/28) has passed without a
+ *   deposit".
+ * NEITHER: kristen-mobile-party-2026-10-24 is an AMENDMENT, not a new customer —
+ *   `kgraboski@gmail.com` + 631-960-6713 match HH-2026-2926 exactly, and the
+ *   invoice converts that booking from in-studio Glow Party to a mobile party at
+ *   $1,690. Check the email before creating a second row.
+ *
+ * The four added after the first pass were applied by hand rather than through
+ * this script, because Alexandra's and Jessica's money was ALREADY in
+ * `financial_transactions` as `stripe-pl-<pi>` rows. `record_payment` would have
+ * written a second ledger row: its covering-row guard matches on
+ * `reference LIKE %booking_ref%` plus an exact amount, and a pay-link reference
+ * carries the payment-intent id while the ledger amount is GROSS of the 3% card
+ * fee. It cannot fire. Those payments were inserted straight into
+ * `booking_payments` with the ledger left alone.
+ *
  * Two invoices are deliberately absent even though money exists:
  *   * `anne-kpop-party-2026-07-19` — the file records $400 paid; no Venmo or
  *     Stripe receipt matches it, and Stripe reads are unavailable (the
