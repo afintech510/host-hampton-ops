@@ -518,6 +518,11 @@ describe('R0 — the staleness walker', () => {
       // Both read an already-resolved contact id.
       'lib/agent/sendApproved.ts',
       'lib/checkinLink.ts',
+      // The Inbox's per-draft detail panel: `.in('id', …)` over the contact ids
+      // the drafts already carry, to display a name/email/phone. It resolves no
+      // identity — it never looks a person up BY email or phone, and it writes
+      // nothing. If it ever gains a lookup, it belongs in SURFACE instead.
+      'app/api/admin/agent/route.ts',
     ])
 
     const touching = ALL_FILES.filter(f => /from\(['"`]contacts['"`]\)/.test(code(relative(f)))).map(relative)

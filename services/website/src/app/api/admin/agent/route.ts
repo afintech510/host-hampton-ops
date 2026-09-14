@@ -33,6 +33,29 @@ const EVENT_COLUMNS =
   'id, source, external_id, direction, from_address, subject, body, parsed, status, classification, contact_id, booking_id, draft_id, error, sent_at, created_at, handled_at'
 
 /**
+ * Everything the Inbox needs to answer "what is this party?" without leaving the
+ * page. Deliberately the same column set the lead workspace reads — a reviewer
+ * comparing the two surfaces should never see different facts.
+ */
+const PLAN_DETAIL_COLUMNS =
+  'id, booking_ref, status, contact_name, contact_email, contact_phone, party_date, party_time, ' +
+  'guest_count_approx, child_name, child_age, event_type, package_type, party_tags, notes, admin_notes, ' +
+  'total_cents, deposit_amount, balance_due_cents, source'
+
+/**
+ * The original message is shown verbatim, so it is capped here rather than in
+ * the browser: a Gmail thread with a quoted history underneath can run to tens
+ * of kilobytes, and fifty of them is the whole page's payload.
+ */
+const MAX_INQUIRY_BODY_CHARS = 4000
+
+/** Unique, non-null ids from a column of draft rows. Empty means "skip the query". */
+function idsFrom(rows: Record<string, unknown>[], key: string): string[] {
+  // `Array.from`, not a spread: this tsconfig targets below es2015.
+  return Array.from(new Set(rows.map(r => r[key]).filter(Boolean))) as string[]
+}
+
+/**
  * A message older than this is history, not an inquiry. "Draft now" needs
  * ?force=1 past it.
  */
@@ -61,29 +84,126 @@ export async function GET(req: NextRequest) {
       .limit(30),
   ])
 
-  // Who each draft is FOR. The Inbox showed a review code and a party type but
-  // never a name, so triaging the queue meant opening rows to find out whose
-  // party each one was. One extra query for the whole page, not one per row.
+  // Who each draft is FOR, and what party it is about. The Inbox showed a review
+  // code and a party type but never the inquiry itself, so deciding whether a
+  // draft was right meant opening the lead page for every row. Three extra
+  // queries for the whole page, not three per row.
   const draftRows = (drafts.data || []) as unknown as Record<string, unknown>[]
-  // `Array.from`, not a spread: this tsconfig targets below es2015, where
-  // spreading a Set needs `downlevelIteration`.
-  const bookingIds = Array.from(new Set(draftRows.map(d => d.booking_id).filter(Boolean))) as string[]
-  let plans: Record<string, { booking_ref: string | null; contact_name: string | null; status: string | null }> = {}
-  if (bookingIds.length) {
-    const { data: planRows } = await supabase
-      .from('bookings')
-      .select('id, booking_ref, contact_name, status')
-      .in('id', bookingIds)
-    plans = Object.fromEntries(
-      (
-        (planRows || []) as {
-          id: string
-          booking_ref: string | null
-          contact_name: string | null
-          status: string | null
-        }[]
-      ).map(p => [p.id, { booking_ref: p.booking_ref, contact_name: p.contact_name, status: p.status }]),
-    )
+  const bookingIds = idsFrom(draftRows, 'booking_id')
+  const contactIds = idsFrom(draftRows, 'contact_id')
+  const inboundIds = idsFrom(draftRows, 'inbound_event_id')
+
+  type PlanRow = Record<string, unknown> & { id: string }
+  type ContactRow = {
+    id: string
+    first_name: string | null
+    last_name: string | null
+    email: string | null
+    phone: string | null
+  }
+  type InquiryRow = Record<string, unknown> & { id: string }
+
+  const [planRes, contactRes, inboundRes] = await Promise.all([
+    bookingIds.length
+      ? supabase.from('bookings').select(PLAN_DETAIL_COLUMNS).in('id', bookingIds)
+      : Promise.resolve({ data: [], error: null }),
+    contactIds.length
+      ? supabase.from('contacts').select('id, first_name, last_name, email, phone').in('id', contactIds)
+      : Promise.resolve({ data: [], error: null }),
+    inboundIds.length
+      ? supabase
+          .from('ingested_messages')
+          .select('id, source, from_address, subject, body, parsed, sent_at, created_at')
+          .in('id', inboundIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  const plans: Record<string, PlanRow> = Object.fromEntries(
+    (((planRes.data || []) as unknown) as PlanRow[]).map(p => [p.id, p]),
+  )
+  const contacts: Record<string, ContactRow> = Object.fromEntries(
+    (((contactRes.data || []) as unknown) as ContactRow[]).map(c => [c.id, c]),
+  )
+  const inquiries: Record<string, InquiryRow> = Object.fromEntries(
+    (((inboundRes.data || []) as unknown) as InquiryRow[]).map(m => [m.id, m]),
+  )
+
+  /**
+   * What we know about the party behind one draft, from all three sources.
+   *
+   * A plan column wins when it holds something, because that is the row the
+   * quote is built from; the contact row and the inbound message fill the gaps
+   * for a draft that has no plan yet (the info-gather case, which is exactly the
+   * case where a reviewer most needs to see what the customer actually said).
+   *
+   * A read FAILURE is reported as such and never as an absent field — showing an
+   * empty "Email —" for a booking that has one is how a reviewer concludes a
+   * customer is unreachable and dismisses a live lead.
+   */
+  function detailsFor(d: Record<string, unknown>) {
+    const plan = d.booking_id ? (plans[d.booking_id as string] ?? null) : null
+    const contact = d.contact_id ? (contacts[d.contact_id as string] ?? null) : null
+    const inbound = d.inbound_event_id ? (inquiries[d.inbound_event_id as string] ?? null) : null
+    const contactName = [contact?.first_name, contact?.last_name].filter(Boolean).join(' ') || null
+
+    const pick = <T,>(...vals: (T | null | undefined)[]): T | null => {
+      for (const v of vals) {
+        if (v !== null && v !== undefined && v !== '') return v
+      }
+      return null
+    }
+
+    const body = typeof inbound?.body === 'string' ? inbound.body : null
+    const tags = (plan?.party_tags as Record<string, unknown> | null) ?? null
+
+    return {
+      // Could not be answered, as distinct from answered "nothing".
+      unavailable: [
+        d.booking_id && planRes.error ? 'plan' : null,
+        d.contact_id && contactRes.error ? 'contact' : null,
+        d.inbound_event_id && inboundRes.error ? 'inquiry' : null,
+      ].filter(Boolean) as string[],
+      name: pick(plan?.contact_name as string | null, contactName),
+      email: pick(
+        plan?.contact_email as string | null,
+        contact?.email ?? null,
+        // Only an email-sourced event's `from_address` is an email address.
+        inbound?.source === 'email' ? ((inbound?.from_address as string | null) ?? null) : null,
+      ),
+      phone: pick(
+        plan?.contact_phone as string | null,
+        contact?.phone ?? null,
+        inbound?.source === 'sms' ? ((inbound?.from_address as string | null) ?? null) : null,
+      ),
+      party_date: (plan?.party_date as string | null) ?? null,
+      party_time: (plan?.party_time as string | null) ?? null,
+      guest_count: (plan?.guest_count_approx as number | null) ?? null,
+      child_name: (plan?.child_name as string | null) ?? null,
+      child_age: (plan?.child_age as number | null) ?? null,
+      event_type: (plan?.event_type as string | null) ?? null,
+      package_type: (plan?.package_type as string | null) ?? null,
+      notes: (plan?.notes as string | null) ?? null,
+      admin_notes: (plan?.admin_notes as string | null) ?? null,
+      source: (plan?.source as string | null) ?? null,
+      total_cents: (plan?.total_cents as number | null) ?? null,
+      deposit_amount: (plan?.deposit_amount as number | null) ?? null,
+      balance_due_cents: (plan?.balance_due_cents as number | null) ?? null,
+      // Theme, location address and any un-parseable requested date the intake
+      // form kept verbatim all live here — see lib/plan.ts.
+      tags: tags && Object.keys(tags).length ? tags : null,
+      /** The message that started this, in the customer's own words. */
+      inquiry: inbound
+        ? {
+            source: (inbound.source as string | null) ?? null,
+            from: (inbound.from_address as string | null) ?? null,
+            subject: (inbound.subject as string | null) ?? null,
+            body: body ? body.slice(0, MAX_INQUIRY_BODY_CHARS) : null,
+            truncated: !!body && body.length > MAX_INQUIRY_BODY_CHARS,
+            parsed: (inbound.parsed as Record<string, unknown> | null) ?? null,
+            received_at: (inbound.sent_at as string | null) || ((inbound.created_at as string | null) ?? null),
+          }
+        : null,
+    }
   }
 
   return NextResponse.json({
@@ -95,17 +215,28 @@ export async function GET(req: NextRequest) {
       ...d,
       // Absent when the draft has no plan row, or when the plan could not be
       // read — the Inbox shows nothing rather than an empty name.
-      booking_ref: d.booking_id ? (plans[d.booking_id as string]?.booking_ref ?? null) : null,
-      contact_name: d.booking_id ? (plans[d.booking_id as string]?.contact_name ?? null) : null,
+      booking_ref: d.booking_id ? ((plans[d.booking_id as string]?.booking_ref as string | null) ?? null) : null,
+      contact_name: d.booking_id ? ((plans[d.booking_id as string]?.contact_name as string | null) ?? null) : null,
       // An OPEN draft whose plan has been cancelled is a live hazard, not a
       // curiosity: approving it sends a customer a quote for a party that was
       // called off. Production had two of these the day this was written —
       // duplicate plans got cancelled, and the drafts hanging off them did not.
-      booking_status: d.booking_id ? (plans[d.booking_id as string]?.status ?? null) : null,
+      booking_status: d.booking_id ? ((plans[d.booking_id as string]?.status as string | null) ?? null) : null,
+      // The inquiry itself — dates, guests, theme, notes and the customer's own
+      // words — so the draft can be judged against it without leaving the page.
+      details: detailsFor(d),
     })),
     ledger: ledger.data || [],
     // Surfaced so a missing migration reads as a clear message, not an empty tab.
-    errors: [events.error?.message, drafts.error?.message].filter(Boolean),
+    errors: [
+      events.error?.message,
+      drafts.error?.message,
+      // A detail lookup that failed is said out loud too: the panel below would
+      // otherwise render a read failure as a party with no date and no guests.
+      planRes.error ? `plan details: ${planRes.error.message}` : null,
+      contactRes.error ? `contact details: ${contactRes.error.message}` : null,
+      inboundRes.error ? `original inquiries: ${inboundRes.error.message}` : null,
+    ].filter(Boolean),
   })
 }
 

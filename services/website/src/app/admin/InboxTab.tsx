@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import {
   RefreshCw, CheckCircle2, XCircle, Pencil, Inbox, MessageSquare, Mail, Sparkles, AlertTriangle, X, Send, Clock,
+  ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { byLongestWaiting, waitingInfo } from '@/lib/leadWaiting'
 import LearningsPanel from './LearningsPanel'
@@ -55,6 +56,42 @@ interface EventRow {
   created_at: string
 }
 
+/**
+ * What is known about the party behind a draft, assembled server-side from the
+ * plan row, the contact row and the original inbound message.
+ */
+interface DraftDetails {
+  /** Sources that could not be READ. Never confuse these with "no value". */
+  unavailable: string[]
+  name: string | null
+  email: string | null
+  phone: string | null
+  party_date: string | null
+  party_time: string | null
+  guest_count: number | null
+  child_name: string | null
+  child_age: number | null
+  event_type: string | null
+  package_type: string | null
+  notes: string | null
+  admin_notes: string | null
+  source: string | null
+  total_cents: number | null
+  deposit_amount: number | null
+  balance_due_cents: number | null
+  /** Theme, location address, requested-date text — whatever intake kept. */
+  tags: Record<string, unknown> | null
+  inquiry: {
+    source: string | null
+    from: string | null
+    subject: string | null
+    body: string | null
+    truncated: boolean
+    parsed: Record<string, unknown> | null
+    received_at: string | null
+  } | null
+}
+
 interface DraftRow {
   id: string
   review_code: string
@@ -74,6 +111,8 @@ interface DraftRow {
   contact_name: string | null
   /** The plan's pipeline status. 'cancelled' makes this draft a hazard. */
   booking_status: string | null
+  /** Absent on an older payload — the panel renders nothing rather than blanks. */
+  details?: DraftDetails | null
 }
 
 interface LedgerRow {
@@ -105,6 +144,183 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[status] || 'bg-gray-100 text-gray-700'}`}>
       {status}
     </span>
+  )
+}
+
+/**
+ * A `date` column is a calendar day, not an instant. `new Date('2026-09-30')`
+ * parses as midnight UTC, which in Eastern time is the EVENING OF THE 29th — so
+ * the obvious formatting renders every party one day early. Build the date from
+ * its own parts, and if it is not the plain Y-M-D we expect, show it verbatim.
+ */
+function formatPartyDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return iso
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/** '14:30:00' → '2:30 PM'. Anything unexpected is shown as stored. */
+function formatPartyTime(raw: string): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(raw)
+  if (!m) return raw
+  const h = Number(m[1])
+  const suffix = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}:${m[2]} ${suffix}`
+}
+
+function money(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+/** One label/value pair. A field nobody told us is said so, not left blank. */
+function Field({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</dt>
+      <dd className="text-xs text-gray-800 break-words">
+        {value === null || value === undefined || value === '' ? (
+          <span className="text-amber-600">not provided</span>
+        ) : (
+          value
+        )}
+      </dd>
+    </div>
+  )
+}
+
+/**
+ * Everything known about the party a draft is answering.
+ *
+ * The reviewer's actual job on this screen is to decide whether the draft is
+ * right, and that is not answerable from the draft alone — "does it have the
+ * date?" needs the date. Until this panel existed the only way to see it was to
+ * open the lead page for every row, which is why drafts got approved on the
+ * strength of the prose reading well.
+ */
+function DraftDetailsPanel({ details }: { details: DraftDetails }) {
+  const [showInquiry, setShowInquiry] = useState(false)
+  const tags = details.tags ? Object.entries(details.tags).filter(([, v]) => v !== null && v !== '') : []
+  const hasMoney =
+    details.total_cents != null || details.deposit_amount != null || details.balance_due_cents != null
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white/60 p-3 space-y-3">
+      {details.unavailable.length > 0 && (
+        // NOT "not provided". We failed to read it — saying the field is empty
+        // would invite a reviewer to re-ask a customer for what we already have.
+        <p className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
+          Could not read the {details.unavailable.join(' and ')} for this draft just now — the fields below are
+          incomplete for that reason, not because the customer left them out. Hit Refresh.
+        </p>
+      )}
+
+      <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2">
+        <Field label="Name" value={details.name} />
+        <Field
+          label="Email"
+          value={details.email ? <a className="underline decoration-dotted" href={`mailto:${details.email}`}>{details.email}</a> : null}
+        />
+        <Field
+          label="Phone"
+          value={details.phone ? <a className="underline decoration-dotted" href={`tel:${details.phone}`}>{details.phone}</a> : null}
+        />
+        <Field label="Date" value={details.party_date ? formatPartyDate(details.party_date) : null} />
+        <Field label="Start time" value={details.party_time ? formatPartyTime(details.party_time) : null} />
+        <Field label="Guests" value={details.guest_count} />
+        <Field label="Child" value={details.child_name} />
+        <Field label="Turning" value={details.child_age} />
+        <Field label="Event type" value={details.event_type} />
+        <Field label="Package / theme" value={details.package_type} />
+        {details.source && <Field label="Came from" value={details.source} />}
+      </dl>
+
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map(([k, v]) => (
+            <span key={k} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+              <span className="text-gray-400">{k.replace(/_/g, ' ')}:</span>{' '}
+              {typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : JSON.stringify(v)}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {hasMoney && (
+        <p className="text-xs text-gray-600">
+          {details.total_cents != null && <>Total {money(details.total_cents)} · </>}
+          {details.deposit_amount != null && <>Deposit ${Number(details.deposit_amount).toFixed(2)} · </>}
+          {details.balance_due_cents != null && <>Balance {money(details.balance_due_cents)}</>}
+        </p>
+      )}
+
+      {details.notes && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Notes</p>
+          <p className="text-xs text-gray-700 whitespace-pre-wrap">{details.notes}</p>
+        </div>
+      )}
+      {details.admin_notes && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Admin notes</p>
+          <p className="text-xs text-gray-700 whitespace-pre-wrap">{details.admin_notes}</p>
+        </div>
+      )}
+
+      {details.inquiry && (
+        <div className="border-t border-gray-100 pt-2">
+          <button
+            onClick={() => setShowInquiry(v => !v)}
+            className="flex items-center gap-1.5 text-[11px] font-semibold text-hampton-navy hover:underline"
+          >
+            {showInquiry ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            What they actually wrote
+            {details.inquiry.received_at && (
+              <span className="font-normal text-gray-400">
+                · {details.inquiry.source || 'message'} · {new Date(details.inquiry.received_at).toLocaleString()}
+              </span>
+            )}
+          </button>
+          {showInquiry && (
+            <div className="mt-2 bg-gray-50 rounded-lg p-3 space-y-2">
+              {details.inquiry.from && (
+                <p className="text-[11px] text-gray-500">From {details.inquiry.from}</p>
+              )}
+              {details.inquiry.subject && (
+                <p className="text-xs font-semibold text-hampton-navy">{details.inquiry.subject}</p>
+              )}
+              {/* Customer-authored text, rendered as text. */}
+              <pre className="whitespace-pre-wrap font-sans text-xs text-gray-700 leading-relaxed">
+                {details.inquiry.body || '(no message body)'}
+              </pre>
+              {details.inquiry.truncated && (
+                <p className="text-[11px] text-gray-400">
+                  Trimmed here — open the lead thread for the whole message.
+                </p>
+              )}
+              {details.inquiry.parsed && Object.keys(details.inquiry.parsed).length > 0 && (
+                <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 border-t border-gray-200 pt-2">
+                  {Object.entries(details.inquiry.parsed).map(([k, v]) => (
+                    <Field
+                      key={k}
+                      label={k.replace(/_/g, ' ')}
+                      value={
+                        typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+                          ? String(v)
+                          : v == null
+                            ? null
+                            : JSON.stringify(v)
+                      }
+                    />
+                  ))}
+                </dl>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -252,7 +468,8 @@ export default function InboxTab({
       {loadErrors.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl px-4 py-3">
           <AlertTriangle className="w-4 h-4 inline mr-1.5 -mt-0.5" />
-          {loadErrors.join(' · ')} — check that migrations 028, 032 and 033 have been applied.
+          {loadErrors.join(' · ')} — a table that is missing entirely usually means a migration has not been
+          applied; a one-off timeout usually clears on Refresh.
         </div>
       )}
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>}
@@ -317,6 +534,10 @@ export default function InboxTab({
               {d.missing_fields && d.missing_fields.length > 0 && (
                 <p className="text-xs text-amber-700">Missing: {d.missing_fields.join(', ')}</p>
               )}
+
+              {/* The inquiry this draft is answering — a draft cannot be judged
+                  right or wrong without the party details in front of you. */}
+              {d.details && <DraftDetailsPanel details={d.details} />}
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <div className="bg-gray-50 rounded-lg p-3">

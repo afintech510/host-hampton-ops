@@ -346,7 +346,16 @@ describe('R4 · a guardrail hold cannot be cleared or approved by accident', () 
     // `{action:'edit', id}` with no fields — or with only a new subject — used to
     // set `error: null` and move the draft to sent_for_review without touching
     // the flagged bytes. A no-op edit laundered a parked draft.
-    const admin = stripComments(read('app/api/admin/agent/route.ts'))
+    const file = stripComments(read('app/api/admin/agent/route.ts'))
+    // Slice to the POST handler before looking for the CLEAR. `error: null` is
+    // ordinary vocabulary in this file — GET's detail lookups fall back to
+    // `{ data: [], error: null }` for a table it has no ids to query — and a
+    // bare `search()` over the whole file happily matched one of those instead,
+    // putting the "clear" hundreds of lines before the guard and passing the
+    // ordering assertion for a reason that had nothing to do with the guard.
+    const postIdx = file.indexOf('export async function POST')
+    expect(postIdx).toBeGreaterThan(-1)
+    const admin = file.slice(postIdx)
     expect(admin).toMatch(/textChanged/)
     expect(admin).toMatch(/heldBack/)
     const idx = admin.indexOf('const textChanged')
