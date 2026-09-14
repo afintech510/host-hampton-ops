@@ -81,6 +81,8 @@ interface DraftDetails {
   balance_due_cents: number | null
   /** Theme, location address, requested-date text — whatever intake kept. */
   tags: Record<string, unknown> | null
+  /** The "customer" on this draft is one of our own addresses. */
+  self_addressed?: boolean
   inquiry: {
     source: string | null
     from: string | null
@@ -213,6 +215,16 @@ function DraftDetailsPanel({ details }: { details: DraftDetails }) {
         <p className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
           Could not read the {details.unavailable.join(' and ')} for this draft just now — the fields below are
           incomplete for that reason, not because the customer left them out. Hit Refresh.
+        </p>
+      )}
+
+      {details.self_addressed && (
+        // This draft is a reply to ourselves. It reads exactly like a real lead
+        // in the queue above — same badges, same waiting clock — and the only
+        // tell is the address, which until now was not on this screen at all.
+        <p className="text-xs bg-red-50 border border-red-300 text-red-800 rounded-lg px-3 py-2 font-semibold">
+          ⚠ The contact on this draft is one of OUR OWN addresses. This is almost certainly our own outgoing
+          mail that came back in as an inquiry — there is no customer at the other end. Dismiss it.
         </p>
       )}
 

@@ -243,6 +243,37 @@ describe('GET /api/admin/agent — inquiry details', () => {
     expect(d.phone).toBe('+16319998888')
   })
 
+  it('reads from_address by its shape, not by the event source vocabulary', async () => {
+    // Production's Gmail poller writes source='gmail'; an allowlist of 'email'
+    // silently dropped every one of those addresses. The address itself says
+    // what it is.
+    const body = await load({
+      contacts: { data: [CONTACTS[0], { ...CONTACTS[1], email: null }], error: null },
+      ingested_messages: {
+        data: [EVENTS[0], { ...EVENTS[1], source: 'gmail', from_address: 'sam@example.net' }],
+        error: null,
+      },
+    })
+    const d = body.drafts.find((x: any) => x.id === 'dr-2').details
+    expect(d.email).toBe('sam@example.net')
+    expect(d.phone).toBeNull()
+  })
+
+  it('flags a draft whose "customer" is one of our own addresses', async () => {
+    // Production has these: our own outgoing quote re-ingested with
+    // direction='in', drafted a reply to. In the queue it is indistinguishable
+    // from a real lead, so the detail panel has to name it.
+    const body = await load({
+      contacts: {
+        data: [CONTACTS[0], { ...CONTACTS[1], email: 'allie@hosthampton.com' }],
+        error: null,
+      },
+    })
+    expect(body.drafts.find((x: any) => x.id === 'dr-2').details.self_addressed).toBe(true)
+    // A real customer is not flagged.
+    expect(body.drafts.find((x: any) => x.id === 'dr-1').details.self_addressed).toBe(false)
+  })
+
   it('reports a failed plan read as a failure, not as a party with no details', async () => {
     const body = await load({ bookings: { data: null, error: { message: 'timeout' } } })
     const d = body.drafts.find((x: any) => x.id === 'dr-1').details

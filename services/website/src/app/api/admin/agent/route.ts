@@ -49,6 +49,24 @@ const PLAN_DETAIL_COLUMNS =
  */
 const MAX_INQUIRY_BODY_CHARS = 4000
 
+/**
+ * Our own mail domains. An "inquiry" from one of these is our own outgoing
+ * message that came back round as an inbound one — `gmail-sync` records some of
+ * them with `direction: 'in'`, and `autoIgnoreReason` only knows the
+ * `mail.hosthampton.com` notification domain, so a draft can end up being a
+ * reply to ourselves with our own address in the customer slot. The panel must
+ * say that out loud: it is indistinguishable from a real lead otherwise.
+ */
+const OUR_EMAIL_DOMAINS = ['hosthampton.com']
+
+function isOurOwnAddress(email: string | null): boolean {
+  const addr = (email || '').trim().toLowerCase()
+  const at = addr.lastIndexOf('@')
+  if (at < 0) return false
+  const domain = addr.slice(at + 1)
+  return OUR_EMAIL_DOMAINS.some(d => domain === d || domain.endsWith(`.${d}`))
+}
+
 /** Unique, non-null ids from a column of draft rows. Empty means "skip the query". */
 function idsFrom(rows: Record<string, unknown>[], key: string): string[] {
   // `Array.from`, not a spread: this tsconfig targets below es2015.
@@ -156,6 +174,20 @@ export async function GET(req: NextRequest) {
     const body = typeof inbound?.body === 'string' ? inbound.body : null
     const tags = (plan?.party_tags as Record<string, unknown> | null) ?? null
 
+    // What KIND of address `from_address` is, decided by the address itself
+    // rather than by `source`. The source vocabulary is open — production has
+    // 'gmail' where this first said 'email' — and guessing wrong would have put
+    // a phone number behind a mailto: link, or nothing behind either.
+    const fromAddr = (inbound?.from_address as string | null) ?? null
+    const fromIsEmail = !!fromAddr && fromAddr.includes('@')
+    const fromIsPhone = !!fromAddr && !fromIsEmail && /\d/.test(fromAddr)
+
+    const email = pick(
+      plan?.contact_email as string | null,
+      contact?.email ?? null,
+      fromIsEmail ? fromAddr : null,
+    )
+
     return {
       // Could not be answered, as distinct from answered "nothing".
       unavailable: [
@@ -164,17 +196,19 @@ export async function GET(req: NextRequest) {
         d.inbound_event_id && inboundRes.error ? 'inquiry' : null,
       ].filter(Boolean) as string[],
       name: pick(plan?.contact_name as string | null, contactName),
-      email: pick(
-        plan?.contact_email as string | null,
-        contact?.email ?? null,
-        // Only an email-sourced event's `from_address` is an email address.
-        inbound?.source === 'email' ? ((inbound?.from_address as string | null) ?? null) : null,
-      ),
+      email,
       phone: pick(
         plan?.contact_phone as string | null,
         contact?.phone ?? null,
-        inbound?.source === 'sms' ? ((inbound?.from_address as string | null) ?? null) : null,
+        fromIsPhone ? fromAddr : null,
       ),
+      /**
+       * True when the "customer" on this draft is US. Production has drafts
+       * whose contact is allie@hosthampton.com and whose "inquiry" is our own
+       * outgoing quote, re-ingested with direction='in' — they look exactly like
+       * a real lead in this queue, which is how one gets approved.
+       */
+      self_addressed: isOurOwnAddress(email) || isOurOwnAddress(fromIsEmail ? fromAddr : null),
       party_date: (plan?.party_date as string | null) ?? null,
       party_time: (plan?.party_time as string | null) ?? null,
       guest_count: (plan?.guest_count_approx as number | null) ?? null,
