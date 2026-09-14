@@ -4,6 +4,7 @@ import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enqueueBookingReminders, enqueueReviewRequest } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
+import { classifyPartyType, isPartyType } from '@/lib/pipelineStages'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
       notes,
       depositAmount,
       source,
+      partyType,
     } = body
 
     if (!contactName || !contactEmail || !partyDate || !partyTime || !eventType) {
@@ -41,9 +43,16 @@ export async function POST(req: NextRequest) {
       ? `[Source: ${source}]${notes ? ` ${notes}` : ''}`
       : notes || null
 
+    // `party_type` is what the Parties tab filters and counts on; `event_type`
+    // is whatever words the caller used. Leaving it unset is what put two real
+    // October parties in the "Unclassified" bucket — an explicit value from the
+    // form wins, otherwise classify the words rather than write NULL.
+    const resolvedPartyType = isPartyType(partyType) ? partyType : classifyPartyType(eventType)
+
     const { data: booking, error: dbError } = await supabase.from('bookings').insert({
       status: 'confirmed',
       event_type: eventType,
+      party_type: resolvedPartyType,
       party_date: partyDate,
       party_time: partyTime,
       package_type: packageName || null,

@@ -366,7 +366,9 @@ export default function PartiesTab({
         <div className="mb-5 -mx-1 overflow-x-auto">
           <div className="flex items-stretch gap-1 px-1 min-w-max">
             <PipelineChip
-              label="All"
+              // "All" would be a lie now that the default list excludes
+              // cancelled — the Cancelled chip to the right is where those live.
+              label="All active"
               count={counts?.all ?? total}
               active={statusFilter === 'all'}
               onClick={() => { setStatusFilter('all'); setPage(1) }}
@@ -698,6 +700,7 @@ export default function PartiesTab({
               <h3 className="text-sm font-medium text-[#1a2744]">Event</h3>
               {!editing ? (
                 <button onClick={() => { setEditing(true); setEditForm({
+                  party_type: selected.party_type || 'unknown',
                   party_date: selected.party_date || '',
                   party_time: selected.party_time || '',
                   guest_count_approx: String(selected.guest_count_approx || ''),
@@ -712,6 +715,9 @@ export default function PartiesTab({
                   <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
                   <button
                     onClick={() => patchBooking({
+                      // Only sent when it is a real value — the route refuses
+                      // anything else with a 400, which is the point.
+                      party_type: editForm.party_type || undefined,
                       party_date: editForm.party_date || null,
                       party_time: editForm.party_time || null,
                       guest_count_approx: editForm.guest_count_approx ? Number(editForm.guest_count_approx) : null,
@@ -730,6 +736,12 @@ export default function PartiesTab({
             </div>
             {!editing ? (
               <div className="text-sm space-y-1 text-gray-600">
+                <p>
+                  Type: <strong>{PARTY_TYPE_LABELS[selected.party_type || 'unknown']}</strong>
+                  {!selected.party_type || selected.party_type === 'unknown'
+                    ? <span className="ml-2 text-xs text-amber-600">— set this so it lands in the right bucket</span>
+                    : null}
+                </p>
                 <p>Date: <strong>{selected.party_date || 'TBD'}</strong></p>
                 <p>Time: <strong>{selected.party_time || 'TBD'}</strong></p>
                 <p>Guests: <strong>{selected.guest_count_approx || '—'}</strong></p>
@@ -740,6 +752,18 @@ export default function PartiesTab({
               </div>
             ) : (
               <div className="space-y-2 text-sm">
+                <div>
+                  <label className="text-xs text-gray-500">Type</label>
+                  <select
+                    value={editForm.party_type}
+                    onChange={e => setEditForm(f => ({ ...f, party_type: e.target.value }))}
+                    className="w-full border rounded px-2 py-1.5 text-sm bg-white"
+                  >
+                    {PARTY_TYPES.map(t => (
+                      <option key={t} value={t}>{PARTY_TYPE_LABELS[t]}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-xs text-gray-500">Date</label>

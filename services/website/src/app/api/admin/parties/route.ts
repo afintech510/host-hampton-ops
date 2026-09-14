@@ -72,6 +72,12 @@ export async function GET(req: NextRequest) {
 
   if (status) {
     query = query.eq('status', status)
+  } else {
+    // Cancelled is an exit from the pipeline, not a stage in it, and it is the
+    // bucket that fills up with abandoned duplicates and throwaway rows. It is
+    // hidden unless you ask for it by name — the Cancelled chip still shows the
+    // true count and still lists them, so nothing becomes unreachable.
+    query = query.neq('status', 'cancelled')
   }
 
   // Ignore an unrecognised value rather than returning nothing: a typo in the
@@ -111,13 +117,24 @@ export async function GET(req: NextRequest) {
   const byStatus: Record<string, number> = {}
   const byPartyType: Record<string, number> = {}
   let inScope = 0
+  let allTypes = 0
   for (const row of countRows ?? []) {
     const r = row as { status: string | null; party_type: string | null }
     const pt = r.party_type || 'unknown'
+    // Every stage chip, including Cancelled, counts every row — that chip is
+    // the only way back to a cancelled party now that the default list hides
+    // them, so its number has to be the real one.
+    if (r.status && (!activeType || pt === activeType)) {
+      byStatus[r.status] = (byStatus[r.status] ?? 0) + 1
+    }
+    // The type chips and the two "All" chips describe the DEFAULT list, which
+    // no longer contains cancelled rows. Counting them here would make All read
+    // higher than the list it labels.
+    if (r.status === 'cancelled') continue
     byPartyType[pt] = (byPartyType[pt] ?? 0) + 1
+    allTypes++
     if (activeType && pt !== activeType) continue
     inScope++
-    if (r.status) byStatus[r.status] = (byStatus[r.status] ?? 0) + 1
   }
 
   return NextResponse.json({
@@ -132,10 +149,10 @@ export async function GET(req: NextRequest) {
     counts: {
       byStatus,
       byPartyType,
-      /** Rows matching the party-type filter, across all stages. */
+      /** Non-cancelled rows matching the party-type filter, across all stages. */
       all: inScope,
-      /** Every party row, ignoring the party-type filter. */
-      allTypes: (countRows ?? []).length,
+      /** Every non-cancelled party row, ignoring the party-type filter. */
+      allTypes,
       // True when the cap was hit, i.e. the counts are a floor not a total.
       truncated: (countRows ?? []).length >= COUNT_SCAN_LIMIT,
       error: countErr?.message ?? null,

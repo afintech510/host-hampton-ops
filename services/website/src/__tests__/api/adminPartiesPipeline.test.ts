@@ -69,7 +69,7 @@ function makeSupabase(opts: Opts = {}) {
         return Promise.resolve(result).then(res, rej)
       },
     }
-    for (const m of ['select', 'eq', 'in', 'not', 'is', 'gte', 'lt', 'order', 'limit', 'range']) {
+    for (const m of ['select', 'eq', 'neq', 'in', 'not', 'is', 'gte', 'lt', 'order', 'limit', 'range']) {
       chain[m] = jest.fn((...args: unknown[]) => { ops.push([m, ...args]); return chain })
     }
     return chain
@@ -151,11 +151,43 @@ describe('GET /api/admin/parties', () => {
 
     const res = await GET(makeReq())
 
+    // Every stage chip counts every row — Cancelled included, because that chip
+    // is now the only route back to a cancelled party.
     expect(res.body.counts.byStatus).toEqual({ lead: 2, quoted: 1, deposit_paid: 1, cancelled: 1 })
+    // The type chips and the two "All" chips describe the DEFAULT list, which
+    // excludes cancelled — so the cancelled `null`-typed row is NOT an
+    // `unknown: 1` here. A number that labels a list has to match that list.
     expect(res.body.counts.byPartyType).toEqual({
-      mobile_party: 2, in_studio_theme: 1, studio_rental: 1, unknown: 1,
+      mobile_party: 2, in_studio_theme: 1, studio_rental: 1,
     })
-    expect(res.body.counts.allTypes).toBe(5)
+    expect(res.body.counts.allTypes).toBe(4)
+    expect(res.body.counts.all).toBe(4)
+  })
+
+  it('hides cancelled by default, and only by default', async () => {
+    const { supabase, calls } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+
+    await GET(makeReq())
+
+    // The list query excludes cancelled when no stage is asked for...
+    const neqs = calls.flatMap(c => c.ops.filter(o => o[0] === 'neq'))
+    expect(neqs).toContainEqual(['neq', 'status', 'cancelled'])
+  })
+
+  it('still lists cancelled parties when the Cancelled chip asks for them', async () => {
+    const { supabase, calls } = makeSupabase({ page: [{ id: 'a', status: 'cancelled' }] })
+    mockGetSupabase.mockReturnValue(supabase)
+
+    const res = await GET(makeReq({ status: 'cancelled' }))
+
+    // ...and does NOT exclude it when that is the stage you selected, or the
+    // Cancelled chip would be a button that shows an empty list forever.
+    const neqs = calls.flatMap(c => c.ops.filter(o => o[0] === 'neq' && o[1] === 'status'))
+    expect(neqs).toHaveLength(0)
+    const eqs = calls.flatMap(c => c.ops.filter(o => o[0] === 'eq'))
+    expect(eqs).toContainEqual(['eq', 'status', 'cancelled'])
+    expect(res.body.bookings).toHaveLength(1)
   })
 
   it('scopes the STAGE counts to the party-type filter, but not the type counts', async () => {

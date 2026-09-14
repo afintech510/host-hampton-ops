@@ -23,6 +23,7 @@ import {
   type AdminPaymentMethod,
   type PaymentType,
 } from '@/lib/adminMoney'
+import { isPartyType } from '@/lib/pipelineStages'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
@@ -61,6 +62,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const allowed = ['status', 'party_date', 'party_time', 'package_type', 'guest_count_approx', 'child_name', 'child_age', 'total_cents', 'balance_due_cents', 'admin_notes', 'notes', 'contact_name', 'contact_email', 'contact_phone', 'photo_gallery_url', 'party_tags']
   for (const key of allowed) {
     if (body[key] !== undefined) updates[key] = body[key]
+  }
+
+  // `party_type` is the field the whole Parties tab filters and counts on, and
+  // it carries a CHECK constraint, so it is validated here rather than passed
+  // through with the free-text fields. A bad value is REFUSED, not dropped: a
+  // PATCH that answers `{ok:true}` having silently ignored the one field you
+  // came to change is how "I set the type and it didn't stick" happens.
+  if (body.party_type !== undefined) {
+    if (!isPartyType(body.party_type)) {
+      return NextResponse.json(
+        { error: `party_type must be one of in_studio_theme, mobile_party, studio_rental, unknown` },
+        { status: 400 },
+      )
+    }
+    updates.party_type = body.party_type
   }
 
   if (Object.keys(updates).length === 0) {
