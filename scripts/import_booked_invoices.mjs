@@ -119,6 +119,9 @@ const INVOICES = [
     contactName: 'Nikki Bloom',
     contactEmail: 'nikki.m.bloom@gmail.com',
     partyDate: '2026-08-29',
+    // `bookings_scheduled_fields_check` requires BOTH date and time on anything
+    // past `quoted`, so every imported row carries the time off its invoice.
+    partyTime: '17:00',
     guestCount: 15,
     packageType: 'Mobile Spa Party',
     partyType: 'mobile_party',
@@ -156,6 +159,7 @@ const INVOICES = [
     contactEmail: 'jessica.vonhagn@gmail.com',
     contactPhone: '5162428585',
     partyDate: '2026-09-13',
+    partyTime: '12:00',
     guestCount: 15,
     packageType: 'Mobile Party',
     partyType: 'mobile_party',
@@ -277,7 +281,27 @@ async function main() {
       })
       console.log(`         + $${(r.amountCents / 100).toFixed(2)} ${r.paidAt} → ${res.message}`)
     }
+
+    // `create` lands every row `awaiting_deposit`, and `record_payment` only
+    // promotes a booking when the balance reaches zero. A party with a $250
+    // deposit on it is therefore left reading "Awaiting Deposit" — the one thing
+    // the row demonstrably is not.
+    const paid = inv.receipts.reduce((s, r) => s + r.amountCents, 0)
+    if (paid > 0 && paid < inv.totalCents) {
+      await api(`/api/admin/parties/${created.bookingId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'deposit_paid' }),
+      })
+      console.log('         → status: deposit_paid')
+    }
   }
+
+  // NOTE ON DATES: `record_payment` takes no `paid_at`, so every row above lands
+  // dated today and eleven payments spanning July–September would all report as
+  // September revenue. Each note quotes its receipt date, and that is what the
+  // re-dating statement in the 2026-09-14 session read to correct both
+  // `booking_payments.paid_at` and the joined `financial_transactions.date`.
+  // If this script is ever extended, give `record_payment` a `paid_at` instead.
 
   if (!APPLY) console.log('\nNothing was written. Re-run with --apply.')
 }
