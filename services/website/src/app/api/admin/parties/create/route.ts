@@ -10,6 +10,7 @@ import { mintPortalLink } from '@/lib/portalLinkMint'
 import { partyQuoteSentHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 import { publicOrigin } from '@/lib/publicOrigin'
+import { isPartyType, PARTY_TYPES } from '@/lib/pipelineStages'
 
 function formatDate(dateStr: string): string {
   try {
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
       contactName, contactEmail, contactPhone, childName,
       partyDate, partyTime, guestCount, packageType,
       lineItems = [], notes, sendEmail = true, lockDate = true,
+      partyType, eventType, source, invoiceNumber, locationAddress,
     } = body as {
       contactName: string
       contactEmail: string
@@ -49,10 +51,35 @@ export async function POST(req: NextRequest) {
       notes?: string
       sendEmail?: boolean
       lockDate?: boolean
+      /**
+       * The five below exist for the invoice importer (2026-09-14). This route
+       * used to hard-code `kid-party` / `in_studio_theme` / `admin`, which is
+       * right for the phone booking it was written for and wrong for every
+       * mobile party and studio rental quoted outside the system — and those are
+       * exactly the rows being brought in. `party_type` is the field the whole
+       * Parties tab filters and counts on, and `event_type` is NOT patchable
+       * afterwards, so both have to be settable here or the imported rows land
+       * permanently mislabelled.
+       */
+      partyType?: string
+      eventType?: string
+      source?: string
+      invoiceNumber?: string
+      locationAddress?: string
     }
 
     if (!contactName || !contactEmail) {
       return NextResponse.json({ error: 'Name and email are required' }, { status: 400 })
+    }
+
+    // Refused, not silently dropped: a CHECK-constrained column given a bad
+    // value should fail loudly here rather than land NULL and read as
+    // "Unclassified" forever — the defect migration 035's comment describes.
+    if (partyType !== undefined && !isPartyType(partyType)) {
+      return NextResponse.json(
+        { error: `party_type must be one of: ${PARTY_TYPES.join(', ')}` },
+        { status: 400 },
+      )
     }
 
     const supabase = getSupabase()
@@ -62,10 +89,12 @@ export async function POST(req: NextRequest) {
     const cutoffs = partyDate ? computeCutoffDates(partyDate) : null
     const bookingRef = generatePartyRef()
 
-    const partyTags = {
+    const partyTags: Record<string, unknown> = {
       date_locked: !!lockDate,
       created_by: adminActorId(req),
       created_at: new Date().toISOString(),
+      ...(locationAddress ? { location_address: locationAddress } : {}),
+      ...(partyType === 'mobile_party' ? { location_type: 'mobile' } : {}),
     }
 
     const snapshot = buildPlanSnapshot({ lineItems, guestCount: guests, packageType })
@@ -75,7 +104,7 @@ export async function POST(req: NextRequest) {
     const { data: booking, error: dbErr } = await supabase.from('bookings').insert({
       booking_ref: bookingRef,
       status: 'awaiting_deposit',
-      event_type: 'kid-party',
+      event_type: eventType || 'kid-party',
       party_date: partyDate || null,
       party_time: partyTime || null,
       package_type: packageType || null,
@@ -90,8 +119,9 @@ export async function POST(req: NextRequest) {
       card_fee_rate: 0.03,
       modification_cutoff: cutoffs?.modificationCutoff || null,
       guest_count_cutoff: cutoffs?.guestCountCutoff || null,
-      party_type: 'in_studio_theme',
-      source: 'admin',
+      party_type: partyType || 'in_studio_theme',
+      source: source || 'admin',
+      invoice_number: invoiceNumber || null,
       quote_snapshot: snapshot,
       payment_method_preference: 'card',
       notes: notes || null,
