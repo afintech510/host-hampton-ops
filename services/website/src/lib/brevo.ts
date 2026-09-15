@@ -109,6 +109,31 @@ export async function removeFromBrevo(email: string): Promise<true | null> {
 }
 
 /**
+ * Brevo stores every contact address LOWERCASED, and the `emails: []` body of
+ * the list add/remove endpoints is matched **case-sensitively** against that
+ * stored form. So a mixed-case address finds nothing.
+ *
+ * Measured against the live API on 2026-09-15, backfilling the marketing list:
+ * `Nitai.Finkelstein@gmail.com`, `Michaela.J.Manning@gmail.com` and
+ * `haleyBelmonte94@gmail.com` each answered
+ * **400 `"Contact already in list and/or does not exist"`** — and a
+ * `GET /contacts/{email}` proved BOTH halves of that message false: all three
+ * existed, none was blacklisted, and `listIds` was `[]`. Retried lowercased,
+ * all three returned 201. The same three addresses are why nine of our
+ * bookings carry capitals (see lib/contactLookup.ts) — this is the same bug
+ * family, at a third provider.
+ *
+ * `removeFromList` is the dangerous direction: a removal that silently matches
+ * nothing leaves the person ON the marketing list, and the caller is told it
+ * worked.
+ *
+ * Note the URL-path endpoints (`GET/PUT /contacts/{email}`) DO fold case — it
+ * is specifically the body arrays that do not, which is why this cannot be
+ * fixed once at the header.
+ */
+const brevoAddress = (email: string) => email.trim().toLowerCase()
+
+/**
  * Add a contact to a Brevo list by list ID.
  * POST /contacts/lists/{listId}/contacts/add
  * Returns true on success, null on error.
@@ -123,7 +148,7 @@ export async function addToList(
       {
         method: 'POST',
         headers: brevoHeaders(),
-        body: JSON.stringify({ emails: [email] }),
+        body: JSON.stringify({ emails: [brevoAddress(email)] }),
       }
     )
 
@@ -155,7 +180,7 @@ export async function removeFromList(
       {
         method: 'POST',
         headers: brevoHeaders(),
-        body: JSON.stringify({ emails: [email] }),
+        body: JSON.stringify({ emails: [brevoAddress(email)] }),
       }
     )
 
