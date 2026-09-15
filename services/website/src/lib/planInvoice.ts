@@ -117,6 +117,24 @@ export interface PlanInvoice {
   guestCount: number | null
 }
 
+/**
+ * May this plan offer an "Edit plan" link to `/party-planner`?
+ *
+ * Only for an in-studio theme party. `/party-planner` is the in-studio builder;
+ * opening it against a mobile party threw a client-side exception, so the link
+ * was a dead end on every other party type — and a dead end an admin hands to a
+ * customer is worse than no link at all.
+ *
+ * An ALLOWLIST, not `!== 'mobile_party'`. Studio rentals and the legacy
+ * unclassified rows (`party_type` NULL reads as 'unknown' — see
+ * party-type-vs-event-type) have never been editable in that builder either, and
+ * a deny-list would have to be remembered again for each new type. The safe
+ * answer is the default.
+ */
+export function canEditPlanInBuilder(partyType: string | null | undefined): boolean {
+  return partyType === 'in_studio_theme'
+}
+
 /** Cents → "$1,234.00". The only money formatter this page uses. */
 export function money(cents: number): string {
   return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

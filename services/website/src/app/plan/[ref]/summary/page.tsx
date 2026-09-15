@@ -53,7 +53,7 @@ import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
-import { loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
+import { canEditPlanInBuilder, loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
 import { ensureInvoiceNumber } from '@/lib/invoiceNumber'
 import { planAccess } from '@/lib/planAccess'
 import { quoteFor } from '@/lib/planPayLinks'
@@ -554,9 +554,12 @@ export default async function PlanSummaryPage({
   return (
     <div className="hh-invoice">
       <div className="action-bar no-print">
-        <Link className="action" href={`/party-planner?ref=${encodeURIComponent(ref)}`}>
-          Edit plan
-        </Link>
+        {/* In-studio theme only — see canEditPlanInBuilder for why. */}
+        {canEditPlanInBuilder(invoice.partyType) && (
+          <Link className="action" href={`/party-planner?ref=${encodeURIComponent(ref)}`}>
+            Edit plan
+          </Link>
+        )}
         <PlanShareBar
           ref_={ref}
           canEmail={!!invoice.booking.contact_email}
