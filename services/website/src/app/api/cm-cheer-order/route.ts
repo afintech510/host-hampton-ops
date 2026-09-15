@@ -6,6 +6,7 @@ import { getSupabase } from '@/lib/supabase'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref } from '@/lib/emailSafety'
 import { screenCmCheerTotals, VALID_PAYMENT_METHODS } from '@/lib/cmCheerOrder'
+import { resolveFundraiserTeam } from '@/lib/fundraiserTeams'
 import { guardRate, intakeRule } from '@/lib/rateLimit'
 
 export const dynamic = 'force-dynamic'
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
     totalProfit,
     itemsData,
     items: itemsString,
+    team: postedTeam,
   } = body
 
   if (!athleteName || !parentName || !email || !phone || !paymentMethod) {
@@ -47,6 +49,17 @@ export async function POST(req: NextRequest) {
   }
   if (!VALID_PAYMENT_METHODS.includes(String(paymentMethod))) {
     return NextResponse.json({ error: 'Invalid payment method' }, { status: 400 })
+  }
+
+  /**
+   * Which fundraiser this is. An ABSENT value is `cm-cheer` — `/cm-cheer` and
+   * `/li-high` predate the field and do not send it — but an unknown value is
+   * refused rather than defaulted, because silently filing a Sharks order under
+   * CM Cheer is exactly the mix-up the `team` column was added to stop.
+   */
+  const team = resolveFundraiserTeam(postedTeam)
+  if (!team) {
+    return NextResponse.json({ error: 'Unknown fundraiser' }, { status: 400 })
   }
 
   /**
@@ -83,7 +96,8 @@ export async function POST(req: NextRequest) {
   const { data: order, error } = await supabase
     .from('cm_cheer_orders')
     .insert({
-      order_ref: '',   // trigger overwrites this
+      order_ref: '',   // trigger overwrites this, and reads `team` to pick the prefix
+      team: team.slug,
       athlete_name: athleteName,
       parent_name: parentName,
       email,
@@ -109,7 +123,7 @@ export async function POST(req: NextRequest) {
     name: parentName,
     email,
     phone: phone || null,
-    sourceDetail: 'cm-cheer-fundraiser',
+    sourceDetail: `${team.slug}-fundraiser`,
     serviceInterests: ['fundraiser'],
     marketingConsent: false,
   }).catch(err => console.error('Contact upsert error (non-fatal):', err))
@@ -134,12 +148,12 @@ export async function POST(req: NextRequest) {
       resend.emails.send({
         from,
         to: ownerEmail(),
-        subject: `📦 CM Cheer Order ${order.order_ref} — ${athleteName}`,
+        subject: `📦 ${team.name} Order ${order.order_ref} — ${athleteName}`,
         replyTo: email,
         html: `
 <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#111;">
-  <div style="background:#111;border-top:4px solid #CE1126;padding:20px 28px;border-radius:10px 10px 0 0;">
-    <h1 style="color:#fff;margin:0;font-size:18px;letter-spacing:0.05em;">CM CHEER — NEW ORDER</h1>
+  <div style="background:#111;border-top:4px solid ${team.emailAccent};padding:20px 28px;border-radius:10px 10px 0 0;">
+    <h1 style="color:#fff;margin:0;font-size:18px;letter-spacing:0.05em;">${escapeHtml(team.name.toUpperCase())} — NEW ORDER</h1>
     <p style="color:#999;margin:4px 0 0;font-size:13px;">${escapeHtml(order.order_ref)} · ${escapeHtml(paymentMethod.toUpperCase())}</p>
   </div>
   <div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px 28px;border-radius:0 0 10px 10px;">
@@ -153,10 +167,10 @@ export async function POST(req: NextRequest) {
     <div style="background:#f9f9f9;border-radius:8px;padding:14px 16px;border:1px solid #eee;">
       <table style="width:100%;">${itemRows}
         <tr><td colspan="2" style="border-top:1px solid #ddd;padding-top:8px;"></td></tr>
-        <tr><td style="font-weight:700;font-size:15px;">Total</td><td style="text-align:right;font-weight:800;font-size:18px;color:#CE1126;">$${storedTotal}</td></tr>
+        <tr><td style="font-weight:700;font-size:15px;">Total</td><td style="text-align:right;font-weight:800;font-size:18px;color:${team.emailAccent};">$${storedTotal}</td></tr>
       </table>
     </div>
-    <p style="margin-top:16px;font-size:12px;color:#aaa;">Order ID: ${escapeHtml(order.order_ref)} · Manage at hosthampton.com/cm-cheer/orders</p>
+    <p style="margin-top:16px;font-size:12px;color:#aaa;">Order ID: ${escapeHtml(order.order_ref)} · Manage at hosthampton.com${team.ordersPath}</p>
   </div>
 </div>`,
       }),
@@ -165,28 +179,28 @@ export async function POST(req: NextRequest) {
       resend.emails.send({
         from,
         to: email,
-        subject: `Order Confirmed — ${order.order_ref} · CM Cheer Fundraiser`,
+        subject: `Order Confirmed — ${order.order_ref} · ${team.name} Fundraiser`,
         html: `
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#111;">
-  <div style="background:#111;border-top:4px solid #CE1126;padding:24px 28px;text-align:center;border-radius:10px 10px 0 0;">
-    <p style="color:#CE1126;font-size:13px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;margin:0 0 6px;">Center Moriches</p>
-    <h1 style="color:#fff;margin:0;font-size:26px;font-weight:800;letter-spacing:0.05em;">CHEER FUNDRAISER</h1>
+  <div style="background:#111;border-top:4px solid ${team.emailAccent};padding:24px 28px;text-align:center;border-radius:10px 10px 0 0;">
+    <p style="color:#fff;font-size:13px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;margin:0 0 6px;opacity:0.7;">${escapeHtml(team.organization)}</p>
+    <h1 style="color:#fff;margin:0;font-size:26px;font-weight:800;letter-spacing:0.05em;">${escapeHtml(team.name.toUpperCase())} FUNDRAISER</h1>
   </div>
   <div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:28px;border-radius:0 0 10px 10px;">
     <h2 style="margin:0 0 4px;font-size:20px;">Thanks, ${escapeHtml(parentName.split(' ')[0])}! 🎉</h2>
     <p style="color:#555;font-size:14px;margin-bottom:20px;">Your order has been received. Your order number is:</p>
-    <div style="background:#CE1126;color:#fff;text-align:center;padding:12px;border-radius:8px;font-size:22px;font-weight:800;letter-spacing:0.1em;margin-bottom:20px;">${escapeHtml(order.order_ref)}</div>
+    <div style="background:${team.emailAccent};color:#fff;text-align:center;padding:12px;border-radius:8px;font-size:22px;font-weight:800;letter-spacing:0.1em;margin-bottom:20px;">${escapeHtml(order.order_ref)}</div>
     <div style="background:#f9f9f9;border-radius:8px;padding:14px 16px;border:1px solid #eee;margin-bottom:20px;">
       <p style="font-size:12px;font-weight:700;text-transform:uppercase;color:#888;margin:0 0 8px;">Athlete: ${escapeHtml(athleteName)}</p>
       <table style="width:100%;">${itemRows}
         <tr><td colspan="2" style="border-top:1px solid #ddd;padding-top:8px;"></td></tr>
-        <tr><td style="font-weight:700;">Total</td><td style="text-align:right;font-weight:800;color:#CE1126;">$${storedTotal}</td></tr>
+        <tr><td style="font-weight:700;">Total</td><td style="text-align:right;font-weight:800;color:${team.emailAccent};">$${storedTotal}</td></tr>
       </table>
     </div>
     ${paymentMethod === 'venmo' ? `
     <div style="background:#e8f4ff;border-radius:8px;padding:14px;border:1px solid #bde0ff;margin-bottom:16px;">
       <p style="margin:0;font-size:14px;font-weight:700;">💳 Payment Reminder</p>
-      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please complete your Venmo payment of <strong>$${storedTotal}</strong> to <strong>@CM-PAL-Red-Devils-Football</strong> and include <strong>${escapeHtml(athleteName)}</strong> in the memo.</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please complete your Venmo payment of <strong>$${storedTotal}</strong> to <strong>${escapeHtml(team.venmoEmailHandle)}</strong> and include <strong>${escapeHtml(athleteName)}</strong> in the memo.</p>
     </div>` : `
     <div style="background:#f0fdf4;border-radius:8px;padding:14px;border:1px solid #bbf7d0;margin-bottom:16px;">
       <p style="margin:0;font-size:14px;font-weight:700;">💵 Payment Reminder</p>

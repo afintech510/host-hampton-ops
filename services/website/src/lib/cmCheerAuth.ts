@@ -43,6 +43,7 @@ import { isAdminAuthorized } from '@/lib/adminAuth'
 export const CM_CHEER_ORDER_COLUMNS = [
   'id',
   'order_ref',
+  'team',
   'athlete_name',
   'parent_name',
   'email',

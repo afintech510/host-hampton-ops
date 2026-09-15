@@ -12,6 +12,11 @@ module.exports = {
         'cmBlack': '#111111',
         'cmRed':   '#CE1126',
         'cmGray':  '#f4f4f5',
+        // ESM Sharks fundraiser — navy + silver.
+        'esmNavy':   '#0C2340', // deep school navy, the primary
+        'esmInk':    '#071628', // near-black navy for headers
+        'esmSilver': '#A2AAAD', // true silver, the secondary
+        'esmMist':   '#E6E9EC', // silver tint for fills
       },
       fontFamily: {
         serif: ['Playfair Display', 'Georgia', 'serif'],
