@@ -42,6 +42,12 @@ export interface FundraiserDashboardTheme {
   /** Filename stem for the CSV export. */
   csvPrefix: string
   /**
+   * What this fundraiser calls the young person an order is for — "Athlete" for
+   * a squad, "Child" for a PTO. Mirrors `personLabel` in `lib/fundraiserTeams`.
+   * The underlying column stays `athlete_name` for every team.
+   */
+  personLabel: string
+  /**
    * Full Tailwind class strings, not fragments. Tailwind scans source text, so
    * a class assembled at runtime (`bg-${x}-600`) is never emitted into the CSS.
    */
@@ -172,7 +178,7 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
   })
 
   function exportCSV() {
-    const rows = [['Order Ref','Athlete','Parent','Email','Phone','Payment','Total','Status','Items','Notes','Date']]
+    const rows = [['Order Ref',theme.personLabel,'Parent','Email','Phone','Payment','Total','Status','Items','Notes','Date']]
     filtered.forEach(o => rows.push([
       o.order_ref, o.athlete_name, o.parent_name, o.email, o.phone,
       o.payment_method, fmt(o.subtotal_cents), o.status,
@@ -289,7 +295,7 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
         {/* Filters + actions */}
         <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center">
           <input
-            type="text" placeholder="Search athlete, parent, email, ref…" value={search} onChange={e => setSearch(e.target.value)}
+            type="text" placeholder={`Search ${theme.personLabel.toLowerCase()}, parent, email, ref…`} value={search} onChange={e => setSearch(e.target.value)}
             className={`w-full sm:flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none ${theme.focusRing}`}
           />
           <div className="flex gap-2">

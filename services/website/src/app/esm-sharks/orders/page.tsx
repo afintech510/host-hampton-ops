@@ -1,6 +1,7 @@
 'use client'
 
 import FundraiserOrdersDashboard, { type FundraiserDashboardTheme } from '@/components/FundraiserOrdersDashboard'
+import { FUNDRAISER_TEAMS } from '@/lib/fundraiserTeams'
 
 /**
  * The ESM Sharks order book — the same screen as CM Cheer's, filtered to
@@ -18,6 +19,10 @@ const ESM_SHARKS_THEME: FundraiserDashboardTheme = {
   logoAlt: 'ESM Sharks',
   tokenKey: 'esm_sharks_token',
   csvPrefix: 'esm-sharks',
+  // Read from the registry, not restated — the customer-facing email uses the
+  // same value, and an organizer's CSV header disagreeing with the confirmation
+  // the customer got is exactly the drift a second copy invites.
+  personLabel: FUNDRAISER_TEAMS['esm-sharks'].personLabel,
   headerBar: 'bg-esmInk',
   headerBorder: 'border-esmSilver',
   accentText: 'text-esmNavy',

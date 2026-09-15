@@ -266,7 +266,7 @@ export default function ESMSharksPage() {
               <h1 className="font-oswald text-xl md:text-3xl tracking-[0.2em] text-esmSilver mb-2 uppercase">Eastport-South Manor</h1>
               <p className="font-varsity text-6xl md:text-9xl text-white tracking-wider mb-2 leading-none varsity-outline">SHARKS</p>
               <div className="w-24 h-1.5 bg-esmSilver mx-auto mb-6 rounded-full"></div>
-              <p className="text-xs md:text-sm text-white font-bold tracking-[0.3em] uppercase px-4 bg-esmSilver/20 inline-block py-1 rounded-full">Official Team Fundraiser</p>
+              <p className="text-xs md:text-sm text-white font-bold tracking-[0.3em] uppercase px-4 bg-esmSilver/20 inline-block py-1 rounded-full">Official Eastport Elementary - Tuttle Fundraiser</p>
             </div>
           </header>
 
@@ -414,12 +414,14 @@ export default function ESMSharksPage() {
             <div className="p-6 md:p-8">
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-esmNavy/10 rounded-lg text-esmNavy"><i data-lucide="user" className="w-6 h-6"></i></div>
-                <h2 className="text-xl sm:text-3xl font-bold text-esmInk font-oswald uppercase tracking-wide">Athlete / Parent Info</h2>
+                <h2 className="text-xl sm:text-3xl font-bold text-esmInk font-oswald uppercase tracking-wide">Child / Parent Info</h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Athlete Name</label>
-                  <input type="text" id="athleteName" required placeholder="Athlete's Name" className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-esmNavy focus:ring-0 outline-none transition-all bg-slate-50" />
+                  {/* The field id and the DB column stay `athlete*` — they are shared with
+                      CM Cheer and the table. Only what the customer reads changes. */}
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Child Name</label>
+                  <input type="text" id="athleteName" required placeholder="Child's Name" className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-esmNavy focus:ring-0 outline-none transition-all bg-slate-50" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Parent/Buyer Full Name</label>
@@ -467,7 +469,7 @@ export default function ESMSharksPage() {
                 </div>
                 <div className="text-center md:text-left">
                   <p className="text-esmInk font-oswald text-xl uppercase mb-1">Send Your Venmo Payment</p>
-                  <p className="text-gray-500 text-sm mb-4">Please include the <strong className="text-esmNavy">athlete&apos;s name</strong> in the payment description/memo.</p>
+                  <p className="text-gray-500 text-sm mb-4">Please include the <strong className="text-esmNavy">child&apos;s name</strong> in the payment description/memo.</p>
                   <a href="https://www.venmo.com/u/hostHampton" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 sm:px-5 py-2 bg-esmInk text-white rounded-full font-mono text-xs sm:text-sm font-bold border border-slate-700 max-w-full hover:bg-esmNavy transition-colors">
                     <span className="truncate">@hostHampton</span>
                   </a>
@@ -511,7 +513,7 @@ export default function ESMSharksPage() {
               </div>
               <div className="mb-6">
                 <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Customer Details</h4>
-                <p className="text-sm"><span className="text-gray-500">Athlete:</span> <span id="sumAthlete" className="font-medium"></span></p>
+                <p className="text-sm"><span className="text-gray-500">Child:</span> <span id="sumAthlete" className="font-medium"></span></p>
                 <p className="text-sm"><span className="text-gray-500">Parent/Buyer:</span> <span id="sumParent" className="font-medium"></span></p>
                 <p className="text-sm"><span className="text-gray-500">Payment:</span> <span id="sumPayment" className="font-medium uppercase"></span></p>
               </div>

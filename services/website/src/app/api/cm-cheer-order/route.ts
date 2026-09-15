@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
   </div>
   <div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px 28px;border-radius:0 0 10px 10px;">
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
-      <tr><td style="color:#888;font-size:13px;padding:4px 0;width:120px;">Athlete</td><td style="font-weight:600;font-size:14px;">${escapeHtml(athleteName)}</td></tr>
+      <tr><td style="color:#888;font-size:13px;padding:4px 0;width:120px;">${escapeHtml(team.personLabel)}</td><td style="font-weight:600;font-size:14px;">${escapeHtml(athleteName)}</td></tr>
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Parent/Buyer</td><td style="font-weight:600;font-size:14px;">${escapeHtml(parentName)}</td></tr>
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Email</td><td><a href="${mailToHref(email)}" style="color:#111;font-weight:600;font-size:14px;">${escapeHtml(email)}</a></td></tr>
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Phone</td><td style="font-weight:600;font-size:14px;">${escapeHtml(phone)}</td></tr>
@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
     <p style="color:#555;font-size:14px;margin-bottom:20px;">Your order has been received. Your order number is:</p>
     <div style="background:${team.emailAccent};color:#fff;text-align:center;padding:12px;border-radius:8px;font-size:22px;font-weight:800;letter-spacing:0.1em;margin-bottom:20px;">${escapeHtml(order.order_ref)}</div>
     <div style="background:#f9f9f9;border-radius:8px;padding:14px 16px;border:1px solid #eee;margin-bottom:20px;">
-      <p style="font-size:12px;font-weight:700;text-transform:uppercase;color:#888;margin:0 0 8px;">Athlete: ${escapeHtml(athleteName)}</p>
+      <p style="font-size:12px;font-weight:700;text-transform:uppercase;color:#888;margin:0 0 8px;">${escapeHtml(team.personLabel)}: ${escapeHtml(athleteName)}</p>
       <table style="width:100%;">${itemRows}
         <tr><td colspan="2" style="border-top:1px solid #ddd;padding-top:8px;"></td></tr>
         <tr><td style="font-weight:700;">Total</td><td style="text-align:right;font-weight:800;color:${team.emailAccent};">$${storedTotal}</td></tr>

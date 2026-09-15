@@ -1,6 +1,7 @@
 'use client'
 
 import FundraiserOrdersDashboard, { type FundraiserDashboardTheme } from '@/components/FundraiserOrdersDashboard'
+import { FUNDRAISER_TEAMS } from '@/lib/fundraiserTeams'
 
 /**
  * The CM Cheer order book.
@@ -23,6 +24,7 @@ const CM_CHEER_THEME: FundraiserDashboardTheme = {
   logoAlt: 'CM Cheer',
   tokenKey: 'cm_cheer_token',
   csvPrefix: 'cm-cheer',
+  personLabel: FUNDRAISER_TEAMS['cm-cheer'].personLabel,
   headerBar: 'bg-zinc-900',
   headerBorder: 'border-red-600',
   accentText: 'text-red-600',

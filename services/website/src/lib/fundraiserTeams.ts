@@ -52,6 +52,16 @@ export interface FundraiserTeam {
   emailAccent: string
   /** Where the organizer dashboard for this team lives. */
   ordersPath: string
+  /**
+   * What this fundraiser calls the young person an order is for.
+   *
+   * CM Cheer is a squad, so "Athlete"; the Sharks page is run by an elementary
+   * school PTO, so "Child". The DB column is `athlete_name` and the API field is
+   * `athleteName` for BOTH — renaming those would mean a migration on a live
+   * table and a breaking change to a shared endpoint, to alter a word nobody
+   * but us reads. This is the label, not the field.
+   */
+  personLabel: string
 }
 
 export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
@@ -65,6 +75,7 @@ export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
     orderPrefix: 'CMC-',
     emailAccent: '#CE1126',
     ordersPath: '/cm-cheer/orders',
+    personLabel: 'Athlete',
   },
   'esm-sharks': {
     slug: 'esm-sharks',
@@ -78,6 +89,7 @@ export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
     orderPrefix: 'ESM-',
     emailAccent: '#0C2340',
     ordersPath: '/esm-sharks/orders',
+    personLabel: 'Child',
   },
 }
 
