@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600" role="img" aria-label="CANVAS TOTE placeholder">
-  <rect width="600" height="600" fill="#A2AAAD"/>
-  <rect x="24" y="24" width="552" height="552" rx="20" fill="none" stroke="#071628" stroke-width="3" stroke-dasharray="14 12" opacity="0.55"/>
-  <g fill="#071628" font-family="Oswald, Arial Narrow, sans-serif" text-anchor="middle">
-    <text x="300" y="268" font-size="46" letter-spacing="3">CANVAS TOTE</text>
-    <text x="300" y="318" font-size="26" letter-spacing="6" opacity="0.7">SILVER</text>
-    <text x="300" y="392" font-size="19" letter-spacing="2" opacity="0.5">PHOTO COMING SOON</text>
-  </g>
-</svg>

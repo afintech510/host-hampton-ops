@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="ESM Sharks placeholder mark">
-  <circle cx="100" cy="100" r="100" fill="#0C2340"/>
-  <path d="M100 34c26 24 41 52 46 84-14-9-28-13-46-13s-32 4-46 13c5-32 20-60 46-84z" fill="#A2AAAD"/>
-  <path d="M28 138c18 7 34 10 72 10s54-3 72-10c-6 12-16 21-30 26-14 5-28 7-42 7s-28-2-42-7c-14-5-24-14-30-26z" fill="#E6E9EC" opacity="0.85"/>
-  <text x="100" y="180" fill="#E6E9EC" font-family="Oswald, Arial Narrow, sans-serif" font-size="22" letter-spacing="6" text-anchor="middle">SHARKS</text>
-</svg>

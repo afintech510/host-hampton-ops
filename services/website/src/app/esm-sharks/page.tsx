@@ -14,8 +14,9 @@ import Script from 'next/script'
  * number, and what keeps these orders out of the CM Cheer organizer dashboard.
  * See `lib/fundraiserTeams.ts` and migration 051.
  *
- * Product photography is PLACEHOLDER (`/images/esm-*.svg`, each one labelled
- * with what belongs there). Prices and costs match CM Cheer's by Adam's choice.
+ * Product photography is real (`/images/esm-*.webp`, from `photos/source/`).
+ * Prices and costs match CM Cheer's by Adam's choice. The Venmo handle is still
+ * a placeholder — see `lib/fundraiserTeams.ts`.
  */
 export default function ESMSharksPage() {
   useEffect(() => {
@@ -259,7 +260,7 @@ export default function ESMSharksPage() {
               <div className="mb-6 relative inline-block group hover:scale-105 transition-transform duration-300">
                 <div className="absolute inset-0 bg-esmSilver rounded-full blur-xl opacity-30 group-hover:opacity-50 transition-opacity"></div>
                 <div className="relative mx-auto w-32 h-32 md:w-48 md:h-48 bg-white rounded-full border-4 border-esmSilver shadow-2xl overflow-hidden flex items-center justify-center">
-                  <img src="/images/esm-sharks-logo.svg" alt="ESM Sharks Logo" className="w-full h-full object-contain" />
+                  <img src="/images/esm-sharks-logo.webp" alt="ESM Sharks Logo" className="w-full h-full object-contain" />
                 </div>
               </div>
               <h1 className="font-oswald text-xl md:text-3xl tracking-[0.2em] text-esmSilver mb-2 uppercase">Eastport-South Manor</h1>
@@ -284,11 +285,11 @@ export default function ESMSharksPage() {
                 {/* Trucker Hat */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="flex gap-2 mb-3">
-                    <button type="button" className="flex-1 py-1.5 border-2 border-esmNavy bg-esmNavy text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="navy" data-src="/images/esm-hat-navy.svg">Navy</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="silver" data-src="/images/esm-hat-silver.svg">Silver</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-esmNavy bg-esmNavy text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="navy" data-src="/images/esm-hat-navy.webp">Navy</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="silver" data-src="/images/esm-hat-silver.webp">Silver</button>
                   </div>
                   <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative">
-                    <img id="img-hat" src="/images/esm-hat-navy.svg" alt="ESM Sharks Trucker Hat" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
+                    <img id="img-hat" src="/images/esm-hat-navy.webp" alt="ESM Sharks Trucker Hat" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
                   </div>
                   <div className="flex-grow">
                     <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Trucker Hat</h3>
@@ -318,11 +319,11 @@ export default function ESMSharksPage() {
                 {/* Canvas Tote */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="flex gap-2 mb-3">
-                    <button type="button" className="flex-1 py-1.5 border-2 border-esmNavy bg-esmNavy text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="navy" data-src="/images/esm-tote-navy.svg">Navy</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="silver" data-src="/images/esm-tote-silver.svg">Silver</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-esmNavy bg-esmNavy text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="navy" data-src="/images/esm-tote-navy.webp">Navy</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="silver" data-src="/images/esm-tote-silver.webp">Silver</button>
                   </div>
                   <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative">
-                    <img id="img-tote" src="/images/esm-tote-navy.svg" alt="ESM Sharks Canvas Tote" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
+                    <img id="img-tote" src="/images/esm-tote-navy.webp" alt="ESM Sharks Canvas Tote" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
                   </div>
                   <div className="flex-grow">
                     <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Canvas Tote</h3>
@@ -352,11 +353,11 @@ export default function ESMSharksPage() {
                 {/* Zip Pouch */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="flex gap-2 mb-3">
-                    <button type="button" className="flex-1 py-1.5 border-2 border-esmNavy bg-esmNavy text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="navy" data-src="/images/esm-pouch-navy.svg">Navy</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="silver" data-src="/images/esm-pouch-silver.svg">Silver</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-esmNavy bg-esmNavy text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="navy" data-src="/images/esm-pouch-navy.webp">Navy</button>
+                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="silver" data-src="/images/esm-pouch-silver.webp">Silver</button>
                   </div>
                   <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative">
-                    <img id="img-pouch" src="/images/esm-pouch-navy.svg" alt="ESM Sharks Zip Pouch" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
+                    <img id="img-pouch" src="/images/esm-pouch-navy.webp" alt="ESM Sharks Zip Pouch" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
                   </div>
                   <div className="flex-grow">
                     <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Zip Pouch</h3>
@@ -387,7 +388,7 @@ export default function ESMSharksPage() {
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
                   <div className="h-[34px] mb-3"></div>
                   <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative p-8">
-                    <img src="/images/esm-sharks-patch.svg" alt="ESM Sharks Patch" className="w-full h-full object-contain transform group-hover:scale-105 transition-transform duration-500" />
+                    <img src="/images/esm-sharks-patch.webp" alt="ESM Sharks Patch" className="w-full h-full object-contain transform group-hover:scale-105 transition-transform duration-500" />
                   </div>
                   <div className="flex-grow">
                     <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Sharks Patch</h3>

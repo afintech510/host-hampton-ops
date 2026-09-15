@@ -14,7 +14,7 @@ const ESM_SHARKS_THEME: FundraiserDashboardTheme = {
   teamSlug: 'esm-sharks',
   title: 'ESM Sharks Orders',
   subtitle: 'Fundraiser Management',
-  logoSrc: '/images/esm-sharks-logo.svg',
+  logoSrc: '/images/esm-sharks-logo.webp',
   logoAlt: 'ESM Sharks',
   tokenKey: 'esm_sharks_token',
   csvPrefix: 'esm-sharks',
