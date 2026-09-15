@@ -21,6 +21,7 @@ import {
   screenPublicGuestCount,
   boundedIntakeText,
 } from '@/lib/publicIntake'
+import { attributionFromBody } from '@/lib/attribution'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,6 +51,9 @@ export async function POST(req: NextRequest) {
 
   const recorded = emptyIntakeRecord()
   const body = await req.json()
+  // The first touch, screened at entry (lib/attribution.ts). One reader for
+  // every intake route, and it accepts the pre-053 `utm` field name too.
+  const attribution = attributionFromBody(body)
   const { name, email, phone, quoteData, summary, partyDate, partyTime, sourcePage } = body
 
   if (!name || !email || !quoteData) {
@@ -103,6 +107,7 @@ export async function POST(req: NextRequest) {
     phone,
     sourceDetail: 'Quote Builder — Save for Later',
     serviceInterests: ['kids-party'],
+    attribution,
   })
   recorded.contact = !!contactId
 
@@ -138,6 +143,7 @@ export async function POST(req: NextRequest) {
     notes: boundedSummary,
     eventType: 'kids birthday party',
     source: 'website_form',
+    attribution,
     // A saved quote is the one intake form that carries real selections, so it
     // writes booking_line_items instead of only the base64 URL it used to —
     // SCREENED, because those rows are what every money path adds up.

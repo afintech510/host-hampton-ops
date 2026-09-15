@@ -11,6 +11,7 @@ import { buildPlanSnapshot, planTotals, writeLineItems, linkFirstTouchEvent } fr
 import { partyRequestReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 import { publicOrigin } from '@/lib/publicOrigin'
+import { attributionFromBody } from '@/lib/attribution'
 
 export async function POST(req: NextRequest) {
   const limited = guardRate(req, plannerRule('party-checkout'))
@@ -18,6 +19,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
+    // The first touch, screened at entry (lib/attribution.ts). One reader for
+    // every intake route, and it accepts the pre-053 `utm` field name too.
+    const attribution = attributionFromBody(body)
 
     // Support both flat fields (contactName) and nested contact object ({ contact: { fullName } })
     const contactObj = body.contact as { fullName?: string; email?: string; phone?: string; childName?: string } | undefined
@@ -99,6 +103,7 @@ export async function POST(req: NextRequest) {
       guest_count_cutoff: guestCountCutoff,
       party_type: 'in_studio_theme',
       source: 'website_form',
+      attribution,
       quote_snapshot: quoteSnapshot,
       payment_method_preference: null,
       notes: notes || null,
@@ -120,6 +125,7 @@ export async function POST(req: NextRequest) {
       sourceDetail: `Party builder — ${packageType || 'kids party'}`,
       serviceInterests: ['kids_party'],
       marketingConsent: !!marketingConsent,
+      attribution,
     })
 
     if (contactId) {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, CheckCircle2, XCircle, Send, Eye, Archive, DollarSign, FileText, ShieldCheck, Sparkles, ListChecks, BookMarked, MessageSquare, X, AlertTriangle, Pencil } from 'lucide-react'
+import { RefreshCw, CheckCircle2, XCircle, Send, Eye, Archive, DollarSign, FileText, ShieldCheck, Sparkles, ListChecks, BookMarked, MessageSquare, X, AlertTriangle, Pencil, TrendingUp } from 'lucide-react'
 import { ContentRenderBody, type ContentRenderRow } from '@/components/content/ContentRenderBody'
 import { checkSlug } from '@/lib/content/slugSafety'
 import { MAX_TITLE_CHARS, MAX_DESCRIPTION_CHARS } from '@/lib/seo'
@@ -48,6 +48,15 @@ interface ReleaseRow {
   status: string
   created_at: string
 }
+/** 90 days of first touches, counted by /api/admin/marketing. */
+interface AttributionSummary {
+  /** Non-null when the read FAILED — which is not the same as "nobody came". */
+  unreadable: string | null
+  byChannel: { label: string; count: number }[]
+  byUtmSource: { label: string; count: number }[]
+  total: number
+}
+
 interface LedgerRow {
   id: string
   entity_type: string
@@ -121,6 +130,24 @@ function Budget({ label, value, max }: { label: string; value: string; max: numb
   )
 }
 
+/** A label/count list as proportional bars, widest first. */
+function CountBars({ rows }: { rows: { label: string; count: number }[] }) {
+  const max = rows.reduce((m, r) => Math.max(m, r.count), 1)
+  return (
+    <div className="space-y-1.5">
+      {rows.slice(0, 8).map(row => (
+        <div key={row.label} className="flex items-center gap-2">
+          <span className="text-xs text-gray-600 w-32 truncate" title={row.label}>{row.label}</span>
+          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-hampton-navy" style={{ width: `${Math.round((row.count / max) * 100)}%` }} />
+          </div>
+          <span className="text-xs text-gray-500 w-8 text-right tabular-nums">{row.count}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /* ── Component ─────────────────────────────────────────── */
 
 export default function MarketingTab({ headers, onLogout }: { headers: Record<string, string>; onLogout: () => void }) {
@@ -129,6 +156,7 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
   const [budget, setBudget] = useState<BudgetRow | null>(null)
   const [releases, setReleases] = useState<ReleaseRow[]>([])
   const [ledger, setLedger] = useState<LedgerRow[]>([])
+  const [attribution, setAttribution] = useState<AttributionSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [running, setRunning] = useState<string | null>(null)
@@ -154,6 +182,7 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
       setBudget(data.budget || null)
       setReleases(data.releases || [])
       setLedger(data.ledger || [])
+      setAttribution(data.attribution || null)
     } catch (err) {
       console.error('Failed to fetch marketing snapshot:', err)
     } finally {
@@ -403,6 +432,42 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
           </div>
         ) : (
           <p className="text-sm text-gray-400">No budget row yet this month.</p>
+        )}
+      </section>
+
+      {/* ── Where inquiries come from ── */}
+      <section className="bg-white rounded-2xl border border-gray-200 p-5">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-hampton-navy mb-1">
+          <TrendingUp className="w-4 h-4" /> Where inquiries come from
+        </h3>
+        <p className="text-xs text-gray-500 mb-4">
+          First touch, last 90 days{attribution && !attribution.unreadable ? ` · ${attribution.total} contacts` : ''}.
+          Recorded from 2026-09-15 — earlier contacts carry no tag, which is not the same as &ldquo;direct&rdquo;.
+        </p>
+
+        {attribution?.unreadable ? (
+          // Rule 12: say the read failed. An empty chart here would read as a
+          // fact about the business.
+          <p className="text-sm text-red-600">Could not read attribution: {attribution.unreadable}</p>
+        ) : !attribution ? (
+          <p className="text-sm text-gray-400">Loading…</p>
+        ) : attribution.byChannel.length === 0 ? (
+          <p className="text-sm text-gray-400">No contacts in the last 90 days.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-hampton-mauve font-semibold mb-2">By channel</p>
+              <CountBars rows={attribution.byChannel} />
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-hampton-mauve font-semibold mb-2">By tag / referrer</p>
+              {attribution.byUtmSource.length === 0 ? (
+                <p className="text-sm text-gray-400">No tagged or referred visits yet.</p>
+              ) : (
+                <CountBars rows={attribution.byUtmSource} />
+              )}
+            </div>
+          </div>
         )}
       </section>
 

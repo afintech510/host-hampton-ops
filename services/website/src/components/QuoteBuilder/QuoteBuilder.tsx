@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback, FormEvent } from 'react'
 import { Check, Sparkles, RotateCcw, Lock, Minus, Plus, Users, Bookmark, Calendar, Loader2 } from 'lucide-react'
 import type { PricingItem, QuoteBuilderProps, QuoteData } from './types'
+import { getAttribution } from '@/lib/utm'
 
 /* ── constants ───────────────────────────────────────── */
 
@@ -229,7 +230,7 @@ function LeadGateForm({ onUnlock }: { onUnlock: (c: { name: string; email: strin
       const res = await fetch('/api/lead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName: name.trim(), email: email.trim(), phone: phone.trim(), eventType: 'Quote Builder', sourcePage: 'kids-party-menu', marketingConsent: consent }),
+        body: JSON.stringify({ attribution: getAttribution(), fullName: name.trim(), email: email.trim(), phone: phone.trim(), eventType: 'Quote Builder', sourcePage: 'kids-party-menu', marketingConsent: consent }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -408,7 +409,7 @@ export default function QuoteBuilder({
       await fetch('/api/quote/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: contact.name, email: contact.email, phone: contact.phone, quoteData, summary }),
+        body: JSON.stringify({ attribution: getAttribution(), name: contact.name, email: contact.email, phone: contact.phone, quoteData, summary }),
       })
       setSaveSuccess(true)
     } catch { /* silent */ }

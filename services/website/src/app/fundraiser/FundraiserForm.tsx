@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Loader2, CheckCircle } from 'lucide-react'
 import { trackLead } from '@/lib/gtag'
+import { getAttribution } from '@/lib/utm'
 
 const ORG_TYPES = [
   { value: '', label: 'Select your organization type...' },
@@ -55,6 +56,7 @@ export default function FundraiserForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          attribution: getAttribution(),
           organizationName,
           contactName,
           email,

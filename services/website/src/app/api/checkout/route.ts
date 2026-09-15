@@ -8,6 +8,7 @@ import { enrollInSequence } from '@/lib/sequences'
 import { formatMoney } from '@/lib/partyPricing'
 import { partyRequestReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import { publicOrigin } from '@/lib/publicOrigin'
+import { attributionFromBody } from '@/lib/attribution'
 
 export async function POST(req: NextRequest) {
   const limited = guardRate(req, plannerRule('checkout'))
@@ -15,6 +16,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
+    // The first touch, screened at entry (lib/attribution.ts). One reader for
+    // every intake route, and it accepts the pre-053 `utm` field name too.
+    const attribution = attributionFromBody(body)
     const {
       packageName,
       partyDate,
@@ -29,7 +33,6 @@ export async function POST(req: NextRequest) {
       notes,
       partyTags,
       bookingTypeSlug,
-      utm,
       marketingConsent,
     } = body
 
@@ -80,6 +83,7 @@ export async function POST(req: NextRequest) {
         contact_phone: contactPhone || null,
         deposit_amount: 0,
         party_tags: bookingPartyTags,
+        attribution,
         notes: notes || null,
         booking_ref: bookingRef,
       })
@@ -99,6 +103,7 @@ export async function POST(req: NextRequest) {
         sourceDetail: `Booking — ${eventType || 'other'}`,
         serviceInterests: [bookingTypeSlug || 'general'],
         marketingConsent: !!marketingConsent,
+        attribution,
       })
 
       // Enroll in post-booking sequence (non-fatal)
@@ -150,6 +155,7 @@ export async function POST(req: NextRequest) {
       contact_phone: contactPhone || null,
       deposit_amount: depositCents,
       party_tags: reqPartyTags,
+      attribution,
       notes: notes || null,
       booking_ref: bookingRef,
     })
@@ -169,6 +175,7 @@ export async function POST(req: NextRequest) {
       sourceDetail: `Party request — ${eventType || 'party'}`,
       serviceInterests: [bookingTypeSlug || eventType || 'general'],
       marketingConsent: !!marketingConsent,
+      attribution,
     })
 
     // Notify the customer (request received — no payment, nothing booked yet)
@@ -223,7 +230,6 @@ export async function POST(req: NextRequest) {
       phone: contactPhone, email: contactEmail, date: `${partyDate} ${partyTime || ''}`.trim(), guests: guestCount,
     }))
 
-    void utm
     return NextResponse.json({ url: `${origin}/book/success?request=1&ref=${bookingRef}` })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Checkout failed'

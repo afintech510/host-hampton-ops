@@ -42,6 +42,31 @@ export const CONTACT_STATUS_LABELS = [
   'unsubscribed',
 ]
 
+/**
+ * `pg_enum` for `lead_source`, read live on production 2026-09-15.
+ *
+ * Restated from `LEAD_SOURCES` in lib/attribution.ts on purpose: a test helper
+ * that imports the list it is checking asserts nothing. `attributionSurface`
+ * pins them against each other.
+ */
+export const LEAD_SOURCE_LABELS = [
+  'instagram',
+  'facebook',
+  'facebook_group',
+  'facebook_marketplace',
+  'google_organic',
+  'google_ads',
+  'nextdoor',
+  'yelp',
+  'referral',
+  'walk_in',
+  'pop_up_market',
+  'email',
+  'sms',
+  'direct',
+  'other',
+]
+
 export function contactsSpec(): TableSpec {
   return {
     columns: {
@@ -54,6 +79,9 @@ export function contactsSpec(): TableSpec {
       status: 'text',
       source: 'text',
       source_detail: 'text',
+      // migration 053. The real column is jsonb NOT NULL DEFAULT '{}' — the
+      // default is why nothing here has to write it.
+      attribution: 'jsonb',
       zip_code: 'text',
       city: 'text',
       service_interests: 'text',
@@ -71,8 +99,17 @@ export function contactsSpec(): TableSpec {
       quo_synced_at: 'timestamptz',
       sync_error: 'text',
     },
-    defaults: { status: 'lead', email_opt_in: false, sms_opt_in: false },
-    checks: [{ name: 'contact_status', column: 'status', allowed: CONTACT_STATUS_LABELS }],
+    defaults: { status: 'lead', email_opt_in: false, sms_opt_in: false, attribution: {} },
+    checks: [
+      { name: 'contact_status', column: 'status', allowed: CONTACT_STATUS_LABELS },
+      // `source` is the `lead_source` ENUM, not free text. A value the type does
+      // not hold is a 22P02 that the intake routes swallow non-fatally — i.e.
+      // the whole contact is dropped, silently. Modelled here so a mis-derived
+      // channel fails in a test rather than in production on the first lead
+      // from a channel nobody anticipated. (The fake reports 23514 where PG
+      // would report 22P02; what matters is that the write is REFUSED.)
+      { name: 'lead_source', column: 'source', allowed: LEAD_SOURCE_LABELS },
+    ],
     uniques: [
       // THE ONE THAT MATTERS: the raw value, so `Foo@x.com` and `foo@x.com`
       // are two different rows and no `onConflict: 'email'` can see that.

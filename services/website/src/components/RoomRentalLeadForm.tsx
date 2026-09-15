@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Send, CheckCircle } from 'lucide-react'
 import { trackLead } from '@/lib/gtag'
-import { captureUtm, getUtmParams } from '@/lib/utm'
+import { getAttribution } from '@/lib/utm'
 
 export default function RoomRentalLeadForm() {
   const [form, setForm] = useState({
@@ -18,8 +18,6 @@ export default function RoomRentalLeadForm() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
   const [consent, setConsent] = useState(false)
-
-  useEffect(() => { captureUtm() }, [])
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }))
@@ -42,7 +40,7 @@ export default function RoomRentalLeadForm() {
           eventType: form.eventName || 'Room Rental',
           sourcePage: 'party-room-rental',
           marketingConsent: consent,
-          utm: getUtmParams(),
+          attribution: getAttribution(),
         }),
       })
 

@@ -38,6 +38,7 @@ import { billedTotalCents, quoteTimeBalanceCents } from '@/lib/planBalance'
 import { classifyPartyType, type PartyType } from '@/lib/inquiryDrafts'
 import { findBookingsByContactEmail } from '@/lib/contactLookup'
 import type { BookingLineItem } from '@/types/booking-flow'
+import { screenAttribution, hasAttributionSignal } from '@/lib/attribution'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -241,6 +242,13 @@ export interface EnsureLeadPlanInput {
   /** Merged into `party_tags` — location_address, source page, form extras. */
   tags?: Record<string, unknown>
   source?: PlanSource
+  /**
+   * The raw first touch as the browser posted it, screened here (migration
+   * 053). NOT the same question as `source`: that says which intake wrote the
+   * row (`website_form`, `quo`, `admin`), this says which channel sent the
+   * customer. Both are needed — "the website form" is not a marketing channel.
+   */
+  attribution?: unknown
   firstTouchEventId?: string | null
   lineItems?: BookingLineItem[]
   snapshotExtra?: Record<string, unknown>
@@ -331,6 +339,7 @@ export async function ensureLeadPlan(input: EnsureLeadPlanInput): Promise<Ensure
       status: 'lead',
       party_type: partyType,
       source: input.source ?? 'website_form',
+      attribution: screenAttribution(input.attribution),
       first_touch_event_id: input.firstTouchEventId ?? null,
       // event_type is still NOT NULL with a 'kid-party' default; keep the form's
       // own words when it had any, they are the best classifier signal later.
@@ -425,10 +434,11 @@ interface OpenPlanRow {
   contact_phone: string | null
   notes: string | null
   party_tags: Record<string, unknown> | null
+  attribution?: unknown
 }
 
 const OPEN_PLAN_COLUMNS =
-  'id, booking_ref, status, party_type, party_date, party_time, guest_count_approx, contact_name, contact_email, contact_phone, notes, party_tags, created_at'
+  'id, booking_ref, status, party_type, party_date, party_time, guest_count_approx, contact_name, contact_email, contact_phone, notes, party_tags, created_at, attribution'
 
 /** Discriminates "no open plan" from "the lookup did not work". */
 type PlanLookup = { ok: true; plan: OpenPlanRow | null } | { ok: false }
@@ -605,6 +615,14 @@ async function enrichPlan(
   // location_address arrives on a plan that started as a bare contact form.
   if (Object.keys(tags).length) {
     patch.party_tags = { ...(plan.party_tags ?? {}), ...tags }
+  }
+
+  // Attribution fills an empty slot and is never overwritten — first touch. The
+  // second form this person submits is usually reached from our own site, so
+  // last-touch would relabel every multi-form lead as `direct`.
+  if (!hasAttributionSignal(screenAttribution(plan.attribution))) {
+    const incomingAttribution = screenAttribution(input.attribution)
+    if (hasAttributionSignal(incomingAttribution)) patch.attribution = incomingAttribution
   }
 
   // Notes append rather than replace: both messages are evidence for the draft.

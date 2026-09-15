@@ -5,6 +5,7 @@ import Footer from '@/components/Footer'
 import BenchworksAttribution from '@/components/BenchworksAttribution'
 import CrispChat from '@/components/CrispChat'
 import GoogleAnalytics from '@/components/GoogleAnalytics'
+import AttributionCapture from '@/components/AttributionCapture'
 import { CartProvider } from '@/context/CartContext'
 import CartDrawer from '@/components/CartDrawer'
 import { RATING } from '@/lib/reviews'
@@ -165,6 +166,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <CartDrawer />
         </CartProvider>
         <GoogleAnalytics />
+        <AttributionCapture />
         <CrispChat />
       </body>
     </html>

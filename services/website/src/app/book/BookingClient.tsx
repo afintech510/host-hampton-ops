@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
+import { getAttribution } from '@/lib/utm'
 
 const LS_KEY = 'hh_quote_data'
 
@@ -296,6 +297,7 @@ function BookingForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          attribution: getAttribution(),
           ...form,
           marketingConsent,
           partyDate: selection.date,
@@ -596,6 +598,7 @@ function BookingForm() {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
+                        attribution: getAttribution(),
                         name: form.contactName,
                         email: form.contactEmail,
                         phone: form.contactPhone,

@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useRef } from 'react'
 import { Check, Minus, Plus, Users, RotateCcw, Bookmark, Calendar, Loader2, Sparkles, Zap, Building2 } from 'lucide-react'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 import { FALLBACK_CATALOG, type PricingCatalog } from '@/lib/pricingCatalog'
+import { getAttribution } from '@/lib/utm'
 
 /* ── constants ─────────────────────────────────────── */
 
@@ -586,6 +587,7 @@ export default function KidsPartyMenuContent({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          attribution: getAttribution(),
           name: contact.fullName,
           email: contact.email,
           phone: contact.phone,
@@ -615,6 +617,7 @@ export default function KidsPartyMenuContent({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          attribution: getAttribution(),
           fullName: contact.fullName,
           email: contact.email,
           phone: contact.phone,

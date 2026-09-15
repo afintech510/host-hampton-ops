@@ -523,6 +523,11 @@ describe('R0 — the staleness walker', () => {
       // identity — it never looks a person up BY email or phone, and it writes
       // nothing. If it ever gains a lookup, it belongs in SURFACE instead.
       'app/api/admin/agent/route.ts',
+      // Counts 90 days of `source`/`attribution` for the Marketing tab's
+      // "where inquiries come from" panel (migration 053). A window read with
+      // no filter on an identity column at all — it resolves nobody and writes
+      // nothing. If it ever looks a person up, it belongs in SURFACE.
+      'app/api/admin/marketing/route.ts',
     ])
 
     const touching = ALL_FILES.filter(f => /from\(['"`]contacts['"`]\)/.test(code(relative(f)))).map(relative)

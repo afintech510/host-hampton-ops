@@ -3,6 +3,7 @@ import { syncContactExternally, type SyncResult } from '@/lib/contactSync'
 import { findContactsByEmail, findContactsByPhone, normalizePhoneKey } from '@/lib/contactLookup'
 import { isUniqueViolation } from '@/lib/planPayment'
 import { optedOutReason } from '@/lib/sequences/processor'
+import { screenAttribution, deriveLeadSource, hasAttributionSignal } from '@/lib/attribution'
 
 // Valid service_type enum values in the database
 const SERVICE_TYPE_MAP: Record<string, string> = {
@@ -48,6 +49,11 @@ interface UpsertContactParams {
   sourceDetail: string
   serviceInterests: string[]
   marketingConsent?: boolean
+  /**
+   * The raw first touch as the browser posted it (see `lib/attribution.ts`).
+   * Unscreened — this function screens it, so no caller can forget to.
+   */
+  attribution?: unknown
 }
 
 /**
@@ -105,6 +111,7 @@ export async function upsertContactResult({
   sourceDetail,
   serviceInterests,
   marketingConsent,
+  attribution,
 }: UpsertContactParams): Promise<UpsertContactOutcome> {
   const supabase = getSupabase()
   const nameParts = name.trim().split(/\s+/)
@@ -112,7 +119,7 @@ export async function upsertContactResult({
   const prior = await findContactsByEmail(
     supabase,
     email,
-    'id, email, status, email_opt_in, quo_contact_id'
+    'id, email, status, email_opt_in, quo_contact_id, source, attribution'
   )
   if (prior.kind === 'unavailable') {
     // Rule 12: "could not read" is not "there is no such contact". Guessing
@@ -125,9 +132,35 @@ export async function upsertContactResult({
     first_name: nameParts[0],
     last_name: nameParts.length > 1 ? nameParts.slice(1).join(' ') : null,
     phone: phone || null,
-    source: 'direct',
     source_detail: sourceDetail,
     service_interests: normalizeServiceInterests(serviceInterests),
+  }
+
+  // ── The first touch.
+  //
+  // `source` used to be the literal `'direct'`, written on insert AND on every
+  // later update, for all 1217 contacts — the one channel column the admin
+  // Contacts tab displays, saying the same thing about every row. It is now
+  // derived from the posted attribution (migration 053).
+  //
+  // `source` is deliberately ABSENT from `fields`: it is merged per branch
+  // below, because whether we may write it depends on what is already stored,
+  // and on the raced path we do not know that until after the INSERT fails.
+  const screened = screenAttribution(attribution)
+  const newSignal = hasAttributionSignal(screened)
+
+  /**
+   * What to write for an existing row. Empty when the row already holds a
+   * first touch, or when this visit carries no signal to offer.
+   *
+   * FIRST TOUCH, NOT LAST: a returning customer who types the address directly
+   * would otherwise overwrite the Instagram ad that earned them with `direct`,
+   * and the ad's only evidence would be gone.
+   */
+  const firstTouchUpdate = (row: ContactRow | null): Record<string, unknown> => {
+    if (!newSignal) return {}
+    if (row && hasAttributionSignal(screenAttribution(row.attribution))) return {}
+    return { attribution: screened, source: deriveLeadSource(screened) }
   }
 
   // Only set opt-in fields when consent is explicitly provided (true).
@@ -146,7 +179,10 @@ export async function upsertContactResult({
   const priorRowCount = prior.kind === 'found' ? prior.contacts.length : 0
 
   if (existing) {
-    const written = await updateContactById(supabase, existing.id, fields)
+    const written = await updateContactById(supabase, existing.id, {
+      ...fields,
+      ...firstTouchUpdate(existing),
+    })
     if (!written.ok) return { kind: 'unavailable', error: written.error }
     contactId = existing.id
     kind = 'updated'
@@ -159,7 +195,16 @@ export async function upsertContactResult({
       )
     }
   } else {
-    const created = await insertContact(supabase, { ...fields, email, status: 'lead' })
+    // On INSERT `source` is always written, signal or not: `deriveLeadSource`
+    // answers `direct` when there is nothing to go on, which is the same value
+    // the old literal wrote and the only honest one.
+    const created = await insertContact(supabase, {
+      ...fields,
+      email,
+      status: 'lead',
+      attribution: screened,
+      source: deriveLeadSource(screened),
+    })
     if (created.kind === 'unavailable') return created
     if (created.kind === 'raced') {
       // 23505 on `contacts_email_key` after an `absent` read means another
@@ -168,7 +213,7 @@ export async function upsertContactResult({
       const again = await findContactsByEmail(
         supabase,
         email,
-        'id, email, status, email_opt_in, quo_contact_id'
+        'id, email, status, email_opt_in, quo_contact_id, source, attribution'
       )
       if (again.kind !== 'found') {
         return {
@@ -177,7 +222,10 @@ export async function upsertContactResult({
         }
       }
       existing = again.primary as ContactRow
-      const written = await updateContactById(supabase, existing.id, fields)
+      const written = await updateContactById(supabase, existing.id, {
+        ...fields,
+        ...firstTouchUpdate(existing),
+      })
       if (!written.ok) return { kind: 'unavailable', error: written.error }
       contactId = existing.id
       kind = 'updated'
@@ -219,6 +267,9 @@ interface ContactRow {
   status?: string | null
   email_opt_in?: boolean | null
   quo_contact_id?: string | null
+  source?: string | null
+  /** jsonb, so `unknown` — `screenAttribution` is what makes it a shape. */
+  attribution?: unknown
 }
 
 async function updateContactById(
@@ -353,6 +404,11 @@ export async function upsertContactByPhone({
         first_name: nameParts[0] || null,
         last_name: nameParts.length > 1 ? nameParts.slice(1).join(' ') : null,
         status: 'lead',
+        // A texter arrives with no browser and therefore no attribution: there
+        // is no URL, no referrer, nothing. `direct` here is a real answer, not
+        // the placeholder it was on the email path before migration 053 — and
+        // it is why "how did you hear about us?" on the forms is the only thing
+        // that will ever attribute the phone half of the inquiries.
         source: 'direct',
         source_detail: sourceDetail,
         service_interests: normalizeServiceInterests(serviceInterests),

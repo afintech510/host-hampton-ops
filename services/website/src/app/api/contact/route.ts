@@ -18,6 +18,7 @@ import {
   settledOk,
   MAX_INTAKE_NAME_CHARS,
 } from '@/lib/publicIntake'
+import { attributionFromBody } from '@/lib/attribution'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,6 +48,12 @@ export async function POST(req: NextRequest) {
   if (limited) return limited
 
   const body = await req.json()
+
+  // The first touch, screened at entry (lib/attribution.ts). One reader for
+
+  // every intake route, and it accepts the pre-053 `utm` field name too.
+
+  const attribution = attributionFromBody(body)
   const { name, email, phone, message, utm, marketingConsent } = body
 
   if (!name || !email || !message) {
@@ -78,6 +85,7 @@ export async function POST(req: NextRequest) {
     sourceDetail: 'Contact Us page',
     serviceInterests: ['general'],
     marketingConsent: !!marketingConsent,
+    attribution,
   })
   recorded.contact = !!contactId
 
@@ -110,6 +118,7 @@ export async function POST(req: NextRequest) {
     contactPhone: phone || null,
     notes: boundedMessage,
     source: 'website_form',
+    attribution,
     tags: { source_page: 'contact-us' },
   })
   // A reused plan whose enrichment write was refused carries none of this

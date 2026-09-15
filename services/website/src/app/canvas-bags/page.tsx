@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useState } from 'react'
 import { CheckCircle, Loader2 } from 'lucide-react'
 import { trackContact } from '@/lib/gtag'
+import { getAttribution } from '@/lib/utm'
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -132,7 +133,7 @@ export default function CanvasBagsPage() {
       const res = await fetch('/api/canvas-bag-inquiry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, attribution: getAttribution() }),
       })
       const data = await res.json()
       if (!res.ok) {

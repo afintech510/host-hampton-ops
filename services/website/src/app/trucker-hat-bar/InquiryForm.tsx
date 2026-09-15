@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Loader2, CheckCircle } from 'lucide-react'
 import { trackContact } from '@/lib/gtag'
+import { getAttribution } from '@/lib/utm'
 
 const c = {
   oat:      '#F5F0EB',
@@ -66,6 +67,7 @@ export default function InquiryForm() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              attribution: getAttribution(),
               name: data.get('name'),
               email: data.get('email'),
               phone: data.get('phone') || null,

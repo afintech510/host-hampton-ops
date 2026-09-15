@@ -9,7 +9,7 @@ import ImageSlider from '@/components/ImageSlider'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import type { PricingItem } from './page'
 import { trackLead, trackCheckoutStart } from '@/lib/gtag'
-import { captureUtm, getUtmParams } from '@/lib/utm'
+import { getAttribution } from '@/lib/utm'
 
 const MINI_PARTY_DISCOUNT = 200
 const MINI_PARTY_MAX_GUESTS = 7
@@ -210,8 +210,6 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
     }
   }
 
-  useEffect(() => { captureUtm() }, [])
-
   // Scroll the card image to the top of the viewport when a theme is selected
   useEffect(() => {
     if (!selectedTheme) return
@@ -249,7 +247,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
           timeOfDay: formData.timeOfDay.join(', '),
           sourcePage: 'party-packages',
           marketingConsent: consent,
-          utm: getUtmParams(),
+          attribution: getAttribution(),
         }),
       })
 
@@ -289,6 +287,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          attribution: getAttribution(),
           packageName: formData.partyTheme || selectedTheme || 'Kids Birthday Party',
           partyDate: calendarSelection.date,
           partyTime: calendarSelection.timeSlot.start,
@@ -306,7 +305,6 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
             price: selectedThemePrice != null ? selectedThemePrice - (isMiniParty ? MINI_PARTY_DISCOUNT : 0) : undefined,
             miniParty: isMiniParty || undefined,
           },
-          utm: getUtmParams(),
         }),
       })
 
@@ -367,6 +365,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          attribution: getAttribution(),
           name: formData.fullName,
           email: formData.email,
           phone: formData.phone,

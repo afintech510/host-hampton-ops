@@ -14,6 +14,7 @@ import { findBookingsByContactEmail } from '@/lib/contactLookup'
 import { screenPublicLineItems, screenPublicGuestCount, boundedIntakeText, MAX_INTAKE_NAME_CHARS } from '@/lib/publicIntake'
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
+import { attributionFromBody } from '@/lib/attribution'
 
 function formatDate(dateStr: string): string {
   try {
@@ -60,6 +61,12 @@ export async function POST(req: NextRequest) {
     if (limited) return limited
 
     const body = await req.json()
+
+    // The first touch, screened at entry (lib/attribution.ts). One reader for
+
+    // every intake route, and it accepts the pre-053 `utm` field name too.
+
+    const attribution = attributionFromBody(body)
     const {
       contactName,
       contactEmail,
@@ -279,6 +286,7 @@ export async function POST(req: NextRequest) {
         notes: boundedNotes,
         party_type: 'in_studio_theme',
         source: 'website_form',
+        attribution,
         party_tags: buildPartyTags(null),
       }).select('id').single()
 
@@ -443,6 +451,7 @@ export async function POST(req: NextRequest) {
       sourceDetail: 'Party Builder — Save Quote',
       serviceInterests: ['kids_party'],
       marketingConsent: !!marketingConsent,
+      attribution,
     })
 
     if (contactId) {

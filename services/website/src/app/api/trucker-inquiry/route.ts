@@ -16,6 +16,7 @@ import {
   missingFrom,
   settledOk,
 } from '@/lib/publicIntake'
+import { attributionFromBody } from '@/lib/attribution'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,6 +26,9 @@ export async function POST(req: NextRequest) {
 
   const recorded = emptyIntakeRecord()
   const body = await req.json()
+  // The first touch, screened at entry (lib/attribution.ts). One reader for
+  // every intake route, and it accepts the pre-053 `utm` field name too.
+  const attribution = attributionFromBody(body)
   const { name, email, phone, company, eventType, date, guests, vision, marketingConsent } = body
 
   if (!name || !email) {
@@ -43,6 +47,7 @@ export async function POST(req: NextRequest) {
     sourceDetail: 'Inquiry form — trucker-hat-bar',
     serviceInterests: ['trucker-hat-bar'],
     marketingConsent: !!marketingConsent,
+    attribution,
   })
   recorded.contact = !!contactId
 
@@ -96,6 +101,7 @@ export async function POST(req: NextRequest) {
     notes: [company ? `Company: ${company}` : null, vision].filter(Boolean).join('\n') || null,
     eventType: eventType || 'trucker hat bar',
     source: 'website_form',
+    attribution,
     tags: { source_page: 'trucker-hat-bar', ...(company ? { company } : {}) },
   })
   recorded.plan = !!plan.bookingId && plan.enriched !== false

@@ -7,6 +7,7 @@ import type { BookingLineItem } from '@/types/booking-flow'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import { ArrowLeft } from 'lucide-react'
+import { getAttribution } from '@/lib/utm'
 
 const STORAGE_KEY = 'hh_quote_data'
 
@@ -139,6 +140,7 @@ export default function SummaryContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          attribution: getAttribution(),
           lineItems,
           contactName: quote.contactName,
           contactEmail: quote.contactEmail,

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Send, CheckCircle } from 'lucide-react'
 import { trackContact } from '@/lib/gtag'
-import { captureUtm, getUtmParams } from '@/lib/utm'
+import { getAttribution } from '@/lib/utm'
 
 export default function MobilePartyForm({ prefillDetails = '' }: { prefillDetails?: string }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', date: '', details: prefillDetails })
@@ -11,8 +11,6 @@ export default function MobilePartyForm({ prefillDetails = '' }: { prefillDetail
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => { captureUtm() }, [])
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }))
@@ -26,7 +24,7 @@ export default function MobilePartyForm({ prefillDetails = '' }: { prefillDetail
       const res = await fetch('/api/mobile-party-inquiry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, marketingConsent: consent, utm: getUtmParams() }),
+        body: JSON.stringify({ ...form, marketingConsent: consent, attribution: getAttribution() }),
       })
 
       if (!res.ok) {

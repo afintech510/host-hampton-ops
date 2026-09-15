@@ -18,6 +18,7 @@ import {
   missingFrom,
   settledOk,
 } from '@/lib/publicIntake'
+import { attributionFromBody } from '@/lib/attribution'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +29,9 @@ export async function POST(req: NextRequest) {
   const recorded = emptyIntakeRecord()
   const supabase = getSupabase()
   const body = await req.json()
+  // The first touch, screened at entry (lib/attribution.ts). One reader for
+  // every intake route, and it accepts the pre-053 `utm` field name too.
+  const attribution = attributionFromBody(body)
 
   const {
     organizationName,
@@ -64,6 +68,7 @@ export async function POST(req: NextRequest) {
     sourceDetail: 'Fundraiser landing page',
     serviceInterests: ['fundraiser'],
     marketingConsent: !!marketingConsent,
+    attribution,
   })
   recorded.contact = !!contactId
 
@@ -119,6 +124,7 @@ export async function POST(req: NextRequest) {
     notes: [`Organization: ${organizationName}`, organizationType, message].filter(Boolean).join('\n') || null,
     eventType: 'fundraiser',
     source: 'website_form',
+    attribution,
     tags: { source_page: 'fundraiser', organization_name: organizationName, organization_type: organizationType || null },
   })
   recorded.plan = !!plan.bookingId && plan.enriched !== false

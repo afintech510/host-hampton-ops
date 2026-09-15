@@ -12,6 +12,7 @@ import MyPartiesModal from './MyPartiesModal'
 import ChangesModal from './ChangesModal'
 import SendMessageModal from './SendMessageModal'
 import { diffPlanSnapshots } from './planDiff'
+import { getAttribution } from '@/lib/utm'
 
 /* ── constants ─────────────────────────────────────── */
 
@@ -1415,6 +1416,7 @@ export default function PartyBuilderContent({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          attribution: getAttribution(),
           // Keep re-saves on the plan already open instead of forking a new one.
           bookingRef: loadedBooking?.booking_ref,
           lineItems: getLineItems(),
@@ -1507,6 +1509,7 @@ export default function PartyBuilderContent({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          attribution: getAttribution(),
           lineItems: getLineItems(),
           contact: {
             fullName: contact.fullName,
