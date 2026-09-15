@@ -158,10 +158,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     if (campaign.campaign_type === 'email' || campaign.campaign_type === 'event_update') {
-      const listId = body.listId ? parseInt(body.listId, 10) : parseInt(process.env.BREVO_DEFAULT_LIST_ID || '0', 10)
-      if (!listId) {
+      // Precedence, and the order is the whole point: the AUDIENCE BELONGS TO
+      // THE CAMPAIGN. `brevo_list_id` (migration 052) wins over anything the
+      // caller posts, because the caller used to be a button pinned to list 3
+      // — `CampaignsTab` held a `sendListId` state it never once called the
+      // setter for. A campaign built for a 243-person batch must not be able
+      // to reach 970 people because of what a click said.
+      const listId = campaign.brevo_list_id
+        ? Number(campaign.brevo_list_id)
+        : body.listId
+          ? parseInt(String(body.listId), 10)
+          : parseInt(process.env.BREVO_DEFAULT_LIST_ID || '0', 10)
+      if (!Number.isFinite(listId) || listId <= 0) {
         await release()
-        return NextResponse.json({ error: 'BREVO_DEFAULT_LIST_ID not configured' }, { status: 500 })
+        return NextResponse.json(
+          { error: 'No Brevo list to send to — set the campaign\'s brevo_list_id or BREVO_DEFAULT_LIST_ID' },
+          { status: 500 },
+        )
       }
 
       const result = await sendCampaign(
@@ -323,6 +336,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.body_text !== undefined) allowed.body_text = body.body_text
   if (body.media_urls !== undefined) allowed.media_urls = Array.isArray(body.media_urls) && body.media_urls.length > 0 ? body.media_urls : null
   if (body.target_segment !== undefined) allowed.target_segment = body.target_segment
+  // Migration 052. `null` clears it back to the full marketing list, which is a
+  // WIDENING — so it has to be said explicitly, not arrived at by a bad parse.
+  if (body.brevo_list_id !== undefined) {
+    if (body.brevo_list_id === null) {
+      allowed.brevo_list_id = null
+    } else {
+      const n = parseInt(String(body.brevo_list_id), 10)
+      if (!Number.isFinite(n) || n <= 0) {
+        return NextResponse.json({ error: 'brevo_list_id must be a positive integer, or null for the full list' }, { status: 400 })
+      }
+      allowed.brevo_list_id = n
+    }
+  }
   if (body.scheduled_for !== undefined) {
     allowed.scheduled_for = body.scheduled_for
     allowed.status = body.scheduled_for ? 'scheduled' : 'draft'

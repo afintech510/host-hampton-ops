@@ -17,6 +17,8 @@ interface Campaign {
   scheduled_for: string | null
   sent_at: string | null
   brevo_campaign_id: number | null
+  /** Migration 052. NULL = the full marketing list (BREVO_DEFAULT_LIST_ID). */
+  brevo_list_id: number | null
   total_recipients: number | null
   opened: number | null
   clicked: number | null
@@ -360,14 +362,21 @@ function CampaignDetail({ campaign, headers, onRefresh }: { campaign: Campaign; 
   }
 
   async function handleSend() {
-    const label = sendListId === 3 ? 'all email opt-ins (List 3)' : `List ${sendListId}`
+    // The confirm used to read "all email opt-ins (List 3)" ALWAYS, because
+    // `sendListId` was state whose setter was never called. It has to name the
+    // list the server will actually use, or the dialog is decoration — and the
+    // server now prefers the campaign's own `brevo_list_id` (migration 052).
+    const effectiveListId = campaign.brevo_list_id ?? sendListId
+    const label = campaign.brevo_list_id
+      ? `this campaign's own audience (Brevo list ${campaign.brevo_list_id})`
+      : 'ALL email opt-ins (List 3)'
     if (!confirm(`Send "${editMode ? editSubject : campaign.subject}" to ${label}? This cannot be undone.`)) return
     setSending(true)
     setMsg('')
     const res = await fetch(`/api/admin/campaigns/${campaign.id}`, {
       method: 'PATCH',
       headers,
-      body: JSON.stringify({ status: 'sending', listId: sendListId }),
+      body: JSON.stringify({ status: 'sending', listId: effectiveListId }),
     })
     setSending(false)
     if (res.ok) {
@@ -534,6 +543,11 @@ function CampaignDetail({ campaign, headers, onRefresh }: { campaign: Campaign; 
           <div>
             <p className="text-xs font-semibold text-hampton-navy mb-2">Send Campaign</p>
             <div className="flex flex-wrap gap-2 items-center">
+              {campaign.brevo_list_id && (
+                <span className="text-sm font-medium text-amber-900 bg-amber-100 rounded-lg px-3 py-1.5">
+                  Brevo list {campaign.brevo_list_id} only
+                </span>
+              )}
               <span className="text-sm text-gray-600 bg-gray-100 rounded-lg px-3 py-1.5">
                 Target: {campaign.target_segment === 'sms_opted_in' ? 'SMS Opted-In' :
                   campaign.target_segment === 'email_opted_in' ? 'Email Opted-In' :

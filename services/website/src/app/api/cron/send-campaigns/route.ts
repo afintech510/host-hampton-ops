@@ -123,10 +123,15 @@ export async function GET(req: NextRequest) {
   let deferred = 0
   const notes: string[] = []
 
-  const listId = parseInt(process.env.BREVO_DEFAULT_LIST_ID || '0', 10)
+  const defaultListId = parseInt(process.env.BREVO_DEFAULT_LIST_ID || '0', 10)
 
   for (const campaign of campaigns) {
     try {
+      // Per-campaign, not per-tick: migration 052 lets a campaign name its own
+      // audience, and a scheduled batch send is exactly the case that needs it.
+      // Reading the env default once outside the loop and using it for every
+      // row is how a 243-person batch becomes a 970-person one.
+      const listId = campaign.brevo_list_id ? Number(campaign.brevo_list_id) : defaultListId
       if (!listId) {
         // Not the campaign's fault and not permanent. Put it back.
         await supabase.from('scheduled_campaigns').update({ status: 'scheduled' }).eq('id', campaign.id)
