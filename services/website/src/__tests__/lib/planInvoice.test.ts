@@ -10,6 +10,7 @@ import {
   docTitleFor,
   formatClockTime,
   formatEventDateTime,
+  hiddenSectionsFrom,
   orderLineItems,
   loadPlanInvoice,
   money,
@@ -359,6 +360,71 @@ describe('loadPlanInvoice', () => {
       for (const s of res.invoice.mobileStations) {
         expect(Object.keys(s).sort()).toEqual(['emoji', 'name'])
       }
+    })
+  })
+
+  /* ── Per-plan section suppression ────────────────────────────────────── */
+
+  describe('sections one plan hides', () => {
+    const mobile = (tags: Record<string, unknown>) =>
+      makeSupabase({ ...STUDIO, party_type: 'mobile_party', party_tags: tags }, [])
+
+    it('drops the kids station menu off a corporate quote', async () => {
+      // HH-PTY-NVLCP: still a mobile_party, but "Adopt a Puppy" has no business
+      // on a quote going to Gusto's head office.
+      const res = await loadPlanInvoice('HH-PTY-AAA', mobile({ hidden_sections: ['mobile_menu'] }))
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.mobileStations).toEqual([])
+    })
+
+    it('empties the whole good-to-know block, policies included', async () => {
+      const res = await loadPlanInvoice('HH-PTY-AAA', mobile({ hidden_sections: ['good_to_know'] }))
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.content.goodToKnow).toEqual([])
+      expect(res.invoice.content.policies).toEqual([])
+    })
+
+    it('hides only what was named', async () => {
+      const res = await loadPlanInvoice('HH-PTY-AAA', mobile({ hidden_sections: ['good_to_know'] }))
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.mobileStations.length).toBeGreaterThan(0)
+    })
+
+    it('changes nothing for a plan that names no sections', async () => {
+      const res = await loadPlanInvoice('HH-PTY-AAA', mobile({}))
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.mobileStations.length).toBeGreaterThan(0)
+      expect(res.invoice.content.goodToKnow.length).toBeGreaterThan(0)
+    })
+
+    it('IGNORES a value it does not recognise rather than blanking the page', async () => {
+      // `party_tags` is free-form jsonb several writers merge into. A stray
+      // entry must not be able to empty a section of a real customer's invoice.
+      for (const junk of [['everything'], ['GOOD_TO_KNOW'], 'mobile_menu', { mobile_menu: true }, null, 42]) {
+        const res = await loadPlanInvoice('HH-PTY-AAA', mobile({ hidden_sections: junk }))
+        if (!res.ok) throw new Error('expected ok')
+        expect(res.invoice.mobileStations.length).toBeGreaterThan(0)
+        expect(res.invoice.content.goodToKnow.length).toBeGreaterThan(0)
+      }
+    })
+
+    it('takes both at once', async () => {
+      const res = await loadPlanInvoice(
+        'HH-PTY-AAA',
+        mobile({ hidden_sections: ['mobile_menu', 'good_to_know'] }),
+      )
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.mobileStations).toEqual([])
+      expect(res.invoice.content.goodToKnow).toEqual([])
+    })
+  })
+
+  describe('hiddenSectionsFrom', () => {
+    it('reads the recognised names and drops the rest', () => {
+      expect([...hiddenSectionsFrom({ hidden_sections: ['mobile_menu', 'nope'] })]).toEqual(['mobile_menu'])
+      expect([...hiddenSectionsFrom({})]).toEqual([])
+      expect([...hiddenSectionsFrom(null)]).toEqual([])
+      expect([...hiddenSectionsFrom(undefined)]).toEqual([])
     })
   })
 })

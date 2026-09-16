@@ -160,6 +160,35 @@ export function docTitleFor(partyType: string, status: string | null): string {
 }
 
 /**
+ * Sections one specific plan suppresses, read from `party_tags.hidden_sections`.
+ *
+ * Per-BOOKING, not per-product. The copy in `plan_content` is keyed by party
+ * type and is right for the great majority — but a corporate activation is
+ * still a `mobile_party`, and the kids' station menu (Glitter Freckles, Adopt a
+ * Puppy, Pirate Sword Decorating) does not belong on a quote going to a
+ * client's head office. HH-PTY-NVLCP, Gusto's NYC leadership all-hands, is the
+ * booking that asked for it.
+ *
+ * Unknown values are DROPPED, not honoured. `party_tags` is free-form jsonb that
+ * several writers merge into, so a stray entry must never be able to blank a
+ * section of a customer's invoice that nobody meant to hide.
+ */
+export const HIDEABLE_SECTIONS = ['mobile_menu', 'good_to_know'] as const
+export type HideableSection = (typeof HIDEABLE_SECTIONS)[number]
+
+export function hiddenSectionsFrom(
+  tags: Record<string, unknown> | null | undefined,
+): Set<HideableSection> {
+  const raw = (tags ?? {}).hidden_sections
+  if (!Array.isArray(raw)) return new Set()
+  return new Set(
+    raw.filter((v): v is HideableSection =>
+      typeof v === 'string' && (HIDEABLE_SECTIONS as readonly string[]).includes(v),
+    ),
+  )
+}
+
+/**
  * `bookings.party_time` as a customer reads it: "5:00 PM", not "17:00".
  *
  * The column is free text and holds both a 24-hour clock (25 of the 30 live
@@ -311,17 +340,25 @@ export async function loadPlanInvoice(
 
   const tags = booking.party_tags ?? {}
   const venueAddress = typeof tags.location_address === 'string' ? tags.location_address : null
+  const hidden = hiddenSectionsFrom(tags)
 
   // The menu appendix reads as "more you could add", so anything already billed
   // on this booking is removed from it — otherwise it duplicates what they
   // have just been charged for.
   const billedNames = new Set(lineItems.map(i => i.name.trim().toLowerCase()))
   const mobileStations =
-    partyType === 'mobile_party'
+    partyType === 'mobile_party' && !hidden.has('mobile_menu')
       ? catalog.mobileStations
           .filter(s => !billedNames.has(s.name.trim().toLowerCase()))
           .map(s => ({ name: s.name, emoji: s.emoji }))
       : []
+
+  // Suppressed HERE rather than in the page, so every reader of the invoice —
+  // the document, and anything that renders from it later — agrees about what
+  // this quote contains. The page already hides the block when both are empty.
+  const shownContent = hidden.has('good_to_know')
+    ? { ...content, goodToKnow: [], policies: [] }
+    : content
 
   return {
     ok: true,
@@ -344,7 +381,7 @@ export async function loadPlanInvoice(
       payments,
       depositIsSeparate,
       securityHoldCents: depositIsSeparate ? catalog.studioRates.securityDepositCents : null,
-      content,
+      content: shownContent,
       catalog,
       mobileStations,
       eventDateTime: formatEventDateTime(booking.party_date, booking.party_time),
