@@ -168,23 +168,26 @@ export function generatePartyRef(): string {
  * Callers MUST pass the total. The old signature defaulted to 0, which was
  * harmless at 25% (0 → $0) but would silently return the full $250 here.
  *
- * ── Why `partyType` is a parameter and not ignored ──────────────────────────
+ * ── Why `partyType` is still a parameter ────────────────────────────────────
  *
- * On every product except a studio rental the deposit COMES OFF the total, so a
- * 50% share is a part payment and the balance simply drops by the same amount.
- * On a studio rental it does not: `depositIsSeparateFor` is true there, which
- * means the deposit is charged ON TOP of the full rental (that is the whole of
- * needs-Adam 41, and `planInvoice` renders it in a callout outside the totals
- * block for exactly this reason). Applying 50% there would not change the terms,
- * it would invent a second charge — a $3,200 rental would be quoted $3,200 plus
- * a $1,600 "deposit". So the rate is deliberately scoped to the products where
- * the deposit is a reservation payment.
+ * It used to carve a studio rental OUT of the 50% rate, and the reason was
+ * sound while it lasted: `depositIsSeparateFor` was true there, so the deposit
+ * was charged ON TOP of the full rental rather than coming off it, and applying
+ * 50% would not have changed the terms — it would have invented a second charge
+ * (a $3,200 rental quoted $3,200 plus a $1,600 "deposit").
  *
- * Omitting `partyType` applies the rate. That is the safe default: every caller
- * that knows it is quoting a studio rental passes it, and a caller that does not
- * know what it is holding is not holding a studio rental — the studio has its
- * own dedicated routes. The separate $500 day-of damage authorisation
- * (`SECURITY_DEPOSIT_CENTS`) is untouched by any of this.
+ * needs-Adam 41 was ruled on 2026-09-16: the deposit is a reservation payment on
+ * every product, studio included, so that rationale is gone and the carve-out
+ * with it. `depositIsSeparateFor` now answers false for everything, which makes
+ * the guard below inert rather than wrong — it is kept so the ruling remains a
+ * single boolean in `lib/planBalance.ts` and reversing it restores the exemption
+ * automatically. No live booking's deposit moved: the largest studio rental in
+ * production is HH-STU-2CTJ3 at $1,100, well under the $3,000 threshold.
+ *
+ * Omitting `partyType` applies the rate, which is now what every product does
+ * anyway. The refundable damage authorisation (`SECURITY_DEPOSIT_CENTS`, $250
+ * since the same ruling) is a different thing entirely and is untouched by any
+ * of this — see `hasSecurityHold`.
  */
 export function getDepositCents(totalCents: number, partyType?: string | null): number {
   if (!Number.isFinite(totalCents) || totalCents <= 0) return 0

@@ -297,24 +297,32 @@ describe('R3 · `party_type === studio_rental` is spelled exactly once', () => {
     expect(offenders).toEqual([])
   })
 
-  it('the switch is documented as needs-Adam, with the numbers and the rows', () => {
+  it('the ruling is documented, with the date, the numbers and the rows', () => {
     /**
      * The comment IS the deliverable here — the next person to touch this must
-     * find out, without leaving the file, that flipping it moves $250 on two
-     * live bookings. So the rule asserts the SUBSTANCE, not one phrase: the
-     * first version of it checked only "must not be flipped without Adam", and
-     * a mutation that gutted the surrounding explanation went straight through.
-     * A tripwire on prose has to name what the prose has to say.
+     * find out, without leaving the file, that this boolean is a settled owner
+     * ruling and what flipping it back would do to four live bookings. So the
+     * rule asserts the SUBSTANCE, not one phrase: an earlier version checked
+     * only a single sentence, and a mutation that gutted the surrounding
+     * explanation went straight through. A tripwire on prose has to name what
+     * the prose has to say.
+     *
+     * It was a needs-Adam tripwire before 2026-09-16 and is a ruled-decision
+     * tripwire now. The ticket number stays in the required list precisely so
+     * the history remains findable from the file.
      */
     const flat = raw('lib/planBalance.ts').replace(/\s+\*?\s*/g, ' ')
     for (const required of [
       /needs-Adam 41/, // the ticket
-      /must not be flipped without Adam/, // the instruction
-      /HH-STU-ZVM4U/, // the rows it moves
+      /RULED 2026-09-16/, // that it is settled, and when
+      /HH-STU-ZVM4U/, // the rows it moved
+      /HH-PTY-FSQU9/,
       /HH-STU-2CTJ3/,
+      /HH-PTY-73LGZ/,
       /\$250/, // what it is worth
-      /SECURITY deposit held against damage/, // what `true` means
-      /reservation payment/, // what `false` means
+      /reservation payment/, // what the ruling says the deposit IS
+      /authorisation/i, // …as distinct from the damage hold, which is not it
+      /studio_security_hold/, // and where that other number lives
     ]) {
       expect(flat).toMatch(required)
     }
@@ -323,7 +331,9 @@ describe('R3 · `party_type === studio_rental` is spelled exactly once', () => {
   it('the second half of the same ruling is documented too', () => {
     const flat = raw('lib/planBalance.ts').replace(/\s+\*?\s*/g, ' ')
     expect(flat).toMatch(/COLUMN_FOLLOWS_INVOICE/)
-    expect(flat).toMatch(/charge two real studio customers \$250 more than they have been quoted/i)
+    // The column and the document are now the same arithmetic. The comment has
+    // to say WHY that is true rather than leaving it as a coincidence.
+    expect(flat).toMatch(/no-op on every row/i)
     // …and the writer that actually puts the number in the column says so too.
     const checkout = raw('app/api/studio-rental/checkout/route.ts').replace(/\s+\*?\s*/g, ' ')
     expect(checkout).toMatch(/COLUMN_FOLLOWS_INVOICE/)

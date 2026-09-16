@@ -323,15 +323,17 @@ describe('recordPlanPayment', () => {
     expect(bal.paid_in_full_at).toBeUndefined()
   })
 
-  it('STUDIO: the security deposit does not reduce the balance', async () => {
+  it('STUDIO: the deposit reduces the balance, like every other product', async () => {
     const db = recordDb({
       booking: { ...BOOKING, party_type: 'studio_rental' },
       paymentsAfter: [{ payment_type: 'deposit', amount_cents: 25000 }],
     })
     const res = await recordPlanPayment(target(), session(), db as never)
     if (!res.ok) throw new Error(res.message)
-    // Full total still owed — the $250 is held against damage.
-    expect(res.newBalanceCents).toBe(100000)
+    // needs-Adam 41, ruled 2026-09-16: the $250 books the date and comes off the
+    // total. This assertion used to expect the full 100000 — the $250 a studio
+    // customer was shown as still owing after paying it.
+    expect(res.newBalanceCents).toBe(75000)
   })
 
   it('marks paid in full and stamps the date when nothing is left', async () => {

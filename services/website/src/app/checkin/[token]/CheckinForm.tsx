@@ -10,7 +10,7 @@ import { useState, useCallback } from 'react'
  * to room/studio rentals (requiresAgreement) — theme and mobile parties
  * complete check-in as soon as step 1 is saved.
  *
- * Phase 1 collects NO payment information. The $500 authorization hold is
+ * Phase 1 collects NO payment information. The $250 authorization hold is
  * Phase 2 and will use Stripe Elements — card data must reach Stripe directly
  * from the browser and must never be posted to our API, so do not add card
  * fields to the submit payload below.
@@ -161,8 +161,8 @@ export default function CheckinForm({
         </p>
         {requiresAgreement ? (
           <p className="text-sm text-hampton-navy/60">
-            A copy of your signed agreement has been emailed to you. A refundable $500 security hold is
-            authorized on your card when you arrive.
+            A copy of your signed agreement has been emailed to you. A refundable $250 security hold is
+            authorized on your card before your event.
           </p>
         ) : null}
       </div>

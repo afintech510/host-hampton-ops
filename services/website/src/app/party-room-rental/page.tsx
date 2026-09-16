@@ -62,7 +62,7 @@ const faqs = [
   },
   {
     q: 'What is the security deposit?',
-    a: 'A $500 refundable security hold is authorized on your card when you arrive \u2014 it is a hold, not a charge, so the money is never taken from your account. It is released after your event once a quick inspection confirms the space is in good condition.',
+    a: 'A $250 refundable security hold is authorized on your card before your event \u2014 it is a hold, not a charge, so the money is never taken from your account. It is released after your event once a quick inspection confirms the space is in good condition.',
   },
   {
     q: "How do I book? What\u2019s the reservation deposit?",
@@ -197,7 +197,7 @@ export default async function PartyRoomRental() {
             <ul className="space-y-1.5">
               {[
                 'Additional hours available: $100/hr (weekday) or $150/hr (weekend)',
-                'Security deposit: $500 (refundable after event)',
+                'Security deposit: $250 (refundable after event)',
                 'You may bring your own decorations, catering, and vendors',
                 'Tables and chairs for up to 60 guests included',
                 'WiFi included',

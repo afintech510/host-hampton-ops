@@ -68,7 +68,7 @@ function seededRows(): CatalogRow[] {
     row('studio-rental-rate', 'Studio Rental — Weekend full-day cap', 97500, { catalog_key: 'studio_weekend_full_day' }),
     row('studio-rental-rate', 'Studio Rental — Weekday full-day cap', 70000, { catalog_key: 'studio_weekday_full_day' }),
     row('studio-rental-rate', 'Studio Rental — Minimum block', 0, { catalog_key: 'studio_min_hours', value: 3 }),
-    row('studio-rental-rate', 'Studio Rental — Refundable security hold', 50000, { catalog_key: 'studio_security_hold' }),
+    row('studio-rental-rate', 'Studio Rental — Refundable security hold', 25000, { catalog_key: 'studio_security_hold' }),
 
     row('guest-overage', 'Theme Party — Included Guests', 0, { catalog_key: 'theme_included_guests', value: 10 }),
     row('guest-overage', 'Theme Party — Additional Guest', 3500, { catalog_key: 'theme_extra_guest' }),

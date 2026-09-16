@@ -21,23 +21,30 @@
  *     to, holds `total - deposit_amount` on a plan nobody has paid and
  *     `total - paid` on one somebody has. Two concepts in one column.
  *
- * ── The switch Adam has to throw (needs-Adam 41, recorded for the THIRD time) ─
+ * ── needs-Adam 41, RULED 2026-09-16 ─────────────────────────────────────────
  *
- * `STUDIO_DEPOSIT_IS_SEPARATE` below is the whole of the open accounting
- * question, deliberately reduced to one boolean so the ruling is a one-line
- * change rather than a session's work. It is NOT a technical choice and must not
- * be flipped without Adam:
+ * `STUDIO_DEPOSIT_IS_SEPARATE` below was the whole of the open accounting
+ * question, deliberately reduced to one boolean so the ruling would be a
+ * one-line change rather than a session's work. Adam ruled it `false`:
  *
- *   `true`  (today, and what `planInvoice.ts` has always said) — a studio
- *           rental's $250 is a SECURITY deposit held against damage and
- *           refunded afterwards. It is not a part payment, so Balance Due is the
- *           full total. The customer pays $475 rental + $250 refundable.
- *   `false` — the $250 is a reservation payment like every other product's, and
- *           comes off the total. The customer pays $475 in all.
+ *   a studio rental's $250 is a RESERVATION payment like every other product's.
+ *   It books the date and it comes off the total, so Balance Due is
+ *   `total - deposit`. The customer pays $475 in all, not $475 + $250.
  *
- * `bookings.balance_due_cents` on both live studio rentals was written as if it
- * were `false`; every line of `planInvoice.ts` says `true`. That is $250 per
- * booking, on HH-STU-ZVM4U (party 2026-09-30) and HH-STU-2CTJ3.
+ * The refundable damage hold is a genuinely separate thing and always was — a
+ * card AUTHORISATION placed before the event and released afterwards, never a
+ * charge and never a line on the invoice. It is the catalog key
+ * `studio_security_hold` (see `lib/pricingCatalog.ts`), and conflating the two
+ * $250s is exactly what this boolean existed to stop.
+ *
+ * The flip made the document AGREE with the column rather than move any money:
+ * `bookings.balance_due_cents` on every live studio rental was already written
+ * as `total - deposit`, while `planInvoice.ts` printed the full total. Measured
+ * on the four priced studio rentals at ruling time, Balance Due falls by exactly
+ * the $250 deposit on each and lands on the stored column —
+ * HH-STU-ZVM4U $225.00, HH-PTY-FSQU9 $425.00, HH-STU-2CTJ3 $850.00,
+ * HH-PTY-73LGZ $50.00. Nobody is charged more; HH-PTY-FSQU9 (`deposit_paid`)
+ * stops being shown $250 MORE than she owes.
  *
  * ── Why `is_optional` lives here ────────────────────────────────────────────
  *
@@ -63,9 +70,14 @@ export interface BilledItem {
 
 /**
  * Is a studio rental's $250 held separately from the total? See the header —
- * this is needs-Adam 41 and the only thing that has to change to settle it.
+ * this was needs-Adam 41, and Adam ruled `false` on 2026-09-16: the $250 is a
+ * reservation payment and comes off the total, the same as every other product.
+ *
+ * Kept as a named constant rather than deleted along with the branches it
+ * selects, because it is the one place the ruling is written down and because
+ * the opposite reading is the one four customer-facing surfaces used to hold.
  */
-export const STUDIO_DEPOSIT_IS_SEPARATE = true
+export const STUDIO_DEPOSIT_IS_SEPARATE = false
 
 /**
  * Has this plan been priced at all?
@@ -94,6 +106,24 @@ export function depositIsSeparateFor(partyType: string | null | undefined): bool
 }
 
 /**
+ * Does this product carry the refundable damage hold?
+ *
+ * Studio rentals, and only studio rentals — it is the room being held against
+ * damage, so there is nothing to hold on a party we bring to your house.
+ *
+ * This is a SECOND question about the same party type, and it has to be asked
+ * separately. `loadPlanInvoice` used to gate the hold on `depositIsSeparate`,
+ * which was a safe shorthand only while that flag meant "is a studio rental".
+ * The moment needs-Adam 41 was ruled and the flag went false, the shorthand
+ * would have silently dropped the security-hold note off every studio rental
+ * quote — the customer's only written warning that a card authorisation is
+ * coming. Two meanings, two functions.
+ */
+export function hasSecurityHold(partyType: string | null | undefined): boolean {
+  return partyType === 'studio_rental'
+}
+
+/**
  * Does `bookings.balance_due_cents` follow the invoice, or keep its own answer?
  *
  * This is the OTHER half of needs-Adam 41, and the reason it is a second
@@ -104,16 +134,21 @@ export function depositIsSeparateFor(partyType: string | null | undefined): bool
  * has to keep today's value until Adam has ruled, because changing it silently
  * would charge two real studio customers $250 more than they have been quoted.
  *
- *   `false` (today) — the quote-time balance is `total - deposit` for every
- *           product, studio included. That is what wrote $225.00 into
- *           HH-STU-ZVM4U's column against a $475.00 invoice.
- *   `true`  — the column is written with the invoice's own semantics, so the
- *           two stop disagreeing.
+ *   `false` — the quote-time balance is `total - deposit` for every product,
+ *           studio included. That is what wrote $225.00 into HH-STU-ZVM4U's
+ *           column against a $475.00 invoice.
+ *   `true`  (today) — the column is written with the invoice's own semantics,
+ *           so the two stop disagreeing.
  *
- * Set BOTH to the same reading of the deposit and the plan surface agrees with
- * itself end to end. That is the whole of the change Adam's ruling needs.
+ * Both are now the SAME arithmetic: with `STUDIO_DEPOSIT_IS_SEPARATE = false`,
+ * `depositIsSeparateFor` answers false for every product, and `planMoney` with
+ * no payments reduces to `max(0, total - deposit)` — which is the other branch
+ * verbatim. Flipping this to `true` was therefore a no-op on every row, and it
+ * is set that way because the invoice is now the single definition of the
+ * balance and the column should be seen to follow it rather than to agree by
+ * coincidence.
  */
-export const COLUMN_FOLLOWS_INVOICE = false
+export const COLUMN_FOLLOWS_INVOICE = true
 
 /**
  * The balance to STORE on a plan nobody has paid yet — `bookings.balance_due_cents`

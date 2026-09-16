@@ -171,7 +171,7 @@ const STUDIO = {
 }
 
 describe('loadPlanInvoice', () => {
-  it('STUDIO: Balance Due is the full total and the deposit is separate', async () => {
+  it('STUDIO: the deposit comes off the balance, like every other product', async () => {
     const supabase = makeSupabase(STUDIO, [
       { ...item({ name: 'Studio Rental — 3 hours', unit_price_cents: 60000, is_featured: true }) },
     ])
@@ -181,12 +181,14 @@ describe('loadPlanInvoice', () => {
 
     expect(res.invoice.totalCents).toBe(60000)
     expect(res.invoice.depositCents).toBe(25000)
-    // The rule SKILL.md and plan §3 both state twice: the $250 is held against
-    // damage, not a part payment, so subtracting it would misstate the balance.
-    expect(res.invoice.depositIsSeparate).toBe(true)
-    expect(res.invoice.balanceDueCents).toBe(60000)
-    // The day-of card hold is a different thing again, and never a charge.
-    expect(res.invoice.securityHoldCents).toBe(50000)
+    // needs-Adam 41, ruled 2026-09-16: the $250 is a RESERVATION payment that
+    // books the date, not a damage deposit. This assertion used to read `true`
+    // / 60000, which is the $250 the document overstated on every studio rental.
+    expect(res.invoice.depositIsSeparate).toBe(false)
+    expect(res.invoice.balanceDueCents).toBe(35000)
+    expect(res.invoice.depositOwedCents).toBe(25000)
+    // The refundable card hold is a different thing again, and never a charge.
+    expect(res.invoice.securityHoldCents).toBe(25000)
   })
 
   it('MOBILE: the deposit does come off the balance', async () => {

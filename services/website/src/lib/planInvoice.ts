@@ -6,23 +6,26 @@
  * deposit rule are the parts worth testing, and a React server component is an
  * awkward place to test them. The page renders this and makes no decisions.
  *
- * ── The deposit rule, which differs by product ──────────────────────────────
+ * ── The deposit rule, which no longer differs by product ────────────────────
  *
- * SKILL.md and plan §3 both say it twice, so it is stated once here and obeyed
- * everywhere:
+ * One rule for everything, since Adam settled needs-Adam 41 on 2026-09-16:
+ * **the deposit is a reservation payment and comes off the balance.** A studio
+ * rental is no exception. See `STUDIO_DEPOSIT_IS_SEPARATE` in lib/planBalance.ts
+ * for the ruling and what it moved.
  *
- *   * **Studio rental** — Balance Due is the FULL total. The $250 is a security
- *     deposit held against damage, refundable after the event; it is not a part
- *     payment, so subtracting it would misstate what the client owes. It is
- *     rendered in the `.deposit-callout`, deliberately OUTSIDE `.totals-section`,
- *     because an earlier version put it inside and clients read it as already
- *     deducted.
- *   * **Everything else** — the deposit is a reservation payment and does come
- *     off the balance.
+ * This file used to say the opposite — that a studio rental's $250 was a damage
+ * deposit, so Balance Due was the FULL total — while `bookings.balance_due_cents`
+ * was written as `total - deposit` on every one of those same rows. The document
+ * and the column disagreed by exactly $250 per studio rental.
  *
- * The $500 studio security hold is a separate thing again: a refundable card
- * authorisation placed on the day, NOT this deposit, and its value is the
- * catalog key `studio_security_hold`. It is shown as a note, never as a charge.
+ * The deposit is still rendered in the `.deposit-callout`, deliberately OUTSIDE
+ * `.totals-section`: an earlier version put it inside and clients read it as
+ * already deducted. It now IS already deducted, so the callout says so.
+ *
+ * The studio security hold is a separate thing and always was: a refundable card
+ * authorisation placed before the event, NOT this deposit, its value the catalog
+ * key `studio_security_hold` ($250 since 2026-09-16). Shown as a note, never as
+ * a charge, and never a line in the total.
  */
 
 import { getSupabase } from '@/lib/supabase'
@@ -30,7 +33,7 @@ import { getDepositCents, BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 import { isPayableStatus } from '@/lib/portalWrite'
 import { loadPricingCatalog, type PricingCatalog } from '@/lib/pricingCatalog'
 import { loadPlanContent, type PlanContent } from '@/lib/planContent'
-import { depositIsSeparateFor, guestMultiplier, planMoney, type PaymentRow } from '@/lib/planBalance'
+import { depositIsSeparateFor, hasSecurityHold, guestMultiplier, planMoney, type PaymentRow } from '@/lib/planBalance'
 import type { BookingLineItem } from '@/types/booking-flow'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -105,9 +108,19 @@ export interface PlanInvoice {
   overpaidCents: number
   /** The authoritative payment rows every figure above was derived from. */
   payments: PaymentRow[]
-  /** True for a studio rental: the deposit is NOT deducted from the balance. */
+  /**
+   * Is the deposit held apart from the total rather than deducted from it?
+   * `false` for every product since needs-Adam 41 was ruled — see
+   * `STUDIO_DEPOSIT_IS_SEPARATE`. Kept on the view model because the page still
+   * words the deposit callout from it.
+   */
   depositIsSeparate: boolean
-  /** The day-of refundable card hold, studio only. Never a charge. */
+  /**
+   * The refundable card hold, studio rentals only. Never a charge, never in the
+   * total. Gated on `hasSecurityHold(partyType)` and deliberately NOT on
+   * `depositIsSeparate` — see that function for the note this would have
+   * dropped off every studio quote.
+   */
   securityHoldCents: number | null
   content: PlanContent
   catalog: PricingCatalog
@@ -380,7 +393,7 @@ export async function loadPlanInvoice(
       overpaidCents: m.overpaidCents,
       payments,
       depositIsSeparate,
-      securityHoldCents: depositIsSeparate ? catalog.studioRates.securityDepositCents : null,
+      securityHoldCents: hasSecurityHold(partyType) ? catalog.studioRates.securityDepositCents : null,
       content: shownContent,
       catalog,
       mobileStations,

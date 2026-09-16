@@ -188,16 +188,16 @@ describe('planMoney — the figures the document and the buttons both use', () =
   })
 })
 
-describe('needs-Adam 41 — the two switches, and what each one moves', () => {
-  it('today the invoice holds the studio deposit separate', () => {
-    expect(STUDIO_DEPOSIT_IS_SEPARATE).toBe(true)
-    expect(depositIsSeparateFor('studio_rental')).toBe(true)
+describe('needs-Adam 41 — RULED 2026-09-16: the deposit is a reservation payment', () => {
+  it('holds no product’s deposit separate, studio included', () => {
+    expect(STUDIO_DEPOSIT_IS_SEPARATE).toBe(false)
+    expect(depositIsSeparateFor('studio_rental')).toBe(false)
     expect(depositIsSeparateFor('in_studio_theme')).toBe(false)
     expect(depositIsSeparateFor(null)).toBe(false)
   })
 
-  it('today the stored column does NOT follow it — that is the disagreement', () => {
-    expect(COLUMN_FOLLOWS_INVOICE).toBe(false)
+  it('has the stored column follow the invoice, so the two agree', () => {
+    expect(COLUMN_FOLLOWS_INVOICE).toBe(true)
   })
 
   /**
@@ -205,23 +205,24 @@ describe('needs-Adam 41 — the two switches, and what each one moves', () => {
    * studio checkout writes into `bookings.balance_due_cents`, and
    * `/api/portal/pay` clamps its charge to that column.
    *
-   * With the switch as it ships today the column keeps the value it has always
-   * had, which is the point: fixing it silently would charge HH-STU-ZVM4U
-   * (party 2026-09-30) and HH-STU-2CTJ3 $250 more than they were quoted.
+   * The ruling made the DOCUMENT move, not the column: every one of these was
+   * already the stored value, and the invoice was the surface printing $250
+   * more. So this test pins that the column did not shift under a live booking.
    */
-  it('writes what production actually holds for both live studio rentals', () => {
-    expect(quoteTimeBalanceCents({ totalCents: 47500, depositCents: 25000, partyType: 'studio_rental' })).toBe(
-      COLUMN_FOLLOWS_INVOICE ? 47500 : 22500, // HH-STU-ZVM4U: the column holds 22500
-    )
-    expect(quoteTimeBalanceCents({ totalCents: 110000, depositCents: 25000, partyType: 'studio_rental' })).toBe(
-      COLUMN_FOLLOWS_INVOICE ? 110000 : 85000, // HH-STU-2CTJ3: the column holds 85000
-    )
+  it('writes what production already holds for every live studio rental', () => {
+    // HH-STU-ZVM4U (party 2026-09-30) — column holds 22500
+    expect(quoteTimeBalanceCents({ totalCents: 47500, depositCents: 25000, partyType: 'studio_rental' })).toBe(22500)
+    // HH-PTY-FSQU9 (2026-10-03, deposit_paid) — column holds 42500
+    expect(quoteTimeBalanceCents({ totalCents: 67500, depositCents: 25000, partyType: 'studio_rental' })).toBe(42500)
+    // HH-STU-2CTJ3 (2026-12-05) — column holds 85000
+    expect(quoteTimeBalanceCents({ totalCents: 110000, depositCents: 25000, partyType: 'studio_rental' })).toBe(85000)
+    // HH-PTY-73LGZ (2026-11-14) — $300 photoshoot, $250 books it, $50 left
+    expect(quoteTimeBalanceCents({ totalCents: 30000, depositCents: 25000, partyType: 'studio_rental' })).toBe(5000)
   })
 
-  it('is a no-op for every non-studio product either way', () => {
-    // Flipping the switch must move the studio rows and nothing else, or the
-    // ruling is bigger than the question it answers.
-    for (const partyType of ['in_studio_theme', 'mobile_party', 'unknown', null]) {
+  it('treats a studio rental exactly like every other product', () => {
+    // The whole of the ruling: there is no longer a studio branch to get wrong.
+    for (const partyType of ['studio_rental', 'in_studio_theme', 'mobile_party', 'unknown', null]) {
       expect(quoteTimeBalanceCents({ totalCents: 159000, depositCents: 25000, partyType })).toBe(134000)
     }
   })

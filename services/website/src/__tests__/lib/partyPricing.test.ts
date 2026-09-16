@@ -58,15 +58,23 @@ describe('getDepositCents', () => {
       expect(dep).toBe(150001) // 150000.5 rounds up
     })
 
-    it('never asks a studio rental for half, because that deposit is charged ON TOP', () => {
-      // `depositIsSeparateFor('studio_rental')` is true: the deposit is not
-      // deducted from the rental. 50% there invents a second charge rather than
-      // changing the payment terms.
-      expect(getDepositCents(320000, 'studio_rental')).toBe(BOOKING_DEPOSIT_CENTS)
+    it('asks a studio rental for half too, now that its deposit comes off the total', () => {
+      // This exemption existed only because `depositIsSeparateFor('studio_rental')`
+      // was true: asking half of a $3,200 rental as a REFUNDABLE damage hold
+      // invented a second charge rather than changing the payment terms.
+      //
+      // needs-Adam 41 (ruled 2026-09-16) made the deposit a reservation payment
+      // for every product, so the rationale is gone and a special case here
+      // would be a second, unruled policy. Forward-only: the largest studio
+      // rental in production is HH-STU-2CTJ3 at $1,100, well under the $3,000
+      // threshold, so no live booking's deposit changed.
+      expect(getDepositCents(320000, 'studio_rental')).toBe(160000)
       expect(getDepositCents(320000, 'mobile_party')).toBe(160000)
       expect(getDepositCents(320000, 'in_studio_theme')).toBe(160000)
       expect(getDepositCents(320000, null)).toBe(160000)
       expect(getDepositCents(320000)).toBe(160000)
+      // Under the threshold a studio rental is still the flat $250.
+      expect(getDepositCents(110000, 'studio_rental')).toBe(BOOKING_DEPOSIT_CENTS)
     })
 
     it('still clamps a studio rental to its total', () => {

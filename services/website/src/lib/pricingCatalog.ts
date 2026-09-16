@@ -212,7 +212,10 @@ export const FALLBACK_STUDIO_RATES: StudioRates = {
   weekendFullDayCents: 97500,
   weekdayFullDayCents: 70000,
   minHours: 3,
-  securityDepositCents: 50000,
+  // $250 since 2026-09-16 (owner ruling, alongside needs-Adam 41). Was $500.
+  // The authoritative value is the `studio_security_hold` row in
+  // `pricing_items`; this is the compiled fallback and must track it.
+  securityDepositCents: 25000,
 }
 
 export const FALLBACK_GUEST_RULES: GuestRules = {

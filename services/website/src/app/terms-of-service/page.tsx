@@ -45,7 +45,7 @@ export default function TermsOfService() {
           <li>Parents/guardians are responsible for supervising children at all times</li>
           <li>Host Hampton is not responsible for personal items left at the venue</li>
           <li>Any damage to the studio or equipment beyond normal wear will be assessed and billed accordingly</li>
-          <li>Room and studio rentals require a <strong>$500 refundable security hold</strong>, authorized on your card on arrival and released after the event if the space is left in its original condition. This is an authorization hold, not a charge — it is only captured if there is damage or excessive cleaning</li>
+          <li>Room and studio rentals require a <strong>$250 refundable security hold</strong>, authorized on your card before the event and released after it if the space is left in its original condition. This is an authorization hold, not a charge — it is only captured if there is damage or excessive cleaning</li>
         </ul>
 
         <h2 className="font-semibold text-lg mt-6">4. Rescheduling</h2>

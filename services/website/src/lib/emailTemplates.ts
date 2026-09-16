@@ -506,7 +506,7 @@ export function bookingConfirmationHtml(raw: BookingConfirmationData): string {
       ${d.isRoomRental ? `<ol style="margin:0;padding-left:20px;color:${BRAND.gray};line-height:2;font-size:14px;">
         <li>We'll reach out <strong>within 24 hours</strong> to confirm your rental details</li>
         <li>We'll go over any setup needs, vendor access, or special requirements</li>
-        <li>A $500 refundable security hold is authorized on your card when you arrive, and released after the event</li>
+        <li>A $250 refundable security hold is authorized on your card before your event, and released afterwards once the space is confirmed in good condition</li>
         <li>Remaining balance is due <strong>${d.balanceDueDate}</strong></li>
       </ol>` : `<ol style="margin:0;padding-left:20px;color:${BRAND.gray};line-height:2;font-size:14px;">
         <li>We'll reach out <strong>within 24 hours</strong> to confirm your booking details</li>
@@ -861,7 +861,7 @@ export function studioRentalConfirmationHtml(raw: {
       <p style="color:${BRAND.navy};font-size:14px;margin:0 0 6px;"><strong>A few things to know:</strong></p>
       <p style="color:${BRAND.gray};font-size:14px;line-height:1.7;margin:0;">
         • Your balance can be paid any time before your event — we'll remind you around <strong>${d.balanceDueDate}</strong>.<br>
-        • A <strong>$500 refundable security hold</strong> is authorized on your card when you arrive and released after the event if there's no damage. It's a hold, not a charge.<br>
+        • A <strong>$250 refundable security hold</strong> is authorized on your card before your event and released afterwards if there's no damage. It's a hold, not a charge.<br>
         • Your rental window includes your own setup and cleanup time.
       </p>
     </div>

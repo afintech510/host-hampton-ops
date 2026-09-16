@@ -26,7 +26,7 @@ export const STUDIO_MIN_HOURS = FALLBACK_STUDIO_RATES.minHours
 // Physical facts about the room, not prices — these stay in code.
 export const STUDIO_SEATED_CAPACITY = 65
 export const STUDIO_STANDING_CAPACITY = 85
-/** $500 refundable CC auth hold, placed day-of. Catalog key `studio_security_hold`. */
+/** $250 refundable CC auth hold, placed before the event. Catalog key `studio_security_hold`. */
 export const SECURITY_DEPOSIT_CENTS = FALLBACK_STUDIO_RATES.securityDepositCents
 // Booking deposit is a flat $250 for every booking type — see
 // BOOKING_DEPOSIT_CENTS / getDepositCents() in lib/partyPricing.ts. The old
