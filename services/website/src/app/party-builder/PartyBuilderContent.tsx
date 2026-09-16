@@ -6,7 +6,7 @@ import type { PricingItem } from '@/components/QuoteBuilder/types'
 import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import { loadStripe } from '@stripe/stripe-js'
-import { formatMoney, calculateCardFee, getCategoryLockState, type LockCategory } from '@/lib/partyPricing'
+import { formatMoney, calculateCardFee, getDepositCents, getCategoryLockState, type LockCategory } from '@/lib/partyPricing'
 import { FALLBACK_CATALOG, mobileBaseCentsFor, type PricingCatalog } from '@/lib/pricingCatalog'
 import MyPartiesModal from './MyPartiesModal'
 import ChangesModal from './ChangesModal'
@@ -24,13 +24,13 @@ import { getAttribution } from '@/lib/utm'
 // they were never in the same place. See lib/pricingCatalog.ts.
 
 const LS_KEY = 'hh_quote_data'
-// Flat $250 booking deposit (owner ruling 2026-09-05), clamped so it can never
-// exceed the booking total. Mirrors getDepositCents() in lib/partyPricing.ts —
-// keep the two in step. Deliberately NOT in the catalog: it is one number for
-// every party type and lib/partyPricing.ts is its home.
-const BOOKING_DEPOSIT_CENTS = 25000
-const computeDeposit = (totalCents: number): number =>
-  totalCents > 0 ? Math.min(BOOKING_DEPOSIT_CENTS, totalCents) : 0
+// The deposit rule, IMPORTED rather than mirrored. This was a hand-copy of
+// `getDepositCents` ("keep the two in step"), and the 2026-09-16 ruling that
+// made the deposit 50% at $3,000 is exactly the change that would have silently
+// left the planner quoting $250 on a $4,000 party while the invoice it turns
+// into asked for $2,000. `lib/partyPricing.ts` has no server-only imports, so
+// this client component can just use it (StudioRentalContent already does).
+const computeDeposit = (totalCents: number): number => getDepositCents(totalCents)
 
 const BALLOON_QTY_ITEMS = new Set([
   'Balloon Garland 6 ft.',

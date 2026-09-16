@@ -8,6 +8,7 @@ import {
   generatePartyRef,
   getDepositCents,
   BOOKING_DEPOSIT_CENTS,
+  MAJOR_BOOKING_THRESHOLD_CENTS,
 } from '@/lib/partyPricing'
 import type { BookingLineItem } from '@/types/booking-flow'
 
@@ -30,9 +31,47 @@ describe('getDepositCents', () => {
   })
 
   it('leaves a non-negative balance for any total', () => {
-    for (const total of [0, 1, 7500, 24999, 25000, 47500, 195000]) {
+    for (const total of [0, 1, 7500, 24999, 25000, 47500, 195000, 300000, 442500, 10_000_00]) {
       expect(total - getDepositCents(total)).toBeGreaterThanOrEqual(0)
     }
+  })
+
+  // ── 50% on a major booking (owner ruling 2026-09-16) ──────────────────────
+  describe('once the job reaches $3,000', () => {
+    it('asks for half, not the flat $250', () => {
+      // HH-PTY-NVLCP, the quote that prompted the rule.
+      expect(getDepositCents(442500)).toBe(221250) // $4,425 → $2,212.50
+      expect(getDepositCents(300000)).toBe(150000) // exactly at the threshold
+    })
+
+    it('is inclusive at $3,000 and leaves $2,999.99 alone', () => {
+      // The boundary is where a rounding or `>` slip would silently mis-charge.
+      expect(getDepositCents(MAJOR_BOOKING_THRESHOLD_CENTS)).toBe(150000)
+      expect(getDepositCents(MAJOR_BOOKING_THRESHOLD_CENTS - 1)).toBe(BOOKING_DEPOSIT_CENTS)
+    })
+
+    it('rounds to a whole cent rather than emitting a fraction', () => {
+      // An odd total halves to a half-cent. Stripe takes integers only, so a
+      // fraction here would be a charge that cannot be created.
+      const dep = getDepositCents(300001)
+      expect(Number.isInteger(dep)).toBe(true)
+      expect(dep).toBe(150001) // 150000.5 rounds up
+    })
+
+    it('never asks a studio rental for half, because that deposit is charged ON TOP', () => {
+      // `depositIsSeparateFor('studio_rental')` is true: the deposit is not
+      // deducted from the rental. 50% there invents a second charge rather than
+      // changing the payment terms.
+      expect(getDepositCents(320000, 'studio_rental')).toBe(BOOKING_DEPOSIT_CENTS)
+      expect(getDepositCents(320000, 'mobile_party')).toBe(160000)
+      expect(getDepositCents(320000, 'in_studio_theme')).toBe(160000)
+      expect(getDepositCents(320000, null)).toBe(160000)
+      expect(getDepositCents(320000)).toBe(160000)
+    })
+
+    it('still clamps a studio rental to its total', () => {
+      expect(getDepositCents(7500, 'studio_rental')).toBe(7500)
+    })
   })
 
   it('returns 0 for zero, negative or invalid totals', () => {

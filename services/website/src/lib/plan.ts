@@ -95,7 +95,7 @@ export function buildPlanSnapshot(input: PlanSnapshotInput): PlanSnapshot {
   // quoted and not charged, and this total becomes `bookings.total_cents`, which
   // the invoice recomputes from the same rows and would then disagree with.
   const totalCents = lineItems.length ? billedTotalCents(lineItems, guestCount) : 0
-  const depositCents = getDepositCents(totalCents)
+  const depositCents = getDepositCents(totalCents, input.partyType)
 
   return {
     ...(input.extra ?? {}),

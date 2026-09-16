@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
 
     // price_type is cosmetic to the math (only guest_multiplied/quantity matter), so the cast is safe.
     const totalCents = calculateLineItemTotal(allLineItems as unknown as BookingLineItem[], guestCount)
-    const depositCents = getDepositCents(totalCents)
+    const depositCents = getDepositCents(totalCents, 'studio_rental')
     // THIS is the writer that put $225.00 into HH-STU-ZVM4U's
     // `balance_due_cents` against a $475.00 invoice, and $850.00 into
     // HH-STU-2CTJ3's against $1,100.00 — it deducts the deposit from a studio

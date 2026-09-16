@@ -301,7 +301,7 @@ export async function loadPlanInvoice(
   const billed = lineItems.filter(i => !i.isOptional)
   const totalCents = billed.reduce((sum, i) => sum + i.amountCents, 0)
 
-  const depositCents = getDepositCents(totalCents)
+  const depositCents = getDepositCents(totalCents, partyType)
   const depositIsSeparate = depositIsSeparateFor(partyType)
   // An unpriced plan can still take the flat deposit that reserves its date —
   // see `isUnpricedPlan`. Withheld on a booking that may not take money at all,

@@ -69,7 +69,7 @@ async function derivedPlanMoney(
     priced: rows.length > 0,
     money: planMoney({
       totalCents,
-      depositCents: getDepositCents(totalCents),
+      depositCents: getDepositCents(totalCents, booking.party_type),
       depositIsSeparate,
       payments: (pays ?? []) as PaymentRow[],
       reservationDepositCents: BOOKING_DEPOSIT_CENTS,

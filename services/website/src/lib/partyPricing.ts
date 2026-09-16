@@ -1,5 +1,5 @@
 import type { BookingLineItem, BookingPayment } from '@/types/booking-flow'
-import { billedTotalCents } from '@/lib/planBalance'
+import { billedTotalCents, depositIsSeparateFor } from '@/lib/planBalance'
 
 const DEFAULT_CARD_FEE_RATE = 0.03
 
@@ -13,6 +13,15 @@ const DEFAULT_CARD_FEE_RATE = 0.03
  * (a $1,950 party went from $487.50 to $250).
  */
 export const BOOKING_DEPOSIT_CENTS = 25000
+
+/**
+ * Above this total, the deposit is a SHARE of the job rather than the flat $250
+ * — owner ruling 2026-09-16, prompted by HH-PTY-NVLCP (Gusto's $4,425 NYC
+ * activation, where $250 was asked to hold a five-figure-adjacent corporate
+ * date).
+ */
+export const MAJOR_BOOKING_THRESHOLD_CENTS = 300000
+export const MAJOR_BOOKING_DEPOSIT_RATE = 0.5
 
 export function calculateCardFee(amountCents: number, rate = DEFAULT_CARD_FEE_RATE): number {
   return Math.round(amountCents * rate)
@@ -149,7 +158,8 @@ export function generatePartyRef(): string {
 }
 
 /**
- * Deposit due to hold a date: a flat $250, never more than the booking total.
+ * Deposit due to hold a date: a flat $250, never more than the booking total —
+ * or **50% once the job reaches $3,000** (owner ruling 2026-09-16).
  *
  * The clamp matters — without it a small booking (e.g. a 1-hour $75 studio
  * slot, if that ever becomes bookable online) would ask for a deposit larger
@@ -157,9 +167,32 @@ export function generatePartyRef(): string {
  *
  * Callers MUST pass the total. The old signature defaulted to 0, which was
  * harmless at 25% (0 → $0) but would silently return the full $250 here.
+ *
+ * ── Why `partyType` is a parameter and not ignored ──────────────────────────
+ *
+ * On every product except a studio rental the deposit COMES OFF the total, so a
+ * 50% share is a part payment and the balance simply drops by the same amount.
+ * On a studio rental it does not: `depositIsSeparateFor` is true there, which
+ * means the deposit is charged ON TOP of the full rental (that is the whole of
+ * needs-Adam 41, and `planInvoice` renders it in a callout outside the totals
+ * block for exactly this reason). Applying 50% there would not change the terms,
+ * it would invent a second charge — a $3,200 rental would be quoted $3,200 plus
+ * a $1,600 "deposit". So the rate is deliberately scoped to the products where
+ * the deposit is a reservation payment.
+ *
+ * Omitting `partyType` applies the rate. That is the safe default: every caller
+ * that knows it is quoting a studio rental passes it, and a caller that does not
+ * know what it is holding is not holding a studio rental — the studio has its
+ * own dedicated routes. The separate $500 day-of damage authorisation
+ * (`SECURITY_DEPOSIT_CENTS`) is untouched by any of this.
  */
-export function getDepositCents(totalCents: number): number {
+export function getDepositCents(totalCents: number, partyType?: string | null): number {
   if (!Number.isFinite(totalCents) || totalCents <= 0) return 0
+  if (totalCents >= MAJOR_BOOKING_THRESHOLD_CENTS && !depositIsSeparateFor(partyType)) {
+    // Rounded to the cent, and it can never exceed the total (the rate is < 1),
+    // so the clamp below is not needed on this branch.
+    return Math.round(totalCents * MAJOR_BOOKING_DEPOSIT_RATE)
+  }
   return Math.min(BOOKING_DEPOSIT_CENTS, totalCents)
 }
 

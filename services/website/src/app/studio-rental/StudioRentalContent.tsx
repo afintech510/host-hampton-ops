@@ -140,7 +140,7 @@ export default function StudioRentalContent(props: Props) {
 
   const rentalCents = rate?.rentalCents ?? 0
   const totalCents = rentalCents + addOnTotal
-  const depositCents = getDepositCents(totalCents)
+  const depositCents = getDepositCents(totalCents, 'studio_rental')
   const balanceDueCents = Math.max(0, totalCents - depositCents)
 
   // Charge breakdown shown on the payment screen (server values once available).

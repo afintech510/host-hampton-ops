@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
   const totalCents = billedTotalCents(billedItems, booking.guest_count_approx as number | null)
   const m = planMoney({
     totalCents,
-    depositCents: getDepositCents(totalCents),
+    depositCents: getDepositCents(totalCents, booking.party_type as string | null),
     depositIsSeparate: depositIsSeparateFor(booking.party_type as string | null),
     payments: billedPayments,
     reservationDepositCents: isPayableStatus(booking.status) ? BOOKING_DEPOSIT_CENTS : 0,
