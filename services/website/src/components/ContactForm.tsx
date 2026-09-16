@@ -4,10 +4,13 @@ import { useState, useEffect } from 'react'
 import { Send, CheckCircle } from 'lucide-react'
 import { trackContact } from '@/lib/gtag'
 import { getAttribution } from '@/lib/utm'
+import HeardAboutSelect, { heardAboutFields } from '@/components/HeardAboutSelect'
 
 export default function ContactForm() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' })
   const [consent, setConsent] = useState(false)
+  const [heardAbout, setHeardAbout] = useState('')
+  const [heardAboutNote, setHeardAboutNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
@@ -24,7 +27,7 @@ export default function ContactForm() {
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, marketingConsent: consent, attribution: getAttribution() }),
+        body: JSON.stringify({ ...form, marketingConsent: consent, attribution: getAttribution(), ...heardAboutFields(heardAbout, heardAboutNote) }),
       })
 
       if (!res.ok) {
@@ -108,6 +111,13 @@ export default function ContactForm() {
             className="w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-pink/40 resize-none"
           />
         </div>
+
+        <HeardAboutSelect
+          value={heardAbout}
+          note={heardAboutNote}
+          onChange={setHeardAbout}
+          onNoteChange={setHeardAboutNote}
+        />
 
         <label className="flex items-start gap-2.5 cursor-pointer">
           <input

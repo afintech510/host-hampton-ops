@@ -5,6 +5,7 @@ import { Check, Minus, Plus, Users, RotateCcw, Bookmark, Calendar, Loader2, Spar
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 import { FALLBACK_CATALOG, type PricingCatalog } from '@/lib/pricingCatalog'
 import { getAttribution } from '@/lib/utm'
+import HeardAboutSelect, { heardAboutFields } from '@/components/HeardAboutSelect'
 
 /* ── constants ─────────────────────────────────────── */
 
@@ -333,6 +334,8 @@ export default function KidsPartyMenuContent({
     preferredDate: restored?.preferredDate || '', guestCountField: '', partyName: restored?.partyName || '',
   })
   const [consent, setConsent] = useState(false)
+  const [heardAbout, setHeardAbout] = useState('')
+  const [heardAboutNote, setHeardAboutNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -628,6 +631,7 @@ export default function KidsPartyMenuContent({
           notes: contact.partyName ? `Party: ${contact.partyName}` : '',
           sourcePage: 'kids-party-menu',
           marketingConsent: consent,
+          ...heardAboutFields(heardAbout, heardAboutNote),
         }),
       })
       if (!res.ok) {
@@ -1080,6 +1084,14 @@ export default function KidsPartyMenuContent({
                 </div>
               </div>
             )}
+
+            <HeardAboutSelect
+              value={heardAbout}
+              note={heardAboutNote}
+              onChange={setHeardAbout}
+              onNoteChange={setHeardAboutNote}
+              variant="form"
+            />
 
             <label className="flex items-start gap-2.5 cursor-pointer">
               <input

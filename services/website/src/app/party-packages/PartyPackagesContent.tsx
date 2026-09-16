@@ -10,6 +10,7 @@ import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import type { PricingItem } from './page'
 import { trackLead, trackCheckoutStart } from '@/lib/gtag'
 import { getAttribution } from '@/lib/utm'
+import HeardAboutSelect, { heardAboutFields } from '@/components/HeardAboutSelect'
 
 const MINI_PARTY_DISCOUNT = 200
 const MINI_PARTY_MAX_GUESTS = 7
@@ -184,6 +185,8 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
   const [consent, setConsent] = useState(false)
+  const [heardAbout, setHeardAbout] = useState('')
+  const [heardAboutNote, setHeardAboutNote] = useState('')
   const [calendarSelection, setCalendarSelection] = useState<CalendarSelection | null>(null)
   const [reserving, setReserving] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -247,6 +250,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
           timeOfDay: formData.timeOfDay.join(', '),
           sourcePage: 'party-packages',
           marketingConsent: consent,
+          ...heardAboutFields(heardAbout, heardAboutNote),
           attribution: getAttribution(),
         }),
       })
@@ -705,6 +709,14 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
               value={formData.notes} onChange={e => update('notes', e.target.value)}
               className="form-input resize-none" />
           </div>
+
+          <HeardAboutSelect
+            value={heardAbout}
+            note={heardAboutNote}
+            onChange={setHeardAbout}
+            onNoteChange={setHeardAboutNote}
+            variant="form"
+          />
 
           <label className="flex items-start gap-2.5 cursor-pointer">
             <input

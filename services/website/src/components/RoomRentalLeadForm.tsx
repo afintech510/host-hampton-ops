@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Send, CheckCircle } from 'lucide-react'
 import { trackLead } from '@/lib/gtag'
 import { getAttribution } from '@/lib/utm'
+import HeardAboutSelect, { heardAboutFields } from '@/components/HeardAboutSelect'
 
 export default function RoomRentalLeadForm() {
   const [form, setForm] = useState({
@@ -18,6 +19,8 @@ export default function RoomRentalLeadForm() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
   const [consent, setConsent] = useState(false)
+  const [heardAbout, setHeardAbout] = useState('')
+  const [heardAboutNote, setHeardAboutNote] = useState('')
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }))
@@ -41,6 +44,7 @@ export default function RoomRentalLeadForm() {
           sourcePage: 'party-room-rental',
           marketingConsent: consent,
           attribution: getAttribution(),
+          ...heardAboutFields(heardAbout, heardAboutNote),
         }),
       })
 
@@ -181,6 +185,13 @@ export default function RoomRentalLeadForm() {
               />
             </div>
           </div>
+
+          <HeardAboutSelect
+            value={heardAbout}
+            note={heardAboutNote}
+            onChange={setHeardAbout}
+            onNoteChange={setHeardAboutNote}
+          />
 
           <label className="flex items-start gap-2.5 cursor-pointer">
             <input

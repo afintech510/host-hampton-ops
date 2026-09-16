@@ -42,6 +42,16 @@ export interface Attribution {
   captured_at?: string
   /** Set only by migration 053's backfill, so a report can tell it apart. */
   backfilled?: boolean
+  /**
+   * What the customer SAID when asked, as a `HEARD_ABOUT_OPTIONS` value.
+   *
+   * Kept in its own key and never merged into `utm_source`, because the two are
+   * different kinds of evidence and a report has to be able to tell them apart:
+   * a UTM is a fact about a click, a self-report is a person's recollection.
+   */
+  self_reported?: HeardAboutValue
+  /** Their own words when they chose "Something else". Bounded, never parsed. */
+  self_reported_note?: string
 }
 
 /**
@@ -74,6 +84,76 @@ export const LEAD_SOURCES = [
 ] as const
 
 export type LeadSource = (typeof LEAD_SOURCES)[number]
+
+/**
+ * "How did you hear about us?" — the options, and what each one means in the
+ * `lead_source` enum.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WHY THIS EXISTS AT ALL. Everything else on this surface measures a BROWSER:
+ * a tag on a URL, a referring host. That reaches exactly the people who clicked
+ * a link. It cannot see the two channels this business actually runs on —
+ * somebody's friend recommended us, and somebody called the number off a sign —
+ * and it will never see the phone half of the inquiries (48 inbound SMS in
+ * September alone, no browser, no URL, nothing to capture).
+ *
+ * A self-report is weaker evidence than a click and it is the ONLY evidence
+ * word-of-mouth ever produces. So it is stored, kept separate, and ranked
+ * below a tag we set ourselves and above a referrer we merely observed — see
+ * `deriveLeadSource`.
+ *
+ * The list is derived from the `lead_source` enum rather than invented, so that
+ * the answers group with the measured ones instead of forming a second
+ * vocabulary nobody can join up. Two deliberate exceptions:
+ *
+ *   - `ai_assistant` has no enum label and lands in `other`. It is on the list
+ *     because the ONLY three UTMs this business has ever captured say
+ *     `chatgpt.com`, so it is demonstrably a real channel here, and `other`
+ *     with the verbatim value beside it is how we keep counting it until it
+ *     earns a label of its own.
+ *   - `something_else` opens a free-text box. That is the field that tells us
+ *     what the eleventh option should be.
+ *
+ * The field is OPTIONAL everywhere. A required question on an inquiry form
+ * costs real inquiries, and a lead we lose is worth more than a lead we can
+ * attribute.
+ */
+export const HEARD_ABOUT_OPTIONS = [
+  { value: 'friend_referral', label: 'A friend or past customer', leadSource: 'referral' },
+  { value: 'instagram', label: 'Instagram', leadSource: 'instagram' },
+  { value: 'facebook', label: 'Facebook', leadSource: 'facebook' },
+  { value: 'facebook_group', label: 'A Facebook group', leadSource: 'facebook_group' },
+  { value: 'google', label: 'Google search', leadSource: 'google_organic' },
+  { value: 'ai_assistant', label: 'ChatGPT or another AI assistant', leadSource: 'other' },
+  { value: 'nextdoor', label: 'Nextdoor', leadSource: 'nextdoor' },
+  { value: 'yelp', label: 'Yelp', leadSource: 'yelp' },
+  { value: 'event_or_market', label: 'Saw us at an event or market', leadSource: 'pop_up_market' },
+  { value: 'drove_by', label: 'Drove by or walked in', leadSource: 'walk_in' },
+  { value: 'something_else', label: 'Something else', leadSource: 'other' },
+] as const satisfies ReadonlyArray<{ value: string; label: string; leadSource: LeadSource }>
+
+export type HeardAboutValue = (typeof HEARD_ABOUT_OPTIONS)[number]['value']
+
+const HEARD_ABOUT_BY_VALUE = new Map<string, LeadSource>(
+  HEARD_ABOUT_OPTIONS.map(o => [o.value, o.leadSource as LeadSource])
+)
+
+/** Their own words are bounded harder than a UTM: this one is prose. */
+const MAX_NOTE_LEN = 300
+
+/**
+ * Accept a `heardAbout` value only if it is one we offered.
+ *
+ * An allowlist, not a sanitiser. The value decides a `lead_source` enum write,
+ * and an unrecognised string that reached that column would be a 22P02 the
+ * intake route swallows non-fatally — the whole contact dropped, silently, for
+ * a dropdown value. Anything unknown is simply not a self-report.
+ */
+export function screenHeardAbout(raw: unknown): HeardAboutValue | undefined {
+  if (typeof raw !== 'string') return undefined
+  const value = raw.trim()
+  return HEARD_ABOUT_BY_VALUE.has(value) ? (value as HeardAboutValue) : undefined
+}
 
 /** Longer than any real tag; a UTM this long is a paste accident or an attack. */
 const MAX_VALUE_LEN = 200
@@ -125,6 +205,17 @@ export function screenAttribution(raw: unknown): Attribution {
     out.landing_path = path.split('?')[0].split('#')[0]
   }
 
+  const selfReported = screenHeardAbout(input.self_reported)
+  if (selfReported) {
+    out.self_reported = selfReported
+    // The note is only meaningful against `something_else`; carrying it on the
+    // others would let a stray value contradict the answer beside it.
+    if (selfReported === 'something_else') {
+      const note = boundedString(input.self_reported_note)
+      if (note) out.self_reported_note = note.slice(0, MAX_NOTE_LEN)
+    }
+  }
+
   const capturedAt = boundedString(input.captured_at)
   // Bound it to a plausible instant. A browser clock is not authoritative and a
   // year-3000 timestamp would sort above every real row in a report forever.
@@ -160,13 +251,21 @@ const OUR_HOSTS = new Set(['hosthampton.com', 'app.hosthampton.com', 'localhost'
 /**
  * Collapse a first touch to the one enum label that best describes it.
  *
- * Reading order is deliberate: an explicit `utm_source` beats an inferred
- * referrer, because the tag is what we put on the link ourselves and the
- * referrer is whatever the browser felt like sending.
+ * Reading order is deliberate, strongest evidence first:
  *
- * `direct` is returned ONLY when there is no signal at all. It used to be
- * returned always, which is worse than useless: a column that says the same
- * thing about every row reads as an answer and is not one.
+ *   1. `utm_source` — a tag WE put on a link. It says which campaign was
+ *      clicked, and we authored it.
+ *   2. `self_reported` — what they said when asked. Ranked above the referrer
+ *      on purpose: someone who heard about us from a friend and then googled
+ *      the name arrives with a Google referrer, and the friend is the real
+ *      origin. The search was navigation, not discovery. It is also the only
+ *      signal word-of-mouth and walk-ins EVER produce.
+ *   3. `referrer` — a host the browser volunteered. Real, but it describes the
+ *      last hop rather than the origin.
+ *
+ * `direct` is returned ONLY when all three are absent. It used to be returned
+ * always, which is worse than useless: a column that says the same thing about
+ * every row reads as an answer and is not one.
  */
 export function deriveLeadSource(attribution: Attribution): LeadSource {
   const source = (attribution.utm_source || '').toLowerCase().replace(/^www\./, '')
@@ -189,6 +288,16 @@ export function deriveLeadSource(attribution: Attribution): LeadSource {
     // A tagged link from somewhere with no label of its own — `chatgpt.com`
     // today. `other` plus the verbatim blob, never a guess.
     return 'other'
+  }
+
+  const selfReported = attribution.self_reported
+  if (selfReported) {
+    const mapped = HEARD_ABOUT_BY_VALUE.get(selfReported)
+    // The map is built from HEARD_ABOUT_OPTIONS, whose `leadSource` values are
+    // type-checked against LeadSource — so this cannot mint a label the enum
+    // does not hold. The fallback is belt-and-braces for a value that survived
+    // the allowlist through some future edit.
+    if (mapped) return mapped
   }
 
   const referrer = attribution.referrer
@@ -220,10 +329,31 @@ export function deriveLeadSource(attribution: Attribution): LeadSource {
 export function attributionFromBody(body: unknown): Attribution {
   if (!body || typeof body !== 'object') return {}
   const fields = body as Record<string, unknown>
-  return screenAttribution(fields.attribution ?? fields.utm)
+  const measured = screenAttribution(fields.attribution ?? fields.utm)
+
+  // "How did you hear about us?" is a FORM FIELD, not part of the blob the
+  // browser stored at first touch — it is typed at submit time, on the page,
+  // by a person. It is merged here so that the rest of the surface sees one
+  // shape and no route has to remember there are two sources.
+  const selfReported = screenHeardAbout(fields.heardAbout)
+  if (!selfReported) return measured
+
+  return screenAttribution({
+    ...measured,
+    self_reported: selfReported,
+    self_reported_note: fields.heardAboutOther,
+  })
 }
 
-/** True when the blob carries anything worth writing. */
+/**
+ * True when the blob carries anything worth writing.
+ *
+ * A self-report counts. It is the only signal a walk-in or a word-of-mouth
+ * lead ever produces, so leaving it out here would mean the answer was
+ * collected, screened, stored — and then declined by the first-touch guard in
+ * `upsertContactResult` as "no signal", which is precisely the shape of
+ * silence this whole surface was built to end.
+ */
 export function hasAttributionSignal(attribution: Attribution): boolean {
-  return UTM_KEYS.some(k => !!attribution[k]) || !!attribution.referrer
+  return UTM_KEYS.some(k => !!attribution[k]) || !!attribution.referrer || !!attribution.self_reported
 }

@@ -54,6 +54,8 @@ interface AttributionSummary {
   unreadable: string | null
   byChannel: { label: string; count: number }[]
   byUtmSource: { label: string; count: number }[]
+  /** Verbatim "Something else" answers — the list of options we do not offer yet. */
+  selfReportedNotes: { note: string; at: string | null }[]
   total: number
 }
 
@@ -462,11 +464,27 @@ export default function MarketingTab({ headers, onLogout }: { headers: Record<st
             <div>
               <p className="text-[11px] uppercase tracking-wider text-hampton-mauve font-semibold mb-2">By tag / referrer</p>
               {attribution.byUtmSource.length === 0 ? (
-                <p className="text-sm text-gray-400">No tagged or referred visits yet.</p>
+                <p className="text-sm text-gray-400">No tagged, reported or referred visits yet.</p>
               ) : (
                 <CountBars rows={attribution.byUtmSource} />
               )}
             </div>
+          </div>
+        )}
+
+        {attribution && !attribution.unreadable && attribution.selfReportedNotes?.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-gray-100">
+            <p className="text-[11px] uppercase tracking-wider text-hampton-mauve font-semibold mb-2">
+              &ldquo;Something else&rdquo; — in their words
+            </p>
+            <ul className="space-y-1">
+              {attribution.selfReportedNotes.map((n, i) => (
+                <li key={i} className="text-xs text-gray-600">
+                  &ldquo;{n.note}&rdquo;
+                  {n.at && <span className="text-gray-400"> · {new Date(n.at).toLocaleDateString()}</span>}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </section>

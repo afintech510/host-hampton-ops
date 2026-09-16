@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Loader2, CheckCircle } from 'lucide-react'
 import { trackContact } from '@/lib/gtag'
 import { getAttribution } from '@/lib/utm'
+import HeardAboutSelect, { heardAboutFields } from '@/components/HeardAboutSelect'
 
 const c = {
   oat:      '#F5F0EB',
@@ -29,6 +30,8 @@ export default function InquiryForm() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [consent, setConsent] = useState(false)
+  const [heardAbout, setHeardAbout] = useState('')
+  const [heardAboutNote, setHeardAboutNote] = useState('')
 
   if (submitted) {
     return (
@@ -77,6 +80,7 @@ export default function InquiryForm() {
               guests: data.get('guests') || null,
               vision: data.get('vision') || null,
               marketingConsent: consent,
+              ...heardAboutFields(heardAbout, heardAboutNote),
             }),
           })
 
@@ -206,6 +210,13 @@ export default function InquiryForm() {
           style={{ border: `1px solid ${c.roseLight}`, background: c.oat, color: c.espresso }}
         />
       </div>
+
+      <HeardAboutSelect
+        value={heardAbout}
+        note={heardAboutNote}
+        onChange={setHeardAbout}
+        onNoteChange={setHeardAboutNote}
+      />
 
       <label className="flex items-start gap-2.5 cursor-pointer">
         <input

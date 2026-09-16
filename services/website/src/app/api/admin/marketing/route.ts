@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { currentMonth } from '@/lib/marketing/budget'
+import { HEARD_ABOUT_OPTIONS } from '@/lib/attribution'
 
 export const dynamic = 'force-dynamic'
 
@@ -91,6 +92,7 @@ function summarizeAttribution(rows: AttributionRow[] | null, error: string | nul
 
   const byChannel = new Map<string, number>()
   const byUtmSource = new Map<string, number>()
+  const selfReportedNotes: { note: string; at: string | null }[] = []
 
   for (const row of rows) {
     const channel = row.source || 'unrecorded'
@@ -102,16 +104,43 @@ function summarizeAttribution(rows: AttributionRow[] | null, error: string | nul
     const referrer = row.attribution && typeof row.attribution === 'object'
       ? (row.attribution as { referrer?: unknown }).referrer
       : undefined
-    // A referrer counts under its host when there was no tag — that is how
-    // untagged traffic (organic search, a shared link) gets a name at all.
+    const selfReported = row.attribution && typeof row.attribution === 'object'
+      ? (row.attribution as { self_reported?: unknown }).self_reported
+      : undefined
+
+    // Same precedence as `deriveLeadSource`, and each label SAYS which kind of
+    // evidence it is. A measured tag and somebody's recollection are not the
+    // same claim, and a chart that silently mixes them invites a spending
+    // decision on the weaker one.
     const label = typeof utmSource === 'string' ? utmSource
+      : typeof selfReported === 'string' ? `${heardAboutLabel(selfReported)} (said so)`
       : typeof referrer === 'string' ? `${referrer} (referrer)`
       : null
     if (label) byUtmSource.set(label, (byUtmSource.get(label) || 0) + 1)
+
+    if (typeof selfReported === 'string') {
+      const note = (row.attribution as { self_reported_note?: unknown }).self_reported_note
+      if (selfReported === 'something_else' && typeof note === 'string' && note.trim()) {
+        // Their own words, verbatim. This is the field that tells us what the
+        // twelfth option should be, and it only works if a human reads it.
+        selfReportedNotes.push({ note: note.trim(), at: row.created_at || null })
+      }
+    }
   }
 
   const sorted = (m: Map<string, number>) =>
     Array.from(m.entries()).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
 
-  return { unreadable: null, byChannel: sorted(byChannel), byUtmSource: sorted(byUtmSource), total: rows.length }
+  return {
+    unreadable: null,
+    byChannel: sorted(byChannel),
+    byUtmSource: sorted(byUtmSource),
+    selfReportedNotes: selfReportedNotes.slice(0, 20),
+    total: rows.length,
+  }
+}
+
+/** The customer-facing label for a `heardAbout` value, or the raw value. */
+function heardAboutLabel(value: string): string {
+  return HEARD_ABOUT_OPTIONS.find(o => o.value === value)?.label ?? value
 }
