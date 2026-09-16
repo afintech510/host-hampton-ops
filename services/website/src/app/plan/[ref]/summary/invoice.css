@@ -31,7 +31,35 @@
 .hh-invoice * { margin: 0; padding: 0; box-sizing: border-box; }
 .hh-invoice h1, .hh-invoice h2, .hh-invoice h3 { font-family: 'Playfair Display', Georgia, serif; }
 
+/* ── The site chrome AROUND this document ───────────────────────────────────
+ *
+ * This file is imported by `/plan/[ref]/summary` and by nothing else, so its
+ * CSS bundle only loads on that route. That is what makes it safe for the rules
+ * below to name global elements: they cannot reach the rest of the site.
+ *
+ * Why they are needed at all: the print rule underneath is
+ * `.hh-invoice .no-print`, which only ever reached DESCENDANTS of the invoice.
+ * `<Nav>`, `<Footer>`, the Benchworks credit, the cart drawer and the Crisp
+ * bubble are rendered by the ROOT layout, OUTSIDE `.hh-invoice` — so none of
+ * them was ever in scope, and a customer's "Save as PDF" came out with the
+ * website's navigation across the top of their invoice.
+ */
+
+/* On screen: no site header. This is a token-gated document, not a page anyone
+ * navigates from, and the fixed nav took the top fifth of a phone screen before
+ * the invoice began. The FOOTER stays (Adam's call, 2026-09-16) — it carries the
+ * address, phone and email a customer looking at a quote actually wants. */
+[data-site-nav] { display: none !important; }
+/* `pt-20` on <main> exists only to clear that fixed header. */
+body > main { padding-top: 0 !important; }
+
 @media print {
+  /* Everything that is not the document. `main` holds the page; every sibling
+   * of it is chrome — header, the gradient spacer, footer, the Benchworks
+   * credit, the cart drawer, and whatever Crisp appends to <body>. */
+  body > *:not(main) { display: none !important; }
+  body > main { padding: 0 !important; }
+
   .hh-invoice { background: #fff !important; padding: 0; }
   .hh-invoice .page { box-shadow: none !important; border: none !important; max-width: none; }
   .hh-invoice .no-print { display: none !important; }

@@ -41,6 +41,13 @@ export default function Nav() {
 
   return (
     <header
+      /**
+       * A stable hook for the few routes that are documents rather than pages
+       * and hide the site header — currently `/plan/[ref]/summary`, whose
+       * `invoice.css` targets this attribute. The Tailwind classes below are
+       * state-dependent and cannot be selected on.
+       */
+      data-site-nav=""
       className={`fixed top-0 w-full z-50 transition-all duration-300 ${
         open
           ? 'bg-white py-2'

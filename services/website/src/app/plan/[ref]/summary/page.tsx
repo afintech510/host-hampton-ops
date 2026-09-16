@@ -58,7 +58,7 @@ import { ensureInvoiceNumber } from '@/lib/invoiceNumber'
 import { planAccess } from '@/lib/planAccess'
 import { quoteFor } from '@/lib/planPayLinks'
 import { isUnpricedPlan } from '@/lib/planBalance'
-import { PayPanel, PlanShareBar, AdminCustomCharge, type PayOption } from './PayPanel'
+import { PayPanel, PlanShareBar, PrintButton, AdminCustomCharge, type PayOption } from './PayPanel'
 import './invoice.css'
 
 export const dynamic = 'force-dynamic'
@@ -582,6 +582,7 @@ export default async function PlanSummaryPage({
             Edit plan
           </Link>
         )}
+        <PrintButton />
         <PlanShareBar
           ref_={ref}
           canEmail={!!invoice.booking.contact_email}

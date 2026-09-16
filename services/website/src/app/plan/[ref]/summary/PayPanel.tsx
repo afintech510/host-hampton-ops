@@ -27,6 +27,30 @@ export interface PayOption {
   detail: string
 }
 
+/**
+ * "Download PDF" — the browser's own print-to-PDF, not a generated file.
+ *
+ * There is no server-side renderer here by choice (plan §17): the `@media print`
+ * rules in `invoice.css` strip the page down to the document itself, so "Save as
+ * PDF" from the print sheet produces the invoice and nothing else. On iOS the
+ * same button opens the share sheet, where "Save to Files" writes a PDF.
+ *
+ * A plain `<button>` rather than a link: `window.print()` needs a user gesture
+ * and there is no URL that means "print".
+ */
+export function PrintButton() {
+  return (
+    <button
+      type="button"
+      className="action"
+      onClick={() => window.print()}
+      style={{ cursor: 'pointer', border: 'none', fontFamily: 'inherit' }}
+    >
+      Download PDF
+    </button>
+  )
+}
+
 type Busy = null | string
 
 function useBusy() {
