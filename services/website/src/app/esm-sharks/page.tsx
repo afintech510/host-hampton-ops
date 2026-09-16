@@ -2,6 +2,13 @@
 
 import { useEffect } from 'react'
 import Script from 'next/script'
+import {
+  isLoosePatchInput,
+  patchOrderLine,
+  patchPriceDollars,
+  totalPatchQty,
+  type PatchSelection,
+} from '@/lib/fundraiserPatches'
 // Footer is rendered by root layout
 
 /**
@@ -14,10 +21,111 @@ import Script from 'next/script'
  * number, and what keeps these orders out of the CM Cheer organizer dashboard.
  * See `lib/fundraiserTeams.ts` and migration 051.
  *
- * Product photography is real (`/images/esm-*.webp`, from `photos/source/`).
- * Prices and costs match CM Cheer's by Adam's choice. The Venmo handle is still
- * a placeholder — see `lib/fundraiserTeams.ts`.
+ * ── Every product is a COLOUR AND A PATCH ──────────────────────────────────
+ *
+ * The Eastport-Tuttle PTO chose two designs (2026-09-16): the circle crest and
+ * the "Sharks" script wordmark. Either can go on any item, so a hat is no longer
+ * one thing with a colour — it is one of four things. That choice is expressed
+ * as FOUR QUANTITY BOXES per product rather than a toggle, and the reason is
+ * worth keeping:
+ *
+ * The colour buttons on this page used to look like a chooser and were only a
+ * picture-swapper — the real colour choice was always the quantity boxes below
+ * them. Adding a patch toggle that looked identical but genuinely decided what
+ * got stitched would have put two lookalike controls on one card, one cosmetic
+ * and one binding. A box per combination has no hidden state at all: what is in
+ * the boxes is what gets made, and the item name falls out of the row it came
+ * from. The photo is now driven by tapping a row, so the one control that
+ * changes the picture is the same one that names the thing.
+ *
+ * Product photography is real (`/images/esm-*.webp`, from `photos/source/`) and
+ * named for its patch: `esm-tote-navy-circle.webp`, `esm-tote-navy-script.webp`.
+ * The hat has no script shot yet — those rows say so rather than showing the
+ * circle photo under a script label. Drop `esm-hat-navy-script.webp` and
+ * `esm-hat-silver-script.webp` in and set `img` on those two rows below.
+ *
+ * Loose patches are still sold on their own, and their 3-for-$20 tier MIXES
+ * across designs. That arithmetic lives in `lib/fundraiserPatches.ts`, where it
+ * is tested — see the notes there for why it is not in this file.
+ *
+ * The Venmo handle is still a placeholder — see `lib/fundraiserTeams.ts`.
  */
+
+/** A patch design, as the buyer reads it and as the order book records it. */
+const PATCHES = [
+  { key: 'circle', label: 'Circle', art: '/images/esm-sharks-patch.webp', name: 'Circle Patch' },
+  { key: 'script', label: 'Script', art: '/images/esm-patch-script.webp', name: 'Script Patch' },
+] as const
+
+const COLORS = [
+  { key: 'navy', label: 'Navy', swatch: '#0C2340' },
+  { key: 'silver', label: 'Silver', swatch: '#A2AAAD' },
+] as const
+
+/**
+ * The catalogue. `img` is the photo of THAT exact combination, or null where we
+ * have not shot it — a null renders an honest "photo coming" tile instead of a
+ * neighbouring combination's picture.
+ */
+const PRODUCTS = [
+  {
+    key: 'hat',
+    title: 'Trucker Hat',
+    price: 25,
+    cost: 20,
+    blurb: 'Classic mesh-back snapback with your patch stitched on the front panel.',
+    shots: {
+      'navy-circle': '/images/esm-hat-navy-circle.webp',
+      'navy-script': null,
+      'silver-circle': '/images/esm-hat-silver-circle.webp',
+      'silver-script': null,
+    },
+  },
+  {
+    key: 'tote',
+    title: 'Canvas Tote',
+    price: 40,
+    cost: 30,
+    blurb: 'Heavy-duty canvas tote with your patch on the front. Big enough for a game day.',
+    shots: {
+      'navy-circle': '/images/esm-tote-navy-circle.webp',
+      'navy-script': '/images/esm-tote-navy-script.webp',
+      'silver-circle': '/images/esm-tote-silver-circle.webp',
+      'silver-script': '/images/esm-tote-silver-script.webp',
+    },
+  },
+  {
+    key: 'pouch',
+    title: 'Zip Pouch',
+    price: 25,
+    cost: 20,
+    blurb: 'Zippered canvas pouch with your patch. Mouthguards, tape, pencils, whatever.',
+    shots: {
+      'navy-circle': '/images/esm-pouch-navy-circle.webp',
+      'navy-script': '/images/esm-pouch-navy-script.webp',
+      'silver-circle': '/images/esm-pouch-silver-circle.webp',
+      'silver-script': '/images/esm-pouch-silver-script.webp',
+    },
+  },
+] as const
+
+/** Every combination of one product, in the order the rows are drawn. */
+function variantsOf(p: (typeof PRODUCTS)[number]) {
+  return COLORS.flatMap((c) =>
+    PATCHES.map((patch) => {
+      const shotKey = `${c.key}-${patch.key}` as keyof typeof p.shots
+      return {
+        id: `qty-${p.key}-${c.key}-${patch.key}`,
+        color: c,
+        patch,
+        /** What a human reads in the order book, the CSV and both emails. */
+        name: `${c.label} ${p.title} — ${patch.name}`,
+        img: p.shots[shotKey] as string | null,
+      }
+    }),
+  )
+}
+
 export default function ESMSharksPage() {
   useEffect(() => {
     if (typeof window !== 'undefined' && (window as any).lucide) {
@@ -53,29 +161,60 @@ export default function ESMSharksPage() {
       })
     }
 
-    // --- Color toggles (navy / silver) ---
-    function setupColorToggles() {
-      document.querySelectorAll('.color-toggle').forEach((toggle) => {
-        toggle.addEventListener('click', (e) => {
-          const btn = e.target as HTMLElement
-          const targetImgId = btn.getAttribute('data-target-img')
-          const newSrc = btn.getAttribute('data-src')
-          if (targetImgId && newSrc) { const img = document.getElementById(targetImgId) as HTMLImageElement; if (img) img.src = newSrc }
-          const siblings = btn.parentElement?.querySelectorAll('.color-toggle')
-          siblings?.forEach((sib) => {
-            sib.classList.remove('border-esmNavy', 'bg-esmNavy', 'border-esmSilver', 'bg-esmSilver', 'text-white', 'text-esmInk')
-            sib.classList.add('border-gray-200', 'bg-white', 'text-gray-500')
-          })
-          btn.classList.remove('border-gray-200', 'bg-white', 'text-gray-500')
-          const isSilver = btn.getAttribute('data-color') === 'silver'
-          // Silver is a light fill, so it takes dark ink; navy takes white.
-          btn.classList.add(
-            isSilver ? 'border-esmSilver' : 'border-esmNavy',
-            isSilver ? 'bg-esmSilver' : 'bg-esmNavy',
-            isSilver ? 'text-esmInk' : 'text-white',
-          )
-        })
+    /**
+     * Tapping a variant row shows that combination's photo.
+     *
+     * The row is both the preview control and the thing being ordered, so there
+     * is no second control that could disagree with the boxes. Where we have no
+     * photo (`data-src` empty) the hero shows a labelled placeholder rather than
+     * the nearest picture we do have — a script row must never illustrate itself
+     * with the circle patch.
+     */
+    function showVariant(btn: HTMLElement) {
+      const key = btn.getAttribute('data-product')
+      if (!key) return
+      const img = document.getElementById(`img-${key}`) as HTMLImageElement | null
+      const ph = document.getElementById(`ph-${key}`)
+      const src = btn.getAttribute('data-src') || ''
+
+      if (img && ph) {
+        // `hidden` and `flex` are both display utilities of equal specificity,
+        // so which one wins is decided by their order in the generated stylesheet.
+        // Toggling both explicitly keeps that out of it.
+        if (src) {
+          img.src = src
+          img.alt = btn.getAttribute('data-combo') || ''
+          img.classList.remove('hidden')
+          ph.classList.add('hidden')
+          ph.classList.remove('flex')
+        } else {
+          img.classList.add('hidden')
+          ph.classList.remove('hidden')
+          ph.classList.add('flex')
+          const art = ph.querySelector('img') as HTMLImageElement | null
+          if (art) art.src = btn.getAttribute('data-patch-art') || ''
+          const cap = ph.querySelector('[data-cap]')
+          if (cap) cap.textContent = btn.getAttribute('data-combo') || ''
+        }
+      }
+
+      document.querySelectorAll(`.variant-row[data-product="${key}"]`).forEach((row) => {
+        row.classList.remove('ring-2', 'ring-esmNavy', 'bg-esmMist/70')
+        row.classList.add('bg-slate-50')
       })
+      const row = btn.closest('.variant-row')
+      if (row) { row.classList.remove('bg-slate-50'); row.classList.add('ring-2', 'ring-esmNavy', 'bg-esmMist/70') }
+    }
+
+    function setupVariantPreview() {
+      document.querySelectorAll('.variant-preview').forEach((btn) => {
+        btn.addEventListener('click', () => showVariant(btn as HTMLElement))
+      })
+    }
+
+    /** Restore each card to its first row — used on load and after a reset. */
+    function resetVariantPreviews() {
+      document.querySelectorAll('.variant-preview[data-first="1"]').forEach((btn) => showVariant(btn as HTMLElement))
     }
 
     // --- Payment radios ---
@@ -90,26 +229,22 @@ export default function ESMSharksPage() {
       })
     }
 
-    // --- Patch pricing (3 for $20, then $6.65 each) ---
-    function calculatePatchPrice(qty: number): number {
-      if (qty <= 0) return 0
-      if (qty >= 3) return 20 + (qty - 3) * 6.65
-      return qty * 8
-    }
-
     /**
-     * Which quantity inputs get the patch tier.
+     * The loose patches currently in the order, by design.
      *
-     * This used to be `id === 'qty-patch'` — a single literal, correct while
-     * there was exactly one patch. There are three designs now, and a literal
-     * would have quietly charged the two new ones a flat $8 each while their
-     * cards advertised "3 for $20": the page would disagree with itself, and
-     * the server takes `line_total` from the browser, so the wrong number is
-     * what gets banked. Each card tiers on its OWN quantity, which is what the
-     * "3 for $20" printed on that card means.
+     * Driven by `data-tier="patch"` — an explicit opt-in, NOT an id prefix. Every
+     * product row is a patch choice now, so ids like `qty-hat-navy-circle` sit
+     * in the same page; a prefix rule would be one rename away from charging a
+     * $25 hat at the $6.65 patch tier. See `lib/fundraiserPatches.ts`.
      */
-    function isPatchInput(el: HTMLInputElement): boolean {
-      return el.id.startsWith('qty-patch')
+    function looseSelections(): PatchSelection[] {
+      const out: PatchSelection[] = []
+      document.querySelectorAll('.qty-input').forEach((input) => {
+        const el = input as HTMLInputElement
+        if (!isLoosePatchInput(el)) return
+        out.push({ design: el.dataset.design || '', qty: parseInt(el.value) || 0 })
+      })
+      return out
     }
 
     /**
@@ -129,14 +264,40 @@ export default function ESMSharksPage() {
       return picked?.value === 'home'
     }
 
+    /**
+     * Tell the buyer where they stand against the mix-and-match tier.
+     *
+     * "3 for $20" is only believable if the page shows it landing. Two patches
+     * of different designs still count as two toward the same three, and this
+     * line is what makes that visible before they reach the summary.
+     */
+    function updatePatchHint(qty: number) {
+      const hint = document.getElementById('patchTierHint')
+      if (!hint) return
+      if (qty === 0) {
+        hint.textContent = 'Mix and match — any 3 patches are $20.'
+      } else if (qty < 3) {
+        const more = 3 - qty
+        const saving = qty * 8 + more * 8 - 20
+        hint.textContent = `${qty} selected. Add ${more} more (either design) for the 3 for $20 price — saves $${saving.toFixed(2)}.`
+      } else {
+        hint.textContent = `${qty} patches — $${patchPriceDollars(qty).toFixed(2)}. The 3 for $20 price is applied.`
+      }
+    }
+
     // --- Total ---
     function calculateTotal(): number {
       let total = 0
       document.querySelectorAll('.qty-input').forEach((input) => {
         const el = input as HTMLInputElement
-        const qty = parseInt(el.value) || 0
-        total += isPatchInput(el) ? calculatePatchPrice(qty) : qty * parseFloat(el.dataset.price || '0')
+        if (isLoosePatchInput(el)) return
+        total += (parseInt(el.value) || 0) * parseFloat(el.dataset.price || '0')
       })
+
+      const patchQty = totalPatchQty(looseSelections())
+      total += patchPriceDollars(patchQty)
+      updatePatchHint(patchQty)
+
       if (isHomeDelivery()) total += HOME_DELIVERY_FEE
       const display = document.getElementById('totalPriceDisplay')
       if (display) display.textContent = `$${total.toFixed(2)}`
@@ -202,21 +363,36 @@ export default function ESMSharksPage() {
         const itemsData: Array<{name:string;qty:number;unit_price:number;line_total:number;cost_per_unit:number}> = []
         let totalCost = 0
 
+        const pushLine = (line: {name:string;qty:number;unit_price:number;line_total:number;cost_per_unit:number}) => {
+          hasItems = true
+          totalCost += line.qty * line.cost_per_unit
+          orderListHTML += `<li class="flex justify-between gap-3 border-b border-gray-100 pb-1"><span>${line.qty}x ${line.name}</span><span class="text-gray-500 whitespace-nowrap">$${line.line_total.toFixed(2)}</span></li>`
+          itemsArr.push(`${line.qty}x ${line.name}`)
+          itemsData.push(line)
+        }
+
+        // Products first, one line per colour-and-patch combination. Each is a
+        // plain qty × price; only the loose patches are tiered.
         document.querySelectorAll('.qty-input').forEach((input) => {
           const el = input as HTMLInputElement
+          if (isLoosePatchInput(el)) return
           const qty = parseInt(el.value)
-          if (qty > 0) {
-            hasItems = true
-            const itemName = el.getAttribute('data-name') || ''
-            const unitPrice = parseFloat(el.dataset.price || '0')
-            const costPerUnit = parseFloat(el.dataset.cost || '0')
-            const lineTotal = isPatchInput(el) ? calculatePatchPrice(qty) : qty * unitPrice
-            totalCost += qty * costPerUnit
-            orderListHTML += `<li class="flex justify-between border-b border-gray-100 pb-1"><span>${qty}x ${itemName}</span><span class="text-gray-500">$${lineTotal.toFixed(2)}</span></li>`
-            itemsArr.push(`${qty}x ${itemName}`)
-            itemsData.push({ name: itemName, qty, unit_price: unitPrice, line_total: lineTotal, cost_per_unit: costPerUnit })
-          }
+          if (!(qty > 0)) return
+          const unitPrice = parseFloat(el.dataset.price || '0')
+          pushLine({
+            name: el.getAttribute('data-name') || '',
+            qty,
+            unit_price: unitPrice,
+            line_total: qty * unitPrice,
+            cost_per_unit: parseFloat(el.dataset.cost || '0'),
+          })
         })
+
+        // Then the loose patches, as ONE line across both designs — that is what
+        // the shared 3-for-$20 tier prices, and splitting it would invent
+        // per-design figures that do not exist.
+        const patchLine = patchOrderLine(looseSelections())
+        if (patchLine) pushLine(patchLine)
 
         if (!hasItems) { alertCustom('Please select at least one item.'); return }
 
@@ -236,7 +412,7 @@ export default function ESMSharksPage() {
           return
         }
         if (deliveryChosen) {
-          orderListHTML += `<li class="flex justify-between border-b border-gray-100 pb-1"><span>1x Home Delivery</span><span class="text-gray-500">$${HOME_DELIVERY_FEE.toFixed(2)}</span></li>`
+          orderListHTML += `<li class="flex justify-between gap-3 border-b border-gray-100 pb-1"><span>1x Home Delivery</span><span class="text-gray-500 whitespace-nowrap">$${HOME_DELIVERY_FEE.toFixed(2)}</span></li>`
           itemsArr.push('1x Home Delivery')
           // cost_per_unit is 0 — the whole fee is the PTO's, so it all counts
           // as raised rather than being netted off as a cost to us.
@@ -312,18 +488,21 @@ export default function ESMSharksPage() {
         const addrBox = document.getElementById('deliveryAddressBox'); if (addrBox) addrBox.classList.add('hidden')
         const addrField = document.getElementById('deliveryAddress') as HTMLTextAreaElement | null
         if (addrField) addrField.required = false
+        // Same reason: the highlighted row and the hero photo are classes and
+        // `src`, neither of which `form.reset()` knows about.
+        resetVariantPreviews()
         calculateTotal()
         finalSubmitBtn.innerHTML = 'CONFIRM & SUBMIT'
         finalSubmitBtn.disabled = false
-        document.querySelectorAll('.color-toggle').forEach((t) => { if (t.getAttribute('data-color') === 'navy') (t as HTMLElement).click() })
       })
     }
 
     setupQuantityButtons()
-    setupColorToggles()
+    setupVariantPreview()
     setupPaymentRadios()
     setupDeliveryRadios()
     setupFormSubmit()
+    resetVariantPreviews()
     calculateTotal()
   }, [])
 
@@ -336,8 +515,7 @@ export default function ESMSharksPage() {
         #esm-sharks-root input[type="number"] { -moz-appearance:textfield }
         .varsity-outline { -webkit-text-stroke:1px #0C2340;text-shadow:3px 3px 0px rgba(12,35,64,0.45) }
         .loader { border:3px solid #E6E9EC;border-top:3px solid #0C2340;border-radius:50%;width:20px;height:20px;animation:spin 1s linear infinite;display:inline-block }
-        @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
-        .color-toggle.bg-white:hover { border-color:#0C2340 !important; color:#0C2340 !important; }` }} />
+        @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }` }} />
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -372,195 +550,166 @@ export default function ESMSharksPage() {
                 <div className="p-2 bg-esmNavy/10 rounded-lg text-esmNavy"><i data-lucide="shopping-bag" className="w-6 h-6"></i></div>
                 <h2 className="text-xl sm:text-3xl font-bold text-esmInk font-oswald uppercase tracking-wide">The Merch</h2>
               </div>
-              <p className="text-sm text-gray-600 mb-3 ml-1">Navy and silver, every piece finished with the embroidered Sharks patch.</p>
-              <p className="text-sm text-gray-700 mb-8 ml-1 bg-esmMist/70 border border-slate-200 rounded-lg px-3 py-2 inline-block">
-                <strong className="text-esmNavy">Three patch designs below</strong> — Circle, Script and Mascot. Take a look and tell us which one the Sharks should run with.
-              </p>
+              <p className="text-sm text-gray-600 mb-3 ml-1">Every piece comes in navy or silver, finished with the patch of your choice.</p>
+
+              {/* The two designs, shown once up front so the rows below are
+                  recognisable at thumbnail size. */}
+              <div className="mb-7 ml-1 bg-white border border-slate-200 rounded-xl p-4 inline-block max-w-full">
+                <p className="text-xs font-bold uppercase tracking-widest text-esmSilver mb-3">Two patch designs — either one on any item</p>
+                <div className="flex flex-wrap items-center gap-5">
+                  {PATCHES.map((p) => (
+                    <div key={p.key} className="flex items-center gap-3">
+                      <div className="w-16 h-16 bg-esmMist rounded-lg p-1.5 flex-none">
+                        <img src={p.art} alt={`${p.label} patch`} className="w-full h-full object-contain" />
+                      </div>
+                      <span className="text-sm font-bold text-esmInk uppercase font-oswald tracking-wide">{p.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
-                {/* Trucker Hat */}
-                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
-                  <div className="flex gap-2 mb-3">
-                    <button type="button" className="flex-1 py-1.5 border-2 border-esmNavy bg-esmNavy text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="navy" data-src="/images/esm-hat-navy.webp">Navy</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-hat" data-color="silver" data-src="/images/esm-hat-silver.webp">Silver</button>
-                  </div>
-                  <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative">
-                    <img id="img-hat" src="/images/esm-hat-navy.webp" alt="ESM Sharks Trucker Hat" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
-                  </div>
-                  <div className="flex-grow">
-                    <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Trucker Hat</h3>
-                    <p className="text-esmNavy font-black text-2xl mt-1 mb-2">$25.00</p>
-                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">Classic mesh-back snapback with the Sharks patch stitched on the front panel.</p>
-                  </div>
-                  <div className="mt-auto pt-4 border-t border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-                      <span className="text-xs font-bold text-esmNavy uppercase tracking-wider">Navy Qty</span>
-                      <div className="flex items-center border-2 border-slate-200 rounded-lg bg-white overflow-hidden">
-                        <button type="button" className="px-3 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target="qty-hat-navy">&minus;</button>
-                        <input type="number" id="qty-hat-navy" data-name="Navy Trucker Hat" className="qty-input w-10 text-center font-bold text-esmNavy outline-none py-1 text-sm" data-price="25" data-cost="20" min="0" defaultValue="0" />
-                        <button type="button" className="px-3 py-1 bg-esmNavy text-white font-bold hover:bg-esmInk transition-colors increment-btn" data-target="qty-hat-navy">+</button>
+                {PRODUCTS.map((product) => {
+                  const variants = variantsOf(product)
+                  return (
+                    <div key={product.key} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full">
+                      <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative">
+                        <img id={`img-${product.key}`} src={variants[0].img || ''} alt={variants[0].name} className="w-full h-full object-cover" />
+                        {/*
+                          Shown only for a combination we have not photographed.
+                          It names the combination and shows the PATCH art, so it
+                          never stands in for a picture of a different product.
+                        */}
+                        <div id={`ph-${product.key}`} className="hidden absolute inset-0 bg-esmMist flex-col items-center justify-center text-center p-5">
+                          {/* src is set before this is ever shown; seeding it
+                              with real art avoids an empty `src`, which some
+                              browsers resolve against the page URL and re-fetch. */}
+                          <img src={PATCHES[0].art} alt="" className="w-20 h-20 object-contain mb-3 opacity-80" />
+                          <p data-cap className="text-xs font-bold uppercase tracking-wide text-esmInk leading-snug"></p>
+                          <p className="text-[10px] uppercase tracking-widest text-slate-500 mt-2">Photo coming soon</p>
+                        </div>
+                      </div>
+                      <div className="flex-grow">
+                        <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">{product.title}</h3>
+                        <p className="text-esmNavy font-black text-2xl mt-1 mb-2">${product.price}.00</p>
+                        <p className="text-sm text-gray-600 mb-4 leading-relaxed">{product.blurb}</p>
+                      </div>
+                      <div className="mt-auto pt-4 border-t border-gray-100">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Pick your colour and patch</p>
+                        <div className="space-y-2">
+                          {variants.map((v, i) => (
+                            <div
+                              key={v.id}
+                              className="variant-row flex items-center gap-2 bg-slate-50 rounded-lg p-1.5 transition-all"
+                              data-product={product.key}
+                            >
+                              {/*
+                                The row's own label is the preview control, so the
+                                one thing that changes the picture is the same
+                                thing that names what gets stitched.
+                              */}
+                              <button
+                                type="button"
+                                className="variant-preview flex items-center gap-2 flex-1 min-w-0 text-left"
+                                data-product={product.key}
+                                data-src={v.img || ''}
+                                data-patch-art={v.patch.art}
+                                data-combo={v.name}
+                                data-first={i === 0 ? '1' : undefined}
+                                title={`Show ${v.name}`}
+                              >
+                                <span className="w-3 h-3 rounded-full flex-none border border-black/20" style={{ background: v.color.swatch }}></span>
+                                <span className="w-7 h-7 flex-none bg-white rounded border border-slate-200 p-0.5">
+                                  <img src={v.patch.art} alt="" className="w-full h-full object-contain" />
+                                </span>
+                                <span className="text-[11px] font-bold uppercase tracking-wide text-gray-700 truncate">
+                                  {v.color.label} · {v.patch.label}
+                                </span>
+                              </button>
+                              <div className="flex items-center border-2 border-slate-200 rounded-lg bg-white overflow-hidden flex-none">
+                                <button type="button" className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target={v.id}>&minus;</button>
+                                <input
+                                  type="number"
+                                  id={v.id}
+                                  data-name={v.name}
+                                  className="qty-input w-9 text-center font-bold text-esmNavy outline-none py-1 text-sm"
+                                  data-price={product.price}
+                                  data-cost={product.cost}
+                                  min="0"
+                                  defaultValue="0"
+                                  aria-label={v.name}
+                                />
+                                <button type="button" className="px-3 py-1.5 bg-esmNavy text-white font-bold hover:bg-esmInk transition-colors increment-btn" data-target={v.id}>+</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between bg-esmMist/60 p-2 rounded-lg border border-slate-200">
-                      <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Silver Qty</span>
-                      <div className="flex items-center border-2 border-slate-300 rounded-lg bg-white overflow-hidden">
-                        <button type="button" className="px-3 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target="qty-hat-silver">&minus;</button>
-                        <input type="number" id="qty-hat-silver" data-name="Silver Trucker Hat" className="qty-input w-10 text-center font-bold text-slate-700 outline-none py-1 text-sm" data-price="25" data-cost="20" min="0" defaultValue="0" />
-                        <button type="button" className="px-3 py-1 bg-esmSilver text-esmInk font-bold hover:bg-slate-400 transition-colors increment-btn" data-target="qty-hat-silver">+</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Canvas Tote */}
-                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
-                  <div className="flex gap-2 mb-3">
-                    <button type="button" className="flex-1 py-1.5 border-2 border-esmNavy bg-esmNavy text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="navy" data-src="/images/esm-tote-navy.webp">Navy</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-tote" data-color="silver" data-src="/images/esm-tote-silver.webp">Silver</button>
-                  </div>
-                  <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative">
-                    <img id="img-tote" src="/images/esm-tote-navy.webp" alt="ESM Sharks Canvas Tote" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
-                  </div>
-                  <div className="flex-grow">
-                    <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Canvas Tote</h3>
-                    <p className="text-esmNavy font-black text-2xl mt-1 mb-2">$40.00</p>
-                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">Heavy-duty canvas tote with the Sharks patch on the front. Big enough for a game day.</p>
-                  </div>
-                  <div className="mt-auto pt-4 border-t border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-                      <span className="text-xs font-bold text-esmNavy uppercase tracking-wider">Navy Qty</span>
-                      <div className="flex items-center border-2 border-slate-200 rounded-lg bg-white overflow-hidden">
-                        <button type="button" className="px-3 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target="qty-tote-navy">&minus;</button>
-                        <input type="number" id="qty-tote-navy" data-name="Navy Canvas Tote" className="qty-input w-10 text-center font-bold text-esmNavy outline-none py-1 text-sm" data-price="40" data-cost="30" min="0" defaultValue="0" />
-                        <button type="button" className="px-3 py-1 bg-esmNavy text-white font-bold hover:bg-esmInk transition-colors increment-btn" data-target="qty-tote-navy">+</button>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between bg-esmMist/60 p-2 rounded-lg border border-slate-200">
-                      <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Silver Qty</span>
-                      <div className="flex items-center border-2 border-slate-300 rounded-lg bg-white overflow-hidden">
-                        <button type="button" className="px-3 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target="qty-tote-silver">&minus;</button>
-                        <input type="number" id="qty-tote-silver" data-name="Silver Canvas Tote" className="qty-input w-10 text-center font-bold text-slate-700 outline-none py-1 text-sm" data-price="40" data-cost="30" min="0" defaultValue="0" />
-                        <button type="button" className="px-3 py-1 bg-esmSilver text-esmInk font-bold hover:bg-slate-400 transition-colors increment-btn" data-target="qty-tote-silver">+</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Zip Pouch */}
-                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
-                  <div className="flex gap-2 mb-3">
-                    <button type="button" className="flex-1 py-1.5 border-2 border-esmNavy bg-esmNavy text-white text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="navy" data-src="/images/esm-pouch-navy.webp">Navy</button>
-                    <button type="button" className="flex-1 py-1.5 border-2 border-gray-200 bg-white text-gray-500 text-xs font-bold uppercase rounded-md transition-colors color-toggle" data-target-img="img-pouch" data-color="silver" data-src="/images/esm-pouch-silver.webp">Silver</button>
-                  </div>
-                  <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative">
-                    <img id="img-pouch" src="/images/esm-pouch-navy.webp" alt="ESM Sharks Zip Pouch" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
-                  </div>
-                  <div className="flex-grow">
-                    <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Zip Pouch</h3>
-                    <p className="text-esmNavy font-black text-2xl mt-1 mb-2">$25.00</p>
-                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">Zippered canvas pouch with the Sharks patch. Mouthguards, tape, pencils, whatever.</p>
-                  </div>
-                  <div className="mt-auto pt-4 border-t border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-                      <span className="text-xs font-bold text-esmNavy uppercase tracking-wider">Navy Qty</span>
-                      <div className="flex items-center border-2 border-slate-200 rounded-lg bg-white overflow-hidden">
-                        <button type="button" className="px-3 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target="qty-pouch-navy">&minus;</button>
-                        <input type="number" id="qty-pouch-navy" data-name="Navy Zip Pouch" className="qty-input w-10 text-center font-bold text-esmNavy outline-none py-1 text-sm" data-price="25" data-cost="20" min="0" defaultValue="0" />
-                        <button type="button" className="px-3 py-1 bg-esmNavy text-white font-bold hover:bg-esmInk transition-colors increment-btn" data-target="qty-pouch-navy">+</button>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between bg-esmMist/60 p-2 rounded-lg border border-slate-200">
-                      <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Silver Qty</span>
-                      <div className="flex items-center border-2 border-slate-300 rounded-lg bg-white overflow-hidden">
-                        <button type="button" className="px-3 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target="qty-pouch-silver">&minus;</button>
-                        <input type="number" id="qty-pouch-silver" data-name="Silver Zip Pouch" className="qty-input w-10 text-center font-bold text-slate-700 outline-none py-1 text-sm" data-price="25" data-cost="20" min="0" defaultValue="0" />
-                        <button type="button" className="px-3 py-1 bg-esmSilver text-esmInk font-bold hover:bg-slate-400 transition-colors increment-btn" data-target="qty-pouch-silver">+</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                  )
+                })}
 
                 {/*
-                  THREE PATCH DESIGNS, for the PTO to choose between.
+                  LOOSE PATCHES — a patch on its own, not the decoration on an
+                  item above.
 
-                  Each is a standalone patch at the same price and tiers on its
-                  OWN quantity — that is what the "3 for $20" printed on each
-                  card means, and `isPatchInput` is what makes all three get it
-                  rather than only the original.
+                  One card with a row per design, rather than a card per design,
+                  because the 3-for-$20 tier is shared: two circles and a script
+                  is three patches and therefore $20 (Adam, 2026-09-16). Two
+                  cards each printing "3 for $20" would have said the tier was
+                  per design, which is exactly the arithmetic this replaces.
 
-                  The names are distinct ("Circle", "Script", "Mascot") because
-                  `data-name` is the string written into the order and read in
-                  the order book; three lines all called "Sharks Patch" would be
-                  unfulfillable. Renaming the original was safe — no ESM order
-                  exists yet.
+                  `data-tier="patch"` is what puts these — and ONLY these — on the
+                  tier. See `lib/fundraiserPatches.ts`.
                 */}
-
-                {/* Patch — Circle / roundel */}
-                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
-                  <div className="h-[34px] mb-3 flex items-center"><span className="text-[10px] font-bold uppercase tracking-widest text-esmSilver">Design 1 of 3</span></div>
-                  <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative p-8">
-                    <img src="/images/esm-sharks-patch.webp" alt="ESM Sharks circle patch" className="w-full h-full object-contain transform group-hover:scale-105 transition-transform duration-500" />
+                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full">
+                  <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative grid grid-cols-2 gap-2 p-4">
+                    {PATCHES.map((p) => (
+                      <div key={p.key} className="bg-white rounded-lg border border-slate-200 p-2 flex items-center justify-center">
+                        <img src={p.art} alt={`${p.label} patch`} className="w-full h-full object-contain" />
+                      </div>
+                    ))}
                   </div>
                   <div className="flex-grow">
-                    <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Circle Patch</h3>
-                    <p className="text-esmNavy font-black text-2xl mt-1 mb-2">$8.00 <span className="text-sm font-bold text-gray-500 tracking-normal normal-case">(3 for $20)</span></p>
-                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">The Eastport-South Manor roundel, shark and lettering in navy and silver.</p>
+                    <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Patches On Their Own</h3>
+                    <p className="text-esmNavy font-black text-2xl mt-1 mb-2">$8.00 <span className="text-sm font-bold text-gray-500 tracking-normal normal-case">(any 3 for $20)</span></p>
+                    <p className="text-sm text-gray-600 mb-3 leading-relaxed">Iron-on patches to put wherever you like. Mix the two designs however you want — three is three.</p>
                   </div>
-                  <div className="mt-auto pt-4 border-t border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-                      <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Quantity</span>
-                      <div className="flex items-center border-2 border-slate-200 rounded-lg bg-white overflow-hidden">
-                        <button type="button" className="px-3 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target="qty-patch">&minus;</button>
-                        <input type="number" id="qty-patch" data-name="Circle Patch" className="qty-input w-10 text-center font-bold text-esmNavy outline-none py-1 text-sm" data-price="8" data-cost="5" min="0" defaultValue="0" />
-                        <button type="button" className="px-3 py-1 bg-esmNavy text-white font-bold hover:bg-esmInk transition-colors increment-btn" data-target="qty-patch">+</button>
-                      </div>
+                  <div className="mt-auto pt-4 border-t border-gray-100">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">How many of each</p>
+                    <div className="space-y-2">
+                      {PATCHES.map((p) => (
+                        <div key={p.key} className="flex items-center gap-2 bg-slate-50 rounded-lg p-1.5">
+                          <span className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="w-7 h-7 flex-none bg-white rounded border border-slate-200 p-0.5">
+                              <img src={p.art} alt="" className="w-full h-full object-contain" />
+                            </span>
+                            <span className="text-[11px] font-bold uppercase tracking-wide text-gray-700 truncate">{p.label}</span>
+                          </span>
+                          <div className="flex items-center border-2 border-slate-200 rounded-lg bg-white overflow-hidden flex-none">
+                            <button type="button" className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target={`qty-loose-${p.key}`}>&minus;</button>
+                            <input
+                              type="number"
+                              id={`qty-loose-${p.key}`}
+                              data-name={p.name}
+                              data-tier="patch"
+                              data-design={p.label}
+                              className="qty-input w-9 text-center font-bold text-esmNavy outline-none py-1 text-sm"
+                              data-price="8"
+                              data-cost="5"
+                              min="0"
+                              defaultValue="0"
+                              aria-label={`${p.name} quantity`}
+                            />
+                            <button type="button" className="px-3 py-1.5 bg-esmNavy text-white font-bold hover:bg-esmInk transition-colors increment-btn" data-target={`qty-loose-${p.key}`}>+</button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                </div>
-
-                {/* Patch — Script wordmark */}
-                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
-                  <div className="h-[34px] mb-3 flex items-center"><span className="text-[10px] font-bold uppercase tracking-widest text-esmSilver">Design 2 of 3</span></div>
-                  <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative p-8">
-                    <img src="/images/esm-patch-script.webp" alt="Sharks script wordmark patch" className="w-full h-full object-contain transform group-hover:scale-105 transition-transform duration-500" />
-                  </div>
-                  <div className="flex-grow">
-                    <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Script Patch</h3>
-                    <p className="text-esmNavy font-black text-2xl mt-1 mb-2">$8.00 <span className="text-sm font-bold text-gray-500 tracking-normal normal-case">(3 for $20)</span></p>
-                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">The &ldquo;Sharks&rdquo; script wordmark, embroidered in white on a blue tail sweep.</p>
-                  </div>
-                  <div className="mt-auto pt-4 border-t border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-                      <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Quantity</span>
-                      <div className="flex items-center border-2 border-slate-200 rounded-lg bg-white overflow-hidden">
-                        <button type="button" className="px-3 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target="qty-patch-script">&minus;</button>
-                        <input type="number" id="qty-patch-script" data-name="Script Patch" className="qty-input w-10 text-center font-bold text-esmNavy outline-none py-1 text-sm" data-price="8" data-cost="5" min="0" defaultValue="0" />
-                        <button type="button" className="px-3 py-1 bg-esmNavy text-white font-bold hover:bg-esmInk transition-colors increment-btn" data-target="qty-patch-script">+</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Patch — Mascot */}
-                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group">
-                  <div className="h-[34px] mb-3 flex items-center"><span className="text-[10px] font-bold uppercase tracking-widest text-esmSilver">Design 3 of 3</span></div>
-                  <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative p-8">
-                    <img src="/images/esm-patch-mascot.webp" alt="Sharks mascot patch" className="w-full h-full object-contain transform group-hover:scale-105 transition-transform duration-500" />
-                  </div>
-                  <div className="flex-grow">
-                    <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Mascot Patch</h3>
-                    <p className="text-esmNavy font-black text-2xl mt-1 mb-2">$8.00 <span className="text-sm font-bold text-gray-500 tracking-normal normal-case">(3 for $20)</span></p>
-                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">The shark on its own, no lettering — navy and silver, cut to the body.</p>
-                  </div>
-                  <div className="mt-auto pt-4 border-t border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-                      <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Quantity</span>
-                      <div className="flex items-center border-2 border-slate-200 rounded-lg bg-white overflow-hidden">
-                        <button type="button" className="px-3 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target="qty-patch-mascot">&minus;</button>
-                        <input type="number" id="qty-patch-mascot" data-name="Mascot Patch" className="qty-input w-10 text-center font-bold text-esmNavy outline-none py-1 text-sm" data-price="8" data-cost="5" min="0" defaultValue="0" />
-                        <button type="button" className="px-3 py-1 bg-esmNavy text-white font-bold hover:bg-esmInk transition-colors increment-btn" data-target="qty-patch-mascot">+</button>
-                      </div>
-                    </div>
+                    <p id="patchTierHint" className="text-[11px] text-esmNavy font-semibold mt-3 bg-esmMist/70 border border-slate-200 rounded-md px-2.5 py-1.5 leading-snug">
+                      Mix and match — any 3 patches are $20.
+                    </p>
                   </div>
                 </div>
 

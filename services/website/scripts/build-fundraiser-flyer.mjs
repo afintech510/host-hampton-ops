@@ -44,10 +44,13 @@ const ORDER_URL = 'https://www.hosthampton.com/esm-sharks'
  * flyer with no prices on it. A human diffing two short lists is the check.
  */
 const PRODUCTS = [
-  { img: 'esm-hat-navy.webp',    name: 'Trucker Hat',  price: '$25', note: 'Navy or silver' },
-  { img: 'esm-tote-navy.webp',   name: 'Canvas Tote',  price: '$40', note: 'Navy or silver' },
-  { img: 'esm-pouch-navy.webp',  name: 'Zip Pouch',    price: '$25', note: 'Navy or silver' },
-  { img: 'esm-patch-mascot.webp', name: 'Patches',     price: '$8',  note: '3 for $20 · 3 designs' },
+  { img: 'esm-hat-navy-circle.webp',   name: 'Trucker Hat', price: '$25', note: 'Navy or silver' },
+  { img: 'esm-tote-navy-circle.webp',  name: 'Canvas Tote', price: '$40', note: 'Navy or silver' },
+  { img: 'esm-pouch-navy-circle.webp', name: 'Zip Pouch',   price: '$25', note: 'Navy or silver' },
+  // The PTO settled on two designs (2026-09-16), so the mascot patch is gone
+  // from the page and this tile shows the circle crest. The note counts DESIGNS
+  // and has to agree with the page, which now sells exactly two.
+  { img: 'esm-sharks-patch.webp',      name: 'Patches',     price: '$8',  note: '3 for $20 · 2 designs' },
 ]
 
 /**
@@ -231,7 +234,7 @@ const html = `<!DOCTYPE html>
       <h2>Scan To Order</h2>
       <ol class="steps">
         <li>Point your phone camera at the code.</li>
-        <li>Pick your items and your child&rsquo;s name.</li>
+        <li>Pick your colour, your patch and your child&rsquo;s name.</li>
         <li>${payLine}</li>
       </ol>
       <div class="url">${esc(ORDER_URL.replace('https://www.', ''))}</div>

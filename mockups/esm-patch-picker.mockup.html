@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESM Sharks — how a buyer picks colour AND patch</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700&family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0C2340; --ink:#071628; --silver:#A2AAAD; --mist:#E6E9EC;
+    --royal:#2C6BA8;           /* the script patch's actual blue, sampled */
+    --line:#e4e7ea; --muted:#6b7280;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#eef1f4;font-family:Inter,system-ui,sans-serif;color:#111827;padding:28px 18px 80px;line-height:1.5}
+  .wrap{max-width:1060px;margin:0 auto}
+
+  h1{font-family:Oswald;font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:30px;color:var(--ink)}
+  .lede{color:var(--muted);font-size:15px;margin-top:6px;max-width:74ch}
+
+  .panel{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin:22px 0}
+  .panel h2{font-family:Oswald;text-transform:uppercase;letter-spacing:.06em;font-size:17px;color:var(--ink);margin-bottom:10px}
+  .panel p{font-size:14px;color:#374151;margin-bottom:9px}
+  .panel p:last-child{margin-bottom:0}
+  .q{border-left:4px solid #C7A36B;background:#fdfaf3;padding:12px 14px;border-radius:0 8px 8px 0;margin:10px 0;font-size:14px}
+  .q b{color:#8a6d33}
+
+  /* colour-clash exhibit */
+  .clash{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .clash figure{background:var(--mist);border:1px solid var(--line);border-radius:10px;padding:14px;width:200px;text-align:center}
+  .clash img{width:100%;height:96px;object-fit:contain}
+  .clash figcaption{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;font-family:ui-monospace,monospace;margin-top:6px}
+  .sw{width:13px;height:13px;border-radius:3px;border:1px solid rgba(0,0,0,.2)}
+
+  /* option blocks */
+  .opt{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:26px 0}
+  .opt > header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:flex-start}
+  .badge{flex:none;width:34px;height:34px;border-radius:9px;background:var(--navy);color:#fff;display:grid;place-items:center;font-family:Oswald;font-size:18px}
+  .opt.rec > header{background:#f3f8f3}
+  .opt.rec .badge{background:#2f6f3e}
+  .opt h3{font-family:Oswald;text-transform:uppercase;letter-spacing:.04em;font-size:19px;color:var(--ink)}
+  .opt header p{font-size:13.5px;color:var(--muted);margin-top:2px}
+  .rectag{margin-left:auto;flex:none;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#2f6f3e;background:#dcecdf;padding:5px 10px;border-radius:999px;white-space:nowrap}
+  .stage{padding:24px;background:#f7f9fb}
+  .tradeoffs{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--line)}
+  .tradeoffs div{padding:16px 24px;font-size:13.5px}
+  .tradeoffs div+div{border-left:1px solid var(--line)}
+  .tradeoffs h4{font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;margin-bottom:7px;font-weight:800}
+  .pro h4{color:#2f6f3e} .con h4{color:#a13d3d}
+  .tradeoffs ul{margin:0;padding-left:17px} .tradeoffs li{margin-bottom:4px;color:#374151}
+
+  /* ---- shared storefront bits ---- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(248px,1fr));gap:16px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column}
+  .shot{aspect-ratio:1;background:var(--mist);border-radius:8px;display:grid;place-items:center;margin-bottom:11px;overflow:hidden;position:relative}
+  .shot span{font-family:Oswald;text-transform:uppercase;letter-spacing:.09em;color:#8e979f;font-size:12px;text-align:center;padding:0 10px}
+  .card h5{font-family:Oswald;text-transform:uppercase;font-size:17px;color:#111827}
+  .price{font-weight:900;font-size:20px;color:var(--navy);margin:2px 0 10px}
+
+  .toggle{display:flex;gap:7px;margin-bottom:10px}
+  .toggle button{flex:1;padding:6px 0;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+    border:2px solid var(--line);background:#fff;color:#9ca3af;border-radius:7px;cursor:pointer;font-family:Inter}
+  .toggle button.on{border-color:var(--navy);background:var(--navy);color:#fff}
+  .toggle button.on.silver{border-color:var(--silver);background:var(--silver);color:var(--ink)}
+
+  .lbl{font-size:9.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:#9ca3af;margin-bottom:6px}
+
+  /* patch thumb picker */
+  .patchpick{display:flex;gap:7px;margin-bottom:11px}
+  .patchpick button{flex:1;border:2px solid var(--line);background:#fff;border-radius:8px;padding:7px 5px;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;gap:5px;font-family:Inter}
+  .patchpick button.on{border-color:var(--navy);background:#f2f6fb}
+  .patchpick img{height:34px;width:100%;object-fit:contain}
+  .patchpick em{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#6b7280;font-style:normal}
+  .patchpick button.on em{color:var(--navy)}
+
+  /* stepper rows */
+  .rows{margin-top:auto;padding-top:11px;border-top:1px solid #f1f3f5;display:flex;flex-direction:column;gap:7px}
+  .row{display:flex;align-items:center;gap:9px;background:#fafbfc;border:1px solid #eef1f4;border-radius:8px;padding:6px 8px}
+  .row.silverbg{background:#f4f6f8}
+  .rowlab{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#374151;display:flex;align-items:center;gap:6px;flex:1;min-width:0}
+  .rowlab img{height:20px;width:22px;object-fit:contain;flex:none}
+  .dot{width:11px;height:11px;border-radius:50%;flex:none;border:1px solid rgba(0,0,0,.22)}
+  .step{display:flex;align-items:center;border:1.5px solid #e1e5ea;border-radius:7px;overflow:hidden;background:#fff;flex:none}
+  .step b{padding:3px 8px;background:#f6f7f9;color:#6b7280;font-weight:700;font-size:13px}
+  .step b.plus{background:var(--navy);color:#fff}
+  .step i{padding:3px 9px;font-style:normal;font-weight:800;font-size:12.5px;color:var(--navy);min-width:26px;text-align:center}
+
+  /* order-level band */
+  .band{background:#fff;border:2px solid var(--navy);border-radius:12px;padding:18px 20px;margin-bottom:18px}
+  .band h4{font-family:Oswald;text-transform:uppercase;letter-spacing:.05em;font-size:16px;color:var(--ink)}
+  .band > p{font-size:13px;color:var(--muted);margin:3px 0 13px}
+  .bigpick{display:grid;grid-template-columns:1fr 1fr;gap:13px;max-width:520px}
+  .bigpick button{border:2.5px solid var(--line);background:#fff;border-radius:10px;padding:13px;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;gap:8px;font-family:Inter;position:relative}
+  .bigpick button.on{border-color:var(--navy);background:#f2f6fb;box-shadow:0 2px 10px rgba(12,35,64,.09)}
+  .bigpick img{height:74px;width:100%;object-fit:contain}
+  .bigpick em{font-style:normal;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#6b7280}
+  .bigpick button.on em{color:var(--navy)}
+  .tick{position:absolute;top:7px;right:8px;width:19px;height:19px;border-radius:50%;background:var(--navy);color:#fff;
+    font-size:11px;display:grid;place-items:center;font-weight:800}
+
+  /* order-book preview */
+  .book{margin-top:20px;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .book header{background:var(--ink);color:#fff;padding:9px 14px;font-family:Oswald;text-transform:uppercase;
+    letter-spacing:.09em;font-size:11.5px}
+  .book table{width:100%;border-collapse:collapse;font-size:13px}
+  .book td{padding:8px 14px;border-bottom:1px solid #f1f3f5}
+  .book tr:last-child td{border-bottom:0}
+  .book td:last-child{text-align:right;font-weight:700;color:var(--navy);white-space:nowrap}
+  .book .amb{color:#a13d3d;font-weight:600}
+  .note{font-size:12.5px;color:var(--muted);margin-top:9px;font-style:italic}
+  @media(max-width:700px){.tradeoffs{grid-template-columns:1fr}.tradeoffs div+div{border-left:0;border-top:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Colour <span style="color:var(--silver)">+</span> patch on every item</h1>
+  <p class="lede">Three ways a parent could pick both, on a phone, without us shooting twelve new product photos.
+  Everything below is a sketch for a decision — nothing is built yet.</p>
+
+  <!-- ============ THINGS TO DECIDE ============ -->
+  <div class="panel">
+    <h2>Two things I need from you before I build</h2>
+
+    <div class="q"><b>1. Do loose patches stay a product?</b> Today a patch is also sold on its own —
+      $8, or 3 for $20. If a patch is <em>also</em> a required choice on every hat, tote and pouch, then a line
+      reading <em>"Circle Patch × 2"</em> in the order book is ambiguous: is that two loose patches in an
+      envelope, or the decoration on two hats? Keep them, drop them, or rename them
+      ("Patch — on its own")?</div>
+
+    <div class="q"><b>2. Does the patch change the price?</b> Circle and script are different sizes and
+      stitch counts. Same $25 hat either way, or does one cost more?</div>
+
+    <h2 style="margin-top:20px">And one thing to look at</h2>
+    <p>The two patches <strong>are not the same blue.</strong> The circle crest is the deep navy the whole
+      site and the flyer are built on. The script is a noticeably brighter royal. Side by side in a picker,
+      a parent will see it — so it's worth knowing whether that's the real thread colour or just how the
+      mockup was rendered.</p>
+    <div class="clash">
+      <figure>
+        <img src="../services/website/public/images/esm-sharks-patch.webp" alt="Circle crest patch">
+        <figcaption>Circle crest</figcaption>
+        <div class="chip"><span class="sw" style="background:#0C2340"></span>#0C2340 navy</div>
+      </figure>
+      <figure>
+        <img src="../services/website/public/images/esm-patch-script.webp" alt="Script wordmark patch">
+        <figcaption>Script wordmark</figcaption>
+        <div class="chip"><span class="sw" style="background:#2C6BA8"></span>~#2C6BA8 royal</div>
+      </figure>
+      <p style="flex:1;min-width:230px;font-size:13.5px;color:#374151">
+        Not a blocker either way — but if they're meant to match, it's much cheaper to fix with the
+        embroiderer now than after a hundred are stitched.</p>
+    </div>
+  </div>
+
+  <!-- ============ OPTION A ============ -->
+  <div class="opt">
+    <header>
+      <div class="badge">A</div>
+      <div><h3>One patch for the whole order</h3>
+      <p>Pick a design once, at the top. It goes on everything in the order.</p></div>
+    </header>
+    <div class="stage">
+      <div class="band">
+        <h4>① Choose your patch</h4>
+        <p>Every item in your order is finished with this design.</p>
+        <div class="bigpick">
+          <button class="on"><span class="tick">✓</span>
+            <img src="../services/website/public/images/esm-sharks-patch.webp" alt=""><em>Circle crest</em></button>
+          <button>
+            <img src="../services/website/public/images/esm-patch-script.webp" alt=""><em>Script wordmark</em></button>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="toggle"><button class="on">Navy</button><button class="silver">Silver</button></div>
+          <div class="shot"><span>Hat photo<br>(navy)</span></div>
+          <h5>Trucker Hat</h5><div class="price">$25.00</div>
+          <div class="rows">
+            <div class="row"><span class="rowlab"><span class="dot" style="background:#0C2340"></span>Navy qty</span>
+              <span class="step"><b>−</b><i>1</i><b class="plus">+</b></span></div>
+            <div class="row silverbg"><span class="rowlab"><span class="dot" style="background:#A2AAAD"></span>Silver qty</span>
+              <span class="step"><b>−</b><i>0</i><b class="plus">+</b></span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="toggle"><button class="on">Navy</button><button class="silver">Silver</button></div>
+          <div class="shot"><span>Tote photo<br>(navy)</span></div>
+          <h5>Canvas Tote</h5><div class="price">$40.00</div>
+          <div class="rows">
+            <div class="row"><span class="rowlab"><span class="dot" style="background:#0C2340"></span>Navy qty</span>
+              <span class="step"><b>−</b><i>0</i><b class="plus">+</b></span></div>
+            <div class="row silverbg"><span class="rowlab"><span class="dot" style="background:#A2AAAD"></span>Silver qty</span>
+              <span class="step"><b>−</b><i>1</i><b class="plus">+</b></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="book"><header>What the order book / CSV / email would say</header>
+        <table>
+          <tr><td>1× Navy Trucker Hat — Circle Patch</td><td>$25.00</td></tr>
+          <tr><td>1× Silver Canvas Tote — Circle Patch</td><td>$40.00</td></tr>
+        </table></div>
+      <p class="note">The product cards don't change at all — the patch is one extra decision above them.</p>
+    </div>
+    <div class="tradeoffs">
+      <div class="pro"><h4>For</h4><ul>
+        <li>One decision, impossible to miss, hard to get wrong</li>
+        <li>Smallest change to a page that already works</li>
+        <li>No new photography, no new quantity boxes</li></ul></div>
+      <div class="con"><h4>Against</h4><ul>
+        <li>Can't have a circle hat <em>and</em> a script tote in one order</li>
+        <li>A family ordering for two kids who want different patches has to send two orders</li>
+        <li>Loose patches sit outside the rule and need their own answer</li></ul></div>
+    </div>
+  </div>
+
+  <!-- ============ OPTION B ============ -->
+  <div class="opt">
+    <header>
+      <div class="badge">B</div>
+      <div><h3>A patch picker inside each product card</h3>
+      <p>Each product carries its own patch choice, next to the colour buttons.</p></div>
+    </header>
+    <div class="stage">
+      <div class="grid">
+        <div class="card">
+          <div class="toggle"><button class="on">Navy</button><button class="silver">Silver</button></div>
+          <div class="shot"><span>Hat photo<br>(navy)</span></div>
+          <h5>Trucker Hat</h5><div class="price">$25.00</div>
+          <div class="lbl">Patch on this hat</div>
+          <div class="patchpick">
+            <button class="on"><img src="../services/website/public/images/esm-sharks-patch.webp" alt=""><em>Circle</em></button>
+            <button><img src="../services/website/public/images/esm-patch-script.webp" alt=""><em>Script</em></button>
+          </div>
+          <div class="rows">
+            <div class="row"><span class="rowlab"><span class="dot" style="background:#0C2340"></span>Navy qty</span>
+              <span class="step"><b>−</b><i>1</i><b class="plus">+</b></span></div>
+            <div class="row silverbg"><span class="rowlab"><span class="dot" style="background:#A2AAAD"></span>Silver qty</span>
+              <span class="step"><b>−</b><i>0</i><b class="plus">+</b></span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="toggle"><button class="on">Navy</button><button class="silver">Silver</button></div>
+          <div class="shot"><span>Tote photo<br>(navy)</span></div>
+          <h5>Canvas Tote</h5><div class="price">$40.00</div>
+          <div class="lbl">Patch on this tote</div>
+          <div class="patchpick">
+            <button><img src="../services/website/public/images/esm-sharks-patch.webp" alt=""><em>Circle</em></button>
+            <button class="on"><img src="../services/website/public/images/esm-patch-script.webp" alt=""><em>Script</em></button>
+          </div>
+          <div class="rows">
+            <div class="row"><span class="rowlab"><span class="dot" style="background:#0C2340"></span>Navy qty</span>
+              <span class="step"><b>−</b><i>0</i><b class="plus">+</b></span></div>
+            <div class="row silverbg"><span class="rowlab"><span class="dot" style="background:#A2AAAD"></span>Silver qty</span>
+              <span class="step"><b>−</b><i>1</i><b class="plus">+</b></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="book"><header>What the order book / CSV / email would say</header>
+        <table>
+          <tr><td>1× Navy Trucker Hat — Circle Patch</td><td>$25.00</td></tr>
+          <tr><td>1× Silver Canvas Tote — Script Patch</td><td>$40.00</td></tr>
+        </table></div>
+      <p class="note">Different patch per product — but still one patch per product, so two hats in the
+        same order must match.</p>
+    </div>
+    <div class="tradeoffs">
+      <div class="pro"><h4>For</h4><ul>
+        <li>Mix designs across products — circle hat, script tote</li>
+        <li>The choice sits right where the buyer is already looking</li>
+        <li>Still no new photography and no new quantity boxes</li></ul></div>
+      <div class="con"><h4>Against</h4><ul>
+        <li><strong>Two lookalike controls, only one of which is binding.</strong> The colour buttons
+          only swap the picture — the real colour choice is the two qty boxes below. A patch control
+          that looks identical but <em>does</em> decide what ships is a trap</li>
+        <li>Can't order one circle hat and one script hat together</li>
+        <li>What you chose is hidden state — you have to scroll back to check</li></ul></div>
+    </div>
+  </div>
+
+  <!-- ============ OPTION C ============ -->
+  <div class="opt rec">
+    <header>
+      <div class="badge">C</div>
+      <div><h3>A quantity box per combination</h3>
+      <p>Exactly how the page already works — colour is a row of its own — with the patch as a second row.</p></div>
+      <div class="rectag">My recommendation</div>
+    </header>
+    <div class="stage">
+      <div class="grid">
+        <div class="card">
+          <div class="shot"><span>Hat photo<br>(navy)</span></div>
+          <div class="toggle" style="margin:0 0 11px"><button class="on">Show navy</button><button class="silver">Show silver</button></div>
+          <h5>Trucker Hat</h5><div class="price">$25.00</div>
+          <div class="lbl">How many, and which patch</div>
+          <div class="rows" style="border-top:0;padding-top:0;margin-top:0">
+            <div class="row"><span class="rowlab"><span class="dot" style="background:#0C2340"></span>
+              <img src="../services/website/public/images/esm-sharks-patch.webp" alt="">Navy · Circle</span>
+              <span class="step"><b>−</b><i>1</i><b class="plus">+</b></span></div>
+            <div class="row"><span class="rowlab"><span class="dot" style="background:#0C2340"></span>
+              <img src="../services/website/public/images/esm-patch-script.webp" alt="">Navy · Script</span>
+              <span class="step"><b>−</b><i>1</i><b class="plus">+</b></span></div>
+            <div class="row silverbg"><span class="rowlab"><span class="dot" style="background:#A2AAAD"></span>
+              <img src="../services/website/public/images/esm-sharks-patch.webp" alt="">Silver · Circle</span>
+              <span class="step"><b>−</b><i>0</i><b class="plus">+</b></span></div>
+            <div class="row silverbg"><span class="rowlab"><span class="dot" style="background:#A2AAAD"></span>
+              <img src="../services/website/public/images/esm-patch-script.webp" alt="">Silver · Script</span>
+              <span class="step"><b>−</b><i>0</i><b class="plus">+</b></span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="shot"><span>Tote photo<br>(silver)</span></div>
+          <div class="toggle" style="margin:0 0 11px"><button>Show navy</button><button class="on silver">Show silver</button></div>
+          <h5>Canvas Tote</h5><div class="price">$40.00</div>
+          <div class="lbl">How many, and which patch</div>
+          <div class="rows" style="border-top:0;padding-top:0;margin-top:0">
+            <div class="row"><span class="rowlab"><span class="dot" style="background:#0C2340"></span>
+              <img src="../services/website/public/images/esm-sharks-patch.webp" alt="">Navy · Circle</span>
+              <span class="step"><b>−</b><i>0</i><b class="plus">+</b></span></div>
+            <div class="row"><span class="rowlab"><span class="dot" style="background:#0C2340"></span>
+              <img src="../services/website/public/images/esm-patch-script.webp" alt="">Navy · Script</span>
+              <span class="step"><b>−</b><i>0</i><b class="plus">+</b></span></div>
+            <div class="row silverbg"><span class="rowlab"><span class="dot" style="background:#A2AAAD"></span>
+              <img src="../services/website/public/images/esm-sharks-patch.webp" alt="">Silver · Circle</span>
+              <span class="step"><b>−</b><i>1</i><b class="plus">+</b></span></div>
+            <div class="row silverbg"><span class="rowlab"><span class="dot" style="background:#A2AAAD"></span>
+              <img src="../services/website/public/images/esm-patch-script.webp" alt="">Silver · Script</span>
+              <span class="step"><b>−</b><i>0</i><b class="plus">+</b></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="book"><header>What the order book / CSV / email would say</header>
+        <table>
+          <tr><td>1× Navy Trucker Hat — Circle Patch</td><td>$25.00</td></tr>
+          <tr><td>1× Navy Trucker Hat — Script Patch</td><td>$25.00</td></tr>
+          <tr><td>1× Silver Canvas Tote — Circle Patch</td><td>$40.00</td></tr>
+        </table></div>
+      <p class="note">Nothing is remembered behind the scenes — what you see in the boxes is exactly what
+        gets made. The colour buttons are relabelled <em>"Show navy / Show silver"</em> so it's clear they
+        only change the picture.</p>
+    </div>
+    <div class="tradeoffs">
+      <div class="pro"><h4>For</h4><ul>
+        <li><strong>No hidden state.</strong> Every combination is visible with its own number</li>
+        <li>Any mix at all — one circle hat and one script hat together</li>
+        <li>The item name writes itself, so the order book and the emails can't be vague</li>
+        <li>Same mental model as today, just one more row</li></ul></div>
+      <div class="con"><h4>Against</h4><ul>
+        <li>Four boxes per card instead of two — a longer page on a phone</li>
+        <li>Slightly more to take in at a glance</li></ul></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Either way</h2>
+    <p><strong>The mascot patch comes off the page.</strong> The shark-on-its-own design isn't one of the
+      two you picked, so its card, its photo and its tile on the printed flyer all go, and the flyer
+      changes from "3 designs" to "2 designs".</p>
+    <p><strong>Every item gets a longer name.</strong> "Navy Trucker Hat" no longer says what was bought,
+      so it becomes "Navy Trucker Hat — Circle Patch" everywhere a human reads it: the order book, the
+      CSV, your confirmation email and the parent's.</p>
+  </div>
+
+</div>
+</body>
+</html>
