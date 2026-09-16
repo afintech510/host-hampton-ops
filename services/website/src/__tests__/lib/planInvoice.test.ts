@@ -8,6 +8,7 @@
 
 import {
   docTitleFor,
+  formatClockTime,
   formatEventDateTime,
   orderLineItems,
   loadPlanInvoice,
@@ -55,9 +56,36 @@ describe('docTitleFor', () => {
   })
 })
 
+describe('formatClockTime', () => {
+  it('turns the stored 24-hour clock into the one a customer reads', () => {
+    // The whole point: `party_time` holds '17:00' on 25 of 30 live rows, and the
+    // invoice printed it that way — including on HH-PTY-NVLCP, a corporate quote.
+    expect(formatClockTime('17:00')).toBe('5:00 PM')
+    expect(formatClockTime('09:30')).toBe('9:30 AM')
+  })
+
+  it('gets both ends of the 12-hour wrap right', () => {
+    expect(formatClockTime('00:15')).toBe('12:15 AM')
+    expect(formatClockTime('12:00')).toBe('12:00 PM')
+  })
+
+  it('passes through anything that is not a clock rather than guessing', () => {
+    // 'TBD' is a real stored value, and so is prose. Mangling it would be worse
+    // than leaving it alone.
+    expect(formatClockTime('TBD')).toBe('TBD')
+    expect(formatClockTime('5-7pm')).toBe('5-7pm')
+    expect(formatClockTime('25:00')).toBe('25:00')
+    expect(formatClockTime('11:75')).toBe('11:75')
+  })
+})
+
 describe('formatEventDateTime', () => {
   it('reads as a date a human would say out loud', () => {
-    expect(formatEventDateTime('2026-03-14', '11:00')).toBe('Saturday, March 14, 2026 · 11:00')
+    expect(formatEventDateTime('2026-03-14', '11:00')).toBe('Saturday, March 14, 2026 · 11:00 AM')
+  })
+
+  it('formats the clock even when the date half is free text', () => {
+    expect(formatEventDateTime('mid-March', '17:00')).toBe('mid-March · 5:00 PM')
   })
 
   it('does not shift the day', () => {

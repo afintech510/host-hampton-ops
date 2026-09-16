@@ -159,18 +159,45 @@ export function docTitleFor(partyType: string, status: string | null): string {
   return status && BOOKED_STATUSES.has(status) ? base.replace('Quotation', 'Invoice') : base
 }
 
+/**
+ * `bookings.party_time` as a customer reads it: "5:00 PM", not "17:00".
+ *
+ * The column is free text and holds both a 24-hour clock (25 of the 30 live
+ * rows) and prose — 'TBD' is a real stored value. So anything that is not
+ * exactly HH:MM is passed through verbatim rather than mangled into a guess;
+ * only a clock is reformatted.
+ *
+ * This is deliberately NOT `Intl`/`Date`: there is no date to attach the time
+ * to here, and building one would drag the box's timezone (UTC) into a figure
+ * that is already local wall-clock time — the same mistake `outbound-send-path`
+ * made with `setHours()`.
+ */
+export function formatClockTime(time: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim())
+  if (!m) return time
+  const h = Number(m[1])
+  const min = m[2]
+  if (!Number.isInteger(h) || h > 23 || Number(min) > 59) return time
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}:${min} ${ampm}`
+}
+
 /** "Saturday, March 14, 2026 · 11:00 AM" — or null when we have no date yet. */
 export function formatEventDateTime(date: string | null, time: string | null): string | null {
   if (!date) return null
+  // The time half is formatted even when the date half cannot be — a row with a
+  // free-text date still shows the customer a readable clock.
+  const clock = time ? formatClockTime(time) : null
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
-  if (!m) return time ? `${date} · ${time}` : date
+  if (!m) return clock ? `${date} · ${clock}` : date
   // Constructed in UTC and formatted in UTC: a party_date is a calendar day, and
   // building it in local time shifts it a day west of the date line.
   const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
   const day = new Intl.DateTimeFormat('en-US', {
     timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   }).format(dt)
-  return time ? `${day} · ${time}` : day
+  return clock ? `${day} · ${clock}` : day
 }
 
 /**
