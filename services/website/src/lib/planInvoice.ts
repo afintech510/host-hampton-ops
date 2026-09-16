@@ -26,7 +26,8 @@
  */
 
 import { getSupabase } from '@/lib/supabase'
-import { getDepositCents } from '@/lib/partyPricing'
+import { getDepositCents, BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
+import { isPayableStatus } from '@/lib/portalWrite'
 import { loadPricingCatalog, type PricingCatalog } from '@/lib/pricingCatalog'
 import { loadPlanContent, type PlanContent } from '@/lib/planContent'
 import { depositIsSeparateFor, guestMultiplier, planMoney, type PaymentRow } from '@/lib/planBalance'
@@ -275,7 +276,11 @@ export async function loadPlanInvoice(
 
   const depositCents = getDepositCents(totalCents)
   const depositIsSeparate = depositIsSeparateFor(partyType)
-  const m = planMoney({ totalCents, depositCents, depositIsSeparate, payments })
+  // An unpriced plan can still take the flat deposit that reserves its date —
+  // see `isUnpricedPlan`. Withheld on a booking that may not take money at all,
+  // so a cancelled party cannot offer a customer a "reserve your date" button.
+  const reservationDepositCents = isPayableStatus(booking.status) ? BOOKING_DEPOSIT_CENTS : 0
+  const m = planMoney({ totalCents, depositCents, depositIsSeparate, payments, reservationDepositCents })
 
   const tags = booking.party_tags ?? {}
   const venueAddress = typeof tags.location_address === 'string' ? tags.location_address : null

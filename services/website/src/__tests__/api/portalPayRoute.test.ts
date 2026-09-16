@@ -51,6 +51,7 @@ jest.mock('@/lib/portalAuth', () => ({
 import { POST } from '@/app/api/portal/pay/route'
 import { __resetRateLimitForTests } from '@/lib/rateLimit'
 import { makeFakeMoneyDb } from '../helpers/fakeMoneyDb'
+import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 
 const BOOKING = {
   id: 'bk-1',
@@ -209,15 +210,75 @@ describe('the amount is still clamped to what is owed', () => {
     expect(created[0].metadata.depositCents).toBe('85000')
   })
 
-  it('a plan that owes nothing is refused rather than charged the body figure', async () => {
+  it('a PRICED plan that owes nothing is refused rather than charged the body figure', async () => {
     for (const balance of [0, null]) {
       created.length = 0
       __resetRateLimitForTests()
-      seed({ balance_due_cents: balance })
+      // Priced and settled: there are line items, so "owes 0" means SETTLED and
+      // the refusal stands. (An unpriced plan is the separate case below — it
+      // owes 0 only for want of a quote.)
+      const db = makeFakeMoneyDb({
+        bookings: [{ ...BOOKING, balance_due_cents: balance }],
+        booking_line_items: [
+          { id: 'li-1', booking_id: BOOKING.id, name: 'Party', quantity: 1, unit_price_cents: 60_000, guest_multiplied: false },
+        ],
+        booking_payments: [
+          { id: 'p-1', booking_id: BOOKING.id, amount_cents: 60_000, payment_type: 'partial' },
+        ],
+      })
+      mockGetSupabase.mockReturnValue(db.client as any)
       const res: any = await POST(req({ amountCents: 50_000, paymentMethod: 'card' }))
       expect([balance, res.status]).toEqual([balance, 409])
       expect(created).toHaveLength(0)
     }
+  })
+
+  /**
+   * The reservation deposit (2026-09-16). An UNPRICED plan — a real customer
+   * arrived from an Instagram inquiry with a date, a portal link and no line
+   * items — owes 0 because nobody has quoted it, and every pay surface read
+   * that as "settled". She had no way to leave the flat deposit that holds her
+   * date. See `isUnpricedPlan` in lib/planBalance.ts.
+   */
+  it('an UNPRICED plan takes the flat deposit — clamped to it, not to the body figure', async () => {
+    created.length = 0
+    __resetRateLimitForTests()
+    const db = makeFakeMoneyDb({ bookings: [{ ...BOOKING, balance_due_cents: 0, total_cents: 0 }] })
+    mockGetSupabase.mockReturnValue(db.client as any)
+
+    const res: any = await POST(req({ amountCents: 50_000, paymentMethod: 'card' }))
+    expect(res.status).toBe(200)
+    expect(created).toHaveLength(1)
+    // The body asked for $500. The ceiling is the server's flat deposit.
+    expect(created[0].metadata.amountCents).toBe(String(BOOKING_DEPOSIT_CENTS))
+    // …and it is typed `deposit`, or `paidAsDepositCents` will not net it off
+    // and the customer can be invited to pay it a second time.
+    expect(created[0].metadata.payment_type).toBe('deposit')
+  })
+
+  it('an unpriced plan that has ALREADY paid its reservation is refused', async () => {
+    created.length = 0
+    __resetRateLimitForTests()
+    const db = makeFakeMoneyDb({
+      bookings: [{ ...BOOKING, balance_due_cents: 0, total_cents: 0 }],
+      booking_payments: [
+        { id: 'p-1', booking_id: BOOKING.id, amount_cents: BOOKING_DEPOSIT_CENTS, payment_type: 'deposit' },
+      ],
+    })
+    mockGetSupabase.mockReturnValue(db.client as any)
+
+    const res: any = await POST(req({ amountCents: 50_000, paymentMethod: 'card' }))
+    expect(res.status).toBe(409)
+    expect(created).toHaveLength(0)
+  })
+
+  it('a CANCELLED unpriced plan is still refused — status is checked first', async () => {
+    created.length = 0
+    __resetRateLimitForTests()
+    seed({ balance_due_cents: 0, total_cents: 0, status: 'cancelled' })
+    const res: any = await POST(req({ amountCents: 50_000, paymentMethod: 'card' }))
+    expect(res.status).toBe(409)
+    expect(created).toHaveLength(0)
   })
 })
 

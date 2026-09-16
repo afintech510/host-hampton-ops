@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { isAdminAuthorized } from '@/lib/adminAuth'
+import { getDepositCents, BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
+import { isPayableStatus } from '@/lib/portalWrite'
+import {
+  billedTotalCents,
+  depositIsSeparateFor,
+  isUnpricedPlan,
+  planMoney,
+  type BilledItem,
+  type PaymentRow,
+} from '@/lib/planBalance'
 
 // Reads a cookie, so it must never be prerendered. Without this Next tried to
 // statically export it and evaluated the handler at BUILD time.
@@ -49,7 +59,10 @@ export async function GET(req: NextRequest) {
 
   const { data: lineItems } = await supabase
     .from('booking_line_items')
-    .select('id, pricing_item_id, name, category, quantity, unit_price_cents, price_type, guest_multiplied, sort_order')
+    // `is_optional` is read because `billedTotalCents` excludes optional items;
+    // without it a quoted-not-charged add-on would inflate the total the money
+    // block below is derived from.
+    .select('id, pricing_item_id, name, category, quantity, unit_price_cents, price_type, guest_multiplied, sort_order, is_optional')
     .eq('booking_id', booking.id)
     .order('sort_order', { ascending: true })
 
@@ -59,9 +72,33 @@ export async function GET(req: NextRequest) {
     .eq('booking_id', booking.id)
     .order('paid_at', { ascending: true })
 
+  // What this plan owes, from the same `planMoney` the invoice, the portal and
+  // the pay route use. The builder needs `depositOwedCents` specifically: on an
+  // unpriced plan it is the only thing payable, and the sticky bar used to
+  // print "Deposit to Reserve $0" over a plan that could be reserved for $250.
+  // `Array.isArray`, not `|| []`: a non-array from the driver would reach
+  // `billedTotalCents`'s `for…of` and throw, taking the whole planner down
+  // rather than the money block. `billedTotalCents` stays strict on purpose.
+  const billedItems = (Array.isArray(lineItems) ? lineItems : []) as unknown as BilledItem[]
+  const billedPayments = (Array.isArray(payments) ? payments : []) as unknown as PaymentRow[]
+  const totalCents = billedTotalCents(billedItems, booking.guest_count_approx as number | null)
+  const m = planMoney({
+    totalCents,
+    depositCents: getDepositCents(totalCents),
+    depositIsSeparate: depositIsSeparateFor(booking.party_type as string | null),
+    payments: billedPayments,
+    reservationDepositCents: isPayableStatus(booking.status) ? BOOKING_DEPOSIT_CENTS : 0,
+  })
+
   return NextResponse.json({
     booking,
     lineItems: lineItems || [],
     payments: payments || [],
+    money: {
+      totalCents: m.totalCents,
+      outstandingCents: m.outstandingCents,
+      depositOwedCents: m.depositOwedCents,
+      unpriced: isUnpricedPlan(totalCents),
+    },
   })
 }

@@ -11,6 +11,18 @@ import { loadStripe } from '@stripe/stripe-js'
 
 interface PortalData {
   booking: PartyBooking
+  /**
+   * Server-derived money. Older responses may not carry it, so every read is
+   * defaulted — but nothing here recomputes it, because the figure a customer
+   * is charged is the server's answer (see /api/portal/booking).
+   */
+  money?: {
+    totalCents: number
+    outstandingCents: number
+    depositOwedCents: number
+    balanceDueCents: number
+    unpriced: boolean
+  }
   permissions: {
     canEditFull: boolean
     canEditGuestCount: boolean
@@ -106,7 +118,14 @@ function MyBookingInner() {
   const getPayAmountCents = useCallback(() => {
     if (!data) return 0
     const balance = data.booking.balance_due_cents || 0
-    if (paymentType === 'deposit') return 9900
+    // Was a hardcoded `9900`. The deposit has been a flat $250 since the
+    // 2026-09-05 ruling, and on an unpriced plan it is the only thing payable —
+    // so it comes from the server's `depositOwedCents`, never from this file.
+    if (paymentType === 'deposit') return data.money?.depositOwedCents || 0
+    // Deliberately still the COLUMN, not the invoice's `outstandingCents`: on a
+    // studio rental the two differ by exactly the $250 of needs-Adam 41, and
+    // the invoice's figure is the higher one. Raising what a customer is asked
+    // for is Adam's ruling to make, not a side effect of this change.
     if (paymentType === 'full') return balance
     return Math.round(Number(customAmount) * 100) || 0
   }, [data, paymentType, customAmount])
@@ -221,7 +240,12 @@ function MyBookingInner() {
   const { booking, permissions } = data
   const status = STATUS_LABELS[booking.status] || { label: booking.status, color: 'bg-gray-100 text-gray-700' }
   const balance = booking.balance_due_cents || 0
-  const isDeposit = booking.status === 'awaiting_deposit'
+  const depositOwed = data.money?.depositOwedCents || 0
+  // What there is to pay AT ALL — a balance, or an unpaid deposit on a plan
+  // that has no balance yet. The Pay button used to be gated on `balance > 0`
+  // alone, which is 0 on every unpriced plan.
+  const payable = balance > 0 || depositOwed > 0
+  const isDeposit = booking.status === 'awaiting_deposit' || (depositOwed > 0 && balance <= 0)
   const cardFee = paymentMethod === 'card' ? calculateCardFee(getPayAmountCents()) : 0
 
   const partyDateFormatted = booking.party_date
@@ -314,9 +338,18 @@ function MyBookingInner() {
           <div className="space-y-6">
             {/* Balance card */}
             <div className="bg-white rounded-xl shadow-sm p-6 text-center">
-              <p className="text-gray-400 text-xs mb-1">Balance Due</p>
-              <p className="text-3xl font-bold text-[#1a2744]">{formatMoney(balance)}</p>
-              {balance > 0 && !showPayment && (
+              <p className="text-gray-400 text-xs mb-1">
+                {balance <= 0 && depositOwed > 0 ? 'Deposit to Reserve' : 'Balance Due'}
+              </p>
+              <p className="text-3xl font-bold text-[#1a2744]">
+                {formatMoney(balance <= 0 && depositOwed > 0 ? depositOwed : balance)}
+              </p>
+              {balance <= 0 && depositOwed > 0 && (
+                <p className="text-gray-500 text-xs mt-2">
+                  Holds your date. We&rsquo;ll build the rest of your plan together.
+                </p>
+              )}
+              {payable && !showPayment && (
                 <button
                   onClick={() => {
                     setShowPayment(true)
@@ -332,7 +365,7 @@ function MyBookingInner() {
             </div>
 
             {/* Inline Payment Form */}
-            {showPayment && balance > 0 && (
+            {showPayment && payable && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 {checkoutReady ? (
                   <>
@@ -378,20 +411,30 @@ function MyBookingInner() {
                             className={`py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
                               paymentType === 'deposit' ? 'border-[#1a2744] bg-[#1a2744]/5 text-[#1a2744]' : 'border-gray-200 text-gray-600'
                             }`}
-                          >Deposit</button>
+                          >Deposit ({formatMoney(depositOwed)})</button>
                         )}
-                        <button
-                          onClick={() => setPaymentType('full')}
-                          className={`py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
-                            paymentType === 'full' ? 'border-[#1a2744] bg-[#1a2744]/5 text-[#1a2744]' : 'border-gray-200 text-gray-600'
-                          }`}
-                        >Full Balance ({formatMoney(balance)})</button>
-                        <button
-                          onClick={() => { setPaymentType('partial'); setCustomAmount('') }}
-                          className={`py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
-                            paymentType === 'partial' ? 'border-[#1a2744] bg-[#1a2744]/5 text-[#1a2744]' : 'border-gray-200 text-gray-600'
-                          }`}
-                        >Custom Amount</button>
+                        {/*
+                          Hidden while there is no balance to pay. On an unpriced
+                          plan both of these resolve to $0 and the server refuses
+                          them — offering a customer a button that cannot work is
+                          the friction this change exists to remove.
+                        */}
+                        {balance > 0 && (
+                          <>
+                            <button
+                              onClick={() => setPaymentType('full')}
+                              className={`py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
+                                paymentType === 'full' ? 'border-[#1a2744] bg-[#1a2744]/5 text-[#1a2744]' : 'border-gray-200 text-gray-600'
+                              }`}
+                            >Full Balance ({formatMoney(balance)})</button>
+                            <button
+                              onClick={() => { setPaymentType('partial'); setCustomAmount('') }}
+                              className={`py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
+                                paymentType === 'partial' ? 'border-[#1a2744] bg-[#1a2744]/5 text-[#1a2744]' : 'border-gray-200 text-gray-600'
+                              }`}
+                            >Custom Amount</button>
+                          </>
+                        )}
                       </div>
                       {paymentType === 'partial' && (
                         <div className="mt-2">

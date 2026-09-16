@@ -576,6 +576,17 @@ export default function PartyBuilderContent({
     id: string; payment_type: string; payment_method: string; amount_cents: number;
     card_fee_cents: number; total_charged_cents: number; paid_at: string
   }[]>([])
+  /**
+   * What the SAVED plan owes, derived server-side (/api/party-builder/load).
+   *
+   * Distinct from `total`/`depositCents` below, which price whatever is on
+   * screen right now. On a plan with no line items those are 0, which is how
+   * the sticky bar came to print "Deposit to Reserve $0" to a customer who
+   * could in fact reserve her date for $250.
+   */
+  const [loadedMoney, setLoadedMoney] = useState<{
+    depositOwedCents: number; outstandingCents: number; unpriced: boolean
+  } | null>(null)
   const [bookingLoading, setBookingLoading] = useState(true)
 
   /* ── calendar state ── */
@@ -679,6 +690,7 @@ export default function PartyBuilderContent({
           const data = await reload.json()
           setLoadedBooking(data.booking)
           setLoadedPayments(data.payments || [])
+          setLoadedMoney(data.money || null)
         }
       } catch (err) {
         console.error('confirm-session client error:', err)
@@ -723,6 +735,7 @@ export default function PartyBuilderContent({
         const b = data.booking
         setLoadedBooking(b)
         setLoadedPayments(data.payments || [])
+        setLoadedMoney(data.money || null)
 
         // Restore contact info
         setContact(prev => ({
@@ -1662,6 +1675,7 @@ export default function PartyBuilderContent({
           const data = await reload.json()
           setLoadedBooking(data.booking)
           setLoadedPayments(data.payments || [])
+          setLoadedMoney(data.money || null)
         }
       } catch { /* non-fatal */ }
     } catch (err: unknown) {
@@ -1712,6 +1726,7 @@ export default function PartyBuilderContent({
           const data = await reload.json()
           setLoadedBooking(data.booking)
           setLoadedPayments(data.payments || [])
+          setLoadedMoney(data.money || null)
         }
       } catch { /* non-fatal */ }
     } catch (err: unknown) {
@@ -1874,6 +1889,17 @@ export default function PartyBuilderContent({
   const depositPaid = totalPaid > 0 || paymentSuccess
   const balanceRemaining = Math.max(0, total - totalPaid)
 
+  /**
+   * The flat deposit that reserves the DATE on a saved plan nobody has priced.
+   *
+   * Only offered while the customer has not started building (`!hasSelections`):
+   * once they are choosing a theme, `depositCents` below is the real figure and
+   * two deposits on one screen is worse than none. Server-derived — this file
+   * never decides what $250 is.
+   */
+  const reserveOnlyCents =
+    !hasSelections && !depositPaid && loadedMoney?.unpriced ? loadedMoney.depositOwedCents || 0 : 0
+
   /* ── Tip jar derived values ──
    * The tip module shows when the customer is paying their FINAL bill on a
    * card — either paying the full remaining balance, or paying any amount
@@ -1971,6 +1997,7 @@ export default function PartyBuilderContent({
           const data = await reload.json()
           setLoadedBooking(data.booking)
           setLoadedPayments(data.payments || [])
+          setLoadedMoney(data.money || null)
         }
         setRecordPayDraft({ amount: '', method: 'cash', notes: '' })
         setShowRecordPayForm(false)
@@ -2108,6 +2135,37 @@ export default function PartyBuilderContent({
           </>
         )}
       </section>
+
+      {/*
+        ── Reserve your date, before anything has been planned ────────────────
+
+        The plan this customer arrived on has a DATE and no priced items, so
+        every pay surface used to render nothing and there was no way to leave a
+        deposit without first building the whole party. The deposit is flat, so
+        it does not need the party to exist yet.
+
+        It links to /my-booking rather than mounting a third Stripe element in
+        this file: the same portal cookie is already good there, and that page's
+        pay flow is the one the server route was written against.
+      */}
+      {reserveOnlyCents > 0 && loadedBooking && (
+        <section className="px-4 mb-4">
+          <div className="max-w-3xl mx-auto bg-hampton-navy text-white rounded-2xl px-6 py-5 text-center shadow-lg">
+            <p className="font-serif text-xl font-black tracking-tight">
+              Reserve {loadedBooking.party_date ? 'your date' : 'your party'} for {fmt(reserveOnlyCents)}
+            </p>
+            <p className="text-white/70 text-sm mt-1">
+              Pay the deposit now to hold it — then take your time choosing a theme. It comes off your total.
+            </p>
+            <a
+              href="/my-booking"
+              className="inline-block mt-4 bg-white text-hampton-navy font-bold rounded-xl px-6 py-2.5 text-sm hover:bg-hampton-ivory transition-colors"
+            >
+              Pay {fmt(reserveOnlyCents)} deposit
+            </a>
+          </div>
+        </section>
+      )}
 
       {/* ── Sticky Section Nav ── */}
       <div className="sticky top-0 z-40 bg-white/95 backdrop-blur-xl border-b border-hampton-mauve/20 shadow-sm">
@@ -3580,9 +3638,14 @@ export default function PartyBuilderContent({
                   <div className="flex justify-between pt-2 border-t border-hampton-navy/10">
                     <span className="font-bold text-hampton-navy">{depositPaid ? 'Balance Due' : 'Deposit to Reserve'}</span>
                     <span className="font-serif font-black text-2xl text-hampton-navy">
-                      {depositPaid ? fmt(balanceRemaining) : fmt(depositCents)}
+                      {depositPaid ? fmt(balanceRemaining) : fmt(reserveOnlyCents > 0 ? reserveOnlyCents : depositCents)}
                     </span>
                   </div>
+                  {reserveOnlyCents > 0 && (
+                    <p className="text-xs text-hampton-navy/50 text-right">
+                      Holds your date — comes off your total
+                    </p>
+                  )}
                   {!depositPaid && total > depositCents && (
                     <p className="text-xs text-hampton-navy/50 text-right">
                       Remaining {fmt(total - depositCents)} due before event

@@ -129,11 +129,15 @@ export function quoteFor(
 
   let amountCents: number
   if (purpose === 'deposit') {
-    if (invoice.depositCents <= 0) return { ok: false, reason: 'This plan has no deposit due.' }
+    // Reads `depositOwedCents`, NOT `depositCents`. On an unpriced plan the
+    // latter is 0 (it is derived from the total) while the former carries the
+    // flat reservation deposit — that gap is what left a real customer with a
+    // date and no way to hold it. `depositOwedCents` is the figure the document
+    // prints, so the button and the page still cannot quote different money.
     // `depositOwedCents` is capped by what the plan actually owes (unless the
-    // deposit is separate), so a paid-in-full plan lands here rather than
-    // minting a live $257.50 Payment Link — which it did, measured in
-    // production 2026-09-13. See lib/planBalance.ts.
+    // deposit is separate or the plan is unpriced), so a paid-in-full plan
+    // lands here rather than minting a live $257.50 Payment Link — which it
+    // did, measured in production 2026-09-13. See lib/planBalance.ts.
     if (depositOwed <= 0) {
       return {
         ok: false,

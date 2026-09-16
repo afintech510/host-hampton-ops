@@ -57,6 +57,7 @@ import { canEditPlanInBuilder, loadPlanInvoice, money, type PlanInvoice } from '
 import { ensureInvoiceNumber } from '@/lib/invoiceNumber'
 import { planAccess } from '@/lib/planAccess'
 import { quoteFor } from '@/lib/planPayLinks'
+import { isUnpricedPlan } from '@/lib/planBalance'
 import { PayPanel, PlanShareBar, AdminCustomCharge, type PayOption } from './PayPanel'
 import './invoice.css'
 
@@ -109,6 +110,10 @@ function InvoiceBody({
   // still invited a second $250 by Venmo.
   const askCents = invoice.depositOwedCents > 0 ? invoice.depositOwedCents : invoice.outstandingCents
   const settled = askCents <= 0 && invoice.totalCents > 0
+  // No priced items yet, so the deposit on offer is the flat one that holds the
+  // date rather than a share of a total. The prose below has to say that, because
+  // "separate from your total" is meaningless when there is no total on the page.
+  const unpriced = isUnpricedPlan(invoice.totalCents)
   const venmoAmount = (askCents / 100).toFixed(2)
   const venmoNote = `${(booking.contact_name || 'Party').split(' ')[0]} — ${
     partyType === 'studio_rental' ? 'Studio Rental' : 'Party'
@@ -203,6 +208,16 @@ function InvoiceBody({
             <p className="section-sub">
               We&rsquo;re still putting your quote together — the line items will appear here as soon as
               we&rsquo;ve confirmed the details with you.
+              {invoice.depositOwedCents > 0 && (
+                <>
+                  {' '}
+                  You don&rsquo;t have to wait for it:{' '}
+                  <strong>{money(invoice.depositOwedCents)}</strong> holds your date now
+                  {invoice.depositIsSeparate
+                    ? ', and is refunded after your rental.'
+                    : ', and it comes off your total once we’ve built the plan together.'}
+                </>
+              )}
             </p>
           ) : (
             <div className="line-items">
@@ -246,7 +261,12 @@ function InvoiceBody({
             asked for it a second time. A deposit that is settled says so rather
             than showing $0.00, which reads like a pricing error.
           */}
-          {invoice.depositCents > 0 && (
+          {/*
+            `depositOwedCents`, not just `depositCents`: on an unpriced plan the
+            latter is 0 and this callout is the only place the page names the
+            deposit the pay button is about to charge.
+          */}
+          {(invoice.depositCents > 0 || invoice.depositOwedCents > 0) && (
             <div className="deposit-callout">
               <div>
                 <div className="label">{content.depositLabel}</div>
@@ -327,7 +347,9 @@ function InvoiceBody({
             <p className="section-sub">
               A <strong>{money(invoice.depositOwedCents > 0 ? invoice.depositOwedCents : askCents)}</strong>{' '}
               {invoice.depositOwedCents > 0
-                ? `${content.depositLabel.split(' — ')[0].toLowerCase()} is required to book — separate from your total, see above.`
+                ? unpriced
+                  ? `${content.depositLabel.split(' — ')[0].toLowerCase()} holds your date. Pay it now and we'll build the plan together afterwards.`
+                  : `${content.depositLabel.split(' — ')[0].toLowerCase()} is required to book — separate from your total, see above.`
                 : 'payment is outstanding on this plan.'}{' '}
               A 3% processing fee applies to card payments; Venmo and Zelle avoid it.
             </p>

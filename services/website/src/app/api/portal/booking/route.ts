@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
-import { isModificationAllowed } from '@/lib/partyPricing'
+import { isModificationAllowed, getDepositCents, BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
+import {
+  billedTotalCents,
+  depositIsSeparateFor,
+  isUnpricedPlan,
+  planMoney,
+  type BilledItem,
+  type PaymentRow,
+} from '@/lib/planBalance'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { screenPublicGuestCount, MAX_PUBLIC_GUEST_COUNT } from '@/lib/publicIntake'
-import { isEditableStatus, partyDateIsSet } from '@/lib/portalWrite'
+import { isEditableStatus, isPayableStatus, partyDateIsSet } from '@/lib/portalWrite'
 import { PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
 
 /**
@@ -111,12 +119,43 @@ export async function GET(req: NextRequest) {
   const fullMod = modificationPermission(partyDate, 'full')
   const guestMod = modificationPermission(partyDate, 'guest_count')
 
+  /*
+    What this booking OWES, derived here rather than in the browser.
+
+    `/my-booking` read `balance_due_cents` straight off the row and gated its
+    Pay button on `> 0`, so an unpriced plan — which owes 0 for want of a quote,
+    not for want of a debt — rendered no way to pay at all. It also carried its
+    own hardcoded `9900` deposit preset, which has not been the deposit since
+    the flat $250 ruling. Both are now this one server-side answer, from the
+    same `planMoney` the invoice and the pay route use (rule 11).
+  */
+  // `Array.isArray` rather than `|| []` — see the note in party-builder/load:
+  // an unexpected shape must not throw inside `billedTotalCents` and take the
+  // customer's whole booking page with it.
+  const items = (Array.isArray(lineItemsRes.data) ? lineItemsRes.data : []) as BilledItem[]
+  const payments = (Array.isArray(paymentsRes.data) ? paymentsRes.data : []) as PaymentRow[]
+  const totalCents = billedTotalCents(items, booking.guest_count_approx as number | null)
+  const money = planMoney({
+    totalCents,
+    depositCents: getDepositCents(totalCents),
+    depositIsSeparate: depositIsSeparateFor(booking.party_type as string | null),
+    payments,
+    reservationDepositCents: isPayableStatus(booking.status) ? BOOKING_DEPOSIT_CENTS : 0,
+  })
+
   return NextResponse.json({
     booking: {
       ...booking,
       line_items: lineItemsRes.data || [],
       payments: paymentsRes.data || [],
       modifications: modificationsRes.data || [],
+    },
+    money: {
+      totalCents: money.totalCents,
+      outstandingCents: money.outstandingCents,
+      depositOwedCents: money.depositOwedCents,
+      balanceDueCents: money.balanceDueCents,
+      unpriced: isUnpricedPlan(totalCents),
     },
     permissions: {
       // A cancelled booking is not editable however far off its date is, and

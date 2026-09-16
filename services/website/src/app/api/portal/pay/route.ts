@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
-import { calculateCardFee, formatMoney, getDepositCents } from '@/lib/partyPricing'
+import { calculateCardFee, formatMoney, getDepositCents, BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 import {
   billedTotalCents,
   depositIsSeparateFor,
+  isUnpricedPlan,
   planMoney,
   type BilledItem,
   type PaymentRow,
+  type PlanMoney,
 } from '@/lib/planBalance'
 import { venmoHandle, zellePhone, PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
@@ -32,10 +34,10 @@ const MAX_TIP_CENTS = 100_000
  * catalog and the plan content, neither of which moves a number here, and this
  * is an interactive path a customer is waiting on.
  */
-async function derivedOutstandingCents(
+async function derivedPlanMoney(
   supabase: ReturnType<typeof getSupabase>,
   booking: { id: string; booking_ref: string; party_type: string | null; guest_count_approx: number | null },
-): Promise<number | null> {
+): Promise<{ money: PlanMoney; priced: boolean } | null> {
   const [{ data: items, error: itemErr }, { data: pays, error: payErr }] = await Promise.all([
     supabase
       .from('booking_line_items')
@@ -53,20 +55,26 @@ async function derivedOutstandingCents(
   // No line items is not "owes nothing" — it is "there is no invoice to compare
   // against". Twenty of the 62 bookings in production are in that state (leads,
   // and the legacy studio rows), none of them with a positive balance, and
-  // returning 0 here would have refused a payment on any that ever gained one.
-  // The column is the only answer on such a booking, which is what `null`
-  // selects.
+  // treating it as 0 would have refused a payment on any that ever gained one.
+  // The column is the only OUTSTANDING answer on such a booking, which is what
+  // `priced: false` tells the caller.
+  //
+  // It is computed rather than short-circuited now, because the reservation
+  // deposit lives on exactly these unpriced rows and needs the payment rows to
+  // know whether it has already been paid.
   const rows = (items ?? []) as BilledItem[]
-  if (rows.length === 0) return null
-
   const depositIsSeparate = depositIsSeparateFor(booking.party_type)
   const totalCents = billedTotalCents(rows, booking.guest_count_approx)
-  return planMoney({
-    totalCents,
-    depositCents: getDepositCents(totalCents),
-    depositIsSeparate,
-    payments: (pays ?? []) as PaymentRow[],
-  }).outstandingCents
+  return {
+    priced: rows.length > 0,
+    money: planMoney({
+      totalCents,
+      depositCents: getDepositCents(totalCents),
+      depositIsSeparate,
+      payments: (pays ?? []) as PaymentRow[],
+      reservationDepositCents: BOOKING_DEPOSIT_CENTS,
+    }),
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -172,7 +180,26 @@ export async function POST(req: NextRequest) {
   // choose any amount UP TO what is owed, and if nothing is owed there is
   // nothing to pay. `/api/plan/[ref]/pay-link` is the derived-amount path.
   const columnBalance = booking.balance_due_cents
-  if (typeof columnBalance !== 'number' || !Number.isFinite(columnBalance) || columnBalance <= 0) {
+  const hasColumnBalance =
+    typeof columnBalance === 'number' && Number.isFinite(columnBalance) && columnBalance > 0
+
+  // ── The reservation deposit, which is a ceiling where there is no balance ──
+  //
+  // An UNPRICED plan owes 0 because nobody has quoted it, not because it is
+  // settled (lib/planBalance.ts `isUnpricedPlan`). Both ceilings above are
+  // therefore 0 on one, and both refusals below used to fire — which is how a
+  // real customer with a date and a portal link (HH-PTY-B7T6W) had no way to
+  // leave the flat deposit that holds it.
+  //
+  // This is the ONLY route on which a charge may exceed the balance, and it is
+  // bounded three ways: the plan must be unpriced, the deposit must not already
+  // be paid (`depositOwedCents` nets off `booking_payments`), and the figure is
+  // `BOOKING_DEPOSIT_CENTS` from the server — never the request body.
+  const derivedMoney = await derivedPlanMoney(supabase, booking)
+  const reservationOwedCents =
+    derivedMoney && isUnpricedPlan(derivedMoney.money.totalCents) ? derivedMoney.money.depositOwedCents : 0
+
+  if (!hasColumnBalance && reservationOwedCents <= 0) {
     return NextResponse.json(
       { error: 'There is no balance to pay on this booking right now. Give us a call if that looks wrong.' },
       { status: 409 },
@@ -195,9 +222,15 @@ export async function POST(req: NextRequest) {
   // ceiling is the LOWER of the two answers. That is a no-op on every row in
   // production today (the column is never the higher one), and it means a stale
   // column can never authorise a charge the invoice would not.
-  const derived = await derivedOutstandingCents(supabase, booking)
-  const balanceCents =
-    derived === null ? columnBalance : Math.min(columnBalance, derived)
+  // `priced: false` keeps the pre-existing meaning of "no invoice to compare
+  // against", where the column is the only answer.
+  const derived = derivedMoney && derivedMoney.priced ? derivedMoney.money.outstandingCents : null
+  const columnCeiling = hasColumnBalance ? (columnBalance as number) : 0
+  const pricedCeiling = derived === null ? columnCeiling : Math.min(columnCeiling, derived)
+  // The higher of the two, because they are different debts: a plan may owe a
+  // balance AND an unpaid deposit. On a priced plan `reservationOwedCents` is 0
+  // and this is exactly the old `balanceCents`.
+  const balanceCents = Math.max(pricedCeiling, reservationOwedCents)
   if (derived !== null && derived !== columnBalance) {
     // Rule 10: a guardrail that stops something must say that it stopped it.
     console.warn(
@@ -211,8 +244,21 @@ export async function POST(req: NextRequest) {
     )
   }
   const effectiveAmount = Math.min(Math.round(amountCents), balanceCents)
-  const isFinalPayment = effectiveAmount >= balanceCents
-  const resolvedType = screenedType ?? (isFinalPayment ? 'final' : 'partial')
+
+  // ── A reservation payment is a DEPOSIT, whatever the client called it ─────
+  //
+  // This is the money half of the reservation deposit and it is not cosmetic.
+  // `paidAsDepositCents` only nets off rows whose `payment_type` is `deposit`,
+  // so a $250 reservation recorded as anything else leaves `depositOwedCents`
+  // at $250 and the customer is invited to pay it a second time. `/my-booking`
+  // does send `deposit`, but `/my-booking/pay` sends no type at all — and the
+  // fallback below would have called it `final`, which on a plan nobody has
+  // even quoted is both wrong and the double-charge.
+  const isReservationPayment = pricedCeiling <= 0 && reservationOwedCents > 0
+  const isFinalPayment = !isReservationPayment && effectiveAmount >= balanceCents
+  const resolvedType = isReservationPayment
+    ? 'deposit'
+    : (screenedType ?? (isFinalPayment ? 'final' : 'partial'))
 
   // Tip handling — added only on card payments. Tip lifts the Stripe charge
   // but doesn't count toward the booking balance (it's a gratuity for the

@@ -7,11 +7,13 @@ import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
 import { recordInboundEvent } from '@/lib/agent/events'
 import { computeCutoffDates, generatePartyRef, formatMoney } from '@/lib/partyPricing'
-import { buildPlanSnapshot, planTotals, writeLineItems, linkFirstTouchEvent } from '@/lib/plan'
+import { buildPlanSnapshot, planTotals, writeLineItemsResult, linkFirstTouchEvent } from '@/lib/plan'
 import { partyRequestReceivedHtml, partyAdminNewBookingHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { attributionFromBody } from '@/lib/attribution'
+import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
+import { isPayableStatus } from '@/lib/portalWrite'
 
 export async function POST(req: NextRequest) {
   const limited = guardRate(req, plannerRule('party-checkout'))
@@ -59,8 +61,60 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabase()
     const origin = publicOrigin(req)
-    const bookingRef = generatePartyRef()
     const { modificationCutoff, guestCountCutoff } = computeCutoffDates(partyDate)
+
+    /*
+      ── Do not FORK a plan the customer is already sitting on ────────────────
+
+      This route called `generatePartyRef()` unconditionally, so a customer who
+      arrived on a real plan by portal link — built it out and pressed "Request
+      This Party" — got a SECOND `pending_review` booking under a new ref, and
+      the plan we had emailed them was orphaned with their date still on it.
+      `/api/party-builder/save` has passed `bookingRef` for exactly this reason
+      since it was written ("Keep re-saves on the plan already open instead of
+      forking a new one"); this path simply never did.
+
+      Ownership is proved by the PORTAL COOKIE, not by a ref in the body: a ref
+      is guessable and this is an unauthenticated public route. The cookie is
+      HMAC-signed by us and names one booking. The email must match as well, so
+      a shared browser cannot fold one person's request into another's plan, and
+      a cancelled or completed booking is never adopted.
+    */
+    const normalizedEmail = String(contactEmail).toLowerCase().trim()
+    const cookieRef = getPortalBookingRef(req.headers.get('cookie'), portalSigningSecret())
+    let adoptedId: string | null = null
+    let adoptedTags: Record<string, unknown> = {}
+    let adoptedNotes: string | null = null
+    let bookingRef = cookieRef || generatePartyRef()
+    if (cookieRef) {
+      const { data: owned, error: ownErr } = await supabase
+        .from('bookings')
+        // `party_tags` and `notes` are read so the write below can MERGE them.
+        // Overwriting `party_tags` would drop `date_locked` — i.e. silently
+        // release a date the customer has already paid to hold — and blanking
+        // `notes` would erase whatever Adam typed when he took the enquiry.
+        .select('id, contact_email, status, party_tags, notes')
+        .eq('booking_ref', cookieRef)
+        .maybeSingle()
+      // Rule 12: a failed read is not a "no". It falls through to a new booking,
+      // which is this route's pre-existing behaviour — but it says so.
+      if (ownErr) {
+        console.error('party-checkout: ownership read failed for', cookieRef, '—', ownErr.message)
+      }
+      const emailMatches = !!owned && (owned.contact_email || '').toLowerCase().trim() === normalizedEmail
+      if (owned && emailMatches && isPayableStatus(owned.status)) {
+        adoptedId = owned.id as string
+        adoptedTags = (owned.party_tags as Record<string, unknown> | null) || {}
+        adoptedNotes = (owned.notes as string | null) ?? null
+      } else {
+        if (owned) {
+          console.warn(
+            `party-checkout: not adopting ${cookieRef} (emailMatches=${emailMatches}, status=${String(owned.status)}) — creating a new booking`,
+          )
+        }
+        bookingRef = generatePartyRef()
+      }
+    }
 
     // Merge structured selection data (sent from the planner) so /load can
     // fully restore the form. buildPlanSnapshot recomputes the totals from the
@@ -78,12 +132,16 @@ export async function POST(req: NextRequest) {
     // reviews availability and approves; the date is only reserved (and a Google
     // Calendar event created) on admin approval. This prevents a customer from
     // paying to lock a slot the venue isn't actually available for.
-    const partyTags: Record<string, unknown> = {}
+    // Spread FIRST so this request's own fields win, but nothing already on the
+    // plan is lost. On a new booking `adoptedTags` is `{}` and this is a no-op.
+    const partyTags: Record<string, unknown> = { ...adoptedTags }
     if (catchyPartyName) partyTags.catchy_party_name = catchyPartyName
 
-    // Insert booking as a pending request — nothing is charged or reserved yet.
-    const { data: booking, error: dbError } = await supabase.from('bookings').insert({
-      booking_ref: bookingRef,
+    // The fields a request writes, whether it lands on a new row or the
+    // customer's existing one. `booking_ref`, `source` and `attribution` are
+    // deliberately NOT in here: a ref never changes, and first-touch
+    // attribution belongs to how they FIRST arrived, not to this later click.
+    const requestFields = {
       status: 'pending_review',
       event_type: 'kid-party',
       party_date: partyDate,
@@ -102,20 +160,51 @@ export async function POST(req: NextRequest) {
       modification_cutoff: modificationCutoff,
       guest_count_cutoff: guestCountCutoff,
       party_type: 'in_studio_theme',
-      source: 'website_form',
-      attribution,
       quote_snapshot: quoteSnapshot,
       payment_method_preference: null,
-      notes: notes || null,
+      // Never blank an existing note. The customer's planner does not send one,
+      // so `notes || null` on an adopted plan would erase what Adam wrote when
+      // he took the enquiry.
+      notes: notes || adoptedNotes || null,
       party_tags: partyTags,
-    }).select('id').single()
+    }
+
+    // Insert booking as a pending request — nothing is charged or reserved yet.
+    const { data: booking, error: dbError } = adoptedId
+      ? await supabase
+          .from('bookings')
+          .update(requestFields)
+          .eq('id', adoptedId)
+          // `.select()` because an UPDATE that matched nothing reports no error;
+          // without it a vanished row would read as a successful request.
+          .select('id')
+          .single()
+      : await supabase
+          .from('bookings')
+          .insert({ ...requestFields, booking_ref: bookingRef, source: 'website_form', attribution })
+          .select('id')
+          .single()
 
     if (dbError || !booking) {
-      console.error('Party booking insert error:', dbError)
+      console.error(`Party booking ${adoptedId ? 'update' : 'insert'} error:`, dbError)
       return NextResponse.json({ error: 'Booking failed' }, { status: 500 })
     }
 
-    await writeLineItems(supabase, booking.id, screened.lineItems)
+    // `replace` on an adopted plan: these line items ARE the plan now, and
+    // appending would bill the customer twice for everything they had already
+    // chosen. A new booking has nothing to replace, so the flag is a no-op.
+    const itemWrite = await writeLineItemsResult(supabase, booking.id, screened.lineItems, {
+      replace: !!adoptedId,
+    })
+    // Rule 10: a guardrail that drops something has to say so. `insert-failed`
+    // on a REPLACE means the old rows are gone and the new ones were refused —
+    // the plan is empty while `total_cents` says otherwise, and only a human can
+    // put it back. The booking still stands (non-fatal by contract).
+    if (!itemWrite.ok) {
+      console.error(
+        `party-checkout: line items ${itemWrite.outcome} for ${bookingRef} (adopted=${!!adoptedId}) — ${itemWrite.message}`,
+      )
+    }
 
     // Upsert contact (non-fatal)
     const contactId = await upsertContact({

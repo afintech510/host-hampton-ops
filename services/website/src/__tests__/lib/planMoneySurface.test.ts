@@ -62,6 +62,8 @@
 
 import fs from 'fs'
 import path from 'path'
+import { planMoney } from '@/lib/planBalance'
+import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 
 const SRC = path.join(process.cwd(), 'src')
 const API_ROOT = path.join(SRC, 'app', 'api')
@@ -365,7 +367,71 @@ describe('R4 · the invoice carries its own payments', () => {
 describe('R5 · the deposit quote is capped by what the plan actually owes', () => {
   it('planMoney caps it, and does NOT cap a separate security deposit', () => {
     const fn = sliceDecl(read('lib/planBalance.ts'), 'export function planMoney')
-    expect(fn).toMatch(/depositIsSeparate\s*\?\s*rawDepositOwed\s*:\s*Math\.min\(\s*rawDepositOwed,\s*outstandingCents\s*\)/)
+    // `|| unpriced` was added with the reservation deposit (2026-09-16): a plan
+    // with no priced items owes 0 for want of a QUOTE, not for want of a debt,
+    // so the cap has nothing meaningful to cap against. The exemption is exactly
+    // that one word — the behavioural tests below are what actually hold the
+    // line, because this regex can only prove the guard is still spelled out.
+    expect(fn).toMatch(
+      /depositIsSeparate \|\| unpriced\s*\?\s*rawDepositOwed\s*:\s*Math\.min\(\s*rawDepositOwed,\s*outstandingCents\s*\)/,
+    )
+  })
+
+  it('a PRICED plan that owes nothing still quotes no deposit — even offered a reservation', () => {
+    // The regression this whole rule exists for: a $600 plan paid $600 rendered
+    // a live "Pay $250.00 deposit". Passing `reservationDepositCents` must not
+    // reopen it, which is the one way the 2026-09-16 change could have gone
+    // wrong. `payment_type: 'partial'` because 16 of the 18 real payments are.
+    const m = planMoney({
+      totalCents: 60000,
+      depositCents: 25000,
+      depositIsSeparate: false,
+      payments: [{ amount_cents: 60000, payment_type: 'partial' }],
+      reservationDepositCents: BOOKING_DEPOSIT_CENTS,
+    })
+    expect(m.outstandingCents).toBe(0)
+    expect(m.depositOwedCents).toBe(0)
+  })
+
+  it('a PARTLY paid priced plan caps the deposit at what is left', () => {
+    const m = planMoney({
+      totalCents: 30000,
+      depositCents: 25000,
+      depositIsSeparate: false,
+      payments: [{ amount_cents: 29000, payment_type: 'partial' }],
+      reservationDepositCents: BOOKING_DEPOSIT_CENTS,
+    })
+    expect(m.depositOwedCents).toBe(1000)
+  })
+
+  it('an UNPRICED plan owes the flat reservation deposit, and not twice', () => {
+    const unpaid = planMoney({
+      totalCents: 0,
+      depositCents: 0,
+      depositIsSeparate: false,
+      payments: [],
+      reservationDepositCents: BOOKING_DEPOSIT_CENTS,
+    })
+    expect(unpaid.depositOwedCents).toBe(BOOKING_DEPOSIT_CENTS)
+    // Nothing is "outstanding" and nothing is OVERPAID — a reservation on a plan
+    // with no price must not render "a refund may be due" on the summary page.
+    expect(unpaid.outstandingCents).toBe(0)
+    expect(unpaid.overpaidCents).toBe(0)
+
+    const paid = planMoney({
+      totalCents: 0,
+      depositCents: 0,
+      depositIsSeparate: false,
+      payments: [{ amount_cents: BOOKING_DEPOSIT_CENTS, payment_type: 'deposit' }],
+      reservationDepositCents: BOOKING_DEPOSIT_CENTS,
+    })
+    expect(paid.depositOwedCents).toBe(0)
+    expect(paid.overpaidCents).toBe(0)
+  })
+
+  it('no reservation deposit is offered when none is passed', () => {
+    const m = planMoney({ totalCents: 0, depositCents: 0, depositIsSeparate: false, payments: [] })
+    expect(m.depositOwedCents).toBe(0)
   })
 
   it('the page never invites a payment on a plan with nothing outstanding', () => {
@@ -452,7 +518,34 @@ describe('R8 · /api/portal/pay cannot charge more than the invoice says', () =>
   const src = read('app/api/portal/pay/route.ts')
 
   it('the ceiling is the LOWER of the column and the derived figure', () => {
-    expect(src).toMatch(/Math\.min\(columnBalance,\s*derived\)/)
+    expect(src).toMatch(/Math\.min\(columnCeiling,\s*derived\)/)
+    // The reservation deposit (2026-09-16) is the ONE thing allowed above that
+    // ceiling, and only by being a separate debt taken as the higher of the two
+    // — never by loosening the min above. Both halves are asserted so that
+    // collapsing them back into one figure fails here.
+    expect(src).toMatch(/Math\.max\(pricedCeiling,\s*reservationOwedCents\)/)
+  })
+
+  it('the reservation deposit is bounded by the server, the plan and the ledger', () => {
+    const decl = /const reservationOwedCents\s*=[\s\S]{0,300}?\r?\n\r?\n/.exec(src)
+    expect(decl).not.toBeNull()
+    // It may only exist on an UNPRICED plan…
+    expect(decl![0]).toMatch(/isUnpricedPlan\(/)
+    // …its figure comes from `planMoney` (which nets off `booking_payments`),
+    // never from the request body.
+    expect(decl![0]).toMatch(/depositOwedCents/)
+    expect(decl![0]).not.toMatch(/amountCents|body/)
+  })
+
+  it('a reservation payment is recorded AS a deposit, or it can be charged twice', () => {
+    // `paidAsDepositCents` only nets off rows typed `deposit`. Recording a
+    // reservation as `final`/`partial` leaves `depositOwedCents` at $250 and
+    // invites the customer to pay it again — and `/my-booking/pay` sends no
+    // type at all, so the fallback is what would have done it.
+    expect(src).toMatch(/const isReservationPayment\s*=/)
+    expect(src).toMatch(/isReservationPayment\s*\r?\n?\s*\?\s*'deposit'/)
+    // It must also never be called the FINAL payment on a plan nobody priced.
+    expect(src).toMatch(/const isFinalPayment = !isReservationPayment &&/)
   })
 
   it('a divergence is reported rather than absorbed silently', () => {
@@ -474,14 +567,19 @@ describe('R8 · /api/portal/pay cannot charge more than the invoice says', () =>
      * only way it ever is: by reintroducing the defect and watching the rule
      * stay green.
      */
-    const fn = sliceDecl(src, 'async function derivedOutstandingCents')
+    const fn = sliceDecl(src, 'async function derivedPlanMoney')
     const failBranch = /if \(itemErr \|\| payErr\) \{[\s\S]{0,400}?\r?\n  \}/.exec(fn)
     expect(failBranch).not.toBeNull()
     expect(failBranch![0]).toMatch(/console\.error\(/)
     expect(failBranch![0]).toMatch(/return null/)
     expect(failBranch![0]).not.toMatch(/return 0/)
-    // …and the separate "there is no invoice" outcome is also null, not zero.
-    expect(fn).toMatch(/rows\.length === 0\) return null/)
+    // …and the separate "there is no invoice to compare against" outcome still
+    // falls back to the column rather than to a ceiling of zero. It is no longer
+    // an early `return null` — the helper computes the money either way, because
+    // the reservation deposit needs the payment rows on exactly these rows — so
+    // the invariant now lives at the call site and is asserted THERE.
+    expect(fn).toMatch(/priced: rows\.length > 0/)
+    expect(src).toMatch(/derivedMoney && derivedMoney\.priced \? derivedMoney\.money\.outstandingCents : null/)
   })
 })
 

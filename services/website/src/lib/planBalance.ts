@@ -67,6 +67,27 @@ export interface BilledItem {
  */
 export const STUDIO_DEPOSIT_IS_SEPARATE = true
 
+/**
+ * Has this plan been priced at all?
+ *
+ * The distinction this function exists to make is the whole of the
+ * reservation-deposit change (2026-09-16). `outstandingCents === 0` has TWO
+ * causes and they are opposites:
+ *
+ *   * the plan is priced and has been paid → settled, nothing more is owed;
+ *   * the plan has **no priced items yet** → we have not quoted it, so
+ *     "outstanding" is unknown rather than zero.
+ *
+ * Every pay surface collapsed those two into "no button", which is why a real
+ * customer (HH-PTY-B7T6W, an Instagram inquiry with a date and nothing else)
+ * could not leave a deposit. `/plan/[ref]/summary` already drew this line for
+ * its "Paid in Full" banner — `settled = askCents <= 0 && totalCents > 0` — so
+ * this is that existing test, named and shared rather than respelled.
+ */
+export function isUnpricedPlan(totalCents: number): boolean {
+  return !(Number.isFinite(totalCents) && totalCents > 0)
+}
+
 /** The one derivation. Never re-spell `party_type === 'studio_rental'` inline. */
 export function depositIsSeparateFor(partyType: string | null | undefined): boolean {
   return STUDIO_DEPOSIT_IS_SEPARATE && partyType === 'studio_rental'
@@ -227,14 +248,40 @@ export function planMoney(input: {
   depositCents: number
   depositIsSeparate: boolean
   payments: PaymentRow[]
+  /**
+   * The flat deposit that reserves a DATE on a plan that has not been priced
+   * yet (`BOOKING_DEPOSIT_CENTS`). Omitted or 0 → today's behaviour exactly.
+   *
+   * It is a separate input from `depositCents` because `depositCents` is
+   * derived from the total (`getDepositCents`) and is therefore 0 on precisely
+   * the plans this is for. Only ever applied when `isUnpricedPlan`, so it can
+   * never widen what a PRICED plan can be charged.
+   */
+  reservationDepositCents?: number
 }): PlanMoney {
   const { totalCents, depositCents, depositIsSeparate, payments } = input
   const paidCents = paidTowardTotalCents(payments, depositIsSeparate)
   const outstandingCents = Math.max(0, totalCents - paidCents)
-  const overpaidCents = Math.max(0, paidCents - totalCents)
+  const unpriced = isUnpricedPlan(totalCents)
+  // Money on an unpriced plan is not an overpayment — there is no price for it
+  // to exceed. Without this a paid reservation deposit would render "a refund
+  // may be due" on the customer's own summary page.
+  const overpaidCents = unpriced ? 0 : Math.max(0, paidCents - totalCents)
 
-  const rawDepositOwed = depositCents > 0 ? Math.max(0, depositCents - paidAsDepositCents(payments)) : 0
-  const depositOwedCents = depositIsSeparate ? rawDepositOwed : Math.min(rawDepositOwed, outstandingCents)
+  const paidAsDeposit = paidAsDepositCents(payments)
+  // The reservation deposit stands in for `depositCents` only where the total
+  // could not produce one. A plan with a priced deposit keeps the priced one.
+  const reservationOwed =
+    unpriced && depositCents <= 0
+      ? Math.max(0, (Number(input.reservationDepositCents) || 0) - paidAsDeposit)
+      : 0
+  const rawDepositOwed =
+    depositCents > 0 ? Math.max(0, depositCents - paidAsDeposit) : reservationOwed
+  // The cap is link 23's finding and is NOT relaxed: a deposit can never exceed
+  // what a plan still owes. It simply does not apply to an unpriced plan, where
+  // `outstandingCents` is 0 for want of a quote rather than for want of a debt.
+  const depositOwedCents =
+    depositIsSeparate || unpriced ? rawDepositOwed : Math.min(rawDepositOwed, outstandingCents)
 
   const balanceDueCents = depositIsSeparate ? outstandingCents : Math.max(0, outstandingCents - depositOwedCents)
 
