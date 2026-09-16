@@ -9,6 +9,17 @@ import {
   totalPatchQty,
   type PatchSelection,
 } from '@/lib/fundraiserPatches'
+import { FUNDRAISER_TEAMS } from '@/lib/fundraiserTeams'
+
+/**
+ * This page's team record — the one place the Venmo account is written.
+ *
+ * The handle used to be a literal in the markup AND a field in the module, and
+ * the confirmation email read the module while the page read the literal. Two
+ * copies of "where the money goes" is the bug that has already bitten CM Cheer,
+ * whose page and email still name different accounts.
+ */
+const TEAM = FUNDRAISER_TEAMS['esm-sharks']
 // Footer is rendered by root layout
 
 /**
@@ -56,7 +67,8 @@ import {
  * across designs. That arithmetic lives in `lib/fundraiserPatches.ts`, where it
  * is tested — see the notes there for why it is not in this file.
  *
- * The Venmo handle is still a placeholder — see `lib/fundraiserTeams.ts`.
+ * The Venmo account is the PTO's own as of 2026-09-16 and comes from
+ * `lib/fundraiserTeams.ts` — the page holds no handle of its own.
  */
 
 /** A patch design, as the buyer reads it and as the order book records it. */
@@ -930,23 +942,35 @@ export default function ESMSharksPage() {
               </div>
               <div id="digitalPaymentInfo" className="hidden bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm mb-2 flex-col md:flex-row items-center gap-4 sm:gap-6">
                 {/*
-                  No QR code here yet, ON PURPOSE. The CM Cheer page embeds a QR
-                  that encodes THAT booster club's Venmo. A QR is unreadable to a
-                  human, so a copied or invented one is a payment silently routed
-                  to the wrong account with nothing on screen to give it away.
-                  When Adam supplies the Sharks' Venmo, generate the QR from that
-                  handle and drop it in here.
+                  Both the QR and the handle come from `lib/fundraiserTeams.ts`,
+                  never from a literal typed here.
+
+                  A QR is unreadable to a human, so a copied or invented one is a
+                  payment silently routed to the wrong account with nothing on
+                  screen to give it away. The picture is generated from the same
+                  string the text shows (`scripts/build-venmo-qr.mjs`), the
+                  account name is printed UNDER it so a parent can see who they
+                  are about to pay, and a test ties all three together.
                 */}
-                <div className="w-32 h-32 flex-shrink-0 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center text-center p-2">
-                  <i data-lucide="qr-code" className="w-8 h-8 text-slate-400"></i>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-2 leading-tight">QR code<br />coming soon</span>
-                </div>
+                <a
+                  href={TEAM.venmoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-32 h-32 flex-shrink-0 rounded-xl border border-slate-200 bg-white p-2 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <img src="/images/esm-venmo-qr.png" alt={`Venmo QR code for ${TEAM.venmoHandle}`} className="w-full h-full object-contain" />
+                </a>
                 <div className="text-center md:text-left">
                   <p className="text-esmInk font-oswald text-xl uppercase mb-1">Send Your Venmo Payment</p>
                   <p className="text-gray-500 text-sm mb-4">Please include the <strong className="text-esmNavy">child&apos;s name</strong> in the payment description/memo.</p>
-                  <a href="https://www.venmo.com/u/hostHampton" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 sm:px-5 py-2 bg-esmInk text-white rounded-full font-mono text-xs sm:text-sm font-bold border border-slate-700 max-w-full hover:bg-esmNavy transition-colors">
-                    <span className="truncate">@hostHampton</span>
+                  <a href={TEAM.venmoUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 sm:px-5 py-2 bg-esmInk text-white rounded-full font-mono text-xs sm:text-sm font-bold border border-slate-700 max-w-full hover:bg-esmNavy transition-colors">
+                    <span className="truncate">{TEAM.venmoHandle}</span>
                   </a>
+                  {/* The name the account answers to, so the handle can be
+                      checked against something a parent recognises. */}
+                  <p className="text-xs text-gray-500 mt-2">
+                    This is <strong className="text-esmInk">{TEAM.organization}</strong> — the name shown in Venmo when you scan.
+                  </p>
                 </div>
               </div>
             </div>

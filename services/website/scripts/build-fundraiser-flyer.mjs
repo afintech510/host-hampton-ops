@@ -54,16 +54,17 @@ const PRODUCTS = [
 ]
 
 /**
- * Whether the flyer may name a Venmo handle.
+ * The Venmo handle the flyer may print, or null to stay silent.
  *
- * `lib/fundraiserTeams.ts` still has the Sharks pointing at @hostHampton, which
- * is Host Hampton's own account and NOT the PTO's — a placeholder nobody has
- * replaced yet. Printing it would put the wrong destination on a hundred pieces
- * of paper, so the flyer says "pay on the order page" and lets the page (one
- * place, changed once) name the account. Flip this to the real handle only when
- * fundraiserTeams.ts holds it too.
+ * This was null while the Sharks still pointed at @hostHampton — Host Hampton's
+ * own account, not the PTO's — because printing a wrong handle puts the wrong
+ * destination on a hundred pieces of paper that nobody can recall.
+ *
+ * Set 2026-09-16 to the PTO's real account, which `lib/fundraiserTeams.ts` now
+ * holds as well. MUST equal FUNDRAISER_TEAMS['esm-sharks'].venmoHandle — paper
+ * cannot be corrected after the fact, so if you change one, change both.
  */
-const VENMO_HANDLE = null
+const VENMO_HANDLE = '@Eastport-tuttlepto-1'
 
 const b64 = async (file, width) => {
   const buf = await sharp(join(IMAGES, file)).resize({ width, withoutEnlargement: true }).webp({ quality: 78 }).toBuffer()

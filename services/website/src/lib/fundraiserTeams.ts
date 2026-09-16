@@ -81,11 +81,13 @@ export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
     slug: 'esm-sharks',
     name: 'ESM Sharks',
     organization: 'Eastport-Tuttle PTO',
-    // PLACEHOLDER — Adam has not set up the Sharks' own Venmo yet, so orders
-    // point at Host Hampton's account for now. Swap both fields together.
-    venmoHandle: '@hostHampton',
-    venmoUrl: 'https://www.venmo.com/u/hostHampton',
-    venmoEmailHandle: '@hostHampton',
+    // The PTO's own account, set 2026-09-16 (was Host Hampton's as a
+    // placeholder). Verified against Venmo before it went live: the profile at
+    // this username reports itself as "Eastport Tuttle PTO | @Eastport-tuttlepto-1".
+    // All three fields are the same string on purpose — see venmoEmailHandle.
+    venmoHandle: '@Eastport-tuttlepto-1',
+    venmoUrl: 'https://www.venmo.com/u/Eastport-tuttlepto-1',
+    venmoEmailHandle: '@Eastport-tuttlepto-1',
     orderPrefix: 'ESM-',
     emailAccent: '#0C2340',
     ordersPath: '/esm-sharks/orders',
