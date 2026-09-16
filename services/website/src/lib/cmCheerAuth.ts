@@ -52,7 +52,7 @@ export const CM_CHEER_ORDER_COLUMNS = [
   'items',
   'subtotal_cents',
   /**
-   * Delivery is DELIBERATELY on this list, unlike `cost_cents` / `profit_cents`.
+   * Delivery is DELIBERATELY on this list.
    *
    * The rule the route documents is that a column added by a migration stays
    * private until somebody decides otherwise, and this is that decision: where
@@ -64,6 +64,24 @@ export const CM_CHEER_ORDER_COLUMNS = [
   'delivery_method',
   'delivery_address',
   'delivery_fee_cents',
+  /**
+   * `profit_cents` is what the ORGANIZER nets — Adam's call, 2026-09-16.
+   *
+   * It was withheld as "Host Hampton's own margin", but on a fundraiser the
+   * sign is the other way round: `subtotal − cost` is what the school keeps
+   * after paying Host Hampton for the products, which is the single number a
+   * PTO treasurer is running the whole drive to find out. The dashboard has
+   * rendered a tile from this field since it was written, so withholding it
+   * did not protect anything — it just made that tile read $0.00 for months.
+   *
+   * Note what this implies and accept it deliberately: publishing net alongside
+   * `subtotal_cents` lets a reader derive our wholesale cost by subtraction.
+   * That is inherent in showing net at all, not a leak to be plugged.
+   *
+   * `cost_cents` itself stays OFF the list — it is the same fact stated from
+   * our side, and there is no question on this screen that needs it.
+   */
+  'profit_cents',
   'status',
   'status_note',
   'notes',

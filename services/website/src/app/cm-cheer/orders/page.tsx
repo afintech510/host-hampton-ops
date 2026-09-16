@@ -25,6 +25,7 @@ const CM_CHEER_THEME: FundraiserDashboardTheme = {
   tokenKey: 'cm_cheer_token',
   csvPrefix: 'cm-cheer',
   personLabel: FUNDRAISER_TEAMS['cm-cheer'].personLabel,
+  organizerShort: 'Boosters',
   headerBar: 'bg-zinc-900',
   headerBorder: 'border-red-600',
   accentText: 'text-red-600',

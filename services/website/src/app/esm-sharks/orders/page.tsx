@@ -23,6 +23,7 @@ const ESM_SHARKS_THEME: FundraiserDashboardTheme = {
   // same value, and an organizer's CSV header disagreeing with the confirmation
   // the customer got is exactly the drift a second copy invites.
   personLabel: FUNDRAISER_TEAMS['esm-sharks'].personLabel,
+  organizerShort: 'PTO',
   headerBar: 'bg-esmInk',
   headerBorder: 'border-esmSilver',
   accentText: 'text-esmNavy',

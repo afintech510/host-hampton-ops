@@ -48,6 +48,14 @@ export interface FundraiserDashboardTheme {
    */
   personLabel: string
   /**
+   * What this fundraiser's organising body is called, short enough for a stat
+   * tile — "PTO" for the Sharks, "Boosters" for CM Cheer. Same reasoning as
+   * `personLabel`: one screen, two customers, and calling a booster club's
+   * money "Net to PTO" is the sort of small wrongness that makes a volunteer
+   * distrust the rest of the numbers.
+   */
+  organizerShort: string
+  /**
    * Full Tailwind class strings, not fragments. Tailwind scans source text, so
    * a class assembled at runtime (`bg-${x}-600`) is never emitted into the CSS.
    */
@@ -213,13 +221,13 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
     // gets printed for the handout pile and the delivery run, and a sheet that
     // makes you cross-reference two columns far apart is a sheet that gets a
     // box left on the wrong doorstep.
-    const rows = [['Order Ref',theme.personLabel,'Parent','Email','Phone','Fulfilment','Delivery Address','Delivery Fee','Payment','Total','Status','Items','Notes','Date']]
+    const rows = [['Order Ref',theme.personLabel,'Parent','Email','Phone','Fulfilment','Delivery Address','Delivery Fee','Payment','Total','Net to '+theme.organizerShort,'Status','Items','Notes','Date']]
     filtered.forEach(o => rows.push([
       o.order_ref, o.athlete_name, o.parent_name, o.email, o.phone,
       isHomeDelivery(o) ? 'Home delivery' : 'In class',
       o.delivery_address || '',
       o.delivery_fee_cents ? fmt(o.delivery_fee_cents) : '',
-      o.payment_method, fmt(o.subtotal_cents), o.status,
+      o.payment_method, fmt(o.subtotal_cents), fmt(o.profit_cents || 0), o.status,
       o.items.map(i => `${i.qty}x ${i.name}`).join(' | '),
       o.notes || '',
       fmtDate(o.created_at),
@@ -232,7 +240,31 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
 
   const nonCancelled = filtered.filter(o => o.status !== 'cancelled')
   const totalRevenue = nonCancelled.reduce((s, o) => s + o.subtotal_cents, 0)
-  const totalRaised = nonCancelled.reduce((s, o) => s + (o.profit_cents || 0), 0)
+  /**
+   * What the school keeps: `subtotal − cost`, summed over everything not
+   * cancelled. The delivery fee is costed at zero, so all $7 of it lands here.
+   *
+   * `|| 0` is kept even though the API now sends the field. A browser holding
+   * an older bundle, or a row written before the column existed, must read as
+   * "nothing counted yet" rather than crashing the tile — but note that is
+   * exactly how this number sat at $0.00 unnoticed for months, so if it ever
+   * reads zero against real orders, suspect the allow-list first.
+   */
+  const netToOrganizer = nonCancelled.reduce((s, o) => s + (o.profit_cents || 0), 0)
+
+  /**
+   * MONEY IN HAND vs MONEY EXPECTED — two different questions, kept apart.
+   *
+   * The "Collected" tile used to sum every non-cancelled order, pending ones
+   * included, while its own sub-label said "{n} paid". A treasurer reading it
+   * was being shown money that has not arrived under a word that says it has.
+   * So `paid` is what the tile labelled Collected now sums, and the optimistic
+   * figure is stated as what it is: what the drive nets IF everything pending
+   * is actually paid.
+   */
+  const paidOrders = filtered.filter(o => o.status === 'paid')
+  const collectedCents = paidOrders.reduce((s, o) => s + o.subtotal_cents, 0)
+  const netCollected = paidOrders.reduce((s, o) => s + (o.profit_cents || 0), 0)
   const pendingCount = filtered.filter(o => o.status === 'pending_payment').length
   const paidCount = filtered.filter(o => o.status === 'paid').length
 
@@ -310,13 +342,22 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
           </div>
           <div className="bg-white rounded-xl border border-green-200 p-2.5 sm:p-4 text-center shadow-sm">
             <p className="text-[10px] sm:text-xs font-bold text-green-600 uppercase tracking-wider mb-1">Collected</p>
-            <p className="text-xl sm:text-3xl font-black text-green-700">{fmt(totalRevenue)}</p>
-            <p className="text-[10px] sm:text-xs text-gray-400">{paidCount} paid</p>
+            <p className="text-xl sm:text-3xl font-black text-green-700">{fmt(collectedCents)}</p>
+            <p className="text-[10px] sm:text-xs text-gray-400">
+              {paidCount} paid{pendingCount > 0 ? ` · ${fmt(totalRevenue - collectedCents)} pending` : ''}
+            </p>
           </div>
+          {/*
+            The number the whole drive exists to produce: what the school keeps
+            after paying Host Hampton for the products. Stated on money actually
+            collected, with the optimistic figure underneath clearly conditional.
+          */}
           <div className={`bg-white rounded-xl border-2 ${theme.accentBorder} p-2.5 sm:p-4 text-center shadow-sm`}>
-            <p className={`text-[10px] sm:text-xs font-bold ${theme.accentText} uppercase tracking-wider mb-1`}>Total Raised</p>
-            <p className={`text-xl sm:text-3xl font-black ${theme.accentText}`}>{fmt(totalRaised)}</p>
-            <p className="text-[10px] sm:text-xs text-gray-400">sales − cost</p>
+            <p className={`text-[10px] sm:text-xs font-bold ${theme.accentText} uppercase tracking-wider mb-1`}>Net To {theme.organizerShort}</p>
+            <p className={`text-xl sm:text-3xl font-black ${theme.accentText}`}>{fmt(netCollected)}</p>
+            <p className="text-[10px] sm:text-xs text-gray-400">
+              {netToOrganizer > netCollected ? `${fmt(netToOrganizer)} if all pending pay` : 'after paying Host Hampton'}
+            </p>
           </div>
         </div>
 

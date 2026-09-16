@@ -13,10 +13,12 @@ export const dynamic = 'force-dynamic'
  * unset in production, so that literal WAS the credential over 21 real customers'
  * contact details. See the note in that module.
  *
- * Columns are an ALLOW-list rather than `select('*')`: the table's `cost_cents`
- * and `profit_cents` are Host Hampton's own margin, not the order book's business,
- * and a column added by the next migration is private until somebody decides
- * otherwise (the rule `/api/portal/booking` and `/api/checkin/[token]` follow).
+ * Columns are an ALLOW-list rather than `select('*')`: a column added by the next
+ * migration is private until somebody decides otherwise (the rule
+ * `/api/portal/booking` and `/api/checkin/[token]` follow). `cost_cents` is still
+ * withheld. `profit_cents` was too, as "Host Hampton's margin" — until Adam
+ * pointed out that on a fundraiser it is the opposite: it is what the SCHOOL
+ * nets after paying us. It is published now; see the note in `lib/cmCheerAuth.ts`.
  */
 export async function GET(req: NextRequest) {
   if (!isCmCheerAuthorized(req)) return cmCheerUnauthorized()
