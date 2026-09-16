@@ -457,10 +457,19 @@ describe('plan content', () => {
     expect(c.depositLabel).toBe('Reservation Deposit — Required to Book')
   })
 
-  it('names the studio deposit as a SECURITY deposit, not a reservation one', () => {
-    // Different words because it is a different thing — refundable after the
-    // event rather than credited against the balance.
-    expect(contentFromRows(FALLBACK_CONTENT_ROWS, 'studio_rental').depositLabel).toMatch(/Security Deposit/)
+  it('names the studio deposit a RESERVATION deposit, like every other product', () => {
+    // It used to read "Security Deposit" here, and the words were the point:
+    // they told the customer the $250 was refundable damage money held apart
+    // from the total. needs-Adam 41 (ruled 2026-09-16) says it is a reservation
+    // payment credited against the balance, so the label has to move with the
+    // arithmetic — the numbers changed on the same page as these words.
+    const c = contentFromRows(FALLBACK_CONTENT_ROWS, 'studio_rental')
+    expect(c.depositLabel).toBe('Reservation Deposit — Required to Book')
+    expect(c.depositLabel).not.toMatch(/Security/)
+    // The callout and the Balance Due line must not contradict each other.
+    expect(c.depositNote).toMatch(/comes off your total/)
+    expect(c.balanceNote).toMatch(/already deducted/)
+    expect(c.balanceNote).not.toMatch(/not deducted/)
   })
 })
 

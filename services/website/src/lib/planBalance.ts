@@ -211,9 +211,10 @@ export function paidTowardTotalCents(payments: PaymentRow[], depositIsSeparate: 
       sum -= amount
       continue
     }
-    // A studio security deposit is not a part payment, so it does not reduce the
-    // total. Counting it would make the balance $250 short on every studio
-    // rental. Governed by STUDIO_DEPOSIT_IS_SEPARATE via the caller's flag.
+    // A deposit held APART from the total is not a part payment, so it would not
+    // reduce it. Inert since needs-Adam 41 was ruled — `depositIsSeparate` is
+    // false for every product — and kept so reversing the one boolean reverses
+    // the arithmetic with it, rather than leaving a branch to re-derive.
     if (depositIsSeparate && p.payment_type === 'deposit') continue
     sum += amount
   }
@@ -235,7 +236,7 @@ export interface PlanMoney {
   /** The full deposit for this plan, whether or not any of it is paid. */
   depositCents: number
   depositIsSeparate: boolean
-  /** Credited against the total (a studio security deposit is not). */
+  /** Credited against the total — every deposit is, since needs-Adam 41. */
   paidCents: number
   /** Everything still owed against the total. Never negative. */
   outstandingCents: number
@@ -255,17 +256,20 @@ export interface PlanMoney {
    * immediately). A deposit is a part of the price, so it can never exceed the
    * price that is left.
    *
-   * A SEPARATE studio security deposit is deliberately NOT capped: it is not
-   * part of the total, so it stays owed even on a fully-paid rental. That is the
-   * behaviour `STUDIO_DEPOSIT_IS_SEPARATE` selects.
+   * A deposit held APART from the total would deliberately NOT be capped — it
+   * is not part of the total, so it would stay owed even on a fully-paid
+   * rental. That is the behaviour `STUDIO_DEPOSIT_IS_SEPARATE` selects, and it
+   * selects it for nothing today: the ruling made every deposit a part payment,
+   * so every deposit is capped.
    */
   depositOwedCents: number
   /**
    * What the document prints beside "Balance Due" — everything outstanding that
    * is not the deposit shown in its own callout, so
-   * `depositOwedCents + balanceDueCents === outstandingCents` for every product
-   * whose deposit comes off the total. For a studio rental the deposit is
-   * separate by design and Balance Due is the whole outstanding total.
+   * `depositOwedCents + balanceDueCents === outstandingCents`. That identity now
+   * holds for EVERY product, studio included: needs-Adam 41 removed the one
+   * case (a separate studio deposit) where Balance Due was the whole
+   * outstanding total instead.
    */
   balanceDueCents: number
   /** Credited MORE than the total. 0 normally; a refund may be due. */

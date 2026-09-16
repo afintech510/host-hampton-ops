@@ -112,7 +112,7 @@ function InvoiceBody({
   const settled = askCents <= 0 && invoice.totalCents > 0
   // No priced items yet, so the deposit on offer is the flat one that holds the
   // date rather than a share of a total. The prose below has to say that, because
-  // "separate from your total" is meaningless when there is no total on the page.
+  // "it comes off your total" is meaningless when there is no total on the page.
   const unpriced = isUnpricedPlan(invoice.totalCents)
   const venmoAmount = (askCents / 100).toFixed(2)
   const venmoNote = `${(booking.contact_name || 'Party').split(' ')[0]} — ${
@@ -308,9 +308,10 @@ function InvoiceBody({
             {invoice.securityHoldCents != null && (
               <>
                 {' '}
-                A refundable {money(invoice.securityHoldCents)} card hold is placed on the day of your
-                rental and released afterwards assuming no damage &mdash; it is not a charge and is
-                separate from the deposit above.
+                A refundable {money(invoice.securityHoldCents)} card hold is authorized before your
+                rental and released afterwards once the space is confirmed in good condition &mdash;
+                it is not a charge, and it is separate from the deposit above, which does come off
+                your total.
               </>
             )}
             {content.policies.length > 0 && (
@@ -349,7 +350,7 @@ function InvoiceBody({
               {invoice.depositOwedCents > 0
                 ? unpriced
                   ? `${content.depositLabel.split(' — ')[0].toLowerCase()} holds your date. Pay it now and we'll build the plan together afterwards.`
-                  : `${content.depositLabel.split(' — ')[0].toLowerCase()} is required to book — separate from your total, see above.`
+                  : `${content.depositLabel.split(' — ')[0].toLowerCase()} is required to book. It comes off your total — the Balance Due above is what is left after it.`
                 : 'payment is outstanding on this plan.'}{' '}
               A 3% processing fee applies to card payments; Venmo and Zelle avoid it.
             </p>

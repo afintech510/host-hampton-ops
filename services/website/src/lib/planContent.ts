@@ -85,14 +85,19 @@ export const FALLBACK_CONTENT_ROWS: PlanContentRow[] = [
     party_type: 'studio_rental', slot: 'good_to_know', sort_order: 1,
     body: "Your rental is the whole studio, privately yours for the booked window. Tell us your setup plans ahead of time and we'll have the room arranged before you arrive.",
   },
-  { party_type: 'studio_rental', slot: 'deposit_label', body: 'Security Deposit — Required to Book', sort_order: 1 },
+  // needs-Adam 41, ruled 2026-09-16: this $250 reserves the date and comes off
+  // the total. It is NOT the refundable damage hold, which is a card
+  // authorisation described separately in the summary page's policy block. The
+  // three bodies below used to say the opposite ("Security Deposit", "Separate
+  // from your Total", "is not deducted from this total") — see planBalance.ts.
+  { party_type: 'studio_rental', slot: 'deposit_label', body: 'Reservation Deposit — Required to Book', sort_order: 1 },
   {
     party_type: 'studio_rental', slot: 'deposit_note', sort_order: 1,
-    body: 'Separate from your Total, due now to reserve the date, and fully refundable after the event assuming no damage.',
+    body: 'Due now to reserve the date. It comes off your total — the Balance Due above is what is left after it.',
   },
   {
     party_type: 'studio_rental', slot: 'balance_note', sort_order: 1,
-    body: 'Your deposit is separate and is not deducted from this total.',
+    body: 'Your deposit is already deducted from this balance.',
   },
   {
     party_type: 'mobile_party', slot: 'good_to_know', sort_order: 1,

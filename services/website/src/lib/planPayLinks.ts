@@ -23,13 +23,15 @@
  *
  * ── The studio rule is imported, never restated ─────────────────────────────
  *
- * `planInvoice.ts` owns `depositIsSeparate`: for a studio rental the $250 is
- * held against damage, so Balance Due is the FULL total and the deposit is not
- * deducted. Everywhere else the deposit is a reservation payment and does come
- * off. This file takes that flag off the invoice and never re-derives it from
- * `party_type` — a constant declared in two files is a constant nothing is
- * checking, and this particular one decides whether we undercharge by $250 or
- * double-charge by $250.
+ * `planInvoice.ts` owns `depositIsSeparate`, and since needs-Adam 41 was ruled
+ * (2026-09-16) it is false for every product: the deposit is a reservation
+ * payment and comes off the total. This file takes that flag off the invoice and
+ * never re-derives it from `party_type` — a constant declared in two files is a
+ * constant nothing is checking, and this particular one decides whether we
+ * undercharge by $250 or double-charge by $250.
+ *
+ * That discipline is why the ruling needed no edit here: `labelFor` and the
+ * quote arithmetic read the flag and changed with it.
  *
  * ── Why a Payment Link and not a Checkout Session ───────────────────────────
  *
@@ -89,10 +91,12 @@ export const MIN_CHARGE_CENTS = 100
  * document prints are the same object, not two agreeing implementations.
  *
  * A `refund` row always subtracts. Known limitation, stated rather than guessed
- * at: `booking_payments` does not record WHICH payment a refund reverses, so
- * refunding a studio security deposit subtracts $250 that was never added, and
- * the remaining balance reads $250 high. That errs towards asking for more, not
- * less, and it is a manual admin row either way — see PLAN.md "needs Adam".
+ * at: `booking_payments` does not record WHICH payment a refund reverses. This
+ * used to read $250 high when a studio SECURITY deposit was refunded, because
+ * that money had never been added to the total in the first place; needs-Adam 41
+ * (ruled 2026-09-16) makes every recorded deposit a part payment, so a refund of
+ * one now reverses something that was genuinely counted. The captured damage
+ * hold is not a `booking_payments` row at all, so it cannot reach this path.
  */
 
 function labelFor(invoice: PlanInvoice, purpose: PayPurpose): string {

@@ -83,7 +83,11 @@ Respond ONLY with valid JSON — no markdown fences, no extra text.`
 
 const PARTY_TYPE_CONTEXT: Record<string, string> = {
   studio_rental:
-    'Studio Rental: they rent our Party Studio and run their own party. Base rate covers a block of hours; additional hours are extra. Tables, chairs, dessert cart, WiFi and Bluetooth speakers are included. The $250 is a refundable security deposit, separate from the rental total.',
+    // needs-Adam 41, ruled 2026-09-16: these are TWO different $250s and the
+    // brief used to describe only one, wrongly — "The $250 is a refundable
+    // security deposit, separate from the rental total." A model given that
+    // sentence quotes a customer terms we do not offer.
+    'Studio Rental: they rent our Party Studio and run their own party. Base rate covers a block of hours; additional hours are extra. Tables, chairs, dessert cart, WiFi and Bluetooth speakers are included. A $250 reservation deposit books the date and COMES OFF the rental total — the balance is the rest. Separately, a refundable $250 card hold is authorized before the event and released afterwards once the space is confirmed undamaged; it is a hold, not a charge, and never part of the total.',
   mobile_party:
     'Mobile Party: we come to them and set up craft/beauty "stations" (slime, hair tinsel, canvas bags, manicures, spa, etc.). We need their venue address, time window and guest count before anything can be priced. Pricing is always custom — there is no published mobile rate card.',
   in_studio_theme:
