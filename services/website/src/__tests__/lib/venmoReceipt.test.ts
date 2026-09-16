@@ -51,6 +51,42 @@ const BEJEWEL: MatchableEvent = {
   variants: [],
 }
 
+/**
+ * One receipt VERBATIM, straight out of the mailbox — Gmail message
+ * 1a0a5c52df710e3b, 2026-09-15, the payment that seated Lottie and Sophie Dwyer
+ * at the 9/25 squishy night. The fixtures above are shaped like this one; this
+ * is the one that proves the shape is right, mojibake and all (the story URL
+ * really does arrive with a mangled byte in it).
+ */
+const REAL_GULA_BODY =
+  'Kaitlin Gula paid you $80.00 Kaitlin Gula paid you $80.00\n\n| |\n\n| |\n\n| |\n\n| |\n|---|\n| | |\n|---|---|\n\n| |\n\n| |\n\n| |\n|---|\n' +
+  '| Kaitlin Gula paid you $ 80. 00 Make+Your+Own+Squishy (Lottie and Sophie Dwyer) See transaction[](https://venmo.com/story/4686879347781134842?k�61e0fd-b86c-4436-974a-7859bbcb87f9) ' +
+  '## Money credited to your Venmo account. ## Transaction details### Date Sep 15, 2026### Transaction ID 4686879346463552027### Sent to @hosthampton | |\n|---|---|\n\n| |\n\n' +
+  "| |\n|---|\n| | |\n|---|---|\n\n| |\n|---|\n| For any issues, including the recipient not receiving funds, please contact us at Help Center at help.venmo.com[](https://help.venmo.com) " +
+  'or call 1-855-812-4430[](855-812-4430). Venmo is a service of PayPal, Inc. | |\n|---|---|'
+
+describe('a verbatim receipt out of the mailbox', () => {
+  it('reads the Gula payment exactly', () => {
+    const r = parseVenmoReceipt('Kaitlin Gula paid you $80.00', REAL_GULA_BODY)
+    expect(r).toEqual({
+      payerName: 'Kaitlin Gula',
+      amountCents: 8000,
+      note: 'Make Your Own Squishy (Lottie and Sophie Dwyer)',
+      transactionId: '4686879346463552027',
+    })
+  })
+
+  it('and places it on the right event, split into the right seats', () => {
+    const m = matchEvent(parseVenmoReceipt('Kaitlin Gula paid you $80.00', REAL_GULA_BODY)!, [SQUISHY, BINGO, BEJEWEL])
+    expect(m.eventId).toBe('evt-squishy')
+    expect(m.confidence).toBe('title')
+    expect(m.seats).toEqual([
+      { variantLabel: 'First Child', unitPriceCents: 4500, quantity: 1 },
+      { variantLabel: 'SIbling', unitPriceCents: 3500, quantity: 1 },
+    ])
+  })
+})
+
 describe('isVenmoSender', () => {
   it('matches venmo.com and its subdomains, and nothing else', () => {
     expect(isVenmoSender('venmo@venmo.com')).toBe(true)
