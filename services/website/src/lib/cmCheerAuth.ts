@@ -51,6 +51,19 @@ export const CM_CHEER_ORDER_COLUMNS = [
   'payment_method',
   'items',
   'subtotal_cents',
+  /**
+   * Delivery is DELIBERATELY on this list, unlike `cost_cents` / `profit_cents`.
+   *
+   * The rule the route documents is that a column added by a migration stays
+   * private until somebody decides otherwise, and this is that decision: where
+   * an order is going is the organizer's job to act on — the delivery run is
+   * theirs to drive — and the $7 is the PTO's money, not Host Hampton's margin.
+   * Withholding it would leave the dashboard unable to answer the one new
+   * question the feature creates.
+   */
+  'delivery_method',
+  'delivery_address',
+  'delivery_fee_cents',
   'status',
   'status_note',
   'notes',

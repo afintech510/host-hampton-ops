@@ -1,0 +1,203 @@
+<!-- @dsCard group="Templates" name="Party menu" subtitle="Complete printable menu · US Letter" viewport-width="900" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobile Craft Party Menu — Host Hampton</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /*
+    ── PRICES IN THIS FILE ──
+
+    Only ONE number here is real: the $850 mobile base at 10 guests, which is
+    confirmed in the repo. Everything else is `$TBD` on purpose.
+
+    That is not laziness, it is the rule the design profile exists to enforce.
+    A menu is a document a parent holds you to. A plausible invented price is
+    indistinguishable from a real one on the page and is only discovered when
+    somebody has already been quoted it — so the template ships unable to lie,
+    and `$TBD` is deliberately ugly enough that nobody prints it by accident.
+    Fill them from Adam or from the live site before this goes anywhere.
+  */
+  :root{--navy:#2F343B;--blue:#8FA8BF;--gold:#C7A36B;--ivory:#F7F2E8;--mauve:#AEB6C2;--rule:#e6e0d4}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Montserrat,system-ui,sans-serif;background:#6d7178;color:var(--navy);line-height:1.6;padding:28px 16px;display:flex;flex-direction:column;align-items:center;gap:20px}
+  .serif{font-family:'Playfair Display',Georgia,serif;font-weight:700}
+
+  .sheet{width:8.5in;min-height:11in;background:var(--ivory);box-shadow:0 14px 44px rgba(0,0,0,.34);
+         display:flex;flex-direction:column;position:relative;overflow:hidden}
+
+  /* Unmissable on screen and on paper, and it survives a black-and-white
+     print — a watermark that only exists as a background colour is a
+     watermark that vanishes in exactly the situation it is there for. */
+  .sheet::before{content:"SPECIMEN — PRICES NOT FINAL";position:absolute;top:47%;left:50%;
+    transform:translate(-50%,-50%) rotate(-27deg);font-family:'Playfair Display',serif;font-weight:700;
+    font-size:60px;color:rgba(47,52,59,.085);letter-spacing:.06em;white-space:nowrap;pointer-events:none;z-index:5}
+
+  header{background:var(--navy);color:#fff;padding:24px 46px 22px;text-align:center}
+  .wordmark{font-size:11.5px;font-weight:700;letter-spacing:.3em;text-transform:uppercase;color:var(--gold)}
+  header h1{font-size:40px;line-height:1.04;margin:10px 0 0}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--mauve);margin-top:10px}
+  .strap{border-top:1px solid rgba(255,255,255,.14);margin-top:10px;padding-top:9px;font-size:12.5px;color:#dcdfe3;max-width:56ch;margin-left:auto;margin-right:auto}
+
+  main{padding:13px 46px 0;flex:1}
+  h2{font-size:19px;margin-bottom:9px}
+  section{margin-bottom:9px}
+
+  .pkgs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .pkg{background:#fff;border:1px solid var(--rule);border-radius:13px;padding:16px 16px;display:flex;flex-direction:column;position:relative}
+  .pkg.featured{border:2px solid var(--gold);box-shadow:0 6px 20px rgba(199,163,107,.2)}
+  .badge{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--gold);color:var(--navy);
+         font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:4px 12px;border-radius:999px;white-space:nowrap}
+  .pkg h3{font-size:19px;line-height:1.15}
+  .pkg .sub{font-size:11px;color:#6b7178;margin:2px 0 10px}
+  .pkg .price{font-size:30px;line-height:1}
+  .pkg .unit{font-size:11.5px;font-weight:600;color:#6b7178;display:block;margin-top:4px}
+  .pkg ul{list-style:none;margin-top:11px;padding-top:10px;border-top:1px solid var(--rule)}
+  .pkg li{font-size:12px;padding-left:16px;position:relative;margin-bottom:4px;line-height:1.38}
+  .pkg li::before{content:"";position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:50%;background:var(--blue)}
+  .pkg.featured li::before{background:var(--gold)}
+  .tbd{background:#fff3cd;border-bottom:1.5px solid var(--gold);padding:0 3px;border-radius:2px}
+
+  .addons{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .addon{background:#fff;border:1px solid var(--rule);border-radius:9px;padding:9px 13px;display:flex;justify-content:space-between;align-items:baseline;gap:9px}
+  .addon .n{font-size:12.5px;font-weight:500}
+  .addon .p{font-family:'Playfair Display',serif;font-weight:700;font-size:16px;white-space:nowrap}
+
+  .two{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;align-items:start}
+  .gtk{background:#fff;border-left:3px solid var(--blue);border-radius:0 10px 10px 0;padding:14px 18px}
+  .gtk h4{font-family:'Playfair Display',serif;font-weight:700;font-size:18px;margin-bottom:9px}
+  .gtk li{font-size:12px;margin:0 0 5px 16px;line-height:1.45}
+  .gtk li:last-child{margin-bottom:0}
+  .dep{border:2px dashed var(--gold);border-radius:12px;padding:13px 17px;background:#fffdf8}
+  .dep .t{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}
+  .dep .a{font-family:'Playfair Display',serif;font-weight:700;font-size:27px;margin:4px 0 4px}
+  .dep .d{font-size:11.5px;color:#6b7178;line-height:1.5}
+
+  footer{background:var(--navy);color:var(--mauve);padding:14px 46px 16px;text-align:center;font-size:12.5px;line-height:1.75;margin-top:auto}
+  footer a{color:#fff;text-decoration:none;font-weight:600}
+  .cta{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;font-size:13px;
+       letter-spacing:.08em;text-transform:uppercase;padding:10px 26px;border-radius:999px;text-decoration:none;margin-bottom:11px}
+
+  .hint{color:#fff;font-size:13px;max-width:8.5in;background:rgba(0,0,0,.26);padding:13px 17px;border-radius:9px;border-left:4px solid var(--gold);line-height:1.6}
+  .hint b{color:var(--gold)}
+
+  @media print{
+    @page{size:letter;margin:0}
+    body{background:#fff;padding:0;gap:0;display:block}
+    .hint{display:none}
+    .sheet{box-shadow:none;width:8.5in}
+  }
+</style>
+</head>
+<body>
+
+<div class="hint">
+  <b>Specimen.</b> Every <span style="background:#fff3cd;color:#2F343B;padding:0 4px;border-radius:2px">$TBD</span>
+  is a real price somebody has to supply — from Adam, or from the live page for that service. The only
+  confirmed figure here is the $850 mobile base at 10 guests.
+  <b>To print:</b> Ctrl/Cmd&nbsp;+&nbsp;P → Letter → <i>Background graphics ON</i>.
+</div>
+
+<div class="sheet">
+  <header>
+    <div class="wordmark">Host Hampton</div>
+    <h1 class="serif">Mobile Craft Parties</h1>
+    <div class="eyebrow">We Come To You · Long Island &amp; The Hamptons</div>
+    <p class="strap">Everything arrives packed, set up and hosted. You handle the cake — we handle the rest,
+    including the mess.</p>
+  </header>
+
+  <main>
+    <section>
+      <h2 class="serif">Choose Your Party</h2>
+      <div class="pkgs">
+        <div class="pkg">
+          <h3 class="serif">The Essentials</h3>
+          <div class="sub">90 minutes · up to 10 guests</div>
+          <div><span class="price serif tbd">$TBD</span><span class="unit">flat · 10 guests included</span></div>
+          <ul>
+            <li>One craft station</li>
+            <li>All materials and covers</li>
+            <li>A host for the full session</li>
+            <li>Setup and cleanup</li>
+          </ul>
+        </div>
+
+        <div class="pkg featured">
+          <span class="badge">Most Booked</span>
+          <h3 class="serif">The Full Party</h3>
+          <div class="sub">2 hours · up to 10 guests</div>
+          <div><span class="price serif">$850</span><span class="unit">flat · 10 guests included</span></div>
+          <ul>
+            <li>Two craft stations</li>
+            <li>Take-home project each</li>
+            <li>All materials, aprons and covers</li>
+            <li>A host for the full session</li>
+            <li>Setup and cleanup inside your window</li>
+          </ul>
+        </div>
+
+        <div class="pkg">
+          <!-- Kept to one line on purpose. A package name that wraps pushes its
+               price down and the three cards stop sharing a baseline, which is
+               the first thing the eye uses to compare them. -->
+          <h3 class="serif">Party + Hat Bar</h3>
+          <div class="sub">2.5 hours · up to 10 guests</div>
+          <div><span class="price serif tbd">$TBD</span><span class="unit">flat · 10 guests included</span></div>
+          <ul>
+            <li>Everything in The Full Party</li>
+            <li>Trucker hat pressed on site</li>
+            <li>Patch and vinyl selection</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="serif">Add Anything</h2>
+      <div class="addons">
+        <div class="addon"><span class="n">Extra guest</span><span class="p tbd">$TBD</span></div>
+        <div class="addon"><span class="n">Extra half hour</span><span class="p tbd">$TBD</span></div>
+        <div class="addon"><span class="n">Second craft station</span><span class="p tbd">$TBD</span></div>
+        <div class="addon"><span class="n">Balloon garland</span><span class="p tbd">$TBD</span></div>
+        <div class="addon"><span class="n">Themed tableware</span><span class="p tbd">$TBD</span></div>
+        <div class="addon"><span class="n">Favor bags</span><span class="p tbd">$TBD</span></div>
+      </div>
+    </section>
+
+    <section class="two">
+      <div class="gtk">
+        <h4>Good To Know</h4>
+        <ul>
+          <li>Setup and cleanup happen <b>inside your booked window</b> — plan your start time around it.</li>
+          <li>We bring materials, table covers, aprons and a host. You bring the food, the cake and the guests.</li>
+          <li>Travel beyond our standard radius is quoted separately.</li>
+          <li>Final guest count is due 7 days out — it is what the total is built from.</li>
+        </ul>
+      </div>
+      <div class="dep">
+        <div class="t">Deposit — Required To Book</div>
+        <div class="a">$250</div>
+        <div class="d">Reserves your date. It is <b>separate from the total</b> and is not
+        subtracted from it. Parties over $3,000 are half up front instead.</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <a class="cta" href="https://www.hosthampton.com/book">Book Your Date</a>
+    <div>
+      <a href="https://www.hosthampton.com">hosthampton.com</a> &nbsp;|&nbsp;
+      <a href="sms:+16319989325">631-998-9325</a> &nbsp;|&nbsp;
+      <a href="mailto:info@hosthampton.com">info@hosthampton.com</a><br>
+      Eastport, NY
+    </div>
+  </footer>
+</div>
+
+</body>
+</html>

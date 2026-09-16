@@ -1,0 +1,99 @@
+<!-- @dsCard group="Foundations" name="Colour" subtitle="5 brand tokens + the roles they may play" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Host Hampton — Colour</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /*
+    These five values are copied from services/website/tailwind.config.js, which
+    is what the live site renders from. They are the source; this file is a view
+    of it. If the two ever disagree, the Tailwind config wins.
+  */
+  :root{
+    --navy:#2F343B;   /* named "hampton-navy"; it is a warm dark GREY, not navy */
+    --blue:#8FA8BF;   /* dusty blue */
+    --gold:#C7A36B;   /* named "hampton-pink" in the config; it is GOLD */
+    --ivory:#F7F2E8;  /* cream base */
+    --mauve:#AEB6C2;  /* soft silver */
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Montserrat,system-ui,sans-serif;background:var(--ivory);color:var(--navy);padding:40px;line-height:1.6}
+  h1{font-family:'Playfair Display',Georgia,serif;font-size:34px;font-weight:700;margin-bottom:6px}
+  .lede{color:#6b7178;max-width:60ch;margin-bottom:34px}
+  .swatches{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-bottom:40px}
+  .sw{background:#fff;border:1px solid #e6e0d4;border-radius:12px;overflow:hidden}
+  .chip{height:92px}
+  .meta{padding:13px 15px}
+  .nm{font-weight:700;font-size:14px}
+  .hex{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#6b7178;margin-top:2px}
+  .role{font-size:12px;color:#6b7178;margin-top:7px;line-height:1.45}
+  h2{font-family:'Playfair Display',serif;font-size:22px;margin:0 0 14px}
+  .rules{background:#fff;border:1px solid #e6e0d4;border-radius:12px;padding:22px 26px;max-width:70ch}
+  .rules li{margin-bottom:11px;font-size:14px}
+  .rules li:last-child{margin-bottom:0}
+  .rules b{color:var(--navy)}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--ivory);padding:1px 5px;border-radius:4px}
+  .warn{border-left:3px solid var(--gold);padding-left:14px;margin-top:18px;font-size:13.5px;color:#6b7178}
+</style>
+</head>
+<body>
+  <h1>Colour</h1>
+  <p class="lede">Five tokens. A party menu is a document a parent reads on a phone in a
+  school pickup line, so contrast is not decoration — it is whether the price is legible.</p>
+
+  <div class="swatches">
+    <div class="sw"><div class="chip" style="background:var(--ivory);box-shadow:inset 0 0 0 1px #e6e0d4"></div>
+      <div class="meta"><div class="nm">Ivory</div><div class="hex">#F7F2E8 · hampton-ivory</div>
+      <div class="role">The page. Every menu sits on this, never on white — white is for cards raised off it.</div></div></div>
+
+    <div class="sw"><div class="chip" style="background:var(--navy)"></div>
+      <div class="meta"><div class="nm">Navy</div><div class="hex">#2F343B · hampton-navy</div>
+      <div class="role">All body text and headings. Also the header bar. Despite the name it is a warm dark grey.</div></div></div>
+
+    <div class="sw"><div class="chip" style="background:var(--gold)"></div>
+      <div class="meta"><div class="nm">Gold</div><div class="hex">#C7A36B · hampton-pink</div>
+      <div class="role">The accent, and the <b>only</b> colour that may mark something as chosen: the "Most Booked" package, a price that matters.</div></div></div>
+
+    <div class="sw"><div class="chip" style="background:var(--blue)"></div>
+      <div class="meta"><div class="nm">Dusty blue</div><div class="hex">#8FA8BF · hampton-blue</div>
+      <div class="role">Secondary fills and quiet section bands. Never text on ivory — it fails contrast.</div></div></div>
+
+    <div class="sw"><div class="chip" style="background:var(--mauve)"></div>
+      <div class="meta"><div class="nm">Silver</div><div class="hex">#AEB6C2 · hampton-mauve</div>
+      <div class="role">Rules, dividers, disabled states. Structure you should not notice.</div></div></div>
+  </div>
+
+  <h2>Rules</h2>
+  <div class="rules">
+    <ul>
+      <li><b>Gold is a scarce resource.</b> One gold thing per screenful. Two "Most Booked"
+      badges is the same as none — the point of the accent is that the eye lands somewhere
+      specific, and a parent skimming on a phone gets one landing.</li>
+      <li><b>Text is navy on ivory or navy on white. That is the whole text system.</b>
+      Measured: navy on ivory is <b>11.2:1</b>, navy on white <b>12.5:1</b>. Blue (2.21:1) and
+      silver (1.83:1) on ivory both fail AA body text, which needs 4.5:1. They are fills, not ink.</li>
+      <li><b>Gold is never text.</b> Gold on ivory measures <b>2.12:1</b> — it fails AA body
+      text (4.5:1) <i>and</i> AA large text (3:1), so there is no size at which it becomes
+      acceptable. This is the rule most likely to be broken by instinct, because a gold price
+      looks expensive and premium; it is also unreadable to a lot of people on a phone in
+      daylight. Gold is a <b>fill, a rule, or a badge background</b> — put <b>navy on gold</b>
+      (5.3:1, passes AA) when you need the accent to carry a word. Never white on gold (2.36:1).</li>
+      <li><b>Safe ink-on-fill pairs</b>, all measured: navy on gold 5.3:1 · navy on blue 5.09:1 ·
+      white on navy 12.54:1. Those three plus navy-on-ivory/white are the complete set.</li>
+      <li><b>Never introduce a sixth colour</b> for a theme. A Slime Party menu and a Spa
+      Party menu are the same brand; the theme lives in the photography and the copy, not in
+      a green palette. The one exception is a fundraiser storefront, which carries the
+      <i>school's</i> colours on purpose — see <code>esm-sharks</code>.</li>
+      <li><b>Print check.</b> Ivory backgrounds vanish if "Background graphics" is off in the
+      print dialog, so a menu must still parse in black on white. Do not encode meaning in a
+      background fill alone — pair it with a rule, a weight change or a label.</li>
+    </ul>
+    <p class="warn"><b>Naming trap:</b> the Tailwind tokens are misleading and have been since
+    they were written — <code>hampton-pink</code> is gold and <code>hampton-navy</code> is grey.
+    They are not renamed here because the class names are live across the whole site. Read the
+    hex, not the name.</p>
+  </div>
+</body>
+</html>

@@ -7,6 +7,7 @@ import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref } from '@/lib/emailSafety'
 import { screenCmCheerTotals, VALID_PAYMENT_METHODS } from '@/lib/cmCheerOrder'
 import { resolveFundraiserTeam } from '@/lib/fundraiserTeams'
+import { reconcileDeliveryItems, screenDelivery } from '@/lib/fundraiserDelivery'
 import { guardRate, intakeRule } from '@/lib/rateLimit'
 
 export const dynamic = 'force-dynamic'
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest) {
     itemsData,
     items: itemsString,
     team: postedTeam,
+    deliveryMethod: postedDeliveryMethod,
+    deliveryAddress: postedDeliveryAddress,
   } = body
 
   if (!athleteName || !parentName || !email || !phone || !paymentMethod) {
@@ -81,13 +84,42 @@ export async function POST(req: NextRequest) {
    * accepted in silence. Rule 14 — a mismatch nobody records is invisible, and an
    * invisible bookkeeping error is a loss.
    */
-  const money = screenCmCheerTotals(total, totalCost, totalProfit, itemsData)
+  /**
+   * How the order reaches the family, and the one charge on it the SERVER knows
+   * the price of.
+   *
+   * Everything above is audited against the browser's own line items because
+   * there is no catalogue to check it against. The $7 delivery fee is different:
+   * it is a rule the PTO set, so `reconcileDeliveryItems` throws away whatever
+   * delivery line the page sent and substitutes the canonical one before the
+   * money is screened. A browser cannot invent a $70 delivery, and cannot attach
+   * a delivery charge to an order that is being handed over in class.
+   */
+  const delivery = screenDelivery(postedDeliveryMethod, postedDeliveryAddress)
+  if (!delivery.ok) {
+    return NextResponse.json({ error: `We could not accept that order: ${delivery.reason}` }, { status: 400 })
+  }
+  const reconciled = reconcileDeliveryItems(itemsData, delivery.method)
+
+  // Delivery is a charge on an order, never an order by itself. Without this,
+  // stripping a bogus delivery line off a classroom order could leave nothing
+  // behind, and the totals screen has no items to cross-check an empty list
+  // against — so it would fall back to trusting the posted total.
+  if (reconciled.items.length === (delivery.method === 'home' ? 1 : 0)) {
+    return NextResponse.json({ error: 'No items in order' }, { status: 400 })
+  }
+
+  const money = screenCmCheerTotals(total, totalCost, totalProfit, reconciled.items)
   if (!money.ok) {
     console.warn(`cm-cheer-order: refused totals from ${email} — ${money.reason}`)
     return NextResponse.json({ error: `We could not accept that order: ${money.reason}` }, { status: 400 })
   }
-  if (money.note) {
-    console.warn(`cm-cheer-order: total mismatch from ${email} — ${money.note}`)
+
+  // One note, so a single `status_note` carries every correction made to the
+  // order rather than the last one silently winning.
+  const statusNote = [reconciled.note, money.note].filter(Boolean).join(' ') || null
+  if (statusNote) {
+    console.warn(`cm-cheer-order: corrected order from ${email} — ${statusNote}`)
   }
 
   const supabase = getSupabase()
@@ -103,12 +135,17 @@ export async function POST(req: NextRequest) {
       email,
       phone,
       payment_method: paymentMethod,
-      items: itemsData,
+      // The RECONCILED items, not the posted ones — the row has to hold the
+      // list the money was actually computed from.
+      items: reconciled.items,
+      delivery_method: delivery.method,
+      delivery_address: delivery.address,
+      delivery_fee_cents: delivery.feeCents,
       subtotal_cents: money.subtotalCents,
       cost_cents: money.costCents,
       profit_cents: money.profitCents,
       status: 'pending_payment',
-      status_note: money.note,
+      status_note: statusNote,
     })
     .select('id, order_ref')
     .single()
@@ -139,9 +176,28 @@ export async function POST(req: NextRequest) {
     // The emails quote the STORED total, not the posted one. Asking a customer
     // for a number the order book does not hold is rule 10 with money on it.
     const storedTotal = (money.subtotalCents / 100).toFixed(2)
-    const itemRows = (itemsData as OrderItem[])
+    const itemRows = (reconciled.items as OrderItem[])
       .map(i => `<tr><td style="padding:6px 0;color:#555;font-size:14px;">${i.qty}x ${escapeHtml(i.name)}</td><td style="padding:6px 0;text-align:right;font-weight:600;font-size:14px;">${Number(i.line_total).toFixed(2)}</td></tr>`)
       .join('')
+
+    /**
+     * Where the order is going, in both emails.
+     *
+     * A parent who paid $7 needs to see the address we are going to drive to,
+     * while there is still time to correct it — and the organizer needs it to
+     * plan the run. A classroom order says so explicitly rather than staying
+     * silent, because "no delivery line" and "we forgot to ask" read the same.
+     */
+    const deliveryBlock = delivery.method === 'home'
+      ? `<div style="background:#fff7ed;border-radius:8px;padding:14px;border:1px solid #fed7aa;margin-bottom:16px;">
+      <p style="margin:0;font-size:14px;font-weight:700;">🚚 Home Delivery</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555;">We'll bring this order to:<br><strong>${escapeHtml(delivery.address ?? '')}</strong></p>
+      <p style="margin:6px 0 0;font-size:12px;color:#888;">The $${(delivery.feeCents / 100).toFixed(2)} delivery charge is included above and goes to the PTO in full.</p>
+    </div>`
+      : `<div style="background:#f9f9f9;border-radius:8px;padding:14px;border:1px solid #eee;margin-bottom:16px;">
+      <p style="margin:0;font-size:14px;font-weight:700;">🎒 Delivered in class</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555;">This order will be given to <strong>${escapeHtml(athleteName)}</strong> at school — no delivery charge.</p>
+    </div>`
 
     await Promise.allSettled([
       // Admin notification
@@ -163,6 +219,7 @@ export async function POST(req: NextRequest) {
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Email</td><td><a href="${mailToHref(email)}" style="color:#111;font-weight:600;font-size:14px;">${escapeHtml(email)}</a></td></tr>
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Phone</td><td style="font-weight:600;font-size:14px;">${escapeHtml(phone)}</td></tr>
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Payment</td><td style="padding:4px 0;">${paymentBadge}</td></tr>
+      <tr><td style="color:#888;font-size:13px;padding:4px 0;">Fulfilment</td><td style="font-weight:600;font-size:14px;">${delivery.method === 'home' ? `🚚 Home delivery — ${escapeHtml(delivery.address ?? '')}` : '🎒 Given to the child in class'}</td></tr>
     </table>
     <div style="background:#f9f9f9;border-radius:8px;padding:14px 16px;border:1px solid #eee;">
       <table style="width:100%;">${itemRows}
@@ -197,6 +254,7 @@ export async function POST(req: NextRequest) {
         <tr><td style="font-weight:700;">Total</td><td style="text-align:right;font-weight:800;color:${team.emailAccent};">$${storedTotal}</td></tr>
       </table>
     </div>
+    ${deliveryBlock}
     ${paymentMethod === 'venmo' ? `
     <div style="background:#e8f4ff;border-radius:8px;padding:14px;border:1px solid #bde0ff;margin-bottom:16px;">
       <p style="margin:0;font-size:14px;font-weight:700;">💳 Payment Reminder</p>

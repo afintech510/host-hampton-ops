@@ -112,6 +112,23 @@ export default function ESMSharksPage() {
       return el.id.startsWith('qty-patch')
     }
 
+    /**
+     * The home-delivery upcharge, in dollars.
+     *
+     * The server has its own copy in `lib/fundraiserDelivery.ts` and that one is
+     * AUTHORITATIVE: the route throws away whatever delivery line this page
+     * sends and substitutes its own. This constant exists so the number on
+     * screen matches what will be charged — if the two ever drift, the customer
+     * is quoted this and billed that, and the difference is written to the
+     * order's status note rather than silently banked.
+     */
+    const HOME_DELIVERY_FEE = 7
+
+    function isHomeDelivery(): boolean {
+      const picked = document.querySelector('input[name="deliveryMethod"]:checked') as HTMLInputElement | null
+      return picked?.value === 'home'
+    }
+
     // --- Total ---
     function calculateTotal(): number {
       let total = 0
@@ -120,6 +137,7 @@ export default function ESMSharksPage() {
         const qty = parseInt(el.value) || 0
         total += isPatchInput(el) ? calculatePatchPrice(qty) : qty * parseFloat(el.dataset.price || '0')
       })
+      if (isHomeDelivery()) total += HOME_DELIVERY_FEE
       const display = document.getElementById('totalPriceDisplay')
       if (display) display.textContent = `$${total.toFixed(2)}`
       return total
@@ -139,6 +157,29 @@ export default function ESMSharksPage() {
       const toast = document.createElement('div')
       toast.className = 'fixed bottom-10 left-1/2 -translate-x-1/2 bg-esmNavy text-white px-8 py-4 rounded-full shadow-2xl z-[9999] font-bold text-sm uppercase tracking-widest'
       toast.innerText = msg; document.body.appendChild(toast); setTimeout(() => toast.remove(), 3000)
+    }
+
+    /**
+     * Show the address box only when it is needed, and re-total on every change.
+     *
+     * The address field is `required` in the markup only while it is visible —
+     * a hidden `required` input blocks form submission with a validation bubble
+     * pointing at nothing the customer can see.
+     */
+    function setupDeliveryRadios() {
+      const box = document.getElementById('deliveryAddressBox')
+      const field = document.getElementById('deliveryAddress') as HTMLTextAreaElement | null
+      document.querySelectorAll('input[name="deliveryMethod"]').forEach((input) => {
+        input.addEventListener('change', () => {
+          const home = isHomeDelivery()
+          if (box) box.classList.toggle('hidden', !home)
+          if (field) {
+            field.required = home
+            if (!home) field.value = ''
+          }
+          calculateTotal()
+        })
+      })
     }
 
     let orderPayload: Record<string, any> = {}
@@ -179,6 +220,29 @@ export default function ESMSharksPage() {
 
         if (!hasItems) { alertCustom('Please select at least one item.'); return }
 
+        /**
+         * Delivery is appended AFTER the product loop, not folded into it.
+         *
+         * The loop is driven by `.qty-input` elements, and making the fee one of
+         * those would put it in the merchandise grid, in the patch-tier check
+         * and in the "select at least one item" test — so a customer could order
+         * nothing but a delivery. It is a charge ON an order; the server draws
+         * the same line and rejects a delivery-only order outright.
+         */
+        const deliveryChosen = isHomeDelivery()
+        const deliveryAddress = (document.getElementById('deliveryAddress') as HTMLTextAreaElement)?.value.trim() || ''
+        if (deliveryChosen && !deliveryAddress) {
+          alertCustom('Please enter the delivery address.')
+          return
+        }
+        if (deliveryChosen) {
+          orderListHTML += `<li class="flex justify-between border-b border-gray-100 pb-1"><span>1x Home Delivery</span><span class="text-gray-500">$${HOME_DELIVERY_FEE.toFixed(2)}</span></li>`
+          itemsArr.push('1x Home Delivery')
+          // cost_per_unit is 0 — the whole fee is the PTO's, so it all counts
+          // as raised rather than being netted off as a cost to us.
+          itemsData.push({ name: 'Home Delivery', qty: 1, unit_price: HOME_DELIVERY_FEE, line_total: HOME_DELIVERY_FEE, cost_per_unit: 0 })
+        }
+
         const totalAmount = calculateTotal()
         const paymentRadio = document.querySelector('input[name="paymentMethod"]:checked') as HTMLInputElement
         const paymentMethod = paymentRadio?.value || ''
@@ -191,6 +255,11 @@ export default function ESMSharksPage() {
         if (el('sumAthlete')) el('sumAthlete')!.textContent = val('athleteName')
         if (el('sumParent')) el('sumParent')!.textContent = val('parentName')
         if (el('sumPayment')) el('sumPayment')!.textContent = paymentMethod
+        if (el('sumDelivery')) {
+          el('sumDelivery')!.textContent = deliveryChosen
+            ? `Home delivery — ${deliveryAddress}`
+            : 'Given to your child in class'
+        }
 
         orderPayload = {
           // The team is what gives this order an ESM- number and keeps it out of
@@ -198,6 +267,8 @@ export default function ESMSharksPage() {
           team: 'esm-sharks',
           athleteName: val('athleteName'), parentName: val('parentName'),
           email: val('email'), phone: val('phone'), paymentMethod,
+          deliveryMethod: deliveryChosen ? 'home' : 'classroom',
+          deliveryAddress: deliveryChosen ? deliveryAddress : null,
           total: totalAmount, totalCost, totalProfit: totalAmount - totalCost,
           items: itemsArr.join(', '), itemsData, date: new Date().toISOString(),
         }
@@ -235,6 +306,12 @@ export default function ESMSharksPage() {
         hideModal(successModal)
         orderForm.reset()
         const info = document.getElementById('digitalPaymentInfo'); if (info) info.classList.add('hidden')
+        // `form.reset()` restores the 'classroom' radio's defaultChecked state
+        // but not the class we toggled, so the address box would stay open over
+        // a fresh order and quietly re-add $7.
+        const addrBox = document.getElementById('deliveryAddressBox'); if (addrBox) addrBox.classList.add('hidden')
+        const addrField = document.getElementById('deliveryAddress') as HTMLTextAreaElement | null
+        if (addrField) addrField.required = false
         calculateTotal()
         finalSubmitBtn.innerHTML = 'CONFIRM & SUBMIT'
         finalSubmitBtn.disabled = false
@@ -245,6 +322,7 @@ export default function ESMSharksPage() {
     setupQuantityButtons()
     setupColorToggles()
     setupPaymentRadios()
+    setupDeliveryRadios()
     setupFormSubmit()
     calculateTotal()
   }, [])
@@ -517,6 +595,49 @@ export default function ESMSharksPage() {
               </div>
             </div>
 
+            {/* Fulfilment — how the order gets to the family */}
+            <div className="p-6 md:p-8 border-t border-gray-200">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-esmNavy/10 rounded-lg text-esmNavy"><i data-lucide="package" className="w-6 h-6"></i></div>
+                <h2 className="text-xl sm:text-3xl font-bold text-esmInk font-oswald uppercase tracking-wide">How Should We Get It To You?</h2>
+              </div>
+              <p className="text-sm text-gray-500 mb-5 ml-1">Pick one. Home delivery is an extra $7 — and every cent of it goes to the PTO.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="cursor-pointer group">
+                  {/* Checked by default: this is how every order has worked so
+                      far, and the free option should never be the one you have
+                      to go looking for. */}
+                  <input type="radio" name="deliveryMethod" value="classroom" className="peer sr-only" defaultChecked required />
+                  <div className="h-full p-4 border-2 border-gray-200 bg-white rounded-xl peer-checked:border-esmNavy peer-checked:bg-esmMist transition-all group-hover:border-gray-300">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-bold text-esmInk uppercase tracking-wide">🎒 Give It To My Child</span>
+                      <span className="text-sm font-black text-green-700">FREE</span>
+                    </div>
+                    <p className="text-xs text-gray-500 leading-snug">We hand the order to your child at school when it arrives.</p>
+                  </div>
+                </label>
+                <label className="cursor-pointer group">
+                  <input type="radio" name="deliveryMethod" value="home" className="peer sr-only" />
+                  <div className="h-full p-4 border-2 border-gray-200 bg-white rounded-xl peer-checked:border-esmNavy peer-checked:bg-esmMist transition-all group-hover:border-gray-300">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-bold text-esmInk uppercase tracking-wide">🚚 Deliver To My Home</span>
+                      <span className="text-sm font-black text-esmNavy">+$7.00</span>
+                    </div>
+                    <p className="text-xs text-gray-500 leading-snug">Dropped at your door. The $7 is <strong className="text-esmNavy">100% donated to the PTO</strong>.</p>
+                  </div>
+                </label>
+              </div>
+              <div id="deliveryAddressBox" className="hidden mt-5">
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Delivery Address</label>
+                <textarea
+                  id="deliveryAddress" rows={3}
+                  placeholder="123 Main St, Eastport, NY 11941&#10;(apartment, gate code, or 'leave on side porch')"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-esmNavy focus:ring-0 outline-none transition-all bg-slate-50 resize-none"
+                ></textarea>
+                <p className="text-xs text-gray-400 mt-1 ml-1">Include anything that helps us find the door.</p>
+              </div>
+            </div>
+
             {/* Payment */}
             <div className="p-6 md:p-8 bg-slate-50 border-y border-gray-200">
               <div className="flex items-center gap-3 mb-6">
@@ -595,6 +716,9 @@ export default function ESMSharksPage() {
                 <p className="text-sm"><span className="text-gray-500">Child:</span> <span id="sumAthlete" className="font-medium"></span></p>
                 <p className="text-sm"><span className="text-gray-500">Parent/Buyer:</span> <span id="sumParent" className="font-medium"></span></p>
                 <p className="text-sm"><span className="text-gray-500">Payment:</span> <span id="sumPayment" className="font-medium uppercase"></span></p>
+                {/* The last screen before money changes hands is the last chance
+                    to catch a wrong address, so it is shown in full here. */}
+                <p className="text-sm"><span className="text-gray-500">Delivery:</span> <span id="sumDelivery" className="font-medium"></span></p>
               </div>
               <label className="flex items-start gap-3 p-4 bg-esmMist border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-200 transition-colors">
                 <input type="checkbox" id="confirmCheckbox" className="mt-1 w-5 h-5 text-esmNavy rounded border-gray-300 focus:ring-esmNavy" />

@@ -64,8 +64,23 @@ interface OrderItem { name: string; qty: number; unit_price: number; line_total:
 interface Order {
   id: string; order_ref: string; team: string; athlete_name: string; parent_name: string
   email: string; phone: string; payment_method: string; items: OrderItem[]
+  /**
+   * How this order reaches the family. `delivery_address` is present exactly
+   * when `delivery_method` is 'home' — the DB constraint guarantees it, so the
+   * organizer never sees a delivery with nowhere to take it.
+   *
+   * Optional in the type because rows created before migration 054 are read
+   * back by an older deployment during a rollout, and a dashboard that renders
+   * `undefined` as "classroom" is telling the truth about those orders anyway.
+   */
+  delivery_method?: 'classroom' | 'home'
+  delivery_address?: string | null
+  delivery_fee_cents?: number
   subtotal_cents: number; profit_cents: number; status: string; status_note: string | null; notes: string | null; created_at: string
 }
+
+/** Rows written before migration 054 were all handed over in class. */
+function isHomeDelivery(o: Order) { return o.delivery_method === 'home' }
 
 function fmt(cents: number) { return `$${(cents / 100).toFixed(2)}` }
 function fmtDate(iso: string) { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }
@@ -95,6 +110,16 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
   const [loading, setLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [paymentFilter, setPaymentFilter] = useState('')
+  /**
+   * Filtered in the BROWSER, unlike status and payment.
+   *
+   * Those two are query parameters the API understands; delivery is not, and
+   * adding it there would mean the "To Deliver" tile counted a different set
+   * than the list below it whenever the filter was on. Everything the tiles
+   * summarise is derived from `filtered`, so the filter has to live where
+   * `filtered` does.
+   */
+  const [deliveryFilter, setDeliveryFilter] = useState('')
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [updating, setUpdating] = useState<string | null>(null)
@@ -172,15 +197,28 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
   }
 
   const filtered = orders.filter(o => {
+    if (deliveryFilter === 'home' && !isHomeDelivery(o)) return false
+    if (deliveryFilter === 'classroom' && isHomeDelivery(o)) return false
     if (!search) return true
     const q = search.toLowerCase()
-    return o.athlete_name.toLowerCase().includes(q) || o.parent_name.toLowerCase().includes(q) || o.email.toLowerCase().includes(q) || o.order_ref.toLowerCase().includes(q)
+    // The address is searchable too — "who else is on Oak Street" is how a
+    // delivery run actually gets planned.
+    return o.athlete_name.toLowerCase().includes(q) || o.parent_name.toLowerCase().includes(q)
+      || o.email.toLowerCase().includes(q) || o.order_ref.toLowerCase().includes(q)
+      || (o.delivery_address || '').toLowerCase().includes(q)
   })
 
   function exportCSV() {
-    const rows = [['Order Ref',theme.personLabel,'Parent','Email','Phone','Payment','Total','Status','Items','Notes','Date']]
+    // Fulfilment sits next to the contact details on purpose: this CSV is what
+    // gets printed for the handout pile and the delivery run, and a sheet that
+    // makes you cross-reference two columns far apart is a sheet that gets a
+    // box left on the wrong doorstep.
+    const rows = [['Order Ref',theme.personLabel,'Parent','Email','Phone','Fulfilment','Delivery Address','Delivery Fee','Payment','Total','Status','Items','Notes','Date']]
     filtered.forEach(o => rows.push([
       o.order_ref, o.athlete_name, o.parent_name, o.email, o.phone,
+      isHomeDelivery(o) ? 'Home delivery' : 'In class',
+      o.delivery_address || '',
+      o.delivery_fee_cents ? fmt(o.delivery_fee_cents) : '',
       o.payment_method, fmt(o.subtotal_cents), o.status,
       o.items.map(i => `${i.qty}x ${i.name}`).join(' | '),
       o.notes || '',
@@ -197,6 +235,11 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
   const totalRaised = nonCancelled.reduce((s, o) => s + (o.profit_cents || 0), 0)
   const pendingCount = filtered.filter(o => o.status === 'pending_payment').length
   const paidCount = filtered.filter(o => o.status === 'paid').length
+
+  // The delivery run, and what it raised. Cancelled orders are excluded from
+  // both — nobody drives to a cancelled order, and its fee was never collected.
+  const deliverCount = nonCancelled.filter(isHomeDelivery).length
+  const deliveryFees = nonCancelled.reduce((s, o) => s + (o.delivery_fee_cents || 0), 0)
 
   // Aggregate items sold across non-cancelled orders
   const itemSummary: Record<string, number> = {}
@@ -277,6 +320,44 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
           </div>
         </div>
 
+        {/*
+          The delivery run.
+
+          Its own strip rather than a fifth summary tile: the tiles answer "how
+          is the fundraiser doing", and this answers "what do I have to go and
+          do" — and it carries an action, which a tile cannot. It renders only
+          when there is a run to make, so a fundraiser with no deliveries never
+          sees a row of zeroes it has to learn to ignore.
+        */}
+        {deliverCount > 0 && (
+          <div className="bg-white rounded-xl border-2 border-amber-200 p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="w-10 h-10 shrink-0 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-black">
+                {deliverCount}
+              </div>
+              <div>
+                <p className="text-sm font-bold text-zinc-900 leading-tight">
+                  {deliverCount === 1 ? '1 order needs home delivery' : `${deliverCount} orders need home delivery`}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {fmt(deliveryFees)} in delivery charges · 100% to the PTO
+                  {' · '}everything else is handed to the {theme.personLabel.toLowerCase()} in class
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setDeliveryFilter(deliveryFilter === 'home' ? '' : 'home')}
+              className={`shrink-0 rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
+                deliveryFilter === 'home'
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'border-2 border-amber-200 text-amber-700 hover:bg-amber-50'
+              }`}
+            >
+              {deliveryFilter === 'home' ? 'Showing deliveries — clear' : 'Show the delivery run'}
+            </button>
+          </div>
+        )}
+
         {/* Items sold summary */}
         {itemSummaryList.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 shadow-sm">
@@ -312,6 +393,12 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
               <option value="venmo">Venmo</option>
               <option value="cash">Cash</option>
             </select>
+            <select value={deliveryFilter} onChange={e => setDeliveryFilter(e.target.value)}
+              className="flex-1 sm:flex-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
+              <option value="">All Fulfilment</option>
+              <option value="home">Home Delivery</option>
+              <option value="classroom">In Class</option>
+            </select>
           </div>
           <div className="flex gap-2">
             <button onClick={fetchOrders} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 border border-gray-200 rounded-lg px-3 py-2 text-sm hover:bg-gray-50 transition-colors">
@@ -341,6 +428,13 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
                     <span className="text-gray-500 text-xs hidden sm:inline">{order.parent_name}</span>
                     <span className={`text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 rounded-full border ${statusBadge(order.status)}`}>{statusLabel(order.status)}</span>
                     <span className={`text-[10px] sm:text-xs font-medium px-1.5 sm:px-2 py-0.5 rounded-full border ${paymentBadge(order.payment_method)}`}>{order.payment_method === 'venmo' ? 'Venmo' : 'Cash'}</span>
+                    {/* Only home delivery gets a badge. "In class" is the norm,
+                        and badging the norm is how the exception stops standing out. */}
+                    {isHomeDelivery(order) && (
+                      <span className="text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 rounded-full border bg-amber-100 text-amber-800 border-amber-200">
+                        🚚 Deliver
+                      </span>
+                    )}
                   </div>
                   <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5">{order.order_ref} · {fmtDate(order.created_at)}</p>
                   <p className="text-xs text-gray-500 sm:hidden mt-0.5">{order.parent_name}</p>
@@ -359,6 +453,29 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
                       <p className="text-xs font-bold text-gray-400 uppercase mb-2">Contact</p>
                       <p className="text-sm"><span className="text-gray-500">Email:</span> <a href={`mailto:${order.email}`} className="font-medium text-zinc-900 hover:underline">{order.email}</a></p>
                       <p className="text-sm"><span className="text-gray-500">Phone:</span> <a href={`tel:${order.phone}`} className="font-medium text-zinc-900 hover:underline">{order.phone}</a></p>
+
+                      <p className="text-xs font-bold text-gray-400 uppercase mt-3 mb-2">Fulfilment</p>
+                      {isHomeDelivery(order) ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          <p className="text-sm font-bold text-amber-900">
+                            🚚 Home delivery
+                            {order.delivery_fee_cents ? <span className="font-medium"> · {fmt(order.delivery_fee_cents)} to the PTO</span> : null}
+                          </p>
+                          {/* A map link, because the next thing the organizer does
+                              with an address is drive to it. */}
+                          <a
+                            href={`https://maps.google.com/?q=${encodeURIComponent(order.delivery_address || '')}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="block text-sm text-amber-900 mt-1 whitespace-pre-wrap hover:underline"
+                          >
+                            {order.delivery_address}
+                          </a>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-600">
+                          🎒 Given to <span className="font-medium text-zinc-900">{order.athlete_name}</span> in class — no delivery charge.
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p className="text-xs font-bold text-gray-400 uppercase mb-2">Items Ordered</p>

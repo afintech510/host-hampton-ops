@@ -1,0 +1,90 @@
+<!-- @dsCard group="Foundations" name="Type" subtitle="Playfair Display + Montserrat, and the menu scale" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Host Hampton — Type</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--navy:#2F343B;--gold:#C7A36B;--ivory:#F7F2E8;--mauve:#AEB6C2}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Montserrat,system-ui,sans-serif;background:var(--ivory);color:var(--navy);padding:40px;line-height:1.6}
+  .serif{font-family:'Playfair Display',Georgia,serif}
+  h1{font-size:34px;font-weight:700;margin-bottom:6px}
+  .lede{color:#6b7178;max-width:62ch;margin-bottom:34px}
+  .row{background:#fff;border:1px solid #e6e0d4;border-radius:12px;padding:20px 24px;margin-bottom:12px;display:flex;gap:26px;align-items:baseline;flex-wrap:wrap}
+  .spec{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#6b7178;min-width:230px;flex-shrink:0;line-height:1.5}
+  .spec b{color:var(--navy);font-family:Montserrat;font-size:12px;display:block;margin-bottom:3px}
+  h2{font-family:'Playfair Display',serif;font-size:22px;margin:34px 0 14px}
+  .rules{background:#fff;border:1px solid #e6e0d4;border-radius:12px;padding:22px 26px;max-width:72ch}
+  .rules li{margin-bottom:11px;font-size:14px}
+  .rules li:last-child{margin-bottom:0}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold)}
+  .price{font-family:'Playfair Display',serif;font-size:38px;font-weight:700}
+  .unit{font-size:13px;font-weight:600;color:#6b7178;letter-spacing:.02em}
+</style>
+</head>
+<body>
+  <h1 class="serif">Type</h1>
+  <p class="lede">Two families, doing two jobs. <b>Playfair Display</b> is the voice — it says
+  this is a nice party, not a school form. <b>Montserrat</b> is the information — everything a
+  parent has to actually read and act on.</p>
+
+  <div class="row">
+    <div class="spec"><b>Menu title</b>Playfair Display 700<br>40–52px · line-height 1.05</div>
+    <div class="serif" style="font-size:46px;font-weight:700;line-height:1.05">Slime Party Menu</div>
+  </div>
+
+  <div class="row">
+    <div class="spec"><b>Eyebrow</b>Montserrat 700 · 11px<br>letter-spacing .18em · UPPERCASE<br>gold</div>
+    <div class="eyebrow">Ages 5–12 · Two Hours</div>
+  </div>
+
+  <div class="row">
+    <div class="spec"><b>Package name</b>Playfair Display 700 · 24px</div>
+    <div class="serif" style="font-size:24px;font-weight:700">The Full Slime Lab</div>
+  </div>
+
+  <div class="row">
+    <div class="spec"><b>Price</b>Playfair Display 700 · 34–40px<br>navy, never gold<br>always paired with its unit</div>
+    <div><span class="price">$45</span> <span class="unit">per guest · 10 guest minimum</span></div>
+  </div>
+
+  <div class="row">
+    <div class="spec"><b>Section heading</b>Playfair Display 700 · 22px</div>
+    <div class="serif" style="font-size:22px;font-weight:700">What&rsquo;s Included</div>
+  </div>
+
+  <div class="row">
+    <div class="spec"><b>Body</b>Montserrat 400 · 14–15px<br>line-height 1.6 · max 68ch</div>
+    <div style="font-size:14.5px;max-width:52ch">Everything is set up before your guests arrive and packed
+    away after — both happen inside your booked window, so the party time is party time.</div>
+  </div>
+
+  <div class="row">
+    <div class="spec"><b>Fine print</b>Montserrat 400 · 12px · #6b7178</div>
+    <div style="font-size:12px;color:#6b7178">Deposit reserves your date and is separate from the total.</div>
+  </div>
+
+  <h2 class="serif">Rules</h2>
+  <div class="rules">
+    <ul>
+      <li><b>A price is never alone.</b> &ldquo;$45&rdquo; and &ldquo;$45 per guest, 10 minimum&rdquo;
+      are different offers, and the first one is the one that turns into an argument on the phone.
+      The unit is part of the price, set in Montserrat 600 at about a third of the price's size.</li>
+      <li><b>Playfair only above ~20px.</b> It is a high-contrast display serif — its thin strokes
+      disappear at body sizes on a phone screen and in print. Anything a parent reads a sentence
+      of is Montserrat.</li>
+      <li><b>One Playfair weight per document</b> (700). Mixing 500 and 700 reads as two brands.</li>
+      <li><b>Letter-spacing belongs to the eyebrow and nothing else.</b> Tracked-out uppercase is
+      the accent texture; using it on a heading as well spends the effect twice.</li>
+      <li><b>Line length caps at 68 characters.</b> A menu is scanned, not read, and a full-width
+      paragraph across a letter page is the single fastest way to make a parent skip the thing you
+      most wanted them to see.</li>
+      <li><b>Fall back honestly.</b> <code>font-family:'Playfair Display',Georgia,serif</code> and
+      <code>Montserrat,system-ui,sans-serif</code>. A menu opened offline or printed from a locked-down
+      school computer must still look deliberate.</li>
+    </ul>
+  </div>
+</body>
+</html>

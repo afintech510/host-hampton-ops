@@ -1,0 +1,162 @@
+<!-- @dsCard group="Components" name="Menu blocks" subtitle="Header, package card, add-on tile, good-to-know, footer" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Host Hampton — Menu blocks</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--navy:#2F343B;--blue:#8FA8BF;--gold:#C7A36B;--ivory:#F7F2E8;--mauve:#AEB6C2;--rule:#e6e0d4}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Montserrat,system-ui,sans-serif;background:var(--ivory);color:var(--navy);padding:40px;line-height:1.6}
+  .serif{font-family:'Playfair Display',Georgia,serif;font-weight:700}
+  .label{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#8a9099;margin:34px 0 12px}
+  .label:first-child{margin-top:0}
+  .demo{background:#fff;border:1px solid var(--rule);border-radius:14px;padding:26px;margin-bottom:8px}
+  .note{font-size:12.5px;color:#6b7178;max-width:70ch;margin-bottom:6px}
+
+  /* ── Header ── */
+  .m-head{background:var(--navy);color:#fff;border-radius:12px;padding:30px 34px;text-align:center}
+  .m-head .wordmark{font-size:12px;font-weight:700;letter-spacing:.3em;text-transform:uppercase;color:var(--gold)}
+  .m-head h1{font-size:44px;line-height:1.05;margin:12px 0 0}
+  .m-head .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--mauve);margin-top:14px}
+
+  /* ── Package card ── */
+  .pkgs{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:16px}
+  .pkg{background:#fff;border:1px solid var(--rule);border-radius:14px;padding:24px 22px;position:relative;display:flex;flex-direction:column}
+  /* The chosen package is marked THREE ways — border, badge, and a heavier
+     price — because the gold border alone disappears when a parent prints the
+     menu with background graphics off, which is the default in most dialogs. */
+  .pkg.featured{border:2px solid var(--gold);box-shadow:0 6px 22px rgba(199,163,107,.18)}
+  .badge{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:var(--gold);color:var(--navy);
+         font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:4px 13px;border-radius:999px;white-space:nowrap}
+  .pkg h3{font-size:23px;line-height:1.15;margin-bottom:3px}
+  .pkg .sub{font-size:12px;color:#6b7178;margin-bottom:15px}
+  .pkg .price{font-size:36px;line-height:1}
+  .pkg .unit{font-size:12.5px;font-weight:600;color:#6b7178;display:block;margin-top:5px}
+  .pkg ul{list-style:none;margin:17px 0 0;padding-top:16px;border-top:1px solid var(--rule)}
+  .pkg li{font-size:13.5px;padding-left:19px;position:relative;margin-bottom:8px;line-height:1.5}
+  .pkg li::before{content:"";position:absolute;left:0;top:8px;width:7px;height:7px;border-radius:50%;background:var(--blue)}
+  .pkg.featured li::before{background:var(--gold)}
+
+  /* ── Add-on tiles ── */
+  .addons{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px}
+  .addon{background:var(--ivory);border:1px solid var(--rule);border-radius:10px;padding:13px 15px;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .addon .n{font-size:13.5px;font-weight:500}
+  .addon .p{font-family:'Playfair Display',serif;font-weight:700;font-size:17px;white-space:nowrap}
+
+  /* ── Good to know ── */
+  .gtk{background:var(--ivory);border-left:3px solid var(--blue);border-radius:0 10px 10px 0;padding:19px 23px}
+  .gtk h4{font-family:'Playfair Display',serif;font-size:19px;margin-bottom:10px}
+  .gtk li{font-size:13.5px;margin-bottom:7px;margin-left:17px;line-height:1.5}
+  .gtk li:last-child{margin-bottom:0}
+
+  /* ── Deposit callout ── */
+  /* Dashed, and OUTSIDE the totals box, because the deposit is not subtracted
+     from the total. An earlier quote design put it as a row inside the totals
+     and parents read it as a partial payment. */
+  .dep{border:2px dashed var(--gold);border-radius:12px;padding:17px 21px;background:#fffdf8}
+  .dep .t{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}
+  .dep .a{font-family:'Playfair Display',serif;font-weight:700;font-size:29px;margin:5px 0 4px}
+  .dep .d{font-size:12.5px;color:#6b7178;line-height:1.5}
+
+  /* ── Footer ── */
+  .m-foot{background:var(--navy);color:var(--mauve);border-radius:12px;padding:22px 26px;text-align:center;font-size:12.5px;line-height:1.7}
+  .m-foot a{color:#fff;text-decoration:none;font-weight:600}
+  .m-foot .cta{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;font-size:13px;
+               letter-spacing:.08em;text-transform:uppercase;padding:11px 26px;border-radius:999px;text-decoration:none;margin-bottom:15px}
+</style>
+</head>
+<body>
+
+<div class="label">Header</div>
+<div class="demo">
+  <div class="m-head">
+    <div class="wordmark">Host Hampton</div>
+    <h1 class="serif">Slime Party Menu</h1>
+    <div class="eyebrow">Ages 5–12 · Two Hours · Up To 16 Guests</div>
+  </div>
+</div>
+<p class="note">The wordmark is set as tracked gold text rather than an image so the header survives
+being emailed, printed and pasted into a text message with no asset to lose.</p>
+
+<div class="label">Package cards</div>
+<div class="demo">
+  <div class="pkgs">
+    <div class="pkg">
+      <h3 class="serif">Slime Basics</h3>
+      <div class="sub">90 minutes · 8–12 guests</div>
+      <div><span class="price serif">$35</span><span class="unit">per guest · 8 guest minimum</span></div>
+      <ul><li>Two slime stations</li><li>Take-home jar each</li><li>Aprons and cleanup</li><li>Host for the full session</li></ul>
+    </div>
+    <div class="pkg featured">
+      <span class="badge">Most Booked</span>
+      <h3 class="serif">The Full Slime Lab</h3>
+      <div class="sub">2 hours · 10–16 guests</div>
+      <div><span class="price serif">$45</span><span class="unit">per guest · 10 guest minimum</span></div>
+      <ul><li>Four slime stations</li><li>Two take-home jars each</li><li>Glitter &amp; charm bar</li><li>Custom labels</li><li>Setup and cleanup included</li></ul>
+    </div>
+    <div class="pkg">
+      <h3 class="serif">Slime + Hat Bar</h3>
+      <div class="sub">2.5 hours · 10–16 guests</div>
+      <div><span class="price serif">$60</span><span class="unit">per guest · 10 guest minimum</span></div>
+      <ul><li>Everything in the Full Lab</li><li>Trucker hat, pressed on site</li><li>Patch and vinyl selection</li></ul>
+    </div>
+  </div>
+</div>
+<p class="note">Exactly one card is featured. The feature is carried by border, badge <i>and</i> bullet
+colour, so it still reads when the menu prints without background graphics.</p>
+
+<div class="label">Add-on tiles</div>
+<div class="demo">
+  <div class="addons">
+    <div class="addon"><span class="n">Extra guest</span><span class="p">$45</span></div>
+    <div class="addon"><span class="n">Balloon garland</span><span class="p">$125</span></div>
+    <div class="addon"><span class="n">Themed tableware</span><span class="p">$4/guest</span></div>
+    <div class="addon"><span class="n">Extra half hour</span><span class="p">$100</span></div>
+    <div class="addon"><span class="n">Party favor bags</span><span class="p">$8 each</span></div>
+    <div class="addon"><span class="n">Custom backdrop</span><span class="p">$150</span></div>
+  </div>
+</div>
+
+<div class="label">Good to know</div>
+<div class="demo">
+  <div class="gtk">
+    <h4>Good To Know</h4>
+    <ul>
+      <li>Setup and cleanup happen <b>inside your booked window</b> — plan your start time accordingly.</li>
+      <li>We bring everything: materials, covers, aprons, and a host for the whole session.</li>
+      <li>You bring the food, the cake and the guests.</li>
+      <li>Final guest count is due 7 days before. It is what the total is built from.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="label">Deposit callout</div>
+<div class="demo">
+  <div class="dep">
+    <div class="t">Deposit — Required To Book</div>
+    <div class="a">$250</div>
+    <div class="d">Reserves your date. This is <b>separate from the total</b> and is not subtracted from it.
+    Refundable after the event assuming no damage.</div>
+  </div>
+</div>
+
+<div class="label">Footer</div>
+<div class="demo">
+  <div class="m-foot">
+    <a class="cta" href="https://www.hosthampton.com/book">Book Your Date</a>
+    <div>
+      <a href="https://www.hosthampton.com">hosthampton.com</a> &nbsp;|&nbsp;
+      <a href="sms:+16319989325">631-998-9325</a> &nbsp;|&nbsp;
+      <a href="mailto:info@hosthampton.com">info@hosthampton.com</a><br>
+      Eastport, NY
+    </div>
+  </div>
+</div>
+<p class="note"><b>631-998-9325 is the only number that belongs on a customer-facing menu.</b>
+The Venmo/Zelle number is a different line and printing it here would route booking questions
+to a phone that is not answered for that.</p>
+
+</body>
+</html>
