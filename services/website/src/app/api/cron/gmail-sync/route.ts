@@ -16,6 +16,8 @@ import {
 } from '@/lib/gmail'
 import { autoIgnoreReason } from '@/lib/agent/triage'
 import { notifyOwnerSms } from '@/lib/ownerNotify'
+import { recordVenmoReceipt } from '@/lib/venmoReconcile'
+import { isVenmoSender } from '@/lib/venmoReceipt'
 
 export const dynamic = 'force-dynamic'
 
@@ -146,6 +148,46 @@ interface IngestOutcome {
   id: string
   outcome: 'recorded' | 'ignored' | 'duplicate' | 'unreadable' | 'write_failed'
   reason?: string
+  /** Set when the message was also a Venmo receipt — see `reconcileVenmo`. */
+  venmo?: 'recorded' | 'duplicate' | 'failed'
+}
+
+/**
+ * The money half of reading the mailbox.
+ *
+ * Venmo is on `AUTO_IGNORE_DOMAINS`, so these receipts are recorded as inbound
+ * events and then deliberately dropped before triage — correctly, because none
+ * of them is an inquiry. But a Venmo receipt is frequently the ONLY trace that
+ * a customer paid: nothing but `/api/webhook` writes a ticket, so an event
+ * bought with a Venmo existed on no roster, in no books, and in no ticket count
+ * until someone noticed by hand.
+ *
+ * So on the way past, a receipt is parsed into a PROPOSAL (never a ticket — the
+ * reason why is at the top of `lib/venmoReceipt.ts`, and it is a real customer
+ * who cancelled in the payment's comments two minutes after paying).
+ *
+ * Deliberately non-fatal, in both directions: a reconciliation failure does not
+ * fail the ingest (which would stall the checkpoint and stop the mailbox over
+ * bookkeeping), and an ingest that has already happened does not stop the
+ * reconciliation (the `venmo_payments` unique key is its own dedupe).
+ */
+async function reconcileVenmo(supabase: Supa, msg: GmailMessage): Promise<IngestOutcome['venmo']> {
+  if (msg.direction === 'out' || !isVenmoSender(msg.fromEmail)) return undefined
+  try {
+    const res = await recordVenmoReceipt({
+      supabase,
+      gmailMessageId: msg.id,
+      fromEmail: msg.fromEmail,
+      subject: msg.subject,
+      body: msg.body,
+      sentAt: msg.sentAt,
+    })
+    if (res.outcome === 'not_a_receipt') return undefined
+    return res.outcome === 'recorded' ? 'recorded' : res.outcome === 'duplicate' ? 'duplicate' : 'failed'
+  } catch (err) {
+    console.error('gmail-sync: venmo reconcile threw (non-fatal):', err instanceof Error ? err.message : err)
+    return 'failed'
+  }
 }
 
 /**
@@ -245,8 +287,13 @@ async function ingestOne(supabase: Supa, id: string, labelId: string | null, for
   // is the dispatcher's to apply, once a message has actually produced a draft.
   if (labelId) await applyLabel(msg.id, labelId)
 
-  if (recorded.kind === 'duplicate') return { id, outcome: 'duplicate' }
-  return { id, outcome: ignore || forceHandled ? 'ignored' : 'recorded', reason: ignore ?? undefined }
+  // After the event is safely recorded, and regardless of whether it was a
+  // duplicate: the two dedupes are independent, and a receipt whose event row
+  // already existed is exactly the case where the payment row may not.
+  const venmo = await reconcileVenmo(supabase, msg)
+
+  if (recorded.kind === 'duplicate') return { id, outcome: 'duplicate', venmo }
+  return { id, outcome: ignore || forceHandled ? 'ignored' : 'recorded', reason: ignore ?? undefined, venmo }
 }
 
 /* ── Backfill ───────────────────────────────────────────────────────── */
@@ -392,6 +439,12 @@ export async function GET(req: NextRequest) {
     duplicates: results.filter(r => r.outcome === 'duplicate').length,
     unreadable: results.filter(r => r.outcome === 'unreadable').length,
     writeFailed: results.filter(r => r.outcome === 'write_failed').length,
+    // Counted separately from the ingest outcomes: a Venmo receipt is always an
+    // `ignored` message (it is not an inquiry) and sometimes also a payment
+    // proposal, and collapsing the two would hide the half that matters.
+    venmoProposed: results.filter(r => r.venmo === 'recorded').length,
+    venmoAlreadySeen: results.filter(r => r.venmo === 'duplicate').length,
+    venmoFailed: results.filter(r => r.venmo === 'failed').length,
     labelled: !!labelId,
     error: failure,
   }

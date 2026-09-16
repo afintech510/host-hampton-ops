@@ -62,6 +62,10 @@ const TEMPLATE_SOURCES = [
   'lib/planPayment.ts',
   'lib/planShare.ts',
   'lib/unclaimedPayment.ts',
+  // Same shape as unclaimedPayment: an owner-facing "this money arrived and we
+  // cannot place it" note, built inline. Its interpolations are a payer name and
+  // a Venmo note — both attacker-supplied, both escaped at entry.
+  'lib/venmoReconcile.ts',
   'lib/sequences/render.ts',
   'lib/agent/sendApproved.ts',
   'lib/experiments/screen.ts',
@@ -425,6 +429,9 @@ describe('the file list cannot go stale', () => {
     'lib/brevo.ts',
     'lib/sequences/processor.ts',
     'app/api/lead/route.ts',
+    // The offline-ticket writer. Its only markup is `ticketConfirmationHtml`,
+    // which is audited above; every value it passes in is escaped at entry there.
+    'lib/offlineTicket.ts',
   ]
 
   /**
