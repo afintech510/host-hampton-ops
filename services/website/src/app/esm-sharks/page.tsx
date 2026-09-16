@@ -35,14 +35,22 @@ import {
  * got stitched would have put two lookalike controls on one card, one cosmetic
  * and one binding. A box per combination has no hidden state at all: what is in
  * the boxes is what gets made, and the item name falls out of the row it came
- * from. The photo is now driven by tapping a row, so the one control that
- * changes the picture is the same one that names the thing.
+ * from.
+ *
+ * The colour buttons are back by Adam's request (2026-09-16), joined by two for
+ * the patch, and the trap above is answered by WIRING them to the rows instead
+ * of leaving them floating: the buttons and the rows are one piece of state
+ * (`syncCard`), so picking "Silver" + "Script" moves the highlight onto the
+ * Silver-Script row. The buttons are a fast way to look; the highlighted row is
+ * where that look lands; the box on it is still the only thing that orders
+ * anything. A control whose effect you can see cannot be the silent kind.
  *
  * Product photography is real (`/images/esm-*.webp`, from `photos/source/`) and
  * named for its patch: `esm-tote-navy-circle.webp`, `esm-tote-navy-script.webp`.
- * The hat has no script shot yet — those rows say so rather than showing the
- * circle photo under a script label. Drop `esm-hat-navy-script.webp` and
- * `esm-hat-silver-script.webp` in and set `img` on those two rows below.
+ * All TWELVE combinations are shot as of 2026-09-16, so the picker can show any
+ * of them. `shots` still allows a null and the card still renders an honest
+ * "photo coming" tile for one — that path is what stops a future un-shot
+ * combination illustrating itself with a neighbour's picture.
  *
  * Loose patches are still sold on their own, and their 3-for-$20 tier MIXES
  * across designs. That arithmetic lives in `lib/fundraiserPatches.ts`, where it
@@ -76,9 +84,9 @@ const PRODUCTS = [
     blurb: 'Classic mesh-back snapback with your patch stitched on the front panel.',
     shots: {
       'navy-circle': '/images/esm-hat-navy-circle.webp',
-      'navy-script': null,
+      'navy-script': '/images/esm-hat-navy-script.webp',
       'silver-circle': '/images/esm-hat-silver-circle.webp',
-      'silver-script': null,
+      'silver-script': '/images/esm-hat-silver-script.webp',
     },
   },
   {
@@ -162,28 +170,53 @@ export default function ESMSharksPage() {
     }
 
     /**
-     * Tapping a variant row shows that combination's photo.
+     * Which combination each card is currently SHOWING.
      *
-     * The row is both the preview control and the thing being ordered, so there
-     * is no second control that could disagree with the boxes. Where we have no
-     * photo (`data-src` empty) the hero shows a labelled placeholder rather than
-     * the nearest picture we do have — a script row must never illustrate itself
-     * with the circle patch.
+     * The colour and patch buttons and the twelve rows are two views of one
+     * piece of state, held on the card as `data-color` / `data-patch`. Whichever
+     * you touch, `syncCard` redraws both, so the buttons can never point at one
+     * combination while a different row looks selected.
+     *
+     * This is a PREVIEW, not the order — the quantity boxes are still the only
+     * thing that decides what gets made. That is why the highlighted row moves
+     * with the buttons: it shows you which of the twelve boxes the picture on
+     * screen belongs to, instead of leaving the buttons as a control whose
+     * effect you cannot locate.
      */
-    function showVariant(btn: HTMLElement) {
-      const key = btn.getAttribute('data-product')
-      if (!key) return
+    const ACTIVE = {
+      navy: ['border-esmNavy', 'bg-esmNavy', 'text-white'],
+      silver: ['border-esmSilver', 'bg-esmSilver', 'text-esmInk'],
+      // Both patches are navy thread now, so a filled navy button would swallow
+      // the thumbnail inside it. A light fill with a navy border reads as
+      // "chosen" and keeps the artwork legible.
+      patch: ['border-esmNavy', 'bg-esmMist', 'text-esmNavy'],
+    }
+    const IDLE = ['border-gray-200', 'bg-white', 'text-gray-500']
+    const ALL_ACTIVE = [...ACTIVE.navy, ...ACTIVE.silver, ...ACTIVE.patch]
+
+    function syncCard(key: string) {
+      const card = document.getElementById(`card-${key}`)
+      if (!card) return
+      const color = card.dataset.color || 'navy'
+      const patch = card.dataset.patch || 'circle'
+
+      // The row for this combination is the source of truth for the photo: it
+      // carries the one `data-src` we shot for it.
+      const row = document.querySelector(
+        `.variant-preview[data-product="${key}"][data-color="${color}"][data-patch="${patch}"]`,
+      ) as HTMLElement | null
+      if (!row) return
+
       const img = document.getElementById(`img-${key}`) as HTMLImageElement | null
       const ph = document.getElementById(`ph-${key}`)
-      const src = btn.getAttribute('data-src') || ''
-
+      const src = row.getAttribute('data-src') || ''
       if (img && ph) {
         // `hidden` and `flex` are both display utilities of equal specificity,
         // so which one wins is decided by their order in the generated stylesheet.
         // Toggling both explicitly keeps that out of it.
         if (src) {
           img.src = src
-          img.alt = btn.getAttribute('data-combo') || ''
+          img.alt = row.getAttribute('data-combo') || ''
           img.classList.remove('hidden')
           ph.classList.add('hidden')
           ph.classList.remove('flex')
@@ -192,29 +225,66 @@ export default function ESMSharksPage() {
           ph.classList.remove('hidden')
           ph.classList.add('flex')
           const art = ph.querySelector('img') as HTMLImageElement | null
-          if (art) art.src = btn.getAttribute('data-patch-art') || ''
+          if (art) art.src = row.getAttribute('data-patch-art') || ''
           const cap = ph.querySelector('[data-cap]')
-          if (cap) cap.textContent = btn.getAttribute('data-combo') || ''
+          if (cap) cap.textContent = row.getAttribute('data-combo') || ''
         }
       }
 
-      document.querySelectorAll(`.variant-row[data-product="${key}"]`).forEach((row) => {
-        row.classList.remove('ring-2', 'ring-esmNavy', 'bg-esmMist/70')
-        row.classList.add('bg-slate-50')
+      document.querySelectorAll(`.variant-row[data-product="${key}"]`).forEach((r) => {
+        r.classList.remove('ring-2', 'ring-esmNavy', 'bg-esmMist/70')
+        r.classList.add('bg-slate-50')
       })
-      const row = btn.closest('.variant-row')
-      if (row) { row.classList.remove('bg-slate-50'); row.classList.add('ring-2', 'ring-esmNavy', 'bg-esmMist/70') }
+      const rowEl = row.closest('.variant-row')
+      if (rowEl) { rowEl.classList.remove('bg-slate-50'); rowEl.classList.add('ring-2', 'ring-esmNavy', 'bg-esmMist/70') }
+
+      document.querySelectorAll(`.combo-btn[data-product="${key}"]`).forEach((b) => {
+        const btn = b as HTMLElement
+        const axis = btn.dataset.axis as 'color' | 'patch'
+        const on = axis === 'color' ? btn.dataset.value === color : btn.dataset.value === patch
+        btn.classList.remove(...ALL_ACTIVE, ...IDLE)
+        if (!on) { btn.classList.add(...IDLE); return }
+        btn.classList.add(...(axis === 'patch' ? ACTIVE.patch : ACTIVE[btn.dataset.value as 'navy' | 'silver']))
+      })
     }
 
-    function setupVariantPreview() {
-      document.querySelectorAll('.variant-preview').forEach((btn) => {
-        btn.addEventListener('click', () => showVariant(btn as HTMLElement))
+    /** Point a card at one combination, from a button or from a row. */
+    function pickCombo(key: string, axis: string, value: string) {
+      const card = document.getElementById(`card-${key}`)
+      if (!card) return
+      if (axis === 'color') card.dataset.color = value
+      else card.dataset.patch = value
+      syncCard(key)
+    }
+
+    function setupComboControls() {
+      // The buttons carry an <img>, so a click can land on the child — read the
+      // listener's own element rather than the event target.
+      document.querySelectorAll('.combo-btn').forEach((b) => {
+        const btn = b as HTMLElement
+        btn.addEventListener('click', () =>
+          pickCombo(btn.dataset.product || '', btn.dataset.axis || '', btn.dataset.value || ''))
+      })
+      document.querySelectorAll('.variant-preview').forEach((r) => {
+        const row = r as HTMLElement
+        row.addEventListener('click', () => {
+          const card = document.getElementById(`card-${row.dataset.product}`)
+          if (!card) return
+          card.dataset.color = row.dataset.color || 'navy'
+          card.dataset.patch = row.dataset.patch || 'circle'
+          syncCard(row.dataset.product || '')
+        })
       })
     }
 
-    /** Restore each card to its first row — used on load and after a reset. */
-    function resetVariantPreviews() {
-      document.querySelectorAll('.variant-preview[data-first="1"]').forEach((btn) => showVariant(btn as HTMLElement))
+    /** Point every card back at navy + circle — on load and after a reset. */
+    function resetCombos() {
+      document.querySelectorAll('[id^="card-"]').forEach((c) => {
+        const card = c as HTMLElement
+        card.dataset.color = 'navy'
+        card.dataset.patch = 'circle'
+        syncCard(card.id.replace(/^card-/, ''))
+      })
     }
 
     // --- Payment radios ---
@@ -490,7 +560,7 @@ export default function ESMSharksPage() {
         if (addrField) addrField.required = false
         // Same reason: the highlighted row and the hero photo are classes and
         // `src`, neither of which `form.reset()` knows about.
-        resetVariantPreviews()
+        resetCombos()
         calculateTotal()
         finalSubmitBtn.innerHTML = 'CONFIRM & SUBMIT'
         finalSubmitBtn.disabled = false
@@ -498,11 +568,11 @@ export default function ESMSharksPage() {
     }
 
     setupQuantityButtons()
-    setupVariantPreview()
+    setupComboControls()
     setupPaymentRadios()
     setupDeliveryRadios()
     setupFormSubmit()
-    resetVariantPreviews()
+    resetCombos()
     calculateTotal()
   }, [])
 
@@ -515,7 +585,10 @@ export default function ESMSharksPage() {
         #esm-sharks-root input[type="number"] { -moz-appearance:textfield }
         .varsity-outline { -webkit-text-stroke:1px #0C2340;text-shadow:3px 3px 0px rgba(12,35,64,0.45) }
         .loader { border:3px solid #E6E9EC;border-top:3px solid #0C2340;border-radius:50%;width:20px;height:20px;animation:spin 1s linear infinite;display:inline-block }
-        @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }` }} />
+        @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+        /* Only the UNCHOSEN buttons get a hover cue — an active one is already
+           filled, and re-colouring it on hover reads as a state change. */
+        .combo-btn.bg-white:hover { border-color:#0C2340 !important; color:#0C2340 !important; }` }} />
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -573,7 +646,58 @@ export default function ESMSharksPage() {
                 {PRODUCTS.map((product) => {
                   const variants = variantsOf(product)
                   return (
-                    <div key={product.key} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full">
+                    <div
+                      key={product.key}
+                      id={`card-${product.key}`}
+                      data-color="navy"
+                      data-patch="circle"
+                      className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full"
+                    >
+                      {/*
+                        Two axes of two. These SHOW a combination; they do not
+                        order one. Picking here moves the highlight onto the
+                        matching row below, so the effect of the button is always
+                        visible on the box that actually decides.
+                      */}
+                      <div className="space-y-2 mb-3">
+                        <div className="flex gap-2">
+                          {COLORS.map((c) => (
+                            <button
+                              key={c.key}
+                              type="button"
+                              className={`combo-btn flex-1 py-1.5 border-2 text-xs font-bold uppercase rounded-md transition-colors ${
+                                c.key === 'navy'
+                                  ? 'border-esmNavy bg-esmNavy text-white'
+                                  : 'border-gray-200 bg-white text-gray-500'
+                              }`}
+                              data-product={product.key}
+                              data-axis="color"
+                              data-value={c.key}
+                            >
+                              {c.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          {PATCHES.map((p) => (
+                            <button
+                              key={p.key}
+                              type="button"
+                              className={`combo-btn flex-1 py-1.5 border-2 text-xs font-bold uppercase rounded-md transition-colors flex items-center justify-center gap-1.5 ${
+                                p.key === 'circle'
+                                  ? 'border-esmNavy bg-esmMist text-esmNavy'
+                                  : 'border-gray-200 bg-white text-gray-500'
+                              }`}
+                              data-product={product.key}
+                              data-axis="patch"
+                              data-value={p.key}
+                            >
+                              <img src={p.art} alt="" className="w-4 h-4 object-contain pointer-events-none" />
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden relative">
                         <img id={`img-${product.key}`} src={variants[0].img || ''} alt={variants[0].name} className="w-full h-full object-cover" />
                         {/*
@@ -598,7 +722,7 @@ export default function ESMSharksPage() {
                       <div className="mt-auto pt-4 border-t border-gray-100">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Pick your colour and patch</p>
                         <div className="space-y-2">
-                          {variants.map((v, i) => (
+                          {variants.map((v) => (
                             <div
                               key={v.id}
                               className="variant-row flex items-center gap-2 bg-slate-50 rounded-lg p-1.5 transition-all"
@@ -613,10 +737,11 @@ export default function ESMSharksPage() {
                                 type="button"
                                 className="variant-preview flex items-center gap-2 flex-1 min-w-0 text-left"
                                 data-product={product.key}
+                                data-color={v.color.key}
+                                data-patch={v.patch.key}
                                 data-src={v.img || ''}
                                 data-patch-art={v.patch.art}
                                 data-combo={v.name}
-                                data-first={i === 0 ? '1' : undefined}
                                 title={`Show ${v.name}`}
                               >
                                 <span className="w-3 h-3 rounded-full flex-none border border-black/20" style={{ background: v.color.swatch }}></span>
