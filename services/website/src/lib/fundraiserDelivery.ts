@@ -6,7 +6,7 @@
  * cross-check the browser's arithmetic against the browser's own line items and
  * has to record a disagreement rather than resolve it (see `lib/cmCheerOrder`).
  *
- * The delivery fee is the one line where that is NOT true: $7 is a rule the PTO
+ * The delivery fee is the one line where that is NOT true: the fee is a rule the PTO
  * set, not a catalogue entry, so the server knows it. That makes this the one
  * charge we can actually PIN rather than merely audit — and pinning it matters,
  * because the fee is the part of the order that goes to the PTO whole. So the
@@ -28,8 +28,15 @@
  * construct a delivery line.
  */
 
-/** The upcharge, in cents. 100% of it is the PTO's. */
-export const HOME_DELIVERY_FEE_CENTS = 700
+/**
+ * The upcharge, in cents. 100% of it is the PTO's.
+ *
+ * THE single source of this number — the order page derives its dollar figure
+ * from it, and `screenDelivery` refuses an order that disagrees. Changing it
+ * here changes the price on screen, in the confirmation email and in the books
+ * together. Was 700; the PTO dropped it to 500 on 2026-09-16.
+ */
+export const HOME_DELIVERY_FEE_CENTS = 500
 
 /**
  * The line-item name. Matched case-insensitively when stripping a client-sent
@@ -49,7 +56,7 @@ export const VALID_DELIVERY_METHODS: DeliveryMethod[] = ['classroom', 'home']
  * orders have always been handed to the athlete at practice — so absence is
  * "classroom", the same reasoning as `resolveFundraiserTeam`. An UNKNOWN value
  * is refused instead of defaulted: quietly turning a typo into "no delivery"
- * would mean a parent who paid $7 never gets their order brought to the door.
+ * would mean a parent who paid the fee never gets their order brought to the door.
  */
 export const DEFAULT_DELIVERY_METHOD: DeliveryMethod = 'classroom'
 
@@ -68,7 +75,7 @@ export function isDeliveryMethod(value: unknown): value is DeliveryMethod {
  * Resolve a posted delivery choice into the three things the row stores.
  *
  * An address is REQUIRED for a home delivery — an order nobody can deliver is
- * worse than one that was never placed, because the $7 has already been paid.
+ * worse than one that was never placed, because the fee has already been paid.
  * It is also DISCARDED for a classroom order: keeping a stray address on a row
  * that is being handed out in class puts a child's home address in a CSV that a
  * parent volunteer downloads, for no purpose the order has.
@@ -108,7 +115,7 @@ export function deliveryLineItem() {
     unit_price: HOME_DELIVERY_FEE_CENTS / 100,
     line_total: HOME_DELIVERY_FEE_CENTS / 100,
     // Zero, because the whole fee is donated to the PTO. `profit_cents` is
-    // subtotal − cost, so a zero cost is what makes the $7 count as raised.
+    // subtotal − cost, so a zero cost is what makes the fee count as raised.
     cost_per_unit: 0,
   }
 }

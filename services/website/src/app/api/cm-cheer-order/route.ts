@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
    * the price of.
    *
    * Everything above is audited against the browser's own line items because
-   * there is no catalogue to check it against. The $7 delivery fee is different:
+   * there is no catalogue to check it against. The delivery fee is different:
    * it is a rule the PTO set, so `reconcileDeliveryItems` throws away whatever
    * delivery line the page sent and substitutes the canonical one before the
    * money is screened. A browser cannot invent a $70 delivery, and cannot attach
@@ -183,7 +183,7 @@ export async function POST(req: NextRequest) {
     /**
      * Where the order is going, in both emails.
      *
-     * A parent who paid $7 needs to see the address we are going to drive to,
+     * A parent who paid for delivery needs to see the address we are going to drive to,
      * while there is still time to correct it — and the organizer needs it to
      * plan the run. A classroom order says so explicitly rather than staying
      * silent, because "no delivery line" and "we forgot to ask" read the same.

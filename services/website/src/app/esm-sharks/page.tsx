@@ -10,6 +10,7 @@ import {
   type PatchSelection,
 } from '@/lib/fundraiserPatches'
 import { FUNDRAISER_TEAMS } from '@/lib/fundraiserTeams'
+import { HOME_DELIVERY_FEE_CENTS } from '@/lib/fundraiserDelivery'
 
 /**
  * This page's team record — the one place the Venmo account is written.
@@ -20,6 +21,17 @@ import { FUNDRAISER_TEAMS } from '@/lib/fundraiserTeams'
  * whose page and email still name different accounts.
  */
 const TEAM = FUNDRAISER_TEAMS['esm-sharks']
+
+/**
+ * The delivery fee as the customer reads it, derived from the server's cents.
+ *
+ * The prose used to spell "$7" three times in the markup. A price written into
+ * a sentence is still a price: leave one behind on a change and the page
+ * promises one figure while the total charges another, which is the complaint
+ * nobody can argue with. Now the sentence and the sum move together.
+ */
+const DELIVERY_FEE_LABEL = `$${(HOME_DELIVERY_FEE_CENTS / 100).toFixed(2)}`
+const DELIVERY_FEE_SHORT = `$${HOME_DELIVERY_FEE_CENTS / 100}`
 // Footer is rendered by root layout
 
 /**
@@ -330,16 +342,17 @@ export default function ESMSharksPage() {
     }
 
     /**
-     * The home-delivery upcharge, in dollars.
+     * The home-delivery upcharge, in dollars — DERIVED from the server's cents.
      *
-     * The server has its own copy in `lib/fundraiserDelivery.ts` and that one is
-     * AUTHORITATIVE: the route throws away whatever delivery line this page
-     * sends and substitutes its own. This constant exists so the number on
-     * screen matches what will be charged — if the two ever drift, the customer
-     * is quoted this and billed that, and the difference is written to the
-     * order's status note rather than silently banked.
+     * `lib/fundraiserDelivery.ts` is authoritative: the route throws away
+     * whatever delivery line this page sends and substitutes its own, and
+     * `screenDelivery` REFUSES an order whose fee disagrees with it. This was a
+     * second hand-typed literal, which meant a fee change had to be made in two
+     * files or every home-delivery order would be rejected — the page quoting
+     * one price while the server insisted on another. Reading the constant
+     * makes that impossible: there is one number now.
      */
-    const HOME_DELIVERY_FEE = 7
+    const HOME_DELIVERY_FEE = HOME_DELIVERY_FEE_CENTS / 100
 
     function isHomeDelivery(): boolean {
       const picked = document.querySelector('input[name="deliveryMethod"]:checked') as HTMLInputElement | null
@@ -566,7 +579,7 @@ export default function ESMSharksPage() {
         const info = document.getElementById('digitalPaymentInfo'); if (info) info.classList.add('hidden')
         // `form.reset()` restores the 'classroom' radio's defaultChecked state
         // but not the class we toggled, so the address box would stay open over
-        // a fresh order and quietly re-add $7.
+        // a fresh order and quietly re-add the delivery fee.
         const addrBox = document.getElementById('deliveryAddressBox'); if (addrBox) addrBox.classList.add('hidden')
         const addrField = document.getElementById('deliveryAddress') as HTMLTextAreaElement | null
         if (addrField) addrField.required = false
@@ -887,7 +900,7 @@ export default function ESMSharksPage() {
                 <div className="p-2 bg-esmNavy/10 rounded-lg text-esmNavy"><i data-lucide="package" className="w-6 h-6"></i></div>
                 <h2 className="text-xl sm:text-3xl font-bold text-esmInk font-oswald uppercase tracking-wide">How Should We Get It To You?</h2>
               </div>
-              <p className="text-sm text-gray-500 mb-5 ml-1">Pick one. Home delivery is an extra $7 — and every cent of it goes to the PTO.</p>
+              <p className="text-sm text-gray-500 mb-5 ml-1">Pick one. Home delivery is an extra {DELIVERY_FEE_SHORT} — and every cent of it goes to the PTO.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="cursor-pointer group">
                   {/* Checked by default: this is how every order has worked so
@@ -907,9 +920,9 @@ export default function ESMSharksPage() {
                   <div className="h-full p-4 border-2 border-gray-200 bg-white rounded-xl peer-checked:border-esmNavy peer-checked:bg-esmMist transition-all group-hover:border-gray-300">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-bold text-esmInk uppercase tracking-wide">🚚 Deliver To My Home</span>
-                      <span className="text-sm font-black text-esmNavy">+$7.00</span>
+                      <span className="text-sm font-black text-esmNavy">+{DELIVERY_FEE_LABEL}</span>
                     </div>
-                    <p className="text-xs text-gray-500 leading-snug">Dropped at your door. The $7 is <strong className="text-esmNavy">100% donated to the PTO</strong>.</p>
+                    <p className="text-xs text-gray-500 leading-snug">Dropped at your door. The {DELIVERY_FEE_SHORT} is <strong className="text-esmNavy">100% donated to the PTO</strong>.</p>
                   </div>
                 </label>
               </div>

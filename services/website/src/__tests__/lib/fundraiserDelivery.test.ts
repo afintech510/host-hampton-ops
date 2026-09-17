@@ -1,5 +1,5 @@
 /**
- * The $7 home-delivery upcharge.
+ * The home-delivery upcharge.
  *
  * Two things are being guarded, and they are different:
  *
@@ -32,7 +32,7 @@ describe('screenDelivery', () => {
   })
 
   it('refuses an unknown method rather than defaulting it', () => {
-    // Defaulting would turn a typo into "no delivery" for a parent who paid $7.
+    // Defaulting would turn a typo into "no delivery" for a parent who paid for delivery.
     for (const bad of ['Home', 'HOME', 'courier', 'home ', 0, true, {}, ['home']]) {
       expect(screenDelivery(bad, '1 Main St').ok).toBe(false)
     }
@@ -83,11 +83,16 @@ describe('reconcileDeliveryItems', () => {
   })
 
   it('OVERRIDES an inflated delivery charge and says so', () => {
+    // 70 is the attacker's number and stays a literal. The CORRECT figure is
+    // derived, because hard-coding it here made this test fail the day the PTO
+    // changed the fee — a tripwire firing on a legitimate price change, which
+    // teaches the next person to edit the test rather than read it.
+    const fee = HOME_DELIVERY_FEE_CENTS / 100
     const inflated = { ...deliveryLineItem(), unit_price: 70, line_total: 70 }
     const { items, note } = reconcileDeliveryItems([hat, inflated], 'home')
     expect(items).toEqual([hat, deliveryLineItem()])
-    expect(items.map(i => (i as typeof hat).line_total)).toEqual([25, 7])
-    expect(note).toMatch(/\$70\.00.*\$7\.00 rate was used/i)
+    expect(items.map(i => (i as typeof hat).line_total)).toEqual([25, fee])
+    expect(note).toMatch(new RegExp(`\\$70\\.00.*\\$${fee.toFixed(2)} rate was used`, 'i'))
   })
 
   it('collapses several delivery lines into one', () => {
@@ -108,7 +113,7 @@ describe('reconcileDeliveryItems', () => {
 
   it('matches a delivery line whatever case or padding the page used', () => {
     // The strip must not be defeatable by casing, or a second delivery line
-    // survives alongside the canonical one and the parent is charged $14.
+    // survives alongside the canonical one and the parent is charged twice.
     for (const name of ['home delivery', 'HOME DELIVERY', ' Home Delivery ']) {
       const { items } = reconcileDeliveryItems([hat, { ...deliveryLineItem(), name, line_total: 70 }], 'home')
       expect(items).toEqual([hat, deliveryLineItem()])
@@ -121,7 +126,7 @@ describe('reconcileDeliveryItems', () => {
     expect(reconcileDeliveryItems(junk, 'classroom').items).toHaveLength(4)
   })
 
-  it('gives the fee a zero cost, so all $7 counts as raised', () => {
+  it('gives the fee a zero cost, so the whole fee counts as raised', () => {
     // profit_cents is subtotal − cost, and the dashboard's "Total Raised" tile
     // is the sum of it. A non-zero cost here would quietly net the PTO's
     // donation off against itself.
