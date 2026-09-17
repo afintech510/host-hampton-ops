@@ -165,6 +165,17 @@ export type SendResult = { ok: true } | { ok: false; reason: string }
 /** Send the plan email. Returns the failure rather than throwing, so the route can say why. */
 export async function sendPlanSummaryEmail(opts: {
   to: string
+  /**
+   * Colleagues of the buyer who should see the same quote in the same thread —
+   * a corporate booking usually has two people on it (Gusto's NYC activation
+   * is Rhiannon plus Camden). They share `to`'s portal link, which is correct:
+   * the link is a magic link for the BOOKING, and anyone the customer would
+   * forward it to could open it anyway.
+   *
+   * Screened by the caller with `isPlausibleEmailAddress` and never taken from
+   * anywhere a customer can reach — only an authenticated admin sets it.
+   */
+  cc?: string[]
   invoice: PlanInvoice
   url: string
   note: string | null
@@ -176,9 +187,11 @@ export async function sendPlanSummaryEmail(opts: {
   }
   const resend = new Resend(process.env.RESEND_API_KEY)
   const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+  const cc = (opts.cc ?? []).filter(a => a.trim().toLowerCase() !== opts.to.trim().toLowerCase())
   const { error } = await resend.emails.send({
     from,
     to: opts.to,
+    ...(cc.length ? { cc } : {}),
     subject: `${opts.subjectPrefix ?? ''}${opts.invoice.docTitle} — ${opts.invoice.booking.booking_ref} | Host Hampton`,
     html: planSummaryEmailHtml({ invoice: opts.invoice, url: opts.url, note: opts.note }),
   })

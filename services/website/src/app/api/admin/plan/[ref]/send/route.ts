@@ -25,6 +25,7 @@ import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adm
 import { loadPlanInvoice } from '@/lib/planInvoice'
 import { writeLedger } from '@/lib/marketing/graph'
 import { buildPlanSummaryLink, sendPlanSummaryEmail, planSummarySms } from '@/lib/planShare'
+import { isPlausibleEmailAddress } from '@/lib/contactLookup'
 import { sendSMSVia } from '@/lib/sms'
 
 type Channel = 'email' | 'sms' | 'both'
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
     channel?: unknown
     confirm?: unknown
     note?: unknown
+    cc?: unknown
   }
 
   if (body.confirm !== true) {
@@ -51,6 +53,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
   }
   const channel: Channel = isChannel(body.channel) ? body.channel : 'email'
   const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim().slice(0, 2000) : null
+
+  /**
+   * Colleagues to copy. A corporate booking is usually two people — Gusto's NYC
+   * activation is Rhiannon plus Camden — and they should read one thread, not
+   * two.
+   *
+   * REFUSED, not filtered: a bad address here means the admin mistyped the one
+   * they meant, and silently dropping it would send the quote to one person
+   * while reporting that both had it (rule 10). Capped at four so this cannot
+   * become a mailing list, and de-duplicated against `to` inside
+   * `sendPlanSummaryEmail`.
+   */
+  const ccRaw = Array.isArray(body.cc) ? body.cc : body.cc === undefined ? [] : [body.cc]
+  if (ccRaw.length > 4) {
+    return NextResponse.json({ error: 'At most 4 cc addresses' }, { status: 400 })
+  }
+  const bad = ccRaw.filter(a => !isPlausibleEmailAddress(a))
+  if (bad.length) {
+    return NextResponse.json(
+      { error: `Not a valid email address: ${bad.map(String).join(', ')} — nothing was sent.` },
+      { status: 400 },
+    )
+  }
+  const cc = (ccRaw as string[]).map(a => a.trim())
 
   const supabase = getSupabase()
 
@@ -102,15 +128,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
   const failures: string[] = []
 
   if (wantsEmail && to) {
-    const sent = await sendPlanSummaryEmail({ to, invoice, url: link.url, note })
+    const sent = await sendPlanSummaryEmail({ to, cc, invoice, url: link.url, note })
     if (sent.ok) {
-      results.push(`Email sent to ${to}`)
+      results.push(cc.length ? `Email sent to ${to} (cc ${cc.join(', ')})` : `Email sent to ${to}`)
       await writeLedger(supabase, {
         entityType: 'booking',
         entityId: invoice.booking.id,
         action: 'send',
         actor,
-        meta: { job: 'plan_summary_email', via: 'admin_send', channel: 'email', to, had_note: note !== null },
+        meta: {
+          job: 'plan_summary_email', via: 'admin_send', channel: 'email', to,
+          // Who else received it is part of "who was told what", so it belongs
+          // in the ledger rather than only in the admin's memory.
+          ...(cc.length ? { cc } : {}),
+          had_note: note !== null,
+        },
       })
     } else {
       failures.push(sent.reason)

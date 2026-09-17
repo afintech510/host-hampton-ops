@@ -153,6 +153,50 @@ describe('POST /api/admin/plan/[ref]/send — "Send to client"', () => {
     expect(sendEmailSpy.mock.calls[0][0].to).toBe('adam@easternbuilding.supply')
   })
 
+  describe('cc — a corporate booking has two people on it', () => {
+    const send = async (cc: unknown) => {
+      const { POST } = await import('@/app/api/admin/plan/[ref]/send/route')
+      return POST(
+        req({ cookie: adminCookie(), body: { channel: 'email', confirm: true, cc } }),
+        { params: params() },
+      )
+    }
+
+    it('copies a colleague on the SAME email as the buyer', async () => {
+      const res = await send(['camden.harris@gusto.com'])
+      expect(res.status).toBe(200)
+      expect(sendEmailSpy).toHaveBeenCalledTimes(1)
+      const call = sendEmailSpy.mock.calls[0][0]
+      expect(call.to).toBe('adam@easternbuilding.supply')
+      expect(call.cc).toEqual(['camden.harris@gusto.com'])
+    })
+
+    it('records who else got it in the ledger', async () => {
+      await send(['camden.harris@gusto.com'])
+      const row = writesTo(db, 'marketing_ledger', 'insert')[0].payload as Record<string, unknown>
+      expect((row.meta as Record<string, unknown>).cc).toEqual(['camden.harris@gusto.com'])
+    })
+
+    it('REFUSES a bad address instead of quietly dropping it', async () => {
+      // Dropping it would send to one person and report that both had it.
+      const res = await send(['camden.harris@gusto.com', 'not an email'])
+      expect(res.status).toBe(400)
+      expect(sendEmailSpy).not.toHaveBeenCalled()
+    })
+
+    it('refuses to become a mailing list', async () => {
+      const res = await send(['a@b.com', 'c@d.com', 'e@f.com', 'g@h.com', 'i@j.com'])
+      expect(res.status).toBe(400)
+      expect(sendEmailSpy).not.toHaveBeenCalled()
+    })
+
+    it('changes nothing when no cc is given', async () => {
+      const res = await send(undefined)
+      expect(res.status).toBe(200)
+      expect(sendEmailSpy.mock.calls[0][0].cc).toEqual([])
+    })
+  })
+
   it('names the admin who did it in the ledger', async () => {
     const { POST } = await import('@/app/api/admin/plan/[ref]/send/route')
     await POST(req({ cookie: adminCookie(), body: { channel: 'email', confirm: true } }), { params: params() })
