@@ -104,7 +104,8 @@ const PRODUCTS = [
     key: 'hat',
     title: 'Trucker Hat',
     price: 25,
-    cost: 20,
+    // $18.75 as of 2026-09-17, so the PTO nets $6.25 rather than $5.00.
+    cost: 18.75,
     blurb: 'Classic mesh-back snapback with your patch stitched on the front panel.',
     shots: {
       'navy-circle': '/images/esm-hat-navy-circle.webp',
@@ -130,7 +131,8 @@ const PRODUCTS = [
     key: 'pouch',
     title: 'Zip Pouch',
     price: 25,
-    cost: 20,
+    // $18.75 as of 2026-09-17, so the PTO nets $6.25 rather than $5.00.
+    cost: 18.75,
     blurb: 'Zippered canvas pouch with your patch. Mouthguards, tape, pencils, whatever.',
     shots: {
       'navy-circle': '/images/esm-pouch-navy-circle.webp',
