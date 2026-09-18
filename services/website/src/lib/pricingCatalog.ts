@@ -470,6 +470,45 @@ export async function loadPricingCatalog(supabase?: Supa): Promise<PricingCatalo
   }
 }
 
+/** One row the admin "Add Line Item" autocomplete can suggest, name + real price. */
+export interface AddOnCatalogItem {
+  name: string
+  priceCents: number
+  guestMultiplied: boolean
+}
+
+/**
+ * Priced add-ons for the admin invoice editor's autocomplete — `service-add-on`
+ * and `decor-add-on` rows (Photobooth, Face Painter, Character Visit, Sodas &
+ * Seltzers, …), the same table `/party-room-rental` reads live. Deliberately a
+ * separate query from `loadPricingCatalog`: those categories aren't part of the
+ * required-keys/fallback contract above (there's no compiled constant for them
+ * to fall back to), so a row without a real price is dropped rather than shown
+ * with a misleading $0 that would silently zero the item if added as-is.
+ */
+export async function loadLineItemAddOns(supabase?: Supa): Promise<AddOnCatalogItem[]> {
+  try {
+    const db = supabase ?? getSupabase()
+    const { data, error } = await db
+      .from('pricing_items')
+      .select('name, price_cents, price_type')
+      .eq('is_active', true)
+      .in('category', ['service-add-on', 'decor-add-on'])
+      .order('sort_order', { ascending: true })
+    if (error || !data) return []
+    return data
+      .filter(r => Number(r.price_cents) > 0)
+      .map(r => ({
+        name: r.name as string,
+        priceCents: Number(r.price_cents),
+        guestMultiplied: r.price_type === 'per_person',
+      }))
+  } catch (err) {
+    console.error('loadLineItemAddOns threw (returning none):', err)
+    return []
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Derived helpers
 // ───────────────────────────────────────────────────────────────────────────

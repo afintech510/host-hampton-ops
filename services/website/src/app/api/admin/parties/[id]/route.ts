@@ -6,7 +6,7 @@ import { formatMoney } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { studioRentalRateWith, hoursBetween } from '@/lib/studioRental'
-import { loadPricingCatalog } from '@/lib/pricingCatalog'
+import { loadPricingCatalog, loadLineItemAddOns } from '@/lib/pricingCatalog'
 import { draftForBookingByHand } from '@/lib/agent/manualDraft'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
 import { sendCheckinLinkSms } from '@/lib/checkinLink'
@@ -54,11 +54,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
   const supabase = getSupabase()
 
-  const [bookingRes, lineItemsRes, paymentsRes, modificationsRes] = await Promise.all([
+  const [bookingRes, lineItemsRes, paymentsRes, modificationsRes, addOnCatalog] = await Promise.all([
     supabase.from('bookings').select('*').eq('id', id).single(),
     supabase.from('booking_line_items').select('*').eq('booking_id', id).order('sort_order'),
     supabase.from('booking_payments').select('*').eq('booking_id', id).order('paid_at', { ascending: false }),
     supabase.from('booking_modifications').select('*').eq('booking_id', id).order('created_at', { ascending: false }),
+    loadLineItemAddOns(supabase),
   ])
 
   if (bookingRes.error) {
@@ -70,6 +71,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     line_items: lineItemsRes.data || [],
     payments: paymentsRes.data || [],
     modifications: modificationsRes.data || [],
+    addOnCatalog,
   })
 }
 
@@ -138,7 +140,38 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
-  return NextResponse.json({ ok: true })
+  // Any per-guest line item (guest-overage, per-head add-ons) is priced off
+  // `guest_count_approx` — see `billedTotalCents` in lib/planBalance.ts. Saving
+  // a new guest count here without also re-running that math is exactly how
+  // "I edited the guest count" and "the invoice still shows the old total"
+  // used to happen: the PATCH used to write the column and stop, so the stored
+  // total/balance went stale until some unrelated line-item action recalculated
+  // it. Recompute in the same request instead.
+  let totalsUpdated: boolean | undefined
+  let totalsWarning: string | undefined
+  let totalCents: number | undefined
+  let balanceCents: number | undefined
+  if (updates.guest_count_approx !== undefined) {
+    const totals = await recalcTotals(supabase, id, { guest_count_approx: updates.guest_count_approx })
+    totalsUpdated = totals.ok
+    if (totals.ok) {
+      totalCents = totals.totalCents
+      balanceCents = totals.balanceCents
+    } else {
+      totalsWarning = `Guest count was saved but the invoice total could not be recalculated (${totals.message}). Reload before quoting this customer.`
+    }
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: totals.ok
+        ? `Guest count change re-priced the invoice — total now ${formatMoney(totals.totalCents)}`
+        : `Guest count change: TOTAL NOT RECALCULATED (${totals.message})`,
+    })
+  }
+
+  return NextResponse.json({
+    ok: true,
+    ...(totalsUpdated !== undefined ? { totalsUpdated, totalCents, balanceCents, warning: totalsWarning } : {}),
+  })
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

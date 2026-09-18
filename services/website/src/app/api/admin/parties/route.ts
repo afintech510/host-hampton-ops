@@ -67,6 +67,18 @@ export async function GET(req: NextRequest) {
   const page = parseInt(req.nextUrl.searchParams.get('page') || '1', 10)
   const limit = 25
 
+  // Column sort for the main list (ignored by the `past=true` photo-backfill
+  // view below, which has its own fixed ordering). Date is the default and
+  // ascending, so with `hidePast` also defaulted on, the soonest upcoming
+  // party — today's, if one exists — sorts to the top rather than whatever
+  // was created most recently.
+  const sortByParam = req.nextUrl.searchParams.get('sortBy')
+  const sortBy: 'party_date' | 'contact_name' | 'status' =
+    sortByParam === 'contact_name' || sortByParam === 'status' ? sortByParam : 'party_date'
+  const sortDir = req.nextUrl.searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'
+  // Opt OUT with `hidePast=false`; any other value (including absent) hides.
+  const hidePast = req.nextUrl.searchParams.get('hidePast') !== 'false'
+
   let query = supabase
     .from('bookings')
     .select(LIST_COLUMNS, { count: 'exact' })
@@ -78,7 +90,13 @@ export async function GET(req: NextRequest) {
     const today = new Date().toISOString().split('T')[0]
     query = query.lt('party_date', today).order('party_date', { ascending: false })
   } else {
-    query = query.order('created_at', { ascending: false })
+    if (hidePast) {
+      // A null party_date is "not yet scheduled", not "past" — it stays
+      // visible so a fresh lead without a date does not vanish from the list.
+      const today = new Date().toISOString().split('T')[0]
+      query = query.or(`party_date.gte.${today},party_date.is.null`)
+    }
+    query = query.order(sortBy, { ascending: sortDir === 'asc', nullsFirst: false })
   }
 
   if (status) {

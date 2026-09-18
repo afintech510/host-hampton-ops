@@ -115,6 +115,8 @@ interface PartyDetail extends PartyBookingSummary {
   line_items: { id: string; name: string; quantity: number; unit_price_cents: number; guest_multiplied: boolean; category: string }[]
   payments: { id: string; payment_type: string; payment_method: string; amount_cents: number; card_fee_cents: number; paid_at: string; recorded_by: string; notes: string | null }[]
   modifications: { id: string; modified_by: string; change_summary: string; created_at: string }[]
+  /** Standard priced add-ons (Photobooth, Face Painter, …) for the Add Item autocomplete. */
+  addOnCatalog?: { name: string; priceCents: number; guestMultiplied: boolean }[]
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -148,6 +150,23 @@ function checkinBadge(status: string | null | undefined) {
 const PIPELINE: readonly string[] = PIPELINE_STAGES
 const PARTY_TYPE_FILTERS: readonly string[] = ['all', ...PARTY_TYPES]
 
+type SortColumn = 'party_date' | 'contact_name' | 'status'
+
+/** A clickable column header — click toggles direction, clicking a new column resets to ascending. */
+function SortHeader({
+  label, column, sortBy, sortDir, onSort,
+}: { label: string; column: SortColumn; sortBy: SortColumn; sortDir: 'asc' | 'desc'; onSort: (c: SortColumn) => void }) {
+  const active = sortBy === column
+  return (
+    <th
+      className="pb-2 pr-4 cursor-pointer select-none hover:text-gray-700"
+      onClick={() => onSort(column)}
+    >
+      {label}{active && <span className="ml-0.5">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+    </th>
+  )
+}
+
 interface PipelineCounts {
   byStatus: Record<string, number>
   byPartyType: Record<string, number>
@@ -176,6 +195,10 @@ export default function PartiesTab({
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('all')
   const [partyTypeFilter, setPartyTypeFilter] = useState('all')
+  const [sortBy, setSortBy] = useState<'party_date' | 'contact_name' | 'status'>('party_date')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  // Past parties are hidden by default; this box unhides them.
+  const [showPast, setShowPast] = useState(false)
   const [counts, setCounts] = useState<PipelineCounts | null>(null)
   // Falls back to the compiled rates until the first fetch lands, so the helper
   // text is never blank and never zero.
@@ -208,7 +231,17 @@ export default function PartiesTab({
   const [creating, setCreating] = useState(false)
   const [createResult, setCreateResult] = useState<{ ok: boolean; bookingRef?: string; builderUrl?: string; error?: string } | null>(null)
 
-  useEffect(() => { fetchBookings() }, [statusFilter, partyTypeFilter, page])
+  useEffect(() => { fetchBookings() }, [statusFilter, partyTypeFilter, page, sortBy, sortDir, showPast])
+
+  function setSort(column: SortColumn) {
+    if (sortBy === column) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(column)
+      setSortDir('asc')
+    }
+    setPage(1)
+  }
 
   async function createPartyPlan() {
     if (!newForm.contactName || !newForm.contactEmail) {
@@ -256,9 +289,10 @@ export default function PartiesTab({
 
   async function fetchBookings() {
     setLoading(true)
-    const params = new URLSearchParams({ page: String(page) })
+    const params = new URLSearchParams({ page: String(page), sortBy, sortDir })
     if (statusFilter !== 'all') params.set('status', statusFilter)
     if (partyTypeFilter !== 'all') params.set('party_type', partyTypeFilter)
+    if (showPast) params.set('hidePast', 'false')
     const res = await fetch(`/api/admin/parties?${params}`, { headers })
     const data = await res.json()
     setBookings(data.bookings || [])
@@ -280,15 +314,23 @@ export default function PartiesTab({
   async function patchBooking(updates: Record<string, unknown>) {
     if (!selected) return
     setActionLoading('save')
-    await fetch(`/api/admin/parties/${selected.id}`, {
+    const res = await fetch(`/api/admin/parties/${selected.id}`, {
       method: 'PATCH',
       headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     })
+    const data = await res.json().catch(() => ({}))
     await fetchDetail(selected.id)
     await fetchBookings()
     setActionLoading('')
     setEditing(false)
+    if (data.totalsUpdated === true) {
+      setCopyToast(`Guest count saved — invoice re-priced to ${formatMoney(data.totalCents)}`)
+      setTimeout(() => setCopyToast(''), 3000)
+    } else if (data.totalsUpdated === false) {
+      setCopyToast(data.warning || 'Guest count saved but the invoice total could not be recalculated')
+      setTimeout(() => setCopyToast(''), 4000)
+    }
   }
 
   async function doAction(action: string, extra?: Record<string, unknown>) {
@@ -528,6 +570,14 @@ export default function PartiesTab({
                 </button>
               )
             })}
+            <label className="flex items-center gap-1.5 ml-2 text-xs text-gray-500 select-none">
+              <input
+                type="checkbox"
+                checked={showPast}
+                onChange={e => { setShowPast(e.target.checked); setPage(1) }}
+              />
+              Show past parties
+            </label>
           </div>
           <a
             // ?new=true tells the planner to clear any existing portal cookie
@@ -694,15 +744,15 @@ export default function PartiesTab({
               <thead>
                 <tr className="text-left text-gray-500 border-b">
                   <th className="pb-2 pr-4">Ref</th>
-                  <th className="pb-2 pr-4">Customer</th>
-                  <th className="pb-2 pr-4">Date</th>
+                  <SortHeader label="Customer" column="contact_name" sortBy={sortBy} sortDir={sortDir} onSort={setSort} />
+                  <SortHeader label="Date" column="party_date" sortBy={sortBy} sortDir={sortDir} onSort={setSort} />
                   <th className="pb-2 pr-4">Type</th>
                   <th className="pb-2 pr-4">Theme</th>
                   <th className="pb-2 pr-4">Food</th>
                   <th className="pb-2 pr-4">Guests</th>
                   <th className="pb-2 pr-4">Total</th>
                   <th className="pb-2 pr-4">Balance</th>
-                  <th className="pb-2 pr-4">Status</th>
+                  <SortHeader label="Status" column="status" sortBy={sortBy} sortDir={sortDir} onSort={setSort} />
                 </tr>
               </thead>
               <tbody>
@@ -953,7 +1003,31 @@ export default function PartiesTab({
             {addingItem && (
               <div className="mt-3 pt-3 border-t border-dashed border-gray-200 space-y-2">
                 <div className="grid grid-cols-2 gap-2">
-                  <input type="text" value={newItem.name} onChange={e => setNewItem(n => ({ ...n, name: e.target.value }))} placeholder="Item name" className="border rounded px-2 py-1.5 text-sm" />
+                  <input
+                    type="text"
+                    list="standard-line-items"
+                    value={newItem.name}
+                    onChange={e => {
+                      const name = e.target.value
+                      // Selecting a catalog option fires the same onChange with
+                      // the option's exact value — that is the only signal a
+                      // native <datalist> gives, so match on it to autofill.
+                      const match = (selected as PartyDetail).addOnCatalog?.find(c => c.name === name)
+                      setNewItem(n => ({
+                        ...n,
+                        name,
+                        price: match ? String(match.priceCents / 100) : n.price,
+                        guest_multiplied: match ? match.guestMultiplied : n.guest_multiplied,
+                      }))
+                    }}
+                    placeholder="Item name"
+                    className="border rounded px-2 py-1.5 text-sm"
+                  />
+                  <datalist id="standard-line-items">
+                    {((selected as PartyDetail).addOnCatalog || []).map(c => (
+                      <option key={c.name} value={c.name}>{formatMoney(c.priceCents)}{c.guestMultiplied ? '/guest' : ''}</option>
+                    ))}
+                  </datalist>
                   <input type="number" value={newItem.price} onChange={e => setNewItem(n => ({ ...n, price: e.target.value }))} placeholder="Price ($)" className="border rounded px-2 py-1.5 text-sm" step="0.01" />
                 </div>
                 <div className="flex items-center gap-3">
