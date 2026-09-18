@@ -56,6 +56,32 @@ const LIST_COLUMNS =
  */
 const COUNT_SCAN_LIMIT = 2000
 
+/** One row of `LIST_COLUMNS`, as far as the sort/merge below need to know it. */
+interface ListRow {
+  party_date: string | null
+  contact_name: string | null
+  status: string | null
+  [key: string]: unknown
+}
+
+type SortColumn = 'party_date' | 'contact_name' | 'status'
+
+/**
+ * Compares two rows for the in-memory sort `hidePast` needs (see below). Nulls
+ * sort last regardless of direction — the same `nullsFirst: false` the plain
+ * DB-ordered path below asks Postgres for, kept consistent here by hand.
+ */
+function compareRows(a: ListRow, b: ListRow, sortBy: SortColumn, sortDir: 'asc' | 'desc'): number {
+  const av = a[sortBy] as string | null
+  const bv = b[sortBy] as string | null
+  if (av == null && bv == null) return 0
+  if (av == null) return 1
+  if (bv == null) return -1
+  if (av === bv) return 0
+  const dir = sortDir === 'asc' ? 1 : -1
+  return av < bv ? -dir : dir
+}
+
 export async function GET(req: NextRequest) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
@@ -73,52 +99,83 @@ export async function GET(req: NextRequest) {
   // party — today's, if one exists — sorts to the top rather than whatever
   // was created most recently.
   const sortByParam = req.nextUrl.searchParams.get('sortBy')
-  const sortBy: 'party_date' | 'contact_name' | 'status' =
+  const sortBy: SortColumn =
     sortByParam === 'contact_name' || sortByParam === 'status' ? sortByParam : 'party_date'
   const sortDir = req.nextUrl.searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'
   // Opt OUT with `hidePast=false`; any other value (including absent) hides.
   const hidePast = req.nextUrl.searchParams.get('hidePast') !== 'false'
 
-  let query = supabase
-    .from('bookings')
-    .select(LIST_COLUMNS, { count: 'exact' })
-    .not('event_type', 'in', `(${NON_PARTY_EVENT_TYPES.join(',')})`)
-    .range((page - 1) * limit, page * limit - 1)
+  // Every filter shared by every shape of this query except party_date/order/
+  // range/count, which differ by branch below. `.select()` is left to each
+  // caller since the two `hidePast` halves don't want a `count`.
+  function withCommonFilters<T extends { eq: Function; neq: Function; not: Function; is: Function }>(q: T): T {
+    let out = q.not('event_type', 'in', `(${NON_PARTY_EVENT_TYPES.join(',')})`)
+    if (status) {
+      out = out.eq('status', status)
+    } else {
+      // Cancelled is an exit from the pipeline, not a stage in it, and it is
+      // the bucket that fills up with abandoned duplicates and throwaway
+      // rows. It is hidden unless you ask for it by name — the Cancelled
+      // chip still shows the true count and still lists them, so nothing
+      // becomes unreachable.
+      out = out.neq('status', 'cancelled')
+    }
+    // Ignore an unrecognised value rather than returning nothing: a typo in
+    // the query string should not read as "there are no parties".
+    if (isPartyType(partyType)) out = out.eq('party_type', partyType)
+    if (photoFilter === 'missing') out = out.is('photo_gallery_url', null)
+    else if (photoFilter === 'set') out = out.not('photo_gallery_url', 'is', null)
+    return out
+  }
+
+  let data: ListRow[] | null = null
+  let error: { message: string } | null = null
+  let count = 0
 
   if (past) {
-    // Photo backfill view: parties whose date has passed, most recent first
+    // Photo backfill view: parties whose date has passed, most recent first.
     const today = new Date().toISOString().split('T')[0]
-    query = query.lt('party_date', today).order('party_date', { ascending: false })
-  } else {
-    if (hidePast) {
-      // A null party_date is "not yet scheduled", not "past" — it stays
-      // visible so a fresh lead without a date does not vanish from the list.
-      const today = new Date().toISOString().split('T')[0]
-      query = query.or(`party_date.gte.${today},party_date.is.null`)
+    const res = await withCommonFilters(
+      supabase.from('bookings').select(LIST_COLUMNS, { count: 'exact' }),
+    )
+      .lt('party_date', today)
+      .order('party_date', { ascending: false })
+      .range((page - 1) * limit, page * limit - 1)
+    data = res.data as ListRow[] | null
+    error = res.error
+    count = res.count || 0
+  } else if (hidePast) {
+    // "party_date >= today OR party_date IS NULL" — a null date is "not yet
+    // scheduled", not "past", so it stays visible rather than vanishing from
+    // the list. PostgREST has no safe way to express that OR through this
+    // client except the raw `.or()` filter string, which this codebase bans
+    // outright (R10/R4: it is an injection vector once any part of the
+    // expression can carry a caller-influenced value, and an exemption for
+    // "but this part is server-generated" is exactly the exception that got
+    // it removed last time). So: two filtered queries, merged and paginated
+    // by hand instead of by PostgREST.
+    const today = new Date().toISOString().split('T')[0]
+    const [futureRes, undatedRes] = await Promise.all([
+      withCommonFilters(supabase.from('bookings').select(LIST_COLUMNS)).gte('party_date', today).limit(COUNT_SCAN_LIMIT),
+      withCommonFilters(supabase.from('bookings').select(LIST_COLUMNS)).is('party_date', null).limit(COUNT_SCAN_LIMIT),
+    ])
+    if (futureRes.error || undatedRes.error) {
+      error = futureRes.error || undatedRes.error
+    } else {
+      const merged = [...(futureRes.data || []), ...(undatedRes.data || [])] as unknown as ListRow[]
+      merged.sort((a, b) => compareRows(a, b, sortBy, sortDir))
+      count = merged.length
+      data = merged.slice((page - 1) * limit, page * limit)
     }
-    query = query.order(sortBy, { ascending: sortDir === 'asc', nullsFirst: false })
-  }
-
-  if (status) {
-    query = query.eq('status', status)
   } else {
-    // Cancelled is an exit from the pipeline, not a stage in it, and it is the
-    // bucket that fills up with abandoned duplicates and throwaway rows. It is
-    // hidden unless you ask for it by name — the Cancelled chip still shows the
-    // true count and still lists them, so nothing becomes unreachable.
-    query = query.neq('status', 'cancelled')
-  }
-
-  // Ignore an unrecognised value rather than returning nothing: a typo in the
-  // query string should not read as "there are no parties".
-  if (isPartyType(partyType)) {
-    query = query.eq('party_type', partyType)
-  }
-
-  if (photoFilter === 'missing') {
-    query = query.is('photo_gallery_url', null)
-  } else if (photoFilter === 'set') {
-    query = query.not('photo_gallery_url', 'is', null)
+    const res = await withCommonFilters(
+      supabase.from('bookings').select(LIST_COLUMNS, { count: 'exact' }),
+    )
+      .order(sortBy, { ascending: sortDir === 'asc', nullsFirst: false })
+      .range((page - 1) * limit, page * limit - 1)
+    data = res.data as ListRow[] | null
+    error = res.error
+    count = res.count || 0
   }
 
   // One unfiltered scan feeds both chip rows. Neither count may be scoped by
@@ -132,8 +189,7 @@ export async function GET(req: NextRequest) {
     .not('event_type', 'in', `(${NON_PARTY_EVENT_TYPES.join(',')})`)
     .limit(COUNT_SCAN_LIMIT)
 
-  const [{ data, error, count }, { data: countRows, error: countErr }, catalog] = await Promise.all([
-    query,
+  const [{ data: countRows, error: countErr }, catalog] = await Promise.all([
     countQuery,
     loadPricingCatalog(supabase),
   ])

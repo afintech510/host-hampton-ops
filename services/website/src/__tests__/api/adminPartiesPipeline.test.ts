@@ -61,15 +61,20 @@ function makeSupabase(opts: Opts = {}) {
         if (table === 'pricing_items') {
           return Promise.resolve({ data: [], error: null, count: null }).then(res, rej)
         }
-        // The paged query is the one that asked for an exact count.
-        const isPaged = ops.some(o => o[0] === 'select' && (o[2] as { count?: string })?.count === 'exact')
+        // The paged query is the one selecting the list's own columns
+        // (LIST_COLUMNS, uniquely identified here by `booking_ref`) — not the
+        // `count: 'exact'` option, which the `hidePast` default (route.ts) no
+        // longer sets on every list query: it runs the list as two queries
+        // (future dates + null dates, merged in JS instead of a raw `.or()`)
+        // and paginates by hand, so neither half asks PostgREST for a count.
+        const isPaged = ops.some(o => o[0] === 'select' && typeof o[1] === 'string' && o[1].includes('booking_ref'))
         const result = isPaged
           ? { data: opts.page ?? [], error: opts.listError ?? null, count: (opts.page ?? []).length }
           : { data: opts.all ?? [], error: null, count: null }
         return Promise.resolve(result).then(res, rej)
       },
     }
-    for (const m of ['select', 'eq', 'neq', 'in', 'not', 'is', 'gte', 'lt', 'order', 'limit', 'range']) {
+    for (const m of ['select', 'eq', 'neq', 'in', 'not', 'is', 'gte', 'lt', 'or', 'order', 'limit', 'range']) {
       chain[m] = jest.fn((...args: unknown[]) => { ops.push([m, ...args]); return chain })
     }
     return chain
@@ -179,7 +184,10 @@ describe('GET /api/admin/parties', () => {
     const { supabase, calls } = makeSupabase({ page: [{ id: 'a', status: 'cancelled' }] })
     mockGetSupabase.mockReturnValue(supabase)
 
-    const res = await GET(makeReq({ status: 'cancelled' }))
+    // hidePast:false — this test is about the status filter, not date-hiding.
+    // The mock has no real WHERE clause, so the default hidePast merge (two
+    // queries, "future" + "undated") would double-count this one fixture row.
+    const res = await GET(makeReq({ status: 'cancelled', hidePast: 'false' }))
 
     // ...and does NOT exclude it when that is the stage you selected, or the
     // Cancelled chip would be a button that shows an empty list forever.
@@ -218,7 +226,8 @@ describe('GET /api/admin/parties', () => {
     const { supabase, calls } = makeSupabase({ page: [{ id: 'a' }] })
     mockGetSupabase.mockReturnValue(supabase)
 
-    const res = await GET(makeReq({ party_type: 'mobil_party' }))
+    // hidePast:false — see the comment on the cancelled-chip test above.
+    const res = await GET(makeReq({ party_type: 'mobil_party', hidePast: 'false' }))
 
     // A typo in the query string must not read as "there are no parties".
     const eqs = calls.flatMap(c => c.ops.filter(o => o[0] === 'eq' && o[1] === 'party_type'))
