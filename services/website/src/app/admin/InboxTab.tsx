@@ -172,8 +172,15 @@ function formatPartyTime(raw: string): string {
   return `${h12}:${m[2]} ${suffix}`
 }
 
+/**
+ * A second, admin-only spelling of `lib/planInvoice.ts`'s `money` — deliberately
+ * NOT imported from there, because this is a client component and that module
+ * reaches for `getSupabase` and the pricing catalog, which would drag server
+ * code into the browser bundle. It carries the same sign rule ("-$250.00", not
+ * "$-250.00"); it keeps its own thousands handling.
+ */
 function money(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`
+  return `${cents < 0 ? '-' : ''}$${Math.abs(cents / 100).toFixed(2)}`
 }
 
 /** One label/value pair. A field nobody told us is said so, not left blank. */

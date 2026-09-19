@@ -38,6 +38,25 @@ describe('money', () => {
     expect(money(25000)).toBe('$250.00')
     expect(money(140100)).toBe('$1,401.00')
   })
+
+  /**
+   * A discount is "-$250.00", not "$-250.00". The sign belongs outside the
+   * currency symbol; the old spelling put the whole signed number after the `$`.
+   * Six live bookings carry a negative line item, and `lib/planShare.ts` puts
+   * this same string in the emailed and texted summary.
+   */
+  it('puts the minus in front of the dollar sign, not after it', () => {
+    expect(money(-25000)).toBe('-$250.00') // HH-PTY-F47YW, "Friends & Fam"
+    expect(money(-20000)).toBe('-$200.00')
+    expect(money(-140100)).toBe('-$1,401.00')
+    expect(money(-1)).toBe('-$0.01')
+  })
+
+  it('never prints a signed zero', () => {
+    // `-0 < 0` is false, so this is already right — pinned because a refund that
+    // exactly cancels a payment is the obvious way to reach it.
+    expect(money(-0)).toBe('$0.00')
+  })
 })
 
 describe('docTitleFor', () => {

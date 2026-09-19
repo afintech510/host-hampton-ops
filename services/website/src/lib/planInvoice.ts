@@ -149,9 +149,24 @@ export function canEditPlanInBuilder(partyType: string | null | undefined): bool
   return partyType === 'in_studio_theme'
 }
 
-/** Cents → "$1,234.00". The only money formatter this page uses. */
+/**
+ * Cents → "$1,234.00". The only money formatter this page uses.
+ *
+ * The sign goes OUTSIDE the currency symbol: a discount is "-$250.00", never
+ * "$-250.00". The old spelling interpolated the whole signed number after the
+ * `$`, so every discount line on every quote printed with the minus wedged
+ * between the symbol and the digits — including Jessica's "Friends & Fam" on
+ * HH-PTY-F47YW. Six live bookings carry a negative line item.
+ *
+ * Worth more than it looks: `money` is also what `lib/planShare.ts` puts in the
+ * emailed and texted summary, so this is a string a customer keeps.
+ */
 export function money(cents: number): string {
-  return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const sign = cents < 0 ? '-' : ''
+  return `${sign}$${(Math.abs(cents) / 100).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
 }
 
 const DOC_TITLES: Record<string, string> = {
