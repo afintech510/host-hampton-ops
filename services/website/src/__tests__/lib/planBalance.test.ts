@@ -14,6 +14,7 @@ import {
   depositIsSeparateFor,
   guestMultiplier,
   paidAsDepositCents,
+  paidTowardDepositCents,
   paidTowardTotalCents,
   planMoney,
   quoteTimeBalanceCents,
@@ -90,6 +91,30 @@ describe('paidTowardTotalCents / paidAsDepositCents', () => {
   })
 })
 
+describe('paidTowardDepositCents', () => {
+  /**
+   * The type on the row is bookkeeping; the money is the money. Since the
+   * deposit is the first part of the total, anything credited to the total has
+   * paid it down. HH-PTY-F47YW is the invoice that proved it: $300 typed
+   * `partial` read as $0 toward a $250 deposit.
+   */
+  it('credits a payment of any type once the deposit comes off the total', () => {
+    expect(paidTowardDepositCents([pay('partial', 30000)], false, 30000)).toBe(30000)
+    expect(paidTowardDepositCents([pay('final', 9900)], false, 9900)).toBe(9900)
+  })
+
+  it('reads only the typed rows when the deposit is held APART from the total', () => {
+    // A payment against the total says nothing about a debt beside the total.
+    expect(paidTowardDepositCents([pay('partial', 30000)], true, 0)).toBe(0)
+    expect(paidTowardDepositCents([pay('deposit', 25000)], true, 0)).toBe(25000)
+  })
+
+  it('never reads a net refund as negative progress on the deposit', () => {
+    // paidTowardTotal is -40000 here; the deposit is untouched, not over-owed.
+    expect(paidTowardDepositCents([pay('partial', 10000), pay('refund', 50000)], false, -40000)).toBe(0)
+  })
+})
+
 describe('planMoney — the figures the document and the buttons both use', () => {
   const party = (payments: PaymentRow[], totalCents = 60000) =>
     planMoney({ totalCents, depositCents: Math.min(25000, totalCents), depositIsSeparate: false, payments })
@@ -115,10 +140,43 @@ describe('planMoney — the figures the document and the buttons both use', () =
     expect(m.depositOwedCents).toBe(0) // ← the $257.50 button
   })
 
-  it('the deposit is capped by what is left, never by the notional $250 alone', () => {
-    expect(party([pay('partial', 55000)]).depositOwedCents).toBe(5000)
-    expect(party([pay('partial', 40000)]).depositOwedCents).toBe(20000)
-    expect(party([pay('partial', 10000)]).depositOwedCents).toBe(25000)
+  /**
+   * HH-PTY-F47YW, 2026-09-19, seen by the customer.
+   *
+   * Jessica's party: $925.00, one $300.00 card payment through the portal,
+   * recorded `partial` because it was short of the full balance. The deposit
+   * read as unpaid, so the invoice printed "Balance Due $375.00" (the $250
+   * deducted as though it were a second payment) beside a callout demanding
+   * "Reservation Deposit — Required to Book $250.00". `/my-booking` said
+   * $625.00, which was right, and `bookings.balance_due_cents` held 62500.
+   */
+  it('a $300 payment typed `partial` pays the deposit down — HH-PTY-F47YW', () => {
+    const m = planMoney({
+      totalCents: 92500,
+      depositCents: 25000,
+      depositIsSeparate: false,
+      payments: [pay('partial', 30000)],
+    })
+    expect(m.paidCents).toBe(30000)
+    expect(m.depositOwedCents).toBe(0) // ← the callout that should not be shown
+    expect(m.balanceDueCents).toBe(62500) // ← what /my-booking said all along
+    expect(m.outstandingCents).toBe(62500)
+  })
+
+  it('the deposit is paid down by what has landed, whatever the row is typed', () => {
+    expect(party([pay('partial', 55000)]).depositOwedCents).toBe(0)
+    expect(party([pay('partial', 40000)]).depositOwedCents).toBe(0)
+    expect(party([pay('partial', 25000)]).depositOwedCents).toBe(0)
+    // Under the deposit: the REMAINDER of it is still owed, not the whole.
+    expect(party([pay('partial', 10000)]).depositOwedCents).toBe(15000)
+    expect(party([pay('partial', 10000)]).balanceDueCents).toBe(35000)
+  })
+
+  it('is still capped by what the plan owes, so it can never exceed the balance', () => {
+    // A $200 party takes a $200 deposit, not $250 — the cap link 23 added.
+    const m = planMoney({ totalCents: 20000, depositCents: 20000, depositIsSeparate: false, payments: [] })
+    expect(m.depositOwedCents).toBe(20000)
+    expect(m.balanceDueCents).toBe(0)
   })
 
   /**

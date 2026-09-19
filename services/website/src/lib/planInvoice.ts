@@ -167,9 +167,31 @@ const DOC_TITLES: Record<string, string> = {
  */
 const BOOKED_STATUSES = new Set(['deposit_paid', 'approved', 'modifications_locked', 'paid_in_full', 'completed'])
 
+export function isBookedStatus(status: string | null | undefined): boolean {
+  return !!status && BOOKED_STATUSES.has(status)
+}
+
 export function docTitleFor(partyType: string, status: string | null): string {
   const base = DOC_TITLES[partyType] ?? DOC_TITLES.unknown
-  return status && BOOKED_STATUSES.has(status) ? base.replace('Quotation', 'Invoice') : base
+  return isBookedStatus(status) ? base.replace('Quotation', 'Invoice') : base
+}
+
+/**
+ * Is this document still a QUOTE — a price nobody has acted on yet?
+ *
+ * A quote shows Total and the deposit that books the date, and nothing else
+ * (owner ruling 2026-09-17): "Balance Due" on a page where no money has moved
+ * is arithmetic the customer did not ask for, and it competes with the one
+ * number we actually want them to act on.
+ *
+ * The moment money lands the document stops being a quote and the balance MUST
+ * come back — a customer who has paid $250 of $1,100 needs the $850 stated
+ * somewhere. So this is deliberately BOTH tests, not just the status: a payment
+ * recorded against a booking whose status nobody advanced would otherwise hide
+ * a real outstanding balance behind a stale column.
+ */
+export function isQuoteStage(booking: { status?: string | null }, paidCents: number): boolean {
+  return !isBookedStatus(booking.status) && paidCents <= 0
 }
 
 /**

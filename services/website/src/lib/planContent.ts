@@ -93,7 +93,7 @@ export const FALLBACK_CONTENT_ROWS: PlanContentRow[] = [
   { party_type: 'studio_rental', slot: 'deposit_label', body: 'Reservation Deposit — Required to Book', sort_order: 1 },
   {
     party_type: 'studio_rental', slot: 'deposit_note', sort_order: 1,
-    body: 'Due now to reserve the date. It comes off your total — the Balance Due above is what is left after it.',
+    body: 'Due now to reserve the date. It comes off your total, so it is not an extra charge.',
   },
   {
     party_type: 'studio_rental', slot: 'balance_note', sort_order: 1,
@@ -106,7 +106,7 @@ export const FALLBACK_CONTENT_ROWS: PlanContentRow[] = [
   { party_type: 'mobile_party', slot: 'deposit_label', body: 'Reservation Deposit — Required to Book', sort_order: 1 },
   {
     party_type: 'mobile_party', slot: 'deposit_note', sort_order: 1,
-    body: 'Separate from your Total and due now to reserve the date. It comes off your balance on the day.',
+    body: 'Due now to reserve the date. It comes off your total, so it is not an extra charge.',
   },
   {
     party_type: 'in_studio_theme', slot: 'good_to_know', sort_order: 1,
@@ -115,10 +115,13 @@ export const FALLBACK_CONTENT_ROWS: PlanContentRow[] = [
   { party_type: 'in_studio_theme', slot: 'deposit_label', body: 'Reservation Deposit — Required to Book', sort_order: 1 },
   {
     party_type: 'in_studio_theme', slot: 'deposit_note', sort_order: 1,
-    body: 'Separate from your Total and due now to reserve the date. It comes off your balance on the day.',
+    body: 'Due now to reserve the date. It comes off your total, so it is not an extra charge.',
   },
   { party_type: 'all', slot: 'deposit_label', body: 'Reservation Deposit — Required to Book', sort_order: 1 },
-  { party_type: 'all', slot: 'deposit_note', body: 'Separate from your Total and due now to reserve the date.', sort_order: 1 },
+  {
+    party_type: 'all', slot: 'deposit_note', sort_order: 1,
+    body: 'Due now to reserve the date. It comes off your total, so it is not an extra charge.',
+  },
   {
     party_type: 'all', slot: 'addons_intro', sort_order: 1,
     body: "Popular additions for this party — ask us to add any of these and we'll send an updated quote.",

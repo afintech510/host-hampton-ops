@@ -11,6 +11,7 @@ import {
   formatClockTime,
   formatEventDateTime,
   hiddenSectionsFrom,
+  isQuoteStage,
   orderLineItems,
   loadPlanInvoice,
   money,
@@ -54,6 +55,53 @@ describe('docTitleFor', () => {
   it('falls back rather than rendering a blank title for an unclassified lead', () => {
     expect(docTitleFor('unknown', 'lead')).toBe('Party Quotation')
     expect(docTitleFor('something_new', null)).toBe('Party Quotation')
+  })
+})
+
+describe('isQuoteStage', () => {
+  // Owner ruling 2026-09-17: a quote shows Total and the deposit that books the
+  // date, and stops there. The Balance Due row is gated on this.
+  it('is true while nothing has been paid and the plan is not booked', () => {
+    expect(isQuoteStage({ status: 'lead' }, 0)).toBe(true)
+    expect(isQuoteStage({ status: 'awaiting_deposit' }, 0)).toBe(true)
+    expect(isQuoteStage({ status: null }, 0)).toBe(true)
+    expect(isQuoteStage({}, 0)).toBe(true)
+  })
+
+  it('is false once the plan is booked — the balance has to be stated again', () => {
+    for (const status of ['deposit_paid', 'approved', 'modifications_locked', 'paid_in_full', 'completed']) {
+      expect(isQuoteStage({ status }, 0)).toBe(false)
+    }
+  })
+
+  /**
+   * The case the status alone gets wrong. A payment recorded by hand against a
+   * booking nobody advanced out of `lead` would otherwise keep the document in
+   * "quote" mode and hide a real outstanding balance — the customer has paid
+   * $250 of $1,100 and the page would print neither the $250 nor the $850.
+   */
+  it('is false as soon as money has landed, whatever the status says', () => {
+    expect(isQuoteStage({ status: 'lead' }, 25000)).toBe(false)
+    expect(isQuoteStage({ status: 'awaiting_deposit' }, 1)).toBe(false)
+  })
+
+  it('treats a negative or absent paid figure as nothing paid', () => {
+    expect(isQuoteStage({ status: 'lead' }, -1)).toBe(true)
+  })
+})
+
+describe('deposit copy', () => {
+  /**
+   * The Balance Due row is hidden at quote stage, so no copy may point at it —
+   * a block removed without its sentence leaves the document describing a
+   * figure it does not print.
+   */
+  it('never refers to a Balance Due block that may not be rendered', () => {
+    const notes = FALLBACK_CONTENT_ROWS.filter(r => r.slot === 'deposit_note')
+    expect(notes.length).toBeGreaterThan(0)
+    for (const row of notes) {
+      expect(row.body.toLowerCase()).not.toContain('balance due above')
+    }
   })
 })
 

@@ -230,6 +230,47 @@ export function paidAsDepositCents(payments: PaymentRow[]): number {
   return sum
 }
 
+/**
+ * How much has been paid down ON THE DEPOSIT — which is not the same question as
+ * "how much arrived carrying the label `deposit`".
+ *
+ * Since needs-Adam 41 the deposit is the FIRST PART of the total, not a debt
+ * beside it. So any money credited to the total pays it down, whatever the row
+ * is typed. Typing it `deposit` is a bookkeeping nicety; the customer's money is
+ * the same money either way.
+ *
+ * Reading only the typed rows is what broke HH-PTY-F47YW in front of a real
+ * customer on 2026-09-19. Jessica paid $300 of a $925 party through the portal;
+ * `/api/portal/pay` recorded it `partial` (its default for anything short of the
+ * full balance), so `paidAsDepositCents` answered $0, the deposit read as unpaid
+ * and the invoice printed **"Reservation Deposit — Required to Book $250.00"**
+ * under a **"Balance Due $375.00"** — the $250 subtracted from the balance as if
+ * it were a second payment AND demanded again in the callout. `/my-booking`, one
+ * click away, said $625.00 — the true figure, and the one on the booking row.
+ *
+ * Not a one-off: only 2 of the 18 real payments in production carry the
+ * `deposit` type, so this was every part-paid plan. `/api/portal/pay` already
+ * forces the type on the RESERVATION half of the same problem (see
+ * `isReservationPayment` there) — this is the priced half, fixed at the source
+ * instead of at each writer.
+ *
+ * A deposit held APART from the total keeps the strict reading: it is not part
+ * of the total, so a payment against the total says nothing about it. That is
+ * `STUDIO_DEPOSIT_IS_SEPARATE`, false for every product today.
+ *
+ * `paidTowardTotal` is floored at 0 first: a net refund must not make the
+ * deposit read as MORE than fully owed.
+ */
+export function paidTowardDepositCents(
+  payments: PaymentRow[],
+  depositIsSeparate: boolean,
+  paidTowardTotal: number,
+): number {
+  const typed = paidAsDepositCents(payments)
+  if (depositIsSeparate) return typed
+  return Math.max(typed, Math.max(0, paidTowardTotal))
+}
+
 export interface PlanMoney {
   /** Everything billed. Optional items excluded. */
   totalCents: number
@@ -307,7 +348,10 @@ export function planMoney(input: {
   // may be due" on the customer's own summary page.
   const overpaidCents = unpriced ? 0 : Math.max(0, paidCents - totalCents)
 
-  const paidAsDeposit = paidAsDepositCents(payments)
+  // Every payment credited to the total pays the deposit down, not just the
+  // rows typed `deposit` — see `paidTowardDepositCents` for the invoice this
+  // read wrong in front of a customer.
+  const paidAsDeposit = paidTowardDepositCents(payments, depositIsSeparate, paidCents)
   // The reservation deposit stands in for `depositCents` only where the total
   // could not produce one. A plan with a priced deposit keeps the priced one.
   const reservationOwed =

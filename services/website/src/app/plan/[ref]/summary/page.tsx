@@ -53,7 +53,7 @@ import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
-import { canEditPlanInBuilder, loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
+import { canEditPlanInBuilder, isQuoteStage, loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
 import { ensureInvoiceNumber } from '@/lib/invoiceNumber'
 import { planAccess } from '@/lib/planAccess'
 import { quoteFor } from '@/lib/planPayLinks'
@@ -114,6 +114,11 @@ function InvoiceBody({
   // date rather than a share of a total. The prose below has to say that, because
   // "it comes off your total" is meaningless when there is no total on the page.
   const unpriced = isUnpricedPlan(invoice.totalCents)
+  // Drives BOTH the Balance Due row and the prose that refers to it — a block
+  // removed without its sentence leaves "the Balance Due above" pointing at
+  // nothing, which is how a document ends up describing a figure it no longer
+  // prints.
+  const quoteStage = isQuoteStage(booking, invoice.paidCents)
   const venmoAmount = (askCents / 100).toFixed(2)
   const venmoNote = `${(booking.contact_name || 'Party').split(' ')[0]} — ${
     partyType === 'studio_rental' ? 'Studio Rental' : 'Party'
@@ -242,13 +247,40 @@ function InvoiceBody({
               <span className="label">Total</span>
               <span className="amount">{money(invoice.totalCents)}</span>
             </div>
-            <div className="totals-row balance">
-              <div>
-                <span className="label">Balance Due</span>
-                {content.balanceNote && <div className="balance-note">{content.balanceNote}</div>}
+            {/*
+              PAID TO DATE. Without it the document jumps from Total $925.00 to
+              Balance Due $625.00 with nothing to explain the gap, which reads as
+              an arithmetic error — the one error a client always catches. It is
+              also the only place the invoice acknowledges money the customer has
+              already sent; /my-booking has always shown a payment history and
+              this page showed none.
+
+              Rendered only when something has actually been credited, so a fresh
+              quote is unchanged.
+            */}
+            {invoice.paidCents > 0 && (
+              <div className="totals-row">
+                <span className="label">Paid to date</span>
+                <span className="amount">&minus;{money(invoice.paidCents)}</span>
               </div>
-              <span className="amount">{money(invoice.balanceDueCents)}</span>
-            </div>
+            )}
+            {/*
+              Balance Due is an INVOICE line, not a quote line. While this is
+              still a quote the page shows the Total and the deposit callout
+              below it and stops there — see `isQuoteStage`. Once a deposit has
+              landed the document becomes the booking record and the balance
+              comes back, because that is the point at which a customer has a
+              real outstanding figure they need stated.
+            */}
+            {!quoteStage && (
+              <div className="totals-row balance">
+                <div>
+                  <span className="label">Balance Due</span>
+                  {content.balanceNote && <div className="balance-note">{content.balanceNote}</div>}
+                </div>
+                <span className="amount">{money(invoice.balanceDueCents)}</span>
+              </div>
+            )}
           </div>
 
           {/*
@@ -258,23 +290,28 @@ function InvoiceBody({
             `deposit owed + Balance Due === everything outstanding` on every
             product whose deposit comes off the total. It used to print the full
             deposit unconditionally, which on a plan that had already paid one
-            asked for it a second time. A deposit that is settled says so rather
-            than showing $0.00, which reads like a pricing error.
-          */}
-          {/*
-            `depositOwedCents`, not just `depositCents`: on an unpriced plan the
+            asked for it a second time.
+
+            Gated on `depositOwedCents` ALONE, so a settled deposit removes the
+            block rather than restyling it. It previously rendered on any plan
+            with a deposit and swapped the amount for the word "Paid" — but the
+            label and note beside it are a demand ("Reservation Deposit —
+            Required to Book", "Due now to reserve the date"), and no value in
+            the amount column makes a demand read as a receipt. Owner ruling
+            2026-09-19 on HH-PTY-F47YW: once it is paid, it should not be shown.
+            What she has paid is now a totals row instead.
+
+            `depositOwedCents`, not `depositCents`: on an unpriced plan the
             latter is 0 and this callout is the only place the page names the
             deposit the pay button is about to charge.
           */}
-          {(invoice.depositCents > 0 || invoice.depositOwedCents > 0) && (
+          {invoice.depositOwedCents > 0 && (
             <div className="deposit-callout">
               <div>
                 <div className="label">{content.depositLabel}</div>
                 <div className="deposit-note">{content.depositNote}</div>
               </div>
-              <div className="amount">
-                {invoice.depositOwedCents > 0 ? money(invoice.depositOwedCents) : 'Paid'}
-              </div>
+              <div className="amount">{money(invoice.depositOwedCents)}</div>
             </div>
           )}
         </div>
@@ -350,7 +387,9 @@ function InvoiceBody({
               {invoice.depositOwedCents > 0
                 ? unpriced
                   ? `${content.depositLabel.split(' — ')[0].toLowerCase()} holds your date. Pay it now and we'll build the plan together afterwards.`
-                  : `${content.depositLabel.split(' — ')[0].toLowerCase()} is required to book. It comes off your total — the Balance Due above is what is left after it.`
+                  : `${content.depositLabel.split(' — ')[0].toLowerCase()} is required to book. It comes off your total${
+                      quoteStage ? '' : ' — the Balance Due above is what is left after it'
+                    }.`
                 : 'payment is outstanding on this plan.'}{' '}
               A 3% processing fee applies to card payments; Venmo and Zelle avoid it.
             </p>

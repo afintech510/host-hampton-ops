@@ -403,15 +403,31 @@ describe('R5 · the deposit quote is capped by what the plan actually owes', () 
     expect(m.depositOwedCents).toBe(0)
   })
 
-  it('a PARTLY paid priced plan caps the deposit at what is left', () => {
-    const m = planMoney({
+  it('a PARTLY paid priced plan owes the REST of the deposit, then nothing', () => {
+    // $290 of a $300 party. The $250 deposit is long since covered, so the $10
+    // left is balance, not deposit — the customer is asked for the same $10
+    // either way, but the document must not call a settled deposit outstanding.
+    const nearlyPaid = planMoney({
       totalCents: 30000,
       depositCents: 25000,
       depositIsSeparate: false,
       payments: [{ amount_cents: 29000, payment_type: 'partial' }],
       reservationDepositCents: BOOKING_DEPOSIT_CENTS,
     })
-    expect(m.depositOwedCents).toBe(1000)
+    expect(nearlyPaid.depositOwedCents).toBe(0)
+    expect(nearlyPaid.balanceDueCents).toBe(1000)
+
+    // Under the deposit, the remainder of it is still what books the date, and
+    // it is still capped by the plan's own total.
+    const part = planMoney({
+      totalCents: 30000,
+      depositCents: 25000,
+      depositIsSeparate: false,
+      payments: [{ amount_cents: 10000, payment_type: 'partial' }],
+      reservationDepositCents: BOOKING_DEPOSIT_CENTS,
+    })
+    expect(part.depositOwedCents).toBe(15000)
+    expect(part.depositOwedCents + part.balanceDueCents).toBe(part.outstandingCents)
   })
 
   it('an UNPRICED plan owes the flat reservation deposit, and not twice', () => {

@@ -210,11 +210,25 @@ describe('quoteFor — deposit', () => {
     expect(q.reason).toMatch(/paid in full/i)
   })
 
-  it('is capped by what is left, so it can never exceed the outstanding amount', () => {
-    // $550 paid of $600: only $50 is left, so the "deposit" cannot be $250.
-    const q = quoteFor(invoice({ totalCents: 60000, payments: [pay('partial', 55000)] }), 'deposit')
+  it('refuses once the deposit itself has been covered, whatever the rows are typed', () => {
+    // $550 paid of $600. The $250 that books the date was covered long ago, so
+    // there is no deposit to quote — the $50 left is a BALANCE, and the balance
+    // quote below is what offers it. Asking for a "deposit" here is how
+    // HH-PTY-F47YW came to demand $250 from a customer who had paid $300.
+    const inv = invoice({ totalCents: 60000, payments: [pay('partial', 55000)] })
+    const deposit = quoteFor(inv, 'deposit')
+    expect(deposit.ok).toBe(false)
+
+    const balance = quoteFor(inv, 'balance')
+    if (!balance.ok) throw new Error(balance.reason)
+    expect(balance.quote.amountCents).toBe(5000)
+  })
+
+  it('quotes the REMAINDER of the deposit while part of it is still owed', () => {
+    // $100 of a $600 party: $150 of the $250 still books the date.
+    const q = quoteFor(invoice({ totalCents: 60000, payments: [pay('partial', 10000)] }), 'deposit')
     if (!q.ok) throw new Error(q.reason)
-    expect(q.quote.amountCents).toBe(5000)
+    expect(q.quote.amountCents).toBe(15000)
   })
 
   it('STUDIO: the security deposit is NOT capped by the total, because it is not part of it', () => {
