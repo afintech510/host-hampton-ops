@@ -377,8 +377,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   //   * `recorded_by` was the literal `'admin'`, so the money row could not name
   //     the human who entered it (migration 047 relaxes the CHECK);
   //   * `amount_cents` reached the column unvalidated.
+  //
+  // `send_receipt: false` records the money and sends the customer NOTHING.
+  // Added 2026-09-19 for HH-PTY-SHS6V: money that arrived weeks ago, being
+  // written down now to make the books right. A "Payment Received" mail for a
+  // payment the customer made in July reads as a second charge, and the party
+  // itself is already over.
+  //
+  // An explicit OPT-OUT, never a default: the receipt is the only thing that
+  // tells a customer their money landed, and a flag that silences it by
+  // omission would silence it for the next caller too. The suppression is
+  // written into the booking's own change log, because "we chose not to tell
+  // her" and "the mail failed" must not look the same to whoever reads that log
+  // in six months (rule 10).
   if (action === 'record_payment') {
     const { amount_cents, payment_method, notes: payNotes, force_ledger } = body
+    const sendReceipt = body.send_receipt !== false
 
     if (!Number.isSafeInteger(amount_cents) || amount_cents <= 0) {
       return NextResponse.json(
@@ -476,11 +490,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await logBookingChange(supabase, {
       bookingId: id, actor: adminActorId(req),
       summary: `${payment_method} payment of ${formatMoney(amount_cents)} recorded. ` +
-        `Balance: ${newBalance === null ? 'unchanged' : formatMoney(newBalance)}.${balanceNote} ${ledgerNote}`,
+        `Balance: ${newBalance === null ? 'unchanged' : formatMoney(newBalance)}.${balanceNote} ${ledgerNote}` +
+        `${sendReceipt ? '' : ' No receipt sent (send_receipt:false).'}`,
     })
 
     // Send customer receipt — only now, with a real payment row behind it.
-    if (process.env.RESEND_API_KEY && booking.contact_email) {
+    if (sendReceipt && process.env.RESEND_API_KEY && booking.contact_email) {
       // A link whose token row was refused is a dead link in a customer's
       // inbox, so the mint decides whether the email goes at all.
       const minted = await mintPortalLink(supabase, id, booking.booking_ref)
@@ -513,7 +528,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       balanceUpdated: newBalance !== null,
       ledger: ledger.kind,
       ledgerReference: ledger.reference,
-      message: `Payment of ${formatMoney(amount_cents)} recorded.${balanceNote} ${ledgerNote}`,
+      receiptSent: sendReceipt,
+      message: `Payment of ${formatMoney(amount_cents)} recorded.${balanceNote} ${ledgerNote}` +
+        `${sendReceipt ? '' : ' No receipt was sent.'}`,
     })
   }
 

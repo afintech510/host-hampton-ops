@@ -358,4 +358,45 @@ describe('the receipt', () => {
       expect.objectContaining({ amountFormatted: '$163', newBalanceFormatted: '$437' }),
     )
   })
+
+  /**
+   * `send_receipt: false` — money that arrived weeks ago, written down now to
+   * make the books right. HH-PTY-SHS6V is the booking that needed it: a
+   * "Payment Received" mail for a July payment reads as a second charge.
+   *
+   * The assertion that matters is `mockResendSend`. A flag that is accepted,
+   * echoed back as `receiptSent: false`, and then mails the customer anyway is
+   * the worst outcome available here — it reports success over the exact thing
+   * it was asked to prevent.
+   */
+  it('sends NOTHING when send_receipt is false, and still records the money', async () => {
+    body = { ...body, send_receipt: false }
+    const d = db()
+    mockGetSupabase.mockReturnValue(d.client)
+
+    const res: any = await POST(req(), { params })
+
+    expect(mockResendSend).not.toHaveBeenCalled()
+    expect(partyPaymentReceivedHtml).not.toHaveBeenCalled()
+    // Suppressing the mail must not suppress the money.
+    expect(res.status ?? 200).not.toBe(500)
+    expect(res.json()).toMatchObject({ ok: true, action: 'payment_recorded', receiptSent: false })
+    expect(d.rows('booking_payments')).toHaveLength(1)
+    // Rule 10: the log has to say we CHOSE not to tell her, so it never reads
+    // like a mail that failed.
+    expect(d.rows('booking_modifications')[0].change_summary).toContain('No receipt sent')
+  })
+
+  it('sends the receipt for every value that is not exactly false', async () => {
+    // An opt-out, never a default. A missing or malformed flag must leave the
+    // customer informed — the failure direction that cannot lose money.
+    for (const value of [undefined, true, 'false', 0, null]) {
+      jest.clearAllMocks()
+      body = { action: 'record_payment', amount_cents: 16300, payment_method: 'venmo', send_receipt: value }
+      const d = db()
+      mockGetSupabase.mockReturnValue(d.client)
+      await POST(req(), { params })
+      expect(mockResendSend).toHaveBeenCalledTimes(1)
+    }
+  })
 })
