@@ -344,6 +344,7 @@ There is **no in-container scheduler**. Scheduled work is driven externally by *
 - `/api/cron/summer-hair-reminders` — a one-day pop-up (2026-07-03) that is over. **`?force=true` overrides the CLOCK only** — it used to drop the `reminder_sent = false` filter as well, so one authenticated GET re-texted all thirteen real customers about a July appointment. Claim before send, STOP honoured, masked payload. Never scheduled; needs-Adam 38 is whether to retire it.
 - `/api/cron/agent-dispatch` — booking agent: claims new inbound events, drafts replies, texts the reviewers. Every 2 minutes. No-op unless `AGENT_ENABLED` is true.
 - `/api/cron/gmail-sync` — pulls new mail from `GMAIL_USER` into `ingested_messages` and applies the handled label. Every 3 minutes. No-op unless the `GMAIL_*` env is set. Read + label only. `?backfill=1&pageToken=…` runs the bounded historical pull by hand.
+- `/api/cron/staff-reminders` (migration 056, added 2026-09-19) — daily digest of `staff_reminders`, internal-only follow-up nudges (never customer-facing). Reads `due_date <= today` in ET, texts (`notifyOwnerSms`) and/or emails (`ownerEmail()` via Brevo) Adam depending on each row's `channel`, and only marks a row `sent` once every channel it asked for actually went out. Not yet scheduled — needs a cron-job.org entry, suggested once daily (e.g. 08:00 ET / 12:00 UTC).
 
 Example trigger:
 ```bash
