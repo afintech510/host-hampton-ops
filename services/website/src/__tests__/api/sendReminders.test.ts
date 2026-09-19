@@ -54,6 +54,56 @@ const EVENT_ID = '22222222-2222-4222-8222-222222222222'
 const BOOKING_ID = '33333333-3333-4333-8333-333333333333'
 const REMINDER_ID = 'aaaaaaaa-0000-4000-8000-000000000001'
 
+/**
+ * THE HOUR THIS FILE RUNS AT USED TO DECIDE WHETHER IT PASSED.
+ *
+ * `send-reminders` checks `checkSmsQuietHours(new Date())` against the real wall
+ * clock, before any consent branch and before any provider call, and DEFERS an
+ * SMS outside the 8am–9pm ET window (see `lib/quietHours.ts`). This file never
+ * pinned the hour, so from 9pm to 8am ET every SMS test here failed: the route
+ * deferred the text before reaching the branch under test, and the row it
+ * asserts on read `pending` with a null error instead of `cancelled`.
+ *
+ * Six tests, red for eleven hours a day. Measured 2026-09-19: 21/27 at 07:43 ET,
+ * 27/27 with the clock moved to 2pm and nothing else changed. The route is
+ * right — quiet hours genuinely defers, and deliberately sits ahead of the
+ * consent check so nothing can text at an hour it cannot justify. It was the
+ * test that never said which hour it was asking about.
+ *
+ * This matters past this file. "Suite green" is the evidence this repository
+ * leans on, and a suite that is green in the afternoon and red overnight makes
+ * that evidence a statement about the clock. Same family as
+ * `stale-tree-invalidates-measurements`: the measurement, not the code, is what
+ * lied.
+ *
+ * ── Why the clock and NOT the timers ────────────────────────────────────────
+ *
+ * `doNotFake` leaves every timer real and fakes `Date` alone. A blanket
+ * `useFakeTimers()` also replaces `setTimeout`, and anything that awaits a real
+ * one then hangs forever rather than failing usefully — proven while diagnosing
+ * this: a whole-suite probe under blanket fake timers turned `sendBulkSMS` and
+ * `sendBulkSMSViaQuo` red, in two files nobody had touched, because the bulk
+ * sender paces its sends on a real timer. Those were the probe's own damage,
+ * not a defect. Fake the smallest thing that answers the question.
+ *
+ * The instant is fixed rather than derived, so it cannot drift: 17:00Z is 1pm
+ * EDT and noon EST, mid-window on either side of a DST change.
+ */
+const FAKEABLE_TIMERS = [
+  'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval',
+  'setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask',
+  'performance', 'hrtime', 'requestAnimationFrame', 'cancelAnimationFrame',
+  'requestIdleCallback', 'cancelIdleCallback',
+] as const
+
+beforeAll(() => {
+  jest.useFakeTimers({ doNotFake: [...FAKEABLE_TIMERS] })
+  jest.setSystemTime(new Date('2026-09-19T17:00:00Z'))
+})
+afterAll(() => {
+  jest.useRealTimers()
+})
+
 function makeReq(secret?: string, params: Record<string, string> = {}) {
   const headers = new Map<string, string>()
   if (secret) headers.set('x-cron-secret', secret)
@@ -236,6 +286,39 @@ describe('GET /api/cron/send-reminders', () => {
     expect(row(fake).attempts).toBe(1)
     expect(row(fake).last_error).toContain('rate limited')
     expect(res.json()).toMatchObject({ delivered: 0, retry: 1 })
+  })
+
+  /**
+   * The hour this whole file now pins, asserted rather than assumed.
+   *
+   * Every other SMS test here runs at 1pm ET and therefore proves nothing about
+   * the window; without this one, freezing the clock would have hidden the
+   * quiet-hours branch instead of covering it. So: move to 3am, and check the
+   * text is HELD — not sent, not cancelled, no attempt spent — and that the row
+   * comes back due at 8am rather than staying overdue forever.
+   */
+  it('HOLDS an overdue text until the window opens, and spends no attempt', async () => {
+    jest.setSystemTime(new Date('2026-09-19T07:00:00Z')) // 03:00 ET
+    try {
+      const fake = setup({ reminders: [reminder({ channel: 'sms', reminder_type: 'booking_sms_1day' })] })
+
+      const res = await GET(makeReq(CRON_SECRET))
+
+      expect(mockSendSMSVia).not.toHaveBeenCalled()
+      // Deferred, never cancelled: a "your party is tomorrow" text is still
+      // wanted at 8am. Cancelling it would drop a real reminder on the floor.
+      expect(row(fake).status).toBe('pending')
+      expect(row(fake).attempts).toBe(0)
+      expect(row(fake).last_error).toBeNull()
+      // Counted apart from `skipped`, so a tick that held six texts for the hour
+      // cannot be read as six people who opted out (rule 10).
+      expect(res.json()).toMatchObject({ deferred: 1, delivered: 0, skipped: 0 })
+      expect(res.json().reasons.join(' ')).toContain('quiet_hours')
+      // It must come back DUE, not merely be left overdue.
+      expect(new Date(row(fake).scheduled_for).toISOString()).toBe('2026-09-19T12:00:00.000Z') // 08:00 ET
+    } finally {
+      jest.setSystemTime(new Date('2026-09-19T17:00:00Z'))
+    }
   })
 
   it('does NOT mark sent when the SMS provider returns null', async () => {
