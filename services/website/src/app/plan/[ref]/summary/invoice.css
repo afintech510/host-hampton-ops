@@ -96,6 +96,49 @@ body > main { padding-top: 0 !important; }
 .hh-invoice .action-bar button:hover,
 .hh-invoice .action-bar a.action:hover { background: #000; }
 
+/* VENMO — the one control on this page deliberately NOT in Host Hampton's navy.
+   The colour IS the affordance: a customer recognises Venmo blue before they
+   read the label, and this is the option that saves them the 3% card fee, so it
+   should be as easy to spot as the card button it sits under.
+
+   Shaped as a sibling of PayPanel's `btn` (same pill, same padding, same
+   weight) so the two read as two ways to pay rather than a button and a link.
+
+   #008CFF is Venmo's own brand blue. White on it measures 3.39:1, which clears
+   WCAG AA for large text but not for 15px — the trade taken knowingly, because
+   a Venmo button that is not Venmo blue stops doing the one job it has.
+   #0074D4 is the same hue at 4.72:1 if that trade is ever re-decided. */
+.hh-invoice .venmo-button {
+  display: inline-block;
+  background: #008CFF;
+  color: #fff;
+  border: none;
+  padding: 15px 40px;
+  border-radius: 50px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-family: inherit;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.hh-invoice .venmo-button:hover { background: #0074D4; }
+.hh-invoice .venmo-button:focus-visible { outline: 3px solid var(--navy); outline-offset: 3px; }
+
+@media print {
+  /* This block is NOT `.no-print`: a printed invoice still has to say how to pay
+     by Venmo. But a filled pill either swallows its own label (browsers drop
+     backgrounds when "print backgrounds" is off) or wastes ink, so on paper it
+     flattens back to the plain navy text it used to be. */
+  .hh-invoice .venmo-button {
+    background: none !important;
+    color: var(--navy) !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    font-size: 16px;
+  }
+}
+
 .hh-invoice .header {
   background: linear-gradient(135deg, var(--navy) 0%, #3a4049 100%);
   color: var(--ivory);

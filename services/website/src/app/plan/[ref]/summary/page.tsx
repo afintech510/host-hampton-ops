@@ -407,20 +407,34 @@ function InvoiceBody({
               </Link>
             )}
             {isAdminView && <AdminCustomCharge ref_={ref_} />}
+            {/*
+              The Venmo half, as a BUTTON rather than a bare handle.
+
+              It is the cheaper option for the customer — the card path adds 3%
+              — and it used to be a plain navy "@hosthampton" link sitting under
+              a filled pill, so the page pushed hardest on the costlier one. Same
+              pill as PayPanel's card button, in Venmo blue, so the two read as
+              two ways to pay. See `.venmo-button` for the colour and the print
+              rule that flattens it back to text on paper.
+
+              The handle keeps its own line: it is what tells the customer WHO
+              they are about to pay, which a label reading "with Venmo" does not.
+            */}
             <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(174,182,194,0.2)' }}>
-              <p className="section-sub" style={{ marginBottom: 6 }}>
-                Prefer Venmo? Send {money(askCents)} &mdash; no card fee.
+              <p className="section-sub" style={{ marginBottom: 12 }}>
+                Prefer Venmo? No card fee.
               </p>
               <a
+                className="venmo-button"
                 href={`https://venmo.com/hosthampton?txn=pay&amount=${venmoAmount}&note=${encodeURIComponent(venmoNote)}`}
                 target="_blank"
                 rel="noopener"
-                style={{ fontSize: 16, fontWeight: 600, color: 'var(--navy)' }}
               >
-                @hosthampton
+                Pay {money(askCents)} with Venmo
               </a>
-              <div className="section-sub" style={{ marginTop: 6, marginBottom: 0 }}>
-                Please include &ldquo;{venmoNote}&rdquo; in the note.
+              <div className="section-sub" style={{ marginTop: 10, marginBottom: 0 }}>
+                Goes to <strong>@hosthampton</strong> &mdash; please include &ldquo;{venmoNote}&rdquo; in the
+                note.
               </div>
             </div>
           </div>
