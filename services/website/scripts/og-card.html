@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+  SOURCE OF public/images/og-default.png  (1200x630, flattened RGB).
+
+  This is the card every hosthampton.com link unfurls to in iMessage, WhatsApp,
+  Slack and Android. It is kept in the repo because an image nobody can
+  regenerate is an image nobody will ever change.
+
+  To rebuild it: open this file in a browser at a viewport of at least
+  1200x630, screenshot the viewport, then crop the top-left 1200x630 and save
+  WITHOUT an alpha channel:
+
+      from PIL import Image
+      Image.open('shot.png').crop((0,0,1200,630)).convert('RGB')            .save('public/images/og-default.png','PNG',optimize=True)
+
+  The `.convert('RGB')` is not optional. The previous og-default.png was RGBA,
+  and a transparent OG image composites unpredictably in iMessage and WhatsApp
+  (usually onto black). `linkPreview.test.ts` asserts the colour type.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:1200px; height:630px; overflow:hidden; }
+  html, body { margin:0; background:#2F343B; }
+  /* Anchored top-left at exactly 1200x630 so the viewport capture can be
+     cropped to the card without hunting for it. */
+  .card {
+    position:absolute; top:0; left:0;
+    width:1200px; height:630px;
+    background:
+      radial-gradient(900px 420px at 50% -18%, rgba(188,205,235,0.22) 0%, rgba(188,205,235,0) 68%),
+      #2F343B;
+    font-family: 'Montserrat', system-ui, sans-serif;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center;
+    /* The footer is absolutely positioned, so flex centring does not know it is
+       there and the group sat 128px from the top against 46px from the bottom.
+       The bottom padding is the footer's height plus its margin, which puts the
+       optical centre back where the mathematical one is. */
+    padding: 0 90px 76px;
+    overflow:hidden;
+  }
+  /* The logo asset is BLACK artwork on transparency. The invoice header inverts
+     it with exactly this filter (invoice.css `.brand .logo`) — reproduced here
+     rather than shipping a second white copy of the logo, so the two cannot
+     drift apart. */
+  .logo { width:430px; height:auto; display:block; filter:brightness(0) invert(1); }
+  .rule {
+    width:180px; height:1px; margin:38px 0 30px;
+    background:linear-gradient(to right, rgba(199,163,107,0) 0%, #C7A36B 50%, rgba(199,163,107,0) 100%);
+  }
+  .eyebrow {
+    font-family:'Montserrat', sans-serif;
+    font-size:21px; font-weight:500; letter-spacing:0.30em;
+    text-transform:uppercase; color:#C7A36B;
+    /* letter-spacing adds a trailing gap; pull it back so the text is optically
+       centred rather than mathematically centred. */
+    text-indent:0.30em;
+  }
+  .services {
+    margin-top:26px;
+    font-size:19px; font-weight:300; letter-spacing:0.05em;
+    color:rgba(247,242,232,0.72); line-height:1.75;
+  }
+  .services .dot { color:#8FA8BF; padding:0 12px; }
+  .foot {
+    position:absolute; bottom:46px; left:0; right:0;
+    font-size:16px; font-weight:400; letter-spacing:0.16em;
+    text-transform:uppercase; color:rgba(174,182,194,0.72);
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="../public/images/host-hampton-logo.png" alt="Host Hampton">
+    <div class="rule"></div>
+    <div class="eyebrow">Boutique Celebration Studio</div>
+    <div class="services">
+      Birthday Parties<span class="dot">&middot;</span>Mobile Craft Parties<span class="dot">&middot;</span>Studio Rental<br>
+      Permanent Jewelry<span class="dot">&middot;</span>Trucker Hat Bar<span class="dot">&middot;</span>Fundraisers
+    </div>
+    <div class="foot">Speonk, New York &nbsp;&middot;&nbsp; hosthampton.com</div>
+  </div>
+</body>
+</html>

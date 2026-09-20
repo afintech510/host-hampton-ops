@@ -71,6 +71,13 @@ const SEND_ROUTES = [
   'app/api/cron/send-campaigns/route.ts',
   'app/api/cron/draft-newsletter/route.ts',
   'app/api/cron/booking-locks/route.ts',
+  // Added 2026-09-20. Migration 056's staff follow-up digest. It hands text to
+  // Brevo (`sendTransactionalEmail`) and to `notifyOwnerSms`, so it IS a
+  // sender — `NOT_A_SENDER` would have been a false statement, and the rules
+  // below are the ones that would notice if it ever started messaging a
+  // customer. Its audience is Adam, which is why the quiet-hours rule does not
+  // reach it: that rule is scoped to the customer-facing SMS types.
+  'app/api/cron/staff-reminders/route.ts',
 ] as const
 
 const ALL = [...SEND_LIBS, ...SEND_ROUTES]
@@ -148,7 +155,7 @@ describe('R0 — the surface is enumerated exactly', () => {
   it('every listed module exists on disk', () => {
     const missing = ALL.filter(rel => !fs.existsSync(path.join(SRC, rel)))
     expect(missing).toEqual([])
-    expect(ALL.length).toBe(20)
+    expect(ALL.length).toBe(21)
   })
 
   it('every cron route that sends or enqueues is in SEND_ROUTES', () => {

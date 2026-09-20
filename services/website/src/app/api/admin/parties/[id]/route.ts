@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { mintPortalLink } from '@/lib/portalLinkMint'
-import { formatMoney } from '@/lib/partyPricing'
+import { formatMoney, screenTipCents } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { studioRentalRateWith, hoursBetween } from '@/lib/studioRental'
@@ -411,6 +411,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         ? (body.payment_type as PaymentType)
         : 'partial'
 
+    /**
+     * A hand-entered gratuity (migration 058).
+     *
+     * Optional `tip_cents`, and it is ON TOP of `amount_cents` rather than
+     * inside it — the same shape as every other writer, so `amount_cents` is
+     * still purely what the plan is credited and the balance arithmetic below
+     * needs no special case. Cash and Venmo tips are the ones most likely to be
+     * typed in here, and they are exactly the ones that were invisible.
+     */
+    const tipCents = screenTipCents(body.tip_cents)
+
     // `.select()` so a refused INSERT is a refusal and not a silent success. The
     // customer receipt below depends on this row existing.
     const { data: paymentRow, error: payErr } = await supabase
@@ -420,8 +431,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         payment_type: paymentType,
         payment_method,
         amount_cents,
+        tip_cents: tipCents,
         card_fee_cents: 0,
-        total_charged_cents: amount_cents,
+        total_charged_cents: amount_cents + tipCents,
         recorded_by: adminActorId(req),
         notes: payNotes || null,
       })
@@ -475,7 +487,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const ledger = await recordAdminPayment(supabase, {
       paymentId: paymentRow.id,
       bookingRef: booking.booking_ref,
-      amountCents: amount_cents,
+      // GROSS, matching the Stripe path, which books `chargedCents`. A tip is
+      // money that arrived and the books have to show it; the BALANCE above is
+      // what must exclude it, and that reads `amount_cents` from the row.
+      amountCents: amount_cents + tipCents,
       method: payment_method,
       paidAt: paymentRow.paid_at || new Date().toISOString(),
       customerName: booking.contact_name || null,
@@ -489,7 +504,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // either way, so this is not a reason to refuse.
     await logBookingChange(supabase, {
       bookingId: id, actor: adminActorId(req),
-      summary: `${payment_method} payment of ${formatMoney(amount_cents)} recorded. ` +
+      summary: `${payment_method} payment of ${formatMoney(amount_cents)} recorded` +
+        `${tipCents > 0 ? ` plus a ${formatMoney(tipCents)} tip (not credited to the balance)` : ''}. ` +
         `Balance: ${newBalance === null ? 'unchanged' : formatMoney(newBalance)}.${balanceNote} ${ledgerNote}` +
         `${sendReceipt ? '' : ' No receipt sent (send_receipt:false).'}`,
     })

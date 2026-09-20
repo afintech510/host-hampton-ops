@@ -3,6 +3,12 @@ import { getSupabase } from '@/lib/supabase'
 import { validatePortalToken, setPortalCookieHeader, portalSigningSecret } from '@/lib/portalAuth'
 import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
 import { checkRateLimit, plannerRule } from '@/lib/rateLimit'
+import {
+  isLinkPreviewBot,
+  previewCardHtml,
+  wantsPreviewBypass,
+  PREVIEW_BYPASS_PARAM,
+} from '@/lib/linkPreview'
 
 // Reads no cookie but DOES set one and write `portal_tokens.used_at`, so it must
 // run per request rather than being prerendered.
@@ -61,6 +67,49 @@ export async function GET(req: NextRequest) {
    */
   const rate = checkRateLimit(req, plannerRule('portal/auth'))
   if (!rate.allowed) return loginRedirect('busy')
+
+  /**
+   * ── The link-preview card ────────────────────────────────────────────────
+   *
+   * FIRST, before the token is read, before the cookie is set and before
+   * `used_at` is stamped. A preview fetcher must leave no trace on this
+   * booking: it did not open the link, a customer did not open the link, and
+   * the column that records that must not be made to say otherwise.
+   *
+   * The card is entirely generic — it names no customer, no ref and no
+   * amount. See lib/linkPreview.ts for why sniffing is acceptable here and
+   * what the `?go=1` escape hatch is for. Anything unrecognised falls through
+   * to exactly the behaviour this route has always had.
+   */
+  if (
+    isLinkPreviewBot(req.headers.get('user-agent')) &&
+    !wantsPreviewBypass(req.nextUrl.searchParams.get(PREVIEW_BYPASS_PARAM))
+  ) {
+    const bypass = new URL(req.nextUrl.toString())
+    bypass.searchParams.set(PREVIEW_BYPASS_PARAM, '1')
+    return new NextResponse(
+      previewCardHtml({
+        origin,
+        title: 'Your Host Hampton booking',
+        description:
+          'Open your secure booking portal to view your party plan, make a payment, or send us a change.',
+        // Path + query only. The host comes from `origin`, which is allowlisted
+        // — pasting `bypass.toString()` would put the caller's forwarded host
+        // back into the page the moment the allowlist ever loosened.
+        continueUrl: `${origin}${bypass.pathname}${bypass.search}`,
+      }),
+      {
+        status: 200,
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          // No cookie, and nothing cacheable that a customer could later be
+          // served instead of their login.
+          'cache-control': 'no-store',
+          'x-robots-tag': 'noindex, nofollow',
+        },
+      },
+    )
+  }
 
   const ref = req.nextUrl.searchParams.get('ref')
   const token = req.nextUrl.searchParams.get('token')

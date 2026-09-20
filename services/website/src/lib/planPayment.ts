@@ -355,6 +355,9 @@ export async function recordPlanPayment(
     payment_type: paymentType,
     payment_method: 'card',
     amount_cents: creditCents,
+    // Migration 058. The note below still says it in English for a human
+    // reading the row; this is the half a query can add up.
+    tip_cents: tipCents,
     card_fee_cents: feeCents,
     total_charged_cents: chargedCents,
     stripe_payment_intent_id:

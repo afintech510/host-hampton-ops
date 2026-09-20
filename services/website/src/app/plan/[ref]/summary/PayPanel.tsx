@@ -135,16 +135,17 @@ const linkBtn: React.CSSProperties = {
 /**
  * The tip jar, shown under the final payment only.
  *
- * Two deliberate differences from the party-builder portal's version:
+ * **It pre-selects 10%** — Adam's call, 2026-09-20, matching the party-builder
+ * portal so the two surfaces behave the same way. It shipped defaulting to zero
+ * for one deploy on the argument that an invoice is a document rather than a
+ * checkout, and that a pre-filled tip means the button charges more than the
+ * Total printed above it. That argument is answered by making the difference
+ * impossible to miss rather than by defaulting low: the button itself reads
+ * "…+ $125.00 tip", the charge line under the jar spells out every component,
+ * and **"No tip" is the first chip**, not a buried link.
  *
- *   1. **It defaults to nothing.** The portal pre-fills 10% because the customer
- *      is already mid-checkout and has read the charge summary. This is a
- *      *document* — someone lands on it to read what the party costs, and a
- *      pre-filled tip would mean the button charges 10% more than the Total the
- *      page prints. The recommendation is stated in words instead, which is what
- *      was actually asked for. One line to change if that call goes the other way.
- *   2. **Whole dollars only.** No cent-level tipping; the presets round to a
- *      dollar and the custom field steps in dollars.
+ * Whole dollars only — the presets round to a dollar and the custom field
+ * steps in dollars.
  */
 function TipJar({
   tip,
@@ -163,10 +164,11 @@ function TipJar({
 
   return (
     <div className="tip-jar">
-      <div className="tip-jar-head">Add a tip for the party team?</div>
+      <div className="tip-jar-head">Tip for the party team</div>
       <p className="tip-jar-note">
-        Entirely optional, and it goes to the people who run your party — never to the studio. We
-        suggest <strong>{tip.recommendedPercent}%</strong> ({usd(tip.recommendedCents)}).
+        Entirely optional, and it goes to the people who run your party — never to the studio. We&rsquo;ve
+        filled in our suggested <strong>{tip.recommendedPercent}%</strong> ({usd(tip.recommendedCents)})
+        — change it to any amount, or choose <strong>No tip</strong>.
       </p>
       <div className="tip-jar-row">
         {tip.presets.map(p => {
@@ -228,9 +230,14 @@ function TipJar({
 /** The pay buttons. Rendered inside the invoice's own payment section. */
 export function PayPanel({ ref_, options }: { ref_: string; options: PayOption[] }) {
   const { busy, setBusy, error, setError } = useBusy()
-  // Lives on the panel, not on the jar, because it has to reach `pay()`. Zero is
-  // the honest default: see TipJar's header.
-  const [tipCents, setTipCents] = useState(0)
+  // Lives on the panel, not on the jar, because it has to reach `pay()`.
+  // Seeded with the recommended 10% when a tip is on offer (see TipJar's
+  // header). Computed in the initialiser rather than an effect, so the first
+  // paint already agrees with the button label — a tip that appears a frame
+  // after the page settles is a figure the customer did not watch arrive.
+  const [tipCents, setTipCents] = useState(
+    () => options.find(o => o.tip)?.tip?.recommendedCents ?? 0,
+  )
 
   async function pay(purpose: string) {
     setError(null)

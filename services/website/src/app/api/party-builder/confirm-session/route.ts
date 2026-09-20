@@ -122,6 +122,10 @@ export async function POST(req: NextRequest) {
       payment_type: paymentType,
       payment_method: 'card',
       amount_cents: amountCents,
+      // Migration 058. Same clamp as the webhook's copy of this insert — the
+      // two race each other on every portal payment and must agree about what
+      // they write, or which one won decides the number in the books.
+      tip_cents: Math.max(0, Math.min(100000, Number.isFinite(tipCents) ? tipCents : 0)),
       card_fee_cents: cardFeeCents,
       total_charged_cents: totalCharged,
       stripe_payment_intent_id: resolvedPaymentIntentId,

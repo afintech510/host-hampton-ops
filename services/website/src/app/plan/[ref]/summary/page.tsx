@@ -355,22 +355,21 @@ function InvoiceBody({
           </div>
         )}
 
-        {/* ============ GOOD TO KNOW / POLICIES ============ */}
-        {(content.goodToKnow.length > 0 || content.policies.length > 0) && (
+        {/* ============ POLICIES / SECURITY HOLD ============
+
+            The "Good to know:" paragraph was removed from the template on
+            Adam's instruction, 2026-09-20. What stays is deliberate: the
+            refundable-hold sentence is a MONEY disclosure (a real card
+            authorisation the customer would otherwise meet unannounced), and
+            the policy list is terms, not blurb. `content.goodToKnow` is still
+            loaded and still overridable per party type in `plan_content` — it
+            is simply no longer rendered here, so turning it back on is one
+            block, not a data migration.
+        */}
+        {(invoice.securityHoldCents != null || content.policies.length > 0) && (
           <div className="goodtoknow">
-            {content.goodToKnow.length > 0 && (
-              <>
-                <strong>Good to know:</strong>{' '}
-                {content.goodToKnow.map((p, i) => (
-                  <span key={i}>
-                    <RichText text={p} />{' '}
-                  </span>
-                ))}
-              </>
-            )}
             {invoice.securityHoldCents != null && (
               <>
-                {' '}
                 A refundable {money(invoice.securityHoldCents)} card hold is authorized before your
                 rental and released afterwards once the space is confirmed in good condition &mdash;
                 it is not a charge, and it is separate from the deposit above, which does come off
@@ -435,8 +434,9 @@ function InvoiceBody({
               <p className="section-sub tip-prose">
                 <strong>Tipping is optional.</strong> If your party team looked after you, the
                 customary thank-you is <strong>{Math.round(RECOMMENDED_TIP_RATE * 100)}%</strong> of
-                your total ({money(recommendedTipCents(invoice.totalCents))}). You can add it to your
-                final card payment below, or hand it to the team on the day.
+                your total ({money(recommendedTipCents(invoice.totalCents))}). That amount is
+                pre-filled on the card payment below and can be changed or removed, or you can hand
+                it to the team on the day.
               </p>
             )}
             {/*

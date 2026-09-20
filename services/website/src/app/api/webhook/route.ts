@@ -449,6 +449,10 @@ export async function POST(req: NextRequest) {
       payment_type: paymentType,
       payment_method: 'card',
       amount_cents: amountCents,
+      // Migration 058 — the portal has charged tips since long before it, and
+      // every one of them lived only in this note. Clamped to the column's
+      // CHECK so a corrupted metadata value fails the tip, not the payment.
+      tip_cents: Math.max(0, Math.min(100000, Number.isFinite(tipCents) ? tipCents : 0)),
       card_fee_cents: cardFeeCents,
       total_charged_cents: totalCharged,
       stripe_payment_intent_id: pi.id,
