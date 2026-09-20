@@ -133,6 +133,9 @@ function InvoiceBody({
     booking.package_type && normalise(booking.package_type) !== normalise(docLabel)
       ? booking.package_type
       : null
+  // The single source for "is a tip on offer at all" — the prose and the jar
+  // are two halves of one thing and must never disagree about whether it exists.
+  const tipOffered = payOptions.some(o => o.tip)
   const venmoAmount = (askCents / 100).toFixed(2)
   const venmoNote = `${(booking.contact_name || 'Party').split(' ')[0]} — ${
     partyType === 'studio_rental' ? 'Studio Rental' : 'Party'
@@ -419,11 +422,16 @@ function InvoiceBody({
             {/*
               Stated in the DOCUMENT, not only in the interactive jar, because
               the invoice is printed and emailed as often as it is clicked — and
-              a customer paying by Venmo never sees the jar at all. Suppressed
-              while a deposit is owed: a gratuity belongs with the final payment,
-              not with the money that holds the date.
+              a customer paying by Venmo never sees the jar at all.
+              Gated on the jar's own presence rather than on a rule of its own.
+              It was `depositOwedCents <= 0` for one deploy, which read well as a
+              sentence ("a gratuity belongs with the final payment") and was
+              wrong in practice: on a fresh quote the deposit IS owed, so the
+              page printed the tip buttons under "Pay in full" with no prose
+              above them explaining what they were. Caught by reading the live
+              document rather than the diff.
             */}
-            {invoice.depositOwedCents <= 0 && invoice.totalCents > 0 && (
+            {tipOffered && (
               <p className="section-sub tip-prose">
                 <strong>Tipping is optional.</strong> If your party team looked after you, the
                 customary thank-you is <strong>{Math.round(RECOMMENDED_TIP_RATE * 100)}%</strong> of

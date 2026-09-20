@@ -509,8 +509,10 @@ describe('R5b · the document does not repeat itself', () => {
     // A customer paying by Venmo, or reading a PDF, never sees the tip jar.
     expect(src).toMatch(/RECOMMENDED_TIP_RATE/)
     expect(src).toMatch(/tip-prose/)
-    // And it is not offered while a deposit is still owed.
-    expect(src).toMatch(/invoice\.depositOwedCents <= 0 && invoice\.totalCents > 0/)
+    // The prose and the jar share one condition. They did not for one deploy,
+    // and the live page printed tip buttons with no sentence explaining them.
+    expect(src).toMatch(/const tipOffered = payOptions\.some\(o => o\.tip\)/)
+    expect(src).toMatch(/\{tipOffered && \(/)
     const css = read('app/plan/[ref]/summary/invoice.css')
     expect(css).toMatch(/\.tip-prose/)
   })
