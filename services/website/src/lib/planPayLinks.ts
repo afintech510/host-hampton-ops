@@ -43,7 +43,7 @@
 
 import crypto from 'crypto'
 import type Stripe from 'stripe'
-import { calculateCardFee } from '@/lib/partyPricing'
+import { calculateCardFee, screenTipCents } from '@/lib/partyPricing'
 import { money, type PlanInvoice } from '@/lib/planInvoice'
 import { getSupabase } from '@/lib/supabase'
 import { writeLedger } from '@/lib/marketing/graph'
@@ -70,12 +70,31 @@ export interface PayQuote {
   purpose: PayPurpose
   /** Credited against the plan. Derived from the invoice, never from a request. */
   amountCents: number
+  /**
+   * Gratuity for the party team. The ONE figure here that comes from the
+   * customer — see `screenTipCents`. Charged, never credited.
+   */
+  tipCents: number
   /** The 3% card fee the invoice page already promises. Not credited. */
   feeCents: number
-  /** What Stripe will actually collect: `amountCents + feeCents`. */
+  /** What Stripe will actually collect: `amountCents + tipCents + feeCents`. */
   chargeCents: number
   /** Customer-facing description; becomes the Stripe line item name. */
   label: string
+}
+
+/**
+ * Which purposes may carry a tip.
+ *
+ * Only the balance. Adam's instruction was "a mechanism to add tip to the FINAL
+ * payment", and it is the right shape independently: a reservation deposit is
+ * paid months before anyone has run a party, so asking for a gratuity there
+ * tips a service that has not happened yet. A tip sent on any other purpose is
+ * dropped silently rather than refused — it is an upsell we declined to take,
+ * not an error the customer should see.
+ */
+export function purposeAcceptsTip(purpose: PayPurpose): boolean {
+  return purpose === 'balance'
 }
 
 export type QuoteResult = { ok: true; quote: PayQuote } | { ok: false; reason: string }
@@ -127,6 +146,7 @@ export function quoteFor(
   invoice: PlanInvoice,
   purpose: PayPurpose,
   customCents?: number,
+  rawTipCents?: unknown,
 ): QuoteResult {
   const remaining = invoice.outstandingCents
   const depositOwed = invoice.depositOwedCents
@@ -177,13 +197,21 @@ export function quoteFor(
     amountCents = requested
   }
 
-  const feeCents = calculateCardFee(amountCents)
-  const chargeCents = amountCents + feeCents
+  // The tip rides on top and is fee-bearing, because Stripe charges us on the
+  // whole collection — the same arithmetic the portal's Payment Element does
+  // (`subtotal = amount + tip`, then 3%), so the two surfaces quote a customer
+  // the same charge for the same tip.
+  const tipCents = purposeAcceptsTip(purpose) ? screenTipCents(rawTipCents) : 0
+  const feeCents = calculateCardFee(amountCents + tipCents)
+  const chargeCents = amountCents + tipCents + feeCents
   if (chargeCents < MIN_CHARGE_CENTS) {
     return { ok: false, reason: `Card payments start at ${money(MIN_CHARGE_CENTS)}.` }
   }
 
-  return { ok: true, quote: { purpose, amountCents, feeCents, chargeCents, label: labelFor(invoice, purpose) } }
+  return {
+    ok: true,
+    quote: { purpose, amountCents, tipCents, feeCents, chargeCents, label: labelFor(invoice, purpose) },
+  }
 }
 
 /* ── Minting ───────────────────────────────────────────────────────────── */
@@ -196,6 +224,8 @@ export interface PayLinkRow {
   booking_id: string
   purpose: string
   amount_cents: number
+  /** Migration 057. Nullable in the type only so a pre-057 read cannot crash. */
+  tip_cents: number | null
   fee_cents: number
   stripe_payment_link_id: string | null
   url: string
@@ -207,7 +237,7 @@ export type MintResult =
   | { ok: false; reason: string; retryable: boolean }
 
 export const PAY_LINK_COLUMNS =
-  'id, booking_id, purpose, amount_cents, fee_cents, stripe_payment_link_id, url, voided_at'
+  'id, booking_id, purpose, amount_cents, tip_cents, fee_cents, stripe_payment_link_id, url, voided_at'
 
 /**
  * Void every live link for this plan+purpose, in the DB and at Stripe.
@@ -266,6 +296,8 @@ export async function createPlanPayLink(opts: {
   invoice: PlanInvoice
   purpose: PayPurpose
   customCents?: number
+  /** Raw, unscreened. `quoteFor` clamps it and drops it on a non-tippable purpose. */
+  tipCents?: unknown
   actor: string
   stripe: Stripe
   db?: Supa
@@ -291,7 +323,7 @@ export async function createPlanPayLink(opts: {
     return { ok: false, reason: 'This plan is cancelled. Please contact us before paying.', retryable: false }
   }
 
-  const quoted = quoteFor(invoice, purpose, opts.customCents)
+  const quoted = quoteFor(invoice, purpose, opts.customCents, opts.tipCents)
   if (!quoted.ok) return { ok: false, reason: quoted.reason, retryable: false }
   const quote = quoted.quote
 
@@ -314,6 +346,11 @@ export async function createPlanPayLink(opts: {
     purpose,
     pay_link_row_id: payLinkId,
     amount_cents: String(quote.amountCents),
+    // Always written, including `0`. The webhook subtracts this from what
+    // Stripe collected before crediting the plan, and an absent key there
+    // reads as "no tip" — which for a link that DID carry one would credit
+    // the gratuity against the balance. Cheap to write, expensive to omit.
+    tip_cents: String(quote.tipCents),
     fee_cents: String(quote.feeCents),
     invoice_number: invoice.invoiceNumber ?? '',
   }
@@ -334,6 +371,23 @@ export async function createPlanPayLink(opts: {
     stripePriceId = price.id
 
     const lineItems: Stripe.PaymentLinkCreateParams.LineItem[] = [{ price: price.id, quantity: 1 }]
+
+    // The tip is its own line for the same reason the fee is: the customer
+    // chose it on our page and must see it named on Stripe's, rather than
+    // discovering a balance line that is larger than the balance. It sits
+    // BEFORE the fee because the fee is charged on it.
+    if (quote.tipCents > 0) {
+      const tipProduct = await stripe.products.create({
+        name: 'Gratuity for the party team',
+        metadata: { booking_ref: ref, purpose },
+      })
+      const tipPrice = await stripe.prices.create({
+        product: tipProduct.id,
+        currency: 'usd',
+        unit_amount: quote.tipCents,
+      })
+      lineItems.push({ price: tipPrice.id, quantity: 1 })
+    }
 
     // The fee is its own line so the customer sees on Stripe's own page exactly
     // what the invoice page promised them ("a 3% processing fee applies to card
@@ -378,6 +432,7 @@ export async function createPlanPayLink(opts: {
     booking_id: booking.id,
     purpose,
     amount_cents: quote.amountCents,
+    tip_cents: quote.tipCents,
     fee_cents: quote.feeCents,
     stripe_payment_link_id: stripeLinkId,
     stripe_price_id: stripePriceId,
@@ -431,6 +486,7 @@ export async function createPlanPayLink(opts: {
       purpose,
       pay_link_id: payLinkId,
       amount_cents: quote.amountCents,
+      tip_cents: quote.tipCents,
       fee_cents: quote.feeCents,
       stripe_payment_link_id: stripeLinkId,
       replaced_links: voided.voided,

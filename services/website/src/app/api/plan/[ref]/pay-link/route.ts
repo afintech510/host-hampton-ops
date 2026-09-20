@@ -13,6 +13,12 @@
  *     amount is a discount coupon for anyone who can edit a request. The single
  *     exception is an admin `custom` amount, which is capped at what the plan
  *     actually owes — see `quoteFor` in lib/planPayLinks.ts.
+ *
+ *     `tipCents` is the one other figure that arrives from the browser, and it
+ *     is accepted for a reason that does not generalise: a tip can only ever
+ *     RAISE the charge, so the attack the rule above exists to stop has no
+ *     version of itself in this direction. It is still clamped
+ *     (`screenTipCents`) and still dropped on any purpose but `balance`.
  *   * **Someone else's plan.** `planAccess()` requires a portal cookie naming
  *     THIS ref, or an admin session. This is the same function the summary page
  *     uses, deliberately, so the page and the money path cannot drift apart.
@@ -59,6 +65,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
   const body = (await req.json().catch(() => ({}))) as {
     purpose?: unknown
     amountDollars?: unknown
+    tipCents?: unknown
   }
   const purpose = body.purpose
   if (!isPayPurpose(purpose)) {
@@ -111,6 +118,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
     invoice,
     purpose,
     customCents,
+    // Unscreened on purpose — `quoteFor` owns the clamp and the
+    // which-purposes-may-tip rule, so there is one place to read and one place
+    // to change rather than a screen here and a second screen there.
+    tipCents: body.tipCents,
     // `adminActorId` returns `admin:<email>` from the signed cookie, or the
     // historical anonymous 'ADMIN' on the shared password. A customer minting
     // their own link is attributed to their portal session.
@@ -129,6 +140,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
     payUrl: minted.payUrl,
     payLinkId: minted.payLinkId,
     amountCents: minted.quote.amountCents,
+    tipCents: minted.quote.tipCents,
     feeCents: minted.quote.feeCents,
     chargeCents: minted.quote.chargeCents,
   })

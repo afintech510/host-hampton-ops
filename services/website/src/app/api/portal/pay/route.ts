@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
-import { calculateCardFee, formatMoney, getDepositCents, BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
+import {
+  calculateCardFee,
+  formatMoney,
+  getDepositCents,
+  BOOKING_DEPOSIT_CENTS,
+  screenTipCents,
+} from '@/lib/partyPricing'
 import {
   billedTotalCents,
   depositIsSeparateFor,
@@ -15,9 +21,6 @@ import {
 import { venmoHandle, zellePhone, PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { screenPortalPaymentType, isPayableStatus, PORTAL_PAYMENT_TYPES } from '@/lib/portalWrite'
-
-/** A gratuity, not a second invoice. $1,000 is generous and still a ceiling. */
-const MAX_TIP_CENTS = 100_000
 
 /**
  * What the INVOICE says is outstanding, from the same pure functions
@@ -265,11 +268,7 @@ export async function POST(req: NextRequest) {
   // helpers, not party fees). Bounded, because it is the one figure on this
   // route with no server-side ceiling of its own: an unbounded tip is an
   // unbounded charge, and a fat-fingered one is a refund conversation.
-  const rawTip = Number(tipCents)
-  const safeTipCents = Math.min(
-    Math.max(0, Number.isFinite(rawTip) ? Math.round(rawTip) : 0),
-    MAX_TIP_CENTS,
-  )
+  const safeTipCents = screenTipCents(tipCents)
 
   if (paymentMethod === 'card') {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })

@@ -133,6 +133,7 @@ async function handlePlanPaySession(
       customerName: bk?.contact_name ?? null,
       customerEmail: bk?.contact_email ?? null,
       amountCents: rec.amountCents,
+      tipCents: Math.max(0, Math.min(planMatch.target.tipCents, session.amount_total ?? 0)),
       feeCents: Math.max(0, Math.min(planMatch.target.feeCents, session.amount_total ?? 0)),
       newBalanceCents: rec.newBalanceCents,
       purpose: planMatch.target.purpose,

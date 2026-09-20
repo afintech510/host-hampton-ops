@@ -64,6 +64,13 @@ export interface PlanPayTarget {
   purpose: PayPurpose
   /** What the link was minted for. Used to separate the fee, never to credit. */
   expectedAmountCents: number
+  /**
+   * Gratuity collected alongside the payment (migration 057). Subtracted out
+   * before crediting, exactly like the fee: it is money for the party team, not
+   * money against the invoice. A tip the webhook cannot see is a tip that pays
+   * the customer's own balance down.
+   */
+  tipCents: number
   feeCents: number
   /** True when the pay-link row was missing and metadata was the only source. */
   fromMetadataOnly: boolean
@@ -158,6 +165,7 @@ export async function matchPlanPayLink(
         bookingRef,
         purpose: row.purpose,
         expectedAmountCents: row.amount_cents,
+        tipCents: Math.max(0, row.tip_cents ?? 0),
         feeCents: row.fee_cents,
         fromMetadataOnly: false,
       },
@@ -178,6 +186,7 @@ export async function matchPlanPayLink(
         bookingRef: metaRef,
         purpose: metaPurpose,
         expectedAmountCents: Number(metaString(m, 'amount_cents') ?? 0) || 0,
+        tipCents: Math.max(0, Number(metaString(m, 'tip_cents') ?? 0) || 0),
         feeCents: Number(metaString(m, 'fee_cents') ?? 0) || 0,
         fromMetadataOnly: true,
       },
@@ -309,9 +318,14 @@ export async function recordPlanPayment(
   // credit or a fee larger than the payment.
   const chargedCents = session.amount_total ?? 0
   const feeCents = Math.max(0, Math.min(target.feeCents, chargedCents))
-  const creditCents = Math.max(0, chargedCents - feeCents)
+  // The tip comes out before the credit for the same reason the fee does: the
+  // customer chose to pay the party team, not to pay their own invoice down.
+  // Clamped against what is left after the fee so a malformed tip can never
+  // drive the credit negative or swallow a real payment.
+  const tipCents = Math.max(0, Math.min(target.tipCents, chargedCents - feeCents))
+  const creditCents = Math.max(0, chargedCents - feeCents - tipCents)
 
-  const expectedCharge = target.expectedAmountCents + target.feeCents
+  const expectedCharge = target.expectedAmountCents + target.tipCents + target.feeCents
   const mismatch = target.expectedAmountCents > 0 && chargedCents !== expectedCharge
   if (mismatch) {
     console.warn(
@@ -326,6 +340,10 @@ export async function recordPlanPayment(
   }
 
   const notes: string[] = [`Plan pay link (${target.purpose})`]
+  // The tip is not a queryable column on `booking_payments` (neither is the
+  // portal's), so this note is the only place the split is written down in our
+  // own books. Say it whenever there is one.
+  if (tipCents > 0) notes.push(`includes ${money(tipCents)} tip for the party team (not credited to the balance)`)
   if (mismatch) notes.push(`link expected ${money(expectedCharge)}, Stripe collected ${money(chargedCents)}`)
   if (isCancelled) notes.push('PLAN WAS CANCELLED when this payment arrived — review')
   if (target.fromMetadataOnly) notes.push('pay link row missing; recorded from Stripe metadata')
@@ -444,6 +462,7 @@ export async function recordPlanPayment(
       modified_by: 'system',
       change_summary:
         `${money(creditCents)} received via card pay link (${target.purpose})` +
+        `${tipCents > 0 ? ` + ${money(tipCents)} tip` : ''}` +
         `${feeCents > 0 ? ` + ${money(feeCents)} card fee` : ''}. Balance: ${money(newBalanceCents)}` +
         `${overpaidCents > 0 ? ` — OVERPAID by ${money(overpaidCents)}, refund may be due` : ''}`,
     })
@@ -480,6 +499,7 @@ export async function recordPlanPayment(
       pay_link_id: target.payLinkId,
       stripe_session_id: session.id,
       amount_cents: creditCents,
+      tip_cents: tipCents,
       fee_cents: feeCents,
       charged_cents: chargedCents,
       balance_due_cents: newBalanceCents,
@@ -517,6 +537,8 @@ export async function sendPlanPaymentReceipt(opts: {
   customerName: string | null
   customerEmail: string | null
   amountCents: number
+  /** Shown as its own row when non-zero, so the charge on the card reconciles. */
+  tipCents?: number
   feeCents: number
   newBalanceCents: number
   purpose: PayPurpose
@@ -535,6 +557,7 @@ export async function sendPlanPaymentReceipt(opts: {
   const first = escapeHtml((opts.customerName || 'there').split(' ')[0])
   const what = opts.purpose === 'deposit' ? 'deposit' : 'payment'
   const overpaid = opts.overpaidCents ?? 0
+  const tip = opts.tipCents ?? 0
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -549,7 +572,8 @@ export async function sendPlanPaymentReceipt(opts: {
     <p style="color:#555;line-height:1.7;margin:0 0 24px;">Thank you &mdash; we&rsquo;ve received your ${what}.</p>
     <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px;">
       <tr style="background:#f9f7f4;"><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Amount</td><td style="padding:10px 12px;color:#555;">${money(opts.amountCents)}</td></tr>
-      ${opts.feeCents > 0 ? `<tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Card fee (3%)</td><td style="padding:10px 12px;color:#555;">${money(opts.feeCents)}</td></tr>` : ''}
+      ${tip > 0 ? `<tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Tip for the party team</td><td style="padding:10px 12px;color:#555;">${money(tip)}</td></tr>` : ''}
+      ${opts.feeCents > 0 ? `<tr${tip > 0 ? ' style="background:#f9f7f4;"' : ''}><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Card fee (3%)</td><td style="padding:10px 12px;color:#555;">${money(opts.feeCents)}</td></tr>` : ''}
       <tr style="background:#f9f7f4;"><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Balance remaining</td><td style="padding:10px 12px;color:#555;">${money(opts.newBalanceCents)}</td></tr>
       <tr><td style="padding:10px 12px;font-weight:bold;color:#1a2744;">Reference</td><td style="padding:10px 12px;color:#888;font-size:12px;">${escapeHtml(opts.bookingRef)}</td></tr>
     </table>
@@ -578,6 +602,7 @@ export async function sendPlanPaymentReceipt(opts: {
       html:
         `<p style="font-family:sans-serif">` +
         `<strong>${money(opts.amountCents)}</strong> ${what} received for <strong>${escapeHtml(opts.bookingRef)}</strong>` +
+        `${tip > 0 ? ` (+ <strong>${money(tip)} tip for the party team</strong>)` : ''}` +
         `${opts.feeCents > 0 ? ` (+ ${money(opts.feeCents)} card fee)` : ''}.<br>` +
         `Balance remaining: <strong>${money(opts.newBalanceCents)}</strong>.<br>` +
         (overpaid > 0

@@ -19,12 +19,44 @@
 
 import { useState } from 'react'
 
+export interface TipPreset {
+  percent: number
+  cents: number
+}
+
+/** Everything the tip jar needs. Absent on any option that may not carry a tip. */
+export interface TipConfig {
+  /** The amount being paid, so the charge line can be recomputed as the tip moves. */
+  amountCents: number
+  /** 3, as in 3%. Display only — the server re-derives the fee when it mints. */
+  feePercent: number
+  presets: TipPreset[]
+  /** The one we say out loud. `RECOMMENDED_TIP_RATE` in lib/partyPricing.ts. */
+  recommendedPercent: number
+  recommendedCents: number
+}
+
 export interface PayOption {
   purpose: 'deposit' | 'balance'
   /** Button text, e.g. "Pay $250.00 deposit". */
   cta: string
   /** Sub-line, e.g. "$250.00 + $7.50 card fee = $257.50 charged". */
   detail: string
+  /** Present only on the final payment — see `purposeAcceptsTip`. */
+  tip?: TipConfig
+}
+
+/**
+ * A local dollar formatter.
+ *
+ * `money()` from lib/planInvoice.ts is deliberately not imported (see the file
+ * header — it would drag the service-role Supabase client's module graph into
+ * the browser bundle), and until the tip jar every figure on this panel arrived
+ * pre-formatted from the server. A tip moves while the customer is choosing it,
+ * so this one has to be formatted here.
+ */
+function usd(cents: number): string {
+  return `$${(cents / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
 }
 
 /**
@@ -100,14 +132,118 @@ const linkBtn: React.CSSProperties = {
   fontFamily: 'inherit',
 }
 
+/**
+ * The tip jar, shown under the final payment only.
+ *
+ * Two deliberate differences from the party-builder portal's version:
+ *
+ *   1. **It defaults to nothing.** The portal pre-fills 10% because the customer
+ *      is already mid-checkout and has read the charge summary. This is a
+ *      *document* — someone lands on it to read what the party costs, and a
+ *      pre-filled tip would mean the button charges 10% more than the Total the
+ *      page prints. The recommendation is stated in words instead, which is what
+ *      was actually asked for. One line to change if that call goes the other way.
+ *   2. **Whole dollars only.** No cent-level tipping; the presets round to a
+ *      dollar and the custom field steps in dollars.
+ */
+function TipJar({
+  tip,
+  tipCents,
+  setTipCents,
+  disabled,
+}: {
+  tip: TipConfig
+  tipCents: number
+  setTipCents: (c: number) => void
+  disabled: boolean
+}) {
+  const [custom, setCustom] = useState('')
+  const matched = tip.presets.find(p => p.cents === tipCents && p.cents > 0)
+  const feeCents = Math.round((tip.amountCents + tipCents) * (tip.feePercent / 100))
+
+  return (
+    <div className="tip-jar">
+      <div className="tip-jar-head">Add a tip for the party team?</div>
+      <p className="tip-jar-note">
+        Entirely optional, and it goes to the people who run your party — never to the studio. We
+        suggest <strong>{tip.recommendedPercent}%</strong> ({usd(tip.recommendedCents)}).
+      </p>
+      <div className="tip-jar-row">
+        {tip.presets.map(p => {
+          const active = p.cents === 0 ? tipCents === 0 : tipCents === p.cents
+          return (
+            <button
+              key={p.percent}
+              type="button"
+              disabled={disabled}
+              className={`tip-chip${active ? ' is-active' : ''}`}
+              onClick={() => {
+                setCustom('')
+                setTipCents(p.cents)
+              }}
+            >
+              {p.percent === 0 ? 'No tip' : `${p.percent}%`}
+            </button>
+          )
+        })}
+        <label className="tip-custom">
+          <span aria-hidden="true">$</span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
+            aria-label="Custom tip in dollars"
+            placeholder="Other"
+            disabled={disabled}
+            value={custom}
+            onChange={e => {
+              const raw = e.target.value
+              setCustom(raw)
+              if (raw === '') {
+                setTipCents(0)
+                return
+              }
+              const n = Number(raw)
+              setTipCents(Number.isFinite(n) && n > 0 ? Math.round(n) * 100 : 0)
+            }}
+          />
+        </label>
+      </div>
+      <div className="tip-jar-total">
+        {tipCents > 0 ? (
+          <>
+            {usd(tip.amountCents)} + <strong>{usd(tipCents)} tip</strong> + {usd(feeCents)} card fee ={' '}
+            <strong>{usd(tip.amountCents + tipCents + feeCents)}</strong> charged
+            {matched ? ` (${matched.percent}%)` : ''}
+          </>
+        ) : (
+          <>No tip &mdash; {usd(tip.amountCents + feeCents)} charged.</>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /** The pay buttons. Rendered inside the invoice's own payment section. */
 export function PayPanel({ ref_, options }: { ref_: string; options: PayOption[] }) {
   const { busy, setBusy, error, setError } = useBusy()
+  // Lives on the panel, not on the jar, because it has to reach `pay()`. Zero is
+  // the honest default: see TipJar's header.
+  const [tipCents, setTipCents] = useState(0)
 
   async function pay(purpose: string) {
     setError(null)
     setBusy(purpose)
-    const { ok, data } = await postJson(`/api/plan/${encodeURIComponent(ref_)}/pay-link`, { purpose })
+    const option = options.find(o => o.purpose === purpose)
+    // Only ever sent for an option the SERVER marked tippable. It re-checks
+    // (`purposeAcceptsTip`) and re-clamps (`screenTipCents`) regardless — this
+    // is the display agreeing with the server, not the client deciding.
+    const tip = option?.tip ? Math.max(0, Math.round(tipCents)) : 0
+    const { ok, data } = await postJson(`/api/plan/${encodeURIComponent(ref_)}/pay-link`, {
+      purpose,
+      ...(tip > 0 ? { tipCents: tip } : {}),
+    })
     if (!ok || typeof data.payUrl !== 'string') {
       setBusy(null)
       setError(typeof data.error === 'string' ? data.error : 'Could not start the payment — please try again.')
@@ -125,12 +261,30 @@ export function PayPanel({ ref_, options }: { ref_: string; options: PayOption[]
     <div className="no-print">
       {options.map(o => (
         <div key={o.purpose} style={{ marginBottom: 14 }}>
+          {/*
+            The jar sits ABOVE its button on purpose: a tip chosen after the
+            customer has already read the button is a tip they have to notice
+            changed the figure. This way the charge line under the jar and the
+            button they press are read in that order.
+          */}
+          {o.tip && (
+            <TipJar tip={o.tip} tipCents={tipCents} setTipCents={setTipCents} disabled={busy !== null} />
+          )}
           <button type="button" style={{ ...btn, opacity: busy ? 0.6 : 1 }} disabled={busy !== null} onClick={() => pay(o.purpose)}>
-            {busy === o.purpose ? 'Opening Stripe…' : o.cta}
+            {busy === o.purpose ? 'Opening Stripe…' : o.tip && tipCents > 0 ? `${o.cta} + ${usd(tipCents)} tip` : o.cta}
           </button>
-          <div className="section-sub" style={{ marginTop: 6, marginBottom: 0, fontSize: 12 }}>
-            {o.detail}
-          </div>
+          {/*
+            `detail` is the server's static charge line. When there is a jar it
+            is suppressed, because the jar prints the same sentence with the tip
+            folded in and live — two charge lines that disagree by the tip is
+            exactly the "invoice says one thing, button charges another" failure
+            this panel is otherwise careful about.
+          */}
+          {!o.tip && (
+            <div className="section-sub" style={{ marginTop: 6, marginBottom: 0, fontSize: 12 }}>
+              {o.detail}
+            </div>
+          )}
         </div>
       ))}
       {error && (

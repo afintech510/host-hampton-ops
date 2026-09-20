@@ -23,6 +23,57 @@ export const BOOKING_DEPOSIT_CENTS = 25000
 export const MAJOR_BOOKING_THRESHOLD_CENTS = 300000
 export const MAJOR_BOOKING_DEPOSIT_RATE = 0.5
 
+/* ── Gratuity ──────────────────────────────────────────────────────────────
+ *
+ * A tip is for the humans who run the party, so it is never part of the plan's
+ * total, never credited against the balance, and never anything but the
+ * customer's own choice. Our marketing says so out loud (`lib/locations.ts`,
+ * `MobilePriceBlock`, the FAQ): no mandatory gratuity.
+ *
+ * These constants live here, once, because there are now two surfaces that
+ * charge a tip — the party-builder portal's Payment Element and the invoice's
+ * Payment Link — and a constant declared in two files is a constant nothing is
+ * checking. That failure mode has already cost real money on this codebase
+ * twice (the card-fee rate, the studio deposit flag).
+ */
+
+/** A gratuity, not a second invoice. $1,000 is generous and still a ceiling. */
+export const MAX_TIP_CENTS = 100_000
+
+/** What we suggest, and the only figure quoted to a customer as "recommended". */
+export const RECOMMENDED_TIP_RATE = 0.1
+
+/** The buttons offered. `0` is first, and is a real choice, not a dark pattern. */
+export const TIP_PRESET_PERCENTS = [0, 10, 15, 20] as const
+
+/** A percentage of the party total, rounded to a whole dollar. */
+export function tipCentsForPercent(totalCents: number, percent: number): number {
+  if (!Number.isFinite(totalCents) || totalCents <= 0) return 0
+  return Math.round((totalCents * percent) / 100 / 100) * 100
+}
+
+/** The recommended (10%) tip on a total, in cents, rounded to a whole dollar. */
+export function recommendedTipCents(totalCents: number): number {
+  return tipCentsForPercent(totalCents, RECOMMENDED_TIP_RATE * 100)
+}
+
+/**
+ * Screen a browser-supplied tip into something safe to charge.
+ *
+ * The tip is the one figure on the pay paths that is genuinely the customer's
+ * to name — it cannot be derived from the plan the way every other amount is.
+ * That makes it the only body-supplied number the pay-link route accepts, and
+ * it is safe for exactly one reason: **a tip can only ever raise the charge.**
+ * The discount-coupon attack that `planPayLinks` is built to refuse does not
+ * exist in this direction. It is still clamped, because an unbounded tip is an
+ * unbounded charge and a fat-fingered one is a refund conversation.
+ */
+export function screenTipCents(raw: unknown): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 0
+  return Math.min(Math.max(0, Math.round(n)), MAX_TIP_CENTS)
+}
+
 export function calculateCardFee(amountCents: number, rate = DEFAULT_CARD_FEE_RATE): number {
   return Math.round(amountCents * rate)
 }

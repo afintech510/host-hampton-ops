@@ -91,6 +91,7 @@ const TARGET = {
   bookingRef: 'HH-2026-TEST',
   purpose: 'deposit' as const,
   expectedAmountCents: 25000,
+  tipCents: 0,
   feeCents: 750,
   fromMetadataOnly: false,
 }

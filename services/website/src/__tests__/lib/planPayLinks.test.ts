@@ -16,6 +16,12 @@ import {
   MIN_CHARGE_CENTS,
 } from '@/lib/planPayLinks'
 import { paidTowardTotalCents, planMoney, type PaymentRow } from '@/lib/planBalance'
+import {
+  MAX_TIP_CENTS,
+  TIP_PRESET_PERCENTS,
+  recommendedTipCents,
+  tipCentsForPercent,
+} from '@/lib/partyPricing'
 import type { PlanInvoice } from '@/lib/planInvoice'
 import { contentFromRows, FALLBACK_CONTENT_ROWS } from '@/lib/planContent'
 import { makePlanDb, writesTo } from '../mocks/planDb'
@@ -281,6 +287,91 @@ describe('quoteFor — balance', () => {
     const q = quoteFor(withOptional, 'balance')
     if (!q.ok) throw new Error(q.reason)
     expect(q.quote.amountCents).toBe(60000)
+  })
+})
+
+/* ── The tip (2026-09-20, migration 057) ────────────────────────────────── */
+
+describe('quoteFor — gratuity', () => {
+  const priced = () => invoice({ totalCents: 125000, payments: [pay('deposit', 25000)] })
+
+  it('rides on top of the balance and is never credited against it', () => {
+    const q = quoteFor(priced(), 'balance', undefined, 12500)
+    if (!q.ok) throw new Error(q.reason)
+    expect(q.quote.amountCents).toBe(100000) // unchanged by the tip
+    expect(q.quote.tipCents).toBe(12500)
+  })
+
+  it('is fee-bearing, exactly as the portal computes it', () => {
+    const q = quoteFor(priced(), 'balance', undefined, 12500)
+    if (!q.ok) throw new Error(q.reason)
+    // 3% of (amount + tip), not of the amount alone.
+    expect(q.quote.feeCents).toBe(Math.round((100000 + 12500) * 0.03))
+    expect(q.quote.chargeCents).toBe(100000 + 12500 + q.quote.feeCents)
+  })
+
+  it('can only ever RAISE the charge — which is why the body may carry it', () => {
+    const without = quoteFor(priced(), 'balance')
+    const with_ = quoteFor(priced(), 'balance', undefined, 12500)
+    if (!without.ok || !with_.ok) throw new Error('both should quote')
+    expect(with_.quote.chargeCents).toBeGreaterThan(without.quote.chargeCents)
+    expect(with_.quote.amountCents).toBe(without.quote.amountCents)
+  })
+
+  it('is dropped on a deposit — a gratuity for a party that has not happened', () => {
+    const q = quoteFor(invoice({ totalCents: 125000 }), 'deposit', undefined, 12500)
+    if (!q.ok) throw new Error(q.reason)
+    expect(q.quote.tipCents).toBe(0)
+    expect(q.quote.chargeCents).toBe(25000 + Math.round(25000 * 0.03))
+  })
+
+  it('is dropped on an admin custom charge', () => {
+    const q = quoteFor(priced(), 'custom', 30000, 12500)
+    if (!q.ok) throw new Error(q.reason)
+    expect(q.quote.tipCents).toBe(0)
+  })
+
+  it('is clamped at the ceiling rather than refused', () => {
+    const q = quoteFor(priced(), 'balance', undefined, 999_999_99)
+    if (!q.ok) throw new Error(q.reason)
+    expect(q.quote.tipCents).toBe(MAX_TIP_CENTS)
+  })
+
+  it('refuses to go negative, and shrugs off junk', () => {
+    for (const junk of [-5000, NaN, Infinity, 'lots', null, undefined, {}]) {
+      const q = quoteFor(priced(), 'balance', undefined, junk)
+      if (!q.ok) throw new Error(q.reason)
+      expect(q.quote.tipCents).toBe(0)
+      expect(q.quote.chargeCents).toBe(100000 + Math.round(100000 * 0.03))
+    }
+  })
+
+  it('rounds a fractional tip to the cent rather than sending Stripe a float', () => {
+    const q = quoteFor(priced(), 'balance', undefined, 1234.6)
+    if (!q.ok) throw new Error(q.reason)
+    expect(q.quote.tipCents).toBe(1235)
+    expect(Number.isInteger(q.quote.chargeCents)).toBe(true)
+  })
+})
+
+describe('recommendedTipCents — the 10% we state out loud', () => {
+  it('is 10% of the total, rounded to a whole dollar', () => {
+    expect(recommendedTipCents(125000)).toBe(12500)
+    expect(recommendedTipCents(95000)).toBe(9500)
+    // $1,234.00 → $123.40 → $123.00
+    expect(recommendedTipCents(123400)).toBe(12300)
+  })
+
+  it('is nothing on an unpriced plan, so the document cannot suggest $0.00', () => {
+    expect(recommendedTipCents(0)).toBe(0)
+    expect(recommendedTipCents(-1)).toBe(0)
+  })
+
+  it('offers no-tip first, and the presets are whole dollars', () => {
+    expect(TIP_PRESET_PERCENTS[0]).toBe(0)
+    for (const p of TIP_PRESET_PERCENTS) {
+      expect(tipCentsForPercent(123400, p) % 100).toBe(0)
+    }
   })
 })
 

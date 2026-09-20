@@ -387,6 +387,97 @@ body > main { padding-top: 0 !important; }
 .hh-invoice .footer strong { color: var(--navy); font-weight: 600; }
 .hh-invoice .footer a { color: var(--navy); }
 
+/* ── Event Details: the "Party address:" lead-in ─────────────────────────── */
+.hh-invoice .detail-label {
+  color: rgba(47,52,59,0.55);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Tip ──────────────────────────────────────────────────────────────────
+ *
+ * The prose line PRINTS (it is part of the document — a customer paying by
+ * Venmo or handing over cash on the day never sees the interactive jar). The
+ * jar itself does not: it lives inside `PayPanel`'s `.no-print` wrapper, which
+ * is correct, because a row of buttons on paper is noise.
+ */
+.hh-invoice .tip-prose {
+  margin-top: -6px;
+  font-size: 13px;
+}
+
+.hh-invoice .tip-jar {
+  border: 1px dashed rgba(174,182,194,0.55);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+.hh-invoice .tip-jar-head {
+  font-weight: 600;
+  color: var(--navy);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.hh-invoice .tip-jar-note {
+  font-size: 12.5px;
+  color: rgba(47,52,59,0.7);
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
+.hh-invoice .tip-jar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.hh-invoice .tip-chip {
+  border: 1px solid rgba(26,39,68,0.25);
+  background: transparent;
+  color: var(--navy);
+  border-radius: 50px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.hh-invoice .tip-chip:hover:not(:disabled) { border-color: var(--navy); }
+.hh-invoice .tip-chip.is-active {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #F6F1EB;
+}
+.hh-invoice .tip-chip:disabled { opacity: 0.5; cursor: default; }
+.hh-invoice .tip-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid rgba(26,39,68,0.25);
+  border-radius: 50px;
+  padding: 5px 12px;
+  font-size: 13px;
+  color: rgba(47,52,59,0.7);
+}
+.hh-invoice .tip-custom input {
+  width: 62px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--navy);
+  outline: none;
+  padding: 2px 0;
+}
+.hh-invoice .tip-jar-total {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: rgba(47,52,59,0.75);
+  line-height: 1.6;
+}
+.hh-invoice .tip-jar-total strong { color: var(--navy); font-weight: 600; }
+
 @media (max-width: 640px) {
   .hh-invoice .details-grid,
   .hh-invoice .option-grid,

@@ -67,6 +67,7 @@ const target = (over: Partial<PlanPayTarget> = {}): PlanPayTarget => ({
   bookingRef: 'HH-2026-TEST',
   purpose: 'balance',
   expectedAmountCents: 60000,
+  tipCents: 0,
   feeCents: 1800,
   fromMetadataOnly: false,
   ...over,

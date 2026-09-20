@@ -56,8 +56,14 @@ import { getSupabase } from '@/lib/supabase'
 import { canEditPlanInBuilder, isQuoteStage, loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
 import { ensureInvoiceNumber } from '@/lib/invoiceNumber'
 import { planAccess } from '@/lib/planAccess'
-import { quoteFor } from '@/lib/planPayLinks'
+import { quoteFor, purposeAcceptsTip } from '@/lib/planPayLinks'
 import { isUnpricedPlan } from '@/lib/planBalance'
+import {
+  RECOMMENDED_TIP_RATE,
+  TIP_PRESET_PERCENTS,
+  tipCentsForPercent,
+  recommendedTipCents,
+} from '@/lib/partyPricing'
 import { PayPanel, PlanShareBar, PrintButton, AdminCustomCharge, type PayOption } from './PayPanel'
 import './invoice.css'
 
@@ -119,6 +125,14 @@ function InvoiceBody({
   // nothing, which is how a document ends up describing a figure it no longer
   // prints.
   const quoteStage = isQuoteStage(booking, invoice.paidCents)
+  // "Mobile Party Quotation" → "Mobile Party", and then the package line only
+  // if it is not that same string again. See the Event Details block below.
+  const docLabel = invoice.docTitle.replace(/ (Quotation|Invoice)$/, '')
+  const normalise = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+  const packageLine =
+    booking.package_type && normalise(booking.package_type) !== normalise(docLabel)
+      ? booking.package_type
+      : null
   const venmoAmount = (askCents / 100).toFixed(2)
   const venmoNote = `${(booking.contact_name || 'Party').split(' ')[0]} — ${
     partyType === 'studio_rental' ? 'Studio Rental' : 'Party'
@@ -180,11 +194,20 @@ function InvoiceBody({
           <div className="detail-box">
             <h3>Event Details</h3>
             <p>
-              <strong>{invoice.docTitle.replace(/ (Quotation|Invoice)$/, '')}</strong>
-              {booking.package_type && (
+              <strong>{docLabel}</strong>
+              {/*
+                The package only earns a line when it SAYS something the heading
+                did not. `package_type` is free text and is very often just the
+                product name again — a mobile party quote printed "Mobile Party"
+                twice, once bold and once not, which reads as a rendering fault
+                rather than a detail. Compared loosely (case, spacing) because
+                the two strings come from different places: one from the
+                party-type label map, one typed by whoever took the booking.
+              */}
+              {packageLine && (
                 <>
                   <br />
-                  {booking.package_type}
+                  {packageLine}
                 </>
               )}
               <br />
@@ -198,7 +221,7 @@ function InvoiceBody({
               {invoice.venueAddress && (
                 <>
                   <br />
-                  {invoice.venueAddress}
+                  <span className="detail-label">Party address:</span> {invoice.venueAddress}
                 </>
               )}
             </p>
@@ -393,6 +416,21 @@ function InvoiceBody({
                 : 'payment is outstanding on this plan.'}{' '}
               A 3% processing fee applies to card payments; Venmo and Zelle avoid it.
             </p>
+            {/*
+              Stated in the DOCUMENT, not only in the interactive jar, because
+              the invoice is printed and emailed as often as it is clicked — and
+              a customer paying by Venmo never sees the jar at all. Suppressed
+              while a deposit is owed: a gratuity belongs with the final payment,
+              not with the money that holds the date.
+            */}
+            {invoice.depositOwedCents <= 0 && invoice.totalCents > 0 && (
+              <p className="section-sub tip-prose">
+                <strong>Tipping is optional.</strong> If your party team looked after you, the
+                customary thank-you is <strong>{Math.round(RECOMMENDED_TIP_RATE * 100)}%</strong> of
+                your total ({money(recommendedTipCents(invoice.totalCents))}). You can add it to your
+                final card payment below, or hand it to the team on the day.
+              </p>
+            )}
             {/*
               The pay buttons post a `purpose`, never an amount — see PayPanel's
               header. When there is nothing left to charge (paid in full) the
@@ -610,6 +648,29 @@ export default async function PlanSummaryPage({
           : clearsEverything
             ? 'in full'
             : 'balance'
+      // ── The tip jar, on the final payment only ────────────────────────────
+      //
+      // `purposeAcceptsTip` is the single owner of which purposes may carry one
+      // — the same function the mint path consults — so the panel cannot offer
+      // a tip the server would then drop. Percentages are OF THE PARTY TOTAL,
+      // not of the amount being charged: on a plan where the deposit is already
+      // paid, 10% of the remaining balance would quietly be less than the 10%
+      // we told them we recommend.
+      const tipBaseCents = invoice.totalCents
+      const tip =
+        purposeAcceptsTip(purpose) && tipBaseCents > 0
+          ? {
+              amountCents: q.quote.amountCents,
+              feePercent: 3,
+              presets: TIP_PRESET_PERCENTS.map(percent => ({
+                percent,
+                cents: tipCentsForPercent(tipBaseCents, percent),
+              })),
+              recommendedPercent: Math.round(RECOMMENDED_TIP_RATE * 100),
+              recommendedCents: recommendedTipCents(tipBaseCents),
+            }
+          : undefined
+
       payOptions.push({
         purpose,
         cta: `Pay ${money(q.quote.amountCents)} ${noun}`,
@@ -617,6 +678,7 @@ export default async function PlanSummaryPage({
           q.quote.feeCents > 0
             ? `${money(q.quote.amountCents)} + ${money(q.quote.feeCents)} card fee = ${money(q.quote.chargeCents)} charged. Venmo or Zelle avoids the fee.`
             : `${money(q.quote.chargeCents)} charged.`,
+        ...(tip ? { tip } : {}),
       })
     }
   }

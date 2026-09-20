@@ -70,6 +70,7 @@ const PAY_LINK_ROW = {
   booking_id: 'bk-1',
   purpose: 'deposit',
   amount_cents: 25000,
+  tip_cents: 0,
   fee_cents: 750,
   stripe_payment_link_id: 'plink_1',
   url: 'https://pay.stripe.com/plink_1',
@@ -81,6 +82,7 @@ const target = (over: Partial<PlanPayTarget> = {}): PlanPayTarget => ({
   bookingRef: 'HH-2026-TEST',
   purpose: 'deposit',
   expectedAmountCents: 25000,
+  tipCents: 0,
   feeCents: 750,
   fromMetadataOnly: false,
   ...over,
@@ -230,6 +232,64 @@ describe('recordPlanPayment', () => {
       // never a person, and who minted the link lives on booking_pay_links.
       recorded_by: 'system',
     })
+  })
+
+  /* ── The gratuity (2026-09-20, migration 057) ──────────────────────────
+   *
+   * The failure this guards is quiet and expensive: `creditCents` used to be
+   * `charged - fee`, so a $125 tip on a $1,000 balance would have credited
+   * $1,125 against the plan. The customer's own generosity would have paid
+   * their invoice down, and the books would call a gratuity party revenue.
+   */
+  it('a tip is charged but NOT credited against the balance', async () => {
+    const db = recordDb()
+    const res = await recordPlanPayment(
+      // $250 balance + $50 tip + 3% of both = $259.00 collected.
+      target({ purpose: 'balance', expectedAmountCents: 25000, tipCents: 5000, feeCents: 900 }),
+      session({ amount_total: 30900 }),
+      db as never,
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+
+    const row = writesTo(db, 'booking_payments', 'insert')[0].payload as Record<string, unknown>
+    // The plan is credited the $250 it was owed — not $300, and not $299.
+    expect(row.amount_cents).toBe(25000)
+    expect(row.card_fee_cents).toBe(900)
+    // The card was charged the whole thing, and the books have to say so.
+    expect(row.total_charged_cents).toBe(30900)
+    // The split is written down somewhere, because there is no tip COLUMN on
+    // booking_payments — this note is the only record of it in our own data.
+    expect(String(row.notes)).toMatch(/\$50\.00 tip/)
+    expect(res.amountCents).toBe(25000)
+  })
+
+  it('a malformed tip cannot swallow a real payment', async () => {
+    const db = recordDb()
+    const res = await recordPlanPayment(
+      // A tip larger than the whole collection — only reachable via corrupted
+      // metadata, but the clamp must hold rather than credit a negative.
+      target({ purpose: 'balance', expectedAmountCents: 25000, tipCents: 999_999, feeCents: 750 }),
+      session({ amount_total: 25750 }),
+      db as never,
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    const row = writesTo(db, 'booking_payments', 'insert')[0].payload as Record<string, unknown>
+    expect(row.amount_cents).toBe(0)
+    expect(Number(row.amount_cents)).toBeGreaterThanOrEqual(0)
+  })
+
+  it('a link minted before migration 057 reads as no tip, not as NaN', async () => {
+    const db = makePlanDb({
+      // `tip_cents` absent entirely, as every pre-057 row's select returns.
+      booking_pay_links: [{ data: { ...PAY_LINK_ROW, tip_cents: undefined }, error: null }],
+      bookings: [{ data: { booking_ref: 'HH-2026-TEST' }, error: null }],
+    })
+    const res = await matchPlanPayLink(session(), db as never)
+    expect(res.outcome).toBe('matched')
+    if (res.outcome !== 'matched') return
+    expect(res.target.tipCents).toBe(0)
   })
 
   it('a REDELIVERED webhook is a success, not a second payment', async () => {

@@ -479,21 +479,117 @@ describe('R5 · the deposit quote is capped by what the plan actually owes', () 
   })
 })
 
+/* ── R5b · the Event Details card says each thing once ──────────────────── */
+
+describe('R5b · the document does not repeat itself', () => {
+  const page = () => read('app/plan/[ref]/summary/page.tsx')
+
+  it('the package line is suppressed when it only repeats the heading', () => {
+    // Measured on a real quote (HH-PTY-KMXWM, 2026-09-20): the Event Details
+    // card printed "Mobile Party" in bold and "Mobile Party" again underneath,
+    // because `docTitle` minus its suffix and `bookings.package_type` were the
+    // same words from two different sources. Compared loosely — one is a label
+    // from a map, the other is free text somebody typed.
+    const src = page()
+    expect(src).toMatch(/normalise\(booking\.package_type\) !== normalise\(docLabel\)/)
+    expect(src).toMatch(/\{packageLine && \(/)
+    // And the raw column is no longer rendered unconditionally.
+    expect(src).not.toMatch(/\{booking\.package_type && \(/)
+  })
+
+  it('the party address is labelled, so it is not a loose line of text', () => {
+    const src = page()
+    expect(src).toMatch(/Party address:<\/span> \{invoice\.venueAddress\}/)
+    // Still gated: a plan with no address prints no empty label.
+    expect(src).toMatch(/\{invoice\.venueAddress && \(/)
+  })
+
+  it('the recommended tip is stated in the printed document, not only in the widget', () => {
+    const src = page()
+    // A customer paying by Venmo, or reading a PDF, never sees the tip jar.
+    expect(src).toMatch(/RECOMMENDED_TIP_RATE/)
+    expect(src).toMatch(/tip-prose/)
+    // And it is not offered while a deposit is still owed.
+    expect(src).toMatch(/invoice\.depositOwedCents <= 0 && invoice\.totalCents > 0/)
+    const css = read('app/plan/[ref]/summary/invoice.css')
+    expect(css).toMatch(/\.tip-prose/)
+  })
+})
+
 /* ── R6 · no amount ever comes from the client ──────────────────────────── */
 
 describe('R6 · the charge is derived server-side', () => {
-  it('the pay-link route reads only a purpose, and an admin-gated custom amount', () => {
+  /**
+   * `tipCents` joined this list on 2026-09-20 and is the one body field that is
+   * allowed to reach money without an admin gate. The rule it does not break:
+   * **a tip can only ever RAISE the charge.** The attack R6 exists to stop is a
+   * request that lowers what is collected, and there is no version of that in
+   * this direction. Every other property below is what keeps it honest.
+   */
+  const ALLOWED_BODY_FIELDS = ['amountDollars', 'purpose', 'tipCents']
+
+  it('the pay-link route reads only a purpose, an admin-gated amount, and a tip', () => {
     const route = read('app/api/plan/[ref]/pay-link/route.ts')
     expect(route).toMatch(/if\s*\(purpose === 'custom' && !isAdmin\)/)
-    // The only body field that becomes money is `amountDollars`, and only after
-    // the admin gate above.
     const bodyReads = [...route.matchAll(/body\.(\w+)/g)].map(m => m[1])
-    expect([...new Set(bodyReads)].sort()).toEqual(['amountDollars', 'purpose'])
+    expect([...new Set(bodyReads)].sort()).toEqual([...ALLOWED_BODY_FIELDS].sort())
   })
 
-  it('the client component holds no arithmetic at all', () => {
+  it('the route does not clamp the tip itself — there is exactly one screen', () => {
+    const route = read('app/api/plan/[ref]/pay-link/route.ts')
+    // A second clamp here would be a second answer to "how big may a tip be",
+    // and the pair would drift. The route hands the raw value to `quoteFor`,
+    // which owns both the ceiling and the which-purposes rule.
+    expect(route).not.toMatch(/MAX_TIP_CENTS|screenTipCents/)
+    expect(route).toMatch(/tipCents:\s*body\.tipCents/)
+  })
+
+  it('the tip is clamped and purpose-gated in one place, on the server', () => {
+    const links = read('lib/planPayLinks.ts')
+    expect(links).toMatch(/purposeAcceptsTip\(purpose\)\s*\?\s*screenTipCents\(rawTipCents\)\s*:\s*0/)
+    // Only the final payment. A gratuity on a reservation deposit tips a party
+    // that has not happened.
+    expect(links).toMatch(/export function purposeAcceptsTip[\s\S]*?return purpose === 'balance'/)
+    // And it is charged, never credited: the fee is taken on amount + tip, and
+    // the collection is amount + tip + fee.
+    expect(links).toMatch(/calculateCardFee\(amountCents \+ tipCents\)/)
+    expect(links).toMatch(/chargeCents = amountCents \+ tipCents \+ feeCents/)
+  })
+
+  it('a tip never pays the plan down — the webhook subtracts it before crediting', () => {
+    const pay = read('lib/planPayment.ts')
+    // This is the whole reason migration 057 added a column rather than
+    // trusting Stripe metadata alone: a tip the webhook cannot see is credited
+    // as party fees, and the customer's balance falls by the size of their own
+    // gratuity.
+    expect(pay).toMatch(/creditCents = Math\.max\(0, chargedCents - feeCents - tipCents\)/)
+    expect(pay).toMatch(/tipCents: Math\.max\(0, row\.tip_cents \?\? 0\)/)
+    expect(pay).toMatch(/tip_cents/)
+  })
+
+  it('the client sends a purpose and a tip, and never an amount', () => {
     const panel = read('app/plan/[ref]/summary/PayPanel.tsx')
-    expect(panel).not.toMatch(/amountCents|totalCents|balanceDueCents|\*\s*100|\/\s*100/)
+    // The direct form of what "no arithmetic" was a proxy for: whatever the
+    // panel computes for DISPLAY, the only things it may put on the wire are a
+    // purpose and a tip. Both are re-derived or re-clamped server-side.
+    const posted = [...panel.matchAll(/pay-link`,\s*\{([\s\S]*?)\}\)/g)].map(m => m[1])
+    expect(posted.length).toBeGreaterThan(0)
+    // Anchored on `{` or `,` so this reads KEYS and not the identifiers used as
+    // values — `amountDollars: amount` has one key, not two.
+    for (const body of posted) {
+      const keys = [...body.matchAll(/[{,]\s*(\w+)\s*[:,]/g)].map(m => m[1])
+      expect(keys.length).toBeGreaterThan(0)
+      for (const k of keys) expect(ALLOWED_BODY_FIELDS).toContain(k)
+    }
+  })
+
+  it('the client never sees the plan\'s own money fields', () => {
+    const panel = read('app/plan/[ref]/summary/PayPanel.tsx')
+    // `amountCents` is now permitted — it rides on `TipConfig` purely so the
+    // charge line can be recomputed as the tip moves, and the server re-prices
+    // at mint time regardless. These three are not: they are the figures that
+    // decide what is owed, and the panel has no business knowing them.
+    expect(panel).not.toMatch(/totalCents|balanceDueCents|outstandingCents|depositOwedCents/)
   })
 })
 
