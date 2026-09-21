@@ -27,6 +27,8 @@ import {
   type FinancialWrite,
 } from '@/lib/stripeSettlement'
 import { recordLedgerEntry } from '@/lib/financialLedger'
+import { resolveMarket } from '@/lib/christmasMarket'
+import { marketVendorConfirmationHtml, marketVendorOwnerHtml } from '@/lib/marketVendorEmails'
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
 
 /**
@@ -1455,6 +1457,139 @@ export async function POST(req: NextRequest) {
           }),
         ])
         console.log('Cart confirmation sent to', m.customerEmail)
+      }
+
+      return NextResponse.json({ received: true })
+    }
+
+    // ── Market vendor booth ────────────────────────────────────
+    //
+    // Unlike every other branch in this file, this one does NOT insert. The row
+    // was written by /api/christmas-market/vendor before the vendor ever
+    // reached Stripe, precisely so that an abandoned checkout still leaves the
+    // vendor's details behind. All that happens here is settlement: pending →
+    // paid.
+    //
+    // The idempotency signal is therefore `paid_at`, not `claimBySessionId` —
+    // the row exists on the first delivery as well as the second, so "does a
+    // row exist" cannot distinguish them. Migration 059's CHECK keeps `paid_at`
+    // and `status` honest about each other.
+    if (m.type === 'market_vendor') {
+      const market = resolveMarket(m.marketSlug)
+      if (!market) {
+        // A session naming a market we have no registry entry for. Rule 14 —
+        // this belongs in front of a human, not silently dropped.
+        console.error(`market vendor: session ${session.id} names unknown market "${m.marketSlug}"`)
+        return NextResponse.json({ error: 'unknown market' }, { status: 500 })
+      }
+
+      // Two ways home: the row id from metadata, and the session id the route
+      // wrote back. The second exists because attaching the session is the one
+      // step in the route that is allowed to fail non-fatally.
+      const lookup = supabase.from('market_vendors').select('id, vendor_ref, business_name, contact_name, email, phone, ig_handle, product_category, total_cents, status, paid_at')
+      const { data: vendorRows, error: vendorErr } = m.vendorId
+        ? await lookup.eq('id', m.vendorId).limit(1)
+        : await lookup.eq('stripe_session_id', session.id).limit(1)
+
+      if (vendorErr) {
+        console.error('market vendor: cannot read the registration —', vendorErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: vendorErr.message }, { status: 500 })
+      }
+
+      const vendor = vendorRows?.[0]
+      if (!vendor) {
+        // Money arrived for a registration that is not in the table. Do not
+        // invent one — that is how a $250 payment ended up in no table at all
+        // (link 22). Let it fall into the unclaimed net where a human sees it.
+        console.error(`market vendor: paid session ${session.id} matches no market_vendors row`)
+        return NextResponse.json({ error: 'no matching vendor registration' }, { status: 500 })
+      }
+
+      if (vendor.paid_at) {
+        console.log(`market vendor ${vendor.vendor_ref} is already paid — redelivery of ${session.id}, nothing re-issued`)
+        return NextResponse.json({ received: true, duplicate: true })
+      }
+
+      const { error: payErr } = await supabase
+        .from('market_vendors')
+        .update({
+          status: 'paid',
+          paid_at: new Date().toISOString(),
+          stripe_session_id: session.id,
+          stripe_payment_intent_id: (session.payment_intent as string) || null,
+        })
+        .eq('id', vendor.id)
+        // Only settle a row that has not been settled. Two concurrent
+        // redeliveries cannot both win this.
+        .is('paid_at', null)
+
+      if (payErr) {
+        console.error(`market vendor ${vendor.vendor_ref}: could not mark paid —`, payErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: payErr.message }, { status: 500 })
+      }
+
+      console.log('Market vendor paid:', vendor.vendor_ref, vendor.business_name)
+
+      await recordFinancialTransaction(supabase, {
+        date: new Date().toISOString().split('T')[0],
+        description: `${market.shortName} vendor booth — ${vendor.business_name}`,
+        amountCents: vendor.total_cents,
+        category: 'Vendor Fee',
+        customerName: vendor.contact_name,
+        reference: `mv-${vendor.vendor_ref}`,
+        notes: vendor.email,
+      })
+
+      // A vendor is a local business owner who just paid us — a real contact,
+      // and a genuinely good audience for next year's market. `sourceDetail`
+      // names the market so this stays legible when there are three of them.
+      await upsertContact({
+        name: vendor.contact_name,
+        email: vendor.email,
+        phone: vendor.phone || undefined,
+        sourceDetail: `Vendor — ${market.name} (${vendor.business_name})`,
+        serviceInterests: ['general'],
+        marketingConsent: true,
+      }).catch(err => console.error('market vendor contact upsert (non-fatal):', err))
+
+      if (process.env.RESEND_API_KEY) {
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        const money = `$${(vendor.total_cents / 100).toFixed(2)}`
+
+        await Promise.allSettled([
+          resend.emails.send({
+            from,
+            to: vendor.email,
+            subject: `You're in — ${market.shortName}, ${market.dateLabel}`,
+            html: marketVendorConfirmationHtml({
+              firstName: vendor.contact_name?.split(' ')[0] || 'there',
+              businessName: vendor.business_name,
+              vendorRef: vendor.vendor_ref,
+              money,
+              marketName: market.name,
+              dateLabel: market.dateLabel,
+              timeLabel: market.timeLabel,
+              locationLine: market.locationLine,
+            }),
+          }),
+          resend.emails.send({
+            from,
+            to: ownerEmail(),
+            subject: `New ${market.shortName} vendor — ${vendor.business_name} (${money})`,
+            html: marketVendorOwnerHtml({
+              vendorRef: vendor.vendor_ref,
+              contactName: vendor.contact_name,
+              businessName: vendor.business_name,
+              igHandle: vendor.ig_handle,
+              email: vendor.email,
+              phone: vendor.phone,
+              productCategory: vendor.product_category,
+              money,
+              marketName: market.name,
+            }),
+          }),
+        ])
       }
 
       return NextResponse.json({ received: true })

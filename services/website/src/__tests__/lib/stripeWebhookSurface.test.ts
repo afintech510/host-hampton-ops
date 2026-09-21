@@ -47,6 +47,7 @@ const SURFACE = [
   'app/api/events/checkout/route.ts',
   'app/api/gift-cards/checkout/route.ts',
   'app/api/vendor-registration/route.ts',
+  'app/api/christmas-market/vendor/route.ts',
   'app/api/portal/pay/route.ts',
   'app/api/studio-rental/checkout/route.ts',
   'app/api/admin/pay-link/route.ts',

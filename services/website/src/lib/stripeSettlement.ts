@@ -51,6 +51,10 @@ export const HANDLED_SESSION_TYPES = [
   'event_ticket_multi',
   'cart_checkout',
   'vendor_registration',
+  // The market vendor booth. `vendor_registration` above is the Spring Market's
+  // older, thinner cousin — it survives only because two real 2026 sessions
+  // carry it and a type that has ever been written must stay handled forever.
+  'market_vendor',
   'party_builder',
   'pay_link',
   'gift_card',

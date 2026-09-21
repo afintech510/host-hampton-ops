@@ -45,6 +45,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/admin',
   '/admin/events',
   '/admin/lead/[ref]',
+  '/admin/market-vendors',
   '/arts-and-crafts-party',
   '/balloon-dog-painting-party',
   '/boggle',
@@ -53,6 +54,13 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/canvas-bags',
   '/canvas-tote-activation',
   '/checkin/[token]',
+  // The market. Reserved for the reason this list exists at all: a static route
+  // silently WINS over the [...slug] catch-all, so a CMS page created at one of
+  // these slugs would save cleanly, appear in the content list, and never
+  // render — the most confusing failure this file prevents.
+  '/christmas-market',
+  '/christmas-market/vendors',
+  '/christmas-market/vendors/success',
   '/classes',
   '/cm-cheer',
   '/cm-cheer/order',

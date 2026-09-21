@@ -64,7 +64,13 @@ const STATIC_ROUTES: Entry[] = [
   // from the sitemap. A sitemap that omits its own indexable pages is not
   // wrong so much as incomplete — these are the only two that were.
   { path: '/signup', changefreq: 'yearly', priority: 0.3 },
-  { path: '/vendor-registration', changefreq: 'monthly', priority: 0.4 },
+  // `/vendor-registration` was here. It now 307s to the current market's vendor
+  // form, which is deliberately NOT promoted (noindex, unlisted) — Adam sends
+  // that link to vendors himself. A sitemap entry that redirects to a noindex
+  // page is a contradiction, so the entry goes rather than the redirect.
+  //
+  // The market's PUBLIC page is below, and it is the one worth indexing.
+  { path: '/christmas-market', changefreq: 'weekly', priority: 0.7 },
   { path: '/sitemap', changefreq: 'monthly', priority: 0.3 },
   { path: '/privacy-policy', changefreq: 'yearly', priority: 0.2 },
   { path: '/terms-of-service', changefreq: 'yearly', priority: 0.2 },

@@ -8,6 +8,7 @@ import GoogleAnalytics from '@/components/GoogleAnalytics'
 import AttributionCapture from '@/components/AttributionCapture'
 import { CartProvider } from '@/context/CartContext'
 import CartDrawer from '@/components/CartDrawer'
+import ChristmasMarketBanner from '@/components/ChristmasMarketBanner'
 import { RATING } from '@/lib/reviews'
 import { OG_DEFAULTS, OG_DEFAULT_IMAGE, SITE_URL, BUSINESS_ID, ORGANIZATION_ID } from '@/lib/seo'
 
@@ -159,7 +160,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen flex flex-col">
         <CartProvider>
           <Nav />
-          <main className="flex-1 pt-20">{children}</main>
+          {/*
+            INSIDE main, not before it. `Nav` is `fixed top-0` and therefore out
+            of flow, so the first in-flow element starts at y=0 — underneath the
+            nav. `main`'s `pt-20` is what clears it, which means anything that
+            needs to be visible has to live after that padding, not ahead of it.
+            The banner then sticks at `top-20` as the page scrolls.
+            Turns itself off after the market; nothing to unwind in January.
+          */}
+          <main className="flex-1 pt-20">
+            <ChristmasMarketBanner />
+            {children}
+          </main>
           <div className="h-40 bg-gradient-to-b from-transparent to-[#BCCDEB]" aria-hidden="true" />
           <Footer />
           <BenchworksAttribution />

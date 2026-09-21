@@ -170,6 +170,13 @@ const DELIBERATELY_PUBLIC = new Set([
   'GET booking-types',
   'POST canvas-bag-inquiry',
   'POST cart-checkout',
+  // Vendor registration for a market. Public because a vendor is a stranger
+  // filling in a form — the same shape as every other intake here. The page it
+  // is posted from is unlisted and noindex, but the ROUTE is open and is
+  // treated as open: it is rate-limited, it pins every price server-side, and
+  // it hands back the Venmo credentials only after a complete submission has
+  // been written to the database.
+  'POST christmas-market/vendor',
   'GET checkin/[token]',
   'POST checkin/[token]',
   'POST checkin/[token]/agreement',

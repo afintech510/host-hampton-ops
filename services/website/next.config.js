@@ -16,6 +16,17 @@ const nextConfig = {
       { source: '/cm-cheer', destination: '/fundraiser', permanent: false },
       { source: '/cm-cheer/order', destination: '/fundraiser', permanent: false },
       { source: '/cm-cheer/orders', destination: '/fundraiser', permanent: false },
+
+      // `/vendor-registration` is the SPRING Market vendor form. It stayed live
+      // and indexable long after that market passed, still selling a $46.35
+      // booth for an event in March, because the market's name was hard-coded
+      // into the page rather than read from a registry. Two real vendors paid
+      // through it.
+      //
+      // Point it at the current market's form. Temporary (307), not permanent:
+      // the destination changes every year, and a 301 would be cached in
+      // browsers and search indexes long after this market is over.
+      { source: '/vendor-registration', destination: '/christmas-market/vendors', permanent: false },
     ]
   },
 }
