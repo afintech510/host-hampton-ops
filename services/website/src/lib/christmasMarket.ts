@@ -23,6 +23,19 @@ export interface MarketConfig {
   timeLabel: string
   /** ISO date of the market itself. Used for the "is this over?" check. */
   eventDate: string
+  /**
+   * When the site-wide banner turns ITSELF on.
+   *
+   * A window, rather than un-mounting the component from the layout, because
+   * "take it out now and put it back later" is a promise about somebody's
+   * memory in six weeks. `SpecialEventBanner` is the cautionary tale sitting in
+   * this same repo: it has a kill switch but no start, so it shipped, expired
+   * in July, and has rendered nothing since while still being imported.
+   *
+   * Both ends of the window are here so the banner's whole life is one thing
+   * you can read at a glance.
+   */
+  promoStartsAt: string
   /** When promotion stops. The banner and the vendor form close themselves. */
   closesAt: string
   locationLine: string
@@ -66,6 +79,19 @@ export const CHRISTMAS_MARKET_2026: MarketConfig = {
   dateLabel: 'Saturday, December 5th',
   timeLabel: '10:00am – 1:00pm',
   eventDate: '2026-12-05',
+  /**
+   * Banner goes up **1 November 2026**, five weeks out.
+   *
+   * Adam's call on 2026-09-21: in late September the market is ten weeks away
+   * and a permanent red bar on every page is just noise that people learn to
+   * ignore before it matters. November 1 puts it up about a week ahead of the
+   * announcement email in docs/christmas-market-2026-marketing.md, so the
+   * banner is already familiar by the time the email lands.
+   *
+   * Moving this is a one-line change — it is the only thing that controls
+   * whether the banner renders.
+   */
+  promoStartsAt: '2026-11-01T00:00:00-04:00',
   // End of the market day, Eastern. The box runs UTC (link 44 — `setHours()`
   // scheduled every reminder 4-5h early), so this is written with an explicit
   // offset and never derived from the server's local clock.
@@ -105,6 +131,19 @@ export function marketTotalCents(m: MarketConfig): number {
  */
 export function isMarketClosed(m: MarketConfig, now: Date = new Date()): boolean {
   return now.getTime() > new Date(m.closesAt).getTime()
+}
+
+/**
+ * Should the site-wide banner be on the page right now?
+ *
+ * Note this governs the BANNER only, not the market. `/christmas-market`, the
+ * RSVP event and the vendor form are all reachable before the banner goes up —
+ * that is the whole point of a quiet period. Adam can send the vendor link and
+ * work the RSVP list for weeks without a red bar on the homepage.
+ */
+export function isPromoLive(m: MarketConfig, now: Date = new Date()): boolean {
+  if (now.getTime() < new Date(m.promoStartsAt).getTime()) return false
+  return !isMarketClosed(m, now)
 }
 
 /**

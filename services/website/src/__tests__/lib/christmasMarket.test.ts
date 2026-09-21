@@ -18,6 +18,7 @@ import {
   resolveMarket,
   marketTotalCents,
   isMarketClosed,
+  isPromoLive,
   isVendorPaymentMethod,
   VENDOR_CATEGORIES,
   VENDOR_EXCLUSIONS,
@@ -90,6 +91,56 @@ describe('market closure', () => {
 
   it('stays closed a year later', () => {
     expect(isMarketClosed(MARKET, new Date('2027-01-01T00:00:00Z'))).toBe(true)
+  })
+})
+
+describe('the banner window', () => {
+  // Adam asked for the banner hidden on 2026-09-21 because the market was ten
+  // weeks out. These assert the WINDOW, not the absence — a test that only
+  // checked "hidden today" would go green forever and never notice the banner
+  // failing to appear in November, which is the expensive direction.
+
+  it('is off in September, when the market is ten weeks away', () => {
+    expect(isPromoLive(MARKET, new Date('2026-09-21T12:00:00Z'))).toBe(false)
+  })
+
+  it('is still off the day before it is due up', () => {
+    expect(isPromoLive(MARKET, new Date('2026-10-31T12:00:00Z'))).toBe(false)
+  })
+
+  it('turns itself on on 1 November — nobody has to remember', () => {
+    expect(isPromoLive(MARKET, new Date('2026-11-01T05:00:00Z'))).toBe(true)
+  })
+
+  it('is up for the announcement email in mid-November', () => {
+    expect(isPromoLive(MARKET, new Date('2026-11-10T12:00:00Z'))).toBe(true)
+  })
+
+  it('is up on the morning of the market', () => {
+    expect(isPromoLive(MARKET, new Date('2026-12-05T14:00:00Z'))).toBe(true)
+  })
+
+  it('turns itself off once the market has ended', () => {
+    expect(isPromoLive(MARKET, new Date('2026-12-05T18:01:00Z'))).toBe(false)
+    expect(isPromoLive(MARKET, new Date('2027-01-01T00:00:00Z'))).toBe(false)
+  })
+
+  it('opens before it closes', () => {
+    // A window inverted by a typo would render the banner never, silently.
+    expect(new Date(MARKET.promoStartsAt).getTime())
+      .toBeLessThan(new Date(MARKET.closesAt).getTime())
+  })
+
+  it('is the ONLY thing gating the banner', () => {
+    // The market itself — page, RSVP, vendor form — must stay reachable during
+    // the quiet period. If the banner's window ever leaks into those, sending a
+    // vendor the link in October stops working.
+    const banner = readFileSync(join(SRC, 'components/ChristmasMarketBanner.tsx'), 'utf8')
+    expect(banner).toMatch(/isPromoLive\(MARKET\)/)
+
+    for (const f of ['app/christmas-market/page.tsx', 'app/christmas-market/vendors/page.tsx']) {
+      expect(readFileSync(join(SRC, f), 'utf8')).not.toMatch(/isPromoLive/)
+    }
   })
 })
 

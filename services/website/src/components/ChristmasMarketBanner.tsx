@@ -12,14 +12,18 @@
  * scrolls with the page, and sticks there. Same visibility, no global math, and
  * nothing to unwind in January.
  *
- * ── IT TURNS ITSELF OFF ──
+ * ── IT TURNS ITSELF ON, AND OFF ──
  *
- * `SpecialEventBanner` (the summer-hair one) has the same kill switch and it is
- * the right idea: `EXPIRY_DATE` + `if (expired) return null`. The lesson from
- * that component is not that the switch was wrong, it is that the date was
- * buried in the component. Here the date comes from the market registry, so
- * "when does this stop" has one answer and the banner, the vendor form and the
- * API all read it.
+ * `isPromoLive` is a WINDOW: `promoStartsAt` .. `closesAt`, both in the market
+ * registry. Adam asked on 2026-09-21 to hide the banner because the market was
+ * still ten weeks out, and a start date is the answer rather than un-mounting
+ * the component — "take it out now, put it back in November" is a promise
+ * about somebody's memory, and this repo already has the counter-example:
+ * `SpecialEventBanner` has an `EXPIRY_DATE` but no start, so it expired in July
+ * and has rendered nothing since while still being imported.
+ *
+ * Both ends live beside each other in one config object, so "when is this on
+ * the site" is a question with a single readable answer.
  *
  * ── DISMISSAL ──
  *
@@ -32,7 +36,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { CHRISTMAS_MARKET_2026 as MARKET, isMarketClosed } from '@/lib/christmasMarket'
+import { CHRISTMAS_MARKET_2026 as MARKET, isPromoLive } from '@/lib/christmasMarket'
 
 const DISMISS_KEY = `hh_banner_dismissed_${MARKET.slug}`
 
@@ -68,7 +72,9 @@ export default function ChristmasMarketBanner() {
     }
   }, [])
 
-  if (isMarketClosed(MARKET)) return null
+  // Outside the promo window — too early, or the market has been and gone.
+  // One check for both ends; see `promoStartsAt` in the market registry.
+  if (!isPromoLive(MARKET)) return null
   if (dismissed) return null
   if (pathname && HIDDEN_PREFIXES.some(p => pathname.startsWith(p))) return null
 
