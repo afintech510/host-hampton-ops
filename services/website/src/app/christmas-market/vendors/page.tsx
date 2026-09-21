@@ -185,7 +185,11 @@ export default function ChristmasMarketVendorPage() {
         <h2 style={{ fontSize: 16, color: '#1a2744', fontFamily: 'Georgia, serif', fontWeight: 'normal', margin: '0 0 14px' }}>
           Before you register
         </h2>
-        <ul style={{ margin: 0, paddingLeft: 18, color: '#555', fontSize: 14, lineHeight: 1.85, fontFamily: 'sans-serif' }}>
+        {/* `listStyle` is explicit because Tailwind's preflight sets
+            `list-style: none` on every ul, so these render as bare lines
+            without it — and the whole point of this block is that it scans as
+            a checklist before somebody pays. */}
+        <ul style={{ margin: 0, paddingLeft: 20, listStyle: 'disc', color: '#555', fontSize: 14, lineHeight: 1.85, fontFamily: 'sans-serif' }}>
           <li><strong style={{ color: '#1a2744' }}>Bring your own table.</strong> Tables are not provided.</li>
           <li>Electricity is available — tick the box below if you need it.</li>
           <li>Setup from <strong style={{ color: '#1a2744' }}>9:00am</strong>, selling 10:00am–1:00pm.</li>
