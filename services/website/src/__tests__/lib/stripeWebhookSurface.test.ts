@@ -35,12 +35,21 @@ function code(s: string): string {
 
 const WEBHOOK = 'app/api/webhook/route.ts'
 const GUARDS = 'lib/stripeSettlement.ts'
+const AFTERMATH = 'lib/stripeAftermath.ts'
 
 /** Every file that creates a Stripe money object or acts on a Stripe event. */
 const SURFACE = [
   WEBHOOK,
   GUARDS,
+  AFTERMATH,
+  'lib/stripeReconcile.ts',
+  'app/api/cron/stripe-reconcile/route.ts',
   'lib/unclaimedPayment.ts',
+  // Issues real Stripe refunds (`stripe.refunds.create`). It predates link 21
+  // and was never on this list — the widened R0 detector found it, which is the
+  // staleness walker doing its job on a file that had been moving money out of
+  // this business without being under the review that covers money coming in.
+  'lib/adminRefund.ts',
   'lib/planPayment.ts',
   'lib/planPayLinks.ts',
   'app/api/cart-checkout/route.ts',
@@ -65,7 +74,14 @@ describe('R0 — nothing joins this surface unaudited', () => {
       const touchesStripe =
         /stripe\.(checkout\.sessions|paymentIntents|paymentLinks)\.create\(/.test(body) ||
         /constructEvent\(/.test(body) ||
-        /checkout\.session\.(completed|async_payment)/.test(body)
+        /checkout\.session\.(completed|async_payment)/.test(body) ||
+        // Link 21. The original three clauses all describe money coming IN, so a
+        // file that only refunds, reads a dispute or reconciles against the
+        // Stripe API could join this surface unaudited — `stripe-reconcile`'s
+        // route did, on the first run of this rule. The refund and dispute
+        // branches are money LEAVING and belong under the same review.
+        /stripe\.(refunds|disputes|charges|webhookEndpoints)\./.test(body) ||
+        /charge\.(refunded|dispute\.)|payment_intent\.payment_failed/.test(body)
       if (touchesStripe && !SURFACE.includes(rel(p))) unlisted.push(rel(p))
     }
     expect(unlisted).toEqual([])
@@ -414,5 +430,91 @@ describe('R9 — migration 046 says what the code assumes', () => {
 
   it('starts the sequence past the legacy four-digit ref space', () => {
     expect(sql).toMatch(/setval\('public\.event_ticket_seq', 10000, false\)/)
+  })
+})
+
+/* ───────────── R10 — the subscription and the branches are one fact (link 21) ── */
+
+describe('R10 — every event the handler branches on is an event we expect Stripe to send', () => {
+  /**
+   * THE rule on this surface.
+   *
+   * The endpoint was created subscribed to `checkout.session.completed` alone
+   * while the handler's first branch was `payment_intent.succeeded`, and the two
+   * disagreed for six months at a cost of $3,596.50. Nothing compared them and
+   * nothing could: the subscription lives at Stripe, the branches live here.
+   *
+   * `EXPECTED_WEBHOOK_EVENTS` is the git half of that comparison and
+   * `/api/cron/stripe-reconcile` checks it against the live endpoint on every
+   * run. This rule guards the git half: add a branch without adding the event to
+   * the list and the monitor would never ask Stripe for it.
+   */
+  const branched = () => {
+    const body = code(read(WEBHOOK))
+    const found = new Set<string>()
+    // `[a-z_.]+` deliberately, NOT `[a-z_]+`: R6b was defeated by a metadata
+    // type containing a digit, the regex matched nothing, and the comparison
+    // ran over an empty set — the quietest kind of hole, because a rule that
+    // silently matches nothing does not even look wrong. Hence the floor below.
+    const re = /event\.type === '([a-z_.0-9]+)'/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(body))) found.add(m[1])
+    return [...Array.from(found)].sort()
+  }
+
+  it('finds the branches at all — a rule matching nothing must fail, not pass', () => {
+    // Eight branches as of link 21. A floor, not an equality, so adding one is
+    // not a chore; dropping below it means the extractor stopped working.
+    expect(branched().length).toBeGreaterThanOrEqual(8)
+  })
+
+  it('every branch is in EXPECTED_WEBHOOK_EVENTS', () => {
+    const expected = code(read(AFTERMATH))
+    const unlisted = branched().filter(t => !expected.includes(`'${t}'`))
+    expect(unlisted).toEqual([])
+  })
+
+  it('and every expected event has a branch — the list may not promise what nothing handles', () => {
+    const { EXPECTED_WEBHOOK_EVENTS } = jest.requireActual('@/lib/stripeAftermath')
+    const handled = new Set(branched())
+    const unhandled = (EXPECTED_WEBHOOK_EVENTS as string[]).filter(e => !handled.has(e))
+    expect(unhandled).toEqual([])
+  })
+})
+
+/* ──────────────────────── R11 — money out is negative, and recorded once ── */
+
+describe('R11 — a reversal subtracts, and only one writer owns its reference', () => {
+  it('the refund and dispute rows are written NEGATIVE', () => {
+    const body = code(read(AFTERMATH))
+    // Scoped to the LEDGER WRITES, not to every `amountCents:` in the file.
+    // The first draft of this rule matched the type annotations and the
+    // `summarizeDispute` object literal — both legitimately positive — and so
+    // failed on correct code. A rule that fires on the wrong occurrence is the
+    // same family as one satisfied by the wrong occurrence (§7).
+    const writes = body.split('recordLedgerEntry(').slice(1)
+    expect(writes).toHaveLength(2)
+    for (const w of writes) {
+      expect(w.slice(0, 400)).toMatch(/amountCents: -/)
+    }
+  })
+
+  it('the Stripe refund reference has exactly one definition', () => {
+    // Two writers produce this row — the admin panel and the webhook — and they
+    // must agree or one refund becomes two negative ledger rows. The template
+    // literal may appear only in the function that defines it.
+    const files = walk(SRC)
+      .filter(f => !rel(f).startsWith('__tests__/'))
+      .filter(f => /stripe-refund-\$\{/.test(code(fs.readFileSync(f, 'utf8'))))
+      .map(rel)
+    expect(files).toEqual([AFTERMATH])
+  })
+
+  it('the admin refund path passes the Stripe refund id through to the books', () => {
+    // Dropping this is silent: the ledger row still appears, under the old
+    // `admin-refund-…` reference, and the webhook then writes a second one.
+    expect(code(read('lib/adminRefund.ts'))).toMatch(/stripeRefundId/)
+    expect(code(read('app/api/admin/orders/[id]/refund/route.ts'))).toMatch(/stripeRefundId/)
+    expect(code(read('lib/adminMoney.ts'))).toMatch(/stripeRefundReference\(/)
   })
 })

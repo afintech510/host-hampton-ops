@@ -102,6 +102,27 @@ same window. Also worth knowing while you are in that console: **cron-job.org
 is the only scheduler.** `crontab -l` on the box has no Host Hampton entries at
 all, so those four jobs are the complete list of what runs on a schedule.
 
+### A6. Schedule the Stripe reconciliation monitor — one new cron job
+`/api/cron/stripe-reconcile` is deployed and answers correctly; **nothing calls
+it.** While you are in the cron-job.org console for A5, add:
+
+| field | value |
+|---|---|
+| URL | `https://www.hosthampton.com/api/cron/stripe-reconcile` |
+| schedule | daily, any time — 09:00 UTC is fine |
+| header | `x-cron-secret: <the same CRON_SECRET the working jobs use>` |
+
+It asks Stripe two questions every run: *is the webhook endpoint still subscribed
+to every event the site has a branch for*, and *did more money succeed at Stripe
+than reached the Financials tab*. It writes nothing, and emails you only when the
+answer is bad (plus an SMS if money is actually missing).
+
+**Why it is worth the two minutes:** from 2026-03-05 to 2026-09-12 the endpoint
+was subscribed to one of the four events the site handled, **$3,596.50** of real
+card payments never reached the Financials tab, and a human reading code found it
+six months later. This job is the thing that would have caught it the next
+morning. `docs/stripe-aftermath-and-monitor.md`.
+
 ---
 
 ## B · Decisions only you can make

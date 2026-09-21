@@ -101,7 +101,14 @@ export type RefundOutcome =
   | { ok: true; ledger: AdminLedgerOutcome; inventoryRestored: boolean }
   | { ok: false; status: number; error: string }
 
-type StripeRefunder = (paymentIntentId: string, amountCents: number) => Promise<void>
+/**
+ * Returns the `re_…` id Stripe assigned, so the ledger row can be written under
+ * the SAME reference the `charge.refunded` webhook will use. Without it the two
+ * writers produce two negative rows for one refund — see
+ * `stripeRefundReference` in `lib/stripeAftermath.ts`. It used to return
+ * `Promise<void>`, discarding the one identifier that makes them agree.
+ */
+export type StripeRefunder = (paymentIntentId: string, amountCents: number) => Promise<string | null>
 
 /**
  * The real Stripe refunder, shared by both routes so neither can drift into a
@@ -115,7 +122,8 @@ export function stripeRefunder(): StripeRefunder | undefined {
   return async (paymentIntentId: string, amountCents: number) => {
     const Stripe = (await import('stripe')).default
     const stripe = new Stripe(key, { apiVersion: '2024-06-20' })
-    await stripe.refunds.create({ payment_intent: paymentIntentId, amount: amountCents })
+    const refund = await stripe.refunds.create({ payment_intent: paymentIntentId, amount: amountCents })
+    return refund?.id ?? null
   }
 }
 
@@ -166,9 +174,10 @@ export async function refundTicket(
   }
 
   // 2. Stripe. Only the winner of the claim gets here.
+  let stripeRefundId: string | null = null
   if (ticket.stripe_payment_intent_id && opts.refundViaStripe) {
     try {
-      await opts.refundViaStripe(ticket.stripe_payment_intent_id, refundAmountCents)
+      stripeRefundId = await opts.refundViaStripe(ticket.stripe_payment_intent_id, refundAmountCents)
     } catch (err: any) {
       // Release the claim, so a corrected retry is possible and the ticket does
       // not read as refunded when no money moved.
@@ -215,6 +224,8 @@ export async function refundTicket(
     category: 'Event Ticket',
     notes: opts.reason,
     viaStripe: Boolean(ticket.stripe_payment_intent_id && opts.refundViaStripe),
+    // Makes this row and the `charge.refunded` webhook's row the same row.
+    stripeRefundId,
   })
 
   return { ok: true, ledger, inventoryRestored }

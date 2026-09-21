@@ -78,6 +78,12 @@ const SEND_ROUTES = [
   // customer. Its audience is Adam, which is why the quiet-hours rule does not
   // reach it: that rule is scoped to the customer-facing SMS types.
   'app/api/cron/staff-reminders/route.ts',
+  // Added 2026-09-21 (link 21). The Stripe reconciliation monitor. It sends an
+  // owner email through Resend and, when money is actually missing, an owner
+  // SMS through `notifyOwnerSms` — so `NOT_A_SENDER` would be a false
+  // statement. Like `staff-reminders` its audience is Adam, never a customer,
+  // which is why the quiet-hours rule does not reach it.
+  'app/api/cron/stripe-reconcile/route.ts',
 ] as const
 
 const ALL = [...SEND_LIBS, ...SEND_ROUTES]
@@ -155,7 +161,7 @@ describe('R0 — the surface is enumerated exactly', () => {
   it('every listed module exists on disk', () => {
     const missing = ALL.filter(rel => !fs.existsSync(path.join(SRC, rel)))
     expect(missing).toEqual([])
-    expect(ALL.length).toBe(21)
+    expect(ALL.length).toBe(22)
   })
 
   it('every cron route that sends or enqueues is in SEND_ROUTES', () => {

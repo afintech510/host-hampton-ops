@@ -66,6 +66,14 @@ const TEMPLATE_SOURCES = [
   // cannot place it" note, built inline. Its interpolations are a payer name and
   // a Venmo note — both attacker-supplied, both escaped at entry.
   'lib/venmoReconcile.ts',
+  // Link 21, and the same shape again: owner-facing refund, chargeback and
+  // declined-card notes built inline. Everything interpolated into them comes
+  // from Stripe — a billing name, a decline message, a dispute reason — which is
+  // to say from whoever filled in the card form, so all of it is escaped.
+  'lib/stripeAftermath.ts',
+  // The reconciliation monitor's alert. Its one interpolation is a JSON dump of
+  // the report, escaped whole.
+  'app/api/cron/stripe-reconcile/route.ts',
   'lib/sequences/render.ts',
   'lib/agent/sendApproved.ts',
   'lib/experiments/screen.ts',

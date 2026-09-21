@@ -123,7 +123,12 @@ describe('refund — the claim is taken before the money moves', () => {
     const fin = db.rows('financial_transactions')
     expect(fin).toHaveLength(1)
     expect(fin[0].amount_cents).toBe(-5000)
-    expect(fin[0].reference).toBe(`admin-refund-ticket-${TICKET}`)
+    // Link 21: keyed on the STRIPE REFUND, not on the ticket. `/api/webhook` now
+    // has a `charge.refunded` branch, so this refund is about to arrive a second
+    // time from Stripe; sharing the reference is what makes that delivery a
+    // no-op instead of a second negative row for the same money.
+    expect(fin[0].reference).toBe('stripe-refund-re_1')
+    expect(fin[0].source).toBe('stripe')
     expect(fin[0].category).toBe('Event Ticket')
   })
 
@@ -238,7 +243,8 @@ describe('refund — the orders route reaches the same implementation', () => {
     expect(res.status).toBe(200)
     expect(db.rows('event_tickets')[0].status).toBe('refunded')
     expect(db.rows('financial_transactions')).toHaveLength(1)
-    expect(db.rows('financial_transactions')[0].reference).toBe(`admin-refund-ticket-${TICKET}`)
+    // Shared with the `charge.refunded` webhook — see the ticket case above.
+    expect(db.rows('financial_transactions')[0].reference).toBe('stripe-refund-re_1')
   })
 
   it('a booking refund writes a NEGATIVE ledger row AND a refund payment row', async () => {
@@ -264,7 +270,9 @@ describe('refund — the orders route reaches the same implementation', () => {
     const fin = db.rows('financial_transactions')
     expect(fin).toHaveLength(1)
     expect(fin[0].amount_cents).toBe(-25000)
-    expect(fin[0].reference).toBe(`admin-refund-booking-${BK}`)
+    // Shared with the `charge.refunded` webhook — see the ticket case above.
+    expect(fin[0].reference).toBe('stripe-refund-re_1')
+    expect(fin[0].source).toBe('stripe')
 
     // `booking_payments` held ZERO rows of type 'refund' in production against a
     // booking that really was refunded $200 — so the balance still said the

@@ -27,6 +27,18 @@ import {
   type FinancialWrite,
 } from '@/lib/stripeSettlement'
 import { recordLedgerEntry } from '@/lib/financialLedger'
+import {
+  recordChargeRefunds,
+  summarizeDispute,
+  disputeWasLost,
+  recordLostDispute,
+  summarizeFailedPayment,
+  shouldAlertOnFailedPayment,
+  failedPaymentLogLine,
+  alertDisputeOpened,
+  alertRefundRecorded,
+  alertPaymentFailed,
+} from '@/lib/stripeAftermath'
 import { resolveMarket } from '@/lib/christmasMarket'
 import { marketVendorConfirmationHtml, marketVendorOwnerHtml } from '@/lib/marketVendorEmails'
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
@@ -702,6 +714,103 @@ export async function POST(req: NextRequest) {
         ` — nothing was issued for it.`,
     )
     return NextResponse.json({ received: true, failed: true })
+  }
+
+  // ── Money going back OUT ──────────────────────────────────────
+  //
+  // Every branch above this point is a payment arriving. Until link 21 the
+  // handler had no others, and the endpoint was subscribed to none of the
+  // events below — so a refund, a chargeback and a declined card were each
+  // invisible to this business. The Financials tab overstated revenue by every
+  // dollar ever sent back ($312.01 of admin refunds when link 18 measured it),
+  // and a chargeback — which has a roughly ten-day evidence deadline and is lost
+  // by default — arrived nowhere at all.
+  //
+  // See `lib/stripeAftermath.ts` for why a refund is a NEGATIVE ledger row keyed
+  // on the refund id rather than the charge, and why a dispute moves the books
+  // when it CLOSES rather than when it opens.
+
+  // A refund was issued — from the dashboard, the admin panel or the API.
+  if (event.type === 'charge.refunded') {
+    const charge = event.data.object as Stripe.Charge
+
+    // The refund list is fetched rather than read off the payload: a webhook
+    // does not reliably expand `charge.refunds`, and "this charge has no
+    // refunds" must never be a serialisation artefact read as fact. A failed
+    // fetch is a 500 so Stripe comes back (rule 12).
+    let refunds: Stripe.Refund[]
+    try {
+      const list = await stripe.refunds.list({ charge: charge.id, limit: 100 })
+      refunds = list.data
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'refund list failed'
+      console.error(`REFUND NOT RECORDED for charge ${charge.id}: could not list refunds:`, message)
+      return NextResponse.json({ error: message }, { status: 500 })
+    }
+
+    const result = await recordChargeRefunds(supabase, charge, refunds)
+    if (!result.ok) {
+      // The books are now wrong and the only fix is a redelivery.
+      console.error(`REFUND NOT RECORDED: ${result.message}`)
+      return NextResponse.json({ error: result.message }, { status: 500 })
+    }
+
+    const freshCents = result.records
+      .filter(r => r.outcome === 'written')
+      .reduce((sum, r) => sum + r.amountCents, 0)
+
+    // Only on a genuine first record. A redelivery is not a second refund, and
+    // this is the same discipline the receipt emails above are under.
+    if (result.written > 0) {
+      console.log(
+        `Stripe refund recorded: charge ${charge.id} — ${result.written} new, ${result.duplicates} already in books`,
+      )
+      await alertRefundRecorded(freshCents, result.records, charge.id, charge.billing_details?.name ?? null)
+    } else {
+      console.log(`stripe charge ${charge.id} refunds already in books (${result.duplicates}) — no second alert`)
+    }
+
+    return NextResponse.json({ received: true, refunded: true, written: result.written, duplicates: result.duplicates })
+  }
+
+  // A customer disputed a charge with their bank. The clock starts now.
+  if (event.type === 'charge.dispute.created') {
+    const dispute = event.data.object as Stripe.Dispute
+    // Nothing is written to the books here: Stripe withdraws the funds when a
+    // dispute opens but returns them if we win, and booking every chargeback as
+    // a loss would understate revenue by every dispute ever contested. The books
+    // move once, on `closed/lost` below.
+    await alertDisputeOpened(summarizeDispute(dispute))
+    return NextResponse.json({ received: true, dispute: 'opened' })
+  }
+
+  // The dispute reached a terminal status.
+  if (event.type === 'charge.dispute.closed') {
+    const dispute = event.data.object as Stripe.Dispute
+    if (!disputeWasLost(dispute)) {
+      console.log(`stripe dispute ${dispute.id} closed as ${String(dispute.status)} — no money moved, nothing recorded`)
+      return NextResponse.json({ received: true, dispute: String(dispute.status) })
+    }
+    const outcome = await recordLostDispute(supabase, dispute)
+    if (outcome === 'failed') {
+      return NextResponse.json({ error: `could not record lost dispute ${dispute.id}` }, { status: 500 })
+    }
+    console.error(
+      `STRIPE DISPUTE LOST: ${dispute.amount}c on dispute ${dispute.id} — recorded as money out (${outcome}).`,
+    )
+    return NextResponse.json({ received: true, dispute: 'lost', recorded: outcome })
+  }
+
+  // A card was declined. No money moved, so nothing reaches the books — but a
+  // decline against a KNOWN booking is a customer who may believe they have paid.
+  if (event.type === 'payment_intent.payment_failed') {
+    const pi = event.data.object as Stripe.PaymentIntent
+    const failed = summarizeFailedPayment(pi)
+    // Logged either way; the predicate governs only the email, so an anonymous
+    // ticket decline does not train Adam to ignore the category.
+    console.error(failedPaymentLogLine(failed))
+    if (shouldAlertOnFailedPayment(failed)) await alertPaymentFailed(failed)
+    return NextResponse.json({ received: true, paymentFailed: true, alerted: shouldAlertOnFailedPayment(failed) })
   }
 
   // ── A settled Checkout Session ────────────────────────────────

@@ -26,6 +26,7 @@
  */
 
 import { recordLedgerEntry, type FinancialSource, type FinancialWrite } from './financialLedger'
+import { stripeRefundReference } from './stripeAftermath'
 
 type MinimalClient = {
   from: (table: string) => any
@@ -208,17 +209,29 @@ export async function recordAdminRefund(
     notes?: string | null
     /** True when the money really left Stripe, false for a books-only reversal. */
     viaStripe: boolean
+    /**
+     * The `re_…` id, when Stripe issued one. Its presence moves this row into
+     * Stripe's reference space so the `charge.refunded` webhook's row collides
+     * with it instead of doubling it — see `stripeRefundReference`.
+     */
+    stripeRefundId?: string | null
   },
 ): Promise<AdminLedgerOutcome> {
-  const reference = adminRefundReference(opts.kind, opts.objectId)
+  // A refund that really went through Stripe is keyed on the REFUND, because
+  // the webhook is about to record the same event and `(source, reference)` is
+  // what makes the second one a no-op. Link 21: before the webhook had a
+  // `charge.refunded` branch there was only one writer, and `source: 'other'`
+  // with an `admin-refund-…` reference was the right answer. Now there are two.
+  const reference = opts.stripeRefundId
+    ? stripeRefundReference(opts.stripeRefundId)
+    : adminRefundReference(opts.kind, opts.objectId)
   const write = await recordLedgerEntry(supabase, {
     date: opts.refundedAt.slice(0, 10),
     description: `Refund — ${opts.label}`,
     amountCents: -Math.abs(opts.amountCents),
-    // A refund issued through Stripe is still recorded under `other`, because
-    // `stripe-…` is the webhook's reference space and this row was written by a
-    // human action the webhook knows nothing about.
-    source: 'other',
+    // A books-only reversal stays under `other`: there is no Stripe object
+    // behind it, so it does not belong in Stripe's reference space.
+    source: opts.stripeRefundId ? 'stripe' : 'other',
     category: opts.category,
     customerName: opts.customerName,
     reference,

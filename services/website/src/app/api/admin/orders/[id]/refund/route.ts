@@ -134,11 +134,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Already refunded' }, { status: 400 })
   }
 
+  // Captured so the ledger row below carries the same reference the
+  // `charge.refunded` webhook will use, making the two the same row rather than
+  // two negative rows for one refund (see `stripeRefundReference`).
+  let stripeRefundId: string | null = null
   if (booking.stripe_payment_intent_id) {
     const refund = stripeRefunder()
     if (refund) {
       try {
-        await refund(booking.stripe_payment_intent_id, refundAmountCents)
+        stripeRefundId = await refund(booking.stripe_payment_intent_id, refundAmountCents)
       } catch (err: any) {
         const { error: relErr } = await supabase
           .from('bookings')
@@ -181,6 +185,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     category: ledgerCategoryForBooking(booking.party_type, booking.event_type),
     notes: reason || null,
     viaStripe: Boolean(booking.stripe_payment_intent_id),
+    stripeRefundId,
   })
 
   if (process.env.RESEND_API_KEY && booking.contact_email) {
