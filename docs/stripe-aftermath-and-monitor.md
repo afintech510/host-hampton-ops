@@ -212,20 +212,87 @@ Suite **3,585 → 3,589 green**, 0 app/lib `tsc` errors.
 
 ---
 
-## 6. What I could NOT verify
+## 6. Production evidence
 
-- **No refund, dispute or declined-card branch has been driven in production.**
-  They are proved by unit test against `fakeMoneyDb` (which refuses what Postgres
-  refuses, including `idx_fin_txn_source_ref`) and by mutation. Driving the
-  dispute branch for real sends Adam a chargeback email **and an SMS**, and
-  driving `charge.refunded` for real needs a real refund. Link 16's discipline —
-  prove idempotency in production *before* subscribing the event — is therefore
-  only half-met here, and that is the honest state.
+Deployed as `8a81939`. Driven against production with synthetic events **signed
+with the real `STRIPE_WEBHOOK_SECRET`** read from inside the container, posted to
+the container IP (the app does not listen on localhost), and — deliberately —
+only on the paths that write nothing and mail nobody.
+
+| probe | result |
+|---|---|
+| forged signature | **400** |
+| `charge.refunded`, a REAL charge with zero refunds | `200 {"refunded":true,"written":0,"duplicates":0}` |
+| `charge.dispute.closed` as **won** | `200 {"dispute":"won"}` — nothing recorded |
+| `payment_intent.payment_failed`, anonymous | `200 {"alerted":false}` — logged, no email |
+| `/api/cron/stripe-reconcile` with no secret | **401** |
+| …with the real `CRON_SECRET` | **200**, `ok: true` |
+
+`financial_transactions` was **1652 rows before and 1652 after**. No email or SMS
+was sent.
+
+The monitor's own answer, from production:
+
+```
+subscription: { ok: true, extra: [], missing: [] }        ← 8 of 8
+money: { ok: true, stripeCents: 155490, booksCents: 155490,
+         shortfallCents: 0, stripePayments: 11, ledgerRows: 11 }
+```
+
+### And the probe found a defect the tests did not
+
+The zero-refund case logged **`refunds already in books (0) — no second alert`**
+for a charge that had never been refunded at all — a guardrail claiming it
+stopped something it never saw, which is rule 10's expensive half and the exact
+shape this codebase keeps rediscovering. Three outcomes now, not two:
+`written`, `duplicates`, and *"has no succeeded refunds — nothing to record"*.
+A test was added for it, and it fails against the old message.
+
+**This is the argument for probing production even when the suite is green:**
+`fakeMoneyDb` would have accepted that line forever, because the ledger was
+right. Only the log was lying.
+
+### The subscription was changed AFTER the branches were proved
+
+Updated **in place**, never recreated — recreating rotates
+`STRIPE_WEBHOOK_SECRET` and every delivery 400s until the box catches up. Stripe's
+update response carries no `secret` field, so nothing was printed. Re-read
+afterwards to confirm, because a write that is not re-read is a claim (rule 8):
+
+```
+BEFORE: 4 events   AFTER: 8 events
+  + charge.refunded, charge.dispute.created,
+    charge.dispute.closed, payment_intent.payment_failed
+```
+
+---
+
+## 6b. What I could NOT verify
+
+- **No refund has been RECORDED in production**, only shown not to record when
+  there is nothing to record. Driving the write path for real needs a real
+  refund, and any such row is a real entry in Adam's books — which is a
+  backfill decision, not a probe (needs-Adam D6). The write is proved against
+  `fakeMoneyDb`, which enforces `idx_fin_txn_source_ref` exactly as Postgres
+  does, and by the mutation that flips its sign.
+- **`charge.dispute.created` was not driven in production**, because it mails
+  Adam a chargeback alert and texts him. The `closed/won` half was, which proves
+  the event type reaches a branch.
+- **The monitor's ALERT path was not driven in production.** `ok: true` is what
+  it should say today; making it say otherwise means either unsubscribing a live
+  event or widening the window until it finds the historical $3,596.50 gap and
+  mails Adam about money he already knows is missing. Both halves are unit-tested
+  against the real incident's shape.
+- **No real chargeback has ever occurred on this account**, so the deadline
+  arithmetic is exercised by synthetic dispute only.
 - **No real chargeback has ever occurred on this account**, so the deadline
   arithmetic is exercised by synthetic dispute only.
 - **Whether the historical $312.01 of admin refunds should be backfilled.** They
   are in the books under `admin-refund-…` / `source: 'other'` where link 18 put
   them; nothing here moves them.
+- **Whether any refund issued from the Stripe DASHBOARD before today exists.**
+  Going forward they are captured; historical ones were not searched for, and
+  that is a books question for Adam rather than a build session's.
 
 ---
 

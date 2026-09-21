@@ -169,6 +169,21 @@ describe('charge.refunded', () => {
     expect(ledger()).toHaveLength(0)
   })
 
+  it('says "nothing to record" — not "already in books" — when there are no refunds', async () => {
+    // Caught by the production probe: with zero refunds the log claimed the
+    // rows were already recorded, which is a guardrail saying it stopped
+    // something it never saw.
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {})
+    mockRefundsList.mockResolvedValue({ data: [] })
+    fire('charge.refunded', charge())
+    await post()
+
+    const lines = log.mock.calls.map(c => String(c[0]))
+    expect(lines.some(l => l.includes('no succeeded refunds — nothing to record'))).toBe(true)
+    expect(lines.some(l => l.includes('already in books'))).toBe(false)
+    log.mockRestore()
+  })
+
   it('500s when the refund list cannot be read, so Stripe redelivers instead of losing it', async () => {
     mockRefundsList.mockRejectedValue(new Error('stripe unreachable'))
     fire('charge.refunded', charge())

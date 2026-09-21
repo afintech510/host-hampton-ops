@@ -766,8 +766,14 @@ export async function POST(req: NextRequest) {
         `Stripe refund recorded: charge ${charge.id} — ${result.written} new, ${result.duplicates} already in books`,
       )
       await alertRefundRecorded(freshCents, result.records, charge.id, charge.billing_details?.name ?? null)
-    } else {
+    } else if (result.duplicates > 0) {
       console.log(`stripe charge ${charge.id} refunds already in books (${result.duplicates}) — no second alert`)
+    } else {
+      // Neither written nor duplicate: the charge carried no SUCCEEDED refund at
+      // all. Saying "already in books (0)" here — which the first version did —
+      // is a guardrail claiming it stopped something it never saw (rule 10). The
+      // production probe on 2026-09-21 is what caught it.
+      console.log(`stripe charge ${charge.id} has no succeeded refunds — nothing to record`)
     }
 
     return NextResponse.json({ received: true, refunded: true, written: result.written, duplicates: result.duplicates })
