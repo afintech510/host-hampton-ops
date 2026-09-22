@@ -105,8 +105,9 @@ export default async function Home() {
                 reads it, and every figure below is the live DB value. */}
             <p className="text-hampton-navy text-base md:text-lg font-semibold leading-relaxed mb-8 max-w-lg">
               Studio parties from <strong>$800</strong> — 2 hours, up to 10 kids, fully hosted with setup,
-              activities and cleanup included. <strong>All ages, no age limit.</strong> Extra guests $35 each.
-              A $250 deposit holds your date and comes off your total.
+              activities and cleanup included. <strong>All ages, no age limit</strong> — we have hosted
+              everything from first birthdays to Sweet 16s, graduation parties and 40th birthdays.
+              Extra guests $35 each. A $250 deposit holds your date and comes off your total.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
               <Link href="/book"

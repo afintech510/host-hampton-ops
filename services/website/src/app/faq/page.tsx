@@ -68,7 +68,7 @@ const faqs: FaqItem[] = [
   {
     category: 'Booking & Deposits',
     q: 'What ages are your parties for?',
-    a: 'All ages — there is no age limit. We host toddlers, kids, tweens, teens and adults, and we tailor the activities to whoever is celebrating. Our Toddler Party is built specifically for ages 2–4, and grown-up groups book us for permanent jewelry, hat bar and craft nights.',
+    a: 'All ages — there is no age limit. We have hosted everything from first birthdays to Sweet 16s, high school graduation parties and 40th birthdays. Our Toddler Party is built specifically for ages 2–4, and grown-up groups book us for permanent jewelry, hat bar and craft nights. We tailor the activities to whoever is celebrating.',
   },
 
   // ── The Studio & Mobile Parties ──
