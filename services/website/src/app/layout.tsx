@@ -5,6 +5,7 @@ import Footer from '@/components/Footer'
 import BenchworksAttribution from '@/components/BenchworksAttribution'
 import CrispChat from '@/components/CrispChat'
 import GoogleAnalytics from '@/components/GoogleAnalytics'
+import MetaPixel from '@/components/MetaPixel'
 import AttributionCapture from '@/components/AttributionCapture'
 import { CartProvider } from '@/context/CartContext'
 import CartDrawer from '@/components/CartDrawer'
@@ -189,6 +190,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <CartDrawer />
         </CartProvider>
         <GoogleAnalytics />
+        <MetaPixel />
         <AttributionCapture />
         <CrispChat />
       </body>

@@ -125,6 +125,10 @@ services:
       args:
         NEXT_PUBLIC_GA_ID: ${NEXT_PUBLIC_GA_ID:-G-BX1DJ77T15}
         NEXT_PUBLIC_GADS_ID: ${NEXT_PUBLIC_GADS_ID:-AW-16667795146}
+        # Meta Pixel "HostHampton". Advanced Matching is OFF by decision — see
+        # components/MetaPixel.tsx, and note the matching Events Manager toggle
+        # has to stay off too.
+        NEXT_PUBLIC_META_PIXEL_ID: ${NEXT_PUBLIC_META_PIXEL_ID:-1543468516699272}
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
     container_name: hampton_website
     restart: unless-stopped
