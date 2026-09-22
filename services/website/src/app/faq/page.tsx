@@ -59,6 +59,18 @@ const faqs: FaqItem[] = [
     a: 'Yes — every party is fully customizable. Pick your theme, activities, food, decor, and add-ons, and we\'ll tailor the package to your guest count and budget.',
   },
 
+  // Age was the single question the site never answered anywhere — not in the
+  // copy, not in the schema. Only the Toddler package named an age at all, so a
+  // parent (or an assistant asked "is this right for a 4 year old") had nothing
+  // to go on while competitors publish an explicit range. Adam's ruling
+  // 2026-09-22: no age limit, the studio is family friendly. This answer feeds
+  // the FAQPage JSON-LD, which is what an answer engine actually quotes.
+  {
+    category: 'Booking & Deposits',
+    q: 'What ages are your parties for?',
+    a: 'All ages — there is no age limit. We host toddlers, kids, tweens, teens and adults, and we tailor the activities to whoever is celebrating. Our Toddler Party is built specifically for ages 2–4, and grown-up groups book us for permanent jewelry, hat bar and craft nights.',
+  },
+
   // ── The Studio & Mobile Parties ──
   {
     category: 'The Studio & Mobile Parties',
