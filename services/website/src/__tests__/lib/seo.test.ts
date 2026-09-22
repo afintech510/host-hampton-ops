@@ -237,3 +237,46 @@ describe('no JSON-LD in the app tree publishes a mobile-party price', () => {
     expect(src).not.toMatch(/priceCurrency/)
   })
 })
+
+describe('the rated business node is typed so Google accepts the rating', () => {
+  // Search Console, 2026-09-22: "Review snippets — 1 invalid item detected …
+  // aggregateRating: Invalid object type for field <parent_node>", reported
+  // against the Sep 8 crawl of /party-packages.
+  //
+  // The cause was @type ORDER. Google reports a multi-typed node under its
+  // FIRST @type; with 'EventVenue' leading, the rating was being attached to a
+  // subclass of Place, and review snippets are only supported on LocalBusiness.
+  // The node lives in the root layout, so this invalidated the star rating on
+  // every page of the site at once.
+  //
+  // This guard reads the ARRAY ITSELF rather than searching the file for the
+  // two words: 'EventVenue' and 'LocalBusiness' both appear in the explanatory
+  // comment above the literal, so a naive substring check passes while the
+  // live order is wrong — the wrong-occurrence failure from the tripwires memo.
+  const layoutSrc = fs.readFileSync(path.join(APP_DIR, 'layout.tsx'), 'utf8')
+
+  /** The `'@type': [ … ]` array literal on the rated node, comments stripped. */
+  function typeArray(): string[] {
+    const withoutComments = layoutSrc.replace(/\/\/[^\n]*/g, '')
+    const m = withoutComments.match(/'@type':\s*\[([^\]]+)\]/)
+    if (!m) throw new Error("no `'@type': [ … ]` array found in layout.tsx")
+    return m[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean)
+  }
+
+  it('leads with LocalBusiness, the type review snippets are supported on', () => {
+    expect(typeArray()[0]).toBe('LocalBusiness')
+  })
+
+  it('still claims EventVenue, so the semantic claim and @id refs survive', () => {
+    expect(typeArray()).toContain('EventVenue')
+  })
+
+  it('carries exactly one aggregateRating in the app tree', () => {
+    // A second rated node would make Google pick one arbitrarily.
+    const rated = walk(APP_DIR).filter(f =>
+      fs.readFileSync(f, 'utf8').replace(/\/\/[^\n]*/g, '').includes('aggregateRating:'),
+    )
+    expect(rated).toHaveLength(1)
+    expect(rated[0].endsWith(path.join('app', 'layout.tsx'))).toBe(true)
+  })
+})

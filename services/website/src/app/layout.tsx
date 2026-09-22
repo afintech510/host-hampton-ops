@@ -63,7 +63,18 @@ const localBusinessSchema = {
   // Multi-typed on purpose. It IS an event venue and it IS a local business,
   // and every page-level `Service.provider` refers to it as a LocalBusiness by
   // @id — so the node has to answer to both names or the reference dangles.
-  '@type': ['EventVenue', 'LocalBusiness'],
+  //
+  // ORDER MATTERS, and it is not cosmetic. Google reports a multi-typed node
+  // under its FIRST @type: with 'EventVenue' first, Search Console read the
+  // whole node as an EventVenue and failed `aggregateRating` with
+  // "Invalid object type for field <parent_node>" — EventVenue descends from
+  // Place, not from LocalBusiness, and review snippets are only supported on
+  // the latter. That killed the star rating on EVERY page, because this schema
+  // is in the root layout, and it had been failing since at least the 2026-09-08
+  // crawl. LocalBusiness goes first so the rating attaches to a type Google
+  // accepts; EventVenue stays in the array so the semantic claim and the @id
+  // references both survive.
+  '@type': ['LocalBusiness', 'EventVenue'],
   '@id': BUSINESS_ID,
   name: 'Host Hampton',
   description: 'Boutique celebration studio offering themed birthday parties, permanent jewelry, room rentals, and workshops.',
