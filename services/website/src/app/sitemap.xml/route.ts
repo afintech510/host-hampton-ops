@@ -26,7 +26,7 @@ export const dynamic = 'force-dynamic'
  * URL changed on every fetch — the fastest way to make it ignore `lastmod`
  * entirely. Bump this date when page copy actually changes.
  */
-const CONTENT_LAST_MODIFIED = '2026-09-12'
+const CONTENT_LAST_MODIFIED = '2026-09-22'
 
 interface Entry {
   path: string
@@ -87,7 +87,17 @@ function urlNode(e: Entry): string {
 }
 
 export async function GET() {
-  const entries: Entry[] = [...STATIC_ROUTES]
+  // Every hand-built route carries a `lastmod`.
+  //
+  // Until 2026-09-22 STATIC_ROUTES declared none, so the 31 most important URLs
+  // on the site — `/`, `/party-packages`, `/faq` — went to Google and the answer
+  // engines with NO freshness signal at all, while the location and craft pages
+  // below did. A crawler with no lastmod has nothing to compare against and
+  // refetches on its own schedule, which is how a superseded price survives in
+  // an index for weeks. The constant above is still the knob: bump it when copy
+  // actually changes. Do NOT make this `new Date()` — per-request churn is what
+  // made Google ignore our lastmod in the first place.
+  const entries: Entry[] = STATIC_ROUTES.map(e => ({ ...e, lastmod: e.lastmod ?? CONTENT_LAST_MODIFIED }))
 
   // Mobile craft party location landing pages.
   for (const l of LOCATIONS) {

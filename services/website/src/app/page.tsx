@@ -24,8 +24,11 @@ const reviewSchema = [
 
 export const metadata: Metadata = {
   title: 'Kids Birthday Parties on Long Island & the Hamptons',
+  // The description is the snippet an answer engine quotes back. It led with the
+  // DEPOSIT, which made "$250" the only price associated with the business.
+  // Lead with what a party actually costs; the deposit is a booking detail.
   description:
-    'Upscale themed kids birthday parties at our private Hamptons studio in Speonk, NY — or mobile at your house. Hands-on hosts, $250 deposit holds your date.',
+    'Upscale themed kids birthday parties at our private Hamptons studio in Speonk, NY — or mobile at your house. From $800 for 2 hours, up to 10 kids, fully hosted.',
 }
 
 const themes = [
@@ -88,8 +91,22 @@ export default async function Home() {
             <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl text-hampton-navy leading-tight mb-6">
               Kids Birthday Parties on Long Island — <span className="italic text-hampton-blue">at Our Studio or Your House</span>
             </h1>
-            <p className="text-hampton-navy text-lg md:text-xl leading-relaxed mb-8 max-w-lg">
+            <p className="text-hampton-navy text-lg md:text-xl leading-relaxed mb-6 max-w-lg">
               Hands-on hosts guide every child through every activity — at our private Hamptons studio in Speonk, or we bring the whole party to your home. Upscale experience, at prices you&apos;d pay anywhere.
+            </p>
+            {/* The commercial facts, in RENDERED TEXT.
+                Until 2026-09-22 the only money figure a reader — or an answer
+                engine — could extract from this page was the "$250 deposit".
+                The theme prices existed solely inside the RSC payload as
+                `price_cents`, which is not text and is not quotable, so an
+                assistant asked "how much is a party at Host Hampton" had
+                nothing to cite and named a competitor who publishes a number.
+                Keep this a plain sentence: a crawler that does not run JS still
+                reads it, and every figure below is the live DB value. */}
+            <p className="text-hampton-navy text-base md:text-lg font-semibold leading-relaxed mb-8 max-w-lg">
+              Studio parties from <strong>$800</strong> — 2 hours, up to 10 kids, fully hosted with setup,
+              activities and cleanup included. Extra guests $35 each. A $250 deposit holds your date and
+              comes off your total.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
               <Link href="/book"
