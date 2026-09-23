@@ -548,10 +548,15 @@ describe('R6 · the charge is derived server-side', () => {
 
   it('the tip is clamped and purpose-gated in one place, on the server', () => {
     const links = read('lib/planPayLinks.ts')
-    expect(links).toMatch(/purposeAcceptsTip\(purpose\)\s*\?\s*screenTipCents\(rawTipCents\)\s*:\s*0/)
-    // Only the final payment. A gratuity on a reservation deposit tips a party
-    // that has not happened.
-    expect(links).toMatch(/export function purposeAcceptsTip[\s\S]*?return purpose === 'balance'/)
+    expect(links).toMatch(
+      /purposeAcceptsTip\(purpose, invoice\.partyType\)\s*\?\s*screenTipCents\(rawTipCents\)\s*:\s*0/,
+    )
+    // Only the final payment, and only a product with a team. A gratuity on a
+    // reservation deposit tips a party that has not happened; a gratuity on a
+    // studio rental tips nobody, because the customer is renting the room.
+    expect(links).toMatch(
+      /export function purposeAcceptsTip[\s\S]*?return purpose === 'balance' && hasPartyTeam\(partyType\)/,
+    )
     // And it is charged, never credited: the fee is taken on amount + tip, and
     // the collection is amount + tip + fee.
     expect(links).toMatch(/calculateCardFee\(amountCents \+ tipCents\)/)

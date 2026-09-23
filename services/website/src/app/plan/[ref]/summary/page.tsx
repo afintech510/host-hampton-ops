@@ -658,15 +658,17 @@ export default async function PlanSummaryPage({
             : 'balance'
       // ── The tip jar, on the final payment only ────────────────────────────
       //
-      // `purposeAcceptsTip` is the single owner of which purposes may carry one
+      // `purposeAcceptsTip` is the single owner of which payments may carry one
       // — the same function the mint path consults — so the panel cannot offer
-      // a tip the server would then drop. Percentages are OF THE PARTY TOTAL,
+      // a tip the server would then drop. It asks about the PRODUCT as well as
+      // the purpose: a studio rental is the room, with no team of ours running
+      // it, so it gets no jar. Percentages are OF THE PARTY TOTAL,
       // not of the amount being charged: on a plan where the deposit is already
       // paid, 10% of the remaining balance would quietly be less than the 10%
       // we told them we recommend.
       const tipBaseCents = invoice.totalCents
       const tip =
-        purposeAcceptsTip(purpose) && tipBaseCents > 0
+        purposeAcceptsTip(purpose, invoice.partyType) && tipBaseCents > 0
           ? {
               amountCents: q.quote.amountCents,
               feePercent: 3,

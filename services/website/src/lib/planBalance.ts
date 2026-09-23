@@ -124,6 +124,28 @@ export function hasSecurityHold(partyType: string | null | undefined): boolean {
 }
 
 /**
+ * Is there a party team to tip?
+ *
+ * A THIRD question about the same party type, and a third function for the same
+ * reason as `hasSecurityHold` — the answers happen to coincide today, and
+ * spelling one of them as the other is how a future ruling silently moves the
+ * wrong thing.
+ *
+ * On a studio rental the customer is renting the room. They bring their own
+ * food, their own decor and their own people; nobody of ours runs the party. The
+ * tip jar's own copy is the argument — *"it goes to the people who run your
+ * party"* — and on a room rental that sentence has no referent. Adam's call,
+ * 2026-09-23, on seeing the jar under a studio rental invoice.
+ *
+ * Note this is NOT the same question as "did we staff it". An in-studio theme
+ * party and a mobile party both send a team, so both tip. If a bare-room product
+ * ever ships that we *do* staff, it gets added here and nowhere else.
+ */
+export function hasPartyTeam(partyType: string | null | undefined): boolean {
+  return partyType !== 'studio_rental'
+}
+
+/**
  * Does `bookings.balance_due_cents` follow the invoice, or keep its own answer?
  *
  * This is the OTHER half of needs-Adam 41, and the reason it is a second

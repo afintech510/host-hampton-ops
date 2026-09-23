@@ -47,7 +47,7 @@ import { calculateCardFee, screenTipCents } from '@/lib/partyPricing'
 import { money, type PlanInvoice } from '@/lib/planInvoice'
 import { getSupabase } from '@/lib/supabase'
 import { writeLedger } from '@/lib/marketing/graph'
-import type { PaymentRow } from '@/lib/planBalance'
+import { hasPartyTeam, type PaymentRow } from '@/lib/planBalance'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -84,17 +84,31 @@ export interface PayQuote {
 }
 
 /**
- * Which purposes may carry a tip.
+ * Which payments may carry a tip.
  *
- * Only the balance. Adam's instruction was "a mechanism to add tip to the FINAL
- * payment", and it is the right shape independently: a reservation deposit is
- * paid months before anyone has run a party, so asking for a gratuity there
- * tips a service that has not happened yet. A tip sent on any other purpose is
- * dropped silently rather than refused — it is an upsell we declined to take,
- * not an error the customer should see.
+ * Two conditions, and they are about different things:
+ *
+ *   * **Purpose** — only the balance. Adam's instruction was "a mechanism to add
+ *     tip to the FINAL payment", and it is the right shape independently: a
+ *     reservation deposit is paid months before anyone has run a party, so
+ *     asking for a gratuity there tips a service that has not happened yet.
+ *   * **Product** — only a party with a team (`hasPartyTeam`). A studio rental
+ *     is the room; there is nobody of ours to tip. Adam's call, 2026-09-23.
+ *
+ * A tip sent on anything this refuses is dropped silently rather than refused —
+ * it is an upsell we declined to take, not an error the customer should see.
+ *
+ * This is the SINGLE owner of the question. The summary page consults it to
+ * decide whether to render the jar AND whether to print the tipping prose, and
+ * `quoteFor` consults it when minting, so the panel can never offer a tip the
+ * server would then drop, and the printed document can never promise one the
+ * page does not show.
  */
-export function purposeAcceptsTip(purpose: PayPurpose): boolean {
-  return purpose === 'balance'
+export function purposeAcceptsTip(
+  purpose: PayPurpose,
+  partyType: string | null | undefined,
+): boolean {
+  return purpose === 'balance' && hasPartyTeam(partyType)
 }
 
 export type QuoteResult = { ok: true; quote: PayQuote } | { ok: false; reason: string }
@@ -201,7 +215,7 @@ export function quoteFor(
   // whole collection — the same arithmetic the portal's Payment Element does
   // (`subtotal = amount + tip`, then 3%), so the two surfaces quote a customer
   // the same charge for the same tip.
-  const tipCents = purposeAcceptsTip(purpose) ? screenTipCents(rawTipCents) : 0
+  const tipCents = purposeAcceptsTip(purpose, invoice.partyType) ? screenTipCents(rawTipCents) : 0
   const feeCents = calculateCardFee(amountCents + tipCents)
   const chargeCents = amountCents + tipCents + feeCents
   if (chargeCents < MIN_CHARGE_CENTS) {

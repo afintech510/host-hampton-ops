@@ -13,9 +13,10 @@ import {
   isPayPurpose,
   createPlanPayLink,
   voidLivePayLinks,
+  purposeAcceptsTip,
   MIN_CHARGE_CENTS,
 } from '@/lib/planPayLinks'
-import { paidTowardTotalCents, planMoney, type PaymentRow } from '@/lib/planBalance'
+import { hasPartyTeam, paidTowardTotalCents, planMoney, type PaymentRow } from '@/lib/planBalance'
 import {
   MAX_TIP_CENTS,
   TIP_PRESET_PERCENTS,
@@ -351,6 +352,69 @@ describe('quoteFor — gratuity', () => {
     if (!q.ok) throw new Error(q.reason)
     expect(q.quote.tipCents).toBe(1235)
     expect(Number.isInteger(q.quote.chargeCents)).toBe(true)
+  })
+})
+
+/* ── A studio rental has nobody to tip (Adam, 2026-09-23) ─────────────────── */
+
+describe('the tip jar is off on a studio rental', () => {
+  /**
+   * A studio rental where the deposit is NOT separate — which is every studio
+   * rental since needs-Adam 41 was ruled. The shared fixture couples
+   * `partyType` to `depositIsSeparate`, and that coupling is exactly what this
+   * rule must not inherit: the tip question is about whether we STAFF the
+   * party, not about how its deposit is accounted for. Overriding `partyType`
+   * alone is the point of the test.
+   */
+  const studio = () =>
+    invoice({
+      totalCents: 60000,
+      partyType: 'studio_rental',
+      payments: [pay('deposit', 25000)],
+    })
+
+  it('hasPartyTeam is false for a studio rental and true for the staffed products', () => {
+    expect(hasPartyTeam('studio_rental')).toBe(false)
+    for (const t of ['in_studio_theme', 'mobile_party', 'unknown', null, undefined]) {
+      expect(hasPartyTeam(t)).toBe(true)
+    }
+  })
+
+  it('purposeAcceptsTip needs BOTH the balance and a team', () => {
+    expect(purposeAcceptsTip('balance', 'in_studio_theme')).toBe(true)
+    expect(purposeAcceptsTip('balance', 'mobile_party')).toBe(true)
+    // The product rule, which is the new half.
+    expect(purposeAcceptsTip('balance', 'studio_rental')).toBe(false)
+    // The purpose rule, which must survive it.
+    expect(purposeAcceptsTip('deposit', 'in_studio_theme')).toBe(false)
+    expect(purposeAcceptsTip('deposit', 'studio_rental')).toBe(false)
+  })
+
+  it('drops a tip sent on a studio rental balance instead of charging it', () => {
+    const q = quoteFor(studio(), 'balance', undefined, 12500)
+    if (!q.ok) throw new Error(q.reason)
+    expect(q.quote.tipCents).toBe(0)
+    // And the customer is charged the balance and the fee on the balance ALONE
+    // — the tip must not survive into the fee either.
+    expect(q.quote.amountCents).toBe(35000)
+    expect(q.quote.feeCents).toBe(Math.round(35000 * 0.03))
+    expect(q.quote.chargeCents).toBe(35000 + Math.round(35000 * 0.03))
+  })
+
+  it('still lets a studio rental pay its balance — dropped, never refused', () => {
+    const q = quoteFor(studio(), 'balance', undefined, 12500)
+    expect(q.ok).toBe(true)
+  })
+
+  it('leaves the tip working on the products that do send a team', () => {
+    const q = quoteFor(
+      invoice({ totalCents: 60000, partyType: 'mobile_party', payments: [pay('deposit', 25000)] }),
+      'balance',
+      undefined,
+      12500,
+    )
+    if (!q.ok) throw new Error(q.reason)
+    expect(q.quote.tipCents).toBe(12500)
   })
 })
 
