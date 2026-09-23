@@ -15,6 +15,7 @@ import { screenPublicLineItems, screenPublicGuestCount, boundedIntakeText, MAX_I
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { attributionFromBody } from '@/lib/attribution'
+import { shouldAdvanceToAwaitingDeposit } from '@/lib/pipelineStages'
 
 function formatDate(dateStr: string): string {
   try {
@@ -385,6 +386,22 @@ export async function POST(req: NextRequest) {
           // Read in the same statement as `status` above, so a failed read can no
           // longer hand `undefined` here and WIPE location_address and the rest.
           party_tags: buildPartyTags(existing.party_tags as Record<string, unknown> | null),
+        }
+
+        // A priced plan has to be payable. `createNew` below writes
+        // `awaiting_deposit`, but this branch — the one a lead that arrived
+        // through the website form takes — never touched `status`, so quoting
+        // such a lead left it at `lead` forever. Nothing downstream recognises
+        // that stage: the builder's pay block was hidden and the admin panel's
+        // Approve button does not apply to it either, so the plan had no way
+        // forward from any surface. Measured on HH-PTY-SEJ4P (Lauren Kovar,
+        // $750) and HH-PTY-KMXWM ($1,250) on 2026-09-23.
+        //
+        // Guarded by `shouldAdvanceToAwaitingDeposit` rather than written
+        // unconditionally, because this same route saves edits to plans that
+        // are already `approved` or `paid_in_full` and must not drag them back.
+        if (shouldAdvanceToAwaitingDeposit(existing.status as string | null)) {
+          updateData.status = 'awaiting_deposit'
         }
 
         if (partyDate) {

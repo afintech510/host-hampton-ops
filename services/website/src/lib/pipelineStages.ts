@@ -33,6 +33,49 @@ export const PIPELINE_STAGES = [
 
 export type PipelineStage = (typeof PIPELINE_STAGES)[number]
 
+/**
+ * Stages at which a plan is priced but not yet paid — the window in which the
+ * customer must be able to see a deposit button.
+ *
+ * This set exists because it was written twice and the two copies disagreed.
+ * The party builder's pay block tested `status === 'awaiting_deposit'` alone,
+ * while `/api/party-builder/save` only ever wrote that status when it CREATED a
+ * booking: quoting a lead that arrived through the website form took the UPDATE
+ * path, which never touched `status`. So a real customer (HH-PTY-SEJ4P, Lauren
+ * Kovar, 2026-09-23) opened her plan on a $750 party and had no payment module
+ * at all, and the admin panel had no button that applied either — `lead` is in
+ * neither this list nor the approve condition. A second live plan
+ * (HH-PTY-KMXWM, $1,250, `quoted`) was in the same hole.
+ *
+ * `quoted` is here as well as `lead` because it means the same thing to a
+ * customer looking at the page: we have priced this and nobody has paid.
+ */
+export const PRE_DEPOSIT_STAGES = ['lead', 'quoted', 'awaiting_deposit'] as const
+
+/**
+ * May this plan still show the customer a "pay your deposit" module?
+ *
+ * A plan with no booking row yet (a fresh planner session) answers true — the
+ * builder has always offered the pay block before the first save, and that is
+ * the request flow that creates the booking.
+ */
+export function canTakeDeposit(status: string | null | undefined): boolean {
+  if (status == null) return true
+  return (PRE_DEPOSIT_STAGES as readonly string[]).includes(status)
+}
+
+/**
+ * Should pricing this plan move it forward to `awaiting_deposit`?
+ *
+ * Only from the two stages that precede it. Deliberately NOT "anything that is
+ * not awaiting_deposit": re-saving a plan that is `approved` or `paid_in_full`
+ * must not walk its status backwards, which is exactly what a naive
+ * `status = 'awaiting_deposit'` on every update would do.
+ */
+export function shouldAdvanceToAwaitingDeposit(status: string | null | undefined): boolean {
+  return status === 'lead' || status === 'quoted'
+}
+
 /** `bookings.party_type` values from migration 035, plus 'all' for the filter. */
 export const PARTY_TYPES = ['in_studio_theme', 'mobile_party', 'studio_rental', 'unknown'] as const
 

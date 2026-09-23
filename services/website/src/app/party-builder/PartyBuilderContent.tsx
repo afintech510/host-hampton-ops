@@ -13,6 +13,7 @@ import ChangesModal from './ChangesModal'
 import SendMessageModal from './SendMessageModal'
 import { diffPlanSnapshots } from './planDiff'
 import { getAttribution } from '@/lib/utm'
+import { canTakeDeposit } from '@/lib/pipelineStages'
 
 /* ── constants ─────────────────────────────────────── */
 
@@ -3167,7 +3168,15 @@ export default function PartyBuilderContent({
         {/* ══ 13. Pay Deposit ══ */}
         <div id="sec-book" className="scroll-mt-20" />
 
-        {hasSelections && !depositPaid && (!loadedBooking || loadedBooking.status === 'awaiting_deposit') && (
+        {/*
+          `canTakeDeposit`, not `status === 'awaiting_deposit'`. The literal was
+          a second copy of a rule `/api/party-builder/save` owns, and the two
+          drifted: that route only writes `awaiting_deposit` when it CREATES a
+          booking, so a website-form lead that was later priced in the planner
+          stayed at `lead` and this whole block — the only payment module on the
+          page — silently vanished for her. See lib/pipelineStages.ts.
+        */}
+        {hasSelections && !depositPaid && canTakeDeposit(loadedBooking?.status) && (
           <div ref={payRef} className="scroll-mt-24 bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
             <div className="bg-gradient-to-r from-hampton-pink to-hampton-mauve px-8 py-5 text-center">
               <h2 className="font-serif text-2xl font-black text-white tracking-tight">REQUEST YOUR PARTY</h2>
