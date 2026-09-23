@@ -131,7 +131,7 @@ export default function PermanentJewelry() {
           </div>
 
           <div className="text-center">
-            <Link href="/party-add-ons" className="btn-secondary mr-4">Add to a Party Package</Link>
+            <Link href="/kids-party-menu" className="btn-secondary mr-4">Add to a Party Package</Link>
             <Link href="/book?event_type=jewelry" className="btn-primary">Book a Session</Link>
           </div>
         </div>

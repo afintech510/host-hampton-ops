@@ -893,7 +893,7 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
                 <div className="border-t border-hampton-pink/15 pt-5">
                   <h4 className="font-serif text-lg text-hampton-navy mb-2">What&apos;s Next?</h4>
                   <p className="text-sm text-hampton-navy/70 leading-relaxed">
-                    Once you reserve your date, Allie will reach out within 24 hours to confirm all the details. Together we&apos;ll finalize your food, cupcake, and activity selections. We also offer a full menu of <a href="/party-add-ons" className="text-hampton-pink font-semibold hover:underline">party add-ons</a>, extra decor, and catering upgrades — so you can make your celebration as elaborate or as effortless as you&apos;d like.
+                    Once you reserve your date, Allie will reach out within 24 hours to confirm all the details. Together we&apos;ll finalize your food, cupcake, and activity selections. We also offer a full menu of <a href="/kids-party-menu" className="text-hampton-pink font-semibold hover:underline">party add-ons</a>, extra decor, and catering upgrades — so you can make your celebration as elaborate or as effortless as you&apos;d like.
                   </p>
                 </div>
 

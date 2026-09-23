@@ -137,7 +137,7 @@ export default function FirstBirthdayParties() {
             ))}
           </div>
           <div className="text-center mt-8">
-            <Link href="/party-add-ons"
+            <Link href="/kids-party-menu"
                   className="text-hampton-navy underline text-sm hover:text-hampton-navy transition-colors">
               View full add-ons menu (character visits, photographers, cake smash setups +)
             </Link>

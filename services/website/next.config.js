@@ -54,8 +54,26 @@ const nextConfig = {
       { source: '/store', destination: '/events', permanent: true },
       { source: '/store/p/:slug*', destination: '/events', permanent: true },
 
-      // `/classes` has no [slug] route, so this wildcard shadows nothing.
-      { source: '/classes/:slug*', destination: '/classes', permanent: true },
+      // `/classes` has no [slug] route, so this wildcard shadows no real page —
+      // but `:slug*` matches ZERO segments, so it matched `/classes` itself and
+      // redirected it to `/classes`: an infinite loop, and GSC's "Redirect
+      // error". `:slug+` requires at least one segment. The bare `/classes` is
+      // then sent to its real successor below.
+      { source: '/classes/:slug+', destination: '/classes', permanent: true },
+
+      // ── Route-level redirect stubs, moved here from their page.tsx ──
+      //
+      // These three paths each had a `page.tsx` whose whole body was a
+      // `redirect()`/`permanentRedirect()` call. On a statically rendered page
+      // that produces the redirect STATUS with NO `Location` header — a dead
+      // end for a browser and a crawler alike, and `s-maxage=31536000` meant it
+      // was cached that way for a year. A redirect declared here emits the
+      // header correctly. The stub pages stay in the tree (unreachable, since
+      // these rules run before routing) so `STATIC_ROUTE_PATTERNS` in
+      // `lib/content/slugSafety.ts` keeps matching the filesystem.
+      { source: '/classes', destination: '/events', permanent: true },
+      { source: '/party-add-ons', destination: '/kids-party-menu', permanent: true },
+      { source: '/esm-sharks/order', destination: '/esm-sharks', permanent: false },
 
       // The spring market is over and the vendor form already points at the
       // current one. Send the market's own old URLs to the events listing

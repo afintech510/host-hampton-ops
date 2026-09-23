@@ -128,10 +128,20 @@ describe('the private and internal routes say noindex', () => {
 describe('the consolidated content moves are PERMANENT redirects', () => {
   // A 307 keeps the old URL in the index competing with the new one and
   // transfers nothing. These moves are permanent, so the status says so.
-  it.each(['classes/page.tsx', 'party-add-ons/page.tsx'])('%s uses permanentRedirect', rel => {
-    const src = fs.readFileSync(path.join(APP_DIR, rel), 'utf8')
-    expect(src).toContain('permanentRedirect')
-    expect(src).not.toMatch(/[^t]redirect\(/)
+  //
+  // This used to read `permanentRedirect` out of `classes/page.tsx` and
+  // `party-add-ons/page.tsx`. It was green the whole time neither page emitted
+  // a `Location` header at all — the status code it was checking never reached
+  // a crawler. The redirect now lives in `next.config.js`, so read the status
+  // off the rule that actually serves it.
+  it.each(['/classes', '/party-add-ons'])('%s is declared permanent', async source => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const config = require(path.join(process.cwd(), 'next.config.js')) as {
+      redirects?: () => Promise<{ source: string; permanent: boolean }[]>
+    }
+    const rule = ((await config.redirects?.()) ?? []).find(r => r.source === source)
+    expect(rule).toBeDefined()
+    expect(rule?.permanent).toBe(true)
   })
 })
 
@@ -278,5 +288,90 @@ describe('the rated business node is typed so Google accepts the rating', () => 
     )
     expect(rated).toHaveLength(1)
     expect(rated[0].endsWith(path.join('app', 'layout.tsx'))).toBe(true)
+  })
+})
+
+/**
+ * Two redirect defects that were live on 2026-09-23, both reported by GSC as
+ * "Redirect error" and both invisible to every test the suite had:
+ *
+ *  1. `{ source: '/classes/:slug*', destination: '/classes' }`. A `*` segment
+ *     matches ZERO segments, so the rule matched `/classes` itself and sent it
+ *     to `/classes` — an infinite loop. The comment above it said the wildcard
+ *     "shadows nothing"; the one path it shadowed was its own destination.
+ *  2. A `page.tsx` whose entire body is `redirect()`/`permanentRedirect()`.
+ *     Statically rendered, that serves the redirect STATUS with NO `Location`
+ *     header — a dead end — and `s-maxage=31536000` cached it for a year.
+ *     `/party-add-ons` and `/esm-sharks/order` were both serving that.
+ *
+ * Neither is visible from inside the app: the first needs the config read as
+ * data, the second needs the page tree walked. A green suite before AND after
+ * the fix never guarded either, so both are asserted here.
+ */
+describe('redirects reach a destination that is not themselves', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const config = require(path.join(process.cwd(), 'next.config.js')) as {
+    redirects?: () => Promise<{ source: string; destination: string }[]>
+  }
+
+  /** Does `source` match `destination` when every `:x*` takes zero segments? */
+  const matchesEmptyHanded = (source: string): string =>
+    source.replace(/\/:[A-Za-z0-9_]+\*/g, '')
+
+  it('declares some redirects at all, so this file cannot pass vacuously', async () => {
+    const rules = (await config.redirects?.()) ?? []
+    expect(rules.length).toBeGreaterThan(20)
+  })
+
+  it('no rule can redirect a URL to itself', async () => {
+    const rules = (await config.redirects?.()) ?? []
+    const loops = rules.filter(r => matchesEmptyHanded(r.source) === r.destination)
+    expect(loops).toEqual([])
+  })
+
+  it('every destination is a path on this site, not a bare status', async () => {
+    const rules = (await config.redirects?.()) ?? []
+    for (const r of rules) expect(r.destination.startsWith('/')).toBe(true)
+  })
+})
+
+describe('no page.tsx is a bare redirect stub', () => {
+  /** Every `page.tsx` under `src/app`, as a route path. */
+  const routes = (): { route: string; src: string }[] => {
+    const out: { route: string; src: string }[] = []
+    const walk = (dir: string, route: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          walk(full, entry.name.startsWith('(') ? route : `${route}/${entry.name}`)
+        } else if (entry.name === 'page.tsx') {
+          out.push({ route: route || '/', src: fs.readFileSync(full, 'utf8') })
+        }
+      }
+    }
+    walk(APP_DIR, '')
+    return out
+  }
+
+  it('walks a realistic number of pages, so this file cannot pass vacuously', () => {
+    expect(routes().length).toBeGreaterThan(40)
+  })
+
+  it('every redirect-only page is also declared in next.config.js', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const config = require(path.join(process.cwd(), 'next.config.js')) as {
+      redirects?: () => Promise<{ source: string }[]>
+    }
+    const declared = new Set(((await config.redirects?.()) ?? []).map(r => r.source))
+
+    const stubs = routes()
+      .filter(({ src }) => /\b(permanentRedirect|redirect)\(['"]\//.test(src))
+      // A page that redirects CONDITIONALLY still renders; only a page whose
+      // whole job is the redirect serves the header-less response.
+      .filter(({ src }) => !/\breturn\b|\bif\b/.test(src))
+      .map(({ route }) => route)
+
+    expect(stubs.length).toBeGreaterThan(0) // the stubs are still in the tree
+    expect(stubs.filter(r => !declared.has(r))).toEqual([])
   })
 })
