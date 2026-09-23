@@ -17,11 +17,28 @@ const ROOM_RENTAL_EVENT_TYPES = new Set(['studio-rental', 'room-rental'])
 const NO_AGREEMENT_EVENT_TYPES = new Set(['kid-party', 'kids-party', 'mobile'])
 
 /**
- * Only room/studio rentals carry the rental agreement & liability waiver —
- * in-studio theme parties and mobile parties don't need one. Defaults to
- * requiring it when the type can't be confidently classified: a customer
- * signing an unnecessary waiver is a minor annoyance, a room-rental customer
- * who never signs one is a real liability gap.
+ * Only STUDIO RENTALS carry the rental agreement & liability waiver.
+ *
+ * **An allowlist, and that is a deliberate reversal (Adam, 2026-09-23.)** This
+ * used to default to REQUIRING the agreement whenever the type could not be
+ * confidently classified, on the argument that a needless waiver is an
+ * annoyance while a missing one is a liability gap. That was the right default
+ * while the agreement was a generic "Party Rental Agreement & Liability Waiver"
+ * that nobody had written yet.
+ *
+ * It is the wrong default now that the document is decided: the check-in flow
+ * reuses the **Studio Rental Agreement** template (Adam's call — it already
+ * contains the liability waiver, so a second template was not needed). That
+ * document is written about renting the room. Putting it in front of a kids'
+ * theme party, a mobile party, or an unclassified booking asks a customer to
+ * sign terms for a thing they did not buy — which is worse than not asking,
+ * because a signature on the wrong contract is not a safety net, it is a
+ * dispute waiting to happen.
+ *
+ * So: studio/room rentals, and nothing else. `NO_AGREEMENT_EVENT_TYPES` is kept
+ * as a fast path but is now redundant with the default — left in place because
+ * it documents the three slugs that were always meant to be excluded, and a
+ * reader should not have to infer that from an absence.
  */
 export function requiresRentalAgreement(booking: InquiryBooking): boolean {
   const et = (booking.event_type || '').toLowerCase().trim()
@@ -29,9 +46,10 @@ export function requiresRentalAgreement(booking: InquiryBooking): boolean {
   if (NO_AGREEMENT_EVENT_TYPES.has(et)) return false
 
   // Legacy/free-text event_type (e.g. "Kids Birthday Party") — fall back to
-  // the same keyword classifier used for inquiry drafting.
+  // the same keyword classifier used for inquiry drafting, and accept ONLY a
+  // confident studio-rental answer. 'unknown' now means no agreement.
   const { partyType } = classifyPartyType(booking)
-  return partyType !== 'in_studio_theme' && partyType !== 'mobile_party'
+  return partyType === 'studio_rental'
 }
 
 /**
