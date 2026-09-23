@@ -63,3 +63,8 @@ marketing-seed.md
 # Google OAuth client downloads (contain client_secret)
 client_secret_*.json
 *.apps.googleusercontent.com.json
+
+# Vendored third-party agent skills (installed via `npx skills add`).
+# The skills themselves are upstream code, re-installable and versioned there —
+# but .agents/product-marketing.md IS ours and is tracked deliberately.
+.agents/skills/
