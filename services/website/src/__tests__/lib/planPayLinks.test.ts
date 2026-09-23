@@ -67,6 +67,7 @@ function invoice(over: Partial<PlanInvoice> & { payments?: PaymentRow[] } = {}):
       total_cents: totalCents,
       deposit_amount: 25000,
       balance_due_cents: null,
+      security_deposit_status: null,
       created_at: null,
       ...(over.booking ?? {}),
     },

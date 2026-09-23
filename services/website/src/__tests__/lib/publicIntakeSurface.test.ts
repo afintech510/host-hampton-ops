@@ -137,7 +137,7 @@ const id = (h: Handler) => `${h.method} ${h.route}`
 
 /* ── Classification ───────────────────────────────────────────────────────── */
 
-type Gate = 'admin' | 'cm-cheer' | 'portal-required' | 'provider-signature' | 'public'
+type Gate = 'admin' | 'cm-cheer' | 'portal-required' | 'plan-scoped' | 'provider-signature' | 'public'
 
 /**
  * How this handler decides whether the caller may proceed.
@@ -152,6 +152,20 @@ function gateOf(h: Handler): Gate {
   if (/isAdminAuthorized\s*\(/.test(h.body)) return 'admin'
   if (/isCmCheerAuthorized\s*\(/.test(h.body)) return 'cm-cheer'
   if (/handleSignwellWebhook\s*\(/.test(h.body)) return 'provider-signature'
+  /*
+   * `planAccess` is a gate in its own right — it answers "is the human in front
+   * of this plan entitled to it" from the ref-scoped portal cookie or an admin
+   * session, and its refusal is a 404/403 return.
+   *
+   * It was missing here, and the omission was hidden rather than harmless:
+   * `/api/plan/[ref]/pay-link` passed this rule only because it ALSO mentions
+   * `isAdminAuthorized`, so it classified as 'admin'. A plan route gated purely
+   * by `planAccess` — which is the normal shape — read as 'public' and would
+   * have had to be declared deliberately public to pass, which would have been
+   * false. Recognising the real gate is the fix; widening DELIBERATELY_PUBLIC
+   * would have been a lie told to a green test.
+   */
+  if (/planAccess\s*\([\s\S]{0,240}?if\s*\(\s*!\s*\w+\.ok\b/.test(h.body)) return 'plan-scoped'
   // A gate refuses. Look for a session read whose falsiness returns 401.
   if (/const\s+\w+\s*=\s*get(?:PortalBookingRef|EmailFromCookie)\s*\([\s\S]{0,200}?if\s*\(\s*!\s*\w+\s*\)\s*(?:\{[\s\S]{0,120}?)?return[\s\S]{0,160}?401/.test(h.body)) {
     return 'portal-required'

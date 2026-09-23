@@ -41,7 +41,8 @@ type Supa = ReturnType<typeof getSupabase>
 export const INVOICE_BOOKING_COLUMNS =
   'id, booking_ref, status, party_type, event_type, package_type, invoice_number, ' +
   'contact_name, contact_email, contact_phone, party_date, party_time, guest_count_approx, ' +
-  'child_name, child_age, party_tags, notes, total_cents, deposit_amount, balance_due_cents, created_at'
+  'child_name, child_age, party_tags, notes, total_cents, deposit_amount, balance_due_cents, ' +
+  'security_deposit_status, created_at'
 
 export interface InvoiceBooking {
   id: string
@@ -64,6 +65,8 @@ export interface InvoiceBooking {
   total_cents: number | null
   deposit_amount: number | null
   balance_due_cents: number | null
+  /** `'none'` until the damage hold is authorized. See lib/securityHold.ts. */
+  security_deposit_status: string | null
   created_at: string | null
 }
 
@@ -147,6 +150,26 @@ export interface PlanInvoice {
  */
 export function canEditPlanInBuilder(partyType: string | null | undefined): boolean {
   return partyType === 'in_studio_theme'
+}
+
+/**
+ * Does this party happen AT OUR STUDIO?
+ *
+ * Which decides whose address the Event Details block prints. A mobile party
+ * already prints the customer's own address from `party_tags.location_address`
+ * ("Party address:"); a studio rental or an in-studio theme party printed no
+ * address at all, so the one question a customer asks on the morning of the
+ * party — *where do I go* — was answered only by the small print in the locked
+ * footer, if at all.
+ *
+ * An ALLOWLIST, for the same reason `canEditPlanInBuilder` is one. `unknown`
+ * and NULL `party_type` are real live values (see party-type-vs-event-type),
+ * and a deny-list would confidently send a customer whose booking nobody has
+ * classified to a building their party is not in. Being silent is recoverable;
+ * printing the wrong address on a document someone drives to is not.
+ */
+export function isHeldAtStudio(partyType: string | null | undefined): boolean {
+  return partyType === 'studio_rental' || partyType === 'in_studio_theme'
 }
 
 /**

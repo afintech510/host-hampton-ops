@@ -58,6 +58,12 @@ export const HANDLED_SESSION_TYPES = [
   'party_builder',
   'pay_link',
   'gift_card',
+  // The studio damage hold. Listed here so it is NOT swept into the unclaimed
+  // net — but note it is the one handled type that is deliberately never
+  // "settled": it is a manual-capture authorization, so its session arrives
+  // `payment_status: 'unpaid'` on purpose and its branch runs BEFORE
+  // `sessionSettlement` is consulted. See lib/securityHold.ts.
+  'security_hold',
 ] as const
 
 export type HandledSessionType = (typeof HANDLED_SESSION_TYPES)[number]

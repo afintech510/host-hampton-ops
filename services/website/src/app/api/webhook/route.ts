@@ -26,6 +26,7 @@ import {
   isLegacyBookingSession,
   type FinancialWrite,
 } from '@/lib/stripeSettlement'
+import { HOLD_AUTHORIZED, HOLD_SESSION_TYPE } from '@/lib/securityHold'
 import { recordLedgerEntry } from '@/lib/financialLedger'
 import {
   recordChargeRefunds,
@@ -839,6 +840,54 @@ export async function POST(req: NextRequest) {
   if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
     const session = event.data.object as Stripe.Checkout.Session
     const m = session.metadata || {}
+
+    // ── Studio damage hold ──────────────────────────────────────
+    //
+    // BEFORE the settlement check, and that ordering is the whole correctness
+    // of this branch. A manual-capture authorization completes with
+    // `payment_status: 'unpaid'` and the PaymentIntent in `requires_capture`,
+    // so `sessionSettlement` answers "not settled" — correctly, for the
+    // question it asks. For a hold that is the SUCCESS case, and falling
+    // through would return early and record nothing at all.
+    //
+    // It writes no `booking_payments` row and no `financial_transactions` row,
+    // on purpose. The hold is an authorization that will never be captured
+    // (Adam, 2026-09-23); booking it as revenue would pay down a balance with
+    // money that is not ours and never arrives. See lib/securityHold.ts.
+    if (m.type === HOLD_SESSION_TYPE) {
+      const ref = m.booking_ref || ''
+      const pi = typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : session.payment_intent?.id || null
+      if (!ref || !pi) {
+        console.error(
+          `security hold: session ${session.id} is missing booking_ref or payment_intent —`,
+          `ref=${ref || '(none)'} pi=${pi || '(none)'} — NOT recorded`,
+        )
+        return NextResponse.json({ error: 'security hold session missing ref or intent' }, { status: 500 })
+      }
+      // `.select()` so a write that matched nothing is a failure Stripe retries,
+      // not a silent success. A hold we cannot record is a hold nobody knows
+      // about, on a card the customer can see is pending.
+      const { data: held, error: holdErr } = await supabase
+        .from('bookings')
+        .update({
+          security_deposit_pi_id: pi,
+          security_deposit_status: HOLD_AUTHORIZED,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('booking_ref', ref)
+        .select('id')
+      if (holdErr || !held?.length) {
+        console.error(
+          `security hold: FAILED to record ${pi} on ${ref} —`,
+          holdErr?.message ?? 'update matched no rows',
+        )
+        return NextResponse.json({ error: holdErr?.message || 'no booking matched' }, { status: 500 })
+      }
+      console.log(`security hold authorized on ${ref}: ${pi} (not captured, not revenue)`)
+      return NextResponse.json({ received: true, securityHold: 'authorized', bookingRef: ref })
+    }
 
     const settlement = sessionSettlement(session)
     if (!settlement.settled) {

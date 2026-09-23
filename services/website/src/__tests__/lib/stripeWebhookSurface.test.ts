@@ -62,6 +62,12 @@ const SURFACE = [
   'app/api/admin/pay-link/route.ts',
   'app/api/party-builder/confirm-session/route.ts',
   'app/api/studio-rental/confirm-session/route.ts',
+  // The studio damage hold. The only route here that creates a Stripe object it
+  // never intends to capture — `capture_method: 'manual'`, authorized and left
+  // to expire. It belongs on this list precisely because it is the exception:
+  // anything that later treats its PaymentIntent as revenue is a bug, and this
+  // is where that gets reviewed. See lib/securityHold.ts.
+  'app/api/plan/[ref]/security-hold/route.ts',
 ]
 
 /* ───────────────────────────────────────────── R0 — the staleness walker ── */

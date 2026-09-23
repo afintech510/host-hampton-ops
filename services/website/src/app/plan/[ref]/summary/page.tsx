@@ -53,7 +53,20 @@ import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
-import { canEditPlanInBuilder, isQuoteStage, loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
+import {
+  canEditPlanInBuilder,
+  isHeldAtStudio,
+  isQuoteStage,
+  loadPlanInvoice,
+  money,
+  type PlanInvoice,
+} from '@/lib/planInvoice'
+import {
+  STUDIO_ADDRESS_LINE,
+  STUDIO_MAPS_URL,
+  STUDIO_PHONE_DISPLAY,
+  STUDIO_PHONE_E164,
+} from '@/lib/studioLocation'
 import { ensureInvoiceNumber } from '@/lib/invoiceNumber'
 import { planAccess } from '@/lib/planAccess'
 import { quoteFor, purposeAcceptsTip } from '@/lib/planPayLinks'
@@ -64,7 +77,15 @@ import {
   tipCentsForPercent,
   recommendedTipCents,
 } from '@/lib/partyPricing'
-import { PayPanel, PlanShareBar, PrintButton, AdminCustomCharge, type PayOption } from './PayPanel'
+import { securityHoldOffer, formatHoldDate } from '@/lib/securityHold'
+import {
+  PayPanel,
+  PlanShareBar,
+  PrintButton,
+  AdminCustomCharge,
+  SecurityHoldPanel,
+  type PayOption,
+} from './PayPanel'
 import './invoice.css'
 
 export const dynamic = 'force-dynamic'
@@ -136,6 +157,31 @@ function InvoiceBody({
   // The single source for "is a tip on offer at all" — the prose and the jar
   // are two halves of one thing and must never disagree about whether it exists.
   const tipOffered = payOptions.some(o => o.tip)
+  /*
+   * The damage hold, as three display states — or nothing at all.
+   *
+   * `securityHoldOffer` is the single owner of the window and of whether this
+   * product has a hold in the first place; the API route re-asks it rather than
+   * trusting that this drew a button, so the page and the guard cannot drift.
+   *
+   * `not_applicable` renders nothing, which is right for a mobile party, an
+   * undated rental, a cancelled one, and a rental that has already happened.
+   */
+  const holdOffer = securityHoldOffer({
+    partyType,
+    partyDate: booking.party_date,
+    status: booking.status,
+    securityDepositStatus: booking.security_deposit_status,
+    amountCents: invoice.securityHoldCents,
+  })
+  const holdPanel =
+    holdOffer.state === 'not_applicable'
+      ? null
+      : {
+          state: holdOffer.state,
+          amountLabel: holdOffer.state === 'done' ? money(invoice.securityHoldCents ?? 0) : money(holdOffer.amountCents),
+          opensOnLabel: holdOffer.state === 'too_early' ? formatHoldDate(holdOffer.opensOn) : '',
+        }
   const venmoAmount = (askCents / 100).toFixed(2)
   const venmoNote = `${(booking.contact_name || 'Party').split(' ')[0]} — ${
     partyType === 'studio_rental' ? 'Studio Rental' : 'Party'
@@ -225,6 +271,34 @@ function InvoiceBody({
                 <>
                   <br />
                   <span className="detail-label">Party address:</span> {invoice.venueAddress}
+                </>
+              )}
+              {/*
+                Where to go, on the document they will actually have open on the
+                day. The address and phone were already on this page — in the
+                locked footer, in small print, under "Thank you for choosing
+                Host Hampton". That is a sign-off, not an answer to "where is
+                this?", and a studio rental printed no venue line at all.
+
+                Gated on `isHeldAtStudio`, NOT on the absence of
+                `venueAddress`: a mobile party with no address saved would
+                otherwise be told to come to Speonk, which is the exact
+                opposite of what it is. The two branches are mutually exclusive
+                by party type, so a plan can never print both.
+
+                A directions link, not plain text — on a phone it opens the
+                native maps app.
+              */}
+              {isHeldAtStudio(partyType) && (
+                <>
+                  <br />
+                  <span className="detail-label">Studio address:</span>{' '}
+                  <a href={STUDIO_MAPS_URL} target="_blank" rel="noopener">
+                    {STUDIO_ADDRESS_LINE}
+                  </a>
+                  <br />
+                  <span className="detail-label">Questions:</span>{' '}
+                  <a href={`tel:${STUDIO_PHONE_E164}`}>{STUDIO_PHONE_DISPLAY}</a>
                 </>
               )}
             </p>
@@ -375,6 +449,21 @@ function InvoiceBody({
                 it is not a charge, and it is separate from the deposit above, which does come off
                 your total.
               </>
+            )}
+            {/*
+              The button sits directly under the sentence that explains it,
+              rather than with the pay buttons. That is where the customer is
+              already reading about the hold — and it keeps a $250
+              authorization visually apart from the buttons that actually take
+              money off their balance. See `SecurityHoldPanel`.
+            */}
+            {holdPanel && (
+              <SecurityHoldPanel
+                ref_={ref_}
+                state={holdPanel.state}
+                amountLabel={holdPanel.amountLabel}
+                opensOnLabel={holdPanel.opensOnLabel}
+              />
             )}
             {content.policies.length > 0 && (
               <ul className="policy-list" style={{ marginTop: 10 }}>

@@ -304,6 +304,90 @@ export function PayPanel({ ref_, options }: { ref_: string; options: PayOption[]
 }
 
 /**
+ * The refundable damage hold on a studio rental — its own button, deliberately
+ * NOT a `PayOption`.
+ *
+ * Keeping it out of `PayPanel` is the point. Everything in that panel charges
+ * money that pays the invoice down; this authorizes money that is never
+ * captured and never touches the balance. Folding it in would put a $250 button
+ * next to the balance buttons with no way for a customer to tell which of them
+ * takes their money — and no way for us to be sure a future change to the pay
+ * loop did not start treating it as revenue.
+ *
+ * Three states, because "no button" answers two different questions wrongly: a
+ * customer five days out needs the button, a customer six weeks out needs to
+ * know it is coming, and a customer who has already authorized needs to be told
+ * to stop looking for it.
+ */
+export function SecurityHoldPanel({
+  ref_,
+  state,
+  amountLabel,
+  opensOnLabel,
+}: {
+  ref_: string
+  state: 'offer' | 'too_early' | 'done'
+  amountLabel: string
+  opensOnLabel: string
+}) {
+  const { busy, setBusy, error, setError } = useBusy()
+
+  async function startHold() {
+    setError(null)
+    setBusy('hold')
+    const { ok, data } = await postJson(`/api/plan/${encodeURIComponent(ref_)}/security-hold`, {})
+    if (!ok || typeof data.url !== 'string') {
+      setBusy(null)
+      setError(typeof data.error === 'string' ? data.error : 'Could not start the hold — please try again.')
+      return
+    }
+    // `busy` stays set on the way out, same as the pay buttons: a second click
+    // here is a second authorization on the same card.
+    window.location.href = data.url
+  }
+
+  if (state === 'done') {
+    return (
+      <div className="section-sub" style={{ marginTop: 10, marginBottom: 0 }}>
+        ✓ Your <strong>{amountLabel}</strong> refundable hold is on file — nothing further to do.
+        It is an authorization, not a charge, and it drops off your card after your rental.
+      </div>
+    )
+  }
+
+  if (state === 'too_early') {
+    return (
+      <div className="section-sub" style={{ marginTop: 10, marginBottom: 0 }}>
+        Your <strong>{amountLabel}</strong> refundable hold opens on <strong>{opensOnLabel}</strong>.
+        We&rsquo;ll place it on your card then — or you can do it with us in person on the day.
+      </div>
+    )
+  }
+
+  return (
+    <div className="no-print" style={{ marginTop: 10 }}>
+      <button
+        type="button"
+        style={{ ...btn, opacity: busy ? 0.6 : 1 }}
+        disabled={busy !== null}
+        onClick={startHold}
+      >
+        {busy ? 'Opening Stripe…' : `Place the ${amountLabel} refundable hold`}
+      </button>
+      <div className="section-sub" style={{ marginTop: 6, marginBottom: 0, fontSize: 12 }}>
+        An authorization on your card, not a charge — it is released after your rental once the
+        space is confirmed in good condition. You can also do this with us in person on the day.
+      </div>
+      {error && (
+        <p style={{ color: '#b00020', fontSize: 13, margin: '10px 0 0' }} role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
  * "Email me this" for the customer, and "Send to client" for an admin.
  *
  * The admin half is a two-step: pick a channel, then confirm. The server also

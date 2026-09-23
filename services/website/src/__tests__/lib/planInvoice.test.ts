@@ -11,6 +11,7 @@ import {
   formatClockTime,
   formatEventDateTime,
   hiddenSectionsFrom,
+  isHeldAtStudio,
   isQuoteStage,
   orderLineItems,
   loadPlanInvoice,
@@ -74,6 +75,28 @@ describe('docTitleFor', () => {
   it('falls back rather than rendering a blank title for an unclassified lead', () => {
     expect(docTitleFor('unknown', 'lead')).toBe('Party Quotation')
     expect(docTitleFor('something_new', null)).toBe('Party Quotation')
+  })
+})
+
+describe('isHeldAtStudio — whose address the document prints', () => {
+  it('is true only for the two party types that happen in our building', () => {
+    expect(isHeldAtStudio('studio_rental')).toBe(true)
+    expect(isHeldAtStudio('in_studio_theme')).toBe(true)
+  })
+
+  /**
+   * The direction that matters. A mobile party is at the CUSTOMER's house, and
+   * an unclassified booking is one nobody has decided about yet — both are live
+   * values. Telling either of them to drive to Speonk is not a cosmetic bug.
+   */
+  it('is false for a mobile party and for every unclassified value', () => {
+    for (const t of ['mobile_party', 'unknown', null, undefined, '', 'Studio Rental']) {
+      expect(isHeldAtStudio(t)).toBe(false)
+    }
+  })
+
+  it('is an allowlist, so an unrecognised new party type stays silent', () => {
+    expect(isHeldAtStudio('pop_up_event')).toBe(false)
   })
 })
 
