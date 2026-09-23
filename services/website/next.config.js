@@ -57,9 +57,12 @@ const nextConfig = {
       // `/classes` has no [slug] route, so this wildcard shadows no real page —
       // but `:slug*` matches ZERO segments, so it matched `/classes` itself and
       // redirected it to `/classes`: an infinite loop, and GSC's "Redirect
-      // error". `:slug+` requires at least one segment. The bare `/classes` is
-      // then sent to its real successor below.
-      { source: '/classes/:slug+', destination: '/classes', permanent: true },
+      // error". `:slug+` requires at least one segment.
+      //
+      // Destination is `/events`, not `/classes`: `/classes` is itself a
+      // redirect now, so pointing here would make every old class URL a
+      // two-hop chain. Send it to the page that answers with a 200.
+      { source: '/classes/:slug+', destination: '/events', permanent: true },
 
       // ── Route-level redirect stubs, moved here from their page.tsx ──
       //

@@ -333,6 +333,17 @@ describe('redirects reach a destination that is not themselves', () => {
     const rules = (await config.redirects?.()) ?? []
     for (const r of rules) expect(r.destination.startsWith('/')).toBe(true)
   })
+
+  it('no destination is itself redirected somewhere else', async () => {
+    // The two-hop case, which is the loop one step apart: fixing `/classes` to
+    // point at `/events` instantly made `/classes/:slug+ -> /classes` a chain.
+    // Google follows a chain but discounts it, and it costs a real visitor a
+    // round trip. Every rule must land on a URL that answers.
+    const rules = (await config.redirects?.()) ?? []
+    const sources = new Set(rules.map(r => r.source))
+    const chained = rules.filter(r => sources.has(r.destination)).map(r => `${r.source} -> ${r.destination}`)
+    expect(chained).toEqual([])
+  })
 })
 
 describe('no page.tsx is a bare redirect stub', () => {
