@@ -213,9 +213,22 @@ write door into a table of 21 real customers.** Close the route, or is LI High
 still live? (The prices also exist only as `data-price` attributes in the page
 markup — a server-side catalogue is the real fix, but it edits two live pages.)
 
-### B10. Retire `summer_hair_bookings`? *(38)* · Retire `cm_cheer_orders`? *(39)*
-16 and 21 real people's names, phone numbers and emails, in tables nothing writes
-to any more. Keep, export, or drop.
+### B10. ~~Retire `summer_hair_bookings`?~~ *(38 — ANSWERED 2026-09-24)* · Retire `cm_cheer_orders`? *(39)*
+
+**`summer_hair_bookings`: exported, then dropped.** Adam's call, 2026-09-24. All
+16 rows went to `audit_scratch/summer_hair_bookings_export_2026-09-24.csv` —
+which is gitignored, and had to be *made* gitignored: the directory was treated
+as ignored for weeks without being so, and one `git add -A` would have published
+those 16 people. The `DROP TABLE` is the first statement of migration 060, which
+also creates the `appointment_bookings` / `appointment_slot_holds` pair that
+replaces it (`services/website/src/lib/appointmentEvents.ts`). The six source
+files that read the old table are deleted.
+
+**`cm_cheer_orders` is still open** — 21 real people's names, phone numbers and
+emails, in a table nothing writes to any more. Keep, export, or drop. Note it is
+NOT the same shape as the one above: `cm_cheer_orders` is multi-tenant
+(migration 051) and `/cm-cheer` is a 307 today, so check both teams before
+touching it.
 
 ---
 
