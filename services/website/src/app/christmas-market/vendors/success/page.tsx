@@ -14,9 +14,12 @@
 import { Suspense, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { trackPurchase } from '@/lib/gtag'
-import { CHRISTMAS_MARKET_2026 as MARKET, marketTotalCents } from '@/lib/christmasMarket'
+import { CHRISTMAS_MARKET_2026 as MARKET, marketPricing } from '@/lib/christmasMarket'
 
-const TOTAL_DOLLARS = marketTotalCents(MARKET) / 100
+// This page is only ever reached from Stripe's `success_url`, so the card
+// total is the right conversion value. A Venmo vendor never lands here — they
+// get the reveal panel on the form itself and nothing is charged yet.
+const TOTAL_DOLLARS = marketPricing(MARKET, 'card').totalCents / 100
 
 function VendorConversionTracker() {
   const searchParams = useSearchParams()

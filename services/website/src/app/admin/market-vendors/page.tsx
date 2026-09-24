@@ -60,7 +60,15 @@ interface MarketMeta {
   name: string
   dateLabel: string
   capacity: number
-  totalCents: number
+  /**
+   * A booth has TWO prices — Venmo carries no card fee. Neither is rendered
+   * here on purpose: every row shows what that vendor was actually charged,
+   * which is the number that stays true when the fee changes. These are typed
+   * so a future tile cannot reach for a single "the price" that does not exist.
+   */
+  boothFeeCents: number
+  cardTotalCents: number
+  venmoTotalCents: number
 }
 
 const money = (c: number) => `$${(c / 100).toFixed(2)}`

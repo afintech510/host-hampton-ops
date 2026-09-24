@@ -20,7 +20,7 @@ import {
   VENDOR_CATEGORIES,
   VENDOR_EXCLUSIONS,
   VENDOR_CATEGORY_POLICY,
-  marketTotalCents,
+  marketPricing,
   formatMarketMoney,
 } from '@/lib/christmasMarket'
 
@@ -33,7 +33,14 @@ interface VenmoReveal {
   qrSrc: string
 }
 
-const TOTAL = marketTotalCents(MARKET)
+/**
+ * Two prices, because Venmo does not carry the card processing fee — the same
+ * rule `components/VenmoOption.tsx` has always applied everywhere else on the
+ * site. The vendor sees both before choosing, so the cheaper option is never a
+ * surprise discovered after paying.
+ */
+const CARD = marketPricing(MARKET, 'card')
+const VENMO = marketPricing(MARKET, 'venmo')
 
 export default function ChristmasMarketVendorPage() {
   const [form, setForm] = useState({
@@ -172,10 +179,16 @@ export default function ChristmasMarketVendorPage() {
       badge={
         <div style={{ display: 'inline-block', background: 'white', borderRadius: 12, padding: '14px 32px', boxShadow: '0 2px 12px rgba(26,39,68,0.10)' }}>
           <div style={{ color: '#1a2744', fontSize: 24, fontWeight: 'bold', fontFamily: 'Georgia, serif' }}>
-            {formatMarketMoney(TOTAL)}
+            {formatMarketMoney(MARKET.boothFeeCents)}
           </div>
           <div style={{ color: '#555', fontSize: 12, fontFamily: 'sans-serif', marginTop: 3 }}>
-            {formatMarketMoney(MARKET.boothFeeCents)} booth + {formatMarketMoney(MARKET.serviceFeeCents)} processing &middot; no sales tax
+            per booth &middot; no sales tax
+          </div>
+          <div style={{ color: '#888', fontSize: 11.5, fontFamily: 'sans-serif', marginTop: 6, lineHeight: 1.5 }}>
+            {formatMarketMoney(VENMO.totalCents)} flat by Venmo &middot;{' '}
+            {formatMarketMoney(CARD.totalCents)} by card
+            <br />
+            (the extra {formatMarketMoney(MARKET.cardFeeCents)} is card processing)
           </div>
         </div>
       }
@@ -278,17 +291,28 @@ export default function ChristmasMarketVendorPage() {
           <div style={{ marginBottom: 24 }}>
             <label style={labelStyle}>How would you like to pay? *</label>
             <div style={{ display: 'grid', gap: 10 }}>
+              {/*
+                Card stays FIRST and stays the default, even though Venmo is
+                cheaper for the vendor. A card booth confirms itself through the
+                Stripe webhook; a Venmo booth waits on Adam opening the app and
+                pressing "mark paid" in the vendor book. Defaulting nine vendors
+                onto the manual path would be steering the whole market into
+                reconciliation work to save each of them $2.05.
+
+                The saving is stated plainly on the Venmo option, so anyone who
+                wants it can take it.
+              */}
               <PayOption
                 checked={form.paymentMethod === 'card'}
                 onSelect={() => setForm(prev => ({ ...prev, paymentMethod: 'card' }))}
-                title={`Card — ${formatMarketMoney(TOTAL)}`}
-                sub="Secure checkout via Stripe. Instant confirmation."
+                title={`Card — ${formatMarketMoney(CARD.totalCents)}`}
+                sub={`Includes ${formatMarketMoney(MARKET.cardFeeCents)} card processing. Secure checkout via Stripe, confirmed instantly.`}
               />
               <PayOption
                 checked={form.paymentMethod === 'venmo'}
                 onSelect={() => setForm(prev => ({ ...prev, paymentMethod: 'venmo' }))}
-                title={`Venmo — ${formatMarketMoney(TOTAL)}`}
-                sub="We'll show you the Venmo details on the next screen."
+                title={`Venmo — ${formatMarketMoney(VENMO.totalCents)}`}
+                sub={`No processing fee — ${formatMarketMoney(MARKET.cardFeeCents)} cheaper. We'll show you the Venmo details on the next screen.`}
               />
             </div>
           </div>
@@ -316,11 +340,18 @@ export default function ChristmasMarketVendorPage() {
               letterSpacing: 0.5,
             }}
           >
+            {/*
+              The button names the price the chosen method actually costs. It
+              used to say the card total on both paths, which meant a Venmo
+              vendor pressed a button reading "$52.05" and then got shown a
+              request for $50 — the kind of mismatch that makes someone stop and
+              wonder which number is real.
+            */}
             {submitting
               ? 'Saving your registration…'
               : form.paymentMethod === 'card'
-                ? `Register & pay ${formatMarketMoney(TOTAL)}`
-                : 'Register & show me the Venmo details'}
+                ? `Register & pay ${formatMarketMoney(CARD.totalCents)}`
+                : `Register & pay ${formatMarketMoney(VENMO.totalCents)} by Venmo`}
           </button>
 
           <p style={{ color: '#999', fontSize: 12, textAlign: 'center', marginTop: 12, fontFamily: 'sans-serif', lineHeight: 1.5 }}>

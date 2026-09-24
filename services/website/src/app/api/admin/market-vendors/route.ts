@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
-import { CHRISTMAS_MARKET_2026, resolveMarket } from '@/lib/christmasMarket'
+import { CHRISTMAS_MARKET_2026, resolveMarket, marketPricing } from '@/lib/christmasMarket'
 
 export const dynamic = 'force-dynamic'
 
@@ -110,7 +110,15 @@ export async function GET(req: NextRequest) {
       name: market.name,
       dateLabel: market.dateLabel,
       capacity: market.boothCapacity,
-      totalCents: market.boothFeeCents + market.serviceFeeCents,
+      // Both, because a booth no longer has one price — Venmo carries no card
+      // fee. The admin screen does not currently render either (every row
+      // carries the amount that vendor was actually charged, which is the
+      // number that matters historically), but a caller asking "what does a
+      // booth cost" must not be handed one of two answers as though it were
+      // the only one.
+      boothFeeCents: market.boothFeeCents,
+      cardTotalCents: marketPricing(market, 'card').totalCents,
+      venmoTotalCents: marketPricing(market, 'venmo').totalCents,
     },
     vendors: rows,
     stats: {

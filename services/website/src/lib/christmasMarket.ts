@@ -40,10 +40,20 @@ export interface MarketConfig {
   closesAt: string
   locationLine: string
 
-  /** Booth fee before the processing fee, in cents. */
+  /** The booth itself, in cents. This is what the studio must NET. */
   boothFeeCents: number
-  /** The processing fee passed on to the vendor, in cents. See note below. */
-  serviceFeeCents: number
+  /**
+   * The card processing fee, in cents. **Card only** — a Venmo vendor pays the
+   * booth fee and nothing else.
+   *
+   * Named `cardFeeCents` and not `serviceFeeCents` deliberately. It was the
+   * second name first, and a "service fee" reads like something every vendor
+   * owes — which is how it ended up being charged on the Venmo path too. The
+   * fee exists *because Stripe takes a cut*; when Stripe is not involved there
+   * is nothing to pass on. The name now says which payment method it belongs
+   * to, so the next person cannot make the same read.
+   */
+  cardFeeCents: number
 
   /**
    * How many booths there are. Registrations past this go to the waitlist
@@ -59,7 +69,7 @@ export interface MarketConfig {
 }
 
 /**
- * ── ON THE $2.05 ──
+ * ── ON THE $2.05, AND WHO PAYS IT ──
  *
  * The rest of this site charges a flat 3% "service fee" (`CC_RATE = 0.03` in
  * the events checkout; `$45 + $1.35` on the old vendor form). This one is 2.05,
@@ -67,9 +77,20 @@ export interface MarketConfig {
  * Stripe's actual cut is 2.9% + 30c = $1.81, so a 3% fee would still leave the
  * studio netting $49.69 on a booth advertised at $50. $52.05 nets $50.24.
  *
- * If you are reading this because you are adding a market and wondering whether
- * to follow the 3% convention or this one: follow this one for anything where
- * the headline number is what the studio must NET.
+ * **It is charged on the CARD path only** (Adam, 2026-09-23). A Venmo vendor
+ * pays a flat $50.00. The fee is not a surcharge for registering, it is the
+ * processor's cut being passed on, and Venmo does not take one — so there is
+ * nothing to pass on and charging it anyway would just be a markup.
+ *
+ * This also puts the vendor form in step with the rest of the site, which has
+ * always worked this way: `components/VenmoOption.tsx` charges the SUBTOTAL
+ * only — no tax, no 3% — on every ticket and cart it appears in, because
+ * "Venmo is the no-fee path" is the house rule. The vendor form was the one
+ * surface that had not been told.
+ *
+ * If you are adding a market and wondering whether to follow the 3% convention
+ * or this one: follow this one for anything where the headline number is what
+ * the studio must NET.
  */
 export const CHRISTMAS_MARKET_2026: MarketConfig = {
   slug: 'christmas-market-2026',
@@ -99,7 +120,7 @@ export const CHRISTMAS_MARKET_2026: MarketConfig = {
   locationLine: 'Host Hampton · 295 Montauk Hwy, Suite 7, Speonk NY',
 
   boothFeeCents: 5000,
-  serviceFeeCents: 205,
+  cardFeeCents: 205,
 
   boothCapacity: 9,
 
@@ -118,8 +139,35 @@ export function resolveMarket(slug: string | null | undefined): MarketConfig | n
   return MARKETS[slug] ?? null
 }
 
-export function marketTotalCents(m: MarketConfig): number {
-  return m.boothFeeCents + m.serviceFeeCents
+export interface MarketPricing {
+  boothFeeCents: number
+  /** Zero on the Venmo path. */
+  cardFeeCents: number
+  totalCents: number
+}
+
+/**
+ * What this vendor owes, given how they are paying.
+ *
+ * There is deliberately **no way to ask for "the price" without naming a
+ * payment method.** The previous shape was `marketTotalCents(market)` — one
+ * number, no argument — and that signature is the bug: every caller got the
+ * card total whether or not a card was involved, and the Venmo vendor was
+ * quoted a processing fee for a processor that was never going to touch the
+ * payment. Making the method a required argument means a caller who has not
+ * decided cannot accidentally get the wrong answer; it will not compile.
+ *
+ * The three numbers are returned together because `market_vendors` stores all
+ * three and migration 059 CHECKs that they add up. Computing them in one place
+ * is what keeps that constraint satisfiable.
+ */
+export function marketPricing(m: MarketConfig, method: VendorPaymentMethod): MarketPricing {
+  const cardFeeCents = method === 'card' ? m.cardFeeCents : 0
+  return {
+    boothFeeCents: m.boothFeeCents,
+    cardFeeCents,
+    totalCents: m.boothFeeCents + cardFeeCents,
+  }
 }
 
 /**

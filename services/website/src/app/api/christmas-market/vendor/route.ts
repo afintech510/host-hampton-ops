@@ -32,7 +32,7 @@ import { publicOrigin } from '@/lib/publicOrigin'
 import { getSupabase } from '@/lib/supabase'
 import {
   resolveMarket,
-  marketTotalCents,
+  marketPricing,
   isMarketClosed,
   isVendorPaymentMethod,
   VENDOR_CATEGORIES,
@@ -202,9 +202,11 @@ export async function POST(req: NextRequest) {
   const taken = rows.filter(r => r.status === 'paid' || r.status === 'pending_payment').length
   const isWaitlist = taken >= market.boothCapacity
 
-  const boothFeeCents = market.boothFeeCents
-  const serviceFeeCents = market.serviceFeeCents
-  const totalCents = marketTotalCents(market)
+  // Priced from the REGISTRY and the vendor's chosen method — never from the
+  // browser, which sends no amount at all. A Venmo vendor owes the booth fee
+  // and nothing else; the $2.05 is Stripe's cut being passed on, and Stripe is
+  // not in the Venmo path.
+  const { boothFeeCents, cardFeeCents, totalCents } = marketPricing(market, paymentMethod)
 
   const { data: inserted, error: insertErr } = await supabase
     .from('market_vendors')
@@ -221,10 +223,13 @@ export async function POST(req: NextRequest) {
       booth_note: boothNote || null,
       payment_method: paymentMethod,
       booth_fee_cents: boothFeeCents,
-      service_fee_cents: serviceFeeCents,
+      // The DB column is still `service_fee_cents` — renaming a live column is
+      // not worth a migration for a field only this route writes. It holds the
+      // CARD fee, and it is 0 on every Venmo row.
+      service_fee_cents: cardFeeCents,
       total_cents: totalCents,
-      // A waitlisted vendor is NOT asked for money. Taking $52.05 for a booth
-      // that may not exist is the refund conversation this branch avoids.
+      // A waitlisted vendor is NOT asked for money. Taking the booth fee for a
+      // booth that may not exist is the refund conversation this branch avoids.
       status: isWaitlist ? 'waitlist' : 'pending_payment',
       status_note: isWaitlist
         ? `Waitlisted on signup — ${taken} of ${market.boothCapacity} booths already taken.`
@@ -291,14 +296,20 @@ export async function POST(req: NextRequest) {
           },
           quantity: 1,
         },
-        {
-          price_data: {
-            currency: 'usd',
-            unit_amount: serviceFeeCents,
-            product_data: { name: 'Card processing fee' },
-          },
-          quantity: 1,
-        },
+        // Only reachable with `paymentMethod === 'card'`, so `cardFeeCents` is
+        // non-zero here — but guarded anyway, because Stripe rejects a zero
+        // `unit_amount` line and a future fee of 0 would turn every card
+        // checkout into a 502 rather than a cheaper booth.
+        ...(cardFeeCents > 0
+          ? [{
+              price_data: {
+                currency: 'usd' as const,
+                unit_amount: cardFeeCents,
+                product_data: { name: 'Card processing fee' },
+              },
+              quantity: 1,
+            }]
+          : []),
       ],
       metadata: {
         type: 'market_vendor',

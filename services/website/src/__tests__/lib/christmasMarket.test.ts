@@ -16,7 +16,7 @@ import {
   CHRISTMAS_MARKET_2026 as MARKET,
   MARKETS,
   resolveMarket,
-  marketTotalCents,
+  marketPricing,
   isMarketClosed,
   isPromoLive,
   isVendorPaymentMethod,
@@ -46,20 +46,47 @@ describe('market registry', () => {
 })
 
 describe('booth pricing', () => {
-  it('charges $50 plus the processing fee, and the parts add up', () => {
+  it('charges $52.05 on a card — booth plus the processing fee', () => {
     expect(MARKET.boothFeeCents).toBe(5000)
-    expect(MARKET.serviceFeeCents).toBe(205)
-    expect(marketTotalCents(MARKET)).toBe(5205)
-    // Migration 059 has this as a CHECK. If the two ever disagree, the database
-    // refuses the row and the vendor sees a 500 at the moment they try to pay.
-    expect(marketTotalCents(MARKET)).toBe(MARKET.boothFeeCents + MARKET.serviceFeeCents)
+    expect(MARKET.cardFeeCents).toBe(205)
+
+    const card = marketPricing(MARKET, 'card')
+    expect(card.totalCents).toBe(5205)
+    expect(card.cardFeeCents).toBe(205)
+  })
+
+  it('charges a flat $50.00 on Venmo — NO processing fee', () => {
+    // Adam, 2026-09-23. The fee is Stripe's cut being passed on; Venmo does not
+    // take one, so charging it anyway would just be a markup. This is also the
+    // rule the rest of the site already follows — VenmoOption charges subtotal
+    // only, no tax and no 3%, on every ticket and cart it appears in.
+    const venmo = marketPricing(MARKET, 'venmo')
+    expect(venmo.totalCents).toBe(5000)
+    expect(venmo.cardFeeCents).toBe(0)
+    expect(venmo.boothFeeCents).toBe(MARKET.boothFeeCents)
+  })
+
+  it('the Venmo vendor saves exactly the card fee', () => {
+    const card = marketPricing(MARKET, 'card')
+    const venmo = marketPricing(MARKET, 'venmo')
+    expect(card.totalCents - venmo.totalCents).toBe(MARKET.cardFeeCents)
+  })
+
+  it('the parts add up on both paths', () => {
+    // Migration 059 CHECKs `total_cents = booth_fee_cents + service_fee_cents`.
+    // If a path ever returns three numbers that disagree, the database refuses
+    // the row and the vendor sees a 500 at the moment they try to register.
+    for (const method of ['card', 'venmo'] as const) {
+      const p = marketPricing(MARKET, method)
+      expect(p.totalCents).toBe(p.boothFeeCents + p.cardFeeCents)
+    }
   })
 
   it('actually nets $50 after Stripe takes 2.9% + 30c', () => {
     // The whole reason this fee is 205 and not the site-wide 3% (=150). If
     // someone "corrects" it back to 3% for consistency, the studio quietly
     // starts netting $49.69 on a booth advertised at $50.
-    const total = marketTotalCents(MARKET)
+    const total = marketPricing(MARKET, 'card').totalCents
     const stripeCut = Math.round(total * 0.029) + 30
     expect(total - stripeCut).toBeGreaterThanOrEqual(5000)
   })
@@ -67,6 +94,40 @@ describe('booth pricing', () => {
   it('formats money with cents', () => {
     expect(formatMarketMoney(5205)).toBe('$52.05')
     expect(formatMarketMoney(5000)).toBe('$50.00')
+  })
+})
+
+describe('the form quotes the same two prices the server charges', () => {
+  const vendorPage = readFileSync(join(SRC, 'app/christmas-market/vendors/page.tsx'), 'utf8')
+
+  it('never hard-codes a price', () => {
+    // Every number on the page comes from marketPricing(). A literal "$52.05"
+    // in the copy is how the Venmo path came to advertise the card fee in the
+    // first place, and it would not move when the fee does.
+    //
+    // COMMENTS ARE STRIPPED FIRST. Without that this rule matches the comment
+    // that explains the rule, which is the tripwire firing on itself — the
+    // "satisfied by the wrong occurrence" family. Prose about a price is not a
+    // price being charged.
+    const code = vendorPage
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+    expect(code).not.toMatch(/\$5[02]\.\d\d/)
+    expect(vendorPage).toMatch(/marketPricing\(MARKET, 'card'\)/)
+    expect(vendorPage).toMatch(/marketPricing\(MARKET, 'venmo'\)/)
+  })
+
+  it('offers the Venmo saving and the card total on their own options', () => {
+    expect(vendorPage).toMatch(/VENMO\.totalCents/)
+    expect(vendorPage).toMatch(/CARD\.totalCents/)
+  })
+
+  it('the submit button quotes the chosen method, not one price for both', () => {
+    // The button read the card total on BOTH paths, so a Venmo vendor pressed
+    // "$52.05" and was then shown a request for $50.
+    const button = vendorPage.slice(vendorPage.indexOf('Saving your registration'))
+    expect(button).toMatch(/CARD\.totalCents/)
+    expect(button).toMatch(/VENMO\.totalCents/)
   })
 })
 
