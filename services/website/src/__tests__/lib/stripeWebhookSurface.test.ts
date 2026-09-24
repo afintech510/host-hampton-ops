@@ -57,6 +57,11 @@ const SURFACE = [
   'app/api/gift-cards/checkout/route.ts',
   'app/api/vendor-registration/route.ts',
   'app/api/christmas-market/vendor/route.ts',
+  // Appointment bookings on a `deposit` or `prepay` event. Same shape as the
+  // vendor route above and reviewed for the same reason: the row is written
+  // BEFORE Stripe, so `paid_at` — not "does a row exist" — is what the webhook
+  // treats as already-settled.
+  'app/api/appointments/[slug]/book/route.ts',
   'app/api/portal/pay/route.ts',
   'app/api/studio-rental/checkout/route.ts',
   'app/api/admin/pay-link/route.ts',

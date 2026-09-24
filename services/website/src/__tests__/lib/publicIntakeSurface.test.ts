@@ -214,8 +214,14 @@ const DELIBERATELY_PUBLIC = new Set([
   'POST signup',
   'POST studio-rental/checkout',
   'POST studio-rental/confirm-session',
-  'GET summer-hair/book',
-  'POST summer-hair/book',
+  // Appointment availability and booking, for every event in the registry
+  // (lib/appointmentEvents.ts). Public because a customer booking a hair
+  // appointment is a stranger filling in a form — the same shape as every other
+  // intake here. Rate-limited, prices pinned server-side from the registry, and
+  // an unknown slug is a 400 rather than a row filed under a day that does not
+  // exist. Replaces the retired `summer-hair/book` pair.
+  'GET appointments/[slug]/book',
+  'POST appointments/[slug]/book',
   'GET themes',
   'POST trucker-inquiry',
   'POST unsubscribe',
@@ -850,7 +856,10 @@ describe('R8: an intake route does not claim to have saved a lead it lost', () =
 
 describe('R9: no public handler hands out whole rows', () => {
   it("nothing on this surface selects '*' from a table holding customer data", () => {
-    const PII_TABLES = ['bookings', 'contacts', 'cm_cheer_orders', 'summer_hair_bookings', 'booking_payments', 'gift_cards']
+    // `appointment_slot_holds` is here beside `appointment_bookings` because it
+    // carries a `booking_id` FK into a table of customer names and phone
+    // numbers. A `select('*')` on it is one join away from the same leak.
+    const PII_TABLES = ['bookings', 'contacts', 'cm_cheer_orders', 'appointment_bookings', 'appointment_slot_holds', 'booking_payments', 'gift_cards']
     const offenders: string[] = []
     for (const h of HANDLERS) {
       if (gateOf(h) === 'admin') continue

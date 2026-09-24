@@ -42,6 +42,13 @@ import {
 } from '@/lib/stripeAftermath'
 import { resolveMarket } from '@/lib/christmasMarket'
 import { marketVendorConfirmationHtml, marketVendorOwnerHtml } from '@/lib/marketVendorEmails'
+import {
+  resolveAppointmentEvent,
+  durationRange,
+  formatAppointmentMoney,
+  paymentNote,
+} from '@/lib/appointmentEvents'
+import { appointmentConfirmationHtml, appointmentAdminNotifyHtml } from '@/lib/email-templates/appointments'
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
 
 /**
@@ -1751,6 +1758,140 @@ export async function POST(req: NextRequest) {
               productCategory: vendor.product_category,
               money,
               marketName: market.name,
+            }),
+          }),
+        ])
+      }
+
+      return NextResponse.json({ received: true })
+    }
+
+    // ── Appointment booking (deposit or prepay) ────────────────
+    //
+    // The same shape as `market_vendor` above, for the same reason: the row is
+    // written by /api/appointments/[slug]/book BEFORE Stripe, so a customer who
+    // abandons the card page still leaves their details and their slots behind.
+    // This branch only settles it.
+    //
+    // `paid_at` is therefore the idempotency signal, not "does a row exist" —
+    // the row exists on the first delivery as well as the second. The update is
+    // `.is('paid_at', null)` so two redeliveries cannot both win.
+    if (m.type === 'appointment_booking') {
+      const apptEvent = resolveAppointmentEvent(m.eventSlug)
+      if (!apptEvent) {
+        console.error(`appointment booking: session ${session.id} names unknown event "${m.eventSlug}"`)
+        return NextResponse.json({ error: 'unknown appointment event' }, { status: 500 })
+      }
+
+      // Two ways home: the row id from metadata, and the session id the route
+      // wrote back (that write is allowed to fail non-fatally).
+      const apptLookup = supabase
+        .from('appointment_bookings')
+        .select('id, event_slug, name, email, phone, time_slot, slot_index, slots_needed, services, party_size, notes, status, estimated_total_cents, paid_at')
+      const { data: apptRows, error: apptErr } = m.bookingId
+        ? await apptLookup.eq('id', m.bookingId).limit(1)
+        : await apptLookup.eq('stripe_session_id', session.id).limit(1)
+
+      if (apptErr) {
+        console.error('appointment booking: cannot read the booking —', apptErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: apptErr.message }, { status: 500 })
+      }
+
+      const appt = apptRows?.[0]
+      if (!appt) {
+        // Money arrived for a booking that is not in the table. Do NOT invent
+        // one — let it fall into the unclaimed net where a human sees it.
+        console.error(`appointment booking: paid session ${session.id} matches no appointment_bookings row`)
+        return NextResponse.json({ error: 'no matching appointment booking' }, { status: 500 })
+      }
+
+      if (appt.paid_at) {
+        console.log(`appointment ${appt.id} is already paid — redelivery of ${session.id}, nothing re-issued`)
+        return NextResponse.json({ received: true, duplicate: true })
+      }
+
+      const paidCents = session.amount_total ?? 0
+
+      const { error: apptPayErr } = await supabase
+        .from('appointment_bookings')
+        .update({
+          status: 'confirmed',
+          paid_at: new Date().toISOString(),
+          amount_paid_cents: paidCents,
+          stripe_session_id: session.id,
+        })
+        .eq('id', appt.id)
+        .is('paid_at', null)
+
+      if (apptPayErr) {
+        console.error(`appointment ${appt.id}: could not mark paid —`, apptPayErr.message, '— asking Stripe to retry')
+        return NextResponse.json({ error: apptPayErr.message }, { status: 500 })
+      }
+
+      // The slots are now held for good. An `expires_at` left on a PAID
+      // booking's holds is a sweep waiting to free a slot somebody paid for —
+      // the abandoned-checkout cleanup must never reach a confirmed booking.
+      const { error: holdErr } = await supabase
+        .from('appointment_slot_holds')
+        .update({ expires_at: null })
+        .eq('booking_id', appt.id)
+
+      if (holdErr) {
+        console.error(`appointment ${appt.id}: paid, but its slot holds still carry an expiry —`, holdErr.message)
+      }
+
+      const apptDuration = durationRange(apptEvent, appt.slot_index, appt.slots_needed || 1)
+
+      await recordFinancialTransaction(supabase, {
+        date: new Date().toISOString().split('T')[0],
+        description: `${apptEvent.name} appointment — ${appt.name}`,
+        amountCents: paidCents,
+        category: 'Services',
+        customerName: appt.name,
+        reference: `appt-${appt.id}`,
+        notes: appt.email,
+      })
+
+      if (process.env.RESEND_API_KEY) {
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        const apptTotal = formatAppointmentMoney(appt.estimated_total_cents ?? paidCents)
+        const apptPayNote = paymentNote(apptEvent)
+
+        await Promise.allSettled([
+          resend.emails.send({
+            from,
+            to: appt.email,
+            subject: `You're booked — ${apptEvent.name} at Host Hampton!`,
+            html: appointmentConfirmationHtml({
+              name: appt.name,
+              eventName: apptEvent.name,
+              dateLabel: apptEvent.dateLabel,
+              locationLine: apptEvent.locationLine,
+              duration: apptDuration,
+              services: (appt.services as string[]) || [],
+              partySize: appt.party_size || 1,
+              estimatedTotal: apptTotal,
+              paymentNote: apptPayNote,
+            }),
+          }),
+          resend.emails.send({
+            from,
+            to: apptEvent.notifyEmail,
+            subject: `${apptEvent.name} Booking: ${appt.name} at ${appt.time_slot}`,
+            replyTo: appt.email,
+            html: appointmentAdminNotifyHtml({
+              name: appt.name,
+              email: appt.email,
+              phone: appt.phone,
+              eventName: apptEvent.name,
+              dateLabel: apptEvent.dateLabel,
+              duration: apptDuration,
+              services: (appt.services as string[]) || [],
+              partySize: appt.party_size || 1,
+              notes: appt.notes,
+              estimatedTotal: apptTotal,
+              paymentNote: apptPayNote,
             }),
           }),
         ])

@@ -256,7 +256,14 @@ describe('the Venmo reveal is server-gated', () => {
     expect(route).toMatch(/market\.venmoHandle/)
     // And it is returned AFTER the insert, never before. If the reveal ever
     // moves above the insert, the form stops capturing the vendor.
-    const insertAt = route.indexOf(".from('market_vendors')\n    .insert(")
+    // Matched with a REGEX, not `indexOf`, because the literal this used to be
+    // embedded a bare `\n` and the checkout is `core.autocrlf=true`. The moment
+    // any editor rewrote this route the anchor found nothing and the rule
+    // silently stopped checking — which is exactly the trap `cronSurface`
+    // already wrote down, one file away, and this one still had. Line endings
+    // and indentation are never the property under test.
+    const insertMatch = /\.from\('market_vendors'\)\s*\.insert\(/.exec(route)
+    const insertAt = insertMatch ? insertMatch.index : -1
     const revealAt = route.indexOf('venmoHandle')
     expect(insertAt).toBeGreaterThan(-1)
     expect(revealAt).toBeGreaterThan(insertAt)

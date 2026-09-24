@@ -56,7 +56,7 @@ import { scanSource, WEBSITE_SRC, stripNeutralised } from '../helpers/templateSc
 const TEMPLATE_SOURCES = [
   'lib/emailTemplates.ts',
   'lib/email-templates/marketing-emails.ts',
-  'lib/email-templates/summer-hair.ts',
+  'lib/email-templates/appointments.ts',
   'lib/email-templates/event-newsletter.ts',
   'lib/email-templates/reminders.ts',
   'lib/planPayment.ts',
@@ -433,7 +433,7 @@ describe('the file list cannot go stale', () => {
     'app/api/party-checkout/route.ts',
     'app/api/portal/email-auth/request/route.ts',
     'app/api/portal/resend-link/route.ts',
-    'app/api/summer-hair/book/route.ts',
+    'app/api/appointments/[slug]/book/route.ts',
     'lib/brevo.ts',
     'lib/sequences/processor.ts',
     'app/api/lead/route.ts',
@@ -462,7 +462,7 @@ describe('the file list cannot go stale', () => {
   const TEMPLATE_MODULES = [
     'lib/emailTemplates.ts',
     'lib/email-templates/marketing-emails.ts',
-    'lib/email-templates/summer-hair.ts',
+    'lib/email-templates/appointments.ts',
     'lib/email-templates/reminders.ts',
   ]
 

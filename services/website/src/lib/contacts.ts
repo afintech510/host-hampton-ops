@@ -5,8 +5,15 @@ import { isUniqueViolation } from '@/lib/planPayment'
 import { optedOutReason } from '@/lib/sequences/processor'
 import { screenAttribution, deriveLeadSource, hasAttributionSignal } from '@/lib/attribution'
 
-// Valid service_type enum values in the database
-const SERVICE_TYPE_MAP: Record<string, string> = {
+/**
+ * Valid service_type enum values in the database.
+ *
+ * Exported so a caller that has to NAME one — `appointmentEvents.ts` carries a
+ * `contactServiceInterest` per event — can be checked against it by a test
+ * rather than by hope. Anything not in here silently becomes `'other'`, which
+ * is a CRM row that looks healthy and is filed under nothing.
+ */
+export const SERVICE_TYPE_MAP: Record<string, string> = {
   'kids-party': 'kids_party',
   'kids_party': 'kids_party',
   'room-rental': 'room_rental',

@@ -55,6 +55,10 @@ export const HANDLED_SESSION_TYPES = [
   // older, thinner cousin — it survives only because two real 2026 sessions
   // carry it and a type that has ever been written must stay handled forever.
   'market_vendor',
+  // An appointment on a `deposit` or `prepay` event (lib/appointmentEvents.ts).
+  // Same shape as `market_vendor`: the row is written before Stripe and this
+  // branch only settles it, so `paid_at` is the idempotency signal.
+  'appointment_booking',
   'party_builder',
   'pay_link',
   'gift_card',

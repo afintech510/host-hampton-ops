@@ -60,6 +60,15 @@ new-b2b-contacts.csv
 new-outreach-contacts.csv
 marketing-seed.md
 
+# ── Local analysis scratch (receipts, ledger dumps, DB exports — PII) ──
+# This directory holds one-off exports taken straight out of the live database.
+# It was untracked-but-committable, which is not the same thing as ignored: the
+# summer_hair_bookings export (16 people's names, emails and phone numbers) was
+# written here on the understanding it could never be committed, and one
+# `git add -A` would have published it along with everything else already in
+# here. Ignored explicitly now, so the assumption is enforced rather than held.
+audit_scratch/
+
 # Google OAuth client downloads (contain client_secret)
 client_secret_*.json
 *.apps.googleusercontent.com.json

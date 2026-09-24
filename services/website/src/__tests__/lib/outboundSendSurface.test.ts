@@ -66,7 +66,9 @@ const SEND_ROUTES = [
   'app/api/cron/send-reminders/route.ts',
   'app/api/cron/event-reminders/route.ts',
   'app/api/cron/birthday-rebooking/route.ts',
-  'app/api/cron/summer-hair-reminders/route.ts',
+  // Renamed from summer-hair-reminders. Still one route, so `ALL.length` below
+  // is unchanged — which is the point of pinning it exactly.
+  'app/api/cron/appointment-reminders/route.ts',
   'app/api/cron/process-sequences/route.ts',
   'app/api/cron/send-campaigns/route.ts',
   'app/api/cron/draft-newsletter/route.ts',
@@ -428,10 +430,10 @@ describe('R4 — nothing sends before it owns the row', () => {
     expect(/error\.message.*duplicate key|duplicate key.*error\.message/.test(src)).toBe(false)
   })
 
-  it('summer-hair claims per row before texting, and releases on failure', () => {
+  it('appointment-reminders claims per row before texting, and releases on failure', () => {
     // `bodyOf`, not `code`: `indexOf('sendSMSVia')` on the raw source finds the
     // IMPORT at offset 163 and concludes the send happens before the claim.
-    const src = bodyOf.get('app/api/cron/summer-hair-reminders/route.ts')!
+    const src = bodyOf.get('app/api/cron/appointment-reminders/route.ts')!
     const claim = src.indexOf("update({ reminder_sent: true })")
     const send = src.indexOf('sendSMSVia')
     expect(claim).toBeGreaterThan(-1)
@@ -562,8 +564,8 @@ describe('R7 — logs carry counts and masked identifiers, never content', () =>
     expect(offenders).toEqual([])
   })
 
-  it('summer-hair masks the phone number in every note it returns', () => {
-    const src = code.get('app/api/cron/summer-hair-reminders/route.ts')!
+  it('appointment-reminders masks the phone number in every note it returns', () => {
+    const src = code.get('app/api/cron/appointment-reminders/route.ts')!
     expect(/function maskPhone/.test(src)).toBe(true)
     // The JSON body must not carry a raw number or a customer name.
     const i = src.indexOf('return NextResponse.json({')

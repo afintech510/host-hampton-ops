@@ -10,6 +10,11 @@ import AttributionCapture from '@/components/AttributionCapture'
 import { CartProvider } from '@/context/CartContext'
 import CartDrawer from '@/components/CartDrawer'
 import ChristmasMarketBanner from '@/components/ChristmasMarketBanner'
+// Mounted PERMANENTLY, which is the fix for `SpecialEventBanner` — it had a
+// kill switch and no start date, so it had to be added and then deleted by hand
+// and then sat imported-by-nothing for three months. This one's whole life is
+// the promo window in lib/appointmentEvents.ts.
+import AppointmentBanner from '@/components/AppointmentBanner'
 import { RATING } from '@/lib/reviews'
 import { OG_DEFAULTS, OG_DEFAULT_IMAGE, SITE_URL, BUSINESS_ID, ORGANIZATION_ID } from '@/lib/seo'
 
@@ -182,6 +187,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           */}
           <main className="flex-1 pt-20">
             <ChristmasMarketBanner />
+            <AppointmentBanner />
             {children}
           </main>
           <div className="h-40 bg-gradient-to-b from-transparent to-[#BCCDEB]" aria-hidden="true" />

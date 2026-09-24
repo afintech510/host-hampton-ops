@@ -161,7 +161,10 @@ describe('R0: the cron surface cannot go stale', () => {
       'agent-dispatch', 'agent-distill', 'birthday-rebooking', 'booking-locks',
       'draft-newsletter', 'event-reminders', 'experiment-report', 'gmail-sync',
       'process-sequences', 'send-campaigns', 'send-reminders', 'social-calendar',
-      'summer-hair-reminders', 'weekly-town-drafts',
+      // Renamed from 'summer-hair-reminders' when the one-day pop-up became a
+      // registry (lib/appointmentEvents.ts). A rename, not a new job — the
+      // count above is unchanged and so is the schedule in AGENTS.md §8.
+      'appointment-reminders', 'weekly-town-drafts',
     ]) {
       expect(names).toContain(known)
     }
@@ -361,8 +364,8 @@ describe('R5: the mutating jobs claim before they act', () => {
     expect(guardAt).toBeLessThan(loop.indexOf(".update({ status: 'modifications_locked'"))
   })
 
-  it('summer-hair-reminders claims the row BEFORE it texts, and releases on failure', () => {
-    const body = ALL_HANDLERS.find(h => h.file === 'summer-hair-reminders/route.ts' && h.method === 'GET')!.body
+  it('appointment-reminders claims the row BEFORE it texts, and releases on failure', () => {
+    const body = ALL_HANDLERS.find(h => h.file === 'appointment-reminders/route.ts' && h.method === 'GET')!.body
     /**
      * Matched with a REGEX, not `indexOf`, because the literal it used to search
      * for embedded a bare `\n` and this repository is checked out with
@@ -382,11 +385,11 @@ describe('R5: the mutating jobs claim before they act', () => {
     expect(body).toMatch(/reminder_sent: false \}\)\s*\r?\n\s*\.eq\('id', b\.id\)/) // the release
   })
 
-  it('summer-hair-reminders `force` cannot drop the already-sent guard', () => {
-    const body = ALL_HANDLERS.find(h => h.file === 'summer-hair-reminders/route.ts' && h.method === 'GET')!.body
+  it('appointment-reminders `force` cannot drop the already-sent guard', () => {
+    const body = ALL_HANDLERS.find(h => h.file === 'appointment-reminders/route.ts' && h.method === 'GET')!.body
     // The filter is applied unconditionally as part of the query, not inside an
     // `if (!force)`. Slice from the query builder to the await.
-    const qAt = body.indexOf("from('summer_hair_bookings')")
+    const qAt = body.indexOf("from('appointment_bookings')")
     const awaitAt = body.indexOf('await query')
     expect(qAt).toBeGreaterThan(-1)
     expect(awaitAt).toBeGreaterThan(qAt)
@@ -395,8 +398,8 @@ describe('R5: the mutating jobs claim before they act', () => {
     expect(q).not.toMatch(/if\s*\(!force\)[\s\S]*reminder_sent/)
   })
 
-  it('summer-hair-reminders never puts a customer name or a raw phone in the response', () => {
-    const body = ALL_HANDLERS.find(h => h.file === 'summer-hair-reminders/route.ts' && h.method === 'GET')!.body
+  it('appointment-reminders never puts a customer name or a raw phone in the response', () => {
+    const body = ALL_HANDLERS.find(h => h.file === 'appointment-reminders/route.ts' && h.method === 'GET')!.body
     const retAt = body.lastIndexOf('return NextResponse.json({')
     expect(retAt).toBeGreaterThan(-1)
     const payload = body.slice(retAt)

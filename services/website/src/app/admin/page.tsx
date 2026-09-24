@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
-  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, Scissors, Rocket, TrendingUp, Inbox,
+  DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, CalendarClock, Rocket, TrendingUp, Inbox,
   Instagram, ClipboardCheck
 } from 'lucide-react'
 import EventsTab from './EventsTab'
@@ -22,19 +22,22 @@ import GiftCardsTab from './GiftCardsTab'
 import PartiesTab from './PartiesTab'
 import BookedTab from './BookedTab'
 import PhotosTab from './PhotosTab'
-import SummerHairTab from './SummerHairTab'
+import AppointmentsTab from './AppointmentsTab'
 import MarketingTab from './MarketingTab'
 import SocialTab from './SocialTab'
 import InboxTab from './InboxTab'
 
 /* ─── Tab Config ────────────────────────────────────── */
 
-type TabKey = 'dashboard' | 'inbox' | 'events' | 'calendar' | 'orders' | 'booked' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'social' | 'financials' | 'revenue' | 'gift-cards' | 'summer-hair'
+type TabKey = 'dashboard' | 'inbox' | 'events' | 'calendar' | 'orders' | 'booked' | 'parties' | 'photos' | 'themes' | 'media' | 'contacts' | 'sequences' | 'campaigns' | 'marketing' | 'social' | 'financials' | 'revenue' | 'gift-cards' | 'appointments'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[] = [
   { key: 'dashboard',  label: 'Dashboard',  Icon: LayoutDashboard, group: 'overview' },
   { key: 'inbox',      label: 'Inbox',      Icon: Inbox,           group: 'overview' },
-  { key: 'summer-hair', label: 'Summer Hair', Icon: Scissors,        group: 'manage' },
+  // One tab for every appointment day — Halloween Hair, Christmas Hair,
+  // permanent jewelry. The event is picked inside the tab, not baked into its
+  // name; "Summer Hair" was still in this sidebar three months after the event.
+  { key: 'appointments', label: 'Appointments', Icon: CalendarClock,  group: 'manage' },
   { key: 'events',     label: 'Events',     Icon: Ticket,          group: 'manage' },
   { key: 'calendar',   label: 'Calendar',   Icon: Calendar,        group: 'manage' },
   { key: 'orders',     label: 'Orders',     Icon: Receipt,         group: 'manage' },
@@ -471,8 +474,8 @@ function AdminDashboard({
           {activeTab === 'gift-cards' && (
             <GiftCardsTab key={`gc-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
-          {activeTab === 'summer-hair' && (
-            <SummerHairTab key={`sh-${refreshKey}`} headers={headers} onLogout={onLogout} />
+          {activeTab === 'appointments' && (
+            <AppointmentsTab key={`appt-${refreshKey}`} headers={headers} onLogout={onLogout} />
           )}
         </main>
       </div>

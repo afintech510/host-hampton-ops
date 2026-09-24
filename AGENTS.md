@@ -213,7 +213,14 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **047**. **Link 17 took none** — the
+The next free migration number is **061**. (This line said **047** for months
+after it stopped being true, which is why it now says how to check rather than
+just asserting a number: the highest file in `starting_plan/` is the floor, and
+`information_schema` on the live DB is what says whether it has been APPLIED.
+**060 is the appointment refactor** — `appointment_bookings` +
+`appointment_slot_holds`, and the `DROP TABLE summer_hair_bookings` that answers
+NEEDS-ADAM B10, after a CSV export to the gitignored `audit_scratch/`.
+**059 is `market_vendors`**.) **Link 17 took none** — the
 contact-identity repair is entirely code, deliberately: the fix for eight
 duplicated people is the LOOKUP, and a functional unique index on `lower(email)`
 cannot be created until those eight are merged (needs-Adam 31), because they
@@ -341,7 +348,7 @@ There is **no in-container scheduler**. Scheduled work is driven externally by *
 - `/api/cron/agent-distill` — the weekly learning distill. Behind `AGENT_ENABLED`; proposes, activates nothing. Not scheduled (needs-Adam 1); suggested Monday 7am.
 - `/api/cron/weekly-town-drafts` — 2 towns per run, lands at `pending_review`, no-op once all 11 have a draft. Not scheduled (needs-Adam 6).
 - `/api/cron/social-calendar` — weekly social drafts. Drafts only; `approved`/`published` are gated edges. Self-throttling before the model call. Not scheduled.
-- `/api/cron/summer-hair-reminders` — a one-day pop-up (2026-07-03) that is over. **`?force=true` overrides the CLOCK only** — it used to drop the `reminder_sent = false` filter as well, so one authenticated GET re-texted all thirteen real customers about a July appointment. Claim before send, STOP honoured, masked payload. Never scheduled; needs-Adam 38 is whether to retire it.
+- `/api/cron/appointment-reminders` — reminders for every event in `lib/appointmentEvents.ts` whose `eventDate` is today (Eastern), at that event's own `reminderLeadMinutes`. A day with nothing on is `{ ok: true }` and no sends, so it is safe to schedule daily. Also sweeps slot holds left by abandoned checkouts. **`?force=true` overrides the CLOCK only** — in its predecessor (`summer-hair-reminders`, a single hard-coded date) it used to drop the `reminder_sent = false` filter as well, so one authenticated GET re-texted all thirteen real customers about a July appointment. Claim before send, STOP honoured, masked payload. **Still not scheduled** — nothing has ever run it.
 - `/api/cron/agent-dispatch` — booking agent: claims new inbound events, drafts replies, texts the reviewers. Every 2 minutes. No-op unless `AGENT_ENABLED` is true.
 - `/api/cron/gmail-sync` — pulls new mail from `GMAIL_USER` into `ingested_messages` and applies the handled label. Every 3 minutes. No-op unless the `GMAIL_*` env is set. Read + label only. `?backfill=1&pageToken=…` runs the bounded historical pull by hand.
 - `/api/cron/staff-reminders` (migration 056, added 2026-09-19) — daily digest of `staff_reminders`, internal-only follow-up nudges (never customer-facing). Reads `due_date <= today` in ET, texts (`notifyOwnerSms`) and/or emails (`ownerEmail()` via Brevo) Adam depending on each row's `channel`, and only marks a row `sent` once every channel it asked for actually went out. Not yet scheduled — needs a cron-job.org entry, suggested once daily (e.g. 08:00 ET / 12:00 UTC).

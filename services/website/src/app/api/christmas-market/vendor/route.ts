@@ -39,28 +39,12 @@ import {
   CHRISTMAS_MARKET_2026,
 } from '@/lib/christmasMarket'
 
+// Lifted into lib/intakeFields.ts when the appointment book route needed the
+// same three screens. A second copy is how two intake routes come to disagree
+// about what an email address looks like.
+import { clean, looksLikeEmail, looksLikePhone, MAX_FIELD } from '@/lib/intakeFields'
+
 export const dynamic = 'force-dynamic'
-
-/** Longest we will store for any single free-text field. */
-const MAX_FIELD = 400
-
-function clean(v: unknown, max = MAX_FIELD): string {
-  if (typeof v !== 'string') return ''
-  return v.trim().slice(0, max)
-}
-
-/**
- * Deliberately permissive — this screens for "obviously not an address", not
- * for RFC compliance. A vendor turned away by a clever regex is a lost booth.
- */
-function looksLikeEmail(v: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)
-}
-
-/** Ten digits somewhere in the string. Formatting is the vendor's business. */
-function looksLikePhone(v: string): boolean {
-  return (v.match(/\d/g) || []).length >= 10
-}
 
 export async function POST(req: NextRequest) {
   const limited = guardRate(req, intakeRule('christmas-market-vendor'))
