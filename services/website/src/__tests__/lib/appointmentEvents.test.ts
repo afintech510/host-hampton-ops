@@ -530,6 +530,10 @@ describe('R4: the slot grid is written in exactly one place', () => {
       'app/api/appointments/[slug]/book/route.ts',
       'app/api/admin/appointments/route.ts',
       'app/api/cron/appointment-reminders/route.ts',
+      // The hero renders the day's opening and closing times server-side, so a
+      // crawler sees them without hydrating. Added to this list when that moved
+      // up out of the client form.
+      'app/appointments/[slug]/page.tsx',
       'app/appointments/[slug]/AppointmentForm.tsx',
       'app/admin/AppointmentsTab.tsx',
     ]

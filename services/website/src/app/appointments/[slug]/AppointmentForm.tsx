@@ -21,7 +21,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
-import { Calendar, Clock, ChevronDown, ChevronUp, Check, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Check, Loader2 } from 'lucide-react'
 import {
   type AppointmentEventConfig,
   calcSlotsNeeded,
@@ -30,7 +30,6 @@ import {
   formatAppointmentMoney,
   priceSummaryRows,
   slotTimes,
-  closingLabel,
   paymentNote,
 } from '@/lib/appointmentEvents'
 
@@ -167,9 +166,11 @@ export default function AppointmentForm({ cfg, closed }: { cfg: AppointmentEvent
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-2">
+      {/* No accent rule across the top any more. It was a hard 6px line sitting
+          directly under the nav, which is what stopped this page looking like the
+          rest of the site — the hero above now fades the blue down into the page
+          instead. `accentHex` still colours the prices and the chosen slot. */}
       <div className="relative overflow-hidden rounded-2xl border-2 border-[#1e3a5f]/20 bg-white shadow-md">
-        <div className="h-1.5" style={{ backgroundColor: cfg.accentHex }} />
-
         <div className="flex flex-col md:flex-row">
           {cfg.flyerSrc && (
             <div className="relative w-full md:w-[340px] shrink-0">
@@ -185,27 +186,11 @@ export default function AppointmentForm({ cfg, closed }: { cfg: AppointmentEvent
           )}
 
           <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center">
-            <span
-              className="text-xs font-semibold uppercase tracking-widest mb-2"
-              style={{ color: cfg.accentHex }}
-            >
-              By appointment
-            </span>
-
-            <h1 className="font-serif text-3xl md:text-4xl text-hampton-navy mb-3 tracking-tight">
-              {cfg.name}
-            </h1>
-
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-hampton-navy/80 mb-5">
-              <span className="flex items-center gap-1.5">
-                <Calendar className="w-4 h-4" />
-                {cfg.dateLabel}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Clock className="w-4 h-4" />
-                {times[0]} – {closingLabel(cfg)}
-              </span>
-            </div>
+            {/* The name, date, hours and address are in the page's hero, on the
+                server. They were here too and it read as the same header twice. */}
+            <p className="text-xs font-semibold uppercase tracking-widest text-hampton-mauve mb-4">
+              What we&apos;re doing
+            </p>
 
             {/* Derived from the registry — never a second hand-written table. */}
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 mb-6">
@@ -227,7 +212,6 @@ export default function AppointmentForm({ cfg, closed }: { cfg: AppointmentEvent
             <p className="text-xs text-hampton-mauve mb-5 italic">
               {payNote} — by appointment only
             </p>
-            <p className="text-xs text-hampton-mauve mb-5">{cfg.locationLine}</p>
 
             {closed ? (
               <div className="rounded-xl border-2 border-hampton-mauve/20 bg-hampton-ivory/60 p-4">

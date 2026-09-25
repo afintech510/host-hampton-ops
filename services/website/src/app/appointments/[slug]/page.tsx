@@ -14,7 +14,12 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { notFound } from 'next/navigation'
-import { resolveAppointmentEvent, isEventClosed } from '@/lib/appointmentEvents'
+import {
+  resolveAppointmentEvent,
+  isEventClosed,
+  slotTimes,
+  closingLabel,
+} from '@/lib/appointmentEvents'
 import { OG_DEFAULTS } from '@/lib/seo'
 import AppointmentForm from './AppointmentForm'
 
@@ -63,14 +68,44 @@ export default function AppointmentEventPage({ params }: { params: { slug: strin
   // link preview both read, rather than appearing after hydration.
   const closed = isEventClosed(cfg)
 
+  const times = slotTimes(cfg)
+
   return (
     <main className="min-h-screen bg-hampton-ivory pb-16">
+      {/**
+       * ── The hero, and why the blue FADES ──
+       *
+       * This page used to open on flat ivory with a hard 6px accent rule across
+       * the top of the booking card, which read as an edge rather than a header
+       * — it did not look like the rest of the site. `/christmas-market` and the
+       * homepage both fade #BCCDEB down through #dae6f0 into the page's own
+       * #F7F2E8, so the blue dissolves into the content instead of stopping at a
+       * line. Same gradient here, so an appointment page is recognisably a Host
+       * Hampton page.
+       *
+       * The event's name, date, hours and address live UP HERE, on the server,
+       * rather than inside the client form. Two reasons: the fade needs content
+       * in it or it is just a stripe, and this is the one page whose <h1> a
+       * crawler should not have to hydrate to see.
+       */}
+      <section className="bg-gradient-to-b from-[#BCCDEB] via-[#dae6f0] to-[#F7F2E8] px-5 pt-12 pb-14 text-center">
+        <p className="text-hampton-navy/60 text-xs tracking-[2px] uppercase mb-3">
+          Host Hampton &middot; By appointment
+        </p>
+        <h1 className="text-hampton-navy font-serif text-4xl sm:text-5xl leading-tight mb-4">
+          {cfg.name}
+        </h1>
+        <p className="text-hampton-navy/80 text-base mb-1">
+          {cfg.dateLabel} &middot; {times[0]} &ndash; {closingLabel(cfg)}
+        </p>
+        <p className="text-hampton-navy/60 text-sm">{cfg.locationLine}</p>
+      </section>
+
       <Suspense
         fallback={
           <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-6">
-            <div className="rounded-2xl border-2 border-[#1e3a5f]/20 bg-white shadow-md p-8">
-              <h1 className="font-serif text-3xl text-hampton-navy mb-2">{cfg.name}</h1>
-              <p className="text-sm text-hampton-navy/70">{cfg.dateLabel} · {cfg.locationLine}</p>
+            <div className="rounded-2xl border-2 border-[#1e3a5f]/20 bg-white shadow-md p-8 text-center">
+              <p className="text-sm text-hampton-navy/70">Loading available times&hellip;</p>
             </div>
           </section>
         }
