@@ -15,7 +15,7 @@ import { NOINDEX } from '@/lib/seo'
  * the promoted one; this is the link Adam sends to vendors directly.
  */
 export const metadata: Metadata = {
-  title: 'Vendor Booth Registration — Host Hampton Christmas Market',
+  title: 'Vendor Booth Registration — Host Hampton Holiday Market',
   robots: NOINDEX,
 }
 

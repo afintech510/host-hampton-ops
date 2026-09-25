@@ -32,7 +32,7 @@ const FLYER_SRC: string | null = null
 // const FLYER_SRC: string | null = '/images/christmas-market-2026.jpg'
 
 export const metadata: Metadata = {
-  title: '3rd Annual Christmas Market — Free Pictures with Santa | Host Hampton',
+  title: '3rd Annual Holiday Market — Free Pictures with Santa | Host Hampton',
   description:
     'Saturday, December 5th, 10am–1pm in Speonk. Free admission, free pictures with Santa, and local vendors at Host Hampton. RSVP free.',
   alternates: { canonical: 'https://www.hosthampton.com/christmas-market' },
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
   // root layout's, images and all. That is why `images` is restated here rather
   // than inherited; omitting it is how a page ends up sharing with no card.
   openGraph: {
-    title: '3rd Annual Host Hampton Christmas Market',
+    title: '3rd Annual Host Hampton Holiday Market',
     description:
       'Free admission · Free pictures with Santa · Local vendors. Saturday, December 5th, 10am–1pm in Speonk.',
     url: 'https://www.hosthampton.com/christmas-market',
@@ -66,7 +66,7 @@ export default function ChristmasMarketPage() {
           Host Hampton &middot; Speonk, NY
         </p>
         <h1 className="text-hampton-navy font-serif text-4xl sm:text-5xl leading-tight mb-4">
-          3rd Annual<br />Christmas Market
+          3rd Annual<br />Holiday Market
         </h1>
         <p className="text-hampton-navy/75 text-lg mb-2">
           {MARKET.dateLabel} &middot; {MARKET.timeLabel}
@@ -90,7 +90,7 @@ export default function ChristmasMarketPage() {
         {FLYER_SRC && (
           <img
             src={FLYER_SRC}
-            alt="3rd Annual Host Hampton Christmas Market — December 5th, 10am to 1pm, free pictures with Santa"
+            alt="3rd Annual Host Hampton Holiday Market — December 5th, 10am to 1pm, free pictures with Santa"
             className="w-full rounded-2xl shadow-lg -mt-8 mb-12"
           />
         )}
@@ -141,7 +141,7 @@ export default function ChristmasMarketPage() {
             href={RSVP_HREF}
             className="inline-block bg-hampton-navy text-[#F6F1EB] font-bold px-10 py-4 rounded-full hover:opacity-90 transition-opacity"
           >
-            RSVP for the Christmas Market
+            RSVP for the Holiday Market
           </Link>
         </section>
       </div>

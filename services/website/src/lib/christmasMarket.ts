@@ -95,8 +95,8 @@ export interface MarketConfig {
 export const CHRISTMAS_MARKET_2026: MarketConfig = {
   slug: 'christmas-market-2026',
   eventSlug: 'christmas-market-2026',
-  name: '3rd Annual Host Hampton Christmas Market',
-  shortName: 'Christmas Market',
+  name: '3rd Annual Host Hampton Holiday Market',
+  shortName: 'Holiday Market',
   dateLabel: 'Saturday, December 5th',
   timeLabel: '10:00am – 1:00pm',
   eventDate: '2026-12-05',

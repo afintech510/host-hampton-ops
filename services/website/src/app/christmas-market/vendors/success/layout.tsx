@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { NOINDEX } from '@/lib/seo'
 
 export const metadata: Metadata = {
-  title: 'Booth Confirmed — Host Hampton Christmas Market',
+  title: 'Booth Confirmed — Host Hampton Holiday Market',
   robots: NOINDEX,
 }
 

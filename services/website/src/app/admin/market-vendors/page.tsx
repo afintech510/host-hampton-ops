@@ -342,7 +342,7 @@ export default function MarketVendorsPage() {
         )}
 
         <p className="text-hampton-navy/40 text-xs mt-8">
-          Attendee RSVPs are separate — they live under <strong>Admin → Events → Christmas Market → Tickets</strong>.
+          Attendee RSVPs are separate — they live under <strong>Admin → Events → Holiday Market → Tickets</strong>.
         </p>
       </div>
     </div>

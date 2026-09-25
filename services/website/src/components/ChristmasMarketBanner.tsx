@@ -95,7 +95,7 @@ export default function ChristmasMarketBanner() {
           className="flex-1 min-w-0 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm hover:opacity-90 transition-opacity"
         >
           <span aria-hidden="true">🎄</span>
-          <span className="font-bold">3rd Annual Christmas Market</span>
+          <span className="font-bold">3rd Annual Holiday Market</span>
           <span className="opacity-90">{MARKET.dateLabel}, {MARKET.timeLabel}</span>
           <span className="hidden sm:inline opacity-75">·</span>
           <span className="hidden sm:inline opacity-90">Free pictures with Santa</span>
@@ -103,7 +103,7 @@ export default function ChristmasMarketBanner() {
         </Link>
         <button
           onClick={dismiss}
-          aria-label="Dismiss Christmas Market announcement"
+          aria-label="Dismiss Holiday Market announcement"
           className="shrink-0 w-7 h-7 grid place-items-center rounded-full hover:bg-white/20 transition-colors text-lg leading-none"
         >
           ×
