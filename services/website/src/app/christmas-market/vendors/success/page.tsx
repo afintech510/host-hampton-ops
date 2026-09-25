@@ -28,7 +28,7 @@ function VendorConversionTracker() {
     if (!sessionId) return
     const key = `hh_conversion_${sessionId}`
     if (sessionStorage.getItem(key)) return
-    trackPurchase(sessionId, TOTAL_DOLLARS, 'Christmas Market Vendor Booth')
+    trackPurchase(sessionId, TOTAL_DOLLARS, 'Holiday Market Vendor Booth')
     sessionStorage.setItem(key, '1')
   }, [searchParams])
   return null
@@ -36,7 +36,9 @@ function VendorConversionTracker() {
 
 export default function ChristmasMarketVendorSuccessPage() {
   return (
-    <main style={{ minHeight: '100vh', background: '#F6F1EB', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
+    // No background: the body's gradient shows through. An opaque #F6F1EB here
+    // hid the fade and met the layout's pre-footer band in a visible line.
+    <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
       <Suspense fallback={null}>
         <VendorConversionTracker />
       </Suspense>

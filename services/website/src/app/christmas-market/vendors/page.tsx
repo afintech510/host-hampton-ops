@@ -209,7 +209,7 @@ export default function ChristmasMarketVendorPage() {
           <li>{VENDOR_CATEGORY_POLICY}</li>
           <li>
             We can&rsquo;t accept: {VENDOR_EXCLUSIONS.join(', ')} — these are things the studio
-            offers in-house, and we don&rsquo;t want to compete with you.
+            offers in-house.
           </li>
         </ul>
       </div>
@@ -378,11 +378,21 @@ function Shell({
   badge?: React.ReactNode
   children: React.ReactNode
 }) {
+  // ── NO BACKGROUNDS HERE. The body already paints the fade. ──
+  //
+  // globals.css puts `linear-gradient(#BCCDEB 0, #dae6f0 300px, #F7F2E8 600px)`
+  // on `body`, and the layout draws the transparent→#BCCDEB band above the
+  // footer. This shell used to paint over both: an opaque #F6F1EB on <main> (a
+  // DIFFERENT ivory from the body's #F7F2E8), its own 420px hero gradient ending
+  // against that fill, and a second pre-footer band on top of the layout's.
+  // Each join was a visible line — Adam spotted it on his phone, 2026-09-25 —
+  // because a gradient meeting a flat fill changes slope at the join, and the
+  // eye reads that as an edge even when the colours match. Painting nothing
+  // leaves one continuous gradient, and a seam cannot form.
   return (
-    <main style={{ minHeight: '100vh', background: '#F6F1EB' }}>
+    <main style={{ minHeight: '100vh' }}>
       <section
         style={{
-          background: 'linear-gradient(to bottom, #BCCDEB 0%, #dae6f0 220px, #F7F2E8 420px)',
           paddingTop: 'calc(5rem + 5rem)', paddingBottom: '4rem',
           textAlign: 'center', paddingLeft: 20, paddingRight: 20,
         }}
@@ -402,8 +412,6 @@ function Shell({
       </section>
 
       <div style={{ maxWidth: 560, margin: '0 auto', padding: '0 20px 60px' }}>{children}</div>
-
-      <div style={{ height: 160, background: 'linear-gradient(to bottom, #F7F2E8, #BCCDEB)' }} aria-hidden="true" />
     </main>
   )
 }
