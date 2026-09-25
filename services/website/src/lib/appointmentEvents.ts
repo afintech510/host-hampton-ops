@@ -260,6 +260,85 @@ export const PERMANENT_JEWELRY_2026: AppointmentEventConfig = {
 }
 
 /**
+ * ── ADAM'S TEST EVENT — safe to delete once he has finished with it ──
+ *
+ * Added 2026-09-24 so the feature can be driven by hand on the real site before
+ * any real event goes up. Everything about it is deliberate:
+ *
+ *  - **It is in `UNCONFIRMED_EVENT_SLUGS`**, so `livePromoEvent()` skips it and
+ *    NO banner appears on hosthampton.com. It is reachable only by its URL.
+ *    Adam's call, 2026-09-24: real visitors must not see a test event.
+ *  - **Notifications are live** (also Adam's call): a booking really does text
+ *    and email whoever is entered, mail `notifyEmail`, and SMS the reviewer
+ *    phones. That is the half most worth checking, and it cannot be checked with
+ *    it switched off.
+ *  - **The service list exercises all three duration behaviours in one screen**,
+ *    which the two hair events cannot: a quick service that fits four people in
+ *    one slot, a variant pair that behaves as radio buttons, and a 40-minute
+ *    service that takes TWO consecutive slots. The last one is the capability the
+ *    retired two-array code could not express at all, so it is the thing most
+ *    worth seeing work.
+ *  - `closesAt` is five weeks out, so it stops working on its own if forgotten.
+ *    That is the whole point of a window: a test event that expires is not
+ *    litter.
+ */
+export const TEST_EVENT: AppointmentEventConfig = {
+  slug: 'test-event',
+  name: 'Test Event',
+  dateLabel: 'Saturday, October 31',
+  eventDate: '2026-10-31',
+  // In the past, so that IF Adam wants to see the banner it is one edit
+  // (delete the slug from UNCONFIRMED_EVENT_SLUGS) rather than a date change.
+  promoStartsAt: '2026-09-01T00:00:00-04:00',
+  closesAt: '2026-10-31T15:00:00-04:00',
+  locationLine: 'Host Hampton · 295 Montauk Hwy, Suite 7, Speonk NY',
+  accentHex: '#1e3a5f',
+
+  firstSlotMinutes: 9 * 60,
+  slotMinutes: 20,
+  slotCount: 18,
+  maxPartySize: 10,
+
+  services: [
+    // Quick: four people share one 20-minute slot.
+    { id: 'Hair Tinsel', label: 'Hair Tinsel', priceCents: 1500, peoplePerSlot: 4, slotsPerServing: 1 },
+    // A variant pair. Picking one clears the other; only the first gets a row in
+    // the price grid, and its `summaryNote` is what mentions the other.
+    {
+      id: 'Hair Wraps',
+      label: 'Hair Wraps',
+      priceCents: 3500,
+      peoplePerSlot: 1,
+      slotsPerServing: 1,
+      variantGroup: 'Wraps',
+      summaryNote: 'add charms +$3',
+    },
+    {
+      id: 'Hair Wraps + Charms',
+      label: 'Hair Wraps + Charms',
+      priceCents: 3800,
+      peoplePerSlot: 1,
+      slotsPerServing: 1,
+      variantGroup: 'Wraps',
+      indent: true,
+    },
+    // THE new capability: 40 minutes per person, so two people is FOUR slots.
+    {
+      id: 'Permanent Bracelet',
+      label: 'Permanent Bracelet (40 min)',
+      priceCents: 6500,
+      peoplePerSlot: 1,
+      slotsPerServing: 2,
+    },
+  ],
+
+  payment: { mode: 'in_person' },
+  contactServiceInterest: 'craft-event',
+  reminderLeadMinutes: 75,
+  notifyEmail: 'allie@hosthampton.com',
+}
+
+/**
  * Every appointment event this site knows about.
  *
  * There is no `SUMMER_HAIR_2026` entry and there will not be one. That table
@@ -267,6 +346,7 @@ export const PERMANENT_JEWELRY_2026: AppointmentEventConfig = {
  * is nothing left for an entry to display.
  */
 export const APPOINTMENT_EVENTS: Record<string, AppointmentEventConfig> = {
+  [TEST_EVENT.slug]: TEST_EVENT,
   [HALLOWEEN_HAIR_2026.slug]: HALLOWEEN_HAIR_2026,
   [CHRISTMAS_HAIR_2026.slug]: CHRISTMAS_HAIR_2026,
   [PERMANENT_JEWELRY_2026.slug]: PERMANENT_JEWELRY_2026,
@@ -294,6 +374,11 @@ export const APPOINTMENT_EVENTS: Record<string, AppointmentEventConfig> = {
  * is the direction an interlock is supposed to fail.
  */
 export const UNCONFIRMED_EVENT_SLUGS: readonly string[] = [
+  // Not "unconfirmed" so much as "deliberately unadvertised" — but it is the
+  // same mechanism and the same guarantee, so it uses the same list rather than
+  // inventing a second concept that does the same job. Adam gets the URL; the
+  // public gets no banner.
+  TEST_EVENT.slug,
   HALLOWEEN_HAIR_2026.slug,
   CHRISTMAS_HAIR_2026.slug,
   PERMANENT_JEWELRY_2026.slug,
