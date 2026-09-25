@@ -71,24 +71,33 @@ export default function AppointmentEventPage({ params }: { params: { slug: strin
   const times = slotTimes(cfg)
 
   return (
-    <main className="min-h-screen bg-hampton-ivory pb-16">
-      {/**
-       * ── The hero, and why the blue FADES ──
-       *
-       * This page used to open on flat ivory with a hard 6px accent rule across
-       * the top of the booking card, which read as an edge rather than a header
-       * — it did not look like the rest of the site. `/christmas-market` and the
-       * homepage both fade #BCCDEB down through #dae6f0 into the page's own
-       * #F7F2E8, so the blue dissolves into the content instead of stopping at a
-       * line. Same gradient here, so an appointment page is recognisably a Host
-       * Hampton page.
-       *
-       * The event's name, date, hours and address live UP HERE, on the server,
-       * rather than inside the client form. Two reasons: the fade needs content
-       * in it or it is just a stripe, and this is the one page whose <h1> a
-       * crawler should not have to hydrate to see.
-       */}
-      <section className="bg-gradient-to-b from-[#BCCDEB] via-[#dae6f0] to-[#F7F2E8] px-5 pt-12 pb-14 text-center">
+    /**
+     * ── NO BACKGROUND ON THIS ELEMENT, AND NO GRADIENT BELOW. THAT IS THE FIX. ──
+     *
+     * The site-wide fade already exists, on `body` in globals.css:
+     *
+     *     linear-gradient(to bottom, #BCCDEB 0%, #dae6f0 300px, #F7F2E8 600px)
+     *
+     * That is why the homepage is seamless — it is ONE gradient over the first
+     * 600px of the document, so there is no element boundary for a seam to form
+     * at. This page had `bg-hampton-ivory` here, which is opaque #F7F2E8 and
+     * painted straight over it; that is why it opened flat.
+     *
+     * The first fix was to re-create the fade on the hero section. It matched in
+     * colour and still showed a LINE, because a ~250px gradient butting onto a
+     * flat fill changes slope abruptly at the join, and the eye reads that
+     * discontinuity as an edge even when the two colours are identical. Adam
+     * spotted it against the homepage.
+     *
+     * So: paint nothing, and let the body gradient through. Nothing to match,
+     * nothing to keep in sync, and no seam is possible. `#F7F2E8` is also
+     * `body`'s `background-color`, so everything below 600px is unchanged.
+     */
+    <main className="min-h-screen pb-16">
+      {/* The event's name, date, hours and address are rendered HERE, on the
+          server, rather than inside the client form — this is the one page whose
+          <h1> a crawler should not have to hydrate to see. */}
+      <section className="px-5 pt-12 pb-14 text-center">
         <p className="text-hampton-navy/60 text-xs tracking-[2px] uppercase mb-3">
           Host Hampton &middot; By appointment
         </p>
