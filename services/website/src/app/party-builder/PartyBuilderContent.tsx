@@ -1756,7 +1756,18 @@ export default function PartyBuilderContent({
       calendarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       return
     }
-    payRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // `payRef` (the deposit-request box) is gated on `canTakeDeposit(status)`,
+    // which reads pipeline stage, not whether money has actually moved — a
+    // booking whose status drifted to `approved`/`deposit_paid` with no real
+    // payment on file (e.g. hand-set by an admin) unmounts payRef entirely, so
+    // this call would otherwise silently do nothing. Fall back to the
+    // post-deposit "Make a Payment" box, which is gated on balance/status
+    // instead and covers that case.
+    if (payRef.current) {
+      payRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    document.querySelector('[data-section="make-payment"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const balloonDecor = decor.filter(d => BALLOON_QTY_ITEMS.has(d.name))
@@ -3796,7 +3807,8 @@ export default function PartyBuilderContent({
                     title="Make a payment"
                   >
                     <CreditCard size={13} />
-                    <span>Pay</span>
+                    <span className="hidden sm:inline">Make Payment</span>
+                    <span className="sm:hidden">Pay</span>
                   </button>
                 )}
                 <button
