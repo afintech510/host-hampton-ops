@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import PhotoAlbumSender from './PhotoAlbumSender'
 
 interface PhotoBooking {
   id: string
@@ -9,6 +10,9 @@ interface PhotoBooking {
   child_name: string | null
   contact_name: string
   contact_email: string
+  contact_phone: string | null
+  event_type: string | null
+  party_type: string | null
   package_type: string | null
   photo_gallery_url: string | null
 }
@@ -24,6 +28,7 @@ export default function PhotosTab({ headers }: { headers: HeadersInit; onLogout:
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [savingId, setSavingId] = useState('')
   const [savedFlash, setSavedFlash] = useState<Record<string, boolean>>({})
+  const [sendingFor, setSendingFor] = useState<string | null>(null)
 
   useEffect(() => { fetchBookings() }, [filter, page])
 
@@ -88,6 +93,7 @@ export default function PhotosTab({ headers }: { headers: HeadersInit; onLogout:
       <div className="mb-6">
         <h2 className="font-serif text-2xl text-hampton-navy mb-1">Photo Gallery Backfill</h2>
         <p className="text-sm text-gray-500">Paste a gallery URL (Google Photos, Dropbox, Pic-Time, etc.) for past parties. The link goes into the post-party thank-you email that sends the morning after each party. If left blank, the email still goes out — without the photo section.</p>
+        <p className="text-sm text-gray-500 mt-1"><strong>📷 Send to client</strong> emails and texts the family their Fotoshare photo booth album with the Google review ask, and saves the link here.</p>
       </div>
 
       {/* Filter pills */}
@@ -165,7 +171,27 @@ export default function PhotosTab({ headers }: { headers: HeadersInit; onLogout:
                       Open ↗
                     </a>
                   )}
+                  <button
+                    onClick={() => setSendingFor(s => (s === b.id ? null : b.id))}
+                    className="px-3 py-2 text-xs rounded-lg border border-hampton-navy/30 text-hampton-navy hover:bg-hampton-navy/5"
+                  >
+                    {sendingFor === b.id ? 'Close' : '📷 Send to client'}
+                  </button>
                 </div>
+
+                {sendingFor === b.id && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <PhotoAlbumSender
+                      booking={b}
+                      headers={headers}
+                      compact
+                      onSent={url => {
+                        setBookings(prev => prev.map(x => x.id === b.id ? { ...x, photo_gallery_url: url } : x))
+                        setDrafts(d => ({ ...d, [b.id]: url }))
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             )
           })}

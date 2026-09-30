@@ -5,6 +5,7 @@ import { formatMoney } from '@/lib/partyPricing'
 import { PIPELINE_STAGES, PARTY_TYPES, PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
 import { FALLBACK_STUDIO_RATES, type StudioRates } from '@/lib/pricingCatalog'
 import { foodSelectionsFromColumns, readFoodSelections } from '@/lib/partyFood'
+import PhotoAlbumSender from './PhotoAlbumSender'
 
 interface PartyBookingSummary {
   id: string
@@ -100,6 +101,7 @@ function FoodDetailLine({ snapshot }: { snapshot: unknown }) {
 
 interface PartyDetail extends PartyBookingSummary {
   quote_snapshot?: unknown
+  photo_gallery_url?: string | null
   checkin_status?: string | null
   checkin_started_at?: string | null
   checkin_completed_at?: string | null
@@ -1271,6 +1273,17 @@ export default function PartiesTab({
                   Also texts automatically 36 hours before and at 6am on the day. Both stop once
                   check-in is complete.
                 </p>
+              </div>
+
+              {/* Post-party: email + text the Fotoshare album with the review ask */}
+              <div className="p-3 bg-gray-50 rounded-lg space-y-2">
+                <span className="text-sm font-medium text-[#1a2744]">Photo Booth Album</span>
+                <PhotoAlbumSender
+                  key={selected.id}
+                  booking={{ ...selected, photo_gallery_url: selected.photo_gallery_url ?? null }}
+                  headers={headers}
+                  onSent={() => fetchDetail(selected.id)}
+                />
               </div>
 
               {/* Unlock toggle — lets client edit even within the lock window */}

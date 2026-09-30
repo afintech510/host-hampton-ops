@@ -61,6 +61,10 @@ const TEMPLATE_SOURCES = [
   'lib/email-templates/reminders.ts',
   'lib/planPayment.ts',
   'lib/planShare.ts',
+  // The post-party photo booth album. Its interpolations are the customer's
+  // first name and an admin-typed occasion phrase, both escaped at entry; the
+  // two links go through `mailHrefExternal`.
+  'lib/photoAlbum.ts',
   'lib/unclaimedPayment.ts',
   // Same shape as unclaimedPayment: an owner-facing "this money arrived and we
   // cannot place it" note, built inline. Its interpolations are a payer name and

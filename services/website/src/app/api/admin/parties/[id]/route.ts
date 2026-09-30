@@ -9,7 +9,15 @@ import { studioRentalRateWith, hoursBetween } from '@/lib/studioRental'
 import { loadPricingCatalog, loadLineItemAddOns } from '@/lib/pricingCatalog'
 import { draftForBookingByHand } from '@/lib/agent/manualDraft'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
-import { sendCheckinLinkSms } from '@/lib/checkinLink'
+import { sendCheckinLinkSms, hasExplicitSmsOptOut } from '@/lib/checkinLink'
+import {
+  PHOTO_ALBUM_SUBJECT, PHOTO_ALBUM_SENT_SUMMARY_PREFIX,
+  screenFotoshareUrl, screenOccasion, photoAlbumText, photoAlbumEmailHtml,
+} from '@/lib/photoAlbum'
+import { checkSmsQuietHours } from '@/lib/quietHours'
+import { findContactsByPhone, isPlausibleEmailAddress } from '@/lib/contactLookup'
+import { ownerEmail } from '@/lib/ownerNotify'
+import { writeLedger } from '@/lib/marketing/graph'
 import { enqueueCheckinReminders, cancelCheckinReminders } from '@/lib/checkinReminders'
 import { readBalanceInputs, computeBalance, sumPayments } from '@/lib/bookingBalance'
 import { billedTotalCents } from '@/lib/planBalance'
@@ -46,6 +54,25 @@ function portalDestination(name: unknown, bookingRef: string): string | undefine
     case 'invoice': return `/plan/${encodeURIComponent(bookingRef)}/summary`
     default: return undefined // the portal itself
   }
+}
+
+/**
+ * Has anyone holding this NUMBER texted STOP? A STOP is a statement about the
+ * number, not about one contact row (21 numbers carry several rows), so every
+ * row holding it is checked. Three outcomes: a failed read is not "clear".
+ */
+async function phoneHasExplicitStop(
+  supabase: ReturnType<typeof getSupabase>,
+  phone: string,
+): Promise<'clear' | 'stopped' | 'unavailable'> {
+  const found = await findContactsByPhone(supabase, phone, 'id, phone')
+  if (found.kind === 'unavailable') return 'unavailable'
+  if (found.kind === 'absent') return 'clear'
+  for (const c of found.contacts) {
+    // Fails CLOSED on its own read error, so an unreadable row reads as stopped.
+    if (await hasExplicitSmsOptOut(c.id)) return 'stopped'
+  }
+  return 'clear'
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -660,6 +687,138 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
 
     return NextResponse.json({ ok: true, action: 'checkin_link_sent', to: booking.contact_phone })
+  }
+
+  // ── "📷 Photo Booth Album" — email + text the customer their Fotoshare link ──
+  // A deliberate human action: the admin pastes the link, reads the preview
+  // (built by the same `photoAlbumText` this sends), and confirms. The link is
+  // saved to `photo_gallery_url` first, so it is on the booking even if a send
+  // fails. A second send of the same album needs `resend: true`, because there
+  // is no way to un-send a text.
+  if (action === 'send_photo_album') {
+    if (body.confirm !== true) {
+      return NextResponse.json({ error: 'Sending to a client must be confirmed' }, { status: 400 })
+    }
+    const album = screenFotoshareUrl(body.url)
+    if (!album.ok) return NextResponse.json({ error: album.reason }, { status: 400 })
+    const occ = screenOccasion(body.occasion)
+    if (!occ.ok) return NextResponse.json({ error: occ.reason }, { status: 400 })
+
+    const wantsEmail = body.email !== false
+    const wantsSms = body.sms !== false
+    if (!wantsEmail && !wantsSms) {
+      return NextResponse.json({ error: 'Pick email, text, or both' }, { status: 400 })
+    }
+    if (booking.status === 'cancelled') {
+      return NextResponse.json({ error: 'This booking is cancelled — nothing was sent.' }, { status: 409 })
+    }
+    const email = typeof booking.contact_email === 'string' ? booking.contact_email.trim() : ''
+    const phone = typeof booking.contact_phone === 'string' ? booking.contact_phone.trim() : ''
+    if (wantsEmail && !isPlausibleEmailAddress(email)) {
+      return NextResponse.json({ error: 'No valid email address on this booking — untick Email or fix it first.' }, { status: 409 })
+    }
+    if (wantsSms && !phone) {
+      return NextResponse.json({ error: 'No phone number on this booking — untick Text or add one first.' }, { status: 409 })
+    }
+
+    // Already sent? Three outcomes: a failed read is not "never sent".
+    const { data: prior, error: priorErr } = await supabase
+      .from('booking_modifications')
+      .select('created_at, change_summary')
+      .eq('booking_id', id)
+      .like('change_summary', `${PHOTO_ALBUM_SENT_SUMMARY_PREFIX}%`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (priorErr) {
+      return NextResponse.json({ error: 'Could not check whether the album was already sent — try again. Nothing was sent.' }, { status: 503 })
+    }
+    if (prior && prior.length > 0 && body.resend !== true) {
+      return NextResponse.json(
+        { error: 'The photo album was already sent for this party.', alreadySent: true, lastSentAt: prior[0].created_at, lastSummary: prior[0].change_summary },
+        { status: 409 },
+      )
+    }
+
+    const { error: saveErr } = await supabase
+      .from('bookings')
+      .update({ photo_gallery_url: album.url, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (saveErr) {
+      return NextResponse.json({ error: `Could not save the album link (${saveErr.message}) — nothing was sent.` }, { status: 503 })
+    }
+
+    const message = { contactName: booking.contact_name, occasion: occ.occasion, albumUrl: album.url }
+    const text = photoAlbumText(message)
+    const actor = adminActorId(req)
+    const sentVia: string[] = []
+    const failures: string[] = []
+
+    if (wantsEmail) {
+      if (!process.env.RESEND_API_KEY) {
+        failures.push('Email is not configured')
+      } else {
+        const { Resend } = await import('resend')
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        // "Please let me know if you have any issues" has to reach a person,
+        // not the noReply sender.
+        const { error: mailErr } = await resend.emails.send({
+          from, to: email, replyTo: ownerEmail(),
+          subject: PHOTO_ALBUM_SUBJECT,
+          html: photoAlbumEmailHtml(message),
+          text,
+        })
+        if (mailErr) failures.push(`Email failed: ${mailErr.message}`)
+        else sentVia.push('email')
+      }
+    }
+
+    if (wantsSms) {
+      // TCPA/CTIA: 8am–9pm local. An admin pressing Send at 10pm gets the
+      // email now and is told to resend the text in the morning — a text is
+      // never queued silently behind their back.
+      const quiet = checkSmsQuietHours(new Date())
+      const stop = quiet.kind === 'open' ? await phoneHasExplicitStop(supabase, phone) : null
+      if (quiet.kind !== 'open') {
+        failures.push('Text NOT sent — it is outside 8am–9pm. Resend with only Text ticked after 8am.')
+      } else if (stop !== 'clear') {
+        failures.push(stop === 'stopped'
+          ? 'Text NOT sent — this number has a STOP (opt-out) on file.'
+          : 'Text NOT sent — could not check this number for a STOP. Try again.')
+      } else {
+        const sid = await sendSMSVia('quo', normalizePhone(phone), text)
+        if (sid) sentVia.push('text')
+        else failures.push('Text failed to send — check the number and Quo config')
+      }
+    }
+
+    if (sentVia.length === 0) {
+      await logBookingChange(supabase, {
+        bookingId: id, actor,
+        summary: `Photo booth album link saved; NOT sent (${failures.join('; ')})`,
+      })
+      return NextResponse.json({ error: failures.join(' ') || 'Nothing was sent', failures }, { status: 502 })
+    }
+
+    await logBookingChange(supabase, {
+      bookingId: id, actor,
+      summary: `${PHOTO_ALBUM_SENT_SUMMARY_PREFIX} via ${sentVia.join(' + ')}: ${album.url}`,
+      newData: { photo_gallery_url: album.url, occasion: occ.occasion, sent_via: sentVia },
+    })
+    for (const channel of sentVia) {
+      await writeLedger(supabase, {
+        entityType: 'review_request',
+        entityId: id,
+        action: 'send',
+        actor,
+        meta: {
+          job: 'photo_album', channel, booking_ref: booking.booking_ref,
+          to: channel === 'email' ? email : phone, album_url: album.url,
+        },
+      })
+    }
+
+    return NextResponse.json({ ok: true, action: 'photo_album_sent', sentVia, failures, photoGalleryUrl: album.url })
   }
 
   if (action === 'delete_booking') {

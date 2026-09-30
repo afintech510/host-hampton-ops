@@ -3,6 +3,7 @@ import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { PIPELINE_STAGES, PARTY_TYPES, isPartyType } from '@/lib/pipelineStages'
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
+import { etDateString } from '@/lib/partyTime'
 
 /**
  * Admin Parties list — the pipeline view (Phase 4 item 5).
@@ -133,12 +134,14 @@ export async function GET(req: NextRequest) {
   let count = 0
 
   if (past) {
-    // Photo backfill view: parties whose date has passed, most recent first.
-    const today = new Date().toISOString().split('T')[0]
+    // Photo backfill view: parties on or before today, most recent first.
+    // TODAY is included, in Eastern time: the photo booth album goes out the
+    // evening of the party, and the old UTC `< today` hid a 2pm party until
+    // 8pm (and a morning one until the next day).
     const res = await withCommonFilters(
       supabase.from('bookings').select(LIST_COLUMNS, { count: 'exact' }),
     )
-      .lt('party_date', today)
+      .lte('party_date', etDateString())
       .order('party_date', { ascending: false })
       .range((page - 1) * limit, page * limit - 1)
     data = res.data as ListRow[] | null
