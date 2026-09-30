@@ -101,6 +101,65 @@ export function studioRentalRate(dateStr: string, totalHours: number): StudioRat
 }
 
 /**
+ * An owner-approved hourly rate on ONE booking — photographers, mostly
+ * ($75/hr on HH-PTY-33VDT, $150/hr on HH-PTY-73LGZ). It lives in
+ * `party_tags.custom_hourly_rate_cents`, and when it is present the rate card
+ * above does not apply, and neither does its 3-hour minimum.
+ *
+ * `edit_rental` used to ignore the tag entirely: changing a $75/hr photoshoot
+ * from 11–4 to 11–2 re-priced it at the $600 weekend base, so the admin
+ * shortened a booking and its invoice went UP from $375 to $600.
+ *
+ * Returns null when the tag is absent or is not a positive whole number of
+ * cents — the catalogue then applies, which is what the booking was quoted on.
+ */
+export function customHourlyRateCents(tags: Record<string, unknown> | null | undefined): number | null {
+  const v = tags?.custom_hourly_rate_cents
+  return typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null
+}
+
+export interface CustomRentalPrice {
+  hours: number
+  unitCents: number
+  rentalCents: number
+  lineItemLabel: string
+  /** The window, printed under the line item on the invoice. */
+  description: string
+}
+
+/** '14:00' → '2:00 PM'. Input is the admin's own 'HH:mm'. */
+function time12(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const suffix = h >= 12 ? 'PM' : 'AM'
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m || 0).padStart(2, '0')} ${suffix}`
+}
+
+/**
+ * Price a custom-rate window: `hours × rate`, one line item whose QUANTITY is
+ * the hours, so the invoice shows the arithmetic rather than a lump sum.
+ * `hours` is `hoursBetween(start, end)`; a caller must refuse 0 before this.
+ */
+export function customHourlyRentalPrice(
+  tags: Record<string, unknown> | null | undefined,
+  rateCents: number,
+  startTime: string,
+  endTime: string,
+  hours: number,
+): CustomRentalPrice {
+  const label = typeof tags?.event_label === 'string' && tags.event_label.trim()
+    ? tags.event_label.trim()
+    : 'Custom rate'
+  const rate = `$${(rateCents / 100).toFixed(rateCents % 100 === 0 ? 0 : 2)}/hr`
+  return {
+    hours,
+    unitCents: rateCents,
+    rentalCents: hours * rateCents,
+    lineItemLabel: `Studio Rental — ${label} (${hours} hr${hours === 1 ? '' : 's'} @ ${rate})`,
+    description: `${time12(startTime)} – ${time12(endTime)} · owner-approved hourly rate`,
+  }
+}
+
+/**
  * Whole-hour difference between two 'HH:mm' (24hr) times on the same day.
  * Returns a positive number of hours, rounded to the nearest hour.
  */

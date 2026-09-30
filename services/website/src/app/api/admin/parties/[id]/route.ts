@@ -5,7 +5,7 @@ import { mintPortalLink } from '@/lib/portalLinkMint'
 import { formatMoney, screenTipCents } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
-import { studioRentalRateWith, hoursBetween } from '@/lib/studioRental'
+import { studioRentalRateWith, hoursBetween, customHourlyRateCents, customHourlyRentalPrice, isWeekendDate } from '@/lib/studioRental'
 import { loadPricingCatalog, loadLineItemAddOns } from '@/lib/pricingCatalog'
 import { draftForBookingByHand } from '@/lib/agent/manualDraft'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
@@ -939,11 +939,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const endTime = body.endTime as string
     if (!startTime || !endTime) return NextResponse.json({ error: 'startTime and endTime required' }, { status: 400 })
     const hours = hoursBetween(startTime, endTime)
-    const { studioRates } = await loadPricingCatalog()
-    if (hours < studioRates.minHours) {
-      return NextResponse.json({ error: `Minimum rental is ${studioRates.minHours} hours` }, { status: 400 })
+    const tags = (booking.party_tags as Record<string, unknown> | null) || {}
+
+    // An owner-approved hourly rate on this booking wins over the rate card —
+    // see `customHourlyRateCents`. Without this, shortening a $75/hr photoshoot
+    // re-priced it at the $600 weekend base.
+    const customRate = customHourlyRateCents(tags)
+    let rate: { hours: number; isWeekend: boolean; rentalCents: number; unitCents: number; quantity: number; lineItemLabel: string; description?: string }
+    if (customRate) {
+      if (hours < 1) {
+        return NextResponse.json({ error: 'End time must be at least an hour after the start time' }, { status: 400 })
+      }
+      const p = customHourlyRentalPrice(tags, customRate, startTime, endTime, hours)
+      rate = {
+        hours: p.hours, isWeekend: isWeekendDate(booking.party_date as string), rentalCents: p.rentalCents,
+        unitCents: p.unitCents, quantity: p.hours, lineItemLabel: p.lineItemLabel, description: p.description,
+      }
+    } else {
+      const { studioRates } = await loadPricingCatalog()
+      if (hours < studioRates.minHours) {
+        return NextResponse.json({ error: `Minimum rental is ${studioRates.minHours} hours` }, { status: 400 })
+      }
+      const card = studioRentalRateWith(studioRates, booking.party_date as string, hours)
+      rate = { ...card, unitCents: card.rentalCents, quantity: 1 }
     }
-    const rate = studioRentalRateWith(studioRates, booking.party_date as string, hours)
 
     // Update (or create) the rental line item.
     const { data: rentalLi } = await supabase
@@ -953,11 +972,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // customer's invoice still says the old one.
     const rentalWrite = rentalLi
       ? await supabase.from('booking_line_items').update({
-          name: rate.lineItemLabel, unit_price_cents: rate.rentalCents, quantity: 1, guest_multiplied: false,
+          name: rate.lineItemLabel, unit_price_cents: rate.unitCents, quantity: rate.quantity, guest_multiplied: false,
+          ...(rate.description ? { description: rate.description } : {}),
         }).eq('id', rentalLi.id).select('id')
       : await supabase.from('booking_line_items').insert({
-          booking_id: id, name: rate.lineItemLabel, category: 'rental', quantity: 1,
-          unit_price_cents: rate.rentalCents, price_type: 'flat', guest_multiplied: false, sort_order: 0,
+          booking_id: id, name: rate.lineItemLabel, category: 'rental', quantity: rate.quantity,
+          unit_price_cents: rate.unitCents, price_type: 'flat', guest_multiplied: false, sort_order: 0,
+          ...(rate.description ? { description: rate.description } : {}),
         }).select('id')
     if (rentalWrite.error || !rentalWrite.data?.length) {
       return NextResponse.json(
@@ -967,7 +988,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Update times on the booking + party_tags.
-    const tags = (booking.party_tags as Record<string, unknown> | null) || {}
     await supabase.from('bookings').update({
       party_time: startTime,
       party_tags: { ...tags, rental_start_time: startTime, rental_end_time: endTime, rental_hours: rate.hours, is_weekend: rate.isWeekend },

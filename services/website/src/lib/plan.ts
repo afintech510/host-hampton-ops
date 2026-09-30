@@ -191,7 +191,11 @@ export async function writeLineItemsResult(
       category: item.category,
       quantity: item.quantity,
       unit_price_cents: item.unit_price_cents,
-      price_type: item.price_type,
+      // The column is NOT NULL DEFAULT 'flat', but a bulk insert sends an
+      // omitted key as NULL — so an item without it failed the WHOLE insert,
+      // non-fatally, and `parties/create` answered ok over a $0 invoice
+      // (HH-PTY-33VDT, 2026-09-28). Default it here, to the column's own default.
+      price_type: item.price_type ?? 'flat',
       guest_multiplied: item.guest_multiplied,
       sort_order: item.sort_order ?? idx,
       // Migration 035 columns — the invoice page renders these.

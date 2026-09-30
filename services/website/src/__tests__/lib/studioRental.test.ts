@@ -3,6 +3,8 @@ import {
   isWeekendDate,
   hoursBetween,
   STUDIO_MIN_HOURS,
+  customHourlyRateCents,
+  customHourlyRentalPrice,
 } from '@/lib/studioRental'
 
 // Reference calendar anchors (local time):
@@ -84,6 +86,44 @@ describe('studioRentalRate — guards', () => {
   it('builds a human-readable label', () => {
     expect(studioRentalRate(SAT, 4).lineItemLabel).toBe('Studio Rental — Weekend 4 hrs')
     expect(studioRentalRate(MON, 3).lineItemLabel).toBe('Studio Rental — Weekday 3 hrs')
+  })
+})
+
+describe('custom hourly rate (owner-approved, per booking)', () => {
+  // HH-PTY-33VDT: a $75/hr photoshoot shortened 11–4 → 11–2 was re-priced at
+  // the $600 weekend base. The rate on the booking must win over the card.
+  const tags = { custom_hourly_rate_cents: 7500, event_label: 'Professional photoshoot' }
+
+  it('reads the tag only when it is a positive whole number of cents', () => {
+    expect(customHourlyRateCents(tags)).toBe(7500)
+    expect(customHourlyRateCents({})).toBeNull()
+    expect(customHourlyRateCents(null)).toBeNull()
+    expect(customHourlyRateCents({ custom_hourly_rate_cents: 0 })).toBeNull()
+    expect(customHourlyRateCents({ custom_hourly_rate_cents: -7500 })).toBeNull()
+    expect(customHourlyRateCents({ custom_hourly_rate_cents: '7500' })).toBeNull()
+    expect(customHourlyRateCents({ custom_hourly_rate_cents: 75.5 })).toBeNull()
+  })
+
+  it('prices 11–2 at 3 × $75 = $225, not the $600 card rate', () => {
+    const p = customHourlyRentalPrice(tags, 7500, '11:00', '14:00', hoursBetween('11:00', '14:00'))
+    expect(p.rentalCents).toBe(22500)
+    expect(p.hours).toBe(3)
+    expect(p.unitCents).toBe(7500)
+    expect(p.lineItemLabel).toBe('Studio Rental — Professional photoshoot (3 hrs @ $75/hr)')
+    expect(p.description).toBe('11:00 AM – 2:00 PM · owner-approved hourly rate')
+  })
+
+  it('is not bound by the 3-hour minimum (HH-PTY-73LGZ was 2 hrs @ $150)', () => {
+    const p = customHourlyRentalPrice({ custom_hourly_rate_cents: 15000 }, 15000, '15:00', '17:00', 2)
+    expect(p.rentalCents).toBe(30000)
+    expect(p.lineItemLabel).toBe('Studio Rental — Custom rate (2 hrs @ $150/hr)')
+    expect(p.description).toBe('3:00 PM – 5:00 PM · owner-approved hourly rate')
+  })
+
+  it('prints noon and a cents rate correctly', () => {
+    const p = customHourlyRentalPrice(tags, 7550, '12:00', '13:00', 1)
+    expect(p.lineItemLabel).toBe('Studio Rental — Professional photoshoot (1 hr @ $75.50/hr)')
+    expect(p.description).toBe('12:00 PM – 1:00 PM · owner-approved hourly rate')
   })
 })
 
