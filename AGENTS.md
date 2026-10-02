@@ -8,7 +8,7 @@ Operating and development guide for the Host Hampton party/event booking platfor
 
 Host Hampton is a party/event booking platform: marketing site, customer booking/party-builder flows, an admin dashboard, and the public API — all served by a single Next.js app. Customers book parties/events, pay deposits via Stripe (LIVE mode — real money), e-sign studio rental agreements (SignWell), and receive automated email/SMS reminders.
 
-There is **no CI/CD**. Production is one Hetzner VPS running Docker Compose; deploys are a manual `git pull` + rebuild on the box, driven from your laptop by `scripts/deploy.sh`.
+Production is one Hetzner VPS running Docker Compose. **Every push to `main` deploys itself** through `.github/workflows/deploy.yml` (Jest gate, then SSH + `docker compose up -d --build website`). `scripts/deploy.sh` redeploys without a push. Both hold `/run/lock/hosthampton-deploy.lock` and skip an already-deployed commit; running `deploy.sh` right after a push used to race the Action and leave the site 502 (2026-10-01, twice). See DEPLOY.md.
 
 > A multi-service AI "agent stack" (orchestrator, SOC, copy, image, paid-ads, MCP servers, redis) is scaffolded in `docker-compose.yml` and `services/` but is **commented out / disabled**. Only `nginx` and `website` run in production. Do not assume those services exist when operating.
 
@@ -696,7 +696,7 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
 - **Stripe is LIVE** — deposits/payments are real money. **`SIGNWELL_TEST_MODE=false` is live e-sign.** Be careful testing payment/contract flows against production.
 - **Migrations are not run by deploy** — apply `starting_plan/migration_*.sql` manually in Supabase first, then deploy.
 - **Git on the box uses a read-only deploy key** via the `github-hosthampton` SSH alias (`IdentitiesOnly yes` required, since the box holds multiple repos' keys). It can pull but not push; pushes happen from your laptop/GitHub.
-- **No CI/CD, no GitHub Actions** — every production change is a manual deploy. Don't assume a pipeline will catch anything.
+- **A push to `main` IS a production deploy** — `.github/workflows/deploy.yml` tests, then deploys. Do not also run `scripts/deploy.sh` for the same push; watch the run (`gh run watch`) and then verify the site. The Action's own health check only WARNS, so a red site can still show a green run.
 - **Agent stack is disabled.** redis/orchestrator/SOC/copy/image/paid/MCP services in `docker-compose.yml` are commented out; `redis_data` and `uploads` volumes are retained for if they're re-enabled. Don't reference them as live infra.
 
 ### Link 23 — the plan money path (2026-09-13)

@@ -84,12 +84,25 @@ jobs:
           script: |
             set -e
             cd /opt/hosthampton
+            # One deploy at a time, box-wide — scripts/deploy.sh takes the same
+            # lock. Two concurrent recreates of hampton_website left the site 502
+            # twice on 2026-10-01 (this job racing a manual deploy of the same push).
+            exec 9>/run/lock/hosthampton-deploy.lock
+            flock -w 900 9 || { echo "Gave up waiting for the deploy lock"; exit 1; }
             # nginx.conf is box-owned (skip-worktree); un-skip so reset succeeds, then restore.
             git update-index --no-skip-worktree nginx/nginx.conf 2>/dev/null || true
             git fetch --all --prune
             git reset --hard origin/main
             git update-index --skip-worktree nginx/nginx.conf 2>/dev/null || true
-            docker compose up -d --build website
+            # A manual deploy that held the lock may already have shipped this commit.
+            MARK=/var/lib/hosthampton/deployed-website
+            HEAD_SHA=$(git rev-parse HEAD)
+            if [ "$(cat "$MARK" 2>/dev/null || true)" = "$HEAD_SHA" ] && [ -n "$(docker compose ps -q --status running website)" ]; then
+              echo "$HEAD_SHA already deployed and running — skipping rebuild"
+            else
+              docker compose up -d --build website
+              { mkdir -p /var/lib/hosthampton && echo "$HEAD_SHA" > "$MARK"; } || echo "WARN: could not write $MARK"
+            fi
             docker image prune -f
             docker compose ps
             curl -fsS --max-time 10 --retry 4 --retry-delay 3 --retry-connrefused --resolve www.hosthampton.com:443:127.0.0.1 https://www.hosthampton.com/ >/dev/null \

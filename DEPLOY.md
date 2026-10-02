@@ -2,8 +2,13 @@
 
 Production is a single Hetzner VPS running Docker Compose. The live website,
 dashboard, and API are all served by the `hampton_website` container behind
-`hampton_nginx`. There is **no CI/CD** — deploys are a manual `git pull` + rebuild
-on the box.
+`hampton_nginx`. **Every push to `main` deploys itself**: `.github/workflows/deploy.yml`
+runs the Jest suite, then SSHes in and rebuilds `website`. `scripts/deploy.sh` is
+for redeploying without a push (e.g. `FORCE=1` after an `.env` change). Both take
+the box-wide lock `/run/lock/hosthampton-deploy.lock` and skip a commit already
+recorded in `/var/lib/hosthampton/deployed-website` — two concurrent recreates
+left the site 502 twice on 2026-10-01. Push, then `gh run watch`; do not also run
+`deploy.sh` for the same push.
 
 - **VPS:** `5.161.88.134` · SSH alias `hampton-vps` (root, key `id_ed25519_headless`)
 - **Repo on box:** `/opt/hosthampton` (tracks `main`)

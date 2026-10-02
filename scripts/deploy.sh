@@ -22,12 +22,42 @@ HEALTH_URL="${HEALTH_URL:-https://www.hosthampton.com/}"
 HEALTH_TRIES="${HEALTH_TRIES:-20}"     # x 3s = up to 60s for the app to boot
 HEALTH_SLEEP="${HEALTH_SLEEP:-3}"
 
+FORCE="${FORCE:-0}"   # FORCE=1 rebuilds even if this commit is already live (e.g. after an .env change)
+
 echo "==> Deploying '${SERVICE}' to ${HOST}:${DIR}"
-ssh "${HOST}" "SERVICE='${SERVICE}' DIR='${DIR}' bash -s" <<'REMOTE'
+ssh "${HOST}" "SERVICE='${SERVICE}' DIR='${DIR}' FORCE='${FORCE}' bash -s" <<'REMOTE'
 set -euo pipefail
 cd "${DIR}"
+
+# ONE deploy at a time, box-wide.
+#
+# Every push to main ALSO deploys, via .github/workflows/deploy.yml, which runs
+# the same `docker compose up -d --build website` over SSH once the tests pass.
+# Pushing and then running this script started two recreates of the same
+# container ~a second apart; on 2026-10-01 that happened twice and both times
+# the loser left the old container Dead and the new one stuck in Created —
+# www.hosthampton.com answered 502 until someone removed the corpse by hand.
+# The workflow takes this same lock, so whichever arrives second waits.
+exec 9>/run/lock/hosthampton-deploy.lock
+if ! flock -n 9; then
+  echo "==> Another deploy (probably the GitHub Action) holds the lock — waiting for it"
+  flock -w 900 9 || { echo "==> Gave up waiting for the deploy lock after 15 min" >&2; exit 1; }
+fi
+
 echo "==> git pull --ff-only (via deploy key)"
 git pull --ff-only
+
+# Skip a rebuild of a commit that is already live — normally because the
+# Action deployed it while we waited on the lock. Recreating again would only
+# cost a second blip of downtime for an identical image.
+MARK="/var/lib/hosthampton/deployed-${SERVICE}"
+HEAD_SHA=$(git rev-parse HEAD)
+if [ "${FORCE}" != "1" ] && [ "$(cat "${MARK}" 2>/dev/null || true)" = "${HEAD_SHA}" ] \
+   && [ -n "$(docker compose ps -q --status running "${SERVICE}")" ]; then
+  echo "==> ${HEAD_SHA:0:7} is already deployed and running — skipping rebuild (FORCE=1 to override)"
+  docker compose ps --format "{{.Name}} {{.Status}}"
+  exit 0
+fi
 
 # Clear stale compose rename-backups before bringing the service up.
 #
@@ -55,6 +85,7 @@ fi
 
 echo "==> docker compose up -d --build ${SERVICE}"
 docker compose up -d --build "${SERVICE}"
+{ mkdir -p /var/lib/hosthampton && echo "${HEAD_SHA}" > "${MARK}"; } || echo "WARN: could not write ${MARK}"
 echo "==> Containers:"
 docker compose ps --format "{{.Name}} {{.Status}}"
 REMOTE
