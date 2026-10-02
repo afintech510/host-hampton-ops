@@ -90,6 +90,7 @@ const TEMPLATE_SOURCES = [
   'app/api/studio-rental/edit/route.ts',
   'app/api/portal/notify-payment/route.ts',
   'app/api/portal/send-message/route.ts',
+  'app/api/plan/[ref]/address/route.ts',
   'app/api/signup/route.ts',
   'app/api/webhook/route.ts',
   'app/api/admin/campaigns/actions/route.ts',

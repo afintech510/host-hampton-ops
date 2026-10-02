@@ -388,6 +388,81 @@ export function SecurityHoldPanel({
 }
 
 /**
+ * "Where's the party?" — the customer types their street address on the
+ * invoice. Drawn only when lib/partyAddress.ts says the address on file is a
+ * placeholder; the route re-asks the same module before it writes. `current`
+ * pre-fills the field with whatever we have ("Westhampton, NY …") so the
+ * customer completes it rather than starting over.
+ */
+export function PartyAddressForm({ ref_, current }: { ref_: string; current: string | null }) {
+  const { busy, setBusy, error, setError, done, setDone } = useBusy()
+  const [value, setValue] = useState(current && !/\b(tbc|tbd)\b/i.test(current) ? current : '')
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setBusy('address')
+    const { ok, data } = await postJson(`/api/plan/${encodeURIComponent(ref_)}/address`, { address: value })
+    setBusy(null)
+    if (!ok) {
+      setError(typeof data.error === 'string' ? data.error : 'Could not save the address — please try again.')
+      return
+    }
+    setDone(typeof data.address === 'string' ? data.address : value)
+  }
+
+  if (done) {
+    return (
+      <div className="address-callout no-print">
+        <strong>✓ Thank you — we have your party address:</strong> {done}
+        <div className="section-sub" style={{ margin: '6px 0 0', fontSize: 13 }}>
+          Need to change it? Call or text (631) 998-9325.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <form className="address-callout no-print" onSubmit={save}>
+      <label htmlFor="party-address" style={{ display: 'block', fontWeight: 700, marginBottom: 4 }}>
+        Where&rsquo;s the party?
+      </label>
+      <div className="section-sub" style={{ margin: '0 0 10px', fontSize: 13 }}>
+        Please add the full street address so our team knows exactly where to set up.
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input
+          id="party-address"
+          type="text"
+          autoComplete="street-address"
+          placeholder="Street address, town, ZIP"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          maxLength={200}
+          required
+          style={{
+            flex: '1 1 260px',
+            padding: '12px 14px',
+            borderRadius: 10,
+            border: '1px solid rgba(26,39,68,0.25)',
+            fontSize: 15,
+            fontFamily: 'inherit',
+          }}
+        />
+        <button type="submit" style={{ ...btn, padding: '12px 28px', opacity: busy ? 0.6 : 1 }} disabled={busy !== null}>
+          {busy ? 'Saving…' : 'Save address'}
+        </button>
+      </div>
+      {error && (
+        <p style={{ color: '#b00020', fontSize: 13, margin: '10px 0 0' }} role="alert">
+          {error}
+        </p>
+      )}
+    </form>
+  )
+}
+
+/**
  * "Email me this" for the customer, and "Send to client" for an admin.
  *
  * The admin half is a two-step: pick a channel, then confirm. The server also

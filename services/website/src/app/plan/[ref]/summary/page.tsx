@@ -84,8 +84,10 @@ import {
   PrintButton,
   AdminCustomCharge,
   SecurityHoldPanel,
+  PartyAddressForm,
   type PayOption,
 } from './PayPanel'
+import { shouldAskForPartyAddress } from '@/lib/partyAddress'
 import './invoice.css'
 
 export const dynamic = 'force-dynamic'
@@ -182,6 +184,13 @@ function InvoiceBody({
           amountLabel: holdOffer.state === 'done' ? money(invoice.securityHoldCents ?? 0) : money(holdOffer.amountCents),
           opensOnLabel: holdOffer.state === 'too_early' ? formatHoldDate(holdOffer.opensOn) : '',
         }
+  // lib/partyAddress.ts owns this, and the route re-asks it before writing.
+  const askAddress = shouldAskForPartyAddress({
+    partyType,
+    status: booking.status,
+    partyDate: booking.party_date,
+    partyTags: booking.party_tags,
+  })
   const venmoAmount = (askCents / 100).toFixed(2)
   const venmoNote = `${(booking.contact_name || 'Party').split(' ')[0]} — ${
     partyType === 'studio_rental' ? 'Studio Rental' : 'Party'
@@ -305,6 +314,9 @@ function InvoiceBody({
           </div>
         </div>
 
+        {/* ============ PARTY ADDRESS — mobile, while it is still a placeholder ============ */}
+        {askAddress && <PartyAddressForm ref_={ref_} current={invoice.venueAddress} />}
+
         {/* ============ INVOICE / LINE ITEMS ============ */}
         <div className="invoice-section">
           <h2>Invoice</h2>
@@ -335,7 +347,8 @@ function InvoiceBody({
                     </div>
                     {item.description && <div className="line-item-desc">{item.description}</div>}
                   </div>
-                  <div className="line-item-amount">{money(item.amountCents)}</div>
+                  {/* A $0 line is a station bundled into the package — "Included" says that; "$0.00" reads as a mistake. */}
+                  <div className="line-item-amount">{item.amountCents === 0 ? 'Included' : money(item.amountCents)}</div>
                 </div>
               ))}
             </div>

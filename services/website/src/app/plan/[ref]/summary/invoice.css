@@ -288,6 +288,18 @@ body > main { padding-top: 0 !important; }
 .hh-invoice .deposit-callout .deposit-note { font-size: 12px; color: rgba(47,52,59,0.6); margin-top: 3px; line-height: 1.5; }
 .hh-invoice .deposit-callout .amount { font-weight: 700; font-size: 18px; color: #8a6d1f; white-space: nowrap; }
 
+/* "Where's the party?" — the address field on a mobile invoice. Same dashed
+   gold as the deposit callout, because it is the same kind of thing: something
+   we still need from the customer. `.no-print` on the element itself. */
+.hh-invoice .address-callout {
+  background: rgba(199,163,107,0.12);
+  border: 1.5px dashed var(--pink);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 0 0 24px;
+  font-size: 14px;
+}
+
 .hh-invoice .totals-row.balance {
   background: rgba(247,242,232,0.6);
   border-radius: 8px;
