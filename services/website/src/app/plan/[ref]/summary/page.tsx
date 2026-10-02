@@ -508,16 +508,29 @@ function InvoiceBody({
         {/* ============ LOCKED PAYMENT SECTION ============ */}
         {!settled && askCents > 0 && (
           <div className="pay-section invoice-section" style={{ textAlign: 'center' }}>
-            <h2>Reserve Your Date</h2>
+            {/*
+              Two headings for two jobs. While the deposit is owed this block
+              books the date; once it is paid the date is already held, and
+              "Reserve Your Date" over a balance payment told a booked customer
+              (HH-PTY-G7ZDL, 2026-10-01) she had not reserved yet.
+            */}
+            <h2>{invoice.depositOwedCents > 0 ? 'Reserve Your Date' : 'Pay Your Balance'}</h2>
             <p className="section-sub">
-              A <strong>{money(invoice.depositOwedCents > 0 ? invoice.depositOwedCents : askCents)}</strong>{' '}
-              {invoice.depositOwedCents > 0
-                ? unpriced
-                  ? `${content.depositLabel.split(' — ')[0].toLowerCase()} holds your date. Pay it now and we'll build the plan together afterwards.`
-                  : `${content.depositLabel.split(' — ')[0].toLowerCase()} is required to book. It comes off your total${
-                      quoteStage ? '' : ' — the Balance Due above is what is left after it'
-                    }.`
-                : 'payment is outstanding on this plan.'}{' '}
+              {invoice.depositOwedCents > 0 ? (
+                <>
+                  A <strong>{money(invoice.depositOwedCents)}</strong>{' '}
+                  {unpriced
+                    ? `${content.depositLabel.split(' — ')[0].toLowerCase()} holds your date. Pay it now and we'll build the plan together afterwards.`
+                    : `${content.depositLabel.split(' — ')[0].toLowerCase()} is required to book. It comes off your total${
+                        quoteStage ? '' : ' — the Balance Due above is what is left after it'
+                      }.`}
+                </>
+              ) : (
+                <>
+                  {booking.status !== 'cancelled' && 'Your date is booked. '}Your remaining balance is{' '}
+                  <strong>{money(askCents)}</strong>.
+                </>
+              )}{' '}
               A 3% processing fee applies to card payments; Venmo and Zelle avoid it.
             </p>
             {/*
