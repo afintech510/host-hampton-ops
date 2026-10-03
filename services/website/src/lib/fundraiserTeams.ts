@@ -62,6 +62,8 @@ export interface FundraiserTeam {
    * but us reads. This is the label, not the field.
    */
   personLabel: string
+  /** Who receives a copy of every new-order notification. Absent = Host Hampton only. */
+  organizerEmail?: string
 }
 
 export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
@@ -92,6 +94,7 @@ export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
     emailAccent: '#0C2340',
     ordersPath: '/esm-sharks/orders',
     personLabel: 'Child',
+    organizerEmail: 'Eastporttuttlepto@gmail.com',
   },
 }
 

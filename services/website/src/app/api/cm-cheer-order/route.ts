@@ -199,14 +199,7 @@ export async function POST(req: NextRequest) {
       <p style="margin:6px 0 0;font-size:13px;color:#555;">This order will be given to <strong>${escapeHtml(athleteName)}</strong> at school — no delivery charge.</p>
     </div>`
 
-    await Promise.allSettled([
-      // Admin notification
-      resend.emails.send({
-        from,
-        to: ownerEmail(),
-        subject: `📦 ${team.name} Order ${order.order_ref} — ${athleteName}`,
-        replyTo: email,
-        html: `
+    const notificationHtml = `
 <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#111;">
   <div style="background:#111;border-top:4px solid ${team.emailAccent};padding:20px 28px;border-radius:10px 10px 0 0;">
     <h1 style="color:#fff;margin:0;font-size:18px;letter-spacing:0.05em;">${escapeHtml(team.name.toUpperCase())} — NEW ORDER</h1>
@@ -229,8 +222,31 @@ export async function POST(req: NextRequest) {
     </div>
     <p style="margin-top:16px;font-size:12px;color:#aaa;">Order ID: ${escapeHtml(order.order_ref)} · Manage at hosthampton.com${team.ordersPath}</p>
   </div>
-</div>`,
+</div>`
+
+    const notificationSubject = `📦 ${team.name} Order ${order.order_ref} — ${athleteName}`
+
+    await Promise.allSettled([
+      // Owner notification
+      resend.emails.send({
+        from,
+        to: ownerEmail(),
+        subject: notificationSubject,
+        replyTo: email,
+        html: notificationHtml,
       }),
+
+      // Organizer copy — a separate send so neither address sees the other and
+      // one failing cannot take the other with it.
+      ...(team.organizerEmail
+        ? [resend.emails.send({
+            from,
+            to: team.organizerEmail,
+            subject: notificationSubject,
+            replyTo: email,
+            html: notificationHtml,
+          })]
+        : []),
 
       // Customer confirmation
       resend.emails.send({
