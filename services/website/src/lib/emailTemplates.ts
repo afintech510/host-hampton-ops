@@ -1314,6 +1314,50 @@ export function partyThankYouHtml(raw: {
 </body></html>`
 }
 
+/* ── Past-Client Review Ask (customer, once, migration 061) ──── */
+
+/**
+ * The one-time Google review ask to a past client. Fixed copy, merge field is
+ * the first name only. MARKETING: carries a working unsubscribe link (CAN-SPAM)
+ * and the postal address in the footer; the caller adds List-Unsubscribe
+ * headers and a plain-text half (`lib/reviewAsk.ts`).
+ */
+export function reviewAskHtml(raw: {
+  firstName: string
+  reviewUrl: string
+  unsubscribeUrl: string
+}): string {
+  const d = escapeFields(raw)
+  const firstName = d.firstName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">A Quick Favor? 💛</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 20px;">
+      Thank you again for celebrating with Host Hampton. Having you with us meant a lot.
+    </p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">
+      We're a small, local business, and Google reviews are honestly how most new families find us. If you have two minutes, we'd be so grateful if you shared a few words about your experience.
+    </p>
+    ${payButton(mailHrefExternal(raw.reviewUrl), 'Leave a Google Review')}
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">
+      Thank you!<br>Adam &amp; the Host Hampton team
+    </p>
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline(`You're receiving this because you celebrated with Host Hampton. <a href="${mailHref(raw.unsubscribeUrl)}" style="color:${BRAND.navy};">Unsubscribe</a>`)}
+</div>
+</body></html>`
+}
+
 /* ── Birthday Rebooking (customer, ~10 months after last party) ── */
 
 /**

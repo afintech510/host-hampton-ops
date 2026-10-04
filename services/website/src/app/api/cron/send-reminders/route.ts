@@ -9,7 +9,9 @@ import {
   reminderBooking7DayHtml,
   reminderBooking1DayHtml,
 } from '@/lib/email-templates/reminders'
-import { partyBalanceReminderHtml, partyAdminUnpaidDayOfHtml, partyThankYouHtml, birthdayRebookHtml } from '@/lib/emailTemplates'
+import { partyBalanceReminderHtml, partyAdminUnpaidDayOfHtml, partyThankYouHtml, birthdayRebookHtml, reviewAskHtml } from '@/lib/emailTemplates'
+import { REVIEW_ASK_EMAIL_SUBJECT, reviewAskText } from '@/lib/reviewAsk'
+import { generateUnsubscribeToken, buildUnsubscribeUrl, unsubscribeHeaders } from '@/lib/unsubscribeLink'
 import { formatMoney } from '@/lib/partyPricing'
 import { generatePortalToken, buildPortalUrl, portalSigningSecret } from '@/lib/portalAuth'
 import {
@@ -17,6 +19,7 @@ import {
   smsEventReminder2Hr,
   smsBookingReminder1Day,
   smsReviewRequest,
+  smsReviewAsk,
   smsBirthdayRebook,
 } from '@/lib/sms-templates'
 import { sendSMSVia } from '@/lib/sms'
@@ -41,8 +44,10 @@ export const dynamic = 'force-dynamic'
  *
  *   WHO   — only a contact with a row in `scheduled_reminders`, and rows are
  *           only ever written by a confirmed ticket purchase, a confirmed
- *           booking, or the birthday scanner. There is no "send to everyone".
- *   WHAT  — only the sixteen `reminder_type` values in the table's CHECK
+ *           booking, the birthday scanner, or the review-ask drip
+ *           (`/api/cron/review-asks`, past clients only, `perDay` a run).
+ *           There is no "send to everyone".
+ *   WHAT  — only the eighteen `reminder_type` values in the table's CHECK
  *           constraint, each rendering a fixed template with merge fields. No
  *           model output, no admin free text, ever reaches a send from here.
  *   HOW OFTEN — once. `uniq_scheduled_reminder_once` (migration 044) makes
@@ -305,7 +310,7 @@ async function dispatch(
  */
 async function sendEmail(
   resend: Resend,
-  args: { from: string; to: string; subject: string; html: string }
+  args: { from: string; to: string; subject: string; html: string; text?: string; replyTo?: string; headers?: Record<string, string> }
 ): Promise<SendOutcome> {
   const { data, error } = await resend.emails.send(args)
   if (error) return { kind: 'retry', reason: `resend rejected: ${error.message}` }
@@ -337,6 +342,41 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any):
       bookLink: `${siteUrl}/book`,
     })
     return sendEmail(resend, { from, to: contact.email, subject: 'A special birthday is coming up! 🎉', html })
+  }
+
+  // The past-client review ask (migration 061). About a PERSON, not a booking,
+  // so it must be answered here, before the booking/event branches below go
+  // looking for a reference it does not have.
+  if (reminder.reminder_type === 'review_ask_email') {
+    // Marketing, so it carries a working unsubscribe. No signing secret means
+    // a dead link, and an email with a dead unsubscribe link is worse than one
+    // not sent — so this is a retry, not a send.
+    const token = generateUnsubscribeToken(contact.email)
+    if (!token) return { kind: 'retry', reason: 'unconfigured: no unsubscribe signing secret' }
+    const unsubscribeUrl = buildUnsubscribeUrl(token)
+    const reviewUrl = buildReviewUrl('email')
+    const firstName = contact.first_name || 'there'
+
+    const sent = await sendEmail(resend, {
+      from,
+      to: contact.email,
+      // "Thank you!" invites a reply, and a reply has to reach a person.
+      replyTo: ownerEmail(),
+      subject: REVIEW_ASK_EMAIL_SUBJECT,
+      html: reviewAskHtml({ firstName, reviewUrl, unsubscribeUrl }),
+      text: reviewAskText({ firstName, reviewUrl, unsubscribeUrl }),
+      headers: unsubscribeHeaders(token),
+    })
+    if (sent.kind === 'delivered') {
+      await writeLedger(supabase, {
+        entityType: 'review_request',
+        entityId: asLedgerEntityId(reminder.contact_id),
+        action: 'send',
+        actor: 'system',
+        meta: { channel: 'email', job: 'review_ask', reminder_type: reminder.reminder_type },
+      })
+    }
+    return sent
   }
 
   let subject = ''
@@ -556,6 +596,22 @@ async function processSmsReminder(reminder: any, contact: any, supabase: any): P
     return sid
       ? { kind: 'delivered', detail: `twilio:${sid}` }
       : { kind: 'retry', reason: 'sms provider rejected the send' }
+  }
+
+  // The past-client review ask (migration 061). Keyed to the contact, so there
+  // is no booking or event to read. Quo, like the other review text, because
+  // a STOP on the Quo line reaches our database and a STOP on Twilio does not.
+  if (reminder.reminder_type === 'review_ask_sms') {
+    const sid = await sendSMSVia('quo', contact.phone, smsReviewAsk({ firstName }))
+    if (!sid) return { kind: 'retry', reason: 'sms provider rejected the send' }
+    await writeLedger(supabase, {
+      entityType: 'review_request',
+      entityId: asLedgerEntityId(reminder.contact_id),
+      action: 'send',
+      actor: 'system',
+      meta: { channel: 'sms', job: 'review_ask', reminder_type: reminder.reminder_type },
+    })
+    return { kind: 'delivered', detail: `quo:${sid}` }
   }
 
   if (reminder.reference_type === 'event') {

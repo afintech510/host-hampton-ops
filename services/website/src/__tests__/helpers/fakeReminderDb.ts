@@ -84,7 +84,8 @@ export function scheduledRemindersSpec(opts: { legacyUuidReferenceId?: boolean }
         column: 'reference_type',
         // Migration 044. Before it: ['event_ticket', 'booking'] — which is why
         // every event reminder was answered 23514.
-        allowed: opts.legacyUuidReferenceId ? ['event_ticket', 'booking'] : ['event', 'booking'],
+        // Migration 061 added 'contact' (the review ask, keyed to a person).
+        allowed: opts.legacyUuidReferenceId ? ['event_ticket', 'booking'] : ['event', 'booking', 'contact'],
       },
       {
         name: 'scheduled_reminders_status_check',
@@ -103,6 +104,8 @@ export function scheduledRemindersSpec(opts: { legacyUuidReferenceId?: boolean }
           'party_thank_you_t1', 'review_request_sms',
           'birthday_rebook_email', 'birthday_rebook_sms',
           'checkin_link_36hr', 'checkin_link_dayof',
+          // Migration 061.
+          ...(opts.legacyUuidReferenceId ? [] : ['review_ask_email', 'review_ask_sms']),
         ],
       },
     ],
@@ -225,6 +228,8 @@ export function makeFakeDb(
     let limit: number | null = null
     let orderKey: string | null = null
     let orderAsc = true
+    let rangeFrom: number | null = null
+    let rangeTo: number | null = null
 
     /**
      * The columns `.select()` asked for, or null for "everything".
@@ -284,6 +289,8 @@ export function makeFakeDb(
       },
       order(k: string, o?: { ascending?: boolean }) { orderKey = k; orderAsc = o?.ascending !== false; return q },
       limit(n: number) { limit = n; return q },
+      /** Inclusive, like PostgREST. Applied after ordering. */
+      range(from: number, to: number) { rangeFrom = from; rangeTo = to; return q },
       rows(): { data: Row[] | null; error: PgError | null } {
         if (readFailures[table]) {
           const error = readFailures[table]
@@ -297,6 +304,7 @@ export function makeFakeDb(
             (orderAsc ? 1 : -1) * String(a[k] ?? '').localeCompare(String(b[k] ?? ''))
           )
         }
+        if (rangeFrom !== null && rangeTo !== null) out = out.slice(rangeFrom, rangeTo + 1)
         if (limit !== null) out = out.slice(0, limit)
         return { data: out.map(project), error: null }
       },

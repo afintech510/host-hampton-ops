@@ -147,3 +147,18 @@ export function smsReviewRequest(params: SmsReviewRequestParams): string {
   const { firstName, reviewUrl = DEFAULT_REVIEW_URL } = params
   return `Hi ${firstName}! Hope you had an amazing time at Host Hampton! We'd love your feedback: ${reviewUrl} Reply STOP to opt out`
 }
+
+/* ── Marketing — Past-Client Review Ask (migration 061) ─────── */
+
+/**
+ * The one-time review ask to a past client, sent ~3 days after the email ask.
+ *
+ * GSM-7 only — no emoji, no curly quotes, no em dash — so it stays at TWO
+ * segments with a typical first name; one non-GSM character would make it four
+ * (`lib/smsSegments.ts`). The BARE review URL, not the UTM-tagged one: Google's
+ * g.page hop drops the tags anyway (`lib/marketing/reviewLink.ts`), and the
+ * ~55 characters they cost are most of a segment.
+ */
+export function smsReviewAsk(params: { firstName: string }): string {
+  return `Hi ${params.firstName}, it's Adam from Host Hampton! If you enjoyed celebrating with us, a quick Google review would mean so much to our small business: ${REVIEW_BASE_URL} Reply STOP to opt out`
+}

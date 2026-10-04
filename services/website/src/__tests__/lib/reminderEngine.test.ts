@@ -374,7 +374,14 @@ describe('isMarketingReminder', () => {
     // asked of every type, so a new type added to the CHECK is a decision
     // somebody has to make rather than a silent default.
     for (const t of allowed) expect(typeof isMarketingReminder(t)).toBe('boolean')
-    expect(allowed).toHaveLength(16)
+    // 16 + migration 061's two review-ask types — decided below: marketing.
+    expect(allowed).toHaveLength(18)
+  })
+
+  it('classes the past-client review ask as marketing (migration 061)', async () => {
+    const { isMarketingReminder } = await import('@/lib/reminderQueue')
+    expect(isMarketingReminder('review_ask_email')).toBe(true)
+    expect(isMarketingReminder('review_ask_sms')).toBe(true)
   })
 })
 

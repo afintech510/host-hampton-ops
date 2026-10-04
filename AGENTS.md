@@ -213,10 +213,13 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **061**. (This line said **047** for months
+The next free migration number is **062**. (This line said **047** for months
 after it stopped being true, which is why it now says how to check rather than
 just asserting a number: the highest file in `starting_plan/` is the floor, and
 `information_schema` on the live DB is what says whether it has been APPLIED.
+**061 is the past-client review ask** — `review_ask_email` / `review_ask_sms`
+added to the `scheduled_reminders` reminder_type CHECK and `'contact'` to its
+reference_type CHECK, applied 2026-10-04.
 **060 is the appointment refactor** — `appointment_bookings` +
 `appointment_slot_holds`, and the `DROP TABLE summer_hair_bookings` that answers
 NEEDS-ADAM B10, after a CSV export to the gitignored `audit_scratch/`.
@@ -335,7 +338,7 @@ There is **no in-container scheduler**. Scheduled work is driven externally by *
 
 **Nothing monitors a cron's status.** A job that has failed every day for months looks exactly like a job that works. If you are asked whether a job runs, ask nginx by path *and* status, and then ask the table that would hold its output.
 
-### The fourteen routes
+### The cron routes (fourteen when this was written; `review-asks`, `staff-reminders` and `stripe-reconcile` came later)
 
 - `/api/cron/send-reminders` — booking/event reminder emails + SMS. **The only deliverer**: it claims each row (`pending`→`sending`) before sending, checks the freshness bound, re-reads consent at send time, and records a named outcome on every path. `?limit=N` (1…50, out of range is a 400) bounds a manual run to the N longest-waiting rows. **Not scheduled** — `docs/reminder-engine-review.md` §10.
 - `/api/cron/process-sequences` — email sequence processing. **Not scheduled, and must not be rescheduled blind**: its cron-job.org job disappeared 2026-08-16 and **45 enrollments are frozen**. **`?limit=N` caps SENDS; `?scan=N` caps rows READ.** They are different questions and conflating them is what made the old drain a no-op — `?limit=` used to set the row cap, and the two oldest enrollments are on an inactive sequence, so `?limit=1` read one row, skipped it, changed nothing and answered 200 for anyone draining a six-month backlog one person at a time. `?scan=` exists so a production probe can be *proved* safe: give a throwaway enrollment an `enrolled_at` that sorts first, read the top of the scan, then fire with a `scan` no larger than the number of throwaway rows. Out-of-range is a 400 on both.
@@ -351,6 +354,7 @@ There is **no in-container scheduler**. Scheduled work is driven externally by *
 - `/api/cron/appointment-reminders` — reminders for every event in `lib/appointmentEvents.ts` whose `eventDate` is today (Eastern), at that event's own `reminderLeadMinutes`. A day with nothing on is `{ ok: true }` and no sends, so it is safe to schedule daily. Also sweeps slot holds left by abandoned checkouts. **`?force=true` overrides the CLOCK only** — in its predecessor (`summer-hair-reminders`, a single hard-coded date) it used to drop the `reminder_sent = false` filter as well, so one authenticated GET re-texted all thirteen real customers about a July appointment. Claim before send, STOP honoured, masked payload. **Still not scheduled** — nothing has ever run it.
 - `/api/cron/agent-dispatch` — booking agent: claims new inbound events, drafts replies, texts the reviewers. Every 2 minutes. No-op unless `AGENT_ENABLED` is true.
 - `/api/cron/gmail-sync` — pulls new mail from `GMAIL_USER` into `ingested_messages` and applies the handled label. Every 3 minutes. No-op unless the `GMAIL_*` env is set. Read + label only. `?backfill=1&pageToken=…` runs the bounded historical pull by hand.
+- `/api/cron/review-asks` (migration 061, added 2026-10-04) — the one-time Google review ask to every past client (`customer` contacts + past non-cancelled bookings + past ticket buyers, ~526 people measured 2026-10-04; our own addresses excluded). **ENQUEUES only** — `send-reminders` delivers, so it needs that scheduled too. Each run queues the next `?perDay=N` (default 40, max 100) people per channel, most recent client first: `review_ask_email` at 11am ET, then `review_ask_sms` at 1pm ET at least 3 days after their email went (immediately for text-only consent). **Once per person ever** — keyed `(contact, review_ask_*, 'review-ask')` and any prior ask row, even cancelled, blocks a re-queue. Both types are MARKETING: consent re-read at send, email carries List-Unsubscribe, SMS goes via Quo and is charged in segments to the 500/month marketing-SMS cap (2 segments each, so texts spill into the next month). `?dryRun=1` plans and writes nothing. Suggested once daily ~10:30 ET. `lib/reviewAsk.ts`.
 - `/api/cron/staff-reminders` (migration 056, added 2026-09-19) — daily digest of `staff_reminders`, internal-only follow-up nudges (never customer-facing). Reads `due_date <= today` in ET, texts (`notifyOwnerSms`) and/or emails (`ownerEmail()` via Brevo) Adam depending on each row's `channel`, and only marks a row `sent` once every channel it asked for actually went out. Not yet scheduled — needs a cron-job.org entry, suggested once daily (e.g. 08:00 ET / 12:00 UTC).
 
 Example trigger:

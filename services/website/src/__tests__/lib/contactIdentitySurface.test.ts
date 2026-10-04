@@ -528,6 +528,11 @@ describe('R0 — the staleness walker', () => {
       // no filter on an identity column at all — it resolves nobody and writes
       // nothing. If it ever looks a person up, it belongs in SURFACE.
       'app/api/admin/marketing/route.ts',
+      // The review-ask audience (migration 061). A paged read of every contact
+      // with no filter on an identity column; it groups rows into people by
+      // lowercased email IN JS and picks the OLDEST row — the same canonical-row
+      // rule as `findContactsByEmail` — and writes nothing to `contacts`.
+      'lib/reviewAsk.ts',
     ])
 
     const touching = ALL_FILES.filter(f => /from\(['"`]contacts['"`]\)/.test(code(relative(f)))).map(relative)

@@ -23,9 +23,12 @@ type Supa = ReturnType<typeof getSupabase>
 export interface ReminderRow {
   contact_id: string
   reminder_type: string
-  /** 'event' | 'booking' — the CHECK allows exactly these two (migration 044). */
-  reference_type: 'event' | 'booking'
-  /** bookings.booking_ref for 'booking', events.id for 'event'. TEXT. */
+  /**
+   * 'event' | 'booking' (migration 044), or 'contact' (migration 061) for a
+   * reminder that is about a person rather than one purchase — the review ask.
+   */
+  reference_type: 'event' | 'booking' | 'contact'
+  /** bookings.booking_ref for 'booking', events.id for 'event', a constant key for 'contact'. TEXT. */
   reference_id: string
   scheduled_for: string
   channel: 'email' | 'sms'
@@ -104,6 +107,10 @@ export async function enqueueReminders(supabase: Supa, rows: ReminderRow[]): Pro
 export const MARKETING_REMINDER_TYPES = new Set<string>([
   'birthday_rebook_email',
   'birthday_rebook_sms',
+  // Migration 061. Asking a past client for a review is a solicitation, not a
+  // message about something they bought — so email_opt_in is re-read at send.
+  'review_ask_email',
+  'review_ask_sms',
 ])
 
 export function isMarketingReminder(reminderType: string): boolean {

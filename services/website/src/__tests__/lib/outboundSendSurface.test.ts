@@ -86,6 +86,10 @@ const SEND_ROUTES = [
   // statement. Like `staff-reminders` its audience is Adam, never a customer,
   // which is why the quiet-hours rule does not reach it.
   'app/api/cron/stripe-reconcile/route.ts',
+  // Added 2026-10-04 (migration 061). Enqueues the past-client review ask into
+  // `scheduled_reminders`; send-reminders delivers it. A queue-filler, like
+  // event-reminders and birthday-rebooking, so it belongs here.
+  'app/api/cron/review-asks/route.ts',
 ] as const
 
 const ALL = [...SEND_LIBS, ...SEND_ROUTES]
@@ -163,7 +167,7 @@ describe('R0 — the surface is enumerated exactly', () => {
   it('every listed module exists on disk', () => {
     const missing = ALL.filter(rel => !fs.existsSync(path.join(SRC, rel)))
     expect(missing).toEqual([])
-    expect(ALL.length).toBe(22)
+    expect(ALL.length).toBe(23)
   })
 
   it('every cron route that sends or enqueues is in SEND_ROUTES', () => {

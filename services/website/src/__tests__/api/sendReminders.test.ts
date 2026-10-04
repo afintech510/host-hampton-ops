@@ -590,3 +590,71 @@ describe('GET /api/cron/send-reminders', () => {
     expect(checkFreshness(undefined, now, 1000, 'x').kind).toBe('unreadable')
   })
 })
+
+/* ── the past-client review ask (migration 061) ─────────────────────────── */
+
+describe('send-reminders: review_ask_email / review_ask_sms', () => {
+  const originalEnv = process.env
+  beforeEach(() => {
+    jest.clearAllMocks()
+    process.env = {
+      ...originalEnv, CRON_SECRET, RESEND_API_KEY: 're_test', TWILIO_ACCOUNT_SID: 'AC_test',
+      PORTAL_LINK_SIGNING_SECRET: 'test-signing-secret',
+    }
+    mockResendSend.mockResolvedValue({ data: { id: 'resend-1' }, error: null })
+    mockSendSMSVia.mockResolvedValue('SM123')
+  })
+  afterAll(() => { process.env = originalEnv })
+
+  const ask = (over: Record<string, any> = {}) =>
+    reminder({ reminder_type: 'review_ask_email', reference_type: 'contact', reference_id: 'review-ask', ...over })
+
+  it('emails the ask with a working unsubscribe, a reply-to and a text half — no booking needed', async () => {
+    const fake = setup({ reminders: [ask()], bookings: [] })
+    await GET(makeReq(CRON_SECRET))
+
+    expect(mockResendSend).toHaveBeenCalledTimes(1)
+    const sent = mockResendSend.mock.calls[0][0]
+    expect(sent.to).toBe('parent@example.com')
+    expect(sent.subject).toBe('A quick favor from Host Hampton?')
+    expect(sent.replyTo).toBeTruthy()
+    expect(sent.headers['List-Unsubscribe']).toContain('/api/unsubscribe?t=')
+    expect(sent.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
+    expect(sent.html).toContain('g.page/r/')
+    expect(sent.html).toContain('/unsubscribe?t=')
+    expect(sent.text).toContain('Unsubscribe: ')
+    expect(row(fake).status).toBe('sent')
+  })
+
+  it('is MARKETING: no email without email_opt_in at send time', async () => {
+    const fake = setup({ reminders: [ask()], contacts: [contact({ email_opt_in: false })] })
+    await GET(makeReq(CRON_SECRET))
+    expect(mockResendSend).not.toHaveBeenCalled()
+    expect(row(fake).status).toBe('cancelled')
+  })
+
+  it('does not send with a dead unsubscribe link — no signing secret is a retry', async () => {
+    delete process.env.PORTAL_LINK_SIGNING_SECRET
+    const fake = setup({ reminders: [ask()] })
+    await GET(makeReq(CRON_SECRET))
+    expect(mockResendSend).not.toHaveBeenCalled()
+    expect(row(fake).status).toBe('pending')
+  })
+
+  it('texts the ask through Quo, keyed to the contact', async () => {
+    const fake = setup({ reminders: [ask({ reminder_type: 'review_ask_sms', channel: 'sms' })], bookings: [] })
+    await GET(makeReq(CRON_SECRET))
+    expect(mockSendSMSVia).toHaveBeenCalledWith('quo', '+16314008080', expect.stringContaining('Google review'))
+    expect(row(fake).status).toBe('sent')
+  })
+
+  it('no text without sms_opt_in at send time', async () => {
+    const fake = setup({
+      reminders: [ask({ reminder_type: 'review_ask_sms', channel: 'sms' })],
+      contacts: [contact({ sms_opt_in: false })],
+    })
+    await GET(makeReq(CRON_SECRET))
+    expect(mockSendSMSVia).not.toHaveBeenCalled()
+    expect(row(fake).status).toBe('cancelled')
+  })
+})
