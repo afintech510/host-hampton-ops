@@ -1,9 +1,8 @@
 /**
- * Tests for the UTM-tagged Google review link builder used by the review-ask
- * SMS + email sends (Phase 3 review-engine tagging).
+ * Tests for the Google review link used by every review ask (SMS + email).
  */
 
-import { buildReviewUrl } from '@/lib/marketing/reviewLink'
+import { buildReviewUrl, REVIEW_BASE_URL } from '@/lib/marketing/reviewLink'
 
 describe('buildReviewUrl', () => {
   /**
@@ -18,35 +17,26 @@ describe('buildReviewUrl', () => {
    * for days because nobody could tell whether it was a real bug. A test that
    * pins a value it owns is a guard; one that pins a value it borrowed is rot.
    *
-   * If you are here because this test failed: check the new URL actually
-   * resolves to Host Hampton's Google place, then update this line on purpose.
+   * If you are here because this test failed: check the new URL actually opens
+   * Host Hampton's review box ON A PHONE (that is how 2026-10-04's "the link
+   * isn't working" was settled), then update this line on purpose.
    */
-  it('points at the Host Hampton Google review page for sms', () => {
-    const url = buildReviewUrl('sms')
-    expect(url).toContain('https://g.page/r/CXw9DJM9kFo-EBM/review')
+  it('points straight at the Host Hampton Google review form', () => {
+    expect(buildReviewUrl('sms')).toBe(
+      'https://search.google.com/local/writereview?placeid=ChIJv3k3iqn36IkRfD0Mkz2QWj4'
+    )
   })
 
-  it('joins UTM params onto a query-less base with "?" not "&"', () => {
-    const url = buildReviewUrl('sms')
-    expect(url).toContain('/review?utm_source=')
-    expect(url).not.toContain('/review&utm_source=')
+  it('is the SAME link on every channel — no per-channel tags', () => {
+    expect(buildReviewUrl('email')).toBe(buildReviewUrl('sms'))
+    expect(buildReviewUrl('email')).toBe(REVIEW_BASE_URL)
   })
 
-  it('tags sms links with utm_source=sms&utm_medium=sms', () => {
-    const url = buildReviewUrl('sms')
-    expect(url).toContain('utm_source=sms')
-    expect(url).toContain('utm_medium=sms')
-    expect(url).toContain('utm_campaign=review_request')
-  })
-
-  it('tags email links with utm_source=email&utm_medium=email', () => {
-    const url = buildReviewUrl('email')
-    expect(url).toContain('utm_source=email')
-    expect(url).toContain('utm_medium=email')
-    expect(url).toContain('utm_campaign=review_request')
-  })
-
-  it('is stable and deterministic for the same input', () => {
-    expect(buildReviewUrl('sms')).toBe(buildReviewUrl('sms'))
+  it('carries nothing but the place id: no redirect hop, no UTM tags', () => {
+    const url = new URL(buildReviewUrl('email'))
+    expect(url.hostname).toBe('search.google.com')
+    expect([...url.searchParams.keys()]).toEqual(['placeid'])
+    expect(buildReviewUrl('email')).not.toContain('g.page')
+    expect(buildReviewUrl('email')).not.toContain('utm_')
   })
 })

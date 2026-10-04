@@ -620,7 +620,7 @@ describe('send-reminders: review_ask_email / review_ask_sms', () => {
     expect(sent.replyTo).toBeTruthy()
     expect(sent.headers['List-Unsubscribe']).toContain('/api/unsubscribe?t=')
     expect(sent.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
-    expect(sent.html).toContain('g.page/r/')
+    expect(sent.html).toContain('search.google.com/local/writereview?placeid=')
     expect(sent.html).toContain('/unsubscribe?t=')
     expect(sent.text).toContain('Unsubscribe: ')
     expect(row(fake).status).toBe('sent')

@@ -77,7 +77,7 @@ describe('the message', () => {
       '(Please let me know if you have any issues at all!)\n' +
       '\n' +
       'If you have a quick moment, we would be so incredibly grateful if you could leave us a 5-star review on Google! 🌟🙏 It helps our small business grow so much!\n' +
-      'https://g.page/r/CXw9DJM9kFo-EBM/review\n' +
+      'https://search.google.com/local/writereview?placeid=ChIJv3k3iqn36IkRfD0Mkz2QWj4\n' +
       '\n' +
       'Thank you again!',
     )
