@@ -219,7 +219,7 @@ describe('GET /api/cron/send-reminders', () => {
   const originalEnv = process.env
   beforeEach(() => {
     jest.clearAllMocks()
-    process.env = { ...originalEnv, CRON_SECRET, RESEND_API_KEY: 're_test', TWILIO_ACCOUNT_SID: 'AC_test' }
+    process.env = { ...originalEnv, CRON_SECRET, RESEND_API_KEY: 're_test', TWILIO_ACCOUNT_SID: 'AC_test', CHECKIN_LINKS_ENABLED: 'true' }
     mockResendSend.mockResolvedValue({ data: { id: 'resend-1' }, error: null })
     mockSendSMSVia.mockResolvedValue('SM123')
     mockHasExplicitSmsOptOut.mockResolvedValue(false)
@@ -639,6 +639,14 @@ describe('send-reminders: review_ask_email / review_ask_sms', () => {
     await GET(makeReq(CRON_SECRET))
     expect(mockResendSend).not.toHaveBeenCalled()
     expect(row(fake).status).toBe('pending')
+  })
+
+  it('cancels a queued check-in link while the switch is off, without sending', async () => {
+    const fake = setup({ reminders: [reminder({ reminder_type: 'checkin_link_36hr', channel: 'sms' })] })
+    await GET(makeReq(CRON_SECRET))
+    expect(mockSendCheckinLinkSms).not.toHaveBeenCalled()
+    expect(row(fake).status).toBe('cancelled')
+    expect(row(fake).last_outcome).toContain('check-in links are switched off')
   })
 
   it('texts the ask through Quo, keyed to the contact', async () => {

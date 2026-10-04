@@ -27,6 +27,8 @@ export const dynamic = 'force-dynamic'
  * Suggested schedule: once a day at ~10:30 ET, ahead of the 11am email slot.
  *
  *   ?perDay=N   1..100, default 40 — people per channel per run
+ *   ?smsGapDays=N  0..14, default 3 — days a text waits after the email ask;
+ *               0 texts the same people the same day
  *   ?dryRun=1   plan and report, write NOTHING (no rows, no budget, no ledger)
  *
  * Bounds, stated plainly because this is the one route that can put a large
@@ -58,6 +60,15 @@ export async function GET(req: NextRequest) {
     }
     perDay = n
   }
+  let smsGapDays: number | undefined
+  const gapParam = params.get('smsGapDays')
+  if (gapParam !== null) {
+    const n = Number(gapParam)
+    if (!Number.isInteger(n) || n < 0 || n > 14) {
+      return NextResponse.json({ error: 'smsGapDays must be an integer 0..14' }, { status: 400 })
+    }
+    smsGapDays = n
+  }
   const dryRunParam = params.get('dryRun')
   const dryRun = dryRunParam === '1' || dryRunParam === 'true'
 
@@ -71,7 +82,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Could not read the audience', detail: load.error }, { status: 503 })
   }
 
-  const plan = planReviewAsks(load.input, { perDay, now })
+  const plan = planReviewAsks(load.input, { perDay, now, smsGapDays })
   const emailAt = askTime(now, REVIEW_ASK_EMAIL_HOUR_ET)
   const smsAt = askTime(now, REVIEW_ASK_SMS_HOUR_ET)
 

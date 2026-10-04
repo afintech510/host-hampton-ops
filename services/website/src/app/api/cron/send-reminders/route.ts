@@ -26,7 +26,7 @@ import { sendSMSVia } from '@/lib/sms'
 import { buildReviewUrl } from '@/lib/marketing/reviewLink'
 import { writeLedger } from '@/lib/marketing/graph'
 import { sendCheckinLinkSms, hasExplicitSmsOptOut } from '@/lib/checkinLink'
-import { isCheckinReminderType } from '@/lib/checkinReminders'
+import { isCheckinReminderType, checkinLinksEnabled } from '@/lib/checkinReminders'
 import { asLedgerEntityId, claimReminder, finishReminder, isMarketingReminder, type SendOutcome } from '@/lib/reminderQueue'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { checkFreshness, reminderMaxLatenessMs } from '@/lib/scheduleFreshness'
@@ -232,6 +232,12 @@ async function dispatch(
 
   if (reminder.channel === 'sms') {
     if (!configured.sms) return { kind: 'retry', reason: 'unconfigured: no SMS provider credential' }
+
+    // Switched off by Adam 2026-10-04 (`checkinLinksEnabled`). Ahead of quiet
+    // hours so a queued row is CANCELLED with the reason, not deferred forever.
+    if (isCheckinReminderType(reminder.reminder_type) && !checkinLinksEnabled()) {
+      return { kind: 'skipped', reason: 'disabled: automatic check-in links are switched off' }
+    }
 
     /**
      * Quiet hours, before any consent branch and before any provider call.

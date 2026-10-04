@@ -19,6 +19,7 @@ import {
   enqueueCheckinReminders,
   cancelCheckinReminders,
   isCheckinReminderType,
+  checkinLinksEnabled,
 } from '@/lib/checkinReminders'
 import {
   makeFakeDb,
@@ -49,7 +50,17 @@ function setup(opts: { contactEmail?: string | null; legacy?: boolean } = {}) {
   return fake
 }
 
-beforeEach(() => jest.clearAllMocks())
+// These tests exercise the check-in texts WITH the switch on; the switch
+// itself (off by default since 2026-10-04) is pinned in its own describe.
+const ORIGINAL_CHECKIN_FLAG = process.env.CHECKIN_LINKS_ENABLED
+beforeEach(() => {
+  jest.clearAllMocks()
+  process.env.CHECKIN_LINKS_ENABLED = 'true'
+})
+afterAll(() => {
+  if (ORIGINAL_CHECKIN_FLAG === undefined) delete process.env.CHECKIN_LINKS_ENABLED
+  else process.env.CHECKIN_LINKS_ENABLED = ORIGINAL_CHECKIN_FLAG
+})
 
 describe('computeCheckinReminderTimes', () => {
   it('schedules 36 hours before the party start, in Eastern', () => {
@@ -200,6 +211,30 @@ describe('enqueueCheckinReminders', () => {
   it('never throws — a scheduling failure must not break a booking', async () => {
     mockGetSupabase.mockImplementation(() => { throw new Error('db down') })
     await expect(enqueueCheckinReminders(base)).resolves.toBeUndefined()
+  })
+})
+
+describe('the off switch (Adam, 2026-10-04)', () => {
+  const base = {
+    bookingRef: 'HH-2026-0042', contactEmail: 'jane@example.com',
+    partyDate: '2026-10-11', partyTime: '2:00 PM', now: new Date('2026-09-01T00:00:00Z'),
+  }
+
+  it('is OFF unless the variable is exactly "true"', () => {
+    for (const v of [undefined, '', 'false', '1', 'TRUE']) {
+      if (v === undefined) delete process.env.CHECKIN_LINKS_ENABLED
+      else process.env.CHECKIN_LINKS_ENABLED = v
+      expect(checkinLinksEnabled()).toBe(false)
+    }
+    process.env.CHECKIN_LINKS_ENABLED = 'true'
+    expect(checkinLinksEnabled()).toBe(true)
+  })
+
+  it('enqueues nothing while off', async () => {
+    delete process.env.CHECKIN_LINKS_ENABLED
+    const fake = setup()
+    await enqueueCheckinReminders(base)
+    expect(fake.tables.scheduled_reminders).toHaveLength(0)
   })
 })
 

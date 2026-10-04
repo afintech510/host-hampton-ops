@@ -152,7 +152,16 @@ function maxDate(a: string | null, b: string | null | undefined): string | null 
  */
 export function planReviewAsks(
   input: ReviewAskInput,
-  opts: { perDay: number; now: Date }
+  opts: {
+    perDay: number
+    now: Date
+    /**
+     * Days a text waits after the email ask. Default SMS_AFTER_EMAIL_DAYS. 0
+     * means "same day": text without waiting for the email at all — what Adam
+     * chose for the first batch on 2026-10-04.
+     */
+    smsGapDays?: number
+  }
 ): ReviewAskPlan {
   const lastSeenByEmail = new Map<string, string | null>()
   for (const b of input.pastBookings) {
@@ -197,7 +206,8 @@ export function planReviewAsks(
 
   const emailPool: Picked[] = []
   const smsPool: Picked[] = []
-  const smsGapMs = SMS_AFTER_EMAIL_DAYS * 24 * 60 * 60 * 1000
+  const smsGapDays = opts.smsGapDays ?? SMS_AFTER_EMAIL_DAYS
+  const smsGapMs = smsGapDays * 24 * 60 * 60 * 1000
   const nowMs = opts.now.getTime()
 
   for (const [key, rows] of Array.from(groups.entries())) {
@@ -239,7 +249,9 @@ export function planReviewAsks(
     // The email goes first. Wait while it is still queued, and for the gap
     // after it went; someone we cannot email is texted without waiting.
     let wait = false
-    if (emailAsks.length > 0) {
+    if (smsGapDays === 0) {
+      wait = false
+    } else if (emailAsks.length > 0) {
       wait = emailAsks.some(
         q => q.status === 'pending' || q.status === 'sending' || nowMs - new Date(q.scheduled_for).getTime() < smsGapMs
       )

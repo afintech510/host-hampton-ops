@@ -193,6 +193,17 @@ describe('planReviewAsks — the text follows the email', () => {
     expect(p.counts.smsWaitingForEmail).toBe(3)
   })
 
+  it('smsGapDays=0 texts the same people the same day, still once per number', () => {
+    const fresh = person()
+    const queued = person()
+    const p = planReviewAsks(input({
+      contacts: [fresh, queued],
+      existing: [{ contact_id: queued.id, reminder_type: 'review_ask_email', status: 'pending', scheduled_for: '2026-10-05T15:00:00Z' }],
+    }), { perDay: 40, now: NOW, smsGapDays: 0 })
+    expect(p.sms.map(x => x.contact.id).sort()).toEqual([fresh.id, queued.id].sort())
+    expect(p.email.map(x => x.contact.id)).toEqual([fresh.id])
+  })
+
   it('texts straight away someone we may text but not email', () => {
     const smsOnly = person({ email_opt_in: false })
     const p = plan(input({ contacts: [smsOnly] }))

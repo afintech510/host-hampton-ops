@@ -32,6 +32,21 @@ export function isCheckinReminderType(type: string): type is CheckinReminderType
   return (CHECKIN_REMINDER_TYPES as readonly string[]).includes(type)
 }
 
+/**
+ * The AUTOMATIC check-in texts (36hr + day-of) are switched OFF — Adam,
+ * 2026-10-04, when the reminder sender was first scheduled. The 18 rows queued
+ * at the time were cancelled with that reason on `last_outcome`.
+ *
+ * Off unless `CHECKIN_LINKS_ENABLED=true`, so an unset variable can never turn
+ * them back on by accident. Gated at BOTH ends: nothing new is enqueued, and
+ * send-reminders cancels any row that is already queued. An admin pressing a
+ * check-in button by hand is unaffected — that is a human choosing to send.
+ * To re-enable: set it in /opt/hosthampton/.env and `up -d --build website`.
+ */
+export function checkinLinksEnabled(): boolean {
+  return process.env.CHECKIN_LINKS_ENABLED === 'true'
+}
+
 export interface CheckinReminderTimes {
   at36hr: Date | null
   dayOf: Date | null
@@ -90,6 +105,10 @@ export async function enqueueCheckinReminders({
   partyTime,
   now = new Date(),
 }: EnqueueInput): Promise<void> {
+  if (!checkinLinksEnabled()) {
+    console.log(`checkin:enqueue — automatic check-in links are off, not scheduling ${bookingRef}`)
+    return
+  }
   try {
     const supabase = getSupabase()
 
