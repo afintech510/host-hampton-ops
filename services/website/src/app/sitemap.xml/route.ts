@@ -26,7 +26,7 @@ export const dynamic = 'force-dynamic'
  * URL changed on every fetch — the fastest way to make it ignore `lastmod`
  * entirely. Bump this date when page copy actually changes.
  */
-const CONTENT_LAST_MODIFIED = '2026-09-22'
+const CONTENT_LAST_MODIFIED = '2026-10-04'
 
 interface Entry {
   path: string

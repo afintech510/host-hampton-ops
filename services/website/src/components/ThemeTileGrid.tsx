@@ -141,7 +141,13 @@ export default function ThemeTileGrid({ themes: dbThemes }: { themes?: ThemeData
               </div>
               <div className="p-4">
                 <h3 className="font-semibold text-hampton-navy text-sm tracking-wide mb-1">{t.name}</h3>
-                <p className="text-hampton-navy text-xs">Starting at ${miniPrice.toLocaleString()}</p>
+                {/* Both tiers, each with what it buys. This used to read "Starting at
+                    $<mini>" alone, under a hero saying "from $800 — up to 10 kids":
+                    a crawler cannot click to the panel that explains the Mini
+                    Party, so ChatGPT and Grok both reported $600–$750 as a price
+                    contradiction with /party-packages. */}
+                <p className="text-hampton-navy text-xs">${regularPrice.toLocaleString()} · 10 kids, 2 hrs</p>
+                <p className="text-hampton-navy/60 text-[11px]">Mini (7 kids, 1.5 hrs) ${miniPrice.toLocaleString()}</p>
               </div>
             </button>
           )
@@ -232,7 +238,7 @@ export default function ThemeTileGrid({ themes: dbThemes }: { themes?: ThemeData
 
             <div className="px-6 py-4 bg-hampton-pink/10 border-t border-hampton-pink/20 flex flex-col sm:flex-row gap-3 items-center justify-between">
               <p className="text-hampton-navy/70 text-xs text-center sm:text-left">
-                Lock your date with a <strong>25% deposit</strong> — change theme or details any time.
+                Lock your date with a <strong>$250 deposit</strong> — change theme or details any time.
               </p>
               <div className="flex gap-3 shrink-0">
                 <Link

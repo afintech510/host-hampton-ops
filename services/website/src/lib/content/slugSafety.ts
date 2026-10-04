@@ -90,6 +90,8 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/kids-party-menu/success',
   '/kids-party-menu/summary',
   '/li-high',
+  /** A `route.ts` (plain text for answer engines), so the page walker misses it. */
+  '/llms.txt',
   '/mermaid-party',
   '/mobile-craft-party',
   '/mobile-craft-party/[location]',

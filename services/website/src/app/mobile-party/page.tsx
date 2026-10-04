@@ -100,6 +100,13 @@ const perfectFor = [
 ]
 
 const faqs = [
+  // The question an assistant is actually asked first. No figure in the answer:
+  // this array becomes FAQPage schema, and no mobile price may appear in schema
+  // (plan §15) — the answer points at the tiers rendered above it instead.
+  {
+    q: 'How much does a mobile party cost?',
+    a: 'Our Entry and Signature packages above are the starting points — each covers a host, every supply, a keepsake for every child, and full setup and cleanup, and the birthday child is always free. Bigger guest lists, extra stations and longer parties get a custom quote, usually within 24 hours. Travel is free within 20 miles of Speonk, and there is never a mandatory gratuity.',
+  },
   {
     q: 'How far will you travel?',
     a: 'We travel throughout the Hamptons and all of Long Island — we have run parties and events everywhere from Manhattan to Montauk. Travel is free within 20 miles of our Speonk studio; beyond that a modest mileage charge covers the drive. We never add a mandatory gratuity — what we quote is what you pay.',

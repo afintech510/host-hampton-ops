@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     template: '%s | Host Hampton',
   },
   description:
-    'Host Hampton is a private celebration studio in Speonk, NY. Upscale themed birthday parties with hands-on hosts — fully customizable to fit any budget. Reserve your date with a $250 deposit.',
+    'Private party studio in Speonk, NY. Fully hosted themed kids birthday parties at our Hamptons studio, or mobile craft parties at your home across Long Island.',
   keywords: ['birthday party venue', 'kids party Hamptons', 'permanent jewelry Long Island', 'party room rental Speonk'],
   icons: {
     icon: [
@@ -83,7 +83,15 @@ const localBusinessSchema = {
   '@type': ['LocalBusiness', 'EventVenue'],
   '@id': BUSINESS_ID,
   name: 'Host Hampton',
-  description: 'Boutique celebration studio offering themed birthday parties, permanent jewelry, room rentals, and workshops.',
+  // The one-sentence identity an answer engine repeats. It used to omit mobile
+  // parties — the page most ChatGPT referrals land on — and say "workshops".
+  description:
+    'Private, fully hosted kids and teen party studio in Speonk, NY. Themed and craft birthday parties at our Hamptons studio, mobile craft parties at your home across Long Island, studio rental for showers and events, and adult activations like a trucker hat bar and permanent jewelry.',
+  knowsAbout: [
+    'Kids birthday parties', 'Mobile craft parties', 'Slime parties', 'Spa parties', 'Glow parties',
+    'Arts and crafts parties', 'Toddler and first birthday parties', 'Sweet 16 parties',
+    'Baby and bridal showers', 'Trucker hat bar', 'Permanent jewelry', 'Party room rental',
+  ],
   url: 'https://www.hosthampton.com',
   telephone: '+16319989325',
   email: 'hosthampton295@gmail.com',

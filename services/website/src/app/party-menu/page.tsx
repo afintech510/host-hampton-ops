@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase'
+import { loadPricingCatalog } from '@/lib/pricingCatalog'
 
 export const metadata: Metadata = {
   title: 'Party Menu & Pricing',
@@ -56,10 +57,32 @@ export default async function PartyMenuPage() {
   const standardActivities = byCat('activity-standard', 'kids-party')
   const partyAddOns = byCat('party-add-on', 'kids-party')
 
-  // Room rental sections — room-rental-specific items
-  const roomRentals = byCat('room-rental')
+  // Room rental prices come from the STUDIO RATE rows — the ones
+  // lib/studioRental.ts charges at checkout and /party-room-rental and
+  // /studio-rental print. This slide used to read the older `room-rental`
+  // category ($450 / $575, $50 / $100 an hour, Fri counted as weekend), which
+  // nothing charges: it was the one page on the site quoting a room rental $25
+  // under the real price, and answer engines quoted it back as a contradiction.
+  const { studioRates } = await loadPricingCatalog()
+  const rentalColumns = [
+    {
+      label: 'Weekend', days: 'Sat & Sun', featured: true,
+      rows: [
+        { name: '3 hours', price: fmt(studioRates.weekendBaseCents) },
+        { name: 'Full day (12 hrs)', price: fmt(studioRates.weekendFullDayCents) },
+        { name: 'Additional hour', price: `${fmt(studioRates.weekendAddlHourCents)}/hr` },
+      ],
+    },
+    {
+      label: 'Weekday', days: 'Mon — Fri', featured: false,
+      rows: [
+        { name: '3 hours', price: fmt(studioRates.weekdayBaseCents) },
+        { name: 'Full day (12 hrs)', price: fmt(studioRates.weekdayFullDayCents) },
+        { name: 'Additional hour', price: `${fmt(studioRates.weekdayAddlHourCents)}/hr` },
+      ],
+    },
+  ]
   const studioRentals = byCat('studio-rental')
-  const deposits = byCat('deposit')
   const serviceAddOns = byCat('service-add-on', 'room-rental')
 
   // Universal sections — exclude room-rental-only items so they don't mix
@@ -131,7 +154,6 @@ export default async function PartyMenuPage() {
         </div>
 
         {/* ═══ SLIDE 2: Room Rental ═══ */}
-        {roomRentals.length > 0 && (
           <div className="bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
             <div className="h-1 bg-hampton-navy" />
             <div className="text-center pt-8 pb-2 px-8">
@@ -151,41 +173,27 @@ export default async function PartyMenuPage() {
             {/* Rental grid */}
             <div className="p-8">
               <div className="grid sm:grid-cols-2 gap-5">
-                {/* Weekend column */}
-                <div className="bg-white border-2 border-hampton-navy rounded-xl p-5 shadow-md">
-                  <div className="text-center border-b border-gray-200 pb-3 mb-4">
-                    <h3 className="font-serif font-bold text-2xl text-hampton-navy">Weekend</h3>
-                    <p className="text-xs font-bold text-hampton-navy/40 uppercase tracking-wider mt-1">Fri, Sat, Sun</p>
-                  </div>
-                  <div className="space-y-3">
-                    {roomRentals
-                      .filter(r => r.name.toLowerCase().includes('weekend') || r.name.toLowerCase().includes('fri'))
-                      .map(r => (
-                        <div key={r.id} className="flex justify-between items-center">
-                          <span className="font-medium text-hampton-navy/60 text-sm">{r.name.replace(/Party Room Rental\s*[-–—]\s*/i, '').replace(/Party Room Rental\s*/i, '')}</span>
-                          <span className="font-black text-lg text-hampton-navy">{fmt(r.price_cents, r.price_label)}</span>
+                {rentalColumns.map(col => (
+                  <div
+                    key={col.label}
+                    className={col.featured
+                      ? 'bg-white border-2 border-hampton-navy rounded-xl p-5 shadow-md'
+                      : 'bg-hampton-ivory/50 border border-gray-200 rounded-xl p-5'}
+                  >
+                    <div className="text-center border-b border-gray-200 pb-3 mb-4">
+                      <h3 className={`font-serif font-bold text-2xl ${col.featured ? 'text-hampton-navy' : 'text-hampton-navy/70'}`}>{col.label}</h3>
+                      <p className="text-xs font-bold text-hampton-navy/40 uppercase tracking-wider mt-1">{col.days}</p>
+                    </div>
+                    <div className="space-y-3">
+                      {col.rows.map(r => (
+                        <div key={r.name} className="flex justify-between items-center">
+                          <span className="font-medium text-hampton-navy/60 text-sm">{r.name}</span>
+                          <span className={`text-lg ${col.featured ? 'font-black text-hampton-navy' : 'font-bold text-hampton-navy/70'}`}>{r.price}</span>
                         </div>
                       ))}
+                    </div>
                   </div>
-                </div>
-
-                {/* Weekday column */}
-                <div className="bg-hampton-ivory/50 border border-gray-200 rounded-xl p-5">
-                  <div className="text-center border-b border-gray-200 pb-3 mb-4">
-                    <h3 className="font-serif font-bold text-2xl text-hampton-navy/70">Weekday</h3>
-                    <p className="text-xs font-bold text-hampton-navy/30 uppercase tracking-wider mt-1">Mon — Thu</p>
-                  </div>
-                  <div className="space-y-3">
-                    {roomRentals
-                      .filter(r => r.name.toLowerCase().includes('weekday') || r.name.toLowerCase().includes('mon'))
-                      .map(r => (
-                        <div key={r.id} className="flex justify-between items-center">
-                          <span className="font-medium text-hampton-navy/50 text-sm">{r.name.replace(/Party Room Rental\s*[-–—]\s*/i, '').replace(/Party Room Rental\s*/i, '')}</span>
-                          <span className="font-bold text-lg text-hampton-navy/70">{fmt(r.price_cents, r.price_label)}</span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
+                ))}
               </div>
 
               {/* Studio / Professional Use */}
@@ -209,15 +217,12 @@ export default async function PartyMenuPage() {
             </div>
 
             {/* Deposit note */}
-            {deposits.length > 0 && (
-              <div className="px-8 pb-6 text-center">
-                <p className="text-[11px] font-bold text-red-500 bg-red-50 inline-block px-4 py-1.5 rounded-full border border-red-100">
-                  All Room Rentals Require a {fmt(deposits[0].price_cents)} Security Deposit (Refundable)
-                </p>
-              </div>
-            )}
+            <div className="px-8 pb-6 text-center">
+              <p className="text-[11px] font-bold text-red-500 bg-red-50 inline-block px-4 py-1.5 rounded-full border border-red-100">
+                All Room Rentals Require a {fmt(studioRates.securityDepositCents)} Refundable Security Hold
+              </p>
+            </div>
           </div>
-        )}
 
         {/* ═══ SLIDE 3: Food & Beverage ═══ */}
         <div className="bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
