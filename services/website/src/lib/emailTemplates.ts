@@ -1347,7 +1347,7 @@ export function reviewAskHtml(raw: {
     </p>
     ${payButton(mailHrefExternal(raw.reviewUrl), 'Leave a Google Review')}
     <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">
-      Thank you!<br>Adam &amp; the Host Hampton team
+      Thank you!<br>Allie &amp; the Host Hampton team
     </p>
     <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
       Questions? Reach out anytime:<br>${contactBlock}

@@ -160,5 +160,5 @@ export function smsReviewRequest(params: SmsReviewRequestParams): string {
  * ~55 characters they cost are most of a segment.
  */
 export function smsReviewAsk(params: { firstName: string }): string {
-  return `Hi ${params.firstName}, it's Adam from Host Hampton! If you enjoyed celebrating with us, a quick Google review would mean so much to our small business: ${REVIEW_BASE_URL} Reply STOP to opt out`
+  return `Hi ${params.firstName}, it's Allie from Host Hampton! If you enjoyed celebrating with us, a quick Google review would mean so much to our small business: ${REVIEW_BASE_URL} Reply STOP to opt out`
 }

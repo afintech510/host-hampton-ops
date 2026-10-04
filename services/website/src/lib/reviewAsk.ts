@@ -350,7 +350,7 @@ export function reviewAskText(args: { firstName: string; reviewUrl: string; unsu
     args.reviewUrl,
     '',
     'Thank you!',
-    'Adam & the Host Hampton team',
+    'Allie & the Host Hampton team',
     '',
     '--',
     'Host Hampton · 295 Montauk Highway, Suite 7 · Speonk, NY 11972',
