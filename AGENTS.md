@@ -335,7 +335,11 @@ There is **no in-container scheduler**. Scheduled work is driven externally by *
 | `/api/cron/gmail-sync` | every 3 min | **working**, 200 × 995 |
 | `/api/cron/booking-locks` | daily 04:00 UTC | **401 on every run**, stale secret — needs-Adam 35 |
 | `/api/cron/draft-newsletter` | daily 11:00 UTC | **401 on every run**, stale secret — needs-Adam 35 |
+| `/api/cron/send-reminders` | every 15 min — **box crontab**, since 2026-10-04 | first real delivery 2026-10-04 (80 review asks) |
+| `/api/cron/review-asks?smsGapDays=0` | daily 14:30 UTC — **box crontab**, since 2026-10-04 | 40 people/day, email + same-day text |
 | everything else | — | **not scheduled at all** |
+
+**The box now has a crontab too** (`crontab -l` on `hampton-vps`): the two rows above run `/root/hh-cron.sh`, which calls the container by IP with `CRON_SECRET` grepped (never sourced) from `.env`, logging to `/var/log/hh-cron.log`. Everything else is still cron-job.org. Remove a job with `crontab -e`.
 
 **Nothing monitors a cron's status.** A job that has failed every day for months looks exactly like a job that works. If you are asked whether a job runs, ask nginx by path *and* status, and then ask the table that would hold its output.
 
