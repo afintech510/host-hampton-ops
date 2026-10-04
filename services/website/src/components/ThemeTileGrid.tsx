@@ -52,13 +52,13 @@ const fallbackThemes: ThemeData[] = [
     images: ['/images/theme-spa.webp', '/images/gallery/spa-party-1.webp', '/images/gallery/spa-party-2.webp'],
   },
   {
-    name: 'Slime Party', slug: 'slime-party', price_cents: 90000, tag: null,
+    name: 'Slime Party', slug: 'slime-party', price_cents: 95000, tag: null,
     description: 'Choose your slime theme! Custom slime-making station with personalized containers and messy fun.',
     extended_description: 'Get ready for the ultimate slime lab! Choose a slime theme and each guest creates their own custom slime — picking colors, glitter, and add-ins at our slime-making station. They take home their creation in personalized containers. The studio is transformed with slime-themed decor and activities. Perfect for ages 5–12.',
     images: ['/images/theme-slime.webp', '/images/slime-party-1.jpg', '/images/slime-party-2.jpg', '/images/slime-party-3.jpg', '/images/slime-party-4.jpg'],
   },
   {
-    name: 'K-Pop Party', slug: 'kpop-party', price_cents: 90000, tag: null,
+    name: 'K-Pop Party', slug: 'kpop-party', price_cents: 95000, tag: null,
     description: 'Hair glitter, decorate your own microphone or trucker hat, glitter tattoos, and all the K-pop vibes.',
     extended_description: 'Your favorite K-pop stars come to life! Guests get hair glitter, decorate their own microphone or trucker hat, enjoy glitter tattoos, and strike poses at our photo wall. The studio is lit with stage lighting and filled with K-pop energy. We can make it neon glow if preferred. Awesome for fans ages 7–14.',
     images: ['/images/theme-kpop.webp', '/images/gallery/kpop-setup.webp'],
@@ -70,7 +70,7 @@ const fallbackThemes: ThemeData[] = [
     images: ['/images/theme-barbie.webp', '/images/gallery/barbie-photo-booth.webp', '/images/gallery/barbie-setup.webp', '/images/gallery/card-barbie-collage.webp'],
   },
   {
-    name: 'Sweets & Treats', slug: 'sweets-treats', price_cents: 80000, tag: 'Best Value',
+    name: 'Sweets & Treats', slug: 'sweets-treats', price_cents: 95000, tag: null,
     description: 'Cookie, cupcake, and donut decorating — plus decorate your own apron to take home!',
     extended_description: 'A party as sweet as the birthday star! Guests decorate their own cookies, cupcakes, or donuts and get to decorate their own aprons to take home. The studio is transformed into a pastel dreamland with sweet-themed decor. Perfect for ages 3–10 who love all things sweet.',
     images: ['/images/theme-sweets.webp', '/images/gallery/donut-decorating.webp'],

@@ -225,9 +225,15 @@ export default function CraftPartyLanding({ data }: { data: CraftParty }) {
 
       {/* ── Pricing (mobile-capable pages only) ── */}
       {mobile && (
+        // "At-Home" in the heading because these are the MOBILE tiers: under a
+        // bare "Spa Party Pricing" an answer engine read $500/$750 as the price
+        // of a studio spa party (ChatGPT, 2026-10-04). Studio prices are per
+        // theme and live on /party-packages.
         <MobilePriceBlock
-          heading={`${data.name} Pricing`}
-          subheading="Brought to your door. What we quote is what you pay — no mandatory gratuity, ever."
+          heading={`At-Home ${data.name} Pricing`}
+          subheading={data.venue === 'both'
+            ? 'Brought to your door. What we quote is what you pay — no mandatory gratuity, ever. Hosting at our Speonk studio instead? Studio prices are on Party Packages.'
+            : 'Brought to your door. What we quote is what you pay — no mandatory gratuity, ever.'}
         />
       )}
 

@@ -114,7 +114,7 @@ const faqs: FaqItem[] = [
   {
     category: 'Pricing',
     q: 'How much does a party cost?',
-    a: 'Party packages start at $800 and are fully customizable based on your theme, guest count, activities, and add-ons. Tell us what you have in mind and we\'ll build a quote — usually within 24 hours.',
+    a: 'Party packages start at $850 and are fully customizable based on your theme, guest count, activities, and add-ons. Tell us what you have in mind and we\'ll build a quote — usually within 24 hours.',
   },
   {
     category: 'Pricing',

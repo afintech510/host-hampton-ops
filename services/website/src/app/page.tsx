@@ -28,17 +28,17 @@ export const metadata: Metadata = {
   // DEPOSIT, which made "$250" the only price associated with the business.
   // Lead with what a party actually costs; the deposit is a booking detail.
   description:
-    'Upscale themed kids birthday parties at our private Hamptons studio in Speonk, NY — or mobile at your house. From $800 for 2 hours, up to 10 kids, fully hosted.',
+    'Upscale themed kids birthday parties at our private Hamptons studio in Speonk, NY — or mobile at your house. From $850 for 2 hours, up to 10 kids, fully hosted.',
 }
 
 const themes = [
   { name: 'Glow Party',       price: 950, img: '/images/theme-glow.webp',     tag: 'Most Popular' },
   { name: 'Swiftie Party',    price: 850, img: '/images/theme-swiftie.webp',  tag: null },
   { name: 'Spa Party',        price: 850, img: '/images/theme-spa.webp',      tag: null },
-  { name: 'Slime Party',      price: 900, img: '/images/theme-slime.webp',    tag: null },
-  { name: 'K-Pop Party',      price: 900, img: '/images/theme-kpop.webp',     tag: null },
+  { name: 'Slime Party',      price: 950, img: '/images/theme-slime.webp',    tag: null },
+  { name: 'K-Pop Party',      price: 950, img: '/images/theme-kpop.webp',     tag: null },
   { name: 'Barbie Party',     price: 850, img: '/images/theme-barbie.webp',   tag: null },
-  { name: 'Sweets & Treats',  price: 800, img: '/images/theme-sweets.webp',   tag: 'Best Value' },
+  { name: 'Sweets & Treats',  price: 950, img: '/images/theme-sweets.webp',   tag: null },
   { name: 'Toddler Party',    price: 850, img: '/images/theme-toddler.webp',  tag: 'Ages 2–4' },
 ]
 
@@ -104,7 +104,7 @@ export default async function Home() {
                 Keep this a plain sentence: a crawler that does not run JS still
                 reads it, and every figure below is the live DB value. */}
             <p className="text-hampton-navy text-base md:text-lg font-semibold leading-relaxed mb-8 max-w-lg">
-              Studio parties from <strong>$800</strong> — 2 hours, up to 10 kids, fully hosted with setup,
+              Studio parties from <strong>$850</strong> — 2 hours, up to 10 kids, fully hosted with setup,
               activities and cleanup included. <strong>All ages, no age limit</strong> — we have hosted
               everything from first birthdays to Sweet 16s, graduation parties and 40th birthdays.
               Extra guests $35 each. A $250 deposit holds your date and comes off your total.

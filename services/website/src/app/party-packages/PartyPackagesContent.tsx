@@ -61,21 +61,21 @@ const themes = [
   },
   {
     name: 'Slime Party',
-    price: 900,
+    price: 950,
     imgs: ['/images/theme-slime.webp', '/images/slime-party-1.jpg', '/images/slime-party-2.jpg', '/images/slime-party-3.jpg', '/images/slime-party-4.jpg'],
     desc: 'Choose your slime theme! Custom slime-making station with personalized containers and messy fun.',
     extendedDesc: 'Each guest creates their own custom slime with a variety of colors, glitters, scents, and mix-ins \u2014 choose a slime theme and make it your own! Everyone takes home their creation in a personalized container. We handle ALL the mess \u2014 you just enjoy the fun.',
   },
   {
     name: 'K-Pop Demon Hunter',
-    price: 900,
+    price: 950,
     imgs: ['/images/theme-kpop.webp'],
     desc: 'Hair glitter, decorate your own microphone or trucker hat, glitter tattoos, and K-pop vibes.',
     extendedDesc: 'For the K-pop obsessed! Features hair glitter, decorate your own microphone or trucker hat, glitter tattoos, karaoke station with all the hits, neon-themed decor, and a photo booth with K-pop-inspired props. We can make it neon glow if preferred. Perfect for tweens and teens who live for the aesthetic.',
   },
   {
     name: 'Trucker Hat Party',
-    price: 900,
+    price: 950,
     imgs: ['/images/gallery/card-trucker-hat-bar.webp'],
     desc: 'Iron-on patches, photo booth, and totally custom trucker hats as favors.',
     extendedDesc: 'The trendiest party on Long Island! Each guest designs their own custom trucker hat with iron-on patches, rhinestones, and embellishments. Includes a photo booth with fun props, and every guest walks away with their one-of-a-kind creation. A huge hit with ages 8+.',
@@ -124,7 +124,7 @@ const themes = [
   },
   {
     name: 'Sweets & Treats',
-    price: 800,
+    price: 950,
     imgs: ['/images/theme-sweets.webp'],
     desc: 'Cookie, cupcake, and donut decorating \u2014 decorate your own apron to take home!',
     extendedDesc: 'A sugar lover\'s dream! Guests decorate cookies, cupcakes, or donuts with professional-grade supplies. Each guest gets to decorate their own apron to take home. Includes all decorating supplies and take-home boxes for creations. The studio is transformed into a pastel sweet paradise.',
