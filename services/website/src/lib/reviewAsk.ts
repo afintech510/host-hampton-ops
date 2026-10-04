@@ -125,6 +125,23 @@ function emailKey(raw: string | null | undefined): string {
   return String(raw ?? '').trim().toLowerCase()
 }
 
+/**
+ * The review-ask TEXTS are switched OFF — Adam, 2026-10-04 ("stop the texts"),
+ * after the first batch of 40 went out the same afternoon. The email ask is
+ * unaffected.
+ *
+ * Off unless `REVIEW_ASK_SMS_ENABLED=true`, so an unset variable can never turn
+ * them back on by accident (the `checkinLinksEnabled` pattern). Gated at BOTH
+ * ends: review-asks queues no text, and send-reminders cancels any review-ask
+ * text already queued. Note a cancelled ask still counts as "asked" for that
+ * person, so re-enabling later will not text anyone whose row was cancelled.
+ * To re-enable: set it in /opt/hosthampton/.env, map it in docker-compose.yml,
+ * and `up -d --build website`.
+ */
+export function reviewAskTextsEnabled(): boolean {
+  return process.env.REVIEW_ASK_SMS_ENABLED === 'true'
+}
+
 export function isInternalAddress(raw: string | null | undefined): boolean {
   const e = emailKey(raw)
   if (!e) return false

@@ -286,7 +286,7 @@ describe('GET /api/cron/review-asks', () => {
   afterAll(() => { jest.useRealTimers(); process.env = originalEnv })
   beforeEach(() => {
     jest.clearAllMocks()
-    process.env = { ...originalEnv, CRON_SECRET: 'test-cron-secret' }
+    process.env = { ...originalEnv, CRON_SECRET: 'test-cron-secret', REVIEW_ASK_SMS_ENABLED: 'true' }
     mockCheckSmsBudget.mockResolvedValue({ ok: true, sent: 0, cap: 500, remaining: 500 })
   })
 
@@ -323,6 +323,19 @@ describe('GET /api/cron/review-asks', () => {
     const second = await GET(req())
     expect(second.json()).toMatchObject({ emailQueued: 0, smsQueued: 0 })
     expect(fake.tables.scheduled_reminders).toHaveLength(2)
+  })
+
+  it('queues NO text while the switch is off — emails still go, nothing charged', async () => {
+    delete process.env.REVIEW_ASK_SMS_ENABLED
+    const fake = setup([person(), person({ email_opt_in: false })])
+    const res = await GET(req())
+    expect(res.json()).toMatchObject({ ok: true, textsEnabled: false, emailQueued: 1, smsQueued: 0 })
+    expect(fake.tables.scheduled_reminders.map(r => r.reminder_type)).toEqual(['review_ask_email'])
+    expect(mockRecordSmsSent).not.toHaveBeenCalled()
+    expect(mockCheckSmsBudget).not.toHaveBeenCalled()
+    // 'yes' is not 'true' — only the exact value re-enables.
+    process.env.REVIEW_ASK_SMS_ENABLED = 'yes'
+    expect((await GET(req({ dryRun: '1' }))).json()).toMatchObject({ textsEnabled: false, wouldQueue: { sms: 0 } })
   })
 
   it('reads past the 1000-row PostgREST page', async () => {

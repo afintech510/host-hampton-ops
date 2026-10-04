@@ -14,6 +14,7 @@ import {
   emailRow,
   loadReviewAskInput,
   planReviewAsks,
+  reviewAskTextsEnabled,
   smsRow,
 } from '@/lib/reviewAsk'
 
@@ -82,7 +83,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Could not read the audience', detail: load.error }, { status: 503 })
   }
 
-  const plan = planReviewAsks(load.input, { perDay, now, smsGapDays })
+  const planned = planReviewAsks(load.input, { perDay, now, smsGapDays })
+  // Texts switched off by Adam 2026-10-04 (`reviewAskTextsEnabled`): plan them
+  // as nothing, so no row is queued, no budget is charged and no ledger entry
+  // claims a text. Emails go on as before.
+  const textsEnabled = reviewAskTextsEnabled()
+  const plan = textsEnabled ? planned : { ...planned, sms: [] }
   const emailAt = askTime(now, REVIEW_ASK_EMAIL_HOUR_ET)
   const smsAt = askTime(now, REVIEW_ASK_SMS_HOUR_ET)
 
@@ -93,6 +99,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       dryRun: true,
       perDay,
+      textsEnabled,
       wouldQueue: { email: plan.email.length, sms: plan.sms.length },
       smsSegments: plan.sms.reduce((n, p) => n + segmentsFor(p.contact.first_name), 0),
       emailAt: emailAt.toISOString(),
@@ -141,6 +148,7 @@ export async function GET(req: NextRequest) {
 
   const summary = {
     perDay,
+    textsEnabled,
     emailQueued: emailRes.inserted,
     emailDuplicate: emailRes.duplicate,
     emailRefused: emailRes.refused.length,

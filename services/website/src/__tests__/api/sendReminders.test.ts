@@ -599,7 +599,7 @@ describe('send-reminders: review_ask_email / review_ask_sms', () => {
     jest.clearAllMocks()
     process.env = {
       ...originalEnv, CRON_SECRET, RESEND_API_KEY: 're_test', TWILIO_ACCOUNT_SID: 'AC_test',
-      PORTAL_LINK_SIGNING_SECRET: 'test-signing-secret',
+      PORTAL_LINK_SIGNING_SECRET: 'test-signing-secret', REVIEW_ASK_SMS_ENABLED: 'true',
     }
     mockResendSend.mockResolvedValue({ data: { id: 'resend-1' }, error: null })
     mockSendSMSVia.mockResolvedValue('SM123')
@@ -654,6 +654,15 @@ describe('send-reminders: review_ask_email / review_ask_sms', () => {
     await GET(makeReq(CRON_SECRET))
     expect(mockSendSMSVia).toHaveBeenCalledWith('quo', '+16314008080', expect.stringContaining('Google review'))
     expect(row(fake).status).toBe('sent')
+  })
+
+  it('cancels a queued review-ask text while the switch is off, without sending', async () => {
+    delete process.env.REVIEW_ASK_SMS_ENABLED
+    const fake = setup({ reminders: [ask({ reminder_type: 'review_ask_sms', channel: 'sms' })], bookings: [] })
+    await GET(makeReq(CRON_SECRET))
+    expect(mockSendSMSVia).not.toHaveBeenCalled()
+    expect(row(fake).status).toBe('cancelled')
+    expect(row(fake).last_outcome).toContain('review-ask texts are switched off')
   })
 
   it('no text without sms_opt_in at send time', async () => {

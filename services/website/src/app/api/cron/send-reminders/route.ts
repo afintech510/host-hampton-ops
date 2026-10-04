@@ -10,7 +10,7 @@ import {
   reminderBooking1DayHtml,
 } from '@/lib/email-templates/reminders'
 import { partyBalanceReminderHtml, partyAdminUnpaidDayOfHtml, partyThankYouHtml, birthdayRebookHtml, reviewAskHtml } from '@/lib/emailTemplates'
-import { REVIEW_ASK_EMAIL_SUBJECT, reviewAskText } from '@/lib/reviewAsk'
+import { REVIEW_ASK_EMAIL_SUBJECT, reviewAskText, reviewAskTextsEnabled } from '@/lib/reviewAsk'
 import { generateUnsubscribeToken, buildUnsubscribeUrl, unsubscribeHeaders } from '@/lib/unsubscribeLink'
 import { formatMoney } from '@/lib/partyPricing'
 import { generatePortalToken, buildPortalUrl, portalSigningSecret } from '@/lib/portalAuth'
@@ -237,6 +237,10 @@ async function dispatch(
     // hours so a queued row is CANCELLED with the reason, not deferred forever.
     if (isCheckinReminderType(reminder.reminder_type) && !checkinLinksEnabled()) {
       return { kind: 'skipped', reason: 'disabled: automatic check-in links are switched off' }
+    }
+    // Review-ask texts switched off by Adam 2026-10-04 (`reviewAskTextsEnabled`).
+    if (reminder.reminder_type === 'review_ask_sms' && !reviewAskTextsEnabled()) {
+      return { kind: 'skipped', reason: 'disabled: review-ask texts are switched off' }
     }
 
     /**
