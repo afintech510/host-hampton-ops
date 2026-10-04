@@ -148,6 +148,17 @@ export default async function PartyRoomRental() {
           <p className="text-hampton-navy max-w-xl mx-auto">
             Perfect for any occasion that deserves a beautiful, private setting.
           </p>
+          {/* Parent-phrased, in plain text. This page surfaced for "party room
+              rental Westhampton" and DROPPED OUT when Perplexity re-asked it the
+              way a parent does — "a small private party room near Westhampton
+              for a kids birthday" (2026-10-04) — because none of those words were
+              on the page. */}
+          <p className="text-hampton-navy max-w-2xl mx-auto mt-4 text-sm leading-relaxed">
+            Looking for a small private party room near Westhampton? Our studio in Speonk, just
+            west of Westhampton, is all yours for a kids birthday party, a baby or bridal shower, a
+            first birthday or a milestone celebration. Bring your own decorations, food and vendors
+            — it is never shared with another group.
+          </p>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {useCases.map(u => (

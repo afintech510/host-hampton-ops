@@ -225,6 +225,14 @@ export default function AtelierBrimPage() {
                 Your guests leave with a bespoke piece they&apos;ll actually wear — and your brand
                 stays top of mind long after the event.
               </p>
+              {/* "Company party" + "on-site" were the words that dropped this page
+                  out of Perplexity's results in favour of vendors who say them
+                  (2026-10-04). The service already travels; say so in text. */}
+              <p>
+                We bring the hat bar on-site — to your office, venue or private event anywhere on
+                Long Island and in the Hamptons — for company parties, employee-appreciation days,
+                client events, brand activations, bachelorettes and milestone birthdays.
+              </p>
             </div>
             <div className="flex gap-8 mt-10">
               {[
