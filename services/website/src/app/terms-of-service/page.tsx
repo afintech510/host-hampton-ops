@@ -24,7 +24,7 @@ export default function TermsOfService() {
           Host Hampton LLC (&quot;Host Hampton,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;)
           provides themed birthday parties, event hosting, room rentals, permanent jewelry services, mobile
           party services, community workshops, and related celebrations at our studio located at 295 Montauk
-          Highway, Suite 7, Speonk, NY 11972. We also offer event ticketing through our website.
+          Highway, Speonk, NY 11972. We also offer event ticketing through our website.
         </p>
 
         <h2 className="font-semibold text-lg mt-6">2. Bookings &amp; Payments</h2>
@@ -193,7 +193,7 @@ export default function TermsOfService() {
         <p>Questions about these Terms? Contact us:</p>
         <ul className="list-none pl-0 space-y-1">
           <li><strong>Host Hampton LLC</strong></li>
-          <li>295 Montauk Highway, Suite 7</li>
+          <li>295 Montauk Highway</li>
           <li>Speonk, NY 11972</li>
           <li>Email: <a href="mailto:hosthampton295@gmail.com" className="text-hampton-pink hover:underline">hosthampton295@gmail.com</a></li>
           <li>Phone: <a href="tel:6319989325" className="text-hampton-pink hover:underline">(631) 998-9325</a></li>

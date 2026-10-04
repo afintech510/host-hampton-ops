@@ -97,7 +97,7 @@ export function appointmentConfirmationHtml(raw: ConfirmationData): string {
     <p style="color:${BRAND.gray};font-size:13px;line-height:1.6;">Questions? Call or text us at <a href="tel:6319989325" style="color:${BRAND.navy};font-weight:600;">${STUDIO_PHONE_DISPLAY}</a>.</p>
   </div>
   <div style="background:${BRAND.footerBg};padding:20px 40px;text-align:center;">
-    <p style="color:${BRAND.navy};font-size:12px;margin:0;">295 Montauk Highway, Suite 7 · Speonk, NY 11972</p>
+    <p style="color:${BRAND.navy};font-size:12px;margin:0;">295 Montauk Highway · Speonk, NY 11972</p>
   </div>
 </div>
 </body></html>`

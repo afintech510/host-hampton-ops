@@ -70,7 +70,7 @@ const faqs = [
   },
   {
     q: 'Where are you located?',
-    a: '295 Montauk Highway, Suite 7, Speonk NY 11972 — right in the heart of the Hamptons, easy off Montauk Highway.',
+    a: '295 Montauk Highway, Speonk NY 11972 — right in the heart of the Hamptons, easy off Montauk Highway.',
   },
 ]
 
@@ -290,7 +290,7 @@ export default function GlowPartyPage() {
             </Link>
           </div>
           <p className="text-gray-600 text-sm mt-6">
-            📍 295 Montauk Hwy, Suite 7 · Speonk, NY · (631) 998-9325
+            📍 295 Montauk Hwy · Speonk, NY · (631) 998-9325
           </p>
         </div>
       </section>

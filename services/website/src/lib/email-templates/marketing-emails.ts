@@ -63,11 +63,11 @@ function canSpamFooter(): string {
   return `
   <div style="background:${BRAND.footerBg};padding:24px 40px;text-align:center;">
     <p style="color:${BRAND.navy};font-size:13px;margin:0 0 6px;font-weight:bold;">Host Hampton</p>
-    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway, Suite 7 &middot; Speonk, NY 11972</p>
+    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway &middot; Speonk, NY 11972</p>
     <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">(631) 998-9325 &middot; <a href="https://www.instagram.com/hosthampton" style="color:${BRAND.navy};">@hosthampton</a></p>
     <p style="color:${BRAND.navy};opacity:0.6;font-size:11px;margin:12px 0 0;">
       You&rsquo;re receiving this because you signed up for Host Hampton updates.<br>
-      <a href="{{unsubscribe_url}}" style="color:${BRAND.navy};text-decoration:underline;">Unsubscribe</a> &middot; 295 Montauk Highway, Suite 7, Speonk, NY 11972
+      <a href="{{unsubscribe_url}}" style="color:${BRAND.navy};text-decoration:underline;">Unsubscribe</a> &middot; 295 Montauk Highway, Speonk, NY 11972
     </p>
   </div>`
 }

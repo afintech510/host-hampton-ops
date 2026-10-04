@@ -65,7 +65,7 @@ const steps = [
   {
     n: '03',
     title: 'Pick Up or Local Delivery',
-    desc: 'Collect your finished bags in-studio at 295 Montauk Hwy, Suite 7, Speonk — or arrange local delivery.',
+    desc: 'Collect your finished bags in-studio at 295 Montauk Hwy, Speonk — or arrange local delivery.',
   },
 ]
 

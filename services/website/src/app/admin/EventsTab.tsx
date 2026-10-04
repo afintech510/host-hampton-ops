@@ -78,7 +78,7 @@ function saleIsLive(e: { sale_discount_cents: number | null; sale_ends_at: strin
   return e.sale_discount_cents != null && e.sale_discount_cents > 0 && e.sale_ends_at != null && new Date(e.sale_ends_at).getTime() > Date.now()
 }
 
-const DEFAULT_LOCATION = 'Host Hampton, 295 Montauk Hwy Suite 7, Speonk NY'
+const DEFAULT_LOCATION = 'Host Hampton, 295 Montauk Hwy, Speonk NY'
 
 /* ─── Events Tab ─────────────────────────────────────── */
 
@@ -1092,7 +1092,7 @@ function EmailComposer({
         <p>This is a friendly reminder about <strong>${event.title}</strong> at Host Hampton!</p>
         <p><strong>Date:</strong> ${dateStr}<br/>
         <strong>Time:</strong> ${timeStr}<br/>
-        <strong>Location:</strong> Host Hampton, 295 Montauk Hwy Suite 7, Speonk NY 11972</p>
+        <strong>Location:</strong> Host Hampton, 295 Montauk Hwy, Speonk NY 11972</p>
         <p>We're looking forward to seeing you! If you have any questions or need to make changes to your reservation, please don't hesitate to reach out.</p>
         <p>Warm regards,<br/>
         <strong>The Host Hampton Team</strong><br/>

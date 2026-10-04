@@ -117,7 +117,7 @@ export const CHRISTMAS_MARKET_2026: MarketConfig = {
   // scheduled every reminder 4-5h early), so this is written with an explicit
   // offset and never derived from the server's local clock.
   closesAt: '2026-12-05T13:00:00-05:00',
-  locationLine: 'Host Hampton · 295 Montauk Hwy, Suite 7, Speonk NY',
+  locationLine: 'Host Hampton · 295 Montauk Hwy, Speonk NY',
 
   boothFeeCents: 5000,
   cardFeeCents: 205,

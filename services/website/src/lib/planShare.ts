@@ -142,7 +142,7 @@ export function planSummaryEmailHtml(opts: {
     <p style="font-size:13px;color:${BRAND.gray};line-height:1.7;margin:0;">This link is private to you &mdash; please don&rsquo;t forward it. Questions? Call or text <strong>(631) 998-9325</strong>.</p>
   </div>
   <div style="background:${BRAND.footerBg};padding:20px 40px;text-align:center;">
-    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway, Suite 7 &middot; Speonk, NY 11972</p>
+    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway &middot; Speonk, NY 11972</p>
     <p style="color:${BRAND.navy};opacity:0.5;font-size:11px;margin:0;">Thank you for choosing Host Hampton!</p>
   </div>
 </div>

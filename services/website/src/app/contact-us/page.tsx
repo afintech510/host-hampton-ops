@@ -4,7 +4,7 @@ import ContactForm from '@/components/ContactForm'
 
 export const metadata: Metadata = {
   title: 'Contact Us',
-  description: 'Get in touch with Host Hampton in Speonk, NY. Call, text, or email to plan your party. Located at 295 Montauk Hwy, Suite 7, Speonk, NY 11972.',
+  description: 'Get in touch with Host Hampton in Speonk, NY. Call, text, or email to plan your party. Located at 295 Montauk Hwy, Speonk, NY 11972.',
 }
 
 const CITIES_SERVED = [
@@ -54,7 +54,7 @@ export default function ContactUs() {
               </div>
               <div>
                 <p className="text-xs text-hampton-navy font-medium uppercase tracking-wide">Address</p>
-                <p className="text-hampton-navy font-semibold">295 Montauk Highway, Suite 7</p>
+                <p className="text-hampton-navy font-semibold">295 Montauk Highway</p>
                 <p className="text-hampton-navy">Speonk, NY 11972</p>
                 <p className="text-hampton-blue text-xs mt-1 group-hover:underline">View on Google Maps &rarr;</p>
               </div>
@@ -121,7 +121,7 @@ export default function ContactUs() {
             allowFullScreen
             loading="lazy"
             referrerPolicy="no-referrer-when-downgrade"
-            title="Host Hampton — 295 Montauk Highway, Suite 7, Speonk NY 11972"
+            title="Host Hampton — 295 Montauk Highway, Speonk NY 11972"
           />
         </div>
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">

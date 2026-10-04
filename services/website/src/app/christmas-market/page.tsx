@@ -52,7 +52,7 @@ export const metadata: Metadata = {
 
 const DETAILS: Array<[string, string]> = [
   ['When', `${MARKET.dateLabel}\n${MARKET.timeLabel}`],
-  ['Where', 'Host Hampton\n295 Montauk Hwy, Suite 7\nSpeonk, NY 11972'],
+  ['Where', 'Host Hampton\n295 Montauk Hwy\nSpeonk, NY 11972'],
   ['Admission', 'Free — everyone welcome'],
   ['Santa', 'Free pictures, bring your phone'],
 ]

@@ -97,7 +97,7 @@ const localBusinessSchema = {
   email: 'hosthampton295@gmail.com',
   address: {
     '@type': 'PostalAddress',
-    streetAddress: '295 Montauk Highway, Suite 7',
+    streetAddress: '295 Montauk Highway',
     addressLocality: 'Speonk',
     addressRegion: 'NY',
     postalCode: '11972',
@@ -156,7 +156,7 @@ const organizationSchema = {
   email: 'hosthampton295@gmail.com',
   address: {
     '@type': 'PostalAddress',
-    streetAddress: '295 Montauk Highway, Suite 7',
+    streetAddress: '295 Montauk Highway',
     addressLocality: 'Speonk',
     addressRegion: 'NY',
     postalCode: '11972',

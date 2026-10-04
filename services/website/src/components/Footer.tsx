@@ -86,7 +86,7 @@ export default function Footer() {
             <li>
               <a href="https://maps.app.goo.gl/dpHmDoUKSN7dXCaT8" target="_blank" rel="noopener noreferrer" className="flex gap-2 hover:text-hampton-navy transition-colors">
                 <MapPin size={16} className="shrink-0 mt-0.5 text-hampton-navy" />
-                <span>295 Montauk Hwy, Suite 7<br />Speonk, NY 11972</span>
+                <span>295 Montauk Hwy<br />Speonk, NY 11972</span>
               </a>
             </li>
             <li>

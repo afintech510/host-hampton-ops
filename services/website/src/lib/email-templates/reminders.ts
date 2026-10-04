@@ -28,7 +28,7 @@ const contactBlock = `
 function reminderFooter(): string {
   return `
   <div style="background:${BRAND.footerBg};padding:20px 40px;text-align:center;">
-    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway, Suite 7 &middot; Speonk, NY 11972</p>
+    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway &middot; Speonk, NY 11972</p>
     <p style="color:${BRAND.navy};opacity:0.5;font-size:11px;margin:0;">Host Hampton &middot; (631) 998-9325</p>
   </div>`
 }
@@ -138,10 +138,10 @@ export function reminderEventDayOfHtml(params: ReminderEventDayOfParams): string
     ${detailCard([
       { label: 'Today&rsquo;s Event', value: eventTitle },
       { label: 'Start Time', value: eventTime },
-      { label: 'Address', value: `${location}, 295 Montauk Hwy, Suite 7, Speonk NY 11972` },
+      { label: 'Address', value: `${location}, 295 Montauk Hwy, Speonk NY 11972` },
     ])}
     <div style="background:#e6f0e8;border-radius:10px;padding:20px;margin-bottom:20px;border:1px solid #b8d4bc;text-align:center;">
-      <p style="margin:0 0 12px;font-size:14px;color:#1a5c2a;font-weight:bold;">295 Montauk Highway, Suite 7 &mdash; Speonk, NY 11972</p>
+      <p style="margin:0 0 12px;font-size:14px;color:#1a5c2a;font-weight:bold;">295 Montauk Highway &mdash; Speonk, NY 11972</p>
       <a href="${mapsUrl}" style="display:inline-block;background:${BRAND.navy};color:#ffffff;padding:10px 24px;border-radius:50px;text-decoration:none;font-size:13px;font-weight:bold;">Open in Google Maps</a>
     </div>
     <div style="background:#f0ece7;border-radius:10px;padding:16px 20px;">
@@ -235,11 +235,11 @@ export function reminderBooking1DayHtml(params: ReminderBooking1DayParams): stri
     ${packageLine}
     ${detailCard([
       { label: 'Arrival Time', value: partyTime },
-      { label: 'Address', value: '295 Montauk Highway, Suite 7' },
+      { label: 'Address', value: '295 Montauk Highway' },
       { label: 'City', value: 'Speonk, NY 11972' },
     ])}
     <div style="background:#e6f0e8;border-radius:10px;padding:20px;margin-bottom:20px;border:1px solid #b8d4bc;text-align:center;">
-      <p style="margin:0 0 12px;font-size:14px;color:#1a5c2a;font-weight:bold;">295 Montauk Highway, Suite 7 &mdash; Speonk, NY 11972</p>
+      <p style="margin:0 0 12px;font-size:14px;color:#1a5c2a;font-weight:bold;">295 Montauk Highway &mdash; Speonk, NY 11972</p>
       <a href="${mapsUrl}" style="display:inline-block;background:${BRAND.navy};color:#ffffff;padding:10px 24px;border-radius:50px;text-decoration:none;font-size:13px;font-weight:bold;">Get Directions</a>
     </div>
     <div style="background:#f0ece7;border-radius:10px;padding:20px;margin-bottom:4px;">

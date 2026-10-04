@@ -131,7 +131,7 @@ const faqs: FaqItem[] = [
   {
     category: 'Location & Hours',
     q: 'Where is Host Hampton located?',
-    a: 'We\'re at 295 Montauk Hwy, Suite 7, Speonk, NY 11972 — on the East End of Long Island, convenient to the Hamptons, Westhampton, Southampton, and the surrounding towns.',
+    a: 'We\'re at 295 Montauk Hwy, Speonk, NY 11972 — on the East End of Long Island, convenient to the Hamptons, Westhampton, Southampton, and the surrounding towns.',
   },
   {
     category: 'Location & Hours',

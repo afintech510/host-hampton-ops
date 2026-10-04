@@ -20,7 +20,7 @@ const SHELL_OPEN = `<!DOCTYPE html>
 <div style="max-width:560px;margin:0 auto;background:#ffffff;">`
 
 const SHELL_CLOSE = `  <div style="background:#BCCDEB;padding:20px 40px;text-align:center;">
-    <p style="color:#1a2744;font-size:12px;margin:0;">Host Hampton &middot; 295 Montauk Highway, Suite 7, Speonk, NY 11972</p>
+    <p style="color:#1a2744;font-size:12px;margin:0;">Host Hampton &middot; 295 Montauk Highway, Speonk, NY 11972</p>
   </div>
 </div>
 </body></html>`

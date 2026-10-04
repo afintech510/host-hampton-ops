@@ -1991,7 +1991,7 @@ export async function POST(req: NextRequest) {
     <p style="color:#888;font-size:13px;line-height:1.6;margin:0;">Questions? Text or call <strong style="color:#1a2744;">(631) 998-9325</strong> or DM <strong style="color:#1a2744;">@hosthampton</strong> on Instagram.</p>
   </div>
   <div style="background:#BCCDEB;padding:20px 40px;text-align:center;">
-    <p style="color:#1a2744;font-size:12px;margin:0;">Host Hampton &middot; 295 Montauk Highway, Suite 7, Speonk, NY 11972</p>
+    <p style="color:#1a2744;font-size:12px;margin:0;">Host Hampton &middot; 295 Montauk Highway, Speonk, NY 11972</p>
   </div>
 </div>
 </body></html>`

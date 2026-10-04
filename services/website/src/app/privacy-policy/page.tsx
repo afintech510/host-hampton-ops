@@ -17,7 +17,7 @@ export default function PrivacyPolicy() {
           Host Hampton LLC (&quot;Host Hampton,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;) operates
           the website <a href="https://www.hosthampton.com" className="text-hampton-pink hover:underline">www.hosthampton.com</a> and
           provides themed birthday parties, event hosting, room rentals, permanent jewelry services, and community
-          events at our studio located at 295 Montauk Highway, Suite 7, Speonk, NY 11972.
+          events at our studio located at 295 Montauk Highway, Speonk, NY 11972.
         </p>
         <p>
           This Privacy Policy describes how we collect, use, disclose, and protect your personal information,
@@ -282,7 +282,7 @@ export default function PrivacyPolicy() {
         </p>
         <ul className="list-none pl-0 space-y-1">
           <li><strong>Host Hampton LLC</strong></li>
-          <li>295 Montauk Highway, Suite 7</li>
+          <li>295 Montauk Highway</li>
           <li>Speonk, NY 11972</li>
           <li>Email: <a href="mailto:hosthampton295@gmail.com" className="text-hampton-pink hover:underline">hosthampton295@gmail.com</a></li>
           <li>Phone: <a href="tel:6319989325" className="text-hampton-pink hover:underline">(631) 998-9325</a></li>

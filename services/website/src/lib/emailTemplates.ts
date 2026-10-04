@@ -38,12 +38,12 @@ const contactBlock = `
 
 const footer = `
   <div style="background:${BRAND.footerBg};padding:20px 40px;text-align:center;">
-    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway, Suite 7 · Speonk, NY 11972</p>
+    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway · Speonk, NY 11972</p>
   </div>`
 
 const footerTagline = (tagline: string) => `
   <div style="background:${BRAND.footerBg};padding:20px 40px;text-align:center;">
-    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway, Suite 7 · Speonk, NY 11972</p>
+    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway · Speonk, NY 11972</p>
     <p style="color:${BRAND.navy};opacity:0.5;font-size:11px;margin:0;">${tagline}</p>
   </div>`
 

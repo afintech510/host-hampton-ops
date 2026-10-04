@@ -584,7 +584,7 @@ export async function sendPlanPaymentReceipt(opts: {
     <p style="font-size:13px;color:#555;line-height:1.7;margin:0;">Questions? Call or text <strong>(631) 998-9325</strong>.</p>
   </div>
   <div style="background:#BCCDEB;padding:20px 40px;text-align:center;">
-    <p style="color:#1a2744;font-size:12px;margin:0;">295 Montauk Highway, Suite 7 &middot; Speonk, NY 11972</p>
+    <p style="color:#1a2744;font-size:12px;margin:0;">295 Montauk Highway &middot; Speonk, NY 11972</p>
   </div>
 </div>
 </body></html>`

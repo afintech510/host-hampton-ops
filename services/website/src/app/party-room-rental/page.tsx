@@ -74,7 +74,7 @@ const faqs = [
   },
   {
     q: 'Where are you located?',
-    a: '295 Montauk Highway, Suite 7, Speonk NY 11972 \u2014 right off Montauk Highway in the heart of the Hamptons.',
+    a: '295 Montauk Highway, Speonk NY 11972 \u2014 right off Montauk Highway in the heart of the Hamptons.',
   },
 ]
 

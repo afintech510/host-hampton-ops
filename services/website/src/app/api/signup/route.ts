@@ -172,7 +172,7 @@ function welcomeEmailHtml(firstName: string, code: string, expiresAt: string): s
 
   <!-- Footer -->
   <div style="background:#BCCDEB;padding:20px 40px;text-align:center;">
-    <p style="color:#1a2744;font-size:12px;margin:0 0 4px;">295 Montauk Highway, Suite 7 · Speonk, NY 11972</p>
+    <p style="color:#1a2744;font-size:12px;margin:0 0 4px;">295 Montauk Highway · Speonk, NY 11972</p>
     <p style="color:#1a2744;font-size:12px;margin:0 0 4px;">
       <a href="tel:6319989325" style="color:#1a2744;text-decoration:none;">(631) 998-9325</a> ·
       <a href="https://www.instagram.com/hosthampton" style="color:#1a2744;text-decoration:none;">@hosthampton</a> ·

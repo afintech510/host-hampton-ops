@@ -27,13 +27,21 @@
  * is the Venmo/Zelle handle's number and must never be printed as "call us".
  */
 
-/** Street + suite, as it should be READ on a document. */
-export const STUDIO_STREET = '295 Montauk Hwy, Suite 7'
+/**
+ * Street, as it should be READ on a document.
+ *
+ * NO suite and NO building — Adam, 2026-10-04: every listing says exactly
+ * "295 Montauk Hwy, Speonk, NY 11972". The web carried four variants (Suite 7,
+ * Bldg 2 Ste 7, Remsenburg, Eastport) and answer engines down-rank a business
+ * whose address will not agree with itself. Every "Suite 7" in src was removed
+ * in the same commit; do not reintroduce one.
+ */
+export const STUDIO_STREET = '295 Montauk Hwy'
 
 /** Town, state and ZIP. */
 export const STUDIO_LOCALITY = 'Speonk, NY 11972'
 
-/** The one-line form for a document: "295 Montauk Hwy, Suite 7, Speonk, NY 11972". */
+/** The one-line form for a document: "295 Montauk Hwy, Speonk, NY 11972". */
 export const STUDIO_ADDRESS_LINE = `${STUDIO_STREET}, ${STUDIO_LOCALITY}`
 
 /**

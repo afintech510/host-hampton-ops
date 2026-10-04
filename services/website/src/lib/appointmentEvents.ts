@@ -168,7 +168,7 @@ export const HALLOWEEN_HAIR_2026: AppointmentEventConfig = {
   eventDate: '2026-10-30',
   promoStartsAt: '2026-10-01T00:00:00-04:00',
   closesAt: '2026-10-30T15:00:00-04:00',
-  locationLine: 'Host Hampton · 295 Montauk Hwy, Suite 7, Speonk NY',
+  locationLine: 'Host Hampton · 295 Montauk Hwy, Speonk NY',
   accentHex: '#8b3a1d',
 
   firstSlotMinutes: 9 * 60,
@@ -193,7 +193,7 @@ export const CHRISTMAS_HAIR_2026: AppointmentEventConfig = {
   eventDate: '2026-12-18',
   promoStartsAt: '2026-12-01T00:00:00-05:00',
   closesAt: '2026-12-18T15:00:00-05:00',
-  locationLine: 'Host Hampton · 295 Montauk Hwy, Suite 7, Speonk NY',
+  locationLine: 'Host Hampton · 295 Montauk Hwy, Speonk NY',
   accentHex: '#8b1d2c',
 
   firstSlotMinutes: 9 * 60,
@@ -220,7 +220,7 @@ export const PERMANENT_JEWELRY_2026: AppointmentEventConfig = {
   eventDate: '2026-11-14',
   promoStartsAt: '2026-10-20T00:00:00-04:00',
   closesAt: '2026-11-14T15:00:00-05:00',
-  locationLine: 'Host Hampton · 295 Montauk Hwy, Suite 7, Speonk NY',
+  locationLine: 'Host Hampton · 295 Montauk Hwy, Speonk NY',
   accentHex: '#6b5b3f',
 
   firstSlotMinutes: 10 * 60,
@@ -291,7 +291,7 @@ export const TEST_EVENT: AppointmentEventConfig = {
   // (delete the slug from UNCONFIRMED_EVENT_SLUGS) rather than a date change.
   promoStartsAt: '2026-09-01T00:00:00-04:00',
   closesAt: '2026-10-31T15:00:00-04:00',
-  locationLine: 'Host Hampton · 295 Montauk Hwy, Suite 7, Speonk NY',
+  locationLine: 'Host Hampton · 295 Montauk Hwy, Speonk NY',
   accentHex: '#1e3a5f',
 
   firstSlotMinutes: 9 * 60,

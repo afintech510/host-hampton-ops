@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       event_date: body.eventDate || null,
       event_time: body.eventTime || null,
       event_end_time: body.eventEndTime || null,
-      location: body.location || 'Host Hampton, 295 Montauk Hwy Suite 7, Speonk NY',
+      location: body.location || 'Host Hampton, 295 Montauk Hwy, Speonk NY',
       max_tickets: body.maxTickets || 30,
       available_tickets: body.maxTickets || 30,
       is_active: body.isActive !== false,

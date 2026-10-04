@@ -166,7 +166,7 @@ export function photoAlbumEmailHtml(raw: PhotoAlbumMessage): string {
   ${p(`Here is the link to access all of your amazing photo booth pics:<br>${link(albumHref)}<br>(Please let me know if you have any issues at all!)`)}
   ${p(`If you have a quick moment, we would be so incredibly grateful if you could leave us a 5-star review on Google! &#127775;&#128591; It helps our small business grow so much!<br>${link(reviewHref)}`)}
   ${p('Thank you again!')}
-  <p style="margin:24px 0 0;font-size:12px;color:#999999;">Host Hampton &middot; 295 Montauk Highway, Suite 7 &middot; Speonk, NY 11972</p>
+  <p style="margin:24px 0 0;font-size:12px;color:#999999;">Host Hampton &middot; 295 Montauk Highway &middot; Speonk, NY 11972</p>
 </div>
 </body></html>`
 }

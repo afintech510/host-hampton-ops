@@ -353,7 +353,7 @@ export function reviewAskText(args: { firstName: string; reviewUrl: string; unsu
     'Allie & the Host Hampton team',
     '',
     '--',
-    'Host Hampton · 295 Montauk Highway, Suite 7 · Speonk, NY 11972',
+    'Host Hampton · 295 Montauk Highway · Speonk, NY 11972',
     `Unsubscribe: ${args.unsubscribeUrl}`,
   ].join('\n')
 }

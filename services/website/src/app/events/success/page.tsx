@@ -37,7 +37,7 @@ export default function EventSuccessPage() {
               <div className="w-8 h-8 rounded-full bg-hampton-blue/10 flex items-center justify-center shrink-0 mt-0.5">
                 <span className="text-sm font-bold text-hampton-navy">2</span>
               </div>
-              <p className="text-sm text-hampton-navy">Arrive at Host Hampton a few minutes early. We're at 295 Montauk Hwy, Suite 7, Speonk.</p>
+              <p className="text-sm text-hampton-navy">Arrive at Host Hampton a few minutes early. We're at 295 Montauk Hwy, Speonk.</p>
             </div>
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full bg-hampton-blue/10 flex items-center justify-center shrink-0 mt-0.5">

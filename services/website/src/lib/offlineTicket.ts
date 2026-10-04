@@ -237,7 +237,7 @@ export async function issueOfflineTickets(
         eventTitle: String(evt.title),
         eventDate: dateDisplay,
         eventTime: String(evt.event_time || 'TBA'),
-        location: String(evt.location || '295 Montauk Highway, Suite 7, Speonk, NY 11972'),
+        location: String(evt.location || '295 Montauk Highway, Speonk, NY 11972'),
         quantity: seatCount(input.seats),
         variantLabel: input.seats.length === 1 ? input.seats[0].variantLabel || undefined : undefined,
         totalFormatted: money(totalCents),

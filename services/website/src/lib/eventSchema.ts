@@ -217,7 +217,7 @@ export function buildEventSchema(e: EventSchemaInput, now: Date = new Date()): R
       name: e.location || 'Host Hampton',
       address: {
         '@type': 'PostalAddress',
-        streetAddress: '295 Montauk Hwy, Suite 7',
+        streetAddress: '295 Montauk Hwy',
         addressLocality: 'Speonk',
         addressRegion: 'NY',
         postalCode: '11972',
