@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Check, Truck, Palette, Gift, Users, Star, ArrowRight } from 'lucide-react'
+import { ACCESSORIES_REVIEWS } from '@/lib/reviews'
 
 export const metadata: Metadata = {
   title: 'Custom Canvas Bags & Trucker Hats',
@@ -56,18 +57,9 @@ const gallery = [
   { img: '/images/jewelry-gold.png', caption: 'Permanent Jewelry & Accessories' },
 ]
 
-const reviews = [
-  {
-    name: 'Melissa T.',
-    text: 'We ordered custom canvas bags for my daughter\'s Swiftie party — every guest was obsessed. They made the whole favor table look incredible.',
-    stars: 5,
-  },
-  {
-    name: 'Coach Sarah R.',
-    text: 'Got custom trucker hats for our whole cheer team. The quality was amazing and the process was so easy. We\'ll definitely be ordering again.',
-    stars: 5,
-  },
-]
+// Verbatim Google reviews about the hat/patch bar (lib/reviews.ts). The two
+// that used to be here traced to no review anywhere.
+const reviews = ACCESSORIES_REVIEWS
 
 export default function CustomAccessoriesPage() {
   return (

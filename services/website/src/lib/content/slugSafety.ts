@@ -122,6 +122,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/r/[token]',
   '/return-policy',
   '/review/[token]',
+  '/reviews',
   '/shower-venue',
   '/signup',
   '/signup-sheet',

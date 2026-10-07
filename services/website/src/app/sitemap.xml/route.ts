@@ -58,6 +58,7 @@ const STATIC_ROUTES: Entry[] = [
   { path: '/events', changefreq: 'weekly', priority: 0.7 },
   { path: '/gift-cards', changefreq: 'monthly', priority: 0.5 },
   { path: '/gallery', changefreq: 'monthly', priority: 0.6 },
+  { path: '/reviews', changefreq: 'monthly', priority: 0.6 },
   { path: '/faq', changefreq: 'monthly', priority: 0.5 },
   { path: '/contact-us', changefreq: 'yearly', priority: 0.6 },
   { path: '/book', changefreq: 'monthly', priority: 0.8 },

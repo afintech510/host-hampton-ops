@@ -10,6 +10,7 @@ import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import type { PricingItem } from './page'
 import { trackLead, trackCheckoutStart } from '@/lib/gtag'
 import { getAttribution } from '@/lib/utm'
+import { PACKAGES_REVIEWS, RATING } from '@/lib/reviews'
 import HeardAboutSelect, { heardAboutFields } from '@/components/HeardAboutSelect'
 
 const MINI_PARTY_DISCOUNT = 200
@@ -1080,42 +1081,20 @@ function PricingMenu({ items }: { items: PricingItem[] }) {
 
 /* ── Customer Reviews ── */
 
-const reviews = [
-  {
-    name: 'Jessica M.',
-    event: 'Glow Party',
-    text: 'My daughter had the BEST birthday ever! The glow party was incredible \u2014 the kids are still talking about it. Allie handled everything so I could actually enjoy the party. Worth every penny.',
-    stars: 5,
-  },
-  {
-    name: 'Sarah K.',
-    event: 'Slime Party',
-    text: 'We booked the slime party for my son\u2019s 8th birthday and it was amazing. The kids had so much fun making their own slime. Best part? We didn\u2019t have to clean up any of the mess!',
-    stars: 5,
-  },
-  {
-    name: 'Maria L.',
-    event: 'Spa Party',
-    text: 'The spa party was perfect for my tween. Every girl felt so special with the robes, manicures, and face masks. The studio was beautifully decorated. Highly recommend!',
-    stars: 5,
-  },
-  {
-    name: 'Ashley R.',
-    event: 'Swiftie Party',
-    text: 'A+ experience from start to finish. The Swiftie theme was spot-on \u2014 friendship bracelets, karaoke, and the cutest decorations. My daughter said it was the best day of her life!',
-    stars: 5,
-  },
-]
-
+// Verbatim Google reviews (lib/reviews.ts). The four that used to be here,
+// under "Real reviews from real Host Hampton families", traced to nothing.
 function CustomerReviews() {
   return (
     <section className="py-16 max-w-4xl mx-auto px-4 sm:px-6">
       <div className="text-center mb-10">
         <h2 className="section-heading">What Parents Are Saying</h2>
-        <p className="text-hampton-navy/70 text-sm">Real reviews from real Host Hampton families.</p>
+        <p className="text-hampton-navy/70 text-sm">
+          From our Google reviews \u2014 {RATING.ratingValue} stars from {RATING.reviewCount} families \u00b7{' '}
+          <Link href="/reviews" className="underline underline-offset-2">Read them all</Link>
+        </p>
       </div>
       <div className="grid sm:grid-cols-2 gap-5">
-        {reviews.map(review => (
+        {PACKAGES_REVIEWS.map(review => (
           <div key={review.name} className="bg-white rounded-2xl border border-hampton-pink/20 shadow-sm p-6">
             <div className="flex items-center gap-1 mb-3">
               {Array.from({ length: review.stars }).map((_, i) => (
@@ -1127,7 +1106,7 @@ function CustomerReviews() {
             </p>
             <div>
               <p className="text-sm font-semibold text-hampton-navy">{review.name}</p>
-              <p className="text-xs text-hampton-navy/50">{review.event}</p>
+              {review.occasion && <p className="text-xs text-hampton-navy/50">{review.occasion}</p>}
             </div>
           </div>
         ))}

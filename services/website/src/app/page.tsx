@@ -8,12 +8,11 @@ import { getSupabase } from '@/lib/supabase'
 import { applyLinkedPrices } from '@/lib/themePricing'
 import { businessRef } from '@/lib/seo'
 import { GALLERY_PHOTOS, GALLERY_HOME_PICKS } from '@/lib/gallery'
+import { HOMEPAGE_REVIEWS, RATING } from '@/lib/reviews'
 
-const reviewSchema = [
-  { name: 'Jessica M.', stars: 5, text: 'Absolutely incredible! My daughter and all her friends had the best time. The studio was perfectly decorated and the staff was so attentive. Worth every penny!' },
-  { name: 'Sarah K.', stars: 5, text: 'Best birthday party decision I ever made. Host Hampton handled EVERYTHING. My daughter was crying tears of joy when she walked in. 10/10 would recommend!' },
-  { name: 'Amanda R.', stars: 5, text: 'The girls were in heaven! Mini manicures, face masks, robes — pure magic. The owners clearly put so much love into making it special. We’ll be back!' },
-].map(r => ({
+// Real Google reviews, verbatim (lib/reviews.ts). The three that used to be
+// here traced to no review anywhere.
+const reviewSchema = HOMEPAGE_REVIEWS.map(r => ({
   '@context': 'https://schema.org',
   '@type': 'Review',
   // By @id, so these three reviews attach to the SAME business node the root
@@ -55,12 +54,6 @@ const steps = [
   { n: '01', title: 'Pick Your Theme',    desc: 'Browse 10+ themed party packages with everything included.' },
   { n: '02', title: 'Reserve Your Date', desc: 'Pay a $250 deposit to lock in your date. No stress — details can change.' },
   { n: '03', title: 'Celebrate!',         desc: 'Arrive, enjoy, make memories. We handle everything before and after.' },
-]
-
-const reviews = [
-  { name: 'Jessica M.', theme: 'Glow Party',    stars: 5, text: "Absolutely incredible! My daughter and all her friends had the best time. The studio was perfectly decorated and the staff was so attentive. Worth every penny!" },
-  { name: 'Sarah K.',   theme: 'Swiftie Party', stars: 5, text: "Best birthday party decision I ever made. Host Hampton handled EVERYTHING. My daughter was crying tears of joy when she walked in. 10/10 would recommend!" },
-  { name: 'Amanda R.',  theme: 'Spa Party',     stars: 5, text: "The girls were in heaven! Mini manicures, face masks, robes — pure magic. The owners clearly put so much love into making it special. We'll be back!" },
 ]
 
 export const dynamic = 'force-dynamic'
@@ -248,11 +241,15 @@ export default async function Home() {
       <section className="bg-hampton-pink/10 py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-12">
-            <p className="section-subheading">Real Stories</p>
+            <p className="section-subheading">Google Reviews</p>
             <h2 className="section-heading">What Parents Are Saying</h2>
+            <p className="text-hampton-navy/70 text-sm">
+              Rated {RATING.ratingValue} stars from {RATING.reviewCount} reviews on Google ·{' '}
+              <Link href="/reviews" className="underline underline-offset-2 hover:text-hampton-navy">Read them all</Link>
+            </p>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
-            {reviews.map(r => (
+            {HOMEPAGE_REVIEWS.map(r => (
               <div key={r.name} className="bg-white rounded-2xl p-6 shadow-sm border border-hampton-pink/20">
                 <div className="flex mb-3">
                   {[...Array(r.stars)].map((_, i) => <Star key={i} size={14} className="text-yellow-400 fill-yellow-400" />)}
@@ -260,7 +257,7 @@ export default async function Home() {
                 <p className="text-hampton-navy text-sm leading-relaxed mb-4 italic">"{r.text}"</p>
                 <div>
                   <p className="font-semibold text-hampton-navy text-sm">{r.name}</p>
-                  <p className="text-hampton-navy text-xs">{r.theme}</p>
+                  {r.occasion && <p className="text-hampton-navy text-xs">{r.occasion}</p>}
                 </div>
               </div>
             ))}
