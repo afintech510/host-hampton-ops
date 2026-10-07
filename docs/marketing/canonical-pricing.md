@@ -45,7 +45,7 @@ For photography & content creation, team meetings & trainings, workshops, pop-up
 | Room Setup & Decor (matching theme) | **$125** |
 | Full Clean-up Service | **$125** |
 | Garbage Service (trash removal) | **$35** |
-| Party Helper (additional staffing) | **$25/hr** |
+| Party Helper (additional staffing) | **$30/hr** |
 
 **Decor:**
 

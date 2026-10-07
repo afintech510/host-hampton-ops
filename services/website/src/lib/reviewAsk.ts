@@ -126,9 +126,10 @@ function emailKey(raw: string | null | undefined): string {
 }
 
 /**
- * The review-ask TEXTS are switched OFF — Adam, 2026-10-04 ("stop the texts"),
- * after the first batch of 40 went out the same afternoon. The email ask is
- * unaffected.
+ * The review-ask TEXTS were switched off 2026-10-04 ("stop the texts") after the
+ * first 40 went out signed "it's Adam" — customer messages are always from
+ * Allie. The copy was fixed that afternoon (5447a7c) and the texts switched
+ * back ON 2026-10-06. The stop was about the name, never the channel.
  *
  * Off unless `REVIEW_ASK_SMS_ENABLED=true`, so an unset variable can never turn
  * them back on by accident (the `checkinLinksEnabled` pattern). Gated at BOTH

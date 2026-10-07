@@ -237,6 +237,10 @@ services:
       # what is really registered; it returned [] until 2026-09-12, which is why
       # zero of 61 bookings had a recorded signature.
       - SIGNWELL_WEBHOOK_ID=${SIGNWELL_WEBHOOK_ID}
+      # Past-client review-ask TEXTS (lib/reviewAsk.ts). OFF unless exactly
+      # "true". Off 2026-10-04 because the first 40 signed as Adam; back on
+      # 2026-10-06 once the copy said Allie.
+      - REVIEW_ASK_SMS_ENABLED=${REVIEW_ASK_SMS_ENABLED:-false}
     networks:
       - hampton_net
 

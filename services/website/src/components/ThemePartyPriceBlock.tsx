@@ -1,4 +1,5 @@
 import { Check } from 'lucide-react'
+import { unstable_noStore as noStore } from 'next/cache'
 import { getSupabase } from '@/lib/supabase'
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
@@ -27,6 +28,8 @@ export default async function ThemePartyPriceBlock({
   atHomeFromCents: number
   atHomeNote: string
 }) {
+  // Live prices: see the noStore() note in MobilePriceBlock.
+  noStore()
   const [catalog, studioCents] = await Promise.all([loadPricingCatalog(), loadStudioPrice(studioItemName)])
   const g = catalog.guestRules
   const usd = (c: number) => `$${Math.round(c / 100).toLocaleString('en-US')}`

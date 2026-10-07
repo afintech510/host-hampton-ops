@@ -1,4 +1,5 @@
 import { Check, Gift, MapPin, ShieldCheck, CalendarCheck } from 'lucide-react'
+import { unstable_noStore as noStore } from 'next/cache'
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 
@@ -18,6 +19,13 @@ import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
  * (/mobile-party, /mobile-craft-party, the 26 town pages, CraftPartyLanding)
  * are server components too, so the await costs one cached query per minute
  * rather than one per page.
+ *
+ * `noStore()` makes every page that renders this block dynamic. Without it
+ * `next build` prerenders those pages with no Supabase env, so they served
+ * FALLBACK_CATALOG under a one-year cache header and never saw a price edit.
+ * It sits here rather than in `loadPricingCatalog` because client components
+ * import that module, and here rather than as `dynamic` on each page because
+ * a page that forgets the export goes stale silently.
  */
 export default async function MobilePriceBlock({
   heading = 'Mobile Party Pricing',
@@ -26,6 +34,7 @@ export default async function MobilePriceBlock({
   heading?: string
   subheading?: string
 }) {
+  noStore()
   const { mobileTiers, mobilePolicy } = await loadPricingCatalog()
   const extraChildPrice = Math.round(mobilePolicy.extraChildCents / 100)
   const depositDollars = Math.round(BOOKING_DEPOSIT_CENTS / 100)
