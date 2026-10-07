@@ -82,6 +82,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/faq',
   '/first-birthday-parties',
   '/fundraiser',
+  '/gallery',
   '/gift-cards',
   '/gift-cards/success',
   '/glow-party',

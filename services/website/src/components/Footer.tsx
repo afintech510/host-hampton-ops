@@ -64,6 +64,7 @@ export default function Footer() {
           <ul className="space-y-2 text-sm text-hampton-navy/70">
             {[
               { href: '/book',              label: 'Reserve Your Date' },
+              { href: '/gallery',           label: 'Party Gallery' },
               { href: '/faq',               label: 'FAQ' },
               { href: '/contact-us',        label: 'Contact Us' },
 

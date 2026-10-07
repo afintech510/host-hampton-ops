@@ -148,7 +148,7 @@ export default function MobileCraftPartyHub() {
             </div>
           </div>
           <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
-            {['/images/theme-slime.webp', '/images/gallery/venue-painting-workshop.webp', '/images/gallery/outdoor-party-setup.webp', '/images/theme-spa.webp'].map((src, i) => (
+            {['/images/gallery/mobile-party-bracelet-station.webp', '/images/gallery/venue-painting-workshop.webp', '/images/gallery/mobile-party-outdoor-table.webp', '/images/gallery/mobile-party-jelly-bag-craft.webp'].map((src, i) => (
               <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 1 ? 'ring-2 ring-[#c4975a]' : ''}`}>
                 <Image src={src} alt="Kids craft party" fill sizes="(max-width: 768px) 45vw, 240px" className="object-cover" />
               </div>

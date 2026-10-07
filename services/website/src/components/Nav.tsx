@@ -13,6 +13,7 @@ const navLinks = [
   { href: '/mobile-party',       label: 'Mobile Party' },
   { href: '/mobile-craft-party', label: 'Craft Parties' },
   { href: '/events',             label: 'Events' },
+  { href: '/gallery',            label: 'Gallery' },
 ]
 
 export default function Nav() {

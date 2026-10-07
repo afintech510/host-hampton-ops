@@ -184,9 +184,14 @@ export default function MobilePartyPage() {
             </div>
           </div>
           <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
-            {['/images/theme-glow.webp', '/images/gallery/outdoor-party-setup.webp', '/images/theme-spa.webp', '/images/theme-slime.webp'].map((src, i) => (
-              <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 1 ? 'ring-2 ring-[#c4975a]' : ''}`}>
-                <Image src={src} alt="Mobile party theme" fill sizes="(max-width: 768px) 45vw, 240px" className="object-cover" />
+            {[
+              { src: '/images/gallery/mobile-spa-nail-station.webp', alt: 'Mobile spa party nail station set up outdoors with polish rack and nail dryer' },
+              { src: '/images/gallery/mobile-party-tent-tables.webp', alt: 'Backyard party tent with pink tables set for a kids birthday party' },
+              { src: '/images/gallery/mobile-party-bracelet-station.webp', alt: 'Bracelet making station with beads, charms and cords at a mobile party' },
+              { src: '/images/gallery/mobile-spa-table-setting.webp', alt: 'Mobile spa party table set with mirrors, spa headbands and pink towels' },
+            ].map(({ src, alt }, i) => (
+              <div key={src} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 1 ? 'ring-2 ring-[#c4975a]' : ''}`}>
+                <Image src={src} alt={alt} fill sizes="(max-width: 768px) 45vw, 240px" className="object-cover" />
                 {i === 1 && (
                   <div className="absolute inset-0 bg-hampton-navy/40 flex items-center justify-center">
                     <span className="text-white font-bold text-sm bg-[#c4975a] px-3 py-1 rounded-full">At Your Home</span>

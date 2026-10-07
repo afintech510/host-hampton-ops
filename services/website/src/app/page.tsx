@@ -7,6 +7,7 @@ import ThemeTileGrid, { ThemeData } from '@/components/ThemeTileGrid'
 import { getSupabase } from '@/lib/supabase'
 import { applyLinkedPrices } from '@/lib/themePricing'
 import { businessRef } from '@/lib/seo'
+import { GALLERY_PHOTOS, GALLERY_HOME_PICKS } from '@/lib/gallery'
 
 const reviewSchema = [
   { name: 'Jessica M.', stars: 5, text: 'Absolutely incredible! My daughter and all her friends had the best time. The studio was perfectly decorated and the staff was so attentive. Worth every penny!' },
@@ -264,6 +265,29 @@ export default async function Home() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ── GALLERY STRIP ────────────────────────────────────── */}
+      <section className="py-20 max-w-7xl mx-auto px-4 sm:px-6">
+        <div className="text-center mb-10">
+          <p className="section-subheading">Real Parties</p>
+          <h2 className="section-heading">From Our Recent Parties</h2>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {GALLERY_HOME_PICKS.map(src => {
+            const p = GALLERY_PHOTOS.find(x => x.src === src)!
+            return (
+              <Link key={src} href="/gallery" className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-md group">
+                <Image src={p.src} alt={p.alt} fill sizes="(max-width: 768px) 50vw, 25vw" className="object-cover transition-transform duration-500 group-hover:scale-105" />
+              </Link>
+            )
+          })}
+        </div>
+        <div className="text-center mt-8">
+          <Link href="/gallery" className="inline-block border-2 border-hampton-navy/20 text-hampton-navy font-semibold px-7 py-3.5 rounded-full text-sm hover:border-hampton-mauve transition-all">
+            See the Full Gallery
+          </Link>
         </div>
       </section>
 

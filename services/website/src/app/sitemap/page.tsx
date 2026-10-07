@@ -5,7 +5,7 @@ import { locationsByRegion } from '@/lib/locations'
 import {
   PartyPopper, Gem, DoorOpen, Baby, Church, Heart, Zap, Calendar,
   BookOpen, Phone, FileText, Shield, RotateCcw, MapPin, Truck, HardHat, Calculator,
-  ShoppingBag, Palette, ClipboardList, Gift, HelpCircle,
+  ShoppingBag, Palette, ClipboardList, Gift, HelpCircle, Images,
 } from 'lucide-react'
 
 export const metadata: Metadata = {
@@ -70,6 +70,7 @@ const sections: { title: string; links: LinkItem[] }[] = [
   {
     title: 'Information',
     links: [
+      { href: '/gallery', label: 'Party Gallery', description: 'Photos from real parties in the studio and at home', icon: <Images className={iconClass} /> },
       { href: '/faq', label: 'FAQ', description: 'Answers on booking, deposits, travel, ages and what’s included', icon: <HelpCircle className={iconClass} /> },
       { href: '/contact-us', label: 'Contact Us', description: 'Get in touch — we respond within 24 hours', icon: <Phone className={iconClass} /> },
 

@@ -161,7 +161,7 @@ export default function LocationPage({ params }: { params: { location: string } 
               </div>
             </div>
             <div className="flex-1 grid grid-cols-2 gap-3 max-w-md w-full">
-              {['/images/gallery/venue-painting-workshop.webp', '/images/theme-slime.webp', '/images/theme-spa.webp', '/images/gallery/outdoor-party-setup.webp'].map((src, i) => (
+              {['/images/gallery/mobile-party-outdoor-table.webp', '/images/gallery/mobile-party-bracelet-station.webp', '/images/gallery/mobile-spa-table-setting.webp', '/images/gallery/mobile-party-jelly-bag-craft.webp'].map((src, i) => (
                 <div key={i} className={`relative rounded-2xl overflow-hidden aspect-square shadow-xl ${i === 0 ? 'ring-2 ring-[#c4975a]' : ''}`}>
                   <Image src={src} alt={`Kids craft party in ${loc.name}`} fill sizes="(max-width: 768px) 45vw, 240px" className="object-cover" />
                 </div>
