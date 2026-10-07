@@ -62,7 +62,7 @@ const faqs = [
   },
   {
     q: 'Can you provide the food, drinks and desserts?',
-    a: 'Yes. Our room rental menu is the same one our party packages use: a pizza party spread, chicken fingers, chicken parm, pasta, salad and fruit trays, a popcorn bar, sodas, a coffee bar, cakes, cake pops, macarons, donuts, a candy wall and a custom treat table. Add any of them when you book, or mix our menu with your own food.',
+    a: 'Yes. Our room rental menu is the same one our party packages use: a pizza party spread, chicken fingers, chicken parm, pasta, salad and fruit trays, a popcorn bar, a stocked drinks fridge, a coffee bar, cakes, cake pops, macarons, donuts, a candy wall and a custom treat table. Add any of them when you book, or mix our menu with your own food.',
   },
   {
     q: 'What is the security deposit?',
