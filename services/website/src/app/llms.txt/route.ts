@@ -6,6 +6,7 @@ import { RATING } from '@/lib/reviews'
 import { STUDIO_ADDRESS_LINE, STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
 import { SITE_URL } from '@/lib/seo'
 import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
+import { applyLinkedPrices } from '@/lib/themePricing'
 
 /**
  * /llms.txt — the plain-text brief an answer engine can read in one fetch.
@@ -27,7 +28,8 @@ import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
  * (Adam chose to keep them up), but mobile pricing is his alone and is being
  * reworked (plan §15) — repeating a number here would put a price he is
  * replacing into one more place an assistant treats as authoritative. So this
- * POINTS at the page, which stays the single source.
+ * POINTS at the page, which stays the single source. One exception, Adam's own
+ * ruling 2026-10-06: an at-home SPA party starts at $950 (also on /spa-party).
  *
  * Per-request for the same reason as sitemap.xml: Supabase credentials do not
  * exist at build time, and prerendering would silently publish the fallback.
@@ -49,20 +51,22 @@ interface ThemeRow {
   slug: string
   price_cents: number
   description: string | null
+  pricing_item_id: string | null
 }
 
 async function loadThemes(): Promise<ThemeRow[]> {
   try {
     const { data, error } = await getSupabase()
       .from('party_themes')
-      .select('name, slug, price_cents, description')
+      .select('name, slug, price_cents, pricing_item_id, description')
       .eq('is_active', true)
       .order('sort_order')
     if (error) {
       console.error('llms.txt: party_themes read failed —', error.message)
       return []
     }
-    return ((data ?? []) as ThemeRow[]).filter(t => Number(t.price_cents) > 0)
+    const priced = await applyLinkedPrices((data ?? []) as ThemeRow[])
+    return priced.filter(t => Number(t.price_cents) > 0)
   } catch (err) {
     console.error('llms.txt: party_themes read threw —', err)
     return []
@@ -132,6 +136,7 @@ export async function GET() {
     '## Mobile parties (we come to you)',
     '',
     '- We bring staffed craft and activity stations to your home, backyard, park, school or venue, with all supplies, setup and cleanup.',
+    `- Spa parties at home start at $950; a spa party at the studio is the Spa Party theme price above: ${SITE_URL}/spa-party`,
     `- Pricing: the current starting packages are listed on ${SITE_URL}/mobile-party. Larger groups, extra stations and longer parties are custom-quoted from guest count, stations and location, usually within 24 hours. What we quote is what you pay.`,
     '- Popular stations: slime, spa and mini manicures, trucker hat bar, canvas bag bar, bracelet making, glitter tattoos, sand art, canvas painting, drip-paint balloon dogs, perfume making, photobooth.',
     `- Get a quote: ${SITE_URL}/mobile-party`,
@@ -141,12 +146,15 @@ export async function GET() {
     `- Weekday (Mon–Fri): ${usd(s.weekdayBaseCents)} for 3 hours, ${usd(s.weekdayAddlHourCents)} per additional hour, full day (12 hours) ${usd(s.weekdayFullDayCents)}.`,
     `- Weekend (Sat–Sun): ${usd(s.weekendBaseCents)} for 3 hours, ${usd(s.weekendAddlHourCents)} per additional hour, full day (12 hours) ${usd(s.weekendFullDayCents)}.`,
     `- ${s.minHours}-hour minimum. Rental time includes your own setup and cleanup. A refundable ${usd(s.securityDepositCents)} security hold is placed on arrival.`,
-    '- Tables and chairs included; bring your own decorations, caterer and vendors. Popular for baby and bridal showers, first birthdays, communions and holiday parties.',
+    '- Up to 65 guests seated. Tables, chairs, WiFi and a Bluetooth speaker system included.',
+    '- Bring your own decorations, caterer and vendors, or add catering from Michelangelo of Speonk; staff and servers are optional.',
+    '- Proof of insurance is available on request for venues and corporate clients.',
+    '- Popular for baby and bridal showers, first birthdays, Sweet 16s, communions and holiday parties.',
     `- Book: ${SITE_URL}/studio-rental`,
     '',
     '## Adult and corporate activations',
     '',
-    `- Trucker hat bar and custom canvas tote bar for brand events, showers and corporate parties: ${SITE_URL}/trucker-hat-bar`,
+    `- Trucker hat bar and custom canvas tote bar, brought on-site to offices, venues and private events across Long Island and the Hamptons: ${SITE_URL}/trucker-hat-bar`,
     `- Permanent jewelry (welded bracelets, anklets, necklaces), in studio or at your event: ${SITE_URL}/permanent-jewelry`,
     `- School and team fundraisers with custom hats and canvas gear: ${SITE_URL}/fundraiser`,
     '',

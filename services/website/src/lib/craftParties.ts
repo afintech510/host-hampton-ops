@@ -61,6 +61,12 @@ export interface CraftParty {
   ctaHeading: string
   /** schema.org Service serviceType. */
   serviceType: string
+  /**
+   * Studio + at-home prices for a party with its own at-home price (Adam's
+   * ruling). Replaces the generic mobile craft tiers on that page. Text only —
+   * never put the at-home figure in structured data (plan §15).
+   */
+  themePricing?: { studioItemName: string; atHomeFromCents: number; atHomeNote: string }
 }
 
 export const CRAFT_PARTIES: CraftParty[] = [
@@ -190,7 +196,7 @@ export const CRAFT_PARTIES: CraftParty[] = [
     intro:
       'A little luxury for the birthday crew. Mini manicures, gentle face masks, cozy robes, and a glam station — our hosts run a calm, pampering spa experience that makes every kid feel like a VIP.',
     audience: 'Best for ages 5–13',
-    heroImages: ['/images/gallery/spa-party-1.webp', '/images/gallery/spa-party-2.webp', '/images/theme-spa.webp', '/images/gallery/venue-party-setup-3.webp'],
+    heroImages: ['/images/gallery/mobile-spa-nail-station.webp', '/images/gallery/mobile-spa-table-setting.webp', '/images/gallery/mobile-spa-glam-vanity.webp', '/images/gallery/mobile-spa-outdoor-table.webp'],
     highlightsTitle: 'What’s Included',
     highlights: [
       { emoji: '💅', title: 'Mini Manicures', desc: 'Kid-safe polish, nail art, and a real pampering moment for every guest.' },
@@ -221,6 +227,12 @@ export const CRAFT_PARTIES: CraftParty[] = [
     venue: 'both',
     ctaHeading: 'Ready for Some Pampering?',
     serviceType: 'Kids spa party',
+    // Adam, 2026-10-06: an at-home spa party starts at $950.
+    themePricing: {
+      studioItemName: 'Spa Party',
+      atHomeFromCents: 95000,
+      atHomeNote: 'We bring the robes, polish, masks, towels and full spa setup',
+    },
   },
 
   // ── Toddler ──
@@ -277,8 +289,8 @@ export const CRAFT_PARTIES: CraftParty[] = [
       { emoji: '🧹', title: 'Setup & Cleanup Handled', desc: 'You enjoy the day — we handle the space before and after.' },
     ],
     faqs: [
-      { q: 'How many guests fit?', a: 'Our studio comfortably hosts intimate to mid-size showers. Tell us your headcount and we’ll confirm the right layout and timing.' },
-      { q: 'Can we bring our own food and decor?', a: 'Yes — bring your caterer and decor, or ask us about add-ons. The space is flexible and yours to style.' },
+      { q: 'How many guests fit?', a: 'Up to 65 guests seated. Tell us your headcount and we’ll confirm the right layout and timing.' },
+      { q: 'Can we bring our own food and decor?', a: 'Yes — bring your own caterer and decor, or we can arrange catering from Michelangelo of Speonk. Staff and servers are available if you want them. WiFi and a Bluetooth speaker system are included.' },
       { q: 'What activities can we add?', a: 'Popular add-ons include a permanent jewelry bar, canvas tote decorating, and craft stations — a lovely keepsake activity for shower guests.' },
     ],
     relatedSlugs: ['canvas-tote-activation', 'arts-and-crafts-party'],

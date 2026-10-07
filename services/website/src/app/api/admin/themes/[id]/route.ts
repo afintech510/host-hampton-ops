@@ -20,6 +20,29 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (body.sortOrder !== undefined) update.sort_order = body.sortOrder
   if (body.isActive !== undefined) update.is_active = body.isActive
 
+  // A price edit on a LINKED theme goes to its pricing_items row first — that is
+  // the price the planner and /party-packages charge (migration 062). The
+  // party_themes column is then written as a mirror. If the linked write fails,
+  // nothing is written: a mirror that disagrees with the real price is exactly
+  // the drift this link exists to end.
+  if (body.priceCents !== undefined) {
+    const { data: current, error: readErr } = await supabase
+      .from('party_themes')
+      .select('pricing_item_id')
+      .eq('id', params.id)
+      .single()
+    if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 })
+    if (current?.pricing_item_id) {
+      const { error: priceErr } = await supabase
+        .from('pricing_items')
+        .update({ price_cents: body.priceCents })
+        .eq('id', current.pricing_item_id)
+      if (priceErr) {
+        return NextResponse.json({ error: `Price not saved: ${priceErr.message}` }, { status: 500 })
+      }
+    }
+  }
+
   const { data, error } = await supabase
     .from('party_themes')
     .update(update)

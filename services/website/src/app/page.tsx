@@ -5,6 +5,7 @@ import { Star, CheckCircle, Clock, Users, Sparkles, Heart, Shield, Palette } fro
 import DynamicTypingSection from '@/components/DynamicTypingSection'
 import ThemeTileGrid, { ThemeData } from '@/components/ThemeTileGrid'
 import { getSupabase } from '@/lib/supabase'
+import { applyLinkedPrices } from '@/lib/themePricing'
 import { businessRef } from '@/lib/seo'
 
 const reviewSchema = [
@@ -69,10 +70,10 @@ export default async function Home() {
     const supabase = getSupabase()
     const { data } = await supabase
       .from('party_themes')
-      .select('name, slug, price_cents, tag, description, extended_description, images')
+      .select('name, slug, price_cents, pricing_item_id, tag, description, extended_description, images')
       .eq('is_active', true)
       .order('sort_order')
-    themes = (data || []) as ThemeData[]
+    themes = await applyLinkedPrices((data || []) as ThemeData[], supabase)
   } catch {
     // fall back to hardcoded themes in ThemeTileGrid
   }

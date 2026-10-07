@@ -3,6 +3,7 @@ import Image from 'next/image'
 import { MapPin, Home, Store, Truck, Phone, ChevronDown, ArrowRight } from 'lucide-react'
 import MobilePartyForm from '@/components/MobilePartyForm'
 import MobilePriceBlock from '@/components/MobilePriceBlock'
+import ThemePartyPriceBlock from '@/components/ThemePartyPriceBlock'
 import { LOCATIONS } from '@/lib/locations'
 import { type CraftParty, craftDisplayName } from '@/lib/craftParties'
 import { businessRef } from '@/lib/seo'
@@ -224,7 +225,15 @@ export default function CraftPartyLanding({ data }: { data: CraftParty }) {
       )}
 
       {/* ── Pricing (mobile-capable pages only) ── */}
-      {mobile && (
+      {mobile && data.themePricing && (
+        <ThemePartyPriceBlock
+          partyName={data.name}
+          studioItemName={data.themePricing.studioItemName}
+          atHomeFromCents={data.themePricing.atHomeFromCents}
+          atHomeNote={data.themePricing.atHomeNote}
+        />
+      )}
+      {mobile && !data.themePricing && (
         // "At-Home" in the heading because these are the MOBILE tiers: under a
         // bare "Spa Party Pricing" an answer engine read $500/$750 as the price
         // of a studio spa party (ChatGPT, 2026-10-04). Studio prices are per

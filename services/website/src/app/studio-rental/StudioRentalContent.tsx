@@ -413,6 +413,13 @@ export default function StudioRentalContent(props: Props) {
           Our private Hamptons studio for your celebration — baby showers, first birthdays, holiday parties and more.
           Seats up to {STUDIO_SEATED_CAPACITY} · standing room for {STUDIO_STANDING_CAPACITY}.
         </p>
+        {/* Adam, 2026-10-06. Plain text so answer engines can quote it — ChatGPT's
+            audit said it would not recommend the studio for a Sweet 16 or a
+            shower without capacity, sound, food and staffing facts. */}
+        <p className="text-hampton-navy/60 text-sm max-w-xl mx-auto mt-2">
+          WiFi and a Bluetooth speaker system included. Catering available from Michelangelo of Speonk;
+          staff and servers optional. Proof of insurance available on request.
+        </p>
         <div className="flex flex-wrap justify-center gap-3 mt-5 text-sm">
           <span className="bg-white border border-hampton-pink/20 rounded-full px-4 py-1.5 text-hampton-navy">Weekend · {formatMoney(rates.weekendBaseCents)} / {minHours} hrs (+{formatMoney(rates.weekendAddlHourCents)}/hr)</span>
           <span className="bg-white border border-hampton-pink/20 rounded-full px-4 py-1.5 text-hampton-navy">Weekday · {formatMoney(rates.weekdayBaseCents)} / {minHours} hrs (+{formatMoney(rates.weekdayAddlHourCents)}/hr)</span>

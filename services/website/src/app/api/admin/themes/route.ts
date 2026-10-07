@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
+import { applyLinkedPrices } from '@/lib/themePricing'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,7 +13,8 @@ export async function GET(req: NextRequest) {
     .select('*')
     .order('sort_order')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ themes: data || [] })
+  // The price shown is the linked pricing_items price — what the planner charges.
+  return NextResponse.json({ themes: await applyLinkedPrices(data || [], supabase) })
 }
 
 export async function POST(req: NextRequest) {
