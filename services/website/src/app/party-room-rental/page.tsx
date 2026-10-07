@@ -62,7 +62,7 @@ const faqs = [
   },
   {
     q: 'Can you provide the food, drinks and desserts?',
-    a: 'Yes. Our room rental menu has a pizza party spread, salad and antipasto trays, garlic knots, a stocked drinks fridge, cakes, cake pops, a candy wall and a custom treat table. Add any of them when you book, or mix our menu with your own food.',
+    a: 'Yes. Our room rental menu is the same one our party packages use: a pizza party spread, chicken fingers, chicken parm, pasta, salad and fruit trays, a popcorn bar, sodas, a coffee bar, cakes, cake pops, macarons, donuts, a candy wall and a custom treat table. Add any of them when you book, or mix our menu with your own food.',
   },
   {
     q: 'What is the security deposit?',
@@ -355,7 +355,7 @@ export default async function PartyRoomRental() {
               {foodItems.length > 0 && (
                 <MenuCard
                   title="Food"
-                  tagline="Catered by Michelangelo of Speonk"
+                  tagline="Hot trays by Michelangelo of Speonk"
                   headerClass="bg-gradient-to-r from-hampton-navy to-hampton-navy/90"
                   items={foodItems}
                 />
