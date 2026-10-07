@@ -21,9 +21,6 @@ export default function Nav() {
   const [scrolled, setScrolled] = useState(false)
   const pathname = usePathname()
 
-  // Hide on party planner routes — they have their own section nav
-  if (pathname === '/party-planner' || pathname === '/party-builder') return null
-
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -39,6 +36,14 @@ export default function Nav() {
     }
     return () => { document.body.style.overflow = '' }
   }, [open])
+
+  // Hide on party planner routes — they have their own section nav. This must
+  // come AFTER every hook: Nav lives in the root layout and survives a
+  // client-side navigation, so returning before the two effects made a <Link>
+  // into or out of the planner change the hook count and React threw
+  // ("Application error: a client-side exception") — the invoice page's
+  // "Edit plan" link crashed on every plan.
+  if (pathname === '/party-planner' || pathname === '/party-builder') return null
 
   return (
     <header
