@@ -431,7 +431,6 @@ export const CRAFT_PARTIES: CraftParty[] = [
       },
     ],
     faqs: [
-      { q: 'How much is a kids paint party?', a: 'Mobile paint parties are custom-quoted based on your group size, which paint style you pick, and your location — tell us those three things and we will send a quote, usually within 24 hours. Studio party packages start at $750.' },
       { q: 'Does the paint wash out of clothes?', a: 'We use washable, kid-safe paints and provide smocks and drop cloths, but we still recommend clothes you would not mind marking — especially for splatter painting. Glow paint is water-based and washes off skin easily.' },
       { q: 'What if we do not have space indoors?', a: 'A patio, deck, garage or backyard works great, and splatter painting is actually better outdoors. We always plan a rain backup with you ahead of time.' },
       { q: 'Do you travel to the Hamptons and the East End?', a: 'Yes — we are based in Speonk, so the East End is our home area. Travel is free within 20 miles of the studio, and a modest mileage charge covers anything further. We travel across central Suffolk into Nassau County, and have run parties and events into Manhattan. We never add a mandatory gratuity.' },

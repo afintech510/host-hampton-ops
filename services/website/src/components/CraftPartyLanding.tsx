@@ -7,6 +7,9 @@ import ThemePartyPriceBlock from '@/components/ThemePartyPriceBlock'
 import { LOCATIONS } from '@/lib/locations'
 import { type CraftParty, craftDisplayName } from '@/lib/craftParties'
 import { businessRef } from '@/lib/seo'
+import { unstable_noStore as noStore } from 'next/cache'
+import { loadPricingCatalog } from '@/lib/pricingCatalog'
+import { buildCostFaq, loadStudioThemes, withCostFaq } from '@/lib/partyCostFaq'
 
 const BASE = 'https://www.hosthampton.com'
 
@@ -17,7 +20,12 @@ function relatedHref(slug: string): string {
   return `/${slug}` // craft pages + /glow-party all live at top-level slugs
 }
 
-export default function CraftPartyLanding({ data }: { data: CraftParty }) {
+export default async function CraftPartyLanding({ data: page }: { data: CraftParty }) {
+  // Live prices: see the noStore() note in MobilePriceBlock. Needed here too,
+  // because the studio-only pages render no price block of their own.
+  noStore()
+  const [themes, catalog] = await Promise.all([loadStudioThemes(), loadPricingCatalog()])
+  const data = { ...page, faqs: withCostFaq(page.faqs, buildCostFaq(page, themes, catalog)) }
   const url = `${BASE}/${data.slug}`
   const mobile = data.venue === 'both' || data.venue === 'mobile'
 

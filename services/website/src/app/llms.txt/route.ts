@@ -1,4 +1,3 @@
-import { getSupabase } from '@/lib/supabase'
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { CRAFT_PARTIES } from '@/lib/craftParties'
 import { LOCATIONS } from '@/lib/locations'
@@ -6,7 +5,7 @@ import { RATING } from '@/lib/reviews'
 import { STUDIO_ADDRESS_LINE, STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
 import { SITE_URL } from '@/lib/seo'
 import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
-import { applyLinkedPrices } from '@/lib/themePricing'
+import { loadStudioThemes, usd } from '@/lib/partyCostFaq'
 
 /**
  * /llms.txt — the plain-text brief an answer engine can read in one fetch.
@@ -36,45 +35,13 @@ import { applyLinkedPrices } from '@/lib/themePricing'
  */
 export const dynamic = 'force-dynamic'
 
-const usd = (cents: number) => {
-  const d = cents / 100
-  return d % 1 === 0 ? `$${d.toLocaleString('en-US')}` : `$${d.toFixed(2)}`
-}
-
 /** Today in Eastern time, YYYY-MM-DD — the box is UTC. */
 function todayEt(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())
 }
 
-interface ThemeRow {
-  name: string
-  slug: string
-  price_cents: number
-  description: string | null
-  pricing_item_id: string | null
-}
-
-async function loadThemes(): Promise<ThemeRow[]> {
-  try {
-    const { data, error } = await getSupabase()
-      .from('party_themes')
-      .select('name, slug, price_cents, pricing_item_id, description')
-      .eq('is_active', true)
-      .order('sort_order')
-    if (error) {
-      console.error('llms.txt: party_themes read failed —', error.message)
-      return []
-    }
-    const priced = await applyLinkedPrices((data ?? []) as ThemeRow[])
-    return priced.filter(t => Number(t.price_cents) > 0)
-  } catch (err) {
-    console.error('llms.txt: party_themes read threw —', err)
-    return []
-  }
-}
-
 export async function GET() {
-  const [themes, catalog] = await Promise.all([loadThemes(), loadPricingCatalog()])
+  const [themes, catalog] = await Promise.all([loadStudioThemes(), loadPricingCatalog()])
   const { studioRates: s, guestRules: g } = catalog
 
   const prices = themes.map(t => t.price_cents)
