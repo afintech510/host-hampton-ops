@@ -55,6 +55,14 @@ describe('paymentStatus — from the money, never the column', () => {
   it('the deposit exactly is deposit paid', () => expect(ps(25000)).toBe('deposit_paid'))
   it('a $100 hold on a $250-deposit party is deposit paid', () => expect(ps(10000)).toBe('deposit_paid'))
   it('more than the deposit, less than the total, is partly paid', () => expect(ps(30000)).toBe('partly_paid'))
+  it('a $250 deposit on a row still carrying the old $99 default is deposit paid (Ashley Persico)', () => {
+    expect(ps(25000, 95000, 9900)).toBe('deposit_paid')
+    expect(ps(25000, 95000, 0)).toBe('deposit_paid')
+    expect(ps(45000, 224500, 9900)).toBe('partly_paid')
+  })
+  it('a larger stored deposit still wins (50% on a big mobile party)', () => {
+    expect(ps(283750, 567500, 283750)).toBe('deposit_paid')
+  })
   it('the total is paid in full; over it is still paid in full', () => {
     expect(ps(90000)).toBe('paid_in_full')
     expect(ps(95000)).toBe('paid_in_full')

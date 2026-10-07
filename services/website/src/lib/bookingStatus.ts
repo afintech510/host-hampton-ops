@@ -24,8 +24,10 @@
  * money path (webhook, confirm-session, record_payment), and re-plumbing them to
  * fix a label would be the wrong trade.
  *
- * A leaf module (no Supabase import) so the admin client components can use it.
+ * No Supabase import, so the admin client components can use it.
  */
+
+import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 
 export const BOOKING_STAGES = ['inquiry', 'quoted', 'booked', 'completed'] as const
 export const EXIT_STAGES = ['cancelled', 'lost'] as const
@@ -145,7 +147,12 @@ export function paymentStatus({ totalCents, paidCents, depositCents }: PaymentIn
   const total = Number(totalCents) || 0
   if (total <= 0) return 'deposit_paid'
   if (paidCents >= total) return 'paid_in_full'
-  const deposit = Number(depositCents) || 0
+  // `deposit_amount` is not a reliable floor: 15 rows still carry the old $99
+  // default and 9 carry 0, while every deposit taken today is $250 — so a $250
+  // payment on one of those rows would read "Partly paid". The deposit is at
+  // least the standard one; larger stored deposits (50% on a big mobile party)
+  // still win.
+  const deposit = Math.max(Number(depositCents) || 0, BOOKING_DEPOSIT_CENTS)
   return paidCents <= deposit ? 'deposit_paid' : 'partly_paid'
 }
 
