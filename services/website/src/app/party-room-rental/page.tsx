@@ -54,11 +54,15 @@ const pricing = [
 const faqs = [
   {
     q: "What\u2019s included with the room rental?",
-    a: 'Tables, chairs, basic lighting, WiFi, Bluetooth sound system, a prep area, and restroom access are all included. The space is yours to decorate and set up however you like \u2014 you supply everything else.',
+    a: 'Tables, chairs, basic lighting, WiFi, Bluetooth sound system, a prep area, and restroom access are all included. The space is yours to decorate and set up however you like \u2014 bring everything else yourself, or add food, drinks, desserts and decor from our room rental menu.',
   },
   {
     q: 'Can I bring my own catering and vendors?',
     a: 'Absolutely. You\u2019re welcome to bring any outside food, drinks, decorations, and vendors. There are no restrictions on outside catering.',
+  },
+  {
+    q: 'Can you provide the food, drinks and desserts?',
+    a: 'Yes. Our room rental menu has a pizza party spread, salad and antipasto trays, garlic knots, a stocked drinks fridge, cakes, cake pops, a candy wall and a custom treat table. Add any of them when you book, or mix our menu with your own food.',
   },
   {
     q: 'What is the security deposit?',
@@ -88,32 +92,95 @@ interface MenuItem {
   category: string
 }
 
-function fmt(cents: number, label?: string | null): string {
+function fmt(cents: number, label?: string | null, priceType?: string): string {
   if (label) return label
   if (cents === 0) return 'Included'
   const d = cents / 100
-  return d % 1 === 0 ? `$${d.toLocaleString()}` : `$${d.toFixed(2)}`
+  const price = d % 1 === 0 ? `$${d.toLocaleString()}` : `$${d.toFixed(2)}`
+  if (priceType === 'per_person') return `${price}/person`
+  if (priceType === 'per_hour') return `${price}/hr`
+  return price
+}
+
+function MenuCard({
+  title,
+  tagline,
+  headerClass,
+  items,
+}: {
+  title: string
+  tagline: string
+  headerClass: string
+  items: MenuItem[]
+}) {
+  return (
+    <div className="bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
+      <div className={`${headerClass} px-8 py-5 text-center`}>
+        <h3 className="font-serif text-2xl font-black text-white tracking-tight">{title}</h3>
+        <p className="text-white/60 text-xs font-semibold tracking-[0.2em] uppercase mt-1">{tagline}</p>
+      </div>
+      <div className="p-6 sm:p-8">
+        <div className="grid sm:grid-cols-2 gap-3">
+          {items.map(item => (
+            <div
+              key={item.id}
+              className="flex items-start justify-between gap-3 p-4 rounded-xl border border-hampton-mauve/15 bg-hampton-ivory/30"
+            >
+              <div>
+                <p className="font-semibold text-hampton-navy text-sm">{item.name}</p>
+                {item.description && (
+                  <p className="text-hampton-navy/50 text-xs mt-0.5">{item.description}</p>
+                )}
+              </div>
+              <span className="shrink-0 font-bold text-hampton-navy text-sm">
+                {fmt(item.price_cents, item.price_label, item.price_type)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default async function PartyRoomRental() {
   // Fetch room-rental menu items server-side
   let menuItems: MenuItem[] = []
+  // Food, drinks and treats come from the `studio-rental` rows — the exact menu
+  // /studio-rental (where "Check Availability" goes) sells at checkout, so a
+  // price printed here is the price charged there. The untagged rows in the
+  // same categories are the kids-party menu and carry different copy.
+  let cateringItems: MenuItem[] = []
   try {
     const supabase = getSupabase()
-    const { data } = await supabase
-      .from('pricing_items')
-      .select('id, name, description, category, price_cents, price_label, price_type')
-      .eq('is_active', true)
-      .or('event_types.cs.{room-rental},event_types.is.null')
-      .in('category', ['service-add-on', 'decor-add-on'])
-      .order('sort_order', { ascending: true })
+    const [{ data }, { data: catering }] = await Promise.all([
+      supabase
+        .from('pricing_items')
+        .select('id, name, description, category, price_cents, price_label, price_type')
+        .eq('is_active', true)
+        .or('event_types.cs.{room-rental},event_types.is.null')
+        .in('category', ['service-add-on', 'decor-add-on'])
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('pricing_items')
+        .select('id, name, description, category, price_cents, price_label, price_type')
+        .eq('is_active', true)
+        .contains('event_types', ['studio-rental'])
+        .in('category', ['food-add-on', 'beverage-add-on', 'dessert-add-on'])
+        .order('sort_order', { ascending: true }),
+    ])
     menuItems = data ?? []
+    cateringItems = catering ?? []
   } catch {
     // page still renders
   }
 
   const serviceAddOns = menuItems.filter(i => i.category === 'service-add-on')
   const decorAddOns = menuItems.filter(i => i.category === 'decor-add-on')
+  const foodItems = cateringItems.filter(i => i.category === 'food-add-on')
+  const beverageItems = cateringItems.filter(i => i.category === 'beverage-add-on')
+  const dessertItems = cateringItems.filter(i => i.category === 'dessert-add-on')
+  const hasCatering = foodItems.length > 0 || beverageItems.length > 0 || dessertItems.length > 0
 
   return (
     <div>
@@ -209,8 +276,8 @@ export default async function PartyRoomRental() {
               {[
                 'Additional hours available: $100/hr (weekday) or $150/hr (weekend)',
                 'Security deposit: $250 (refundable after event)',
-                'You may bring your own decorations, catering, and vendors',
-                'Tables and chairs for up to 60 guests included',
+                'You may bring your own decorations, catering, and vendors — or order food, drinks and treats from our menu below',
+                'Tables and chairs for up to 65 guests included',
                 'WiFi included',
                 'Bluetooth sound system included',
               ].map(i => (
@@ -273,85 +340,67 @@ export default async function PartyRoomRental() {
       </section>
 
       {/* ── Room Rental Menu (display-only) ── */}
-      {(serviceAddOns.length > 0 || decorAddOns.length > 0) && (
-        <section className="bg-hampton-pink/10 py-16 px-4 sm:px-6">
+      {(hasCatering || serviceAddOns.length > 0 || decorAddOns.length > 0) && (
+        <section id="menu" className="bg-hampton-pink/10 py-16 px-4 sm:px-6 scroll-mt-20">
           <div className="max-w-4xl mx-auto">
             <div className="text-center mb-10">
               <h2 className="section-heading">Room Rental Menu</h2>
               <p className="text-hampton-navy max-w-lg mx-auto">
-                Optional add-on services to make your event even easier.
+                Bring your own, or let us take care of the food, drinks and treats. Everything here
+                is optional and can be added when you book.
               </p>
             </div>
 
             <div className="space-y-8">
-              {/* Services & Add-Ons */}
-              {serviceAddOns.length > 0 && (
-                <div className="bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
-                  <div className="bg-gradient-to-r from-hampton-navy to-hampton-navy/90 px-8 py-5 text-center">
-                    <h3 className="font-serif text-2xl font-black text-white tracking-tight">
-                      Services &amp; Add-Ons
-                    </h3>
-                    <p className="text-white/60 text-xs font-semibold tracking-[0.2em] uppercase mt-1">
-                      Let us handle the details
-                    </p>
-                  </div>
-                  <div className="p-6 sm:p-8">
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {serviceAddOns.map(item => (
-                        <div
-                          key={item.id}
-                          className="flex items-start justify-between gap-3 p-4 rounded-xl border border-hampton-mauve/15 bg-hampton-ivory/30"
-                        >
-                          <div>
-                            <p className="font-semibold text-hampton-navy text-sm">{item.name}</p>
-                            {item.description && (
-                              <p className="text-hampton-navy/50 text-xs mt-0.5">{item.description}</p>
-                            )}
-                          </div>
-                          <span className="shrink-0 font-bold text-hampton-navy text-sm">
-                            {fmt(item.price_cents, item.price_label)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+              {foodItems.length > 0 && (
+                <MenuCard
+                  title="Food"
+                  tagline="Catered by Michelangelo of Speonk"
+                  headerClass="bg-gradient-to-r from-hampton-navy to-hampton-navy/90"
+                  items={foodItems}
+                />
               )}
-
-              {/* Decor */}
+              {beverageItems.length > 0 && (
+                <MenuCard
+                  title="Beverages"
+                  tagline="Stocked &amp; chilled"
+                  headerClass="bg-gradient-to-r from-hampton-blue to-hampton-blue/80"
+                  items={beverageItems}
+                />
+              )}
+              {dessertItems.length > 0 && (
+                <MenuCard
+                  title="Desserts &amp; Treats"
+                  tagline="The sweet finish"
+                  headerClass="bg-gradient-to-r from-hampton-pink to-hampton-pink/80"
+                  items={dessertItems}
+                />
+              )}
+              {serviceAddOns.length > 0 && (
+                <MenuCard
+                  title="Services &amp; Add-Ons"
+                  tagline="Let us handle the details"
+                  headerClass="bg-gradient-to-r from-hampton-navy to-hampton-navy/90"
+                  items={serviceAddOns}
+                />
+              )}
               {decorAddOns.length > 0 && (
-                <div className="bg-white rounded-3xl shadow-lg border border-hampton-pink/20 overflow-hidden">
-                  <div className="bg-gradient-to-r from-hampton-pink to-hampton-pink/80 px-8 py-5 text-center">
-                    <h3 className="font-serif text-2xl font-black text-white tracking-tight">
-                      Decor
-                    </h3>
-                    <p className="text-white/60 text-xs font-semibold tracking-[0.2em] uppercase mt-1">
-                      Finishing touches
-                    </p>
-                  </div>
-                  <div className="p-6 sm:p-8">
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {decorAddOns.map(item => (
-                        <div
-                          key={item.id}
-                          className="flex items-start justify-between gap-3 p-4 rounded-xl border border-hampton-mauve/15 bg-hampton-ivory/30"
-                        >
-                          <div>
-                            <p className="font-semibold text-hampton-navy text-sm">{item.name}</p>
-                            {item.description && (
-                              <p className="text-hampton-navy/50 text-xs mt-0.5">{item.description}</p>
-                            )}
-                          </div>
-                          <span className="shrink-0 font-bold text-hampton-navy text-sm">
-                            {fmt(item.price_cents, item.price_label)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <MenuCard
+                  title="Decor"
+                  tagline="Finishing touches"
+                  headerClass="bg-gradient-to-r from-hampton-pink to-hampton-pink/80"
+                  items={decorAddOns}
+                />
               )}
             </div>
+
+            {hasCatering && (
+              <div className="text-center mt-10">
+                <Link href="/studio-rental" className="btn-primary px-8 py-3.5 text-sm">
+                  Book &amp; Add to Your Rental
+                </Link>
+              </div>
+            )}
           </div>
         </section>
       )}
