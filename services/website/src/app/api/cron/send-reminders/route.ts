@@ -568,7 +568,7 @@ async function processSmsReminder(reminder: any, contact: any, supabase: any): P
     if (bErr) return { kind: 'retry', reason: `booking read failed: ${bErr.message}` }
     if (!booking) return { kind: 'failed', reason: `no booking ${reminder.reference_id}` }
     if (booking.checkin_status === 'complete') return { kind: 'skipped', reason: 'checkin_complete' }
-    if (booking.status === 'cancelled') return { kind: 'skipped', reason: 'booking_cancelled' }
+    if (booking.status === 'cancelled' || booking.status === 'lost') return { kind: 'skipped', reason: 'booking_cancelled' }
 
     const result = await sendCheckinLinkSms({
       id: booking.id,

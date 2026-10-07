@@ -102,7 +102,7 @@ export function screenPortalPaymentType(value: unknown): PortalPaymentType | nul
  * `completed` is here for the same reason in the other direction: a party that
  * is over is reconciled by hand, not by a self-service charge.
  */
-export const UNPAYABLE_STATUSES = ['cancelled', 'completed'] as const
+export const UNPAYABLE_STATUSES = ['cancelled', 'lost', 'completed'] as const
 
 export function isPayableStatus(status: unknown): boolean {
   if (typeof status !== 'string') return true // unknown shape: the balance check still gates it
@@ -119,7 +119,7 @@ export function isPayableStatus(status: unknown): boolean {
  * `modifications_locked` is a label no route enforces, and the honest answer is
  * that the DATE enforces it and the label records it.
  */
-export const UNEDITABLE_STATUSES = ['cancelled'] as const
+export const UNEDITABLE_STATUSES = ['cancelled', 'lost'] as const
 
 export function isEditableStatus(status: unknown): boolean {
   if (typeof status !== 'string') return true

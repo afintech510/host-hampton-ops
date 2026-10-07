@@ -194,7 +194,13 @@ function fakeDb(rows: Record<string, Array<Record<string, unknown>>>, failOn?: s
         select: () => self(),
         limit: (n: number) => { pool = pool.slice(0, n); return self() },
         not: (col: string, op: string, val: unknown) => {
-          pool = pool.filter(r => (op === 'eq' ? r[col] !== val : true))
+          // PostgREST `in` takes a raw list, `(a,b)`. An op the fake does not
+          // know throws rather than silently matching everything.
+          if (op === 'eq') pool = pool.filter(r => r[col] !== val)
+          else if (op === 'in') {
+            const set = String(val).replace(/^\(|\)$/g, '').split(',').map(v => v.trim().replace(/^"|"$/g, ''))
+            pool = pool.filter(r => !set.includes(String(r[col])))
+          } else throw new Error(`fakeDb: unsupported not() op ${op}`)
           return self()
         },
         ilike: (col: string, pattern: string) => {
@@ -222,6 +228,7 @@ describe('findBookingsByContactEmail', () => {
     { id: '2', booking_ref: 'HH-B', contact_email: 'JANE@Example.com', status: 'deposit_paid' },
     { id: '3', booking_ref: 'HH-C', contact_email: 'janeXdoe@example.com', status: 'confirmed' },
     { id: '4', booking_ref: 'HH-D', contact_email: 'bob@example.com', status: 'cancelled' },
+    { id: '5', booking_ref: 'HH-E', contact_email: 'sue@example.com', status: 'lost' },
   ]
 
   it('finds a MIXED-CASE stored address — the 9 real bookings `.eq()` missed', async () => {
@@ -249,6 +256,14 @@ describe('findBookingsByContactEmail', () => {
     expect(all.kind).toBe('found')
     const live = await findBookingsByContactEmail(
       fakeDb({ bookings: BOOKINGS }), 'bob@example.com', undefined, { excludeCancelled: true })
+    expect(live.kind).toBe('absent')
+  })
+
+  it('excludeCancelled leaves a LOST lead out too (migration 064)', async () => {
+    const all = await findBookingsByContactEmail(fakeDb({ bookings: BOOKINGS }), 'sue@example.com')
+    expect(all.kind).toBe('found')
+    const live = await findBookingsByContactEmail(
+      fakeDb({ bookings: BOOKINGS }), 'sue@example.com', undefined, { excludeCancelled: true })
     expect(live.kind).toBe('absent')
   })
 

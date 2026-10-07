@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { formatMoney } from '@/lib/partyPricing'
-import { PIPELINE_STAGES, PARTY_TYPES, PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
+import { PARTY_TYPES, PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
+import {
+  BOOKING_STAGES, STAGE_LABELS, STAGE_STYLE, PAYMENT_LABELS, PAYMENT_STYLE,
+  partyStatuses, etToday, type BookingStage, type PaymentStatus,
+} from '@/lib/bookingStatus'
+import { sumPayments, computeBalance } from '@/lib/bookingBalance'
 import { FALLBACK_STUDIO_RATES, type StudioRates } from '@/lib/pricingCatalog'
 import { foodSelectionsFromColumns, readFoodSelections } from '@/lib/partyFood'
 import PhotoAlbumSender from './PhotoAlbumSender'
@@ -11,6 +16,11 @@ interface PartyBookingSummary {
   id: string
   booking_ref: string
   status: string
+  /** Derived by the list route (lib/bookingStatus.ts) — what the tab shows. */
+  stage?: BookingStage
+  payment_status?: PaymentStatus
+  paid_cents?: number
+  deposit_amount?: number | null
   /** Migration 035. The consistent product field — `event_type` never was. */
   party_type: string | null
   source: string | null
@@ -121,17 +131,22 @@ interface PartyDetail extends PartyBookingSummary {
   addOnCatalog?: { name: string; priceCents: number; guestMultiplied: boolean }[]
 }
 
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  lead: { label: 'Lead', color: 'bg-slate-100 text-slate-700' },
-  quoted: { label: 'Quoted', color: 'bg-indigo-100 text-indigo-800' },
-  awaiting_deposit: { label: 'Awaiting Deposit', color: 'bg-yellow-100 text-yellow-800' },
-  pending_review: { label: 'Pending Review', color: 'bg-blue-100 text-blue-800' },
-  deposit_paid: { label: 'Deposit Paid', color: 'bg-blue-100 text-blue-800' },
-  approved: { label: 'Approved', color: 'bg-green-100 text-green-800' },
-  modifications_locked: { label: 'Locked', color: 'bg-gray-100 text-gray-800' },
-  paid_in_full: { label: 'Paid in Full', color: 'bg-emerald-100 text-emerald-800' },
-  completed: { label: 'Completed', color: 'bg-purple-100 text-purple-800' },
-  cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800' },
+/**
+ * The two badges every party carries: booking stage and payment status, both
+ * from lib/bookingStatus.ts. The raw `bookings.status` column is no longer
+ * shown — its eleven values stopped meaning one thing each (`approved` was
+ * both "deposit in hand" and "unpaid quote").
+ */
+function StatusBadges({ stage, payment, size = 'xs' }: { stage: BookingStage; payment: PaymentStatus; size?: 'xs' | 'sm' }) {
+  const pad = size === 'sm' ? 'px-3 py-1' : 'px-2 py-0.5'
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      <span className={`${pad} rounded-full text-xs font-medium ${STAGE_STYLE[stage]}`}>{STAGE_LABELS[stage]}</span>
+      {stage !== 'inquiry' && stage !== 'lost' && (
+        <span className={`${pad} rounded-full text-xs ${PAYMENT_STYLE[payment]}`}>{PAYMENT_LABELS[payment]}</span>
+      )}
+    </span>
+  )
 }
 
 const CHECKIN_STATUS: Record<string, { label: string; color: string }> = {
@@ -145,11 +160,11 @@ function checkinBadge(status: string | null | undefined) {
 }
 
 /**
- * The stages and labels come from lib/pipelineStages.ts, which the API route
+ * The stages and labels come from lib/bookingStatus.ts, which the API route
  * reads too — a second copy here is how the UI and the API end up disagreeing
  * about what the pipeline is.
  */
-const PIPELINE: readonly string[] = PIPELINE_STAGES
+const PIPELINE: readonly BookingStage[] = BOOKING_STAGES
 const PARTY_TYPE_FILTERS: readonly string[] = ['all', ...PARTY_TYPES]
 
 type SortColumn = 'party_date' | 'contact_name' | 'status'
@@ -170,7 +185,7 @@ function SortHeader({
 }
 
 interface PipelineCounts {
-  byStatus: Record<string, number>
+  byStage: Record<string, number>
   byPartyType: Record<string, number>
   all: number
   allTypes: number
@@ -292,7 +307,7 @@ export default function PartiesTab({
   async function fetchBookings() {
     setLoading(true)
     const params = new URLSearchParams({ page: String(page), sortBy, sortDir })
-    if (statusFilter !== 'all') params.set('status', statusFilter)
+    if (statusFilter !== 'all') params.set('stage', statusFilter)
     if (partyTypeFilter !== 'all') params.set('party_type', partyTypeFilter)
     if (showPast) params.set('hidePast', 'false')
     const res = await fetch(`/api/admin/parties?${params}`, { headers })
@@ -522,20 +537,23 @@ export default function PartiesTab({
               <div key={stage} className="flex items-stretch gap-1">
                 <span className="self-center text-gray-300 text-xs select-none">{i === 0 ? '' : '›'}</span>
                 <PipelineChip
-                  label={STATUS_LABELS[stage]?.label || stage}
-                  count={counts?.byStatus[stage] ?? 0}
+                  label={STAGE_LABELS[stage]}
+                  count={counts?.byStage?.[stage] ?? 0}
                   active={statusFilter === stage}
                   onClick={() => { setStatusFilter(stage); setPage(1) }}
                 />
               </div>
             ))}
             <span className="self-center text-gray-300 text-xs px-1 select-none">|</span>
-            <PipelineChip
-              label="Cancelled"
-              count={counts?.byStatus.cancelled ?? 0}
-              active={statusFilter === 'cancelled'}
-              onClick={() => { setStatusFilter('cancelled'); setPage(1) }}
-            />
+            {(['cancelled', 'lost'] as const).map(exit => (
+              <PipelineChip
+                key={exit}
+                label={STAGE_LABELS[exit]}
+                count={counts?.byStage?.[exit] ?? 0}
+                active={statusFilter === exit}
+                onClick={() => { setStatusFilter(exit); setPage(1) }}
+              />
+            ))}
           </div>
         </div>
 
@@ -759,7 +777,10 @@ export default function PartiesTab({
               </thead>
               <tbody>
                 {bookings.map(b => {
-                  const st = STATUS_LABELS[b.status] || { label: b.status, color: 'bg-gray-100 text-gray-700' }
+                  // Owed = billed total less money landed — never the stored
+                  // `balance_due_cents`, which means two different things
+                  // depending on which writer last touched it.
+                  const owed = computeBalance(b.total_cents, b.paid_cents ?? 0).balanceCents
                   return (
                     <tr
                       key={b.id}
@@ -794,9 +815,9 @@ export default function PartiesTab({
                       <td className="py-3 pr-4 whitespace-nowrap"><FoodCell booking={b} /></td>
                       <td className="py-3 pr-4 text-center">{b.guest_count_approx || '—'}</td>
                       <td className="py-3 pr-4">{formatMoney(b.total_cents || 0)}</td>
-                      <td className="py-3 pr-4 font-medium">{formatMoney(b.balance_due_cents || 0)}</td>
+                      <td className="py-3 pr-4 font-medium">{formatMoney(owed)}</td>
                       <td className="py-3 pr-4">
-                        <span className={`px-2 py-0.5 rounded-full text-xs ${st.color}`}>{st.label}</span>
+                        <StatusBadges stage={b.stage ?? 'inquiry'} payment={b.payment_status ?? 'unpaid'} />
                       </td>
                     </tr>
                   )
@@ -818,7 +839,18 @@ export default function PartiesTab({
   }
 
   // Detail view
-  const st = STATUS_LABELS[selected.status] || { label: selected.status, color: 'bg-gray-100 text-gray-700' }
+  // Same derivation the list route uses, from this party's own payment rows.
+  const selectedPaid = sumPayments(selected.payments)
+  const selectedOwed = computeBalance(selected.total_cents, selectedPaid).balanceCents
+  const selectedStatus = partyStatuses({
+    status: selected.status,
+    paidCents: selectedPaid,
+    partyDate: selected.party_date,
+    today: etToday(),
+    totalCents: selected.total_cents,
+    depositCents: selected.deposit_amount,
+  })
+  const isClosed = selectedStatus.stage === 'cancelled' || selectedStatus.stage === 'lost'
 
   return (
     <div>
@@ -832,7 +864,7 @@ export default function PartiesTab({
             {selected.child_name ? `${selected.child_name}'s Party` : selected.package_type || 'Party Booking'}
           </h2>
         </div>
-        <span className={`px-3 py-1 rounded-full text-xs font-medium ${st.color}`}>{st.label}</span>
+        <StatusBadges stage={selectedStatus.stage} payment={selectedStatus.payment_status} size="sm" />
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -1305,13 +1337,36 @@ export default function PartiesTab({
                 </div>
               </label>
 
-              {selected.status !== 'cancelled' && selected.status !== 'completed' && (
+              {/* Lost = a lead that said no. Nobody booked, nothing is owed,
+                  and nothing is sent to the customer. It keeps them out of the
+                  past-client review ask, which a cancelled booking would not. */}
+              {!isClosed && (selectedStatus.stage === 'inquiry' || selectedStatus.stage === 'quoted') && (
+                <button
+                  onClick={() => { if (confirm('Mark this lead as lost? Nothing is sent to the customer.')) doAction('mark_lost') }}
+                  disabled={!!actionLoading}
+                  className="w-full bg-gray-100 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
+                >
+                  {actionLoading === 'mark_lost' ? 'Saving...' : 'Mark as Lost'}
+                </button>
+              )}
+
+              {!isClosed && selectedStatus.stage !== 'completed' && (
                 <button
                   onClick={() => { if (confirm('Cancel this booking?')) doAction('cancel') }}
                   disabled={!!actionLoading}
                   className="w-full bg-red-100 text-red-700 py-2 rounded-lg text-sm font-medium hover:bg-red-200 disabled:opacity-50"
                 >
                   Cancel Booking
+                </button>
+              )}
+
+              {isClosed && (
+                <button
+                  onClick={() => { if (confirm('Reopen this party as an open lead?')) doAction('reopen') }}
+                  disabled={!!actionLoading}
+                  className="w-full border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {actionLoading === 'reopen' ? 'Reopening...' : 'Reopen'}
                 </button>
               )}
 
@@ -1329,7 +1384,7 @@ export default function PartiesTab({
           <div className="bg-white rounded-xl border p-5">
             <div className="text-center mb-4">
               <p className="text-gray-400 text-xs">Balance Due</p>
-              <p className="text-2xl font-bold text-[#1a2744]">{formatMoney(selected.balance_due_cents || 0)}</p>
+              <p className="text-2xl font-bold text-[#1a2744]">{formatMoney(selectedOwed)}</p>
             </div>
 
             {(selected.balance_due_cents || 0) > 0 && (

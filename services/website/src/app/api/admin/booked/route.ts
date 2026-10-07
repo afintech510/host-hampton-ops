@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { sumPayments, computeBalance } from '@/lib/bookingBalance'
+import { partyStatuses, etToday, type BookingStage, type PaymentStatus } from '@/lib/bookingStatus'
 import { foodSelectionsFromColumns, type FoodSelections } from '@/lib/partyFood'
 
 export const dynamic = 'force-dynamic'
@@ -80,6 +81,9 @@ export interface BookedParty {
   id: string
   booking_ref: string
   status: string
+  /** Derived (lib/bookingStatus.ts): what the tab shows instead of `status`. */
+  stage: BookingStage
+  payment_status: PaymentStatus
   party_type: string | null
   event_type: string | null
   source: string | null
@@ -197,6 +201,7 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 3. Derive ──
+  const today = etToday()
   const parties: BookedParty[] = rows.map(r => {
     const id = String(r.id)
     const mine = byBooking.get(id) ?? []
@@ -209,6 +214,14 @@ export async function GET(req: NextRequest) {
       id,
       booking_ref: String(r.booking_ref ?? ''),
       status: String(r.status ?? ''),
+      ...partyStatuses({
+        status: r.status as string | null,
+        paidCents: paidSum,
+        partyDate: (r.party_date as string | null) ?? null,
+        today,
+        totalCents: total,
+        depositCents: (r.deposit_amount as number | null) ?? null,
+      }),
       party_type: (r.party_type as string | null) ?? null,
       event_type: (r.event_type as string | null) ?? null,
       source: (r.source as string | null) ?? null,

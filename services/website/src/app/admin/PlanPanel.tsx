@@ -1,7 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { PARTY_TYPES, PARTY_TYPE_LABELS, PIPELINE_STAGES } from '@/lib/pipelineStages'
+import { PARTY_TYPES, PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
+import {
+  BOOKING_STAGES, STAGE_LABELS, STAGE_STYLE, PAYMENT_LABELS, PAYMENT_STYLE,
+  type BookingStage, type PaymentStatus,
+} from '@/lib/bookingStatus'
 
 /**
  * The right rail (plan §11.6). The thread answers "what did we say"; this
@@ -72,13 +76,22 @@ interface Props {
   onDrafted: () => void
 }
 
-/** The pipeline header — the progression Adam likes, lit rather than inferred. */
-export function PipelineHeader({ status }: { status: string | null }) {
-  const idx = PIPELINE_STAGES.indexOf((status ?? '') as (typeof PIPELINE_STAGES)[number])
+/**
+ * The pipeline header: booking stage lit along Inquiry → Quote sent → Booked →
+ * Completed, with the payment status beside it (lib/bookingStatus.ts). When the
+ * route could not read the payments it sends no statuses, and the header says
+ * so rather than guessing a stage that depends on them.
+ */
+export function PipelineHeader({ statuses }: { statuses: { stage: BookingStage; payment_status: PaymentStatus } | null }) {
+  if (!statuses) {
+    return <div className="text-[11px] text-amber-700">Status unavailable — payments could not be read.</div>
+  }
+  const { stage, payment_status } = statuses
+  const idx = (BOOKING_STAGES as readonly string[]).indexOf(stage)
   return (
     <div className="flex flex-wrap items-center gap-1 text-[11px]">
-      {PIPELINE_STAGES.map((stage, i) => (
-        <span key={stage} className="flex items-center gap-1">
+      {BOOKING_STAGES.map((s, i) => (
+        <span key={s} className="flex items-center gap-1">
           <span
             className={`px-2 py-0.5 rounded-full ${
               i === idx
@@ -88,17 +101,17 @@ export function PipelineHeader({ status }: { status: string | null }) {
                   : 'bg-gray-100 text-gray-400'
             }`}
           >
-            {stage.replace(/_/g, ' ')}
+            {STAGE_LABELS[s]}
           </span>
-          {i < PIPELINE_STAGES.length - 1 && <span className="text-gray-300">›</span>}
+          {i < BOOKING_STAGES.length - 1 && <span className="text-gray-300">›</span>}
         </span>
       ))}
-      {/* `cancelled` is an exit from the pipeline, not a stage in it. */}
-      {status === 'cancelled' && (
-        <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">cancelled</span>
+      {/* Cancelled and Lost are exits from the pipeline, not stages in it. */}
+      {idx === -1 && (
+        <span className={`px-2 py-0.5 rounded-full font-semibold ${STAGE_STYLE[stage]}`}>{STAGE_LABELS[stage]}</span>
       )}
-      {idx === -1 && status && status !== 'cancelled' && (
-        <span className="px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">{status}</span>
+      {stage !== 'inquiry' && stage !== 'lost' && (
+        <span className={`ml-2 px-2 py-0.5 rounded-full ${PAYMENT_STYLE[payment_status]}`}>{PAYMENT_LABELS[payment_status]}</span>
       )}
     </div>
   )

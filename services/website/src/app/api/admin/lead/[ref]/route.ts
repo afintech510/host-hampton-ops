@@ -5,6 +5,8 @@ import { loadLeadTimeline } from '@/lib/agent/threadTimeline'
 import { writeLedger } from '@/lib/marketing/graph'
 import { coerceIsoDate } from '@/lib/plan'
 import { isPartyType } from '@/lib/pipelineStages'
+import { partyStatuses, etToday } from '@/lib/bookingStatus'
+import { sumPayments } from '@/lib/bookingBalance'
 import { describeMissing, evaluateInquiry, type InquiryBooking } from '@/lib/inquiryDrafts'
 
 export const dynamic = 'force-dynamic'
@@ -169,7 +171,7 @@ export async function GET(req: NextRequest, { params }: { params: { ref: string 
   const bookingId = booking ? String(booking.id) : null
   const contactId = (booking?.contact_id as string | null) ?? (found as { contactId?: string | null }).contactId ?? null
 
-  const [timeline, drafts, lineItems] = await Promise.all([
+  const [timeline, drafts, lineItems, pays] = await Promise.all([
     loadLeadTimeline({ supabase, bookingId, contactId, draftId: found.draftId }),
     supabase
       .from('inquiry_drafts')
@@ -192,7 +194,23 @@ export async function GET(req: NextRequest, { params }: { params: { ref: string 
           .eq('booking_id', bookingId)
           .order('sort_order', { ascending: true })
       : Promise.resolve({ data: [], error: null }),
+    bookingId
+      ? supabase.from('booking_payments').select('amount_cents, payment_type').eq('booking_id', bookingId)
+      : Promise.resolve({ data: [], error: null }),
   ])
+
+  // Booking stage + payment status (lib/bookingStatus.ts). Null when the
+  // payments could not be read: "could not read" must not render as Unpaid.
+  const statuses = booking && !pays.error
+    ? partyStatuses({
+        status: booking.status as string | null,
+        paidCents: sumPayments(pays.data as { amount_cents: number | null; payment_type: string | null }[]),
+        partyDate: (booking.party_date as string | null) ?? null,
+        today: etToday(),
+        totalCents: (booking.total_cents as number | null) ?? null,
+        depositCents: (booking.deposit_amount as number | null) ?? null,
+      })
+    : null
 
   const draftRows = (drafts.data ?? []) as unknown as Record<string, unknown>[]
   const openDrafts = draftRows.filter(d => OPEN_DRAFT_STATUSES.includes(String(d.status)))
@@ -200,6 +218,7 @@ export async function GET(req: NextRequest, { params }: { params: { ref: string 
   return NextResponse.json({
     ref,
     booking,
+    statuses,
     // Can this plan actually be QUOTED, or would drafting now only ask for the
     // missing pieces? Computed with the SAME `evaluateInquiry()` the draft node
     // runs, so the panel cannot promise a quote the gate will refuse to write.

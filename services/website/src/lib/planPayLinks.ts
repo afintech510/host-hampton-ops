@@ -231,7 +231,7 @@ export function quoteFor(
 /* ── Minting ───────────────────────────────────────────────────────────── */
 
 /** Statuses on which no new money should be asked for. */
-const UNPAYABLE_STATUSES = new Set(['cancelled'])
+const UNPAYABLE_STATUSES = new Set(['cancelled', 'lost'])
 
 export interface PayLinkRow {
   id: string

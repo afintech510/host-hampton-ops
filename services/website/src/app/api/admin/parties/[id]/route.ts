@@ -385,6 +385,57 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, action: 'cancelled' })
   }
 
+  // ── Lost / reopen (migration 064) ─────────────────────────────────────
+  // `lost` is a lead that said no: nobody booked and nothing is owed. It sends
+  // the customer NOTHING. It is refused once money has landed — that party was
+  // booked, so ending it is a cancellation (and possibly a refund), not a lost
+  // lead. A failed payments read refuses too: "could not read" is not "unpaid".
+  if (action === 'mark_lost' || action === 'reopen') {
+    const { data: pays, error: paysErr } = await supabase
+      .from('booking_payments')
+      .select('amount_cents, payment_type')
+      .eq('booking_id', id)
+    if (paysErr) {
+      return NextResponse.json({ error: `Could not read payments (${paysErr.message}) — nothing changed.` }, { status: 503 })
+    }
+    const paid = sumPayments(pays)
+
+    let next: string
+    if (action === 'mark_lost') {
+      if (paid > 0) {
+        return NextResponse.json(
+          { error: `This party has ${formatMoney(paid)} paid, so it was booked — cancel it instead of marking it lost.` },
+          { status: 409 },
+        )
+      }
+      next = 'lost'
+    } else {
+      if (booking.status !== 'lost' && booking.status !== 'cancelled') {
+        return NextResponse.json({ error: 'Only a lost or cancelled party can be reopened.' }, { status: 409 })
+      }
+      // Back to the open end of the pipeline. Money already landed still reads
+      // as Booked — the stage is derived from the payments, not from this.
+      next = typeof booking.total_cents === 'number' && booking.total_cents > 0 ? 'quoted' : 'lead'
+    }
+
+    const { data: moved, error: moveErr } = await supabase
+      .from('bookings')
+      .update({ status: next, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id')
+    if (moveErr || !moved?.length) {
+      return NextResponse.json({ error: `Status NOT changed: ${moveErr?.message || 'no row matched'}` }, { status: 500 })
+    }
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: action === 'mark_lost' ? 'Marked as lost (lead declined) — nothing sent to customer' : `Reopened as ${next}`,
+      oldData: { status: booking.status },
+      newData: { status: next },
+    })
+    if (action === 'mark_lost') await cancelCheckinReminders(booking.booking_ref)
+    return NextResponse.json({ ok: true, action: action === 'mark_lost' ? 'marked_lost' : 'reopened', status: next })
+  }
+
   // ── "Record a payment" — the one place a human puts money in the books ──
   //
   // This is where the cash, Venmo, Zelle and cheque money arrives: Stripe never

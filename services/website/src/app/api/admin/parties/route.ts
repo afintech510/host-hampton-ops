@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
-import { PIPELINE_STAGES, PARTY_TYPES, isPartyType } from '@/lib/pipelineStages'
+import { isPartyType } from '@/lib/pipelineStages'
+import { ALL_STAGES, isBookingStage, partyStatuses } from '@/lib/bookingStatus'
+import { sumPayments } from '@/lib/bookingBalance'
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { etDateString } from '@/lib/partyTime'
 
@@ -44,7 +46,7 @@ const NON_PARTY_EVENT_TYPES = ['vendor_registration']
 const LIST_COLUMNS =
   'id, booking_ref, status, party_type, source, event_type, party_date, party_time, package_type, ' +
   'guest_count_approx, child_name, contact_name, contact_email, contact_phone, total_cents, ' +
-  'balance_due_cents, payment_method_preference, approved_at, paid_in_full_at, photo_gallery_url, created_at, ' +
+  'balance_due_cents, deposit_amount, payment_method_preference, approved_at, paid_in_full_at, photo_gallery_url, created_at, ' +
   'pizza_or_bagels:quote_snapshot->>pizzaOrBagels, ' +
   'cupcake_flavor:quote_snapshot->>cupcakeFlavor, ' +
   'add_mobile_cupcakes:quote_snapshot->>addMobileCupcakes'
@@ -62,6 +64,7 @@ interface ListRow {
   party_date: string | null
   contact_name: string | null
   status: string | null
+  stage?: string
   [key: string]: unknown
 }
 
@@ -73,8 +76,13 @@ type SortColumn = 'party_date' | 'contact_name' | 'status'
  * DB-ordered path below asks Postgres for, kept consistent here by hand.
  */
 function compareRows(a: ListRow, b: ListRow, sortBy: SortColumn, sortDir: 'asc' | 'desc'): number {
-  const av = a[sortBy] as string | null
-  const bv = b[sortBy] as string | null
+  // "Status" sorts by booking stage, in pipeline order.
+  const key = (r: ListRow): string | null =>
+    sortBy === 'status'
+      ? String((ALL_STAGES as readonly string[]).indexOf(r.stage as string)).padStart(2, '0')
+      : (r[sortBy] as string | null)
+  const av = key(a)
+  const bv = key(b)
   if (av == null && bv == null) return 0
   if (av == null) return 1
   if (bv == null) return -1
@@ -87,18 +95,18 @@ export async function GET(req: NextRequest) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
   const supabase = getSupabase()
-  const status = req.nextUrl.searchParams.get('status')
+  // `stage` is the derived booking stage (lib/bookingStatus.ts). The old
+  // `status` param filtered the raw column, whose values stopped meaning one
+  // thing; it is still honoured for any bookmarked URL.
+  const stageParam = req.nextUrl.searchParams.get('stage')
+  const rawStatus = req.nextUrl.searchParams.get('status')
+  const stage = isBookingStage(stageParam) ? stageParam : null
   const partyType = req.nextUrl.searchParams.get('party_type')
   const past = req.nextUrl.searchParams.get('past') === 'true'
   const photoFilter = req.nextUrl.searchParams.get('photos') // 'missing' | 'set' | null
   const page = parseInt(req.nextUrl.searchParams.get('page') || '1', 10)
   const limit = 25
 
-  // Column sort for the main list (ignored by the `past=true` photo-backfill
-  // view below, which has its own fixed ordering). Date is the default and
-  // ascending, so with `hidePast` also defaulted on, the soonest upcoming
-  // party — today's, if one exists — sorts to the top rather than whatever
-  // was created most recently.
   const sortByParam = req.nextUrl.searchParams.get('sortBy')
   const sortBy: SortColumn =
     sortByParam === 'contact_name' || sortByParam === 'status' ? sortByParam : 'party_date'
@@ -106,144 +114,116 @@ export async function GET(req: NextRequest) {
   // Opt OUT with `hidePast=false`; any other value (including absent) hides.
   const hidePast = req.nextUrl.searchParams.get('hidePast') !== 'false'
 
-  // Every filter shared by every shape of this query except party_date/order/
-  // range/count, which differ by branch below. `.select()` is left to each
-  // caller since the two `hidePast` halves don't want a `count`.
-  function withCommonFilters<T extends { eq: Function; neq: Function; not: Function; is: Function }>(q: T): T {
-    let out = q.not('event_type', 'in', `(${NON_PARTY_EVENT_TYPES.join(',')})`)
-    if (status) {
-      out = out.eq('status', status)
-    } else {
-      // Cancelled is an exit from the pipeline, not a stage in it, and it is
-      // the bucket that fills up with abandoned duplicates and throwaway
-      // rows. It is hidden unless you ask for it by name — the Cancelled
-      // chip still shows the true count and still lists them, so nothing
-      // becomes unreachable.
-      out = out.neq('status', 'cancelled')
-    }
-    // Ignore an unrecognised value rather than returning nothing: a typo in
-    // the query string should not read as "there are no parties".
-    if (isPartyType(partyType)) out = out.eq('party_type', partyType)
-    if (photoFilter === 'missing') out = out.is('photo_gallery_url', null)
-    else if (photoFilter === 'set') out = out.not('photo_gallery_url', 'is', null)
-    return out
-  }
-
-  let data: ListRow[] | null = null
-  let error: { message: string } | null = null
-  let count = 0
-
-  if (past) {
-    // Photo backfill view: parties on or before today, most recent first.
-    // TODAY is included, in Eastern time: the photo booth album goes out the
-    // evening of the party, and the old UTC `< today` hid a 2pm party until
-    // 8pm (and a morning one until the next day).
-    const res = await withCommonFilters(
-      supabase.from('bookings').select(LIST_COLUMNS, { count: 'exact' }),
-    )
-      .lte('party_date', etDateString())
-      .order('party_date', { ascending: false })
-      .range((page - 1) * limit, page * limit - 1)
-    data = res.data as ListRow[] | null
-    error = res.error
-    count = res.count || 0
-  } else if (hidePast) {
-    // "party_date >= today OR party_date IS NULL" — a null date is "not yet
-    // scheduled", not "past", so it stays visible rather than vanishing from
-    // the list. PostgREST has no safe way to express that OR through this
-    // client except the raw `.or()` filter string, which this codebase bans
-    // outright (R10/R4: it is an injection vector once any part of the
-    // expression can carry a caller-influenced value, and an exemption for
-    // "but this part is server-generated" is exactly the exception that got
-    // it removed last time). So: two filtered queries, merged and paginated
-    // by hand instead of by PostgREST.
-    const today = new Date().toISOString().split('T')[0]
-    const [futureRes, undatedRes] = await Promise.all([
-      withCommonFilters(supabase.from('bookings').select(LIST_COLUMNS)).gte('party_date', today).limit(COUNT_SCAN_LIMIT),
-      withCommonFilters(supabase.from('bookings').select(LIST_COLUMNS)).is('party_date', null).limit(COUNT_SCAN_LIMIT),
-    ])
-    if (futureRes.error || undatedRes.error) {
-      error = futureRes.error || undatedRes.error
-    } else {
-      const merged = [...(futureRes.data || []), ...(undatedRes.data || [])] as unknown as ListRow[]
-      merged.sort((a, b) => compareRows(a, b, sortBy, sortDir))
-      count = merged.length
-      data = merged.slice((page - 1) * limit, page * limit)
-    }
-  } else {
-    const res = await withCommonFilters(
-      supabase.from('bookings').select(LIST_COLUMNS, { count: 'exact' }),
-    )
-      .order(sortBy, { ascending: sortDir === 'asc', nullsFirst: false })
-      .range((page - 1) * limit, page * limit - 1)
-    data = res.data as ListRow[] | null
-    error = res.error
-    count = res.count || 0
-  }
-
-  // One unfiltered scan feeds both chip rows. Neither count may be scoped by
-  // its own filter: the stage counts must keep showing every stage while you
-  // are standing inside one, and the party-type counts must keep showing every
-  // product — a chip that reads 0 because it is not the selected chip is worse
-  // than no number at all.
-  const countQuery = supabase
-    .from('bookings')
-    .select('status, party_type')
-    .not('event_type', 'in', `(${NON_PARTY_EVENT_TYPES.join(',')})`)
-    .limit(COUNT_SCAN_LIMIT)
-
-  const [{ data: countRows, error: countErr }, catalog] = await Promise.all([
-    countQuery,
+  // One read of every party row and every payment. The stage depends on the
+  // money, so it cannot be a PostgREST filter; the table is ~100 rows and the
+  // cap makes a runaway table say so instead of becoming a full scan.
+  const [rowsRes, paysRes, catalog] = await Promise.all([
+    supabase
+      .from('bookings')
+      .select(LIST_COLUMNS)
+      .not('event_type', 'in', `(${NON_PARTY_EVENT_TYPES.join(',')})`)
+      .limit(COUNT_SCAN_LIMIT),
+    supabase.from('booking_payments').select('booking_id, amount_cents, payment_type').limit(COUNT_SCAN_LIMIT * 5),
     loadPricingCatalog(supabase),
   ])
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  if (rowsRes.error) return NextResponse.json({ error: rowsRes.error.message }, { status: 500 })
+  // A failed payments read must not render every booked party as an unpaid
+  // inquiry (rule 12): refuse instead.
+  if (paysRes.error) {
+    return NextResponse.json({ error: `Could not read payments: ${paysRes.error.message}` }, { status: 503 })
   }
 
+  type PayRow = { booking_id: string; amount_cents: number | null; payment_type: string | null }
+  const paysBy = new Map<string, PayRow[]>()
+  for (const p of (paysRes.data ?? []) as PayRow[]) {
+    const list = paysBy.get(p.booking_id) ?? []
+    list.push(p)
+    paysBy.set(p.booking_id, list)
+  }
+
+  const today = etDateString()
+  const all: ListRow[] = ((rowsRes.data ?? []) as unknown as ListRow[]).map(r => {
+    const paid = sumPayments(paysBy.get(r.id as string))
+    const s = partyStatuses({
+      status: r.status,
+      paidCents: paid,
+      partyDate: r.party_date,
+      today,
+      totalCents: r.total_cents as number | null,
+      depositCents: r.deposit_amount as number | null,
+    })
+    return { ...r, paid_cents: paid, stage: s.stage, payment_status: s.payment_status }
+  })
+
   const activeType = isPartyType(partyType) ? partyType : null
-  const byStatus: Record<string, number> = {}
+  const inType = (r: ListRow) => !activeType || ((r.party_type as string) || 'unknown') === activeType
+  const isExit = (r: ListRow) => r.stage === 'cancelled' || r.stage === 'lost'
+
+  let list = all.filter(r => {
+    if (stage) {
+      if (r.stage !== stage) return false
+    } else if (rawStatus) {
+      if (r.status !== rawStatus) return false
+    } else if (isExit(r)) {
+      // Cancelled and Lost are exits, hidden unless asked for by name; their
+      // chips still show the real count and still list them.
+      return false
+    }
+    if (!inType(r)) return false
+    if (photoFilter === 'missing' && r.photo_gallery_url) return false
+    if (photoFilter === 'set' && !r.photo_gallery_url) return false
+    return true
+  })
+
+  if (past) {
+    // Photo backfill view: parties on or before today (Eastern — the album
+    // goes out the evening of the party), most recent first.
+    list = list.filter(r => !!r.party_date && r.party_date <= today)
+    list.sort((a, b) => compareRows(a, b, 'party_date', 'desc'))
+  } else {
+    // A null date is "not yet scheduled", not "past", so it stays visible.
+    if (hidePast) list = list.filter(r => !r.party_date || r.party_date >= today)
+    list.sort((a, b) => compareRows(a, b, sortBy, sortDir))
+  }
+
+  const total = list.length
+  const data = list.slice((page - 1) * limit, page * limit)
+
+  // Chip counts are never scoped by their own filter: stage counts keep every
+  // stage visible while you stand in one, type counts keep every product. They
+  // count every date, past included — the list below them is what hides past.
+  const byStage: Record<string, number> = {}
   const byPartyType: Record<string, number> = {}
   let inScope = 0
   let allTypes = 0
-  for (const row of countRows ?? []) {
-    const r = row as { status: string | null; party_type: string | null }
-    const pt = r.party_type || 'unknown'
-    // Every stage chip, including Cancelled, counts every row — that chip is
-    // the only way back to a cancelled party now that the default list hides
-    // them, so its number has to be the real one.
-    if (r.status && (!activeType || pt === activeType)) {
-      byStatus[r.status] = (byStatus[r.status] ?? 0) + 1
-    }
-    // The type chips and the two "All" chips describe the DEFAULT list, which
-    // no longer contains cancelled rows. Counting them here would make All read
-    // higher than the list it labels.
-    if (r.status === 'cancelled') continue
+  for (const r of all) {
+    if (inType(r)) byStage[r.stage as string] = (byStage[r.stage as string] ?? 0) + 1
+    if (isExit(r)) continue
+    const pt = (r.party_type as string) || 'unknown'
     byPartyType[pt] = (byPartyType[pt] ?? 0) + 1
     allTypes++
-    if (activeType && pt !== activeType) continue
-    inScope++
+    if (inType(r)) inScope++
   }
 
   return NextResponse.json({
-    bookings: data || [],
-    total: count || 0,
+    bookings: data,
+    total,
     page,
     limit,
-    stages: PIPELINE_STAGES,
+    stages: ALL_STAGES,
     // The live studio rate card, so the tab's re-pricing helper text cannot
     // describe prices `edit_rental` no longer charges.
     studioRates: catalog.studioRates,
     counts: {
-      byStatus,
+      byStage,
       byPartyType,
-      /** Non-cancelled rows matching the party-type filter, across all stages. */
+      /** Open (not cancelled/lost) rows matching the party-type filter. */
       all: inScope,
-      /** Every non-cancelled party row, ignoring the party-type filter. */
+      /** Every open party row, ignoring the party-type filter. */
       allTypes,
       // True when the cap was hit, i.e. the counts are a floor not a total.
-      truncated: (countRows ?? []).length >= COUNT_SCAN_LIMIT,
-      error: countErr?.message ?? null,
+      truncated: (rowsRes.data ?? []).length >= COUNT_SCAN_LIMIT,
+      error: null,
     },
   })
 }

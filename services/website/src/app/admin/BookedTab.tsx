@@ -3,6 +3,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { formatMoney } from '@/lib/partyPricing'
 import { PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
+import {
+  ALL_STAGES, STAGE_LABELS, STAGE_STYLE, PAYMENT_LABELS, PAYMENT_STYLE,
+  type BookingStage, type PaymentStatus,
+} from '@/lib/bookingStatus'
 import { foodSummary, type FoodSelections } from '@/lib/partyFood'
 import {
   Search, ArrowUpDown, ArrowUp, ArrowDown, X, ExternalLink, Pizza, Cake,
@@ -29,6 +33,8 @@ interface BookedParty {
   id: string
   booking_ref: string
   status: string
+  stage: BookingStage
+  payment_status: PaymentStatus
   party_type: string | null
   event_type: string | null
   source: string | null
@@ -73,24 +79,6 @@ interface Totals {
 interface PartyDetail extends BookedParty {
   line_items?: { id: string; name: string; quantity: number; unit_price_cents: number; guest_multiplied: boolean; category: string }[]
   payments?: { id: string; payment_type: string; payment_method: string; amount_cents: number; paid_at: string; recorded_by: string; notes: string | null }[]
-}
-
-const STATUS_STYLE: Record<string, string> = {
-  lead: 'bg-slate-100 text-slate-700',
-  quoted: 'bg-indigo-100 text-indigo-800',
-  awaiting_deposit: 'bg-yellow-100 text-yellow-800',
-  pending_review: 'bg-blue-100 text-blue-800',
-  deposit_paid: 'bg-blue-100 text-blue-800',
-  approved: 'bg-green-100 text-green-800',
-  modifications_locked: 'bg-gray-100 text-gray-800',
-  paid_in_full: 'bg-emerald-100 text-emerald-800',
-  completed: 'bg-purple-100 text-purple-800',
-  confirmed: 'bg-teal-100 text-teal-800',
-  cancelled: 'bg-red-100 text-red-800',
-}
-
-function statusLabel(s: string) {
-  return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 type SortKey = 'party_date' | 'contact_name' | 'total_cents' | 'paid_cents' | 'balance_cents' | 'status' | 'party_type'
@@ -259,8 +247,10 @@ export default function BookedTab({ headers, onLogout }: { headers: HeadersInit;
 
     const dir = sortDir === 'asc' ? 1 : -1
     rows = [...rows].sort((a, b) => {
-      const av = a[sortKey]
-      const bv = b[sortKey]
+      // "Status" sorts by booking stage in pipeline order, not the raw column.
+      const stageRank = (p: BookedParty) => (ALL_STAGES as readonly string[]).indexOf(p.stage)
+      const av = sortKey === 'status' ? stageRank(a) : a[sortKey]
+      const bv = sortKey === 'status' ? stageRank(b) : b[sortKey]
       // Undated / unpriced rows sort to the bottom in BOTH directions — they are
       // "unknown", not "smallest", and burying them under a descending sort is
       // how a party with no date gets forgotten.
@@ -441,8 +431,11 @@ export default function BookedTab({ headers, onLogout }: { headers: HeadersInit;
                     </td>
                     <td className="py-2.5 px-3 text-xs text-gray-600">{PARTY_TYPE_LABELS[p.party_type || 'unknown'] ?? p.party_type}</td>
                     <td className="py-2.5 px-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[p.status] ?? 'bg-gray-100 text-gray-700'}`}>
-                        {statusLabel(p.status)}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STAGE_STYLE[p.stage]}`}>
+                        {STAGE_LABELS[p.stage]}
+                      </span>
+                      <span className={`ml-1 text-xs px-2 py-0.5 rounded-full ${PAYMENT_STYLE[p.payment_status]}`}>
+                        {PAYMENT_LABELS[p.payment_status]}
                       </span>
                       {p.evidence === 'status_only' && (
                         <span

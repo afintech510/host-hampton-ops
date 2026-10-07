@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
       .from('bookings')
       .select('id, booking_ref, contact_name, contact_phone')
       .not('contact_phone', 'is', null)
-      .not('status', 'eq', 'cancelled')
+      .not('status', 'in', '(cancelled,lost)')
       .order('created_at', { ascending: false })
       .limit(2000)
 

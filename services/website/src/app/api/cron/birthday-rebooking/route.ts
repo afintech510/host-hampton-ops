@@ -44,7 +44,8 @@ const MAX_PER_RUN = Number(process.env.BIRTHDAY_REBOOK_MAX_PER_RUN || 100)
  * Without this filter the nudge went to every cancelled booking in the window —
  * including the eight `HH-TEST-PAY*` throwaway rows.
  */
-const NOT_REBOOKABLE = ['cancelled', 'lead']
+// `lost` (migration 064): a lead that declined never had a party to rebook.
+const NOT_REBOOKABLE = ['cancelled', 'lost', 'lead']
 
 function ymd(d: Date): string {
   return d.toISOString().slice(0, 10)

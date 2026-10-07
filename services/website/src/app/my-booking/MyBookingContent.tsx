@@ -8,6 +8,8 @@ import type { PartyBooking } from '@/types/booking-flow'
 import { PAYMENT_METHODS } from '@/types/booking-flow'
 import type { PaymentMethod } from '@/types/booking-flow'
 import { loadStripe } from '@stripe/stripe-js'
+import { CUSTOMER_STAGE_LABELS, PAYMENT_LABELS, partyStatuses, etToday, type BookingStage } from '@/lib/bookingStatus'
+import { sumPayments } from '@/lib/bookingBalance'
 
 interface PortalData {
   booking: PartyBooking
@@ -31,15 +33,17 @@ interface PortalData {
   }
 }
 
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  awaiting_deposit: { label: 'Awaiting Deposit', color: 'bg-yellow-100 text-yellow-800' },
-  pending_review: { label: 'Under Review', color: 'bg-blue-100 text-blue-800' },
-  deposit_paid: { label: 'Deposit Paid', color: 'bg-blue-100 text-blue-800' },
-  approved: { label: 'Confirmed', color: 'bg-green-100 text-green-800' },
-  modifications_locked: { label: 'Locked', color: 'bg-gray-100 text-gray-800' },
-  paid_in_full: { label: 'Paid in Full', color: 'bg-emerald-100 text-emerald-800' },
-  completed: { label: 'Completed', color: 'bg-purple-100 text-purple-800' },
-  cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800' },
+/**
+ * The customer sees the derived booking stage (lib/bookingStatus.ts), never the
+ * raw column — `approved` used to read "Confirmed" on quotes nobody had paid.
+ */
+const STAGE_BADGE: Record<BookingStage, string> = {
+  inquiry: 'bg-slate-100 text-slate-700',
+  quoted: 'bg-yellow-100 text-yellow-800',
+  booked: 'bg-green-100 text-green-800',
+  completed: 'bg-purple-100 text-purple-800',
+  cancelled: 'bg-red-100 text-red-800',
+  lost: 'bg-gray-100 text-gray-700',
 }
 
 function MyBookingInner() {
@@ -238,7 +242,18 @@ function MyBookingInner() {
 
   if (!data) return null
   const { booking, permissions } = data
-  const status = STATUS_LABELS[booking.status] || { label: booking.status, color: 'bg-gray-100 text-gray-700' }
+  const stages = partyStatuses({
+    status: booking.status,
+    paidCents: sumPayments(booking.payments),
+    partyDate: booking.party_date,
+    today: etToday(),
+    totalCents: booking.total_cents,
+    depositCents: (booking as { deposit_amount?: number | null }).deposit_amount ?? null,
+  })
+  const status = {
+    label: stages.stage === 'booked' ? PAYMENT_LABELS[stages.payment_status] : CUSTOMER_STAGE_LABELS[stages.stage],
+    color: STAGE_BADGE[stages.stage],
+  }
   const balance = booking.balance_due_cents || 0
   const depositOwed = data.money?.depositOwedCents || 0
   // What there is to pay AT ALL — a balance, or an unpaid deposit on a plan

@@ -9,6 +9,7 @@ import PlanPanel, {
   type PlanEvaluation,
   type PlanLineItem,
 } from '@/app/admin/PlanPanel'
+import type { BookingStage, PaymentStatus } from '@/lib/bookingStatus'
 
 /**
  * `/admin/lead/[ref]` — the Lead Thread Workspace (plan §11).
@@ -33,6 +34,8 @@ import PlanPanel, {
 interface LeadPayload {
   ref: string
   booking: PlanBooking | null
+  /** Booking stage + payment status, derived server-side (lib/bookingStatus.ts). */
+  statuses?: { stage: BookingStage; payment_status: PaymentStatus } | null
   drafts: LeadDraft[]
   activeDraftId: string | null
   evaluation: PlanEvaluation | null
@@ -160,7 +163,7 @@ export default function LeadWorkspacePage({ params }: { params: { ref: string } 
               </div>
             </div>
           </div>
-          <PipelineHeader status={data?.booking?.status ?? null} />
+          {data?.booking && <PipelineHeader statuses={data.statuses ?? null} />}
         </header>
 
         {error && (

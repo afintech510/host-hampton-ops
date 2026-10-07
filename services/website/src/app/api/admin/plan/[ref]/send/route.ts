@@ -93,7 +93,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
   // A cancelled plan is not a quote. Sending one tells a customer their
   // cancelled party is on, which is worse than the admin having to un-cancel it
   // first. Rule 10 — the refusal says so, in the ledger as well as the response.
-  if (invoice.booking.status === 'cancelled') {
+  if (invoice.booking.status === 'cancelled' || invoice.booking.status === 'lost') {
     await writeLedger(supabase, {
       entityType: 'booking',
       entityId: invoice.booking.id,

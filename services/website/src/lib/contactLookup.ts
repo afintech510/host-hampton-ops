@@ -343,7 +343,8 @@ export async function findBookingsByContactEmail(
   const select = withColumns(columns, ['contact_email'])
 
   let query = supabase.from('bookings').select(select).ilike('contact_email', normalized)
-  if (opts.excludeCancelled) query = query.not('status', 'eq', 'cancelled')
+  // `lost` (migration 064) is closed the same way: a lead that declined.
+  if (opts.excludeCancelled) query = query.not('status', 'in', '(cancelled,lost)')
   // The limit is applied to the CANDIDATES, and candidates can only ever be a
   // superset of the answer, so a limit here can hide a real row. It is
   // deliberately generous and deliberately not the default.

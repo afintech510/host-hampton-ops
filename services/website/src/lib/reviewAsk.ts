@@ -66,7 +66,8 @@ const INTERNAL_DOMAINS = ['hosthampton.com', 'easternbuilding.supply']
 const INTERNAL_ADDRESSES = new Set(['hosthampton295@gmail.com', 'alark51@gmail.com'])
 
 /** Bookings that never became a party, and so are not a party to review. */
-export const NOT_A_PAST_PARTY = ['cancelled', 'lead']
+// `lost` (migration 064): a lead that declined is not a past client.
+export const NOT_A_PAST_PARTY = ['cancelled', 'lost', 'lead']
 
 /** Rows already in the queue that bear on whether to ask. */
 export const RELEVANT_REMINDER_TYPES = [

@@ -138,7 +138,7 @@ async function bookingFor(supabase: Supa, contactId: string | null): Promise<str
     .from('bookings')
     .select('id')
     .eq('contact_id', contactId)
-    .not('status', 'in', '("cancelled","completed")')
+    .not('status', 'in', '("cancelled","lost","completed")')
     .order('created_at', { ascending: false })
     .limit(1)
   return ((data ?? [])[0] as { id: string } | undefined)?.id ?? null

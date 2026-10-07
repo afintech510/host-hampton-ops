@@ -562,7 +562,7 @@ export async function applyExtractedFields(args: {
   // A cancelled party does not get its fields filled in from a stranger's prose.
   // Same stand-down as the draft node (plan §4.6) — this is the WRITE half of it,
   // and it is reachable independently because `applyExtractedFields` is exported.
-  if (typeof row.status === 'string' && row.status === 'cancelled') {
+  if (row.status === 'cancelled' || row.status === 'lost') {
     return { updated: [], error: 'plan is cancelled — nothing written (plan §4.6)' }
   }
 

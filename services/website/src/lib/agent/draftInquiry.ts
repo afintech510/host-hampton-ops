@@ -273,7 +273,7 @@ export const PLAN_COLUMNS =
  *
  * Rule 8: a guarantee stated in the plan and implemented nowhere.
  */
-export const STAND_DOWN_PLAN_STATUSES: readonly string[] = ['cancelled']
+export const STAND_DOWN_PLAN_STATUSES: readonly string[] = ['cancelled', 'lost']
 
 /** True when this plan's status means the agent must not draft for it. */
 export function planIsStoodDown(status: unknown): boolean {

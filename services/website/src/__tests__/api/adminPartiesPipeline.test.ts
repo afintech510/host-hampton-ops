@@ -1,13 +1,18 @@
 /**
- * Tests for GET /api/admin/parties — Phase 4 item 5's pipeline view.
+ * Tests for GET /api/admin/parties — the pipeline view.
  *
- * The regression worth locking down is the `event_type` allowlist this route
- * used to filter on. It hid seven real parties in production (four
+ * The regression worth locking down first is the `event_type` allowlist this
+ * route used to filter on. It hid seven real parties in production (four
  * `room-rental` studio bookings and three whose event_type is the label
  * 'Kids Birthday Party') and would have hidden every mobile lead, because
  * `ensureLeadPlan` keeps the form's own words in `event_type`. A pipeline view
  * whose entire purpose is "no lead gets lost" must not be built on a list of
  * spellings, so this asserts the filter is an EXCLUSION of non-party forms.
+ *
+ * Since 2026-10-07 the route derives a booking STAGE and a PAYMENT STATUS for
+ * every row from its payments (lib/bookingStatus.ts) and filters, counts and
+ * pages in memory, so these tests assert on what comes back, not on the
+ * PostgREST filters built.
  */
 
 jest.mock('next/server', () => ({
@@ -27,7 +32,7 @@ jest.mock('@/lib/adminAuth', () => ({
 }))
 
 import { GET } from '@/app/api/admin/parties/route'
-import { PIPELINE_STAGES } from '@/lib/pipelineStages'
+import { ALL_STAGES } from '@/lib/bookingStatus'
 
 function makeReq(params: Record<string, string> = {}) {
   return {
@@ -37,11 +42,12 @@ function makeReq(params: Record<string, string> = {}) {
 }
 
 interface Opts {
-  /** Rows the paged list query returns. */
-  page?: Record<string, unknown>[]
-  /** Rows the count scan returns. */
-  all?: { status: string; party_type: string | null }[]
+  /** Every party row the route reads (it filters, counts and pages in memory). */
+  rows?: Record<string, unknown>[]
+  /** booking_payments rows. */
+  payments?: { booking_id: string; amount_cents: number; payment_type: string }[]
   listError?: { message: string } | null
+  paymentsError?: { message: string } | null
 }
 
 function makeSupabase(opts: Opts = {}) {
@@ -50,31 +56,22 @@ function makeSupabase(opts: Opts = {}) {
 
   const from = jest.fn((table: string) => {
     const ops: [string, ...unknown[]][] = []
-    const record = { table, ops }
-    calls.push(record)
+    calls.push({ table, ops })
 
     const chain: any = {
       then: (res: any, rej: any) => {
-        // The route also loads the pricing catalog now (for the rate card it
-        // hands the tab). Returning no rows makes it use the compiled
-        // fallback, which is what this suite wants — it is testing the pipeline.
-        if (table === 'pricing_items') {
-          return Promise.resolve({ data: [], error: null, count: null }).then(res, rej)
-        }
-        // The paged query is the one selecting the list's own columns
-        // (LIST_COLUMNS, uniquely identified here by `booking_ref`) — not the
-        // `count: 'exact'` option, which the `hidePast` default (route.ts) no
-        // longer sets on every list query: it runs the list as two queries
-        // (future dates + null dates, merged in JS instead of a raw `.or()`)
-        // and paginates by hand, so neither half asks PostgREST for a count.
-        const isPaged = ops.some(o => o[0] === 'select' && typeof o[1] === 'string' && o[1].includes('booking_ref'))
-        const result = isPaged
-          ? { data: opts.page ?? [], error: opts.listError ?? null, count: (opts.page ?? []).length }
-          : { data: opts.all ?? [], error: null, count: null }
+        // The pricing catalog read returns nothing, so the compiled fallback
+        // rate card is used — this suite is testing the pipeline.
+        const result =
+          table === 'bookings'
+            ? { data: opts.listError ? null : (opts.rows ?? []), error: opts.listError ?? null }
+            : table === 'booking_payments'
+              ? { data: opts.paymentsError ? null : (opts.payments ?? []), error: opts.paymentsError ?? null }
+              : { data: [], error: null }
         return Promise.resolve(result).then(res, rej)
       },
     }
-    for (const m of ['select', 'eq', 'neq', 'in', 'not', 'is', 'gte', 'lt', 'or', 'order', 'limit', 'range']) {
+    for (const m of ['select', 'eq', 'neq', 'in', 'not', 'is', 'gte', 'lte', 'lt', 'or', 'order', 'limit', 'range']) {
       chain[m] = jest.fn((...args: unknown[]) => { ops.push([m, ...args]); return chain })
     }
     return chain
@@ -83,10 +80,11 @@ function makeSupabase(opts: Opts = {}) {
   return { supabase: { from } as any, calls }
 }
 
-/** The filter the list query actually built, as `[column, operator, value]`. */
-function notFilters(calls: { ops: [string, ...unknown[]][] }[]): unknown[][] {
-  return calls.flatMap(c => c.ops.filter(o => o[0] === 'not').map(o => o.slice(1)))
-}
+const FUTURE = '2099-06-01'
+const row = (id: string, status: string, party_type: string | null, extra: Record<string, unknown> = {}) =>
+  ({ id, booking_ref: `HH-${id}`, status, party_type, party_date: FUTURE, total_cents: 90000, deposit_amount: 25000, ...extra })
+
+const ids = (res: any) => res.body.bookings.map((b: any) => b.id)
 
 describe('GET /api/admin/parties', () => {
   beforeEach(() => {
@@ -110,161 +108,160 @@ describe('GET /api/admin/parties', () => {
     // The old bug: `.in('event_type', ['kid-party','kids-party','kids_party','studio-rental'])`.
     const inEventType = calls.flatMap(c => c.ops.filter(o => o[0] === 'in' && o[1] === 'event_type'))
     expect(inEventType).toHaveLength(0)
-
-    const nots = notFilters(calls)
+    const nots = calls.flatMap(c => c.ops.filter(o => o[0] === 'not').map(o => o.slice(1)))
     expect(nots).toContainEqual(['event_type', 'in', '(vendor_registration)'])
   })
 
   it('hands the tab the live studio rate card', async () => {
     const { supabase } = makeSupabase()
     mockGetSupabase.mockReturnValue(supabase)
-
     const res = await GET(makeReq())
-
-    // The tab's "re-prices the rental fee (...)" helper text reads these, so it
-    // cannot end up describing prices `edit_rental` no longer charges.
-    expect(res.body.studioRates).toMatchObject({
-      weekendBaseCents: expect.any(Number),
-      weekdayBaseCents: expect.any(Number),
-      minHours: expect.any(Number),
-    })
     expect(res.body.studioRates.weekendBaseCents).toBeGreaterThan(0)
   })
 
-  it('returns the pipeline stages in order, with lead and quoted at the front', async () => {
+  it('returns the booking stages: Inquiry, Quote sent, Booked, Completed, then the exits', async () => {
     const { supabase } = makeSupabase()
+    mockGetSupabase.mockReturnValue(supabase)
+    const res = await GET(makeReq())
+    expect(res.body.stages).toEqual(ALL_STAGES)
+    expect(res.body.stages).toEqual(['inquiry', 'quoted', 'booked', 'completed', 'cancelled', 'lost'])
+  })
+
+  it('derives each row stage and payment status from the MONEY, not the status column', async () => {
+    const { supabase } = makeSupabase({
+      rows: [
+        row('jenna', 'approved', 'in_studio_theme'), // approved, nothing paid
+        row('alyssa', 'approved', 'in_studio_theme'), // approved, $250 paid
+        row('gabriella', 'awaiting_deposit', 'in_studio_theme'), // $250 paid, column never moved
+      ],
+      payments: [
+        { booking_id: 'alyssa', amount_cents: 25000, payment_type: 'deposit' },
+        { booking_id: 'gabriella', amount_cents: 25000, payment_type: 'partial' },
+      ],
+    })
     mockGetSupabase.mockReturnValue(supabase)
 
     const res = await GET(makeReq())
-
-    expect(res.body.stages).toEqual(PIPELINE_STAGES)
-    expect(res.body.stages.slice(0, 2)).toEqual(['lead', 'quoted'])
-    expect(res.body.stages[res.body.stages.length - 1]).toBe('completed')
+    const by = Object.fromEntries(res.body.bookings.map((b: any) => [b.id, [b.stage, b.payment_status, b.paid_cents]]))
+    expect(by.jenna).toEqual(['quoted', 'unpaid', 0])
+    expect(by.alyssa).toEqual(['booked', 'deposit_paid', 25000])
+    expect(by.gabriella).toEqual(['booked', 'deposit_paid', 25000])
   })
 
   it('counts every stage and every party type from one scan', async () => {
     const { supabase } = makeSupabase({
-      all: [
-        { status: 'lead', party_type: 'mobile_party' },
-        { status: 'lead', party_type: 'in_studio_theme' },
-        { status: 'quoted', party_type: 'mobile_party' },
-        { status: 'deposit_paid', party_type: 'studio_rental' },
-        { status: 'cancelled', party_type: null },
+      rows: [
+        row('a', 'lead', 'mobile_party'),
+        row('b', 'lead', 'in_studio_theme'),
+        row('c', 'quoted', 'mobile_party'),
+        row('d', 'deposit_paid', 'studio_rental'),
+        row('e', 'cancelled', null),
+        row('f', 'lost', 'mobile_party'),
       ],
     })
     mockGetSupabase.mockReturnValue(supabase)
 
     const res = await GET(makeReq())
 
-    // Every stage chip counts every row — Cancelled included, because that chip
-    // is now the only route back to a cancelled party.
-    expect(res.body.counts.byStatus).toEqual({ lead: 2, quoted: 1, deposit_paid: 1, cancelled: 1 })
-    // The type chips and the two "All" chips describe the DEFAULT list, which
-    // excludes cancelled — so the cancelled `null`-typed row is NOT an
-    // `unknown: 1` here. A number that labels a list has to match that list.
-    expect(res.body.counts.byPartyType).toEqual({
-      mobile_party: 2, in_studio_theme: 1, studio_rental: 1,
-    })
+    // Every stage chip counts every row — the exits included, because those
+    // chips are the only route back to a cancelled or lost party.
+    expect(res.body.counts.byStage).toEqual({ inquiry: 2, quoted: 1, booked: 1, cancelled: 1, lost: 1 })
+    // The type chips and "All" describe the DEFAULT list, which excludes exits.
+    expect(res.body.counts.byPartyType).toEqual({ mobile_party: 2, in_studio_theme: 1, studio_rental: 1 })
     expect(res.body.counts.allTypes).toBe(4)
     expect(res.body.counts.all).toBe(4)
   })
 
-  it('hides cancelled by default, and only by default', async () => {
-    const { supabase, calls } = makeSupabase()
-    mockGetSupabase.mockReturnValue(supabase)
-
-    await GET(makeReq())
-
-    // The list query excludes cancelled when no stage is asked for...
-    const neqs = calls.flatMap(c => c.ops.filter(o => o[0] === 'neq'))
-    expect(neqs).toContainEqual(['neq', 'status', 'cancelled'])
+  it('hides cancelled and lost by default, and lists them when their chip asks', async () => {
+    const rows = [row('a', 'lead', 'mobile_party'), row('b', 'cancelled', 'mobile_party'), row('c', 'lost', 'mobile_party')]
+    const cases: [Record<string, string>, string[]][] = [
+      [{}, ['a']],
+      [{ stage: 'cancelled' }, ['b']],
+      [{ stage: 'lost' }, ['c']],
+    ]
+    for (const [params, expected] of cases) {
+      const { supabase } = makeSupabase({ rows })
+      mockGetSupabase.mockReturnValue(supabase)
+      expect(ids(await GET(makeReq(params)))).toEqual(expected)
+    }
   })
 
-  it('still lists cancelled parties when the Cancelled chip asks for them', async () => {
-    const { supabase, calls } = makeSupabase({ page: [{ id: 'a', status: 'cancelled' }] })
+  it('filters by stage when one is selected', async () => {
+    const { supabase } = makeSupabase({
+      rows: [row('a', 'lead', null), row('b', 'approved', null), row('c', 'approved', null)],
+      payments: [{ booking_id: 'c', amount_cents: 25000, payment_type: 'deposit' }],
+    })
     mockGetSupabase.mockReturnValue(supabase)
+    expect(ids(await GET(makeReq({ stage: 'booked' })))).toEqual(['c'])
+  })
 
-    // hidePast:false — this test is about the status filter, not date-hiding.
-    // The mock has no real WHERE clause, so the default hidePast merge (two
-    // queries, "future" + "undated") would double-count this one fixture row.
-    const res = await GET(makeReq({ status: 'cancelled', hidePast: 'false' }))
-
-    // ...and does NOT exclude it when that is the stage you selected, or the
-    // Cancelled chip would be a button that shows an empty list forever.
-    const neqs = calls.flatMap(c => c.ops.filter(o => o[0] === 'neq' && o[1] === 'status'))
-    expect(neqs).toHaveLength(0)
-    const eqs = calls.flatMap(c => c.ops.filter(o => o[0] === 'eq'))
-    expect(eqs).toContainEqual(['eq', 'status', 'cancelled'])
-    expect(res.body.bookings).toHaveLength(1)
+  it('still honours the old raw ?status= filter for a bookmarked URL', async () => {
+    const { supabase } = makeSupabase({ rows: [row('a', 'lead', null), row('b', 'quoted', null)] })
+    mockGetSupabase.mockReturnValue(supabase)
+    expect(ids(await GET(makeReq({ status: 'quoted' })))).toEqual(['b'])
   })
 
   it('scopes the STAGE counts to the party-type filter, but not the type counts', async () => {
-    const { supabase, calls } = makeSupabase({
-      all: [
-        { status: 'lead', party_type: 'mobile_party' },
-        { status: 'lead', party_type: 'in_studio_theme' },
-        { status: 'quoted', party_type: 'mobile_party' },
-      ],
+    const { supabase } = makeSupabase({
+      rows: [row('a', 'lead', 'mobile_party'), row('b', 'lead', 'in_studio_theme'), row('c', 'quoted', 'mobile_party')],
     })
     mockGetSupabase.mockReturnValue(supabase)
 
     const res = await GET(makeReq({ party_type: 'mobile_party' }))
 
-    // Standing inside Mobile, the stage counts are Mobile's...
-    expect(res.body.counts.byStatus).toEqual({ lead: 1, quoted: 1 })
+    expect(res.body.counts.byStage).toEqual({ inquiry: 1, quoted: 1 })
     expect(res.body.counts.all).toBe(2)
-    // ...but the type chips still show every product, so a chip never reads 0
-    // merely because it is not the one selected.
     expect(res.body.counts.byPartyType).toEqual({ mobile_party: 2, in_studio_theme: 1 })
-
-    // The list query itself is filtered on the 035 column, not on event_type.
-    const eqs = calls.flatMap(c => c.ops.filter(o => o[0] === 'eq'))
-    expect(eqs).toContainEqual(['eq', 'party_type', 'mobile_party'])
+    expect(ids(res).sort()).toEqual(['a', 'c'])
   })
 
   it('ignores an unrecognised party_type instead of returning nothing', async () => {
-    const { supabase, calls } = makeSupabase({ page: [{ id: 'a' }] })
+    const { supabase } = makeSupabase({ rows: [row('a', 'lead', 'mobile_party')] })
     mockGetSupabase.mockReturnValue(supabase)
-
-    // hidePast:false — see the comment on the cancelled-chip test above.
-    const res = await GET(makeReq({ party_type: 'mobil_party', hidePast: 'false' }))
-
     // A typo in the query string must not read as "there are no parties".
-    const eqs = calls.flatMap(c => c.ops.filter(o => o[0] === 'eq' && o[1] === 'party_type'))
-    expect(eqs).toHaveLength(0)
-    expect(res.body.bookings).toHaveLength(1)
+    expect(ids(await GET(makeReq({ party_type: 'mobil_party' })))).toEqual(['a'])
   })
 
-  it('filters by stage when one is selected', async () => {
-    const { supabase, calls } = makeSupabase()
+  it('hides past parties by default but keeps undated ones; a booked past party is Completed', async () => {
+    const { supabase } = makeSupabase({
+      rows: [
+        row('past', 'paid_in_full', null, { party_date: '2020-01-01' }),
+        row('undated', 'lead', null, { party_date: null }),
+        row('soon', 'lead', null),
+      ],
+    })
     mockGetSupabase.mockReturnValue(supabase)
+    expect(ids(await GET(makeReq())).sort()).toEqual(['soon', 'undated'])
 
-    await GET(makeReq({ status: 'lead' }))
-
-    const eqs = calls.flatMap(c => c.ops.filter(o => o[0] === 'eq'))
-    expect(eqs).toContainEqual(['eq', 'status', 'lead'])
+    const { supabase: s2 } = makeSupabase({ rows: [row('past', 'paid_in_full', null, { party_date: '2020-01-01' })] })
+    mockGetSupabase.mockReturnValue(s2)
+    const all = await GET(makeReq({ hidePast: 'false' }))
+    expect(all.body.bookings[0].stage).toBe('completed')
   })
 
   it('selects the columns the pipeline rows render', async () => {
     const { supabase, calls } = makeSupabase()
     mockGetSupabase.mockReturnValue(supabase)
-
     await GET(makeReq())
-
-    const cols = String(calls[0].ops.find(o => o[0] === 'select')?.[1] ?? '')
+    const cols = String(calls.find(c => c.table === 'bookings')?.ops.find(o => o[0] === 'select')?.[1] ?? '')
     expect(cols).toContain('party_type')
     expect(cols).toContain('source')
+    expect(cols).toContain('deposit_amount')
   })
 
   it('surfaces a list error as a 500 rather than an empty pipeline', async () => {
     const { supabase } = makeSupabase({ listError: { message: 'column missing' } })
     mockGetSupabase.mockReturnValue(supabase)
-
     const res = await GET(makeReq())
-
-    // An empty Parties tab reads as "no work to do", which is the worst
-    // possible way to report a broken query.
+    // An empty Parties tab reads as "no work to do", the worst way to report a broken query.
     expect(res.status).toBe(500)
     expect(res.body.error).toBe('column missing')
+  })
+
+  it('refuses (503) when payments cannot be read, rather than calling every party Unpaid', async () => {
+    const { supabase } = makeSupabase({ rows: [row('a', 'approved', null)], paymentsError: { message: 'timeout' } })
+    mockGetSupabase.mockReturnValue(supabase)
+    const res = await GET(makeReq())
+    expect(res.status).toBe(503)
   })
 })

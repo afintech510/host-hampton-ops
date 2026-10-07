@@ -62,12 +62,13 @@ export async function readBalanceInputs(
 
 /** A refund subtracts; everything else adds. */
 export function sumPayments(
-  rows: { amount_cents: number; payment_type: string }[] | null | undefined,
+  rows: { amount_cents: number | null; payment_type: string | null }[] | null | undefined,
 ): number {
   let paid = 0
   for (const p of rows || []) {
-    if (p.payment_type === 'refund') paid -= p.amount_cents
-    else paid += p.amount_cents
+    const a = Number(p.amount_cents) || 0
+    if (p.payment_type === 'refund') paid -= a
+    else paid += a
   }
   return paid
 }

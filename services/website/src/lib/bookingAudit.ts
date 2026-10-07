@@ -27,6 +27,8 @@ export async function logBookingChange(
     bookingId: string
     actor: string
     summary: string
+    /** The values BEFORE the write — captured before it, never read back after. */
+    oldData?: Record<string, unknown> | null
     newData?: Record<string, unknown> | null
   },
 ): Promise<boolean> {
@@ -35,6 +37,7 @@ export async function logBookingChange(
     modified_by: opts.actor,
     change_summary: opts.summary,
   }
+  if (opts.oldData !== undefined && opts.oldData !== null) row.old_data = opts.oldData
   if (opts.newData !== undefined && opts.newData !== null) row.new_data = opts.newData
 
   const { error } = await supabase.from('booking_modifications').insert(row)
