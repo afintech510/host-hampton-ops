@@ -99,6 +99,7 @@ export default function MarketVendorsPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [market, setMarket] = useState<MarketMeta | null>(null)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [busyId, setBusyId] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
 
@@ -162,6 +163,7 @@ export default function MarketVendorsPage() {
         setError(data.error || 'Update failed.')
         return
       }
+      setNotice(data.notice || '')
       await load()
     } catch {
       setError('Update failed.')
@@ -228,6 +230,7 @@ export default function MarketVendorsPage() {
         </div>
 
         {error && <p className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3 mb-5">{error}</p>}
+        {notice && <p className="bg-amber-50 text-amber-800 text-sm rounded-lg px-4 py-3 mb-5">{notice}</p>}
 
         {stats && market && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">

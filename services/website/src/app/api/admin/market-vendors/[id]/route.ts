@@ -5,7 +5,7 @@
  * vendor paid is a statement that money arrived, and the only writers allowed
  * to make that statement are the Stripe webhook (which has the payment intent)
  * and the explicit `confirm_venmo` action below (which requires a human to have
- * actually looked at the Venmo app).
+ * actually looked at the Venmo app, and writes the books in the same act).
  *
  * That distinction is the whole lesson of link 3: the books and the balances
  * disagreed because a status could be typed in one place and money recorded in
@@ -15,6 +15,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { isAdminAuthorized, unauthorizedResponse, adminActorId } from '@/lib/adminAuth'
+import { resolveMarket } from '@/lib/christmasMarket'
+import { confirmVendorVenmo } from '@/lib/marketVendorVenmo'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,31 +38,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const update: Record<string, unknown> = {}
 
   // ── Confirming a Venmo payment ────────────────────────────────────────────
-  // Its own action, not a status write, because it must set `paid_at` in the
-  // same statement — migration 059's CHECK refuses a 'paid' row without one.
+  // Its own action, not a status write: it marks the vendor paid AND writes the
+  // booth fee to the books, dated by the vendor's own Venmo receipt when the
+  // queue holds one. It used to do only the first half, so every Venmo booth was
+  // missing from the Financials tab. See `lib/marketVendorVenmo.ts`.
   if (body.action === 'confirm_venmo') {
-    const { data: row, error: readErr } = await supabase
-      .from('market_vendors')
-      .select('id, vendor_ref, status, payment_method, paid_at')
-      .eq('id', params.id)
-      .single()
-
-    if (readErr || !row) {
-      return NextResponse.json({ error: 'Vendor not found' }, { status: 404 })
-    }
-    if (row.paid_at) {
-      return NextResponse.json({ error: 'That vendor is already marked paid.' }, { status: 409 })
-    }
-    if (row.payment_method !== 'venmo') {
-      return NextResponse.json(
-        { error: 'That vendor chose card. A card payment is settled by Stripe, not by hand.' },
-        { status: 409 },
-      )
-    }
-
-    update.status = 'paid'
-    update.paid_at = new Date().toISOString()
-    update.status_note = `Venmo confirmed by ${actor} on ${new Date().toISOString().split('T')[0]}`
+    const { data: row } = await supabase.from('market_vendors').select('market_slug').eq('id', params.id).maybeSingle()
+    const result = await confirmVendorVenmo(supabase, {
+      vendorId: params.id,
+      actor,
+      market: resolveMarket(row?.market_slug),
+    })
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
+    return NextResponse.json({ vendor: result.vendor, ledger: result.ledger, receipt: result.receipt, notice: result.notice })
   } else if (typeof body.status === 'string') {
     if (!(SETTABLE_STATUSES as readonly string[]).includes(body.status)) {
       return NextResponse.json(

@@ -43,6 +43,7 @@ import {
 // same three screens. A second copy is how two intake routes come to disagree
 // about what an email address looks like.
 import { clean, looksLikeEmail, looksLikePhone, MAX_FIELD } from '@/lib/intakeFields'
+import { venmoBoothNote } from '@/lib/marketVendorVenmo'
 
 export const dynamic = 'force-dynamic'
 
@@ -240,7 +241,8 @@ export async function POST(req: NextRequest) {
 
   // ── Venmo: the reveal ─────────────────────────────────────────────────────
   if (paymentMethod === 'venmo') {
-    const note = `${market.shortName} booth — ${businessName}`
+    // The admin's "mark paid" finds this receipt by this exact note.
+    const note = venmoBoothNote(market, businessName)
     return NextResponse.json({
       venmo: {
         handle: `@${market.venmoHandle}`,
