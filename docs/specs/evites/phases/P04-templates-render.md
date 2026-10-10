@@ -7,8 +7,12 @@
 2. `components/evites/InviteCanvas.tsx`:
    - props `{template, facts, sizes, mode: 'web'|'satori'}`
    - absolutely positioned; every multi-child `div` has `display:flex` (a Satori requirement)
-   - `web` mode may add `filter: drop-shadow`
+   - gradient text uses one `backgroundClip:'text'` layer + `filter: drop-shadow(...)` per `Glow.stops` in **both** modes (spec §6 v1.1 — Satori 0.47 supports it); solid text uses stacked `text-shadow`
+   - explicit numeric `lineHeight` per slot and the `wordSpacing`/`paddingRight` letter-spacing fix (spec §6 v1.1; see `scripts/evite-spike/render.mjs`)
    - image `src` is a public path in web mode and a data URI in satori mode
+   - **Cosmetic fixes from the spike (spec changelog B5):**
+     - a shrunken honoree (long name, or "BIRTHDAY STAR") must sit vertically centred in its slot, so it does not leave a larger gap above the age line than the Mia layout has
+     - the background art's small confetti square near the left of the name row must not overlap the first letter of a wide name: either mask/move it in `background.jpg`/`background.webp` (re-run `optimize-assets.mjs`) or keep the honoree row clear of it. Check with "ALEXANDRIA-ROSE" and "BIRTHDAY STAR".
 3. `lib/evites/render.ts`: `renderEvite(supabase, eviteId, {force})` exactly per spec §5 steps 1–8:
    - claim token
    - random object suffix

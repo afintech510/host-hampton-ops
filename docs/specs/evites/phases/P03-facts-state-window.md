@@ -13,7 +13,7 @@
 1. `lib/evites/themes.ts`: `resolveTheme(booking, lineItems, partyThemes)`. It is pure: the caller passes `party_themes` rows. Replace the P02 stub in `ensure.ts` (ensure reads `party_themes` and line items).
 2. `lib/evites/partyWindow.ts`: 08:00–21:00 ET acceptance; durations per spec. **No `setHours`, no `new Date(x + 'T…')`.**
 3. `lib/evites/state.ts`: `inviteState(booking, payments, evite, now, flags)` returns `disabled | unavailable | closed | live | needs_time | preview`, in the spec §4 order. "Booked" comes **only** from `bookingStage()`.
-4. `lib/evites/facts.ts`: `inviteFacts(booking, evite, lineItems, partyThemes, state)` per spec §3, including `shareText`, `reshareText`, `title`, `description`, and both place lines (mobile town extraction).
+4. `lib/evites/facts.ts`: `inviteFacts(booking, evite, lineItems, partyThemes, state)` per spec §3 (v1.1: no name → `honoreeDisplay: 'BIRTHDAY STAR'`), including `shareText`, `reshareText`, `title`, `description`, and both place lines (mobile town extraction).
 5. `lib/evites/hash.ts`: `renderInputsHash`, `calInputsHash` over canonical JSON (sorted keys).
 6. `lib/evites/glyphs.ts`: load each bundled `.woff` (from P01, `public/evites/fonts/`) with `opentype.js`. `fitsFont(text, font)` and `screenForImage(text, font)` (NFKD-fold, then drop unsupported characters). Memoise the font loads.
 7. `lib/evites/fit.ts`: `fitFontSize({text, font, size, minSize, maxWidth, letterSpacingEm, uppercase})`.
@@ -28,7 +28,7 @@
   - past end → closed;
   - booked with `Evening` → needs_time;
   - flags off / pilot.
-- **facts:** name / no name ("BIRTHDAY", `hasName=false`); `quote_snapshot.childName` fallback; preview dateLine "Pick your date"; studio lines come from `studioLocation` constants; mobile town for three address shapes plus "Long Island" fallback; provisional address → "Location to be confirmed"; the host contact default is never the payments number.
+- **facts:** name / no name (`honoreeDisplay` "BIRTHDAY STAR", `hasName=false` — spec v1.1 B1; the star is an image slot, so the string contains no emoji; no-name `title` "Glow Birthday Party"-style, OG title `<THEME> BIRTHDAY PARTY`); `quote_snapshot.childName` fallback; preview dateLine "Pick your date"; studio lines come from `studioLocation` constants; mobile town for three address shapes plus "Long Island" fallback; provisional address → "Location to be confirmed"; the host contact default is never the payments number.
 - **glyphs:** "·" and "–" are kept where the font has them (assert per font); "Łucja" folds; an emoji is dropped.
 - **fit:** a long name shrinks to ≤ maxWidth and ≥ minSize.
 - **hash:** stable across key order; changes when the date changes; `calInputsHash` does not change on a theme change.

@@ -1028,3 +1028,13 @@ OG images now work on all event pages (pulls from DB). Google Ads conversion tra
 ### Commits This Session
 
 - 6a0bd6c: feat: add OG image support for event pages + bitchy bingo preview
+
+---
+
+## EVITE build (feat/evites) — 2026-10-10
+
+Orchestrated build of the Host Hampton EVITE (spec `docs/specs/evites/03-architecture-spec.md`, LOCKED v1.1). One entry per phase.
+
+- **P00 — `/my-booking` card-pay fix** (branch `fix/my-booking-card-pay`, `cfaba26`, NOT deployed). Both card paths called `initEmbeddedCheckout` with the PaymentIntent secret `/api/portal/pay` returns, so no card field ever appeared; now a shared `PortalCardPayment` Payment Element (party-builder pattern). `portal/pay/route.ts` untouched. Jest 186 suites / 3919 green, `next build` green; `tsc` shows the same 393 pre-existing `__tests__`-only errors as main. Awaiting Adam's deploy gate.
+- **P01 — render spike** (`97e4f74`). Satori 0.47 + sharp/librsvg, no network: within 0–2 px of the mocks. In `node:20-alpine` on the box (`--rm --network none -m 512m`, `/tmp/evite-spike`, removed afterwards with the pulled image): ~2.8 s per pair, max event-loop block 33 ms, peak RSS 250 MB, OG ~75–80 KB, output byte-identical to Windows. **GO.** resvg rejected (blocks the loop 0.8–1.5 s).
+- **Spec v1.1** (Adam): no-name honoree "BIRTHDAY STAR" + star image; `Glow.stops` two-colour type; Satori supports `filter: drop-shadow`; two cosmetic fixes carried into P04.

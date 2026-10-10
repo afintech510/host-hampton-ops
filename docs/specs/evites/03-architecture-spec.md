@@ -1,6 +1,6 @@
 # Host Hampton EVITE — Architecture Spec (MVP)
 
-**Status: LOCKED v1.0** (2026-10-10) after adversarial review. The changelog at the end lists every review finding and its resolution.
+**Status: LOCKED v1.1** (2026-10-10). v1.0 locked after adversarial review; v1.1 carries Adam's post-spike decisions. The changelog at the end lists every change and its resolution.
 **Scope:** `02-SOW.md` · **Facts:** `01-codebase-review.md` · **Decisions:** `handoff/HANDOFF.md` §2 + review §6b.
 Changes after lock need Adam's OK and a changelog entry.
 
@@ -222,7 +222,7 @@ Every call sits **after** the booking write and after `recordInboundEvent` (`lib
 ```ts
 interface InviteFacts {
   hasName: boolean
-  honoreeDisplay: string          // 'MIA' | 'BIRTHDAY' (+ star icon slot when !hasName → "Birthday ⭐")
+  honoreeDisplay: string          // 'MIA' | 'BIRTHDAY STAR' (+ star icon image slot when !hasName → "BIRTHDAY STAR ⭐"; v1.1)
   ageOrdinal: string | null
   themeWord: string; themeSub: string; templateSlug: 'glow' | 'plain'
   dateLine: string                // state preview → 'Pick your date'; needs_time → 'Saturday, November 14';
@@ -240,7 +240,7 @@ interface InviteFacts {
 }
 ```
 
-- **Name:** `child_name`, else `quote_snapshot.childName`. First token, ≤ 20 chars. No name → "BIRTHDAY" plus the star icon (`assets/glow/icons/star.png`). **No emoji in image text, ever.**
+- **Name:** `child_name`, else `quote_snapshot.childName`. First token, ≤ 20 chars. No name → `honoreeDisplay = 'BIRTHDAY STAR'` plus the star icon **image** (`assets/glow/icons/star.png`) — v1.1, Adam 2026-10-10, because plain "BIRTHDAY" sat redundantly above "7TH Birthday!". The name slot auto-shrinks to fit it. The no-name OG title is "GLOW BIRTHDAY PARTY" (`<THEME> BIRTHDAY PARTY`). **No emoji in image text, ever** — the ⭐ is always the icon image, never a glyph.
 - **Mobile town:** the locality before the state or ZIP. Unparseable → "Long Island". Provisional addresses (`isProvisionalAddress`) count as missing.
 - **Studio:** `lib/studioLocation.ts` constants.
 - **Host contact:** defaults to "Allie" and `STUDIO_PHONE_DISPLAY`, normalised to `631-998-9325`. Never `lib/paymentContacts.ts`.
@@ -314,6 +314,7 @@ There are no renders triggered by page or API GETs.
 8. On any failure: `UPDATE … SET render_claim = NULL, render_error = $reason WHERE render_claim = $token`. The previous objects keep being served.
 
 **Measured in the spike:** wall time and event-loop block per render. Above 500 ms, move the satori call into a `worker_threads` worker (same module, same queue) before Phase 2.
+**P01 result (v1.1):** in `node:20-alpine` on the box (`--network none`, `-m 512m`, librsvg 2.58.93, sharp 0.33.5): ~2.8 s wall per portrait+OG pair, of which Satori is 20–150 ms and the rest is librsvg on the libuv pool; **max event-loop block 33 ms**; peak RSS 250 MB; OG ~75–80 KB; network 0; output byte-identical to Windows. The 500 ms trigger is not hit, so no worker is needed. `@resvg/resvg-js` was equal in quality but blocks the loop 0.8–1.5 s, so it is rejected.
 
 **Fonts:** commit `public/evites/fonts/*.woff` (from `@fontsource`, latin subset) **with their OFL licence files**. They are used by both Satori and the page's `@font-face`. WOFF2 is never handed to Satori or opentype.js.
 
@@ -340,7 +341,8 @@ interface TemplateLayout {
   ogCard: { portraitHeight: 560; radius: 14; titleFont: FontKey; titleSize: 74; titleColor: string; glow: Glow;
             ctaText: 'Tap to RSVP'; ctaBg: string; ctaColor: string }
 }
-type Glow = { color: string; radii: number[] }       // stacked text-shadow / box-shadow, both renderers
+type Glow = { stops: Array<{ color: string; radius: number }> }   // v1.1: per-stop colour (GLOW is #ff3df2 10px + #8a3dff 26px);
+                                                                  // a one-colour glow repeats the colour. Stacked shadows / drop-shadows.
 type Slot =
   | { id: string; type: 'text'; top: number; font: FontKey; weight?: 400 | 600; size: number;
       minSize?: number; maxWidth?: number; lineHeight?: number; letterSpacingEm?: number; uppercase?: boolean;
@@ -351,7 +353,8 @@ type Slot =
 ```
 
 - Every slot is horizontally centred (all Glow slots are). `autoShrink` is implied by `maxWidth` plus `minSize`.
-- **Glow neon:** `filter: drop-shadow` becomes stacked `text-shadow` (Satori has no `filter`). Web mode may add the filter.
+- **Glow neon (v1.1, measured in the P01 spike):** Satori 0.47 **does** support `filter: drop-shadow(...)`, and librsvg rasterises it. A gradient-filled slot (`fill`) renders as one `backgroundClip: 'text'` layer plus `filter: drop-shadow(stop1) drop-shadow(stop2)…` — matching the Chrome mock — in **both** renderers. Solid-colour slots and shape layers use stacked `text-shadow` / `box-shadow` from the same `Glow.stops`. A two-layer `textShadow` fallback for gradient text (transparent shadowed copy under the clipped copy) is kept only if a later Satori breaks `filter`.
+- **Satori text metrics (from the spike):** every text slot carries an explicit numeric `lineHeight` (CSS `normal` is not portable: Poppins 1.5, Bungee Outline 1.32, Neonderthaw 1.35, Monoton 1.558). Satori skips letter-spacing after a space and omits the trailing letter-space, so a spaced slot sets `wordSpacing = letterSpacing` and `paddingRight = letterSpacing` to centre like Chrome.
 - The `honoree` slot has a sibling image slot `star` with `showWhen: '!hasName'`.
 - **`plain`** is `glow` minus the `icon_strip` slot.
 - A schema test validates that every font, image and bind exists and that slot ids are unique.
@@ -680,6 +683,16 @@ No `NEXT_PUBLIC_*` additions. **Rotating `PORTAL_LINK_SIGNING_SECRET` would also
 ---
 
 ## Changelog
+
+**v1.1 — 2026-10-10, Adam's post-spike decisions (P01 GO).**
+
+| # | Change | Where |
+|---|---|---|
+| B1 | No-name `honoreeDisplay` is `'BIRTHDAY STAR'` (was `'BIRTHDAY'`, which read redundantly above "7TH Birthday!"); the ⭐ stays an icon image, never an emoji glyph. No-name OG title stays `<THEME> BIRTHDAY PARTY` ("GLOW BIRTHDAY PARTY"). | §3, P03 |
+| B2 | Satori 0.47 supports `filter: drop-shadow`; gradient text uses one clipped layer + drop-shadow filters in both renderers. Text-metric workarounds (numeric `lineHeight`, `wordSpacing`/`paddingRight` for letter-spacing) recorded. | §6 |
+| B3 | `Glow` becomes `{ stops: [{color, radius}] }` so GLOW's two-colour halo is expressible. | §6 |
+| B4 | Spike measurements recorded; Satori + sharp(librsvg) confirmed, no worker thread, resvg rejected. | §5 |
+| B5 | Two cosmetic layout fixes carried into P04: a shrunken name must not leave a larger gap above the age line (centre the honoree row vertically in its slot), and the background's confetti square must not overlap the first letter of a wide name. | P04 |
 
 **v1.0 — LOCKED 2026-10-10.** Adversarial review: 6 blockers, 13 major, 9 minor, plus cuts. All resolved as below.
 
