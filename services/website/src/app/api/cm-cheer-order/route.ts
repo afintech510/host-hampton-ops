@@ -6,7 +6,7 @@ import { getSupabase } from '@/lib/supabase'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref } from '@/lib/emailSafety'
 import { screenCmCheerTotals, VALID_PAYMENT_METHODS } from '@/lib/cmCheerOrder'
-import { resolveFundraiserTeam } from '@/lib/fundraiserTeams'
+import { resolveFundraiserTeam, screenTeacherName } from '@/lib/fundraiserTeams'
 import { reconcileDeliveryItems, screenDelivery } from '@/lib/fundraiserDelivery'
 import { guardRate, intakeRule } from '@/lib/rateLimit'
 
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
     athleteName,
+    teacherName: postedTeacherName,
     parentName,
     email,
     phone,
@@ -64,6 +65,14 @@ export async function POST(req: NextRequest) {
   if (!team) {
     return NextResponse.json({ error: 'Unknown fundraiser' }, { status: 400 })
   }
+
+  // Required for a school PTO (the handout pile is sorted by classroom),
+  // dropped to NULL for a squad. `lib/fundraiserTeams.ts` decides which.
+  const teacher = screenTeacherName(team, postedTeacherName)
+  if (!teacher.ok) {
+    return NextResponse.json({ error: `We could not accept that order: ${teacher.reason}` }, { status: 400 })
+  }
+  const teacherName = teacher.teacherName
 
   /**
    * THE TOTAL, THE COST AND THE PROFIT ALL ARRIVE FROM THE BROWSER.
@@ -131,6 +140,7 @@ export async function POST(req: NextRequest) {
       order_ref: '',   // trigger overwrites this, and reads `team` to pick the prefix
       team: team.slug,
       athlete_name: athleteName,
+      teacher_name: teacherName,
       parent_name: parentName,
       email,
       phone,
@@ -196,7 +206,7 @@ export async function POST(req: NextRequest) {
     </div>`
       : `<div style="background:#f9f9f9;border-radius:8px;padding:14px;border:1px solid #eee;margin-bottom:16px;">
       <p style="margin:0;font-size:14px;font-weight:700;">🎒 Delivered in class</p>
-      <p style="margin:6px 0 0;font-size:13px;color:#555;">This order will be given to <strong>${escapeHtml(athleteName)}</strong> at school — no delivery charge.</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555;">This order will be given to <strong>${escapeHtml(athleteName)}</strong> at school${teacherName ? ` in <strong>${escapeHtml(teacherName)}</strong>'s class` : ''} — no delivery charge.</p>
     </div>`
 
     const notificationHtml = `
@@ -208,11 +218,12 @@ export async function POST(req: NextRequest) {
   <div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px 28px;border-radius:0 0 10px 10px;">
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
       <tr><td style="color:#888;font-size:13px;padding:4px 0;width:120px;">${escapeHtml(team.personLabel)}</td><td style="font-weight:600;font-size:14px;">${escapeHtml(athleteName)}</td></tr>
+      ${teacherName ? `<tr><td style="color:#888;font-size:13px;padding:4px 0;">Teacher</td><td style="font-weight:600;font-size:14px;">${escapeHtml(teacherName)}</td></tr>` : ''}
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Parent/Buyer</td><td style="font-weight:600;font-size:14px;">${escapeHtml(parentName)}</td></tr>
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Email</td><td><a href="${mailToHref(email)}" style="color:#111;font-weight:600;font-size:14px;">${escapeHtml(email)}</a></td></tr>
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Phone</td><td style="font-weight:600;font-size:14px;">${escapeHtml(phone)}</td></tr>
       <tr><td style="color:#888;font-size:13px;padding:4px 0;">Payment</td><td style="padding:4px 0;">${paymentBadge}</td></tr>
-      <tr><td style="color:#888;font-size:13px;padding:4px 0;">Fulfilment</td><td style="font-weight:600;font-size:14px;">${delivery.method === 'home' ? `🚚 Home delivery — ${escapeHtml(delivery.address ?? '')}` : '🎒 Given to the child in class'}</td></tr>
+      <tr><td style="color:#888;font-size:13px;padding:4px 0;">Fulfilment</td><td style="font-weight:600;font-size:14px;">${delivery.method === 'home' ? `🚚 Home delivery — ${escapeHtml(delivery.address ?? '')}` : `🎒 Given to the child in class${teacherName ? ` (${escapeHtml(teacherName)})` : ''}`}</td></tr>
     </table>
     <div style="background:#f9f9f9;border-radius:8px;padding:14px 16px;border:1px solid #eee;">
       <table style="width:100%;">${itemRows}
@@ -264,7 +275,7 @@ export async function POST(req: NextRequest) {
     <p style="color:#555;font-size:14px;margin-bottom:20px;">Your order has been received. Your order number is:</p>
     <div style="background:${team.emailAccent};color:#fff;text-align:center;padding:12px;border-radius:8px;font-size:22px;font-weight:800;letter-spacing:0.1em;margin-bottom:20px;">${escapeHtml(order.order_ref)}</div>
     <div style="background:#f9f9f9;border-radius:8px;padding:14px 16px;border:1px solid #eee;margin-bottom:20px;">
-      <p style="font-size:12px;font-weight:700;text-transform:uppercase;color:#888;margin:0 0 8px;">${escapeHtml(team.personLabel)}: ${escapeHtml(athleteName)}</p>
+      <p style="font-size:12px;font-weight:700;text-transform:uppercase;color:#888;margin:0 0 8px;">${escapeHtml(team.personLabel)}: ${escapeHtml(athleteName)}${teacherName ? ` · Teacher: ${escapeHtml(teacherName)}` : ''}</p>
       <table style="width:100%;">${itemRows}
         <tr><td colspan="2" style="border-top:1px solid #ddd;padding-top:8px;"></td></tr>
         <tr><td style="font-weight:700;">Total</td><td style="text-align:right;font-weight:800;color:${team.emailAccent};">$${storedTotal}</td></tr>

@@ -47,6 +47,8 @@ export interface FundraiserDashboardTheme {
    * The underlying column stays `athlete_name` for every team.
    */
   personLabel: string
+  /** Show the Teacher column/search. Mirrors `collectsTeacher` in `lib/fundraiserTeams`. */
+  collectsTeacher: boolean
   /**
    * What this fundraiser's organising body is called, short enough for a stat
    * tile — "PTO" for the Sharks, "Boosters" for CM Cheer. Same reasoning as
@@ -71,6 +73,8 @@ export interface FundraiserDashboardTheme {
 interface OrderItem { name: string; qty: number; unit_price: number; line_total: number }
 interface Order {
   id: string; order_ref: string; team: string; athlete_name: string; parent_name: string
+  /** Migration 067. NULL on every CM Cheer row and on ESM orders placed before 2026-10-10. */
+  teacher_name?: string | null
   email: string; phone: string; payment_method: string; items: OrderItem[]
   /**
    * How this order reaches the family. `delivery_address` is present exactly
@@ -214,6 +218,7 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
     return o.athlete_name.toLowerCase().includes(q) || o.parent_name.toLowerCase().includes(q)
       || o.email.toLowerCase().includes(q) || o.order_ref.toLowerCase().includes(q)
       || (o.delivery_address || '').toLowerCase().includes(q)
+      || (o.teacher_name || '').toLowerCase().includes(q)
   })
 
   function exportCSV() {
@@ -221,9 +226,11 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
     // gets printed for the handout pile and the delivery run, and a sheet that
     // makes you cross-reference two columns far apart is a sheet that gets a
     // box left on the wrong doorstep.
-    const rows = [['Order Ref',theme.personLabel,'Parent','Email','Phone','Fulfilment','Delivery Address','Delivery Fee','Payment','Total','Net to '+theme.organizerShort,'Status','Items','Notes','Date']]
+    // Teacher sits beside the child so the sheet can be sorted into one pile per
+    // classroom. Only for a team that collects it — a squad's CSV has no rooms.
+    const rows = [['Order Ref',theme.personLabel,...(theme.collectsTeacher ? ['Teacher'] : []),'Parent','Email','Phone','Fulfilment','Delivery Address','Delivery Fee','Payment','Total','Net to '+theme.organizerShort,'Status','Items','Notes','Date']]
     filtered.forEach(o => rows.push([
-      o.order_ref, o.athlete_name, o.parent_name, o.email, o.phone,
+      o.order_ref, o.athlete_name, ...(theme.collectsTeacher ? [o.teacher_name || ''] : []), o.parent_name, o.email, o.phone,
       isHomeDelivery(o) ? 'Home delivery' : 'In class',
       o.delivery_address || '',
       o.delivery_fee_cents ? fmt(o.delivery_fee_cents) : '',
@@ -465,6 +472,11 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                     <span className="font-bold text-zinc-900 text-sm">{order.athlete_name}</span>
+                    {theme.collectsTeacher && order.teacher_name && (
+                      <span className="text-[10px] sm:text-xs font-medium px-1.5 sm:px-2 py-0.5 rounded-full border bg-slate-100 text-slate-700 border-slate-200">
+                        {order.teacher_name}
+                      </span>
+                    )}
                     <span className="text-gray-400 text-xs hidden sm:inline">·</span>
                     <span className="text-gray-500 text-xs hidden sm:inline">{order.parent_name}</span>
                     <span className={`text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 rounded-full border ${statusBadge(order.status)}`}>{statusLabel(order.status)}</span>
@@ -515,6 +527,14 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
                       ) : (
                         <p className="text-sm text-gray-600">
                           🎒 Given to <span className="font-medium text-zinc-900">{order.athlete_name}</span> in class — no delivery charge.
+                        </p>
+                      )}
+                      {theme.collectsTeacher && (
+                        <p className="text-sm mt-2">
+                          <span className="text-gray-500">Teacher:</span>{' '}
+                          {order.teacher_name
+                            ? <span className="font-medium text-zinc-900">{order.teacher_name}</span>
+                            : <span className="text-gray-400 italic">not given (ordered before the field existed)</span>}
                         </p>
                       )}
                     </div>

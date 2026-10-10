@@ -6,7 +6,35 @@ import {
   DEFAULT_FUNDRAISER_TEAM,
   isFundraiserTeamSlug,
   resolveFundraiserTeam,
+  screenTeacherName,
+  MAX_TEACHER_NAME_LENGTH,
 } from '@/lib/fundraiserTeams'
+
+describe('screenTeacherName', () => {
+  const sharks = FUNDRAISER_TEAMS['esm-sharks']
+  const cheer = FUNDRAISER_TEAMS['cm-cheer']
+
+  it('requires a teacher on a Sharks order', () => {
+    for (const missing of [undefined, null, '', '   ', 42, {}]) {
+      expect(screenTeacherName(sharks, missing).ok).toBe(false)
+    }
+  })
+
+  it('trims and collapses whitespace', () => {
+    expect(screenTeacherName(sharks, '  Mrs.   Smith ')).toEqual({ ok: true, teacherName: 'Mrs. Smith' })
+  })
+
+  it('refuses an over-long name', () => {
+    expect(screenTeacherName(sharks, 'x'.repeat(MAX_TEACHER_NAME_LENGTH)).ok).toBe(true)
+    expect(screenTeacherName(sharks, 'x'.repeat(MAX_TEACHER_NAME_LENGTH + 1)).ok).toBe(false)
+  })
+
+  it('stores nothing for a team that does not collect it, whatever was posted', () => {
+    // `/cm-cheer` and `/li-high` never send it; an absent value must not 400 them.
+    expect(screenTeacherName(cheer, undefined)).toEqual({ ok: true, teacherName: null })
+    expect(screenTeacherName(cheer, 'Coach Bob')).toEqual({ ok: true, teacherName: null })
+  })
+})
 
 describe('resolveFundraiserTeam', () => {
   it('defaults an absent team to cm-cheer, so the pages that predate the field keep working', () => {

@@ -45,6 +45,9 @@ export const CM_CHEER_ORDER_COLUMNS = [
   'order_ref',
   'team',
   'athlete_name',
+  // Migration 067. Which classroom an in-class order goes to — the organizer's
+  // job to act on, same reasoning as delivery below.
+  'teacher_name',
   'parent_name',
   'email',
   'phone',

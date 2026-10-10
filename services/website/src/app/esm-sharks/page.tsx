@@ -9,7 +9,7 @@ import {
   totalPatchQty,
   type PatchSelection,
 } from '@/lib/fundraiserPatches'
-import { FUNDRAISER_TEAMS } from '@/lib/fundraiserTeams'
+import { FUNDRAISER_TEAMS, MAX_TEACHER_NAME_LENGTH } from '@/lib/fundraiserTeams'
 import { HOME_DELIVERY_FEE_CENTS } from '@/lib/fundraiserDelivery'
 
 /**
@@ -526,6 +526,7 @@ export default function ESMSharksPage() {
         if (el('summaryTotal')) el('summaryTotal')!.textContent = `$${totalAmount.toFixed(2)}`
         if (el('summaryConfirmTotal')) el('summaryConfirmTotal')!.textContent = `$${totalAmount.toFixed(2)}`
         if (el('sumAthlete')) el('sumAthlete')!.textContent = val('athleteName')
+        if (el('sumTeacher')) el('sumTeacher')!.textContent = val('teacherName').trim()
         if (el('sumParent')) el('sumParent')!.textContent = val('parentName')
         if (el('sumPayment')) el('sumPayment')!.textContent = paymentMethod
         if (el('sumDelivery')) {
@@ -538,7 +539,8 @@ export default function ESMSharksPage() {
           // The team is what gives this order an ESM- number and keeps it out of
           // the CM Cheer order book. Do not drop it.
           team: 'esm-sharks',
-          athleteName: val('athleteName'), parentName: val('parentName'),
+          athleteName: val('athleteName'), teacherName: val('teacherName').trim(),
+          parentName: val('parentName'),
           email: val('email'), phone: val('phone'), paymentMethod,
           deliveryMethod: deliveryChosen ? 'home' : 'classroom',
           deliveryAddress: deliveryChosen ? deliveryAddress : null,
@@ -882,6 +884,12 @@ export default function ESMSharksPage() {
                   <input type="text" id="athleteName" required placeholder="Child's Name" className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-esmNavy focus:ring-0 outline-none transition-all bg-slate-50" />
                 </div>
                 <div>
+                  {/* In-class orders are sorted by room, so the teacher is what
+                      gets the box to the right desk. Required by the API too. */}
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Child&apos;s Teacher</label>
+                  <input type="text" id="teacherName" required maxLength={MAX_TEACHER_NAME_LENGTH} placeholder="Mrs. Smith" className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-esmNavy focus:ring-0 outline-none transition-all bg-slate-50" />
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Parent/Buyer Full Name</label>
                   <input type="text" id="parentName" required placeholder="Jane Doe" className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-esmNavy focus:ring-0 outline-none transition-all bg-slate-50" />
                 </div>
@@ -1027,6 +1035,7 @@ export default function ESMSharksPage() {
               <div className="mb-6">
                 <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Customer Details</h4>
                 <p className="text-sm"><span className="text-gray-500">Child:</span> <span id="sumAthlete" className="font-medium"></span></p>
+                <p className="text-sm"><span className="text-gray-500">Teacher:</span> <span id="sumTeacher" className="font-medium"></span></p>
                 <p className="text-sm"><span className="text-gray-500">Parent/Buyer:</span> <span id="sumParent" className="font-medium"></span></p>
                 <p className="text-sm"><span className="text-gray-500">Payment:</span> <span id="sumPayment" className="font-medium uppercase"></span></p>
                 {/* The last screen before money changes hands is the last chance

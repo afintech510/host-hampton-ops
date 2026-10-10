@@ -62,6 +62,12 @@ export interface FundraiserTeam {
    * but us reads. This is the label, not the field.
    */
   personLabel: string
+  /**
+   * Whether an order must name the child's teacher (`teacher_name`, migration
+   * 067). True for a school PTO, where an in-class handout is sorted by room;
+   * false for a squad. When false the route stores NULL whatever was posted.
+   */
+  collectsTeacher: boolean
   /** Who receives a copy of every new-order notification. Absent = Host Hampton only. */
   organizerEmail?: string
 }
@@ -78,6 +84,7 @@ export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
     emailAccent: '#CE1126',
     ordersPath: '/cm-cheer/orders',
     personLabel: 'Athlete',
+    collectsTeacher: false,
   },
   'esm-sharks': {
     slug: 'esm-sharks',
@@ -94,6 +101,7 @@ export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
     emailAccent: '#0C2340',
     ordersPath: '/esm-sharks/orders',
     personLabel: 'Child',
+    collectsTeacher: true,
     organizerEmail: 'Eastporttuttlepto@gmail.com',
   },
 }
@@ -118,6 +126,33 @@ export function resolveFundraiserTeam(value: unknown): FundraiserTeam | null {
   }
   if (typeof value !== 'string') return null
   return isFundraiserTeamSlug(value) ? FUNDRAISER_TEAMS[value] : null
+}
+
+/** Long enough for "Mrs. Van Der Berg-Kowalski (Room 12)"; the DB backstop is 120. */
+export const MAX_TEACHER_NAME_LENGTH = 80
+
+export type TeacherScreen =
+  | { ok: true; teacherName: string | null }
+  | { ok: false; reason: string }
+
+/**
+ * Resolve a posted teacher name for this team.
+ *
+ * A team that does not collect one gets NULL regardless of what was sent — a
+ * squad has no classroom, and a stray value would only be noise in its CSV.
+ * A team that does collect one REQUIRES it: an in-class order with no room on
+ * it is a box the PTO has to go and ask about.
+ */
+export function screenTeacherName(team: FundraiserTeam, value: unknown): TeacherScreen {
+  if (!team.collectsTeacher) return { ok: true, teacherName: null }
+  if (typeof value !== 'string' || value.trim() === '') {
+    return { ok: false, reason: "the child's teacher is required" }
+  }
+  const trimmed = value.trim().replace(/\s+/g, ' ')
+  if (trimmed.length > MAX_TEACHER_NAME_LENGTH) {
+    return { ok: false, reason: `a teacher's name must be under ${MAX_TEACHER_NAME_LENGTH} characters` }
+  }
+  return { ok: true, teacherName: trimmed }
 }
 
 /**
