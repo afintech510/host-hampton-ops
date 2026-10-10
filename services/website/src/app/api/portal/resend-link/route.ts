@@ -4,6 +4,7 @@ import { generatePortalToken, buildPortalUrl, portalSigningSecret } from '@/lib/
 import { partyPortalMagicLinkHtml } from '@/lib/emailTemplates'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
 import { publicOrigin } from '@/lib/publicOrigin'
+import { safePortalRedirect } from '@/lib/portalRedirect'
 import { guardRate, guardRecipient, intakeRule } from '@/lib/rateLimit'
 import {
   findBookingsByContactEmail,
@@ -77,12 +78,16 @@ export async function POST(req: NextRequest) {
   // `await req.json()` was unguarded and `email.toLowerCase()` assumed a string:
   // `{"email":123}`, `{"email":{}}` and a non-JSON body each 500'd the public
   // login endpoint. Measured.
-  const body = (await req.json().catch(() => null)) as { email?: unknown; phone?: unknown } | null
+  const body = (await req.json().catch(() => null)) as { email?: unknown; phone?: unknown; next?: unknown } | null
   if (!body || typeof body !== 'object') {
     return NextResponse.json({ error: 'Email or phone required' }, { status: 400 })
   }
   const email = typeof body.email === 'string' ? body.email : undefined
   const phone = typeof body.phone === 'string' || typeof body.phone === 'number' ? String(body.phone) : undefined
+  // Where the link should land (`/my-booking/login?next=`). Screened here against the shared
+  // allow-list and screened AGAIN by `/api/portal/auth` when the link is opened; an unusable
+  // value is simply dropped, never echoed and never an error (the login stays anti-enumeration).
+  const next = safePortalRedirect(body.next) ?? undefined
 
   if (!email && !phone) {
     return NextResponse.json({ error: 'Email or phone required' }, { status: 400 })
@@ -140,7 +145,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'We could not send that just now — try again.' }, { status: 503 })
     }
 
-    const portalUrl = buildPortalUrl(match.booking_ref, rawToken)
+    const portalUrl = buildPortalUrl(match.booking_ref, rawToken, next)
     const firstName = (match.contact_name || '').trim().split(/\s+/)[0] || 'there'
     // Transactional — Quo, per the SMS routing policy in lib/sms.ts.
     const smsRes = await sendSMSVia(
@@ -251,7 +256,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'We could not send that just now — try again.' }, { status: 503 })
   }
 
-  const portalUrl = buildPortalUrl(String(booking.booking_ref), rawToken)
+  const portalUrl = buildPortalUrl(String(booking.booking_ref), rawToken, next)
 
   // The address we send to is the one ON THE BOOKING, not the one the caller
   // typed — the two can differ in case, and the booking row is the record.

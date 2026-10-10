@@ -3,10 +3,15 @@
 import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import { safePortalRedirect } from '@/lib/portalRedirect'
 
 function LoginContent() {
   const params = useSearchParams()
   const errorType = params.get('error')
+  // `?next=` is where the emailed/texted link should land (e.g. the host's invitation page).
+  // Restricted to the portal redirect allow-list (lib/portalRedirect.ts); anything else is
+  // dropped here, and the server screens it again before it goes on the link.
+  const next = safePortalRedirect(params.get('next'))
   const [mode, setMode] = useState<'email' | 'phone'>('email')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
@@ -33,7 +38,7 @@ function LoginContent() {
     await fetch('/api/portal/resend-link', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(mode === 'phone' ? { phone } : { email }),
+      body: JSON.stringify({ ...(mode === 'phone' ? { phone } : { email }), ...(next ? { next } : {}) }),
     })
     setSent(true)
     setLoading(false)

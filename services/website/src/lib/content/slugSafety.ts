@@ -102,6 +102,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/mobile-craft-party/[location]',
   '/mobile-party',
   '/my-booking',
+  '/my-booking/invitation',
   '/my-booking/login',
   '/my-booking/pay',
   '/paint-party',

@@ -42,6 +42,8 @@ const SURFACE = [
   'app/api/portal/clear/route.ts',
   'app/api/portal/email-auth/request/route.ts',
   'app/api/portal/email-auth/verify/route.ts',
+  'app/api/portal/invitation/route.ts',
+  'app/api/portal/invitation/event/route.ts',
   'app/api/portal/my-bookings/route.ts',
   'app/api/portal/notify-payment/route.ts',
   'app/api/portal/pay/route.ts',

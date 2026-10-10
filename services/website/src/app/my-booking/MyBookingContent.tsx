@@ -72,6 +72,19 @@ function MyBookingInner() {
 
   useEffect(() => { fetchBooking() }, [])
 
+  // The "Your invitation" card shows only when the host has one they may see: a 200 from the
+  // invitation endpoint. 404 (no evite yet / switched off / cancelled), 401 and a failed read
+  // all hide it, so the card can never be a link to a dead page. Deliberately a separate small
+  // fetch rather than a field on /api/portal/booking, whose column list is not touched here.
+  const [hasInvitation, setHasInvitation] = useState(false)
+  useEffect(() => {
+    let live = true
+    fetch('/api/portal/invitation', { cache: 'no-store' })
+      .then(r => { if (live) setHasInvitation(r.ok) })
+      .catch(() => undefined)
+    return () => { live = false }
+  }, [])
+
   // Handle return from embedded checkout
   useEffect(() => {
     if (!sessionId) return
@@ -319,6 +332,18 @@ function MyBookingInner() {
         {!permissions.canEditFull && permissions.fullReason && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
             <p className="text-amber-800 text-sm">{permissions.fullReason}</p>
+          </div>
+        )}
+
+        {hasInvitation && (
+          <div className="bg-white rounded-xl shadow-sm p-6 mb-6 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="font-display text-lg text-[#1a2744]">Your invitation</h2>
+              <p className="text-sm text-gray-500">See your party invitation, send it to your guests and watch the RSVPs come in.</p>
+            </div>
+            <a href="/my-booking/invitation" className="bg-[#1a2744] text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-[#2a3754] transition-colors">
+              Open my invitation
+            </a>
           </div>
         )}
 

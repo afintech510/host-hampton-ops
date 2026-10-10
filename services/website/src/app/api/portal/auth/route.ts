@@ -3,6 +3,7 @@ import { getSupabase } from '@/lib/supabase'
 import { validatePortalToken, setPortalCookieHeader, portalSigningSecret } from '@/lib/portalAuth'
 import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
 import { checkRateLimit, plannerRule } from '@/lib/rateLimit'
+import { safePortalRedirect } from '@/lib/portalRedirect'
 import {
   isLinkPreviewBot,
   previewCardHtml,
@@ -184,17 +185,11 @@ export async function GET(req: NextRequest) {
   if (stampErr) console.error('portal auth: could not stamp used_at:', stampErr.message)
 
   // Set cookie and redirect to portal (or custom redirect)
-  const redirectTo = req.nextUrl.searchParams.get('redirect')
-  const allowedRedirects = ['/my-booking', '/party-builder', '/party-planner']
-  // The Phase 5 invoice page is per-plan, so it cannot be a fixed entry in the
-  // allowlist. It is matched against the ref THIS request just authenticated
-  // rather than against any ref, which keeps the allowlist's guarantee intact:
-  // a redirect can only ever land on the plan the token was good for, so this
-  // stays closed as a redirector even though the path is dynamic.
-  const summaryForThisRef = `/plan/${ref}/summary`
-  const isAllowed =
-    !!redirectTo && (allowedRedirects.includes(redirectTo) || redirectTo === summaryForThisRef)
-  const destination = isAllowed ? (redirectTo as string) : '/party-planner'
+  // The allow-list is `lib/portalRedirect.ts`, shared with the login page's `?next=` and with
+  // `/api/portal/resend-link`, so the three can never disagree. The Phase 5 invoice page is
+  // per-plan, so it cannot be a fixed entry: it is matched against the ref THIS request just
+  // authenticated, which keeps the allowlist closed as a redirector even though the path is dynamic.
+  const destination = safePortalRedirect(req.nextUrl.searchParams.get('redirect'), ref) ?? '/party-planner'
   const response = NextResponse.redirect(new URL(destination, origin))
   response.headers.set('Set-Cookie', setPortalCookieHeader(ref, secret, isLocal))
 
