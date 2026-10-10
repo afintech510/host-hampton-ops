@@ -1,0 +1,103 @@
+/**
+ * Column allow-lists for evite reads (spec §2 `views.ts`, §7.2, §7.3, §13).
+ *
+ * There is no `select('*')` anywhere in evite code (tripwire E5). Each list is
+ * an ALLOW-list on purpose: a column added by a later migration stays private
+ * until somebody decides otherwise. Use as `.select(LIST.join(', '))`.
+ *
+ * Which list goes where:
+ *   EVITE_BOOKING_COLUMNS      server-side booking read (never sent to a browser as-is)
+ *   EVITE_LOOKUP_COLUMNS       "does this booking already have an evite, and which"
+ *   PUBLIC_RSVP_SELF_COLUMNS   the caller's OWN rsvp, returned to the guest
+ *   HOST_RSVP_COLUMNS          the host's list (spec §7.2, exactly)
+ *   ADMIN_RSVP_COLUMNS         the admin card (spec §7.3)
+ */
+
+/** `bookings` columns the evite code reads. Every one exists in production. */
+export const EVITE_BOOKING_COLUMNS = [
+  'id',
+  'booking_ref',
+  'status',
+  'party_type',
+  'event_type',
+  'party_date',
+  'party_time',
+  'package_type',
+  'guest_count_approx',
+  'child_name',
+  'child_age',
+  'contact_name',
+  'contact_email',
+  'party_tags',
+  'quote_snapshot',
+  'created_at',
+] as const
+
+/** Enough of an `evites` row to say "it exists" (archived or not) and to link it. */
+export const EVITE_LOOKUP_COLUMNS = ['id', 'booking_id', 'slug', 'archived_at'] as const
+
+/**
+ * What a guest gets back about their OWN rsvp. Never `id`, `evite_id`,
+ * `edit_nonce`, `consent_ip`, `contact_id`, the purge flags or `cal_version_seen`.
+ * The guest typed their reminder contact and club email themselves, so they may
+ * be shown back to them (the edit screen prefills from them).
+ */
+export const PUBLIC_RSVP_SELF_COLUMNS = [
+  'status',
+  'revision',
+  'parent_name',
+  'children',
+  'adult_count',
+  'has_allergy',
+  'allergy_note',
+  'note_to_honoree',
+  'reminder_email',
+  'reminder_phone_e164',
+  'reminder_opt_out_at',
+  'club_email',
+  'club_opt_in_at',
+  'club_opted_out_at',
+  'birthday_month',
+  'created_at',
+  'updated_at',
+] as const
+
+/**
+ * Spec §7.2, exactly. **Never reminder contacts, club fields or IP.**
+ */
+export const HOST_RSVP_COLUMNS = [
+  'status',
+  'parent_name',
+  'children',
+  'adult_count',
+  'has_allergy',
+  'allergy_note',
+  'note_to_honoree',
+  'created_at',
+  'updated_at',
+] as const
+
+/**
+ * Spec §7.3. Excludes the raw reminder email/phone, club email and IP: they are
+ * revealed one RSVP at a time through a separate, logged `?reveal=<rsvpId>`.
+ * "Club opted in" is `club_opt_in_at`; the purge flags are the two `*_purged_at`.
+ */
+export const ADMIN_RSVP_COLUMNS = [
+  'id',
+  'status',
+  'revision',
+  'parent_name',
+  'children',
+  'child_count',
+  'adult_count',
+  'has_allergy',
+  'allergy_note',
+  'note_to_honoree',
+  'reminder_opt_out_at',
+  'club_opt_in_at',
+  'club_opted_out_at',
+  'allergy_purged_at',
+  'contacts_purged_at',
+  'created_at',
+  'updated_at',
+] as const
