@@ -11,6 +11,7 @@ import { sumPayments, computeBalance } from '@/lib/bookingBalance'
 import { FALLBACK_STUDIO_RATES, type StudioRates } from '@/lib/pricingCatalog'
 import { foodSelectionsFromColumns, readFoodSelections } from '@/lib/partyFood'
 import PhotoAlbumSender from './PhotoAlbumSender'
+import InvitationCard from '@/components/admin/InvitationCard'
 
 interface PartyBookingSummary {
   id: string
@@ -1127,6 +1128,16 @@ export default function PartiesTab({
 
         {/* Right column */}
         <div className="space-y-6">
+          {/* Invitation & RSVPs (EVITE, spec 7.3). Hidden by the card itself for a booking that can never have one. */}
+          <InvitationCard
+            key={selected.id}
+            bookingId={selected.id}
+            headers={headers}
+            status={selected.status}
+            partyType={selected.party_type}
+            partyTags={(selected as PartyDetail).party_tags}
+          />
+
           {/* Actions */}
           <div className="bg-white rounded-xl border p-5">
             <h3 className="text-sm font-medium text-[#1a2744] mb-3">Actions</h3>
