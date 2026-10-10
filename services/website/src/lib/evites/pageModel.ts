@@ -51,6 +51,17 @@ export function longDateText(isoDate: string): string | null {
   return new Intl.DateTimeFormat('en-US', { timeZone: PARTY_TZ, weekday: 'long', month: 'long', day: 'numeric' }).format(noon)
 }
 
+/**
+ * The birthday child's first name in the case the family typed it ('Mia', 'DeShawn'), for
+ * sentences like "Leave a note for Mia". `honoreeDisplay` is the upper-case IMAGE string, so
+ * the name is read back out of `title` ("Mia's Glow Party"); null when the booking has no name.
+ */
+export function honoreeFirstName(facts: Pick<InviteFacts, 'hasName' | 'title'>): string | null {
+  if (!facts.hasName) return null
+  const at = facts.title.indexOf("'s ")
+  return at > 0 ? facts.title.slice(0, at) : null
+}
+
 export function ribbonFor(state: VisibleInviteState): InviteRibbon | null {
   switch (state) {
     case 'preview':

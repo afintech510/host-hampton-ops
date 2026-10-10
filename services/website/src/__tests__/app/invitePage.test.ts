@@ -17,7 +17,11 @@ let mockDb: ReturnType<typeof makeFakeEviteDb>
 let mockHeaders: Headers
 
 jest.mock('@/lib/supabase', () => ({ getSupabase: () => mockDb.supabase }))
-jest.mock('next/headers', () => ({ headers: () => mockHeaders }))
+let mockCookies: Record<string, string> = {}
+jest.mock('next/headers', () => ({
+  headers: () => mockHeaders,
+  cookies: () => ({ get: (name: string) => (name in mockCookies ? { name, value: mockCookies[name] } : undefined) }),
+}))
 jest.mock('next/navigation', () => ({
   notFound: () => {
     throw Object.assign(new Error('NEXT_NOT_FOUND'), { kind: 'notFound' })
@@ -90,6 +94,7 @@ beforeEach(() => {
   __resetRateLimitForTests()
   newRequest()
   mockHeaders = new Headers({ 'cf-connecting-ip': '203.0.113.9' })
+  mockCookies = {}
   mockDb = makeDb()
   jest.spyOn(console, 'error').mockImplementation(() => undefined)
   jest.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -104,15 +109,15 @@ afterEach(() => {
 })
 
 describe('a live invitation', () => {
-  it('draws the invitation, the details as text, and the (disabled) RSVP buttons', async () => {
+  it('draws the invitation, the details as text, and the live RSVP buttons (P06)', async () => {
     const out = await html()
     expect(out).toContain('>MIA<')
     expect(out).toContain('aria-label="Party details"')
     expect(out).toContain('Saturday, November 14')
     expect(out).toContain('Any questions? Ask Allie')
     expect(out).toContain('hh-inv-frame')
-    expect(out).toMatch(/<button[^>]*disabled[^>]*>Yes, we(&#x27;|')ll be there<\/button>/)
-    expect(out).toMatch(/<button[^>]*disabled[^>]*>Can(&#x27;|')t make it<\/button>/)
+    expect(out).toMatch(/<button(?![^>]*\sdisabled="")[^>]*>Yes, we(&#x27;|')ll be there<\/button>/)
+    expect(out).toMatch(/<button(?![^>]*\sdisabled="")[^>]*>Can(&#x27;|')t make it<\/button>/)
     expect(out).not.toContain('role="status"') // no ribbon
   })
 

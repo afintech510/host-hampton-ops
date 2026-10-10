@@ -4,9 +4,11 @@ import { InviteCanvas } from '@/components/evites/InviteCanvas'
 import RsvpIsland from '@/components/evites/RsvpIsland'
 import ViewBeacon from '@/components/evites/ViewBeacon'
 import { computeSizes } from '@/lib/evites/layout'
-import { invitePageModel, inviteMetadata, unavailableMetadata, type RibbonTone } from '@/lib/evites/pageModel'
+import { honoreeFirstName, invitePageModel, inviteMetadata, unavailableMetadata, type RibbonTone } from '@/lib/evites/pageModel'
+import type { OwnRsvp } from '@/lib/evites/rsvpView'
 import { templateFor } from '@/lib/evites/templates'
 import { loadInvite } from './loadInvite'
+import { loadRsvpPanel } from './loadOwnRsvp'
 
 /**
  * The public invitation (spec §7.1). Unauthenticated, unindexed, throttled.
@@ -20,7 +22,9 @@ import { loadInvite } from './loadInvite'
  *   - The same HTML for a link-preview bot and a person.
  *   - Every unavailable outcome is the SAME `notFound()`: unknown, archived,
  *     cancelled, lost, switched off, and throttled.
- *   - It shows NO counts of RSVPs (D15) and never reads `evite_rsvps`.
+ *   - It shows NO counts of RSVPs (D15) and never renders another guest's row: the
+ *     only RSVP it reads is the CALLER'S OWN, through their edit cookie
+ *     (`loadOwnRsvp`), and only for a `live` party.
  *
  * `loadInvite` is the request-cached guarded load: the rate limiter first, then
  * the database, once per request even though `generateMetadata` calls it too.
@@ -28,7 +32,11 @@ import { loadInvite } from './loadInvite'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-type Props = { params: { slug: string } }
+type Flag = string | string[] | undefined
+type Props = { params: { slug: string }; searchParams?: { edit?: Flag; stopped?: Flag } }
+
+/** `?edit=1` / `?stopped=1`: only the exact value `1` counts. */
+const flag = (v: Flag): boolean => (Array.isArray(v) ? v[0] : v) === '1'
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
@@ -47,7 +55,7 @@ const RIBBON_STYLE: Record<RibbonTone, string> = {
   done: 'bg-white/90 text-[#1b0630]',
 }
 
-export default async function InvitePage({ params }: Props) {
+export default async function InvitePage({ params, searchParams }: Props) {
   const r = await loadInvite(params.slug)
   if (r.kind === 'redirect') permanentRedirect(`/i/${r.slug}`) // 308
   if (r.kind !== 'ok') notFound()
@@ -56,12 +64,24 @@ export default async function InvitePage({ params }: Props) {
   const template = templateFor(r.facts.templateSlug)
   const sizes = computeSizes(template, r.facts)
 
+  // Only a live party takes RSVPs. The caller's own answer (if their cookie verifies) and the current club wording.
+  let own: OwnRsvp | null = null
+  let club: { version: string; wording: string } | null = null
+  if (model.showRsvp) ({ own, club } = await loadRsvpPanel(r.evite.id))
+
   return (
     <div className="hh-inv-col">
       {model.ribbon && (
         <div role="status" className={`mb-4 rounded-xl px-4 py-2.5 text-center ${RIBBON_STYLE[model.ribbon.tone]}`}>
           <p className="text-sm font-bold uppercase tracking-wide">{model.ribbon.text}</p>
           {model.ribbon.note && <p className="mt-0.5 text-xs">{model.ribbon.note}</p>}
+        </div>
+      )}
+
+      {flag(searchParams?.stopped) && (
+        <div role="status" className="mb-4 rounded-xl bg-emerald-200/95 px-4 py-2.5 text-center text-[#06301a]">
+          <p className="text-sm font-bold">Reminders stopped</p>
+          <p className="mt-0.5 text-xs">We won&apos;t send you any more reminders about this party.</p>
         </div>
       )}
 
@@ -96,7 +116,9 @@ export default async function InvitePage({ params }: Props) {
         </section>
       )}
 
-      {model.showRsvp && <RsvpIsland slug={params.slug} />}
+      {model.showRsvp && (
+        <RsvpIsland slug={params.slug} own={own} startInEdit={!!own && flag(searchParams?.edit)} honoree={honoreeFirstName(r.facts)} club={club} />
+      )}
 
       <ViewBeacon slug={params.slug} />
     </div>

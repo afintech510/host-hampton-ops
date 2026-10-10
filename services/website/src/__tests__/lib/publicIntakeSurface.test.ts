@@ -233,8 +233,13 @@ const DELIBERATELY_PUBLIC = new Set([
   // reads that module's result, not this route's). Rate-limited FIRST on the same
   // `eviteViewRule` as the page, because it answers 404 vs 204 and is therefore an
   // enumeration oracle for the slug suffix; a 404 for every unavailable case.
-  // P06 adds the RSVP routes here.
   'POST i/[slug]/event',
+  // The EVITE guest RSVP (spec §7.5). POST creates an answer on the strength of the slug alone; PATCH changes
+  // one on the strength of a signed, expiring, nonce-revocable edit token (cookie or x-rsvp-token), which the
+  // walker cannot see as a gate because it is not the portal cookie. Both are rate-limited first (guardRate on
+  // eviteRsvpRule, before any await), Origin-checked, and answer with the caller's OWN row only.
+  'POST i/[slug]/rsvp',
+  'PATCH i/[slug]/rsvp',
   // Portal auth's own front door: it must be reachable without a session,
   // because handing one out is what it does. Audited by link 14.
   'GET portal/auth',
