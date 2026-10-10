@@ -48,13 +48,14 @@ import { isEviteEligible } from '@/lib/evites/eligibility'
 import { childNameOf } from '@/lib/evites/facts'
 import { calInputsHash } from '@/lib/evites/hash'
 import { validPartyDate } from '@/lib/evites/partyWindow'
-import { queueRender, renderEvite } from '@/lib/evites/render'
+import { queueRender, renderViaQueue } from '@/lib/evites/render'
 import { claimAndSend, performSend, type ClaimAndSendResult, type SendResult } from '@/lib/evites/sendOne'
 import { reclaimFailed, type SendKey } from '@/lib/evites/sends'
 import { sendPartyCancelledNotices } from '@/lib/evites/inlineSends'
 import { loadHeadcountRsvps, loadSendContext, type SendContext, type SendContextRead, type SendRsvpRow } from '@/lib/evites/sendContext'
 import { emailSuppressed } from '@/lib/evites/suppression'
 import { makeSlug, slugNameFor, slugNamePart } from '@/lib/evites/slug'
+import { slugIsAnAlias } from '@/lib/evites/slugTaken'
 import { resolveTheme } from '@/lib/evites/themes'
 import { readThemeInputs } from '@/lib/evites/themeInputs'
 import { EVITE_BOOKING_COLUMNS, EVITE_SEND_RSVP_COLUMNS } from '@/lib/evites/views'
@@ -87,7 +88,12 @@ export const BACKFILL_PER_TICK = 25
 export const BACKFILL_RECENT_DAYS = 14
 /** How many candidate bookings each backfill query reads. */
 export const BACKFILL_SCAN = 300
+/** Evites examined per tick. Up to this many, ALL of them are examined every tick; past it the window rotates (see `scan`). */
 export const SCAN_LIMIT = 150
+/** Of the `SCAN_LIMIT`, how many are always the NEWEST evites (a just-created lead must never wait for a rotation to reach it). */
+export const SCAN_NEWEST = 60
+/** The rotation advances once per this interval of wall-clock time (the cron's 15-minute cadence). */
+export const SCAN_TICK_MS = 15 * 60 * 1000
 export const RENDERS_PER_TICK = 2
 export const RECLAIM_PER_TICK = 20
 export const LEAD_PREVIEW_PER_TICK = 10
@@ -283,25 +289,70 @@ function remember(ledger: Ledger, key: SendKey, r: ClaimAndSendResult): void {
 
 /* ── the scan ─────────────────────────────────────────────────── */
 
-async function scan(run: Run): Promise<void> {
+type ScanEvite = { id: string; booking_id: string; went_live_at: string | null; cancelled_notice_at: string | null; created_at: string | null; updated_at: string | null }
+const SCAN_COLUMNS = 'id, booking_id, went_live_at, cancelled_notice_at, created_at, updated_at'
+
+/**
+ * Which window of the not-archived invitations this tick examines. It used to be `ORDER BY updated_at ASC LIMIT 150`:
+ * an invitation nothing ever writes to (a finished party, a quiet one) keeps its old `updated_at` forever, so once
+ * 150 such rows existed they filled the window every tick and an evite created afterwards was never reached.
+ *
+ *   - up to `SCAN_LIMIT` invitations: ALL of them, every tick. Nothing is skipped, nothing rotates.
+ *   - more than that: the `SCAN_NEWEST` newest (a brand-new lead, its first render and its lead_preview) PLUS a slice of
+ *     the rest that ADVANCES with the clock (`floor(now / 15 min)`), so every older invitation is reached within
+ *     `ceil(rest / (SCAN_LIMIT - SCAN_NEWEST))` ticks. The offset comes from the clock and a count, not from stored state,
+ *     so a restart or a second container cannot pin the window. `rep.scan.truncated` says rotation is in effect.
+ * The window is then sorted oldest-updated first, which is the order the per-step caps (2 renders, 10 previews) saw before.
+ */
+/**
+ * The inclusive index ranges (into the not-archived invitations ordered newest first) one tick examines.
+ * Pure, so the "every invitation is reached within a bounded number of ticks" claim is a test, not a comment.
+ */
+export function scanRanges(total: number, tick: number): Array<[number, number]> {
+  if (total <= SCAN_LIMIT) return total > 0 ? [[0, total - 1]] : []
+  const rotate = SCAN_LIMIT - SCAN_NEWEST
+  const rest = total - SCAN_NEWEST
+  const offset = (tick * rotate) % rest
+  const from = SCAN_NEWEST + offset
+  const out: Array<[number, number]> = [[0, SCAN_NEWEST - 1]]
+  const end = Math.min(from + rotate - 1, total - 1)
+  out.push([from, end])
+  const got = end - from + 1
+  // the slice ran off the end of the list: wrap to the start of the rotating part so the window is always full
+  if (got < rotate) out.push([SCAN_NEWEST, SCAN_NEWEST + (rotate - got) - 1])
+  return out
+}
+
+async function readScanWindow(run: Run): Promise<ScanEvite[] | null> {
   const { supabase, rep } = run
-  const list = await supabase
-    .from('evites')
-    .select('id, booking_id, went_live_at, cancelled_notice_at')
-    .is('archived_at', null)
-    .order('updated_at', { ascending: true })
-    .limit(SCAN_LIMIT + 1)
-  if (list.error) {
+  const fail = (what: string, reason: string): null => {
     rep.scan.unavailable = true
     noteError(run, 'scan')
-    console.error(`evites/cron: scan read failed: ${list.error.message}`)
-    return
+    console.error(`evites/cron: scan ${what} failed: ${reason}`)
+    return null
   }
-  let evites = (list.data ?? []) as unknown as Array<{ id: string; booking_id: string; went_live_at: string | null; cancelled_notice_at: string | null }>
-  if (evites.length > SCAN_LIMIT) {
-    rep.scan.truncated = true
-    evites = evites.slice(0, SCAN_LIMIT)
+  const total = await supabase.from('evites').select('id', { count: 'exact', head: true }).is('archived_at', null)
+  if (total.error || typeof total.count !== 'number') return fail('count', total.error?.message ?? 'no count')
+  const n = total.count
+  if (n > SCAN_LIMIT) rep.scan.truncated = true
+
+  const out: ScanEvite[] = []
+  for (const [from, to] of scanRanges(n, Math.floor(run.now.getTime() / SCAN_TICK_MS))) {
+    const part = await supabase.from('evites').select(SCAN_COLUMNS).is('archived_at', null).order('created_at', { ascending: false }).range(from, to)
+    if (part.error) return fail('read', part.error.message)
+    out.push(...((part.data ?? []) as unknown as ScanEvite[]))
   }
+  return out
+}
+
+async function scan(run: Run): Promise<void> {
+  const { supabase, rep } = run
+  const window = await readScanWindow(run)
+  if (window === null) return
+  const seen = new Set<string>()
+  const evites = window
+    .filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true)))
+    .sort((a, b) => String(a.updated_at ?? '').localeCompare(String(b.updated_at ?? '')))
   rep.scan.evites = evites.length
 
   const bookings = new Map<string, { booking_ref: string | null; status: string | null; party_date: string | null; updated_at: string | null }>()
@@ -421,6 +472,9 @@ async function reslug(run: Run, ctx: SendContext): Promise<ReslugResult> {
   const theme = resolveTheme(ctx.booking, inputs.lineItems, inputs.partyThemes).short
   for (let attempt = 0; attempt < 5; attempt++) {
     const slug = makeSlug(childNameOf(ctx.booking), theme)
+    const alias = await slugIsAnAlias(supabase, slug)
+    if (alias === 'taken') continue
+    if (alias === 'unknown') return 'error'
     const w = await supabase
       .from('evites')
       .update({ slug, previous_slugs: previous })
@@ -530,7 +584,7 @@ async function stepRenders(run: Run): Promise<void> {
     if (ctx.state !== 'preview' && ctx.state !== 'needs_time' && ctx.state !== 'live') continue
     attempted += 1
     rep.renders.attempted += 1
-    const out = await renderEvite(supabase, item.eviteId, { now: run.now })
+    const out = await renderViaQueue(supabase, item.eviteId, { now: run.now })
     if (out.kind === 'rendered') rep.renders.rendered += 1
     else if (out.kind === 'fresh') rep.renders.fresh += 1
     else if (out.kind === 'busy') rep.renders.busy += 1
@@ -759,7 +813,7 @@ async function stepOrphans(run: Run): Promise<void> {
       noteError(run, 'orphans')
       continue
     }
-    await runKeys(run, planOrphans({ id: eviteId }, rows, ledger), ledger, rep.step7.orphans, counter)
+    await runKeys(run, planOrphans({ id: eviteId }, rows, ledger, now), ledger, rep.step7.orphans, counter)
   }
 }
 

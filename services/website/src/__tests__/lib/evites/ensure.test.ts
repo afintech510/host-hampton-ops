@@ -20,6 +20,8 @@ function makeFake(script: {
   lineItems?: Result
   /** `party_themes` read. Default: the Glow row. */
   themes?: Result
+  /** Results for successive alias checks (`previous_slugs @> {slug}`). Default: no row, i.e. the slug is free. */
+  aliases?: Result[]
 }) {
   const calls = {
     bookingSelect: [] as string[],
@@ -27,7 +29,9 @@ function makeFake(script: {
     themeSelect: [] as string[],
     insertedRows: [] as Array<Record<string, unknown>>,
     lookupFilters: [] as Array<[string, unknown]>,
+    aliasChecks: [] as unknown[],
   }
+  let aliasI = 0
   let lookupI = 0
   let insertI = 0
   const supabase = {
@@ -49,6 +53,13 @@ function makeFake(script: {
         if (mode === 'select') (table === 'bookings' ? calls.bookingSelect : calls.lookupSelect).push(cols)
         return b
       }
+      b.contains = (col: string, val: unknown) => {
+        calls.aliasChecks.push([col, val])
+        const r = (script.aliases ?? [])[aliasI++] ?? { data: [], error: null }
+        b.then = (resolve: (v: Result) => unknown) => resolve(r)
+        return b
+      }
+      b.limit = () => b
       b.insert = (row: Record<string, unknown>) => {
         mode = 'insert'
         calls.insertedRows.push(row)
@@ -191,6 +202,37 @@ describe('ensureEviteForBooking', () => {
     const out = await ensureEviteForBooking(supabase, BOOKING_ID)
     expect(out).toEqual({ kind: 'created', eviteId: EVITE_ID, slug: 'mia-glow-9zz9' })
     expect(calls.insertedRows).toHaveLength(3)
+  })
+
+  it("a minted slug that is another invitation's re-minted alias is taken: mint again, and the insert never carries it", async () => {
+    const { supabase, calls } = makeFake({
+      booking: booking(),
+      aliases: [{ data: [{ id: 'someone-elses' }], error: null }, { data: [{ id: 'someone-elses' }], error: null }, { data: [], error: null }],
+      inserts: [inserted('mia-glow-7kq2')],
+    })
+    const out = await ensureEviteForBooking(supabase, BOOKING_ID)
+    expect(out.kind).toBe('created')
+    expect(calls.aliasChecks).toHaveLength(3)
+    expect(calls.aliasChecks.every((c) => (c as unknown[])[0] === 'previous_slugs' && Array.isArray((c as unknown[])[1]))).toBe(true)
+    expect(calls.insertedRows).toHaveLength(1)
+    // the slug that was inserted is the one the THIRD check cleared
+    expect([(calls.aliasChecks[2] as unknown[])[1]]).toEqual([[calls.insertedRows[0].slug]])
+  })
+
+  it('an alias check that cannot be read is unavailable, not "free": nothing is inserted', async () => {
+    const { supabase, calls } = makeFake({ booking: booking(), aliases: [{ data: null, error: { message: 'boom' } }] })
+    expect((await ensureEviteForBooking(supabase, BOOKING_ID)).kind).toBe('unavailable')
+    expect(calls.insertedRows).toHaveLength(0)
+  })
+
+  it('every alias hit in a row gives up as unavailable after MAX_SLUG_ATTEMPTS, inserting nothing', async () => {
+    const { supabase, calls } = makeFake({
+      booking: booking(),
+      aliases: Array.from({ length: 8 }, () => ({ data: [{ id: 'x' }], error: null })),
+    })
+    expect((await ensureEviteForBooking(supabase, BOOKING_ID)).kind).toBe('unavailable')
+    expect(calls.aliasChecks).toHaveLength(MAX_SLUG_ATTEMPTS)
+    expect(calls.insertedRows).toHaveLength(0)
   })
 
   it('slug collision five times in a row gives up as unavailable (and never throws)', async () => {

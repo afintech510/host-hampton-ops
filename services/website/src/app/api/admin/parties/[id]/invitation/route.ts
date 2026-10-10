@@ -9,8 +9,10 @@ import { isEviteEligible } from '@/lib/evites/eligibility'
 import { ensureEviteForBooking, MAX_SLUG_ATTEMPTS } from '@/lib/evites/ensure'
 import { childNameOf } from '@/lib/evites/facts'
 import { renderInputsHash } from '@/lib/evites/hash'
-import { renderEvite, queueRender } from '@/lib/evites/render'
+import { renderViaQueue, queueRender } from '@/lib/evites/render'
 import { makeSlug } from '@/lib/evites/slug'
+import { slugIsAnAlias } from '@/lib/evites/slugTaken'
+import { fireClubOptOut } from '@/lib/evites/clubHook'
 import { themeShortOf } from '@/lib/evites/themes'
 import { TEMPLATE_SLUGS } from '@/lib/evites/templates'
 import { loadFactsContext } from '@/lib/evites/adminLoad'
@@ -20,6 +22,7 @@ import {
   ADMIN_EVITE_COLUMNS,
   ADMIN_REVEAL_COLUMNS,
   ADMIN_ROW_LIMIT,
+  ADMIN_VOID_COLUMNS,
   ADMIN_SEND_COLUMNS,
   ADMIN_SEND_LIMIT,
   adminRsvpViews,
@@ -41,7 +44,11 @@ import type { EviteBookingRow, EviteRow, EviteSendRow } from '@/lib/evites/types
  *
  *   GET   /api/admin/parties/[id]/invitation              the card's data
  *   GET   ...?reveal=<rsvpId>                             ONE RSVP's raw contact, audited
- *   POST  ...  { action: ensure | rerender | archive | unarchive | set_theme | reslug | notify_cancelled }
+ *   POST  ...  { action: ensure | rerender | archive | unarchive | set_theme | reslug | notify_cancelled | void_rsvp }
+ *
+ * `void_rsvp` { rsvpId } deletes ONE RSVP of THIS booking's invitation (the remedy for a junk answer that a
+ * link holder filled the list with). It is a hard DELETE of our own `evite_rsvps` row (its ledger rows go with it,
+ * ON DELETE CASCADE), audited by id; a club member is taken off the Brevo list first-class, not left subscribed.
  *
  * `[id]` is the BOOKING id, the same id `/api/admin/parties/[id]` takes.
  *
@@ -291,7 +298,7 @@ async function revealContact(req: NextRequest, supabase: Supa, bookingId: string
 
 // ------------------------------------------------------------------------------------------------ POST
 
-const ACTIONS = ['ensure', 'rerender', 'archive', 'unarchive', 'set_theme', 'reslug', 'notify_cancelled'] as const
+const ACTIONS = ['ensure', 'rerender', 'archive', 'unarchive', 'set_theme', 'reslug', 'notify_cancelled', 'void_rsvp'] as const
 type Action = (typeof ACTIONS)[number]
 
 function isSlugCollision(err: { code?: string | null; message?: string | null; details?: string | null } | null): boolean {
@@ -345,7 +352,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   switch (action as Exclude<Action, 'ensure'>) {
     case 'rerender': {
       // Awaited on purpose: the admin pressed the button to see the result (about two seconds).
-      const outcome = await renderEvite(supabase, evite.id, { force: true })
+      const outcome = await renderViaQueue(supabase, evite.id, { force: true })
       const audited = await audit(`Invitation: re-render requested (${outcome.kind})`)
       if (outcome.kind === 'failed') return json({ ok: false, action, outcome, audited }, 502)
       return json({ ok: outcome.kind === 'rendered', action, outcome, audited })
@@ -434,6 +441,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
         const slug = makeSlug(name, themeShort)
         if (slug === evite.slug) continue
+        // Another invitation's re-minted alias is taken too (UNIQUE(slug) does not see previous_slugs).
+        const alias = await slugIsAnAlias(supabase, slug)
+        if (alias === 'taken') continue
+        if (alias === 'unknown') return json({ error: 'Could not check whether the new link is free; try again' }, 503)
         const { data, error } = await supabase
           .from('evites')
           .update({ slug, previous_slugs: previous })
@@ -464,6 +475,41 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const result = await notifyPartyCancelled(supabase, evite.id)
       const audited = await audit(`Invitation: cancellation notice requested (${result.queued ? 'queued' : result.reason ?? 'not sent'})`)
       return json({ action, ...result, audited }, result.ok ? 200 : 502)
+    }
+
+    case 'void_rsvp': {
+      const rsvpId = body.rsvpId
+      if (typeof rsvpId !== 'string' || !isUuidLike(rsvpId)) return json({ error: 'rsvpId must be an RSVP id' }, 400)
+
+      // Scoped to THIS booking's invitation: the id alone would let any booking's URL remove any guest's answer.
+      const read = await supabase
+        .from('evite_rsvps')
+        .select(ADMIN_VOID_COLUMNS.join(', '))
+        .eq('id', rsvpId)
+        .eq('evite_id', evite.id)
+        .maybeSingle<{
+          id: string
+          evite_id: string
+          status: string
+          revision: number
+          child_count: number
+          club_email: string | null
+          club_opt_in_at: string | null
+          club_opted_out_at: string | null
+        }>()
+      if (read.error) return json({ error: `rsvp read failed: ${read.error.message}` }, 503)
+      if (!read.data) return json({ error: 'That RSVP is not on this invitation' }, 404)
+      const was = read.data
+
+      const { data, error } = await supabase.from('evite_rsvps').delete().eq('id', rsvpId).eq('evite_id', evite.id).select('id')
+      if (error) return json({ error: `remove failed: ${error.message}` }, 500)
+      if (!data || data.length === 0) return json({ error: 'That RSVP was already removed' }, 404)
+
+      // A club member is taken off the list with the answer that held their consent record; best effort, never blocks the removal.
+      if (was.club_email && was.club_opt_in_at && !was.club_opted_out_at) fireClubOptOut(supabase, { email: was.club_email, rsvpId })
+
+      const audited = await audit(`Invitation: removed RSVP ${rsvpId}`, { rsvpId, status: was.status, revision: was.revision, children: was.child_count })
+      return json({ ok: true, action, rsvpId, audited })
     }
   }
 }

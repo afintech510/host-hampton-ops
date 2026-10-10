@@ -71,20 +71,38 @@ describe('P08 admin invitation surface', () => {
       const before = squash(src.slice(Math.max(0, m.index! - 220), m.index!))
       expect(before).toMatch(/const \{[^}]*\berror\b[^}]*\} = await supabase\s*\.from\(/)
     }
-    // archive, unarchive, set_theme, reslug.
-    expect(examined).toBe(4)
-    // Each conditional update is read back with .select(...) so zero rows is an answer.
-    for (const m of Array.from(src.matchAll(/\.update\(/g))) {
+    // archive, unarchive, set_theme, reslug, and the void_rsvp delete.
+    expect(examined).toBe(5)
+    // Each conditional update / delete is read back with .select(...) so zero rows is an answer.
+    for (const m of Array.from(src.matchAll(/\.(?:update|delete)\(/g))) {
       const after = squash(src.slice(m.index!, m.index! + 330))
       expect(after).toMatch(/\.select\('(id|slug)'\)/)
     }
+  })
+
+  it('void_rsvp: validates the id, reads the RSVP scoped to THIS invitation, and deletes with the same scope', () => {
+    const b = bodyOf(route(), /export async function POST\(/)
+    const slice = b.slice(b.indexOf("case 'void_rsvp'"))
+    expect(slice.length).toBeGreaterThan(200)
+    const check = slice.indexOf('isUuidLike(rsvpId)')
+    const read = slice.indexOf('.maybeSingle')
+    const del = slice.indexOf('.delete()')
+    expect(check).toBeGreaterThan(-1)
+    expect(check).toBeLessThan(read)
+    expect(read).toBeLessThan(del)
+    // both the read and the delete name the invitation: a bare id would remove any guest's answer from any booking's URL
+    expect(squash(slice.slice(0, read))).toMatch(/\.eq\('id', rsvpId\) \.eq\('evite_id', evite\.id\)/)
+    expect(squash(slice.slice(del, del + 200))).toMatch(/\.eq\('id', rsvpId\)\s*\.eq\('evite_id', evite\.id\)/)
+    // the audit text names the RSVP and carries no address
+    const audit = slice.slice(slice.indexOf('audit('))
+    expect(audit).not.toMatch(/reminder_email|club_email|reminder_phone/)
   })
 
   it('every write is audited with the human, and no literal actor is written', () => {
     const src = route()
     expect(src).toMatch(/import \{ logBookingChange \} from '@\/lib\/bookingAudit'/)
     expect(src).toMatch(/actor = adminActorId\(req\)/)
-    expect((src.match(/audit\(/g) ?? []).length).toBe(7) // ensure, rerender, archive, unarchive, set_theme, reslug, notify_cancelled
+    expect((src.match(/audit\(/g) ?? []).length).toBe(8) // ensure, rerender, archive, unarchive, set_theme, reslug, notify_cancelled, void_rsvp
     expect(src).toMatch(/actor: adminActorId\(req\)/) // the reveal
     expect(src).not.toMatch(/\b(?:modified_by|actor|recorded_by)\s*:\s*['"](?:ADMIN|admin)['"]/)
   })

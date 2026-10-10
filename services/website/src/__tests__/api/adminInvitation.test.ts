@@ -34,12 +34,20 @@ import { adminHooks } from '@/lib/evites/adminHooks'
 
 let db: AdminDb
 jest.mock('@/lib/supabase', () => ({ getSupabase: () => db.supabase }))
-jest.mock('@/lib/evites/render', () => ({ renderEvite: jest.fn(), queueRender: jest.fn(() => 'queued') }))
+jest.mock('@/lib/evites/render', () => ({ renderEvite: jest.fn(), renderViaQueue: jest.fn(), queueRender: jest.fn(() => 'queued') }))
+
+// `makeSlug` is the real one unless a test scripts it (the alias-collision test needs a slug it can predict).
+jest.mock('@/lib/evites/slug', () => {
+  const actual = jest.requireActual('@/lib/evites/slug')
+  return { ...actual, makeSlug: jest.fn(actual.makeSlug) }
+})
 
 import { GET, POST } from '@/app/api/admin/parties/[id]/invitation/route'
-import { renderEvite, queueRender } from '@/lib/evites/render'
+import { renderViaQueue, queueRender } from '@/lib/evites/render'
+import { makeSlug } from '@/lib/evites/slug'
+import { clubHooks } from '@/lib/evites/clubHook'
 
-const renderMock = renderEvite as jest.Mock
+const renderMock = renderViaQueue as jest.Mock
 const queueMock = queueRender as jest.Mock
 
 const ENV = ['EVITES_PAGES', 'EVITES_PILOT_REFS', 'ADMIN_PASSWORD', 'ADMIN_SESSION_SECRET', 'PORTAL_LINK_SIGNING_SECRET', 'SUPABASE_URL'] as const
@@ -718,6 +726,102 @@ describe('POST notify_cancelled', () => {
     const res = await post({ action: 'notify_cancelled' })
     expect(res.status).toBe(502)
     expect(await res.json()).toMatchObject({ ok: false, queued: false, reason: 'hook-failed' })
+  })
+})
+
+describe('POST reslug: an alias is a taken slug (v1.2, finding 10)', () => {
+  it('a minted slug that is another invitation\'s previous_slugs entry is skipped, and the update never carries it', async () => {
+    db = makeAdminDb({
+      extraBookings: [bookingRow({ id: OTHER_BOOKING_ID, booking_ref: 'HH-TEST-2' })],
+      extraEvites: [adminEviteRow({ id: OTHER_EVITE_ID, booking_id: OTHER_BOOKING_ID, slug: 'zed-glow-9zzz', previous_slugs: ['mia-glow-2222'] })],
+    })
+    ;(makeSlug as jest.Mock).mockReturnValueOnce('mia-glow-2222').mockReturnValueOnce('mia-glow-3333')
+    const res = await post({ action: 'reslug' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).slug).toBe('mia-glow-3333')
+    expect(evUpdates().map((u) => u.patch.slug)).toEqual(['mia-glow-3333'])
+    expect(eviteRow().slug).toBe('mia-glow-3333')
+  })
+
+  it('an alias check that cannot be read is a 503 and writes nothing', async () => {
+    db.errors.push({ table: 'evites', op: 'select', when: ({ filters }) => (filters ?? []).some((f) => f.kind === 'contains'), message: 'boom' })
+    const res = await post({ action: 'reslug' })
+    expect(res.status).toBe(503)
+    expect(evUpdates()).toHaveLength(0)
+    expect(eviteRow().slug).toBe('mia-glow-7kq2')
+  })
+})
+
+describe('POST void_rsvp (v1.2, finding 7): the remedy for a list a link holder filled', () => {
+  const RSVP_A = '77777777-7777-4777-8777-777777777771'
+  const RSVP_B = '77777777-7777-4777-8777-777777777772'
+  const OTHER_RSVP = '77777777-7777-4777-8777-777777777773'
+  const seed = () =>
+    makeAdminDb({
+      rsvps: [adminRsvp({ id: RSVP_A }), adminRsvp({ id: RSVP_B, parent_name: 'Junk', reminder_email: RAW.email, club_email: RAW.club, club_opt_in_at: '2026-10-21T00:00:00Z', opt_in_text_version: 'club-v1' })],
+      extraBookings: [bookingRow({ id: OTHER_BOOKING_ID, booking_ref: 'HH-TEST-2' })],
+      extraEvites: [adminEviteRow({ id: OTHER_EVITE_ID, booking_id: OTHER_BOOKING_ID, slug: 'zed-glow-9zzz' })],
+    })
+
+  it('deletes that one RSVP, reads the rows back, and audits it by id with the signed-in human and no address', async () => {
+    db = seed()
+    const res = await post({ action: 'void_rsvp', rsvpId: RSVP_A }, { auth: { cookieEmail: 'Allie@Example.com' } })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, action: 'void_rsvp', rsvpId: RSVP_A, audited: true })
+    expect(db.tables.evite_rsvps.map((r) => r.id)).toEqual([RSVP_B])
+    expect(db.deletes).toHaveLength(1)
+    expect(db.deletes[0].filters).toEqual(expect.arrayContaining([{ kind: 'eq', col: 'id', val: RSVP_A }, { kind: 'eq', col: 'evite_id', val: EVITE_ID }]))
+    expect(audits()[0]).toMatchObject({ modified_by: 'admin:allie@example.com' })
+    expect(JSON.stringify(audits()[0])).toContain(RSVP_A)
+    expect(JSON.stringify(audits()[0])).not.toMatch(/@example\.(org|net)/)
+  })
+
+  it('an RSVP on ANOTHER booking\'s invitation is a 404 and is not deleted', async () => {
+    db = seed()
+    db.tables.evite_rsvps.push(adminRsvp({ id: OTHER_RSVP, evite_id: OTHER_EVITE_ID }))
+    const res = await post({ action: 'void_rsvp', rsvpId: OTHER_RSVP })
+    expect(res.status).toBe(404)
+    expect(db.tables.evite_rsvps.map((r) => r.id)).toContain(OTHER_RSVP)
+    expect(db.deletes).toHaveLength(0)
+    expect(audits()).toHaveLength(0)
+  })
+
+  it('a missing or malformed rsvpId is a 400 and touches nothing', async () => {
+    db = seed()
+    for (const rsvpId of [undefined, 7, 'not-a-uuid', '']) expect((await post({ action: 'void_rsvp', rsvpId })).status).toBe(400)
+    expect(db.deletes).toHaveLength(0)
+    expect(db.tables.evite_rsvps).toHaveLength(2)
+  })
+
+  it('a failed read is a 503 and a failed delete is a 500; neither removes the RSVP or claims it did', async () => {
+    db = seed()
+    db.errors.push({ table: 'evite_rsvps', op: 'select', message: 'boom', times: 1 })
+    expect((await post({ action: 'void_rsvp', rsvpId: RSVP_A })).status).toBe(503)
+    db.errors.push({ table: 'evite_rsvps', op: 'delete', message: 'boom' })
+    expect((await post({ action: 'void_rsvp', rsvpId: RSVP_A })).status).toBe(500)
+    expect(db.tables.evite_rsvps).toHaveLength(2)
+    expect(audits()).toHaveLength(0)
+  })
+
+  it('removing a club member takes them off the club list (best effort); a non-member triggers nothing', async () => {
+    const calls: unknown[] = []
+    const realOut = clubHooks.recordClubOptOut
+    clubHooks.recordClubOptOut = (_s, input) => void calls.push(input)
+    try {
+      db = seed()
+      expect((await post({ action: 'void_rsvp', rsvpId: RSVP_A })).status).toBe(200)
+      expect(calls).toHaveLength(0)
+      expect((await post({ action: 'void_rsvp', rsvpId: RSVP_B })).status).toBe(200)
+      expect(calls).toEqual([{ email: RAW.club, rsvpId: RSVP_B }])
+    } finally {
+      clubHooks.recordClubOptOut = realOut
+    }
+  })
+
+  it('a second removal of the same RSVP is a 404', async () => {
+    db = seed()
+    expect((await post({ action: 'void_rsvp', rsvpId: RSVP_A })).status).toBe(200)
+    expect((await post({ action: 'void_rsvp', rsvpId: RSVP_A })).status).toBe(404)
   })
 })
 

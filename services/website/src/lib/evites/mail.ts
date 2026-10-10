@@ -27,6 +27,13 @@ import { Resend } from 'resend'
 /** The same fallback the reminder sender uses (`send-reminders/route.ts`). */
 export const DEFAULT_FROM = 'noReply@mail.hosthampton.com'
 
+/**
+ * Resend gets this long to answer. A hung call used to hold the claim until the 15-minute stuck-sending sweep
+ * reclaimed it and sent the message AGAIN, while the first call might still complete: so the call is abandoned
+ * at 30 seconds and reported as `failed` (retriable, with a fresh attempt number the stale worker cannot finish).
+ */
+export const RESEND_TIMEOUT_MS = 30_000
+
 export interface EviteMailAttachment {
   filename: string
   content: string | Buffer
@@ -57,6 +64,21 @@ function errorText(e: unknown): string {
   return String(e)
 }
 
+class MailTimeout extends Error {}
+
+/** Reject after `ms`. The late result of the abandoned call is swallowed so it cannot become an unhandled rejection. */
+function withTimeout<T>(pending: Promise<T> | T, ms: number): Promise<T> {
+  const p = Promise.resolve(pending)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new MailTimeout(`no answer within ${Math.round(ms / 1000)} seconds`)), ms)
+  })
+  p.catch(() => undefined)
+  return Promise.race([p, limit]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer)
+  })
+}
+
 export async function sendEviteEmail(input: EviteMailInput): Promise<EviteMailOutcome> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { kind: 'unconfigured' }
@@ -64,7 +86,7 @@ export async function sendEviteEmail(input: EviteMailInput): Promise<EviteMailOu
 
   try {
     const resend = new Resend(apiKey)
-    const { data, error } = await resend.emails.send({
+    const call = resend.emails.send({
       from,
       to: input.to,
       subject: input.subject,
@@ -76,10 +98,12 @@ export async function sendEviteEmail(input: EviteMailInput): Promise<EviteMailOu
         ? { attachments: input.attachments.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })) }
         : {}),
     })
+    const { data, error } = await withTimeout(call, RESEND_TIMEOUT_MS)
     if (error) return { kind: 'failed', error: `resend rejected: ${errorText(error)}` }
     if (!data?.id) return { kind: 'failed', error: 'resend returned no message id' }
     return { kind: 'sent', providerId: data.id }
   } catch (e) {
+    if (e instanceof MailTimeout) return { kind: 'failed', error: `resend timed out: ${errorText(e)}` }
     return { kind: 'failed', error: `resend threw: ${errorText(e)}` }
   }
 }

@@ -30,7 +30,7 @@ jest.mock('@/lib/agent/events', () => ({ recordInboundEvent: jest.fn().mockResol
 const mockPlan = jest.fn()
 jest.mock('@/lib/plan', () => ({ ensureLeadPlan: (...a: unknown[]) => mockPlan(...a), linkFirstTouchEvent: jest.fn().mockResolvedValue(undefined) }))
 jest.mock('@/lib/evites/ensure', () => ({ ensureEviteForBooking: jest.fn() }))
-jest.mock('@/lib/evites/render', () => ({ queueRender: jest.fn(), renderEvite: jest.fn() }))
+jest.mock('@/lib/evites/render', () => ({ queueRender: jest.fn(), renderEvite: jest.fn(), renderViaQueue: jest.fn() }))
 
 import { ensureEviteForBooking } from '@/lib/evites/ensure'
 import { queueRender } from '@/lib/evites/render'

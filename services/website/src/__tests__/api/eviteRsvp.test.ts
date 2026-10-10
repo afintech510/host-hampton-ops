@@ -776,9 +776,178 @@ describe('PATCH: the Birthday Club box', () => {
     expect((await patch({ clubOptOut: true }, { cookie: fresh.cookie })).status).toBe(200)
     expect(out).not.toHaveBeenCalled()
   })
-  it('opting back in clears an earlier opt-out', async () => {
-    const { cookie } = seeded({ club_email: 'pat@example.com', club_opt_in_at: '2026-10-21T00:00:00Z', opt_in_text_version: 'club-v1', club_opted_out_at: '2026-10-22T00:00:00Z' })
-    await patch(club(), { cookie })
-    expect(rsvps()[0].club_opted_out_at).toBeNull()
+  // ---- v1.2, finding 2: one sign-up per RSVP, bound to its first address
+  const joined = { club_email: 'pat@example.com', club_opt_in_at: '2026-10-21T00:00:00Z', opt_in_text_version: 'club-v1' }
+
+  it('an RSVP that is already in the club refuses a DIFFERENT address: 409, nothing written, no contact created, no hook', async () => {
+    const calls: unknown[] = []
+    clubHooks.recordClubOptIn = (_s, input) => void calls.push(input)
+    const { cookie } = seeded(joined)
+    const res = await patch(club({ email: 'victim@example.com' }), { cookie })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/already joined/i)
+    expect(rsvps()[0]).toMatchObject({ club_email: 'pat@example.com', club_opt_in_at: '2026-10-21T00:00:00Z' })
+    expect(db.updates.filter((u) => u.table === 'evite_rsvps')).toHaveLength(0)
+    expect(calls).toHaveLength(0)
+    expect(events()).toEqual([])
+  })
+  it('walking a list of addresses through one cookie reaches recordClubOptIn exactly once', async () => {
+    const calls: unknown[] = []
+    clubHooks.recordClubOptIn = (_s, input) => void calls.push(input)
+    const { cookie } = seeded()
+    const codes: number[] = []
+    for (const email of ['a@example.com', 'b@example.com', 'c@example.com', 'd@example.com']) codes.push((await patch(club({ email }), { cookie })).status)
+    expect(codes).toEqual([200, 409, 409, 409])
+    expect(calls).toHaveLength(1)
+    expect(rsvps()[0].club_email).toBe('a@example.com')
+  })
+  it('the SAME address again (any case) is an idempotent no-op: 200, the consent record and the hook untouched', async () => {
+    const calls: unknown[] = []
+    clubHooks.recordClubOptIn = (_s, input) => void calls.push(input)
+    const { cookie } = seeded(joined)
+    const res = await patch(club({ email: 'PAT@Example.com', birthdayMonth: undefined }), { cookie })
+    expect(res.status).toBe(200)
+    expect(rsvps()[0]).toMatchObject({ club_email: 'pat@example.com', club_opt_in_at: '2026-10-21T00:00:00Z', consent_ip: null })
+    expect(calls).toHaveLength(0)
+    expect(events()).toEqual([]) // not a second 'club_opted_in'
+  })
+  it('the same address with a month only saves the month', async () => {
+    const calls: unknown[] = []
+    clubHooks.recordClubOptIn = (_s, input) => void calls.push(input)
+    const { cookie } = seeded(joined)
+    expect((await patch(club({ birthdayMonth: 9 }), { cookie })).status).toBe(200)
+    expect(rsvps()[0]).toMatchObject({ birthday_month: 9, club_opt_in_at: '2026-10-21T00:00:00Z' })
+    expect(calls).toHaveLength(0)
+    expect(events()).toEqual(['birthday_month_saved'])
+  })
+  it('after an opt-out there is NO re-opt-in on that RSVP (club_opted_out_at is never cleared): 409, the time is kept', async () => {
+    const calls: unknown[] = []
+    clubHooks.recordClubOptIn = (_s, input) => void calls.push(input)
+    const { cookie } = seeded({ ...joined, club_opted_out_at: '2026-10-22T00:00:00Z' })
+    for (const email of ['pat@example.com', 'victim@example.com']) {
+      const res = await patch(club({ email }), { cookie })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toMatch(/left the Birthday Club/i)
+    }
+    expect(rsvps()[0].club_opted_out_at).toBe('2026-10-22T00:00:00Z')
+    expect(calls).toHaveLength(0)
+  })
+  it('a second opt-out keeps the first time', async () => {
+    const { cookie } = seeded({ ...joined, club_opted_out_at: '2026-10-22T00:00:00Z' })
+    expect((await patch({ clubOptOut: true }, { cookie })).status).toBe(200)
+    expect(rsvps()[0].club_opted_out_at).toBe('2026-10-22T00:00:00Z')
+  })
+  it('club sign-ups per invitation are capped at the RSVP cap', async () => {
+    const full = Array.from({ length: 46 }, () => rsvpRow({ ...joined })) // max(40, 3 x 12 guests + 10) = 46
+    const mine = rsvpRow()
+    db = makeRsvpDb({ rsvps: [mine, ...full] })
+    const calls: unknown[] = []
+    clubHooks.recordClubOptIn = (_s, input) => void calls.push(input)
+    const res = await patch(club(), { cookie: cookieFor(EVITE_ID, tokenFor(mine)) })
+    expect(res.status).toBe(429)
+    expect(db.tables.evite_rsvps[0].club_opt_in_at).toBeNull()
+    expect(calls).toHaveLength(0)
+  })
+  it('two tabs racing two addresses cannot both win: the first write is conditional on "never opted in"', async () => {
+    const { cookie } = seeded()
+    db.hooks.beforeUpdate = (_info, tables) => {
+      // the other tab's opt-in lands between our read and our write
+      Object.assign(tables.evite_rsvps[0], { club_email: 'other@example.com', club_opt_in_at: '2026-11-01T14:59:00Z', opt_in_text_version: 'club-v1' })
+    }
+    const res = await patch(club({ email: 'mine@example.com' }), { cookie })
+    expect(res.status).toBe(409)
+    expect(rsvps()[0].club_email).toBe('other@example.com')
+  })
+})
+
+describe('v1.2 finding 1: the reminder address caps count when the address was SET', () => {
+  const longAgo = new Date(NOW.getTime() - 30 * 24 * 3600_000).toISOString()
+  const recent = new Date(NOW.getTime() - 3600_000).toISOString()
+
+  it('POST stamps reminder_set_at; a phone or no reminder leaves it null', async () => {
+    await post({ ...YES, reminderContact: 'pat@example.com' })
+    await post({ ...YES, reminderContact: '631-400-8080' })
+    await post(YES)
+    expect(rsvps().map((r) => r.reminder_set_at ?? null)).toEqual([NOW.toISOString(), null, null])
+  })
+  it('three RSVPs created long ago whose address was SET just now by PATCH count against the 24-hour cap (a created_at count saw zero)', async () => {
+    db = makeRsvpDb({ rsvps: [1, 2, 3].map(() => rsvpRow({ evite_id: OTHER_EVITE_ID, reminder_email: 'victim@example.com', created_at: longAgo, reminder_set_at: recent })) })
+    const body = await (await post({ ...YES, reminderContact: 'victim@example.com' })).json()
+    expect(body.reminderDropped).toBe(true)
+    expect(rsvps().find((r) => r.evite_id === EVITE_ID)!.reminder_email).toBeNull()
+  })
+  it('PATCH-ing the address onto an OLD row stamps reminder_set_at, and the next ask for that address is counted', async () => {
+    const rows = [1, 2, 3].map(() => rsvpRow({ created_at: longAgo }))
+    db = makeRsvpDb({ rsvps: rows })
+    for (const row of rows) {
+      const res = await patch({ reminderContact: 'victim@example.com' }, { cookie: cookieFor(EVITE_ID, tokenFor(row)) })
+      expect((await res.json()).reminderDropped).toBeUndefined()
+    }
+    expect(rsvps().map((r) => r.reminder_set_at)).toEqual([NOW.toISOString(), NOW.toISOString(), NOW.toISOString()])
+    // the 24-hour count now sees all three (it saw ZERO while it counted created_at, which is 30 days old)
+    const rpc = (db.supabase as unknown as { rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: unknown }> }).rpc
+    expect((await rpc('evite_reminder_email_recent', { p_email: 'victim@example.com' })).data).toBe(3)
+    // and a fourth ask, by POST, is refused
+    const body = await (await post({ ...YES, reminderContact: 'victim@example.com' })).json()
+    expect(body.reminderDropped).toBe(true)
+  })
+  it('a PATCH over the 24-hour cap is stored WITHOUT the address and says so', async () => {
+    const mine = rsvpRow({ created_at: longAgo })
+    db = makeRsvpDb({ rsvps: [mine, ...[1, 2, 3].map(() => rsvpRow({ evite_id: OTHER_EVITE_ID, reminder_email: 'victim@example.com', created_at: longAgo, reminder_set_at: recent }))] })
+    const res = await patch({ reminderContact: 'victim@example.com' }, { cookie: cookieFor(EVITE_ID, tokenFor(mine)) })
+    expect((await res.json()).reminderDropped).toBe(true)
+    expect(db.tables.evite_rsvps[0].reminder_email).toBeNull()
+    expect(db.tables.evite_rsvps[0].reminder_set_at).toBeNull()
+  })
+  it('per evite: at most three RSVPs on ONE invitation may hold the same address (case-insensitive), by POST or by PATCH', async () => {
+    const held = [1, 2, 3].map(() => rsvpRow({ reminder_email: 'Victim@Example.com', reminder_set_at: longAgo, created_at: longAgo }))
+    const mine = rsvpRow({ created_at: longAgo })
+    db = makeRsvpDb({ rsvps: [mine, ...held] })
+    const viaPost = await (await post({ ...YES, reminderContact: 'victim@example.com' })).json()
+    expect(viaPost.reminderDropped).toBe(true)
+    const viaPatch = await (await patch({ reminderContact: 'victim@example.com' }, { cookie: cookieFor(EVITE_ID, tokenFor(mine)) })).json()
+    expect(viaPatch.reminderDropped).toBe(true)
+    expect(db.tables.evite_rsvps.filter((r) => r.reminder_email === 'victim@example.com')).toHaveLength(0)
+    expect(db.rpcCalls.some((c) => c.name === 'evite_reminder_email_on_evite')).toBe(true)
+  })
+  it('two holders on the invitation is under the per-evite cap', async () => {
+    const held = [1, 2].map(() => rsvpRow({ reminder_email: 'victim@example.com', reminder_set_at: longAgo, created_at: longAgo }))
+    db = makeRsvpDb({ rsvps: held })
+    const body = await (await post({ ...YES, reminderContact: 'victim@example.com' })).json()
+    expect(body.reminderDropped).toBeUndefined()
+  })
+  it('a failed per-evite count fails toward NOT emailing a stranger', async () => {
+    const real = db.supabase as unknown as { rpc: (n: string, a: Record<string, unknown>) => Promise<unknown> }
+    const original = real.rpc.bind(real)
+    real.rpc = async (name, args) => (name === 'evite_reminder_email_on_evite' ? { data: null, error: { message: 'boom' } } : original(name, args))
+    const body = await (await post({ ...YES, reminderContact: 'pat@example.com' })).json()
+    expect(body.reminderDropped).toBe(true)
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('evite_reminder_email_on_evite failed'))
+  })
+})
+
+describe('v1.2 finding 3: the RSVP API shares the page ceiling (no second enumeration oracle)', () => {
+  it('POST and PATCH count against eviteViewRule BEFORE resolving: 60 calls from one address, then 429, with no database read for the 61st', async () => {
+    const codes: number[] = []
+    // 404s (unknown slug) are exactly what an enumeration run produces; the RSVP rule (10) would stop at 10, so use a spread of callers for it
+    for (let i = 0; i < 60; i++) {
+      const ip = `198.51.100.${(i % 200) + 1}`
+      codes.push((await post(YES, { slug: 'zed-glow-0000', headers: { 'cf-connecting-ip': ip } })).status)
+    }
+    expect(new Set(codes)).toEqual(new Set([404]))
+    // the same caller, now on the view bucket alone: 60 shared with page views
+    __resetRateLimitForTests()
+    const caller = { 'cf-connecting-ip': '203.0.113.77' }
+    const { eviteViewRule, guardRate } = await import('@/lib/rateLimit')
+    for (let i = 0; i < 59; i++) expect(guardRate(new NextRequest(`${ORIGIN}/i/x`, { headers: caller }), eviteViewRule)).toBeNull()
+    // one view token left: the RSVP POST spends it (and the RSVP rule's own), the next call is the view rule's 429
+    const first = await post(YES, { slug: 'zed-glow-0000', headers: caller })
+    expect(first.status).toBe(404)
+    const selectsBefore = db.selects.length
+    const second = await post(YES, { slug: 'zed-glow-0000', headers: caller })
+    expect(second.status).toBe(429)
+    expect(db.selects.length).toBe(selectsBefore)
+    const third = await patch({ parentName: 'x' }, { slug: 'zed-glow-0000', headers: caller })
+    expect(third.status).toBe(429)
   })
 })

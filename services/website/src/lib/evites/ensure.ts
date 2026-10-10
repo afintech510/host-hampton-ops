@@ -31,6 +31,7 @@ import { makeSlug } from '@/lib/evites/slug'
 import { childNameOf } from '@/lib/evites/facts'
 import { resolveTheme } from '@/lib/evites/themes'
 import { readThemeInputs } from '@/lib/evites/themeInputs'
+import { slugIsAnAlias } from '@/lib/evites/slugTaken'
 import { EVITE_BOOKING_COLUMNS, EVITE_LOOKUP_COLUMNS } from '@/lib/evites/views'
 import type { EviteBookingRow } from '@/lib/evites/types'
 
@@ -120,6 +121,10 @@ export async function ensureEviteForBooking(supabase: Supa, bookingId: string): 
 
     for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
       const slug = makeSlug(firstName, themeShort)
+      // A slug that is another invitation's re-minted alias is taken too (UNIQUE(slug) does not see previous_slugs).
+      const alias = await slugIsAnAlias(supabase, slug)
+      if (alias === 'taken') continue
+      if (alias === 'unknown') return { kind: 'unavailable', reason: 'slug alias check failed' }
       const { data: inserted, error: insertErr } = await supabase
         .from('evites')
         .insert({ booking_id: bookingId, slug })

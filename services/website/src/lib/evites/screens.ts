@@ -375,3 +375,51 @@ export function screenRsvpPatch(body: unknown, existing: ExistingRsvp): ScreenRe
     },
   }
 }
+
+/* ── the club box on a stored RSVP (v1.2) ─────────────────────── */
+
+/** The club state of the caller's stored RSVP. */
+export interface ExistingClub {
+  club_email: string | null
+  club_opt_in_at: string | null
+  club_opted_out_at: string | null
+}
+
+export type ClubOptInDecision =
+  /** Never opted in: write the consent record and fire the hook. */
+  | { kind: 'fresh' }
+  /** Already in, same address: a no-op (the month may still be saved). NEVER calls `recordClubOptIn` again. */
+  | { kind: 'unchanged' }
+  | { kind: 'refused'; reason: 'already-joined' | 'left'; message: string }
+
+/**
+ * ONE club sign-up per RSVP, bound to the first address given (adversarial review, finding 2).
+ *
+ * Every accepted opt-in runs `recordClubOptIn`: a `contacts` insert for an unknown address and a Brevo list
+ * add. The edit cookie is a bearer credential and a link holder can re-send the form, so if a different address
+ * were accepted each time, one RSVP would be a free "add any email address to our list" button, repeatable
+ * without bound.
+ *
+ *   never opted in                         -> fresh
+ *   in, not opted out, SAME address        -> unchanged (idempotent; compared case-insensitively)
+ *   in, not opted out, a DIFFERENT address -> refused: one address per RSVP
+ *   opted out at any time                  -> refused: `club_opted_out_at` is never cleared, so an RSVP that left the
+ *                                             club cannot be used to add an address again (re-opt-in count: zero; the
+ *                                             guest asks the studio, who can add them by hand)
+ */
+export function decideClubOptIn(existing: ExistingClub, email: string): ClubOptInDecision {
+  if (!existing.club_opt_in_at) return { kind: 'fresh' }
+  if (existing.club_opted_out_at) {
+    return {
+      kind: 'refused',
+      reason: 'left',
+      message: 'You left the Birthday Club from this RSVP. To join again, please contact the studio.',
+    }
+  }
+  if ((existing.club_email ?? '').trim().toLowerCase() === email.trim().toLowerCase()) return { kind: 'unchanged' }
+  return {
+    kind: 'refused',
+    reason: 'already-joined',
+    message: 'This RSVP has already joined the Birthday Club. Only one email address can be signed up per RSVP.',
+  }
+}

@@ -1,6 +1,6 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { HostInvitationView, type HostViewProps } from '@/components/evites/HostInvitationView'
+import { HostInvitationView, openInvitationImage, type HostViewProps } from '@/components/evites/HostInvitationView'
 import type { HostPayload, HostRsvp } from '@/lib/evites/hostView'
 import { formFromCustomize, UPDATING_MESSAGE } from '@/lib/evites/hostUi'
 import { readSrc } from '../helpers/sourceScan'
@@ -81,8 +81,24 @@ describe('Share panel disabled states', () => {
     const html = view(payload())
     for (const k of KINDS) expect(disabled(html, k)).toBe(false)
     expect(html).not.toContain(UPDATING_MESSAGE)
-    expect(control(html, 'download')).toContain('href="https://p.supabase.co/storage/v1/object/public/evites/k/invite-v1-ab12.jpg"')
-    expect(control(html, 'download')).toContain('download=')
+    // v1.2 finding 8: a BUTTON, never an anchor to the storage host (GA4 records an outbound click, with the URL, for a cross-origin link)
+    expect(control(html, 'download')).toMatch(/^<button\b/)
+    expect(control(html, 'download')).not.toContain('href=')
+    expect(control(html, 'download')).not.toContain('download=')
+    expect(html).not.toContain('p.supabase.co')
+  })
+
+  it('Download image opens the picture with window.open(url, "_blank", "noopener") and renders no link to a foreign origin', () => {
+    const calls: unknown[][] = []
+    openInvitationImage('https://p.supabase.co/storage/v1/object/public/evites/k/invite-v1-ab12.jpg', (...a) => calls.push(a))
+    expect(calls).toEqual([['https://p.supabase.co/storage/v1/object/public/evites/k/invite-v1-ab12.jpg', '_blank', 'noopener']])
+    // and the component wires the button to it (no anchor-with-href={images.invite} left in the source)
+    const src = readSrc('components', 'evites', 'HostInvitationView.tsx')
+    expect(src).toMatch(/openInvitationImage\(data\.images\.invite/)
+    expect(src).not.toMatch(/href=\{data\.images\.invite/)
+    const anchors = Array.from(view(payload()).matchAll(/<a\b[^>]*href="([^"]*)"/g)).map((m) => m[1])
+    expect(anchors.length).toBeGreaterThan(0)
+    for (const href of anchors) expect(href).not.toContain('supabase.co')
   })
 
   it('live but the picture is stale: all four are disabled and the panel says "Updating your invitation..."', () => {

@@ -188,6 +188,7 @@ export const EVITE_SEND_RSVP_COLUMNS = [
   'allergy_note',
   'note_to_honoree',
   'reminder_email',
+  'reminder_set_at',
   'reminder_opt_out_at',
   'cal_version_seen',
   'edit_nonce',

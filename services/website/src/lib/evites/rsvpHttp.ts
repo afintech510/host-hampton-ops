@@ -19,8 +19,14 @@ export function rsvpCap(guestCap: number | null): number {
   return Math.max(RSVP_CAP_FLOOR, 3 * (guestCap ?? 0) + 10)
 }
 
-/** `evite_reminder_email_recent(email) >= this` and the RSVP is stored WITHOUT the reminder address (spec §7.5, §13). */
+/**
+ * `evite_reminder_email_recent(email) >= this` and the RSVP is stored WITHOUT the reminder address (spec §7.5, §13).
+ * The count is of RSVPs whose `reminder_set_at` is in the last 24 hours: a PATCH that sets the address counts too (v1.2).
+ */
 export const REMINDER_EMAIL_DAILY_CAP = 3
+
+/** At most this many RSVPs on ONE invitation may hold the same reminder address (`evite_reminder_email_on_evite`, v1.2). */
+export const REMINDER_EMAIL_PER_EVITE_CAP = 3
 
 /** A request body bigger than this is not an RSVP. */
 export const RSVP_BODY_MAX_CHARS = 20_000

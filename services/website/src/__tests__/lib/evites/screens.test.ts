@@ -1,4 +1,5 @@
 import {
+  decideClubOptIn,
   screenAdultCount,
   screenBirthdayMonth,
   screenChildren,
@@ -219,5 +220,31 @@ describe('the PATCH body', () => {
     expect(field({ club: { optIn: true, email: 'pat@example.com', birthdayMonth: 13, consentVersion: 'club-v1' } })).toBe('club.birthdayMonth')
     expect(field({ club: { optIn: true, email: 'pat@example.com' } })).toBe('club.consentVersion')
     expect(field({ club: { optIn: true, email: 'pat@example.com', consentVersion: 'club-v1' }, clubOptOut: true })).toBe('club')
+  })
+})
+
+describe('decideClubOptIn: one sign-up per RSVP, bound to its first address (v1.2, finding 2)', () => {
+  const joined = { club_email: 'Pat@Example.com', club_opt_in_at: '2026-10-21T00:00:00Z', club_opted_out_at: null }
+  it('never opted in -> fresh', () => {
+    expect(decideClubOptIn({ club_email: null, club_opt_in_at: null, club_opted_out_at: null }, 'a@example.com')).toEqual({ kind: 'fresh' })
+  })
+  it('in, same address in any case or with padding -> unchanged (the caller must NOT run recordClubOptIn again)', () => {
+    expect(decideClubOptIn(joined, 'pat@example.com')).toEqual({ kind: 'unchanged' })
+    expect(decideClubOptIn(joined, '  PAT@EXAMPLE.COM ')).toEqual({ kind: 'unchanged' })
+  })
+  it('in, a different address -> refused (already-joined)', () => {
+    const d = decideClubOptIn(joined, 'victim@example.com')
+    expect(d).toMatchObject({ kind: 'refused', reason: 'already-joined' })
+  })
+  it('ever opted out -> refused (left), for the same address and for any other', () => {
+    const left = { ...joined, club_opted_out_at: '2026-10-22T00:00:00Z' }
+    expect(decideClubOptIn(left, 'pat@example.com')).toMatchObject({ kind: 'refused', reason: 'left' })
+    expect(decideClubOptIn(left, 'victim@example.com')).toMatchObject({ kind: 'refused', reason: 'left' })
+  })
+  it('a refusal carries a friendly sentence and never echoes an address', () => {
+    for (const d of [decideClubOptIn(joined, 'victim@example.com'), decideClubOptIn({ ...joined, club_opted_out_at: 'x' }, 'v@example.com')]) {
+      expect(d.kind).toBe('refused')
+      if (d.kind === 'refused') expect(d.message).not.toMatch(/@/)
+    }
   })
 })

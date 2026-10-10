@@ -157,38 +157,50 @@ describe('reclaimFailed', () => {
 describe('finishSend', () => {
   it('sent: provider id, sent_at, outcome', async () => {
     const db = makeSendDb({ sends: [sendRow({ id: 'a' })] })
-    expect(await finishSend(db.supabase, 'a', { kind: 'sent', providerId: 're_123' }, SEND_NOW)).toEqual({ ok: true })
+    expect(await finishSend(db.supabase, 'a', { kind: 'sent', providerId: 're_123' }, { attempts: 1 }, SEND_NOW)).toEqual({ ok: true })
     expect(db.tables.evite_sends[0]).toMatchObject({ status: 'sent', outcome: 'sent', provider_id: 're_123', sent_at: SEND_NOW.toISOString(), last_error: null })
   })
 
   it('failed: the error is kept (and clipped), attempts untouched', async () => {
     const db = makeSendDb({ sends: [sendRow({ id: 'a', attempts: 2 })] })
-    await finishSend(db.supabase, 'a', { kind: 'failed', error: 'x'.repeat(900) })
+    await finishSend(db.supabase, 'a', { kind: 'failed', error: 'x'.repeat(900) }, { attempts: 2 })
     expect(db.tables.evite_sends[0]).toMatchObject({ status: 'failed', outcome: 'failed', attempts: 2 })
     expect(String(db.tables.evite_sends[0].last_error).length).toBeLessThanOrEqual(500)
   })
 
   it('skipped: the reason is the outcome', async () => {
     const db = makeSendDb({ sends: [sendRow({ id: 'a' })] })
-    await finishSend(db.supabase, 'a', { kind: 'skipped', reason: 'suppressed' })
+    await finishSend(db.supabase, 'a', { kind: 'skipped', reason: 'suppressed' }, { attempts: 1 })
     expect(db.tables.evite_sends[0]).toMatchObject({ status: 'skipped', outcome: 'suppressed' })
   })
 
   it('only a `sending` row can be finished: a late worker cannot overwrite the new owner', async () => {
     const db = makeSendDb({ sends: [sendRow({ id: 'a', status: 'sent', provider_id: 're_first' })] })
-    expect(await finishSend(db.supabase, 'a', { kind: 'failed', error: 'late' })).toEqual({ ok: false, reason: 'not-sending' })
+    expect(await finishSend(db.supabase, 'a', { kind: 'failed', error: 'late' }, { attempts: 1 })).toEqual({ ok: false, reason: 'not-sending' })
     expect(db.tables.evite_sends[0]).toMatchObject({ status: 'sent', provider_id: 're_first' })
+  })
+
+  it('a worker that hung and was RECLAIMED cannot finish the row the new owner holds (conditional on its attempt number)', async () => {
+    // attempt 1 hung past the stuck window; reclaimFailed made it attempt 2 and a second worker is now sending.
+    const db = makeSendDb({ sends: [sendRow({ id: 'a', status: 'sending', attempts: 2 })] })
+    // the stale worker (attempts 1) wakes up and reports its late "sent"
+    expect(await finishSend(db.supabase, 'a', { kind: 'sent', providerId: 're_stale' }, { attempts: 1 })).toEqual({ ok: false, reason: 'not-sending' })
+    expect(db.tables.evite_sends[0]).toMatchObject({ status: 'sending', attempts: 2 })
+    expect(db.tables.evite_sends[0].provider_id ?? null).toBeNull()
+    // the real owner (attempts 2) can finish it
+    expect(await finishSend(db.supabase, 'a', { kind: 'sent', providerId: 're_owner' }, { attempts: 2 })).toEqual({ ok: true })
+    expect(db.tables.evite_sends[0]).toMatchObject({ status: 'sent', provider_id: 're_owner' })
   })
 
   it('reads its own {error}: one failed write is retried once, two are reported', async () => {
     const once = makeSendDb({ sends: [sendRow({ id: 'a' })] })
     once.errors.push({ table: 'evite_sends', op: 'update', times: 1, message: 'blip' })
-    expect(await finishSend(once.supabase, 'a', { kind: 'sent', providerId: 're_1' })).toEqual({ ok: true })
+    expect(await finishSend(once.supabase, 'a', { kind: 'sent', providerId: 're_1' }, { attempts: 1 })).toEqual({ ok: true })
     expect(once.tables.evite_sends[0].status).toBe('sent')
 
     const twice = makeSendDb({ sends: [sendRow({ id: 'a' })] })
     twice.errors.push({ table: 'evite_sends', op: 'update', message: 'down' })
-    expect(await finishSend(twice.supabase, 'a', { kind: 'sent', providerId: 're_1' })).toEqual({ ok: false, reason: 'write-failed', error: 'down' })
+    expect(await finishSend(twice.supabase, 'a', { kind: 'sent', providerId: 're_1' }, { attempts: 1 })).toEqual({ ok: false, reason: 'write-failed', error: 'down' })
     expect(twice.tables.evite_sends[0].status).toBe('sending')
   })
 })

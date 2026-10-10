@@ -93,9 +93,12 @@ describe('E-ledger: finishSend is the ONLY writer of a terminal status', () => {
     expect(others.every((s) => s === 'sending')).toBe(true)
   })
 
-  it('finishSend is conditional on the row still being `sending`, reads its error, and reads the row back', () => {
+  it('finishSend is conditional on the row still being `sending` AT THE ATTEMPT THE CALLER HOLDS, reads its error, and reads the row back', () => {
     const finish = squash(bodyOf(src('lib/evites/sends.ts'), /export async function finishSend\(/))
-    expect(finish).toMatch(/\.eq\('id', id\)\.eq\('status', 'sending'\)\.select\('id'\)/)
+    expect(finish).toMatch(/\.eq\('id', id\)\.eq\('status', 'sending'\)\.eq\('attempts', claim\.attempts\)\.select\('id'\)/)
+    // and both production callers hand it the attempt number they were given, not a default
+    expect(squash(src('lib/evites/sendOne.ts'))).toMatch(/finishSend\(supabase, send\.id, outcome, \{ attempts: send\.attempts \}/)
+    expect(squash(src('lib/evites/sends.ts'))).toMatch(/\{ kind: 'failed', error: `stuck in sending[^`]*` \}, \{ attempts \}/)
     expect(finish).toMatch(/if \(error\) \{[^}]*continue/)
     expect(finish).toMatch(/rows\.length === 0\) return \{ ok: false, reason: 'not-sending'/)
   })

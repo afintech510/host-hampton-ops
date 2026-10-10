@@ -1,5 +1,5 @@
 import sharp from 'sharp'
-import { renderEvite, queueRender, OG_MAX_BYTES, MAX_WAITING_RENDERS, CLAIM_STALE_MS } from '@/lib/evites/render'
+import { renderEvite, renderViaQueue, queueRender, OG_MAX_BYTES, MAX_WAITING_RENDERS, CLAIM_STALE_MS } from '@/lib/evites/render'
 import { inviteFacts } from '@/lib/evites/facts'
 import { renderInputsHash } from '@/lib/evites/hash'
 import { makeFakeEviteDb } from '../../helpers/fakeEviteDb'
@@ -410,5 +410,83 @@ describe('queueRender', () => {
     const q = g.__eviteRenderQueue as { waiting: unknown[]; running: boolean }
     expect(q.running).toBe(true)
     expect(q.waiting).toHaveLength(1)
+  })
+
+  // v1.2 finding 4: the admin button and the cron used to call renderEvite directly, beside a queued render.
+  describe('renderViaQueue - the awaitable path through the SAME queue', () => {
+    // A cheap render: pilot mode refuses a booking that is not a pilot booking, with no drawing.
+    beforeEach(() => {
+      process.env.EVITES_PAGES = 'pilot'
+      process.env.EVITES_PILOT_REFS = 'HH-TEST-1'
+    })
+
+    it('does not start while another render holds the queue, then runs and returns its outcome (a direct renderEvite would have read at once)', async () => {
+      const gt = gate()
+      queueRender('busy', { run: gt.run })
+      await tick()
+      expect(gt.started).toEqual(['busy'])
+
+      const db = makeFakeEviteDb({ tables: tablesFor() })
+      let settled = false
+      const pending = renderViaQueue(db.supabase, 'ev-1', { now: NOW }).then((o) => ((settled = true), o))
+      await tick()
+      await tick()
+      expect(db.selects).toHaveLength(0) // nothing was read: it is waiting its turn
+      expect(settled).toBe(false)
+
+      await drain(gt, 1) // the running render finishes
+      const out = await pending
+      expect(out.kind).toBe('rendered')
+      expect(db.uploads).toHaveLength(2)
+    })
+
+    it('two awaited renders and a queued one never overlap', async () => {
+      const gt = gate()
+      queueRender('q1', { run: gt.run })
+      const order: string[] = []
+      const dbA = makeFakeEviteDb({ tables: tablesFor() })
+      const dbB = makeFakeEviteDb({ tables: tablesFor() })
+      const a = renderViaQueue(dbA.supabase, 'ev-1', { now: NOW }).then((o) => (order.push('a'), o))
+      const b = renderViaQueue(dbB.supabase, 'ev-1', { now: NOW }).then((o) => (order.push('b'), o))
+      await tick()
+      expect(dbA.selects).toHaveLength(0)
+      expect(dbB.selects).toHaveLength(0)
+      await drain(gt, 1)
+      expect((await a).kind).toBe('rendered')
+      expect((await b).kind).toBe('rendered')
+      expect(order).toEqual(['a', 'b'])
+    })
+
+    it('is never dropped by the 20-waiting cap, and does not use up a place in it', async () => {
+      const gt = gate()
+      const results = Array.from({ length: MAX_WAITING_RENDERS + 1 }, (_, i) => queueRender(`e${i}`, { run: gt.run }))
+      expect(results.every((r) => r === 'queued')).toBe(true)
+      expect(queueRender('overflow', { run: gt.run })).toBe('dropped')
+      const db = makeFakeEviteDb({ tables: tablesFor({ booking: { booking_ref: 'HH-OTHER' } }) }) // renders as "skipped": cheap
+      const awaited = renderViaQueue(db.supabase, 'ev-1', { now: NOW })
+      // the queue is full for fire-and-forget callers, as before
+      expect(queueRender('overflow-2', { run: gt.run })).toBe('dropped')
+      await drain(gt, MAX_WAITING_RENDERS + 1)
+      expect(await awaited).toEqual({ kind: 'skipped', reason: 'state-disabled' })
+    })
+
+    it('a render that throws is a failed outcome, never a rejection; the queue carries on', async () => {
+      const boom = { from: () => { throw new Error('db exploded') } } as never
+      const out = await renderViaQueue(boom, 'ev-1', { now: NOW })
+      expect(out.kind).toBe('failed')
+      const db = makeFakeEviteDb({ tables: tablesFor({ booking: { booking_ref: 'HH-OTHER' } }) })
+      expect((await renderViaQueue(db.supabase, 'ev-1', { now: NOW })).kind).toBe('skipped')
+    })
+
+    it('a fire-and-forget render of the same evite is not swallowed by an awaited one (and the reverse)', async () => {
+      const gt = gate()
+      queueRender('busy', { run: gt.run })
+      const db = makeFakeEviteDb({ tables: tablesFor({ booking: { booking_ref: 'HH-OTHER' } }) })
+      void renderViaQueue(db.supabase, 'ev-1', { now: NOW, force: true })
+      queueRender('ev-1', { run: gt.run })
+      const q = g.__eviteRenderQueue as { waiting: Array<{ eviteId: string; awaited?: boolean }> }
+      expect(q.waiting.map((w) => [w.eviteId, !!w.awaited])).toEqual([['ev-1', true], ['ev-1', false]])
+      await drain(gt, 2)
+    })
   })
 })

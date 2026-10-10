@@ -15,7 +15,10 @@
  * Party", or "Glow Birthday Party" with no name), NOT the upper-case image string.
  * Unlike an image, an .ics carries UTF-8 and the emoji is fine here.
  *
- * Two VALARMs (`ACTION:DISPLAY`, each WITH a `DESCRIPTION` - RFC 5545 requires one
+ * A CANCEL (`method: 'CANCEL'`) carries UID, SEQUENCE and STATUS:CANCELLED but NO `URL`, no "Plans changed?" line
+ * and no VALARM: the invitation page of a cancelled party answers "not available", so a link to it is a dead end.
+ *
+ * Two VALARMs on a PUBLISH (`ACTION:DISPLAY`, each WITH a `DESCRIPTION` - RFC 5545 requires one
  * for DISPLAY and several clients drop an alarm without it): a day before and two
  * hours before. Google Calendar ignores imported alarms, and a phone's saved copy
  * never updates itself; both are documented limits (spec §8).
@@ -106,6 +109,12 @@ function descriptionLines(facts: IcsFacts, url: string, editUrl: string): string
   return lines
 }
 
+function cancelDescriptionLines(facts: IcsFacts): string[] {
+  const lines = ['This party has been cancelled.']
+  if (facts.hostContactLine) lines.push(facts.hostContactLine)
+  return lines
+}
+
 export function buildIcs(facts: IcsFacts, evite: IcsEvite, url: string, opts: IcsOptions): string {
   const win = facts.window
   if (!win) throw new Error('evites/ics: the party has no start time, so there is nothing to put in a calendar')
@@ -127,18 +136,24 @@ export function buildIcs(facts: IcsFacts, evite: IcsEvite, url: string, opts: Ic
     `DTEND:${icsUtc(win.endUtc)}`,
     `SUMMARY:${escapeIcsText(summaryOf(facts))}`,
     ...(facts.calendarLocation ? [`LOCATION:${escapeIcsText(facts.calendarLocation)}`] : []),
-    `URL:${plain(url)}`,
-    `DESCRIPTION:${escapeIcsText(descriptionLines(facts, url, opts.editUrl ?? url).join('\n'))}`,
-    'BEGIN:VALARM',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:Reminder',
-    'TRIGGER:-P1D',
-    'END:VALARM',
-    'BEGIN:VALARM',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:Reminder',
-    'TRIGGER:-PT2H',
-    'END:VALARM',
+    // A CANCEL names no page: the invitation URL of a cancelled party is the dead "not available" page, and a
+    // calendar app that keeps the cancelled entry would show a link to it. Nor does it alarm for a party that is off.
+    ...(cancel ? [] : [`URL:${plain(url)}`]),
+    `DESCRIPTION:${escapeIcsText((cancel ? cancelDescriptionLines(facts) : descriptionLines(facts, url, opts.editUrl ?? url)).join('\n'))}`,
+    ...(cancel
+      ? []
+      : [
+          'BEGIN:VALARM',
+          'ACTION:DISPLAY',
+          'DESCRIPTION:Reminder',
+          'TRIGGER:-P1D',
+          'END:VALARM',
+          'BEGIN:VALARM',
+          'ACTION:DISPLAY',
+          'DESCRIPTION:Reminder',
+          'TRIGGER:-PT2H',
+          'END:VALARM',
+        ]),
     'END:VEVENT',
     'END:VCALENDAR',
   ]

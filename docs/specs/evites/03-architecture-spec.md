@@ -1,6 +1,6 @@
 # Host Hampton EVITE — Architecture Spec (MVP)
 
-**Status: LOCKED v1.1** (2026-10-10). v1.0 locked after adversarial review; v1.1 carries Adam's post-spike decisions. The changelog at the end lists every change and its resolution.
+**Status: LOCKED v1.2** (2026-10-10). v1.0 locked after adversarial review; v1.1 carries Adam's post-spike decisions. The changelog at the end lists every change and its resolution.
 **Scope:** `02-SOW.md` · **Facts:** `01-codebase-review.md` · **Decisions:** `handoff/HANDOFF.md` §2 + review §6b.
 Changes after lock need Adam's OK and a changelog entry.
 
@@ -683,6 +683,21 @@ No `NEXT_PUBLIC_*` additions. **Rotating `PORTAL_LINK_SIGNING_SECRET` would also
 ---
 
 ## Changelog
+
+**v1.2 — 2026-10-10, fixes from the adversarial review of `feat/evites` (orchestrator; for Adam's OK at the P11 gate).**
+
+| # | Change | Where |
+|---|---|---|
+| C1 | `evite_rsvps.reminder_set_at` (+ CHECK `reminder_email IS NULL OR reminder_set_at IS NOT NULL`); `evite_reminder_email_recent` counts `reminder_set_at` (a PATCHed address was uncapped); new `evite_reminder_email_on_evite` caps one address at 3 RSVPs per evite; orphan sweep mails `rsvp_confirmed` only for an address set inside its look-back | §1, §7.5, §9.3 |
+| C2 | Birthday Club opt-in is once per RSVP: same address = no-op, different address = 409, no re-opt-in after an opt-out (ask the studio); capped per evite | §7.5, §10 |
+| C3 | RSVP POST/PATCH and the edit-link GET also count against the shared `eviteViewRule` ceiling (they were a second enumeration oracle) | §7.5, §13 |
+| C4 | Every render goes through the one concurrency-1 queue (`renderViaQueue`), including cron and admin | §5 |
+| C5 | Resend call times out at 30 s; `finishSend` is conditional on the claim's `attempts` | §9.3 |
+| C6 | CANCEL `.ics` carries no URL, no edit line and no VALARMs | §8 |
+| C7 | Admin action `void_rsvp` (scoped, audited; club member removed from the list) | §7.3 |
+| C8 | Host-page image download is a button (`window.open`), not a cross-origin link GA would report | §7.2 |
+| C9 | Cron scan reads everything up to 150 evites, then the newest 60 plus a rotating slice | §9.3 |
+| C10 | A slug in any evite's `previous_slugs` is never re-minted | §2, §7.4 |
 
 **v1.1 — 2026-10-10, Adam's post-spike decisions (P01 GO).**
 

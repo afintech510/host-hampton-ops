@@ -1,6 +1,8 @@
 -- Migration 068 — EVITE: shareable birthday invitations + RSVPs (2026-10-10)
 --
--- Source of truth: docs/specs/evites/03-architecture-spec.md (LOCKED v1.1) §1.
+-- Source of truth: docs/specs/evites/03-architecture-spec.md (LOCKED v1.1) §1, amended in place before it was ever
+-- applied by the adversarial-review fixes (spec v1.2): evite_rsvps.reminder_set_at + rsvp_reminder_email_has_set_at,
+-- evite_reminder_email_recent() counting reminder_set_at, and evite_reminder_email_on_evite().
 -- Additive only. No existing table, column or row is changed. The one change
 -- outside the five new tables is the `lead_source` enum gaining 'evite', and the
 -- one new storage object is the public `evites` bucket.
@@ -34,6 +36,7 @@
 --   BEGIN;
 --   DROP TABLE IF EXISTS evite_events, evite_sends, evite_rsvps, evite_consent_texts, evites CASCADE;
 --   DROP FUNCTION IF EXISTS evite_reminder_email_recent(text);
+--   DROP FUNCTION IF EXISTS evite_reminder_email_on_evite(uuid, text);
 --   DROP FUNCTION IF EXISTS touch_evites_updated_at();
 --   DELETE FROM storage.buckets WHERE id = 'evites';
 --   COMMIT;
@@ -99,6 +102,7 @@ CREATE TABLE evite_rsvps (
   allergy_note         text CHECK (char_length(allergy_note) <= 300),
   note_to_honoree      text CHECK (char_length(note_to_honoree) <= 500),
   reminder_email       text CHECK (char_length(reminder_email) <= 254),
+  reminder_set_at      timestamptz,                      -- when reminder_email was last set or CHANGED (POST or PATCH); the cap counts THIS, not created_at
   reminder_phone_e164  text CHECK (reminder_phone_e164 ~ '^\+1[2-9][0-9]{9}$'),
   reminder_opt_out_at  timestamptz,
   cal_version_seen     integer NOT NULL DEFAULT 0,       -- highest cal_version this guest was sent
@@ -117,16 +121,26 @@ CREATE TABLE evite_rsvps (
   CONSTRAINT rsvp_no_has_no_party CHECK (status = 'yes' OR (jsonb_array_length(children) = 0 AND adult_count = 0)),
   CONSTRAINT rsvp_yes_has_a_child CHECK (status = 'no'  OR jsonb_array_length(children) >= 1),
   CONSTRAINT rsvp_club_is_complete CHECK (club_opt_in_at IS NULL OR (club_email IS NOT NULL AND opt_in_text_version IS NOT NULL)),
-  CONSTRAINT rsvp_one_reminder_channel CHECK (reminder_email IS NULL OR reminder_phone_e164 IS NULL)
+  CONSTRAINT rsvp_one_reminder_channel CHECK (reminder_email IS NULL OR reminder_phone_e164 IS NULL),
+  CONSTRAINT rsvp_reminder_email_has_set_at CHECK (reminder_email IS NULL OR reminder_set_at IS NOT NULL)
 );
 CREATE INDEX idx_evite_rsvps_evite ON evite_rsvps (evite_id);
-CREATE INDEX idx_evite_rsvps_reminder_email ON evite_rsvps (lower(reminder_email), created_at) WHERE reminder_email IS NOT NULL;
+CREATE INDEX idx_evite_rsvps_reminder_email ON evite_rsvps (lower(reminder_email), reminder_set_at) WHERE reminder_email IS NOT NULL;
 
--- DB-backed per-recipient cap (the in-memory limiter forgets after an hour and on deploy)
+-- DB-backed per-recipient caps (the in-memory limiter forgets after an hour and on deploy).
+-- Both count the address as it is HELD NOW. The 24-hour one counts reminder_set_at, not created_at: a PATCH that
+-- sets the address on an older row is a new "ask to mail this stranger" and must count (v1.2).
 CREATE FUNCTION evite_reminder_email_recent(p_email text) RETURNS integer
   LANGUAGE sql STABLE SECURITY INVOKER AS
 $$ SELECT count(*)::int FROM evite_rsvps
-   WHERE lower(reminder_email) = lower(btrim(p_email)) AND created_at > now() - interval '24 hours' $$;
+   WHERE lower(reminder_email) = lower(btrim(p_email)) AND reminder_set_at > now() - interval '24 hours' $$;
+
+-- Per-evite cap: how many RSVPs on ONE invitation hold this address (a link holder cannot aim one address at a
+-- stranger from fifty RSVPs on one party).
+CREATE FUNCTION evite_reminder_email_on_evite(p_evite_id uuid, p_email text) RETURNS integer
+  LANGUAGE sql STABLE SECURITY INVOKER AS
+$$ SELECT count(*)::int FROM evite_rsvps
+   WHERE evite_id = p_evite_id AND lower(reminder_email) = lower(btrim(p_email)) $$;
 
 CREATE TABLE evite_sends (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -167,6 +181,7 @@ ALTER TABLE evite_sends         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE evite_events        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE evite_consent_texts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON FUNCTION evite_reminder_email_recent(text) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION evite_reminder_email_on_evite(uuid, text) FROM anon, authenticated;
 -- No policies: service role only.
 
 -- Public storage bucket for the rendered invitation and OG card (spec §1 Storage).

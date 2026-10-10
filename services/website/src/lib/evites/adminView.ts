@@ -64,7 +64,10 @@ export const ADMIN_SEND_COLUMNS = [
 
 export const ADMIN_CONTACT_PRESENCE_COLUMNS = ['id', 'reminder_email', 'reminder_phone_e164', 'club_email'] as const
 
-export const ADMIN_REVEAL_COLUMNS = ['id', 'evite_id', 'reminder_email', 'reminder_phone_e164', 'club_email'] as const
+/** What `void_rsvp` reads before it deletes: enough to audit WHAT was removed (no address) and to take a club member off the list. */
+export const ADMIN_VOID_COLUMNS = ['id', 'evite_id', 'status', 'revision', 'child_count', 'club_email', 'club_opt_in_at', 'club_opted_out_at'] as const
+
+export const ADMIN_REVEAL_COLUMNS =['id', 'evite_id', 'reminder_email', 'reminder_phone_e164', 'club_email'] as const
 
 /** The most RSVP / send rows one GET reads. One more is requested so truncation is KNOWN, not guessed. */
 export const ADMIN_ROW_LIMIT = 500

@@ -3,7 +3,7 @@ jest.mock('resend', () => ({
   Resend: jest.fn().mockImplementation(() => ({ emails: { send: (...a: unknown[]) => sendMock(...a) } })),
 }))
 
-import { sendEviteEmail, DEFAULT_FROM } from '@/lib/evites/mail'
+import { sendEviteEmail, DEFAULT_FROM, RESEND_TIMEOUT_MS } from '@/lib/evites/mail'
 
 /** `sendEviteEmail` (spec §2 `mail.ts`): the one Resend call, a named outcome, never throws. */
 
@@ -63,6 +63,42 @@ describe('sendEviteEmail', () => {
     sendMock.mockRejectedValue(new Error('socket hang up'))
     const out = await sendEviteEmail(INPUT)
     expect(out).toEqual({ kind: 'failed', error: 'resend threw: socket hang up' })
+  })
+
+  describe('v1.2 finding 5: a hung Resend call is abandoned', () => {
+    beforeEach(() => jest.useFakeTimers())
+    afterEach(() => jest.useRealTimers())
+
+    it('RESEND_TIMEOUT_MS is 30 seconds', () => {
+      expect(RESEND_TIMEOUT_MS).toBe(30_000)
+    })
+
+    it('a call that never answers is a `failed` after 30 s, not a promise that holds the claim until the 15-minute sweep', async () => {
+      sendMock.mockReturnValue(new Promise(() => undefined))
+      let out: unknown = null
+      const p = sendEviteEmail(INPUT).then((o) => (out = o))
+      await jest.advanceTimersByTimeAsync(29_999)
+      expect(out).toBeNull() // still waiting
+      await jest.advanceTimersByTimeAsync(1)
+      await p
+      expect(out).toEqual({ kind: 'failed', error: expect.stringMatching(/^resend timed out: no answer within 30 seconds/) })
+    })
+
+    it('a late answer after the timeout changes nothing and raises nothing', async () => {
+      let late: (v: unknown) => void = () => undefined
+      sendMock.mockReturnValue(new Promise((r) => (late = r)))
+      const p = sendEviteEmail(INPUT)
+      await jest.advanceTimersByTimeAsync(30_000)
+      expect((await p).kind).toBe('failed')
+      late({ data: { id: 're_late' }, error: null })
+      await jest.advanceTimersByTimeAsync(10)
+    })
+
+    it('a prompt answer clears the timer (no stray timer keeps the process alive)', async () => {
+      sendMock.mockResolvedValue({ data: { id: 're_abc' }, error: null })
+      expect(await sendEviteEmail(INPUT)).toEqual({ kind: 'sent', providerId: 're_abc' })
+      expect(jest.getTimerCount()).toBe(0)
+    })
   })
 
   it('passes attachments, headers and reply-to through; sends none when there are none', async () => {

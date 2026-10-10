@@ -3,7 +3,7 @@
  *
  *   claimSend(supabase, key)             INSERT; the unique index says "already done"
  *   reclaimFailed(supabase, { limit })   failed (attempts < 4) and stuck `sending` rows -> `sending` again
- *   finishSend(supabase, id, outcome)    the ONLY writer of `sent` / `failed` / `skipped`
+ *   finishSend(supabase, id, outcome, claim)   the ONLY writer of `sent` / `failed` / `skipped`
  *
  * CLAIM BEFORE SEND (principle 4). Every outbound evite email is first an INSERT into
  * `evite_sends` under `uniq_evite_send_once (evite_id, rsvp_id, send_type, ref_version,
@@ -193,10 +193,13 @@ export async function reclaimFailed(supabase: Supa, opts: { limit: number; now?:
         if (result.reclaimed.length >= limit) break
         const attempts = Number(row.attempts) || 1
         if (attempts >= MAX_SEND_ATTEMPTS) {
-          const done = await finishSend(supabase, String(row.id), {
-            kind: 'failed',
-            error: `stuck in sending for over ${Math.round(STUCK_SENDING_MS / 60000)} minutes and out of attempts`,
-          })
+          const done = await finishSend(
+            supabase,
+            String(row.id),
+            { kind: 'failed', error: `stuck in sending for over ${Math.round(STUCK_SENDING_MS / 60000)} minutes and out of attempts` },
+            { attempts },
+            now,
+          )
           if (done.ok) result.exhausted += 1
           else result.errors.push(`stuck finish: ${done.reason}`)
           continue
@@ -240,7 +243,19 @@ export type FinishResult = { ok: true } | { ok: false; reason: 'not-sending' | '
 
 const clip = (s: string, n = 500) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
-export async function finishSend(supabase: Supa, id: string, outcome: SendFinish, now: Date = new Date()): Promise<FinishResult> {
+/**
+ * `claim.attempts` is the attempt number THIS worker was handed (1 for a first send, +1 on every reclaim). The write is
+ * conditional on it, so a worker that hung past the stuck window and was reclaimed (attempts 2, a second worker now sending)
+ * cannot finish the row the new owner holds: its late `sent` / `failed` matches zero rows and reports `not-sending`.
+ * The status alone could not say that, because a reclaimed row is `sending` again.
+ */
+export async function finishSend(
+  supabase: Supa,
+  id: string,
+  outcome: SendFinish,
+  claim: { attempts: number },
+  now: Date = new Date(),
+): Promise<FinishResult> {
   let patch: Record<string, unknown>
   switch (outcome.kind) {
     case 'sent':
@@ -257,7 +272,7 @@ export async function finishSend(supabase: Supa, id: string, outcome: SendFinish
   let lastError: string | undefined
   // One retry: a `sent` that fails to record is the window in which a reclaim re-sends it.
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const { data, error } = await supabase.from('evite_sends').update(patch).eq('id', id).eq('status', 'sending').select('id')
+    const { data, error } = await supabase.from('evite_sends').update(patch).eq('id', id).eq('status', 'sending').eq('attempts', claim.attempts).select('id')
     if (error) {
       lastError = error.message
       continue

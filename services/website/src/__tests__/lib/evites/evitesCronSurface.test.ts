@@ -218,3 +218,37 @@ describe('retention writes', () => {
     expect(code).toMatch(/shiftEtDate\(/)
   })
 })
+
+describe('v1.2: a re-minted slug is checked against every invitation\'s aliases BEFORE it is written', () => {
+  it('cron reslug and ensure each call slugIsAnAlias before their write, and treat "unknown" as a failure rather than "free"', () => {
+    let examined = 0
+    for (const [rel, header, write] of [
+      ['lib/evites/cronTick.ts', /async function reslug\(/, '.update('],
+      ['lib/evites/ensure.ts', /export async function ensureEviteForBooking\(/, '.insert('],
+    ] as const) {
+      const body = squash(bodyOf(src(rel), header))
+      const check = body.indexOf('slugIsAnAlias(')
+      const w = body.indexOf(write, body.indexOf('makeSlug('))
+      examined++
+      expect(check).toBeGreaterThan(-1)
+      expect(w).toBeGreaterThan(check)
+      expect(body.slice(check, w)).toMatch(/alias === 'taken'\) continue/)
+      expect(body.slice(check, w)).toMatch(/alias === 'unknown'\) return/)
+    }
+    expect(examined).toBe(2)
+    // and the helper itself: a read error is `unknown`, not `free`
+    const helper = squash(src('lib/evites/slugTaken.ts'))
+    expect(helper).toMatch(/if \(error\) \{.*?return 'unknown'/)
+    expect(helper).toMatch(/\.contains\('previous_slugs', \[slug\]\)/)
+  })
+
+  it('the cron scan reads a counted, rotating window, never "the first 150 by updated_at"', () => {
+    const code = src('lib/evites/cronTick.ts')
+    const body = squash(bodyOf(code, /async function readScanWindow\(/))
+    expect(body).toMatch(/count: 'exact', head: true/)
+    expect(body).toMatch(/scanRanges\(/)
+    expect(body).toMatch(/\.range\(from, to\)/)
+    expect(body).not.toMatch(/order\('updated_at'/)
+    expect(squash(bodyOf(code, /async function scan\(/))).not.toMatch(/\.limit\(SCAN_LIMIT/)
+  })
+})

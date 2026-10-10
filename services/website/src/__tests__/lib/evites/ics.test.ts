@@ -131,6 +131,29 @@ describe('CANCEL', () => {
     expect(can).toContain('UID:evite-ev-uuid-1@hosthampton.com\r\n')
     expect(can).toContain('DTSTART:20261114T190000Z\r\n')
   })
+
+  it('links no page (a cancelled invitation is a dead page) and carries no alarm', () => {
+    const can = buildIcs(NOV, { id: 'ev-uuid-1', cal_version: 3 }, URL_, { method: 'CANCEL', now: STAMP, editUrl: 'https://www.hosthampton.com/i/mia-glow-7kq2/rsvp/TOKEN' })
+    const unfolded = can.replace(/\r\n /g, '')
+    expect(unfolded).not.toMatch(/^URL:/m)
+    expect(unfolded).not.toContain(URL_)
+    expect(unfolded).not.toContain('Plans changed')
+    expect(unfolded).not.toContain('TOKEN')
+    expect(unfolded).not.toContain('VALARM')
+    expect(unfolded).not.toContain('TRIGGER')
+    // the properties that make it a cancellation survive
+    expect(unfolded).toContain('UID:evite-ev-uuid-1@hosthampton.com\r\n')
+    expect(unfolded).toContain('SEQUENCE:4\r\n')
+    expect(unfolded).toContain('STATUS:CANCELLED\r\n')
+  })
+
+  it('a PUBLISH still carries the URL, the edit line and both alarms (the CANCEL change is not a PUBLISH change)', () => {
+    const pub = buildIcs(NOV, { id: 'ev-uuid-1', cal_version: 3 }, URL_, { method: 'PUBLISH', now: STAMP })
+    const unfolded = pub.replace(/\r\n /g, '')
+    expect(unfolded).toContain(`\r\nURL:${URL_}\r\n`)
+    expect(unfolded).toContain('Plans changed')
+    expect(pub.match(/BEGIN:VALARM/g)).toHaveLength(2)
+  })
 })
 
 describe('escaping (RFC 5545 §3.3.11)', () => {

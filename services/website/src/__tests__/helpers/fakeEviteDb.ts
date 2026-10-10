@@ -55,7 +55,7 @@ export interface FakeEviteDbOptions {
 export interface InjectedError {
   /** Table (or 'storage') and operation the error applies to. */
   table: string
-  op: 'select' | 'update' | 'upload' | 'insert'
+  op: 'select' | 'update' | 'upload' | 'insert' | 'delete'
   /** Only when this returns true for the patch / path (default: always). */
   when?: (info: { patch?: Row; path?: string; filters?: Filter[] }) => boolean
   message?: string
@@ -91,6 +91,7 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
   const uploaded = new Map<string, Buffer>()
   const selects: Array<{ table: string; cols: string }> = []
   const inserts: Array<{ table: string; row: Row }> = []
+  const deletes: Array<{ table: string; filters: Filter[]; matched: number }> = []
   const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = []
   const errors: InjectedError[] = []
   const hooks: { beforeUpdate?: (info: { table: string; patch: Row; filters: Filter[] }, db: Record<string, Row[]>) => void } = {}
@@ -133,8 +134,9 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
   }
 
   class Query implements PromiseLike<Result> {
-    private op: 'select' | 'update' | 'insert' = 'select'
+    private op: 'select' | 'update' | 'insert' | 'delete' = 'select'
     private limitN: number | null = null
+    private rangeN: { from: number; to: number } | null = null
     private orderBy: { col: string; asc: boolean } | null = null
     private patch: Row = {}
     private filters: Filter[] = []
@@ -143,7 +145,7 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
     private countHead = false
     constructor(private table: string) {}
     select(cols?: string, o?: { count?: string; head?: boolean }) {
-      if (this.op === 'update' || this.op === 'insert') {
+      if (this.op === 'update' || this.op === 'insert' || this.op === 'delete') {
         this.returning = true
         this.returnCols = (cols ?? '')
           .split(',')
@@ -158,6 +160,10 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
     update(patch: Row) {
       this.op = 'update'
       this.patch = patch
+      return this
+    }
+    delete() {
+      this.op = 'delete'
       return this
     }
     eq(col: string, val: unknown) {
@@ -182,6 +188,10 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
     }
     limit(n: number) {
       this.limitN = n
+      return this
+    }
+    range(from: number, to: number) {
+      this.rangeN = { from, to }
       return this
     }
     order(col: string, o?: { ascending?: boolean }) {
@@ -242,6 +252,14 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
         ;(tables[this.table] ??= []).push(full)
         return { data: this.returning ? [project(full, this.returnCols)] : null, error: null }
       }
+      if (this.op === 'delete') {
+        const err = injected(this.table, 'delete', { filters: this.filters })
+        if (err) return { data: null, error: err }
+        const gone = rows.filter((r) => matches(r, this.filters))
+        for (const r of gone) rows.splice(rows.indexOf(r), 1)
+        deletes.push({ table: this.table, filters: this.filters, matched: gone.length })
+        return { data: this.returning ? gone.map((r) => project(r, this.returnCols)) : null, error: null }
+      }
       if (this.op === 'select') {
         const err = injected(this.table, 'select', { filters: this.filters })
         if (err) return { data: null, error: err }
@@ -251,6 +269,7 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
           const { col, asc } = this.orderBy
           out = out.sort((a, b) => (String(a[col] ?? '') < String(b[col] ?? '') ? -1 : 1) * (asc ? 1 : -1))
         }
+        if (this.rangeN !== null) out = out.slice(this.rangeN.from, this.rangeN.to + 1)
         if (this.limitN !== null) out = out.slice(0, this.limitN)
         return { data: out, error: null }
       }
@@ -319,5 +338,5 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
     },
   }
 
-  return { supabase: supabase as never, tables, updates, uploads, uploaded, selects, inserts, rpcCalls, errors, hooks }
+  return { supabase: supabase as never, tables, deletes, updates, uploads, uploaded, selects, inserts, rpcCalls, errors, hooks }
 }

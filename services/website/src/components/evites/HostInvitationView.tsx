@@ -60,6 +60,11 @@ export interface HostViewProps {
   }
 }
 
+/** Open the stored picture in a new tab. `open` is injectable so a test can see the call without a DOM. */
+export function openInvitationImage(url: string, open: (url: string, target: string, features: string) => unknown = (u, t, f) => window.open(u, t, f)): void {
+  open(url, '_blank', 'noopener')
+}
+
 function FieldError({ error, field }: { error: HostViewProps['formError']; field: string }) {
   if (!error || error.field !== field) return null
   return (
@@ -89,19 +94,13 @@ function SharePanel({ props }: { props: HostViewProps }) {
           {props.copied ? 'Link copied!' : 'Copy link'}
         </button>
         {gate.enabled && data.images.invite ? (
-          // `download` is ignored for a cross-origin image (the file lives on the storage
-          // host), so this opens the picture in a new tab to save: fine for the MVP.
-          <a
-            data-share="download"
-            href={data.images.invite}
-            download="invitation.jpg"
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => on?.download?.()}
-            className={BTN_2}
-          >
+          // A BUTTON, not an anchor: GA4's enhanced measurement records every click on a link to another origin as an
+          // "outbound click" with the full destination URL, and this destination is the picture's storage path, whose
+          // random `image_key` is the only thing keeping it unlisted. `download` is ignored cross-origin anyway, so the
+          // picture opens in a new tab to save: fine for the MVP.
+          <button type="button" data-share="download" onClick={() => { on?.download?.(); openInvitationImage(data.images.invite as string) }} className={BTN_2}>
             Download image
-          </a>
+          </button>
         ) : (
           <span data-share="download" aria-disabled="true" className={`${BTN_2} ${OFF}`}>
             Download image

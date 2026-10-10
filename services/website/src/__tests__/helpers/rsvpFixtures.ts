@@ -15,7 +15,15 @@ type Row = Record<string, unknown>
 let seq = 0
 export const uuid = (): string => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`
 
-export const rsvpRow = (over: Row = {}): Row => ({
+export const rsvpRow = (over: Row = {}): Row => {
+  const row = baseRsvpRow(over)
+  // The migration's CHECK: a stored reminder address always has a set-time. A seed that names the address but not
+  // the time gets its creation time, as a POST would have stamped; a seed can still pass `reminder_set_at` explicitly.
+  if (row.reminder_email && row.reminder_set_at === null) row.reminder_set_at = row.created_at
+  return row
+}
+
+const baseRsvpRow = (over: Row = {}): Row => ({
   id: uuid(),
   evite_id: EVITE_ID,
   status: 'yes',
@@ -28,6 +36,7 @@ export const rsvpRow = (over: Row = {}): Row => ({
   allergy_note: null,
   note_to_honoree: null,
   reminder_email: null,
+  reminder_set_at: null,
   reminder_phone_e164: null,
   reminder_opt_out_at: null,
   cal_version_seen: 0,
@@ -59,6 +68,7 @@ export function rsvpChecks(r: Row): string | null {
   if (typeof r.allergy_note === 'string' && r.allergy_note.length > 300) return 'allergy_note length'
   if (typeof r.note_to_honoree === 'string' && r.note_to_honoree.length > 500) return 'note_to_honoree length'
   if (r.reminder_email && r.reminder_phone_e164) return 'rsvp_one_reminder_channel'
+  if (r.reminder_email && !r.reminder_set_at) return 'rsvp_reminder_email_has_set_at'
   if (typeof r.reminder_phone_e164 === 'string' && !/^\+1[2-9][0-9]{9}$/.test(r.reminder_phone_e164)) return 'reminder_phone_e164'
   if (r.club_opt_in_at && !(r.club_email && r.opt_in_text_version)) return 'rsvp_club_is_complete'
   if (typeof r.edit_nonce !== 'string' || r.edit_nonce.length !== 16) return 'edit_nonce length'
@@ -97,6 +107,7 @@ export function makeRsvpDb(o: RsvpDbOptions = {}) {
         allergy_note: null,
         note_to_honoree: null,
         reminder_email: null,
+        reminder_set_at: null,
         reminder_phone_e164: null,
         reminder_opt_out_at: null,
         cal_version_seen: 0,
@@ -119,7 +130,13 @@ export function makeRsvpDb(o: RsvpDbOptions = {}) {
       evite_reminder_email_recent: (args, tables) => {
         const email = String(args.p_email ?? '').trim().toLowerCase()
         const since = Date.now() - 24 * 3600 * 1000
-        const n = (tables.evite_rsvps ?? []).filter((r) => typeof r.reminder_email === 'string' && r.reminder_email.toLowerCase() === email && Date.parse(String(r.created_at)) > since).length
+        // migration 068 (v1.2): counts when the address was SET, not when the row was created.
+        const n = (tables.evite_rsvps ?? []).filter((r) => typeof r.reminder_email === 'string' && r.reminder_email.toLowerCase() === email && Date.parse(String(r.reminder_set_at)) > since).length
+        return { data: n, error: null }
+      },
+      evite_reminder_email_on_evite: (args, tables) => {
+        const email = String(args.p_email ?? '').trim().toLowerCase()
+        const n = (tables.evite_rsvps ?? []).filter((r) => r.evite_id === args.p_evite_id && typeof r.reminder_email === 'string' && r.reminder_email.toLowerCase() === email).length
         return { data: n, error: null }
       },
     },

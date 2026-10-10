@@ -440,7 +440,7 @@ async function stampCalVersionSeen(supabase: Supa, stamp: { rsvpId: string; vers
  */
 export async function performSend(supabase: Supa, send: ClaimedSend, opts: { now?: Date } = {}): Promise<SendResult> {
   const finish = async (outcome: Parameters<typeof finishSend>[2]): Promise<SendResult> => {
-    const done = await finishSend(supabase, send.id, outcome)
+    const done = await finishSend(supabase, send.id, outcome, { attempts: send.attempts }, opts.now ?? new Date())
     if (!done.ok) console.error(`evites/sendOne: ledger row ${send.id} not finished as ${outcome.kind}: ${done.reason}`)
     if (outcome.kind === 'sent') return { kind: 'sent', providerId: outcome.providerId }
     if (outcome.kind === 'skipped') return { kind: 'skipped', reason: outcome.reason }

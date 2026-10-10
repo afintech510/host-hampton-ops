@@ -11,7 +11,7 @@ jest.mock('@/lib/evites/club', () => {
   const actual = jest.requireActual('@/lib/evites/club')
   return { ...actual, retryClubLinks: jest.fn() }
 })
-jest.mock('@/lib/evites/render', () => ({ queueRender: jest.fn(), renderEvite: jest.fn() }))
+jest.mock('@/lib/evites/render', () => ({ queueRender: jest.fn(), renderEvite: jest.fn(), renderViaQueue: jest.fn() }))
 jest.mock('@/lib/evites/mail')
 
 const retry = retryClubLinks as jest.Mock

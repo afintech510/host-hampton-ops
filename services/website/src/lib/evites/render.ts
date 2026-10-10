@@ -331,6 +331,8 @@ export async function renderEvite(supabase: Supa, eviteId: string, opts: RenderO
 interface QueueItem {
   eviteId: string
   run: (eviteId: string) => Promise<unknown>
+  /** An awaited render (`renderViaQueue`): its caller is waiting for the result, so it is neither deduped nor counted against the cap. */
+  awaited?: boolean
 }
 interface RenderQueue {
   waiting: QueueItem[]
@@ -366,10 +368,37 @@ export function queueRender(
   opts: { run?: (eviteId: string) => Promise<unknown> } = {},
 ): 'queued' | 'dropped' {
   const q = queue()
-  if (q.waiting.some((w) => w.eviteId === eviteId)) return 'queued'
-  if (q.waiting.length >= MAX_WAITING_RENDERS) return 'dropped'
+  if (q.waiting.some((w) => !w.awaited && w.eviteId === eviteId)) return 'queued'
+  if (q.waiting.filter((w) => !w.awaited).length >= MAX_WAITING_RENDERS) return 'dropped'
   q.waiting.push({ eviteId, run: opts.run ?? ((id) => renderEvite(getSupabase(), id)) })
   pump(q)
   return 'queued'
+}
+
+/**
+ * Render through the SAME concurrency-1 queue and wait for the outcome (the admin "Re-render" button, the
+ * cron's stale-render step). sharp holds a whole canvas in memory per render, so a direct `renderEvite`
+ * beside a queued one would run two at once (spec §5): every caller in the app goes through the queue.
+ *
+ * An awaited render is never dropped (its caller is holding a request or a cron tick open, and both are
+ * bounded: two per tick, one per button press), so it does not count toward `MAX_WAITING_RENDERS`.
+ * It never throws: a render that threw is a `failed` outcome, like `renderEvite` itself.
+ */
+export function renderViaQueue(supabase: Supa, eviteId: string, opts: RenderOptions = {}): Promise<RenderOutcome> {
+  const q = queue()
+  return new Promise<RenderOutcome>((resolve) => {
+    q.waiting.push({
+      eviteId,
+      awaited: true,
+      run: async () => {
+        try {
+          resolve(await renderEvite(supabase, eviteId, opts))
+        } catch (e) {
+          resolve({ kind: 'failed', reason: describe(e) })
+        }
+      },
+    })
+    pump(q)
+  })
 }
 

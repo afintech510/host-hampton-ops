@@ -8,7 +8,7 @@ import { runEviteSendsTick, BACKFILL_PER_TICK } from '@/lib/evites/cronTick'
 /** Step 1 of the scheduler: backfill (spec §9.3, §2.1). `ensure` is replaced so only the SELECTION is under test. */
 
 jest.mock('@/lib/evites/mail')
-jest.mock('@/lib/evites/render', () => ({ queueRender: jest.fn(), renderEvite: jest.fn() }))
+jest.mock('@/lib/evites/render', () => ({ queueRender: jest.fn(), renderEvite: jest.fn(), renderViaQueue: jest.fn() }))
 jest.mock('@/lib/evites/ensure', () => ({ ensureEviteForBooking: jest.fn() }))
 let db: SendDb
 jest.mock('@/lib/supabase', () => ({ getSupabase: () => db.supabase }))

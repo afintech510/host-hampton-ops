@@ -54,6 +54,8 @@ export interface EviteRsvpRow {
   allergy_note: string | null
   note_to_honoree: string | null
   reminder_email: string | null
+  /** When `reminder_email` was last set or changed; non-null whenever the email is (migration 068 CHECK). */
+  reminder_set_at: string | null
   reminder_phone_e164: string | null
   reminder_opt_out_at: string | null
   cal_version_seen: number

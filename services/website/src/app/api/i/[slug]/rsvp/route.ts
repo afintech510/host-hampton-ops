@@ -1,17 +1,18 @@
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { eviteRsvpRule, guardRate } from '@/lib/rateLimit'
+import { eviteRsvpRule, eviteViewRule, guardRate } from '@/lib/rateLimit'
 import { resolveEviteBySlug, type ResolveOutcome } from '@/lib/evites/resolve'
 import { recordEviteEvent } from '@/lib/evites/analytics'
 import { readCurrentClubConsent } from '@/lib/evites/consent'
 import { fireClubOptIn, fireClubOptOut } from '@/lib/evites/clubHook'
 import { fireRsvpHook } from '@/lib/evites/rsvpHooks'
 import { cookieName, editTokenExpiry, newEditNonce, signEditToken, verifyEditToken } from '@/lib/evites/rsvpToken'
-import { screenRsvpPatch, screenRsvpPost, type ExistingRsvp } from '@/lib/evites/screens'
+import { decideClubOptIn, screenRsvpPatch, screenRsvpPost, type ExistingRsvp } from '@/lib/evites/screens'
 import { OWN_RSVP_SELECT, ownRsvpView } from '@/lib/evites/rsvpView'
 import {
   REMINDER_EMAIL_DAILY_CAP,
+  REMINDER_EMAIL_PER_EVITE_CAP,
   RSVP_BODY_MAX_CHARS,
   consentIp,
   honeypotRsvp,
@@ -99,19 +100,33 @@ async function openGate(req: NextRequest, slug: string): Promise<Gate> {
 }
 
 /**
- * The DB-backed per-recipient cap (spec §7.5). True when the address may be kept as a reminder
- * address. An RPC error is NOT "zero recent": it fails toward not emailing a stranger.
+ * The DB-backed per-recipient caps (spec §7.5, v1.2). True when the address may be kept as a reminder
+ * address: fewer than `REMINDER_EMAIL_DAILY_CAP` RSVPs anywhere SET it in the last 24 hours (`reminder_set_at`,
+ * so setting it by PATCH on an old row counts), and fewer than `REMINDER_EMAIL_PER_EVITE_CAP` RSVPs on THIS
+ * invitation hold it. Used by BOTH the POST and any PATCH that sets or changes the address: there is no
+ * path that stores a reminder address without passing here. An RPC error is NOT "zero recent": it fails
+ * toward not emailing a stranger.
  */
-async function reminderEmailAllowed(supabase: ReturnType<typeof getSupabase>, email: string): Promise<boolean> {
+async function reminderEmailAllowed(supabase: ReturnType<typeof getSupabase>, eviteId: string, email: string): Promise<boolean> {
   const recent = await supabase.rpc('evite_reminder_email_recent', { p_email: email })
   if (recent.error || typeof recent.data !== 'number') {
     console.error(`api/i/rsvp: evite_reminder_email_recent failed, storing the RSVP without the reminder address: ${recent.error?.message ?? 'non-numeric result'}`)
     return false
   }
-  return recent.data < REMINDER_EMAIL_DAILY_CAP
+  if (recent.data >= REMINDER_EMAIL_DAILY_CAP) return false
+  const here = await supabase.rpc('evite_reminder_email_on_evite', { p_evite_id: eviteId, p_email: email })
+  if (here.error || typeof here.data !== 'number') {
+    console.error(`api/i/rsvp: evite_reminder_email_on_evite failed, storing the RSVP without the reminder address: ${here.error?.message ?? 'non-numeric result'}`)
+    return false
+  }
+  return here.data < REMINDER_EMAIL_PER_EVITE_CAP
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
+  // The shared page/beacon/cal ceiling first: this route also answers 404 for an unknown slug, so without it
+  // it is a second, more generously limited, enumeration oracle (v1.2). Then the RSVP's own tighter rule.
+  const viewLimited = guardRate(req, eviteViewRule)
+  if (viewLimited) return viewLimited
   const limited = guardRate(req, eviteRsvpRule)
   if (limited) return limited
   if (!originAllowed(req)) return json({ error: 'Forbidden' }, 403)
@@ -138,7 +153,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   let reminderPhone: string | null = null
   let reminderDropped = false
   if (v.reminder.kind === 'email') {
-    if (await reminderEmailAllowed(supabase, v.reminder.email)) reminderEmail = v.reminder.email
+    if (await reminderEmailAllowed(supabase, eviteId, v.reminder.email)) reminderEmail = v.reminder.email
     else reminderDropped = true
   } else if (v.reminder.kind === 'phone') {
     reminderPhone = v.reminder.phoneE164
@@ -170,6 +185,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       has_allergy: v.hasAllergy,
       allergy_note: v.allergyNote,
       reminder_email: reminderEmail,
+      reminder_set_at: reminderEmail ? now.toISOString() : null,
       reminder_phone_e164: reminderPhone,
       edit_nonce: editNonce,
     })
@@ -190,6 +206,8 @@ export async function POST(req: NextRequest, { params }: Params) {
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
+  const viewLimited = guardRate(req, eviteViewRule)
+  if (viewLimited) return viewLimited
   const limited = guardRate(req, eviteRsvpRule)
   if (limited) return limited
   if (!originAllowed(req)) return json({ error: 'Forbidden' }, 403)
@@ -215,7 +233,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
   if (!read.data) return json({ error: 'Unauthorized' }, 401)
   const existingRow = read.data as unknown as Record<string, unknown>
-  const existing: ExistingRsvp & { revision: number; club_opt_in_at: string | null; reminder_opt_out_at: string | null } = {
+  const existing: ExistingRsvp & {
+    revision: number
+    club_email: string | null
+    club_opt_in_at: string | null
+    club_opted_out_at: string | null
+    reminder_opt_out_at: string | null
+  } = {
     status: existingRow.status === 'no' ? 'no' : 'yes',
     parent_name: String(existingRow.parent_name ?? ''),
     children: Array.isArray(existingRow.children) ? (existingRow.children as Array<{ first_name: string }>) : [],
@@ -225,7 +249,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     reminder_email: typeof existingRow.reminder_email === 'string' ? existingRow.reminder_email : null,
     reminder_phone_e164: typeof existingRow.reminder_phone_e164 === 'string' ? existingRow.reminder_phone_e164 : null,
     revision: Number(existingRow.revision ?? 1),
+    club_email: typeof existingRow.club_email === 'string' ? existingRow.club_email : null,
     club_opt_in_at: typeof existingRow.club_opt_in_at === 'string' ? existingRow.club_opt_in_at : null,
+    club_opted_out_at: typeof existingRow.club_opted_out_at === 'string' ? existingRow.club_opted_out_at : null,
     reminder_opt_out_at: typeof existingRow.reminder_opt_out_at === 'string' ? existingRow.reminder_opt_out_at : null,
   }
 
@@ -235,6 +261,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   // The club box: the version the guest saw must be the CURRENT one, read from the table (three outcomes).
   let consentVersion: string | null = null
+  // One sign-up per RSVP, bound to its first address (finding 2): decided BEFORE anything is written or fired.
+  let clubDecision: ReturnType<typeof decideClubOptIn> | null = null
   if (p.club) {
     const consent = await readCurrentClubConsent(supabase)
     if (consent.kind !== 'ok') return json(GENERIC_FAILURE, 503)
@@ -242,17 +270,36 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       return json({ error: 'The sign-up wording has changed. Please reload the page and try again.' }, 409)
     }
     consentVersion = consent.version
+
+    clubDecision = decideClubOptIn(existing, p.club.email)
+    if (clubDecision.kind === 'refused') return json({ error: clubDecision.message }, 409)
+    if (clubDecision.kind === 'fresh') {
+      // The list-wide ceiling: no more club sign-ups on one invitation than it may have RSVPs. A failed count is not "zero".
+      const joined = await supabase.from('evite_rsvps').select('id', { count: 'exact', head: true }).eq('evite_id', eviteId).not('club_opt_in_at', 'is', null)
+      if (joined.error || typeof joined.count !== 'number') {
+        console.error(`api/i/rsvp: club count failed: ${joined.error?.message ?? 'no count'}`)
+        return json(GENERIC_FAILURE, 503)
+      }
+      if (joined.count >= rsvpCap(resolved.facts.guestCap)) return json({ error: 'The Birthday Club sign-up is full for this invitation — please contact the host' }, 429)
+    }
   }
+  const clubFresh = clubDecision?.kind === 'fresh'
 
   const cols: Record<string, unknown> = { ...p.columns }
   const nowIso = now.toISOString()
   let reminderDropped = false
 
-  if (p.newReminderEmail && !(await reminderEmailAllowed(supabase, p.newReminderEmail))) {
-    reminderDropped = true
-    delete cols.reminder_email
-    delete cols.reminder_phone_e164
-    delete cols.reminder_opt_out_at
+  if (p.newReminderEmail) {
+    // Setting or CHANGING the reminder address by PATCH goes through the same caps as the POST, and stamps
+    // `reminder_set_at` so the 24-hour count and the cron's `rsvp_confirmed` sweep see when it was set.
+    if (await reminderEmailAllowed(supabase, eviteId, p.newReminderEmail)) {
+      cols.reminder_set_at = nowIso
+    } else {
+      reminderDropped = true
+      delete cols.reminder_email
+      delete cols.reminder_phone_e164
+      delete cols.reminder_opt_out_at
+    }
   }
   if (p.reminderOptOut && !existing.reminder_opt_out_at) cols.reminder_opt_out_at = nowIso
 
@@ -263,15 +310,22 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     p.next.has_allergy !== existing.has_allergy
   if (material) cols.revision = existing.revision + 1
 
+  let monthSaved = false
   if (p.club && consentVersion) {
-    cols.club_email = p.club.email
-    cols.club_opt_in_at = nowIso
-    cols.opt_in_text_version = consentVersion
-    cols.consent_ip = consentIp(req)
-    cols.club_opted_out_at = null
-    if (p.club.birthdayMonth !== null) cols.birthday_month = p.club.birthdayMonth
+    if (clubFresh) {
+      cols.club_email = p.club.email
+      cols.club_opt_in_at = nowIso
+      cols.opt_in_text_version = consentVersion
+      cols.consent_ip = consentIp(req)
+      if (p.club.birthdayMonth !== null) cols.birthday_month = p.club.birthdayMonth
+    } else if (p.club.birthdayMonth !== null) {
+      // 'unchanged': the same address again. The consent record and the hook are NOT touched; only the month may move.
+      cols.birthday_month = p.club.birthdayMonth
+    }
+    monthSaved = p.club.birthdayMonth !== null
   }
-  const optingOut = p.clubOptOut && existing.club_opt_in_at !== null
+  // `club_opted_out_at` is written once and never cleared (decideClubOptIn): a second opt-out keeps the first time.
+  const optingOut = p.clubOptOut && existing.club_opt_in_at !== null && existing.club_opted_out_at === null
   if (optingOut) cols.club_opted_out_at = nowIso
 
   const calendarUrl = `/i/${params.slug}/cal`
@@ -281,13 +335,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   // Conditional on the revision we read: two tabs changing the party cannot silently overwrite each other.
-  const updated = await supabase
+  let write = supabase
     .from('evite_rsvps')
     .update(cols)
     .eq('id', verified.rsvpId)
     .eq('evite_id', eviteId)
     .eq('revision', existing.revision)
-    .select(OWN_RSVP_SELECT)
+  // A first club sign-up also holds "still never opted in": two tabs with two addresses cannot both win.
+  if (clubFresh) write = write.is('club_opt_in_at', null)
+  const updated = await write.select(OWN_RSVP_SELECT)
   if (updated.error) {
     console.error(`api/i/rsvp: update failed: ${updated.error.message}`)
     return updated.error.code === '23514' ? json({ error: 'That answer is not valid.' }, 400) : json(GENERIC_FAILURE, 503)
@@ -300,8 +356,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     fireRsvpHook('onRsvpChanged', { eviteId, rsvpId: verified.rsvpId, slug: params.slug, revision: Number(row.revision) || existing.revision + 1, status: p.next.status })
   }
   if (p.club && consentVersion) {
-    await recordEviteEvent(supabase, eviteId, 'club_opted_in')
-    if (p.club.birthdayMonth !== null) await recordEviteEvent(supabase, eviteId, 'birthday_month_saved')
+    if (clubFresh) await recordEviteEvent(supabase, eviteId, 'club_opted_in')
+    if (monthSaved) await recordEviteEvent(supabase, eviteId, 'birthday_month_saved')
+  }
+  if (p.club && consentVersion && clubFresh) {
     fireClubOptIn(supabase, {
       email: p.club.email,
       parentName: String(row.parent_name ?? existing.parent_name),

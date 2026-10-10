@@ -109,4 +109,32 @@ describe('migration 068 text', () => {
     expect(SQL).not.toMatch(/CONSTRAINT evites_slug_key/)
     expect(SQL).not.toMatch(/CONSTRAINT evites_booking_id_key/)
   })
+
+  // ---- v1.2 (adversarial review): the reminder address caps count when the address was SET
+  it('evite_rsvps.reminder_set_at exists, and a stored reminder_email must have one (a CHECK, not a convention)', () => {
+    const table = SQL.match(/CREATE TABLE evite_rsvps\s*\([\s\S]*?\n\);/)![0]
+    expect(table).toMatch(/\breminder_set_at\s+timestamptz\b/)
+    expect(table).toMatch(/CONSTRAINT rsvp_reminder_email_has_set_at CHECK \(reminder_email IS NULL OR reminder_set_at IS NOT NULL\)/)
+  })
+
+  it('the 24-hour cap function counts reminder_set_at, never created_at (a PATCH on an old row is a new ask)', () => {
+    const fn = SQL.match(/CREATE FUNCTION evite_reminder_email_recent\(p_email text\)[\s\S]*?\$\$;/)![0]
+    expect(fn).toMatch(/reminder_set_at > now\(\) - interval '24 hours'/)
+    expect(fn).not.toMatch(/created_at/)
+    expect(fn).toMatch(/SECURITY INVOKER/)
+    expect(fn).toMatch(/lower\(reminder_email\) = lower\(btrim\(p_email\)\)/)
+  })
+
+  it('the per-evite cap function counts the held address on ONE invitation, and both are revoked from anon/authenticated', () => {
+    const fn = SQL.match(/CREATE FUNCTION evite_reminder_email_on_evite\(p_evite_id uuid, p_email text\)[\s\S]*?\$\$;/)![0]
+    expect(fn).toMatch(/evite_id = p_evite_id/)
+    expect(fn).toMatch(/lower\(reminder_email\) = lower\(btrim\(p_email\)\)/)
+    expect(fn).toMatch(/SECURITY INVOKER/)
+    expect(SQL).toMatch(/REVOKE ALL ON FUNCTION evite_reminder_email_on_evite\(uuid, text\) FROM anon, authenticated/)
+    expect(RAW).toMatch(/DROP FUNCTION IF EXISTS evite_reminder_email_on_evite\(uuid, text\)/)
+  })
+
+  it('the reminder index is on (lower(reminder_email), reminder_set_at)', () => {
+    expect(SQL).toMatch(/CREATE INDEX idx_evite_rsvps_reminder_email ON evite_rsvps \(lower\(reminder_email\), reminder_set_at\) WHERE reminder_email IS NOT NULL/)
+  })
 })

@@ -596,6 +596,59 @@ export function ruleE9(files: Files): Verdict {
   return { examined, offenders }
 }
 
+/* ── E11 (spec v1.2) ──────────────────────────────────────────── */
+
+/**
+ * E11: every public handler that RESOLVES an invitation slug spends the shared page/beacon/cal allowance
+ * (`eviteViewRule`) before it reads. The RSVP routes answer 404 for an unknown slug, so with only their own,
+ * more generous, rule they were a second enumeration oracle beside the page.
+ */
+export function ruleE11(files: Files): Verdict {
+  const offenders: string[] = []
+  let examined = 0
+  for (const rel of inScope(files, PUBLIC_RE)) {
+    if (!/\/route\.ts$/.test(rel)) continue
+    for (const h of handlersOf(files[rel])) {
+      // the RSVP handlers resolve through `openGate`; the other public routes call the resolver themselves
+      if (!/\bresolveEviteBySlug\s*\(|\bopenGate\s*\(/.test(h.body)) continue
+      examined++
+      const body = squash(h.body)
+      const m = /const (\w+) = guardRate\(req, eviteViewRule\) if \(\1\) return \1/.exec(body)
+      const first = body.search(/\bawait\b|\bgetSupabase\s*\(|\.from\s*\(/)
+      if (!m) offenders.push(`${rel} ${h.name}: no guardRate(req, eviteViewRule) that returns`)
+      else if (first >= 0 && first < m.index) offenders.push(`${rel} ${h.name}: a read precedes the view allowance`)
+    }
+  }
+  if (examined === 0) offenders.push('E11 examined no handler (the rule would pass vacuously)')
+  return { examined, offenders }
+}
+
+/* ── E12 (spec v1.2) ──────────────────────────────────────────── */
+
+/**
+ * E12: `renderEvite` is called from `render.ts` ONLY. Every other caller goes through the process-wide
+ * concurrency-1 queue (`queueRender` fire-and-forget, `renderViaQueue` awaited): sharp holds a whole canvas per
+ * render, and a direct call beside a queued one runs two at once.
+ */
+export function ruleE12(files: Files): Verdict {
+  const offenders: string[] = []
+  let examined = 0
+  for (const rel of Object.keys(files)) {
+    examined++
+    if (rel === 'lib/evites/render.ts') continue
+    if (/\brenderEvite\s*\(/.test(files[rel]) || /import\s*\{[^}]*\brenderEvite\b[^}]*\}\s*from/.test(files[rel])) offenders.push(`${rel}: uses renderEvite directly`)
+  }
+  const render = files['lib/evites/render.ts']
+  if (render === undefined) offenders.push('lib/evites/render.ts is missing')
+  else {
+    examined++
+    const via = fnNamed(render, 'renderViaQueue')
+    if (!via) offenders.push('renderViaQueue not found')
+    else if (!/queue\(\)/.test(via.body) || !/pump\(q\)/.test(via.body)) offenders.push('renderViaQueue does not go through the shared queue')
+  }
+  return { examined, offenders }
+}
+
 /* ── copy (review C15, SOW S18) ───────────────────────────────── */
 
 /** Not one of the spec's ten, but the same kind of rule: the feature's customer-facing name is "Host Hampton EVITE". */
@@ -627,8 +680,12 @@ const FLOORS: Record<string, number> = {
   E7: 8,
   E8: 70,
   E9: 14,
+  // the rsvp POST and PATCH (through openGate), the token GET, the event beacon and the cal route
+  E11: 5,
+  // every non-test source file under src/
+  E12: 300,
 }
-const RULES: Record<string, (f: Files) => Verdict> = { E1: ruleE1, E2: ruleE2, E3: ruleE3, E4: ruleE4, E5: ruleE5, E6: ruleE6, E7: ruleE7, E8: ruleE8, E9: ruleE9 }
+const RULES: Record<string, (f: Files) => Verdict> = { E1: ruleE1, E2: ruleE2, E3: ruleE3, E4: ruleE4, E5: ruleE5, E6: ruleE6, E7: ruleE7, E8: ruleE8, E9: ruleE9, E11: ruleE11, E12: ruleE12 }
 
 describe('the surface is read', () => {
   it('the tree was read, with the files the rules name', () => {
@@ -793,6 +850,36 @@ describe('E9: the render store path is size-guarded and offline', () => {
   })
 })
 
+describe('E11: every public handler that resolves a slug spends the shared view allowance first', () => {
+  it('holds on the tree', () => {
+    const v = ruleE11(disk())
+    expect(v.offenders).toEqual([])
+    expect(v.examined).toBeGreaterThanOrEqual(FLOORS.E11)
+  })
+  it('fires: dropping the view allowance, or reading before it, is an offender', () => {
+    const rel = 'app/api/i/[slug]/rsvp/route.ts'
+    const real = disk()[rel]
+    expect(ruleE11({ ...disk(), [rel]: real.replace(/const viewLimited = guardRate\(req, eviteViewRule\)\s*if \(viewLimited\) return viewLimited/g, '') }).offenders.length).toBeGreaterThan(0)
+    expect(ruleE11({ ...disk(), [rel]: real.replace(/(export async function POST\([^)]*\)[^{]*\{)/, '$1 const s = getSupabase();') }).offenders.length).toBeGreaterThan(0)
+    const tok = 'app/i/[slug]/rsvp/[token]/route.ts'
+    expect(ruleE11({ ...disk(), [tok]: disk()[tok].replace(/guardRate\(req, eviteViewRule\)/, 'null') }).offenders.length).toBeGreaterThan(0)
+  })
+})
+
+describe('E12: no direct renderEvite call outside render.ts', () => {
+  it('holds on the tree', () => {
+    const v = ruleE12(disk())
+    expect(v.offenders).toEqual([])
+    expect(v.examined).toBeGreaterThanOrEqual(FLOORS.E12)
+  })
+  it('fires: a direct call from the cron or the admin route is an offender', () => {
+    for (const rel of ['lib/evites/cronTick.ts', 'app/api/admin/parties/[id]/invitation/route.ts']) {
+      const real = disk()[rel]
+      expect(ruleE12({ ...disk(), [rel]: real.replace('renderViaQueue(', 'renderEvite(') }).offenders.length).toBeGreaterThan(0)
+    }
+  })
+})
+
 describe('copy: the feature is called "Host Hampton EVITE" (review C15)', () => {
   it('no "digital EVITE" wording survives anywhere in src', () => {
     const v = ruleCopy(disk())
@@ -815,7 +902,7 @@ describe('E10: every rule examined what it claims, and no tripwire is switched o
       expect({ id, offenders: v.offenders }).toEqual({ id, offenders: [] })
       expect(v.examined).toBeGreaterThanOrEqual(FLOORS[id])
     }
-    expect(Object.keys(counts).sort()).toEqual(['E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8', 'E9'])
+    expect(Object.keys(counts).sort()).toEqual(['E1', 'E11', 'E12', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8', 'E9'])
   })
 
   it('the bound functions are never given an empty tree (the harness cannot be run on nothing)', () => {

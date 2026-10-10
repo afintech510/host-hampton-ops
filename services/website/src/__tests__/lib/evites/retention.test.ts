@@ -9,7 +9,7 @@ import { runEviteSendsTick } from '@/lib/evites/cronTick'
  */
 
 jest.mock('@/lib/evites/mail')
-jest.mock('@/lib/evites/render', () => ({ queueRender: jest.fn(), renderEvite: jest.fn() }))
+jest.mock('@/lib/evites/render', () => ({ queueRender: jest.fn(), renderEvite: jest.fn(), renderViaQueue: jest.fn() }))
 let db: SendDb
 jest.mock('@/lib/supabase', () => ({ getSupabase: () => db.supabase }))
 

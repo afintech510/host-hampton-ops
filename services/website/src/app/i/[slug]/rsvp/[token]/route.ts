@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { eviteRsvpRule, guardRate } from '@/lib/rateLimit'
+import { eviteRsvpRule, eviteViewRule, guardRate } from '@/lib/rateLimit'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { resolveEviteBySlug } from '@/lib/evites/resolve'
 import { verifyEditToken } from '@/lib/evites/rsvpToken'
@@ -44,6 +44,9 @@ const STOP_FAILED_HTML =
   '<p>Please try the link again in a moment. If it keeps failing, call us on (631) 998-9325.</p></body></html>'
 
 export async function GET(req: NextRequest, { params }: Params) {
+  // The shared page/beacon/cal ceiling too (v1.2): this route resolves the slug as well.
+  const viewLimited = guardRate(req, eviteViewRule)
+  if (viewLimited) return viewLimited
   const limited = guardRate(req, eviteRsvpRule)
   if (limited) return limited
 

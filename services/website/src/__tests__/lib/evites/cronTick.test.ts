@@ -2,8 +2,8 @@ import { cronDb, ticks, rowsOf, runTicks, fakeRenderer, freshenRender, EVITE_ID,
 import { guestRsvp, rsvpRow, sendRow, uuid, type SendDb } from '../../helpers/sendFixtures'
 import { __resetRateLimitForTests } from '@/lib/rateLimit'
 import { sendEviteEmail } from '@/lib/evites/mail'
-import { renderEvite, queueRender } from '@/lib/evites/render'
-import { runEviteSendsTick, STEP7_SENDS_PER_TICK, type TickReport } from '@/lib/evites/cronTick'
+import { renderViaQueue, queueRender } from '@/lib/evites/render'
+import { runEviteSendsTick, scanRanges, SCAN_LIMIT, SCAN_NEWEST, STEP7_SENDS_PER_TICK, type TickReport } from '@/lib/evites/cronTick'
 import { loadSendContext } from '@/lib/evites/sendContext'
 import { calInputsHash } from '@/lib/evites/hash'
 
@@ -18,12 +18,12 @@ import { calInputsHash } from '@/lib/evites/hash'
  */
 
 jest.mock('@/lib/evites/mail')
-jest.mock('@/lib/evites/render', () => ({ queueRender: jest.fn(), renderEvite: jest.fn() }))
+jest.mock('@/lib/evites/render', () => ({ queueRender: jest.fn(), renderEvite: jest.fn(), renderViaQueue: jest.fn() }))
 let db: SendDb
 jest.mock('@/lib/supabase', () => ({ getSupabase: () => db.supabase }))
 
 const mailMock = sendEviteEmail as jest.Mock
-const renderMock = renderEvite as jest.Mock
+const renderMock = renderViaQueue as jest.Mock
 const ENV = ['EVITES_PAGES', 'EVITES_SENDS', 'EVITES_PILOT_REFS', 'PORTAL_LINK_SIGNING_SECRET', 'SUPABASE_URL'] as const
 const saved: Record<string, string | undefined> = {}
 const clock = { now: new Date('2026-10-31T12:00:00Z') }
@@ -660,6 +660,45 @@ describe('the 50-send budget and the orphan sweep', () => {
     await runTicks(db, ticks('2026-11-03T12:00:00Z', '2026-11-03T13:00:00Z'), (n) => (clock.now = n))
     expect(mailMock).toHaveBeenCalledTimes(2)
   })
+
+  describe('v1.2: rsvp_confirmed is owed only to an address that was SET inside the look-back', () => {
+    const now = new Date('2026-11-03T12:00:00Z')
+    const ago = (ms: number) => new Date(now.getTime() - ms).toISOString()
+    const invited = sendRow({ rsvp_id: null, send_type: 'invite_ready', ref_version: 0, status: 'sent' })
+    const types = (id: string) => db.tables.evite_sends.filter((s) => s.rsvp_id === id).map((s) => s.send_type).sort()
+
+    it('an RSVP merely TOUCHED (a name edit) whose address was set ten days ago gets its parent notice but its address is NOT mailed', async () => {
+      const R = uuid()
+      db = await liveDb({
+        rsvps: [guestRsvp({ id: R, reminder_email: 'old@example.com', created_at: ago(10 * DAY), reminder_set_at: ago(10 * DAY), updated_at: ago(HOUR), revision: 2 })],
+        sends: [invited],
+      }, now)
+      await runTicks(db, [now], (n) => (clock.now = n))
+      expect(types(R)).toEqual(['rsvp_changed'])
+      expect(mails().map((m) => m.to)).not.toContain('old@example.com')
+    })
+
+    it('an address SET by a recent PATCH on an old row, never confirmed, is confirmed once (it passed the capped path when it was set)', async () => {
+      const R = uuid()
+      db = await liveDb({
+        rsvps: [guestRsvp({ id: R, reminder_email: 'new@example.com', created_at: ago(10 * DAY), reminder_set_at: ago(HOUR), updated_at: ago(HOUR) })],
+        sends: [invited, sendRow({ rsvp_id: R, send_type: 'new_rsvp', ref_version: 1, status: 'sent' })],
+      }, now)
+      await runTicks(db, ticks('2026-11-03T12:00:00Z', '2026-11-03T12:30:00Z'), (n) => (clock.now = n))
+      expect(types(R)).toEqual(['new_rsvp', 'rsvp_confirmed'])
+      expect(mails().filter((m) => m.to === 'new@example.com')).toHaveLength(1)
+    })
+
+    it('an address set before the look-back is never swept, however recently the row was updated', async () => {
+      const R = uuid()
+      db = await liveDb({
+        rsvps: [guestRsvp({ id: R, reminder_email: 'old@example.com', created_at: ago(5 * DAY), reminder_set_at: ago(3 * DAY), updated_at: ago(HOUR) })],
+        sends: [invited, sendRow({ rsvp_id: R, send_type: 'new_rsvp', ref_version: 1, status: 'sent' })],
+      }, now)
+      await runTicks(db, [now], (n) => (clock.now = n))
+      expect(types(R)).toEqual(['new_rsvp'])
+    })
+  })
 })
 
 // ============================================================================================
@@ -822,5 +861,109 @@ describe('day_before is not blocked on the unworded studio arrival note', () => 
     const m = mails().find((x) => x.to === 'a@example.com')
     expect(m).toBeDefined()
     expect(m?.text).not.toContain('TODO')
+  })
+})
+
+// ============================================================================================
+describe('v1.2 finding 9: the scan window cannot be filled by finished parties', () => {
+  const FILLER_ID = (i: number) => `f0000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+  /** `n` invitations for parties that finished in June, and so have nothing left to do. */
+  const addFillers = (d: SendDb, n: number, when: { created_at: string; updated_at: string }) => {
+    for (let i = 0; i < n; i++) {
+      d.tables.bookings.push({
+        id: `fb-${i}`,
+        booking_ref: `HH-FILL-${i}`,
+        status: 'deposit_paid',
+        party_type: 'in_studio_theme',
+        party_date: '2026-06-06',
+        party_time: '14:00',
+        package_type: 'Glow Party',
+        child_name: `Kid${i}`,
+        contact_email: `f${i}@example.com`,
+        party_tags: {},
+        created_at: when.created_at,
+        updated_at: when.updated_at,
+      })
+      d.tables.evites.push({
+        id: FILLER_ID(i),
+        booking_id: `fb-${i}`,
+        slug: `kid-glow-${String(i).padStart(4, '0')}`,
+        archived_at: null,
+        went_live_at: '2026-05-01T00:00:00Z',
+        cancelled_notice_at: null,
+        cal_version: 0,
+        previous_slugs: [],
+        ...when,
+      })
+    }
+  }
+  const guestsFor = () => {
+    const old = { created_at: '2026-10-20T12:00:00Z', updated_at: '2026-10-20T12:00:00Z' }
+    return [guestRsvp({ id: uuid(), reminder_email: 'a@example.com', ...old }), guestRsvp({ id: uuid(), reminder_email: 'b@example.com', ...old })]
+  }
+
+  it('200 finished parties that nothing ever writes to (oldest updated_at) do not stop a LIVE party from getting its week_before', async () => {
+    db = await liveDb({ rsvps: guestsFor() })
+    addFillers(db, 200, { created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' })
+    const [r] = await runTicks(db, [new Date('2026-11-07T15:00:00Z')], (n) => (clock.now = n))
+    expect(r.scan.truncated).toBe(true) // rotation is in effect, and says so
+    expect(r.scan.evites).toBeLessThanOrEqual(150)
+    expect(r.scan.active).toBe(1)
+    expect(rowsOf(db, 'week_before')).toHaveLength(2)
+  })
+
+  it('a party NEWER than 200 finished ones (so it sits behind the newest 60) is still reached within two ticks by the rotation', async () => {
+    db = await liveDb({ rsvps: guestsFor() })
+    addFillers(db, 200, { created_at: '2026-10-25T00:00:00Z', updated_at: '2026-10-25T00:00:00Z' })
+    const seen: number[] = []
+    const reports = await runTicks(db, ticks('2026-11-07T15:00:00Z', '2026-11-07T15:15:00Z'), (n) => (clock.now = n))
+    for (const r of reports) {
+      seen.push(r.scan.active)
+      expect(r.scan.evites).toBeLessThanOrEqual(150)
+    }
+    expect(seen.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(1)
+    expect(rowsOf(db, 'week_before')).toHaveLength(2)
+  })
+
+  it('scanRanges: always the newest 60, plus a slice that advances; every index is covered within ceil(rest/90) consecutive ticks, for any list size', () => {
+    for (const total of [151, 200, 241, 300, 301, 1000, 1234]) {
+      const rest = total - SCAN_NEWEST
+      const need = Math.ceil(rest / (SCAN_LIMIT - SCAN_NEWEST))
+      for (const start of [0, 1, 7, 12345]) {
+        const covered = new Set<number>()
+        for (let t = start; t < start + need; t++) {
+          const ranges = scanRanges(total, t)
+          let size = 0
+          for (const [from, to] of ranges) {
+            expect(from).toBeGreaterThanOrEqual(0)
+            expect(to).toBeLessThanOrEqual(total - 1)
+            for (let i = from; i <= to; i++) covered.add(i)
+            size += to - from + 1
+          }
+          expect(size).toBe(SCAN_LIMIT) // a full window every tick
+          expect(ranges[0]).toEqual([0, SCAN_NEWEST - 1]) // the newest are never rotated out
+        }
+        expect(covered.size).toBe(total)
+      }
+    }
+    expect(scanRanges(150, 99)).toEqual([[0, 149]])
+    expect(scanRanges(0, 99)).toEqual([])
+  })
+
+  it('with 150 or fewer invitations nothing rotates and nothing is skipped', async () => {
+    db = await liveDb({ rsvps: guestsFor() })
+    addFillers(db, 100, { created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' })
+    const [r] = await runTicks(db, [new Date('2026-11-07T15:00:00Z')], (n) => (clock.now = n))
+    expect(r.scan.truncated).toBe(false)
+    expect(r.scan.evites).toBe(101)
+    expect(r.scan.past).toBe(100)
+  })
+
+  it('an unreadable count is "could not read", never "nothing to do"', async () => {
+    db = await liveDb({ rsvps: guestsFor() })
+    db.errors.push({ table: 'evites', op: 'select', times: 1000 })
+    const [r] = await runTicks(db, [new Date('2026-11-07T15:00:00Z')], (n) => (clock.now = n))
+    expect(r.scan.unavailable).toBe(true)
+    expect(rowsOf(db, 'week_before')).toHaveLength(0)
   })
 })

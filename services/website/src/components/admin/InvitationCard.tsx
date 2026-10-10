@@ -129,7 +129,7 @@ function kidsText(kids: number, cap: number | null): string {
   return cap !== null ? `${kids} of ${cap} kids` : `${kids} kid${kids === 1 ? '' : 's'}`
 }
 
-export type InvitationAction = 'ensure' | 'rerender' | 'archive' | 'unarchive' | 'set_theme' | 'reslug' | 'notify_cancelled'
+export type InvitationAction = 'ensure' | 'rerender' | 'archive' | 'unarchive' | 'set_theme' | 'reslug' | 'notify_cancelled' | 'void_rsvp'
 
 export interface InvitationViewProps {
   data: InvitationPayload
@@ -424,6 +424,18 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
                     ) : (
                       <span className="text-gray-400">no contact</span>
                     )}
+                    <div>
+                      <button
+                        type="button"
+                        className="underline text-red-700 disabled:opacity-50"
+                        disabled={working}
+                        onClick={() => onAction('void_rsvp', { rsvpId: r.id })}
+                        title="Deletes this answer (for a junk or mistaken RSVP)"
+                        data-testid="remove-rsvp"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 </li>
               )
@@ -550,6 +562,7 @@ const CONFIRMS: Partial<Record<InvitationAction, string>> = {
   archive: 'Archive this invitation? The public link stops working immediately.',
   reslug: 'Mint a new invitation link? Anyone with the old link is forwarded to the new one.',
   notify_cancelled: 'Email every guest who said yes that the party is cancelled? This cannot be undone.',
+  void_rsvp: 'Remove this RSVP? The answer is deleted, the headcount changes, and it cannot be restored. (A club member is also taken off the list.)',
 }
 
 export default function InvitationCard({ bookingId, headers, status, partyType, partyTags }: {
@@ -689,6 +702,8 @@ function describeSuccess(action: InvitationAction, body: Record<string, unknown>
       return typeof body?.warning === 'string' ? `Saved. ${body.warning}` : 'Theme saved; the image is re-rendering.'
     case 'reslug':
       return 'New link minted. The old one forwards to it.'
+    case 'void_rsvp':
+      return 'RSVP removed.'
     case 'notify_cancelled':
       return body?.queued === true ? 'Cancellation emails queued.' : `Not sent: ${typeof body?.reason === 'string' ? body.reason : 'nothing queued'}.`
   }

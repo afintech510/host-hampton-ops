@@ -289,15 +289,24 @@ export function inviteReadyVerdict(ctx: SendContext, now: Date): CandidateVerdic
  * claim that races the slow inline one harmless.
  *
  * Only the LATEST revision is expected: a guest on revision 3 does not need a `new_rsvp` for revision 1.
+ *
+ * `rsvp_confirmed` additionally needs `reminder_set_at` inside the lookback AND no `rsvp_confirmed` row: the address
+ * was set recently (by the POST, or by a PATCH that went through the same per-address caps) and has not been
+ * confirmed. `ms()` of a null/absent timestamp is NaN, which is never "recent".
  */
-export function planOrphans(evite: { id: string }, rsvps: readonly SendRsvpRow[], ledger: Ledger): SendKey[] {
+export function planOrphans(evite: { id: string }, rsvps: readonly SendRsvpRow[], ledger: Ledger, now: Date): SendKey[] {
+  const lookbackFrom = now.getTime() - ORPHAN_LOOKBACK_MS
   const out: SendKey[] = []
   for (const r of rsvps) {
     const parentType: EviteSendType = r.revision <= 1 ? 'new_rsvp' : 'rsvp_changed'
     if (!hasRow(ledger, r.id, parentType, r.revision)) {
       out.push({ evite_id: evite.id, rsvp_id: r.id, send_type: parentType, ref_version: r.revision })
     }
-    if (guestEligible(r) && !hasRow(ledger, r.id, 'rsvp_confirmed', 0)) {
+    // `rsvp_confirmed` is the ONE mail the sweep can originate for an address, so it is owed only when the address was
+    // SET inside the sweep's own lookback (it was passed through the capped path then). An RSVP that merely got
+    // touched (a name edit, a note) with an address set long ago is not a trigger to mail that address.
+    const setAt = ms(r.reminder_set_at)
+    if (guestEligible(r) && Number.isFinite(setAt) && setAt >= lookbackFrom && !hasRow(ledger, r.id, 'rsvp_confirmed', 0)) {
       out.push({ evite_id: evite.id, rsvp_id: r.id, send_type: 'rsvp_confirmed', ref_version: 0 })
     }
   }
