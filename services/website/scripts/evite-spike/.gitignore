@@ -1,0 +1,5 @@
+box/
+out/
+out-resvg/
+node_modules/
+box-out/
