@@ -101,3 +101,12 @@ export const ADMIN_RSVP_COLUMNS = [
   'created_at',
   'updated_at',
 ] as const
+
+/** `booking_line_items` columns the theme resolver reads. No `select('*')`. */
+export const EVITE_LINE_ITEM_COLUMNS = ['name', 'category', 'pricing_item_id'] as const
+
+/** `party_themes` columns the theme resolver reads. */
+export const EVITE_PARTY_THEME_COLUMNS = ['id', 'name', 'slug', 'pricing_item_id'] as const
+
+/** `booking_payments` columns `inviteState` needs (the pair `sumPayments()` reads). */
+export const EVITE_PAYMENT_COLUMNS = ['amount_cents', 'payment_type'] as const

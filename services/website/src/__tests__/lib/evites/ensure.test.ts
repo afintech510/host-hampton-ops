@@ -16,10 +16,15 @@ function makeFake(script: {
   lookups?: Result[]
   /** Results for successive evites INSERTs. */
   inserts?: Result[]
+  /** `booking_line_items` read. Default: no rows. */
+  lineItems?: Result
+  /** `party_themes` read. Default: the Glow row. */
+  themes?: Result
 }) {
   const calls = {
     bookingSelect: [] as string[],
     lookupSelect: [] as string[],
+    themeSelect: [] as string[],
     insertedRows: [] as Array<Record<string, unknown>>,
     lookupFilters: [] as Array<[string, unknown]>,
   }
@@ -29,6 +34,17 @@ function makeFake(script: {
     from(table: string) {
       let mode: 'select' | 'insert' = 'select'
       const b: Record<string, unknown> = {}
+      if (table === 'booking_line_items' || table === 'party_themes') {
+        // thenable: `await supabase.from(t).select(...)[.eq(...)]` resolves to the scripted result
+        const r = table === 'booking_line_items' ? script.lineItems ?? { data: [], error: null } : script.themes ?? { data: [GLOW_THEME], error: null }
+        b.select = (cols: string) => {
+          calls.themeSelect.push(`${table}: ${cols}`)
+          return b
+        }
+        b.eq = () => b
+        b.then = (resolve: (v: Result) => unknown) => resolve(r)
+        return b
+      }
       b.select = (cols: string) => {
         if (mode === 'select') (table === 'bookings' ? calls.bookingSelect : calls.lookupSelect).push(cols)
         return b
@@ -61,6 +77,7 @@ function makeFake(script: {
   return { supabase: supabase as never, calls }
 }
 
+const GLOW_THEME = { id: 't0000000-0000-4000-8000-000000000001', name: 'Glow Party', slug: 'glow-party', pricing_item_id: null }
 const BOOKING_ID = 'b0000000-0000-4000-8000-000000000001'
 const EVITE_ID = 'e0000000-0000-4000-8000-000000000001'
 
@@ -70,6 +87,7 @@ const booking = (over: Record<string, unknown> = {}): Result => ({
     booking_ref: 'HH-PTY-AAAAA',
     status: 'awaiting_deposit',
     party_type: 'in_studio_theme',
+    package_type: 'Glow Party',
     child_name: 'Mia Rose',
     party_tags: {},
     quote_snapshot: null,
@@ -356,5 +374,67 @@ describe('ensureEviteForBooking', () => {
       } as never
       await expect(ensureEviteForBooking(exploding, BOOKING_ID)).resolves.toMatchObject({ kind: 'unavailable' })
     })
+  })
+})
+
+describe('ensureEviteForBooking - the slug names the resolved theme (P03)', () => {
+  it('a Glow party is mia-glow-…', async () => {
+    const { supabase, calls } = makeFake({ booking: booking(), inserts: [inserted('mia-glow-7kq2')] })
+    await ensureEviteForBooking(supabase, BOOKING_ID)
+    expect(calls.insertedRows[0].slug).toMatch(/^mia-glow-/)
+  })
+
+  it('another catalogue theme names itself in the slug', async () => {
+    const { supabase, calls } = makeFake({
+      booking: booking({ package_type: 'Swiftie Party' }),
+      themes: { data: [GLOW_THEME, { id: 't2', name: 'Swiftie Party', slug: 'swiftie-party', pricing_item_id: null }], error: null },
+      inserts: [inserted('mia-swiftie-7kq2')],
+    })
+    await ensureEviteForBooking(supabase, BOOKING_ID)
+    expect(calls.insertedRows[0].slug).toMatch(/^mia-swiftie-/)
+  })
+
+  it('no theme evidence at all is mia-birthday-…', async () => {
+    const { supabase, calls } = makeFake({
+      booking: booking({ package_type: 'Custom Party Theme' }),
+      inserts: [inserted('mia-birthday-7kq2')],
+    })
+    await ensureEviteForBooking(supabase, BOOKING_ID)
+    expect(calls.insertedRows[0].slug).toMatch(/^mia-birthday-/)
+  })
+
+  it('a theme line item resolves through party_themes.pricing_item_id', async () => {
+    const { supabase, calls } = makeFake({
+      booking: booking({ package_type: null }),
+      lineItems: { data: [{ name: 'K-Pop Demon Hunter Party', category: 'theme', pricing_item_id: 'p-kpop' }], error: null },
+      themes: { data: [GLOW_THEME, { id: 't3', name: 'K-Pop Party', slug: 'kpop-party', pricing_item_id: 'p-kpop' }], error: null },
+      inserts: [inserted('mia-kpop-7kq2')],
+    })
+    await ensureEviteForBooking(supabase, BOOKING_ID)
+    expect(calls.insertedRows[0].slug).toMatch(/^mia-kpop-/)
+  })
+
+  it('a failed line-item or theme read is unavailable and nothing is inserted', async () => {
+    for (const script of [
+      { lineItems: { data: null, error: { message: 'timeout' } } },
+      { themes: { data: null, error: { message: 'timeout' } } },
+    ]) {
+      const { supabase, calls } = makeFake({ booking: booking(), ...script })
+      expect((await ensureEviteForBooking(supabase, BOOKING_ID)).kind).toBe('unavailable')
+      expect(calls.insertedRows).toHaveLength(0)
+    }
+  })
+
+  it('reads both tables with explicit column lists, never *', async () => {
+    const { supabase, calls } = makeFake({ booking: booking(), inserts: [inserted('mia-glow-7kq2')] })
+    await ensureEviteForBooking(supabase, BOOKING_ID)
+    expect(calls.themeSelect).toHaveLength(2)
+    for (const s of calls.themeSelect) expect(s).not.toContain('*')
+  })
+
+  it('does not read themes at all when the evite already exists', async () => {
+    const { supabase, calls } = makeFake({ booking: booking(), lookups: [existingRow()] })
+    await ensureEviteForBooking(supabase, BOOKING_ID)
+    expect(calls.themeSelect).toHaveLength(0)
   })
 })

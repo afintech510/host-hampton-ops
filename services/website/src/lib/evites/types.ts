@@ -124,3 +124,24 @@ export interface EviteBookingRow {
   quote_snapshot: unknown
   created_at: string | null
 }
+
+/** The `booking_line_items` columns the evite theme resolver reads (`EVITE_LINE_ITEM_COLUMNS`). */
+export interface EviteLineItemRow {
+  name: string | null
+  category: string | null
+  pricing_item_id: string | null
+}
+
+/** The `party_themes` columns the evite theme resolver reads (`EVITE_PARTY_THEME_COLUMNS`). */
+export interface PartyThemeRow {
+  id: string
+  name: string
+  slug: string
+  pricing_item_id: string | null
+}
+
+/** The `booking_payments` columns `inviteState` needs, i.e. what `sumPayments()` reads. */
+export interface EvitePaymentRow {
+  amount_cents: number | null
+  payment_type: string | null
+}

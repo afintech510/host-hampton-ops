@@ -28,6 +28,9 @@ import type { getSupabase } from '@/lib/supabase'
 import { evitePagesMode, isPilotBooking } from '@/lib/evites/config'
 import { isEviteEligible } from '@/lib/evites/eligibility'
 import { makeSlug } from '@/lib/evites/slug'
+import { childNameOf } from '@/lib/evites/facts'
+import { resolveTheme } from '@/lib/evites/themes'
+import { readThemeInputs } from '@/lib/evites/themeInputs'
 import { EVITE_BOOKING_COLUMNS, EVITE_LOOKUP_COLUMNS } from '@/lib/evites/views'
 import type { EviteBookingRow } from '@/lib/evites/types'
 
@@ -70,26 +73,6 @@ function uniqueViolationOf(err: PgLikeError | null | undefined): 'slug' | 'booki
   return 'other'
 }
 
-/**
- * The short theme word that goes in the slug (`mia-glow-7kq2`).
- * replaced in P03 — by `themes.ts` `resolveTheme()`. Until themes exist every
- * invitation is the Glow template, so every slug says glow.
- */
-function resolveThemeShort(_booking: EviteBookingRow): string {
-  return 'glow'
-}
-
-/** `child_name`, else `quote_snapshot.childName`. makeSlug takes the first token. */
-function childFirstName(booking: EviteBookingRow): string | null {
-  if (typeof booking.child_name === 'string' && booking.child_name.trim() !== '') return booking.child_name
-  const snap = booking.quote_snapshot
-  if (snap && typeof snap === 'object' && !Array.isArray(snap)) {
-    const v = (snap as Record<string, unknown>).childName
-    if (typeof v === 'string' && v.trim() !== '') return v
-  }
-  return null
-}
-
 async function findExisting(
   supabase: Supa,
   bookingId: string,
@@ -127,8 +110,13 @@ export async function ensureEviteForBooking(supabase: Supa, bookingId: string): 
     if (existing.kind === 'unavailable') return existing
     if (existing.kind === 'found') return { kind: 'exists', eviteId: existing.row.id, slug: existing.row.slug }
 
-    const firstName = childFirstName(booking)
-    const themeShort = resolveThemeShort(booking)
+    // The slug names the theme, so read what the theme resolver needs. A failed read
+    // is `unavailable` (the caller retries later), never a guess at the plain template.
+    const inputs = await readThemeInputs(supabase, bookingId)
+    if (inputs.kind === 'unavailable') return inputs
+
+    const firstName = childNameOf(booking)
+    const themeShort = resolveTheme(booking, inputs.lineItems, inputs.partyThemes).short
 
     for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
       const slug = makeSlug(firstName, themeShort)
