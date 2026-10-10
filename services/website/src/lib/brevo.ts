@@ -166,6 +166,44 @@ export async function addToList(
 }
 
 /**
+ * Create-or-update a contact AND put it on one list, in one call:
+ * `POST /v3/contacts { email, updateEnabled: true, listIds: [id] }`.
+ *
+ * This is the Birthday Club's add (docs/specs/evites spec §10). Three things it
+ * deliberately does NOT do:
+ *   - it sends no `attributes`, so an existing Brevo contact keeps whatever name it has;
+ *   - it never sends `emailBlacklisted`: a person who unsubscribed at Brevo STAYS
+ *     blacklisted (a list add does not clear it either - measured);
+ *   - it is not `PUT /contacts/{email}`, which is update-only (404 for a stranger).
+ *
+ * The address goes out lowercased (`brevoAddress`), the same form Brevo stores.
+ * 201 = created, 204 = already existed (updated).
+ */
+export type BrevoListUpsertResult =
+  | { kind: 'listed'; created: boolean }
+  | { kind: 'error'; status: number | null; error: string }
+
+export async function upsertListMember(email: string, listId: number): Promise<BrevoListUpsertResult> {
+  try {
+    const res = await fetch(`${BREVO_BASE}/contacts`, {
+      method: 'POST',
+      headers: brevoHeaders(),
+      body: JSON.stringify({ email: brevoAddress(email), updateEnabled: true, listIds: [listId] }),
+    })
+    if (!res.ok && res.status !== 204) {
+      const body = await res.text()
+      console.error('brevo:upsertListMember error:', res.status, body.slice(0, 300))
+      return { kind: 'error', status: res.status, error: `${res.status}: ${body.slice(0, 200)}` }
+    }
+    return { kind: 'listed', created: res.status === 201 }
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('brevo:upsertListMember exception:', error)
+    return { kind: 'error', status: null, error }
+  }
+}
+
+/**
  * Remove a contact from a Brevo list by list ID.
  * POST /contacts/lists/{listId}/contacts/remove
  * Returns true on success, null on error.

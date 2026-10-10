@@ -2593,7 +2593,7 @@ export default function PartyBuilderContent({
             <h3 className="font-serif font-bold text-lg text-hampton-navy mb-1">All-Inclusive Celebration</h3>
             <p className="text-xs text-hampton-navy/70 leading-relaxed font-medium">
               Every package includes 2 hours of private studio time, a dedicated party host, full themed decorations,
-              activities &amp; entertainment, pizza or bagels, cupcakes for all guests, treat cart, digital EVITE, and complete cleanup.
+              activities &amp; entertainment, pizza or bagels, cupcakes for all guests, treat cart, Host Hampton EVITE, and complete cleanup.
               {INCLUDED_GUESTS} guests + Birthday Star included. Additional guests {fmt(EXTRA_GUEST_CENTS)} each.
             </p>
           </div>

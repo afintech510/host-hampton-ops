@@ -88,7 +88,7 @@ export async function GET() {
     `- Mini Party: ${usd(g.miniPartyDiscountCents)} off the classic price, 1.5 hours, for a smaller guest list. ` +
       `(A "starting at" price ${usd(g.miniPartyDiscountCents)} below a theme's classic price is the Mini Party price, not a different rate.)`,
     `- Deposit: a flat ${usd(BOOKING_DEPOSIT_CENTS)} holds the date and comes off the total.`,
-    '- Included: a dedicated host, full themed decor and setup, the theme activities, pizza or bagels, cupcakes, juice and water, a treat cart, a digital invitation, and full cleanup.',
+    '- Included: a dedicated host, full themed decor and setup, the theme activities, pizza or bagels, cupcakes, juice and water, a treat cart, a Host Hampton EVITE, and full cleanup.',
     '',
   )
   if (themes.length) {

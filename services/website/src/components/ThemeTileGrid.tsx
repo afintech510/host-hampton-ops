@@ -27,7 +27,7 @@ const included = [
   'Cupcakes for all guests',
   'Juice boxes and bottled water for all guests',
   'Treat cart',
-  'Digital EVITE invitation',
+  'Host Hampton EVITE',
   'Full cleanup — you walk out the door stress-free',
 ]
 

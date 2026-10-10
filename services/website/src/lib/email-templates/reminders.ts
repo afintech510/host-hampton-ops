@@ -197,7 +197,7 @@ export function reminderBooking7DayHtml(params: ReminderBooking7DayParams): stri
       <table style="width:100%;font-size:13px;color:${BRAND.gray};">
         <tr><td style="padding:5px 0;vertical-align:top;width:20px;">&#9744;</td><td style="padding:5px 0;">Confirm your headcount with us if it has changed</td></tr>
         <tr><td style="padding:5px 0;vertical-align:top;">&#9744;</td><td style="padding:5px 0;">Let us know of any food allergies or special accommodations</td></tr>
-        <tr><td style="padding:5px 0;vertical-align:top;">&#9744;</td><td style="padding:5px 0;">Share your digital EVITE with guests if you haven&rsquo;t already</td></tr>
+        <tr><td style="padding:5px 0;vertical-align:top;">&#9744;</td><td style="padding:5px 0;">Share your Host Hampton EVITE with guests if you haven&rsquo;t already</td></tr>
         <tr><td style="padding:5px 0;vertical-align:top;">&#9744;</td><td style="padding:5px 0;">Arrange cake pickup / delivery for party day</td></tr>
       </table>
     </div>

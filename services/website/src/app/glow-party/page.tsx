@@ -33,7 +33,7 @@ const whatsIncluded = [
   { icon: Camera, text: 'Neon balloon arch & glowing photo backdrop — perfect for pics' },
   { icon: Check,  text: 'Professional party host on-site for the full 2 hours' },
   { icon: Check,  text: 'Pizza or bagels + cupcakes + juice boxes & bottled water for all guests' },
-  { icon: Check,  text: 'Digital EVITE invitation + full setup & cleanup — zero stress' },
+  { icon: Check,  text: 'Host Hampton EVITE + full setup & cleanup — zero stress' },
 ]
 
 const packages = [

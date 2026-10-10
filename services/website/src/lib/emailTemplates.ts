@@ -510,7 +510,7 @@ export function bookingConfirmationHtml(raw: BookingConfirmationData): string {
         <li>Remaining balance is due <strong>${d.balanceDueDate}</strong></li>
       </ol>` : `<ol style="margin:0;padding-left:20px;color:${BRAND.gray};line-height:2;font-size:14px;">
         <li>We'll reach out <strong>within 24 hours</strong> to confirm your booking details</li>
-        <li>You'll receive a personalized themed EVITE digital invitation</li>
+        <li>You'll receive a personalized, themed Host Hampton EVITE</li>
         <li>We'll work together to finalize themes, activities &amp; fun details</li>
         <li>Remaining balance is due <strong>${d.balanceDueDate}</strong></li>
       </ol>`}

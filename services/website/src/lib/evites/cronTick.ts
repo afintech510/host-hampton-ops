@@ -16,6 +16,7 @@
  *   7  party_cancelled, details_changed, week_before, day_before, final_headcount, then the orphan sweep -
  *                      50 claimed sends a tick IN TOTAL
  *   8  Retention       lib/evites/retention.ts
+ *   8b Club retry      Birthday Club opt-ins whose contact link never landed (lib/evites/club.ts `retryClubLinks`, 10 a tick)
  *   9  Report          COUNTS PER STEP AND OUTCOME ONLY. No name, address, slug or booking ref.
  *
  * FLAGS. `EVITES_PAGES` gates steps 1-3 and retention; `EVITES_SENDS` gates steps 4-7 (and needs pages on:
@@ -76,6 +77,7 @@ import {
   type LedgerRow,
 } from '@/lib/evites/cronDue'
 import { chunks, IN_CHUNK, runRetention, type RetentionReport } from '@/lib/evites/retention'
+import { emptyClubRetryReport, retryClubLinks, type ClubRetryReport } from '@/lib/evites/club'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -145,6 +147,8 @@ export interface TickReport {
     orphans: Tally
   }
   retention: RetentionReport | null
+  /** Step 8b: counts only. */
+  clubRetry: ClubRetryReport
   timedOut: boolean
   errors: number
   failedSteps: string[]
@@ -175,6 +179,7 @@ function newReport(pages: EviteMode, sends: EviteMode): TickReport {
       orphans: tally(),
     },
     retention: null,
+    clubRetry: emptyClubRetryReport(),
     timedOut: false,
     errors: 0,
     failedSteps: [],
@@ -822,6 +827,11 @@ export async function runEviteSendsTick(supabase: Supa, opts: { now?: Date } = {
     await guarded(run, 'retention', async () => {
       rep.retention = await runRetention(supabase, { now })
       if (rep.retention.errors > 0) noteError(run, 'retention')
+    })
+    // Step 8b: a club opt-in whose contact link could not be made inline. Counts only; never a name or address.
+    await guarded(run, 'clubRetry', async () => {
+      rep.clubRetry = await retryClubLinks(supabase, { now })
+      if (rep.clubRetry.readFailed) noteError(run, 'clubRetry')
     })
   }
 

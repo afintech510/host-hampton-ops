@@ -38,8 +38,8 @@ import {
  * A response carries ONE RSVP, the caller's own, reduced to PUBLIC_RSVP_SELF_COLUMNS
  * by `ownRsvpView`. `id` / `evite_id` are never read from the body.
  *
- * Emails are NOT sent here: `rsvpHooks` (no-ops until P09) and the club hooks
- * (no-ops until P10) are fired without being awaited.
+ * Emails are NOT sent here: `rsvpHooks` (P09) and the club hooks (`lib/evites/club.ts`, P10) are fired
+ * without being awaited.
  */
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'

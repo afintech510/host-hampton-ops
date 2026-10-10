@@ -37,6 +37,8 @@ const SURFACE = [
   'lib/sequences.ts',
   'lib/smsOptOut.ts',
   'lib/brevo.ts',
+  // The Birthday Club (spec §10): resolves a person by the shared lookup and INSERTs only when absent.
+  'lib/evites/club.ts',
   'lib/quo.ts',
   'app/api/webhooks/quo/route.ts',
   'app/api/webhooks/twilio/route.ts',

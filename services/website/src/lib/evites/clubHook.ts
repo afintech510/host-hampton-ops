@@ -1,39 +1,31 @@
 /**
- * The Birthday Club side effects of an RSVP PATCH, as INJECTED functions
- * (spec §10). P06 stores the consent on the RSVP row (`club_opt_in_at`,
- * `opt_in_text_version`, `consent_ip`, `club_email`) and then calls these. They are
- * no-ops until P10 replaces them with `recordClubOptIn` / `recordClubOptOut` from
- * `lib/evites/club.ts` (contact link, Brevo list).
+ * The Birthday Club side effects of an RSVP PATCH, as INJECTABLE functions (spec §10). The RSVP PATCH stores
+ * the consent on the RSVP row (`club_opt_in_at`, `opt_in_text_version`, `consent_ip`, `club_email`) and then
+ * calls these. The defaults are `recordClubOptIn` / `recordClubOptOut` from `lib/evites/club.ts` (contact
+ * link, Brevo list); tests replace them.
  *
- * Same contract as `rsvpHooks`: fired without awaiting, never throws. The consent
- * record is the RSVP row, so a failure here loses nothing the cron cannot retry
- * (`club_opt_in_at IS NOT NULL AND contact_id IS NULL`).
+ * Same contract as `rsvpHooks`: fired without awaiting, never throws. The consent record is the RSVP row,
+ * so a failure here loses nothing the cron cannot retry
+ * (`club_opt_in_at IS NOT NULL AND contact_id IS NULL`, `retryClubLinks`).
  */
 
 import type { getSupabase } from '@/lib/supabase'
+import { recordClubOptIn, recordClubOptOut, type ClubOptInInput, type ClubOptOutInput } from '@/lib/evites/club'
+
+export type { ClubOptInInput, ClubOptOutInput }
 
 type Supa = ReturnType<typeof getSupabase>
-
-export interface ClubOptInInput {
-  email: string
-  parentName: string
-  birthdayMonth: number | null
-  slug: string
-  consentVersion: string
-  rsvpId: string
-}
-
-export interface ClubOptOutInput {
-  email: string | null
-  rsvpId: string
-}
 
 export const clubHooks: {
   recordClubOptIn: (supabase: Supa, input: ClubOptInInput) => void | Promise<void>
   recordClubOptOut: (supabase: Supa, input: ClubOptOutInput) => void | Promise<void>
 } = {
-  recordClubOptIn: () => undefined,
-  recordClubOptOut: () => undefined,
+  recordClubOptIn: async (supabase, input) => {
+    await recordClubOptIn(supabase, input)
+  },
+  recordClubOptOut: async (supabase, input) => {
+    await recordClubOptOut(supabase, input)
+  },
 }
 
 function swallow(name: string, out: void | Promise<void>): void {

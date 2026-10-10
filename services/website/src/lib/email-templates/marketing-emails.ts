@@ -127,7 +127,7 @@ export function marketingPartiesHtml(params: MarketingPartiesParams): string {
           <li>2-hour private party room</li>
           <li>Theme-coordinated decor &amp; setup</li>
           <li>Party coordinator on-site</li>
-          <li>Custom digital EVITE invitation</li>
+          <li>Custom Host Hampton EVITE</li>
           <li>Up to 15 children included</li>
         </ul>
       </div>
