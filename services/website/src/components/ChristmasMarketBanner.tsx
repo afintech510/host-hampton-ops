@@ -56,6 +56,7 @@ const HIDDEN_PREFIXES = [
   '/checkin',
   '/r/',
   '/s/',
+  '/i/', // a guest's evite: no site promotions on a child's invitation
 ]
 
 export default function ChristmasMarketBanner() {

@@ -101,6 +101,7 @@ describe('the private and internal routes say noindex', () => {
     'plan/layout.tsx',
     'review/layout.tsx',
     'checkin/layout.tsx',
+    'i/layout.tsx',
     'book/success/page.tsx',
     'events/success/page.tsx',
     'gift-cards/success/page.tsx',

@@ -58,6 +58,7 @@ export interface RateLimitRule {
 
 export const MINUTE_MS = 60_000
 export const HOUR_MS = 60 * MINUTE_MS
+export const DAY_MS = 24 * HOUR_MS
 
 /**
  * The default for a form that writes rows and sends mail.
@@ -141,6 +142,32 @@ export function webhookRule(route: string): RateLimitRule {
   return { route, perCaller: 240, perRoute: 300, windowMs: 10 * MINUTE_MS }
 }
 
+/**
+ * The invitation page `/i/[slug]` AND its view beacon `/api/i/[slug]/event`
+ * (spec §7.1, §13). ONE rule, so the page and the beacon share one allowance.
+ *
+ * The page is the enumeration oracle for a four-character slug suffix, so what
+ * matters is the ROUTE ceiling: 1,500 per 10 minutes holds even when every
+ * per-caller key is forged (see the header on why `CF-Connecting-IP` is
+ * forgeable), and bounds a single name prefix to about ten days of exhaustive
+ * search. The beacon answers 404 for an unknown slug and 204 for a real one, so
+ * it is the same oracle and must be inside the same ceiling. One real view is
+ * two requests (the page, then the beacon), which still leaves ~750 real views
+ * per 10 minutes for the whole site; the busiest public route took 23 requests
+ * in ten days. Per caller, 60 is thirty views: a household reloading a card.
+ *
+ * A flood therefore slows every invite for ten minutes. That trade is stated in
+ * spec §13.1 and accepted: unavailable is better than enumerable.
+ */
+export const eviteViewRule: RateLimitRule = { route: 'evite-view', perCaller: 60, perRoute: 1500, windowMs: 10 * MINUTE_MS }
+
+/**
+ * `POST/PATCH /api/i/[slug]/rsvp` (spec §7.5). 10 per caller per 10 minutes is a
+ * family correcting an RSVP; 600 per route is the ceiling that holds. Defined
+ * here for the RSVP routes (P06) so the numbers live beside their siblings.
+ */
+export const eviteRsvpRule: RateLimitRule = { route: 'evite-rsvp', perCaller: 10, perRoute: 600, windowMs: 10 * MINUTE_MS }
+
 // ───────────────────────────────────────────────────────────────────────────
 // Caller identity
 // ───────────────────────────────────────────────────────────────────────────
@@ -164,6 +191,21 @@ function looksLikeIp(value: string): boolean {
  * always exists but identifies Cloudflare rather than the visitor.
  */
 export function callerKey(req: NextRequest): { key: string; trusted: boolean } {
+  return callerKeyFromHeaders(req.headers)
+}
+
+/** Anything with a `get(name)`: a `Headers`, the `ReadonlyHeaders` from `next/headers`, a test double. */
+export interface HeaderLike {
+  get(name: string): string | null
+}
+
+/**
+ * The identity logic behind `callerKey`, taking the headers alone so a SERVER
+ * COMPONENT (which has `headers()` and no `NextRequest`) is keyed exactly as a
+ * route handler is. One implementation: a second copy of "who is this caller"
+ * is a copy that drifts (rule 11).
+ */
+export function callerKeyFromHeaders(headers: HeaderLike | null | undefined): { key: string; trusted: boolean } {
   /**
    * Read defensively. A rate limiter must never become an outage, and that
    * includes throwing on a request shape it did not expect: `req.headers` is
@@ -173,7 +215,7 @@ export function callerKey(req: NextRequest): { key: string; trusted: boolean } {
    */
   const get = (name: string): string | null => {
     try {
-      return req.headers?.get?.(name) ?? null
+      return headers?.get?.(name) ?? null
     } catch {
       return null
     }
@@ -296,11 +338,16 @@ export type RateLimitOutcome =
  * allowance for everybody else.
  */
 export function checkRateLimit(req: NextRequest, rule: RateLimitRule, nowMs?: number): RateLimitOutcome {
+  return checkRateLimitFor(callerKey(req), rule, nowMs)
+}
+
+/** The buckets, given an already-derived caller identity. Shared by `checkRateLimit` and `guardRateHeaders`. */
+function checkRateLimitFor(identity: { key: string; trusted: boolean }, rule: RateLimitRule, nowMs?: number): RateLimitOutcome {
   const s = store()
   const now = nowMs ?? Date.now()
   sweep(s, now)
 
-  const { key, trusted } = callerKey(req)
+  const { key, trusted } = identity
 
   /**
    * No usable address at all. The per-caller bucket is SKIPPED rather than shared.
@@ -367,6 +414,23 @@ export function rateLimitedResponse(outcome: Extract<RateLimitOutcome, { allowed
 export function guardRate(req: NextRequest, rule: RateLimitRule): NextResponse | null {
   const outcome = checkRateLimit(req, rule)
   return outcome.allowed ? null : rateLimitedResponse(outcome)
+}
+
+/**
+ * `guardRate` for a SERVER COMPONENT, which has `headers()` and can return no
+ * response (spec §7.1, A5). It counts against the SAME buckets as `guardRate`
+ * (same store, same `rule.route` key, same caller identity), so a rule used by
+ * a page and by a route is one allowance, not two.
+ *
+ * Returns `true` when the request is LIMITED, `false` to carry on. The caller
+ * decides what refusal looks like; the invite page renders the one
+ * "unavailable" page, identical to an unknown slug, so a flooder learns nothing
+ * from being throttled.
+ *
+ * Call it ONCE per request and BEFORE any database read.
+ */
+export function guardRateHeaders(headers: HeaderLike | null | undefined, rule: RateLimitRule): boolean {
+  return !checkRateLimitFor(callerKeyFromHeaders(headers), rule).allowed
 }
 
 // ───────────────────────────────────────────────────────────────────────────

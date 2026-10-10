@@ -6,6 +6,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Menu, X, Phone, MessageCircle } from 'lucide-react'
 import CartButton from '@/components/CartButton'
+import { isInvitePath } from '@/lib/evites/chrome'
 
 const navLinks = [
   { href: '/party-packages',     label: 'Party Packages' },
@@ -43,7 +44,9 @@ export default function Nav() {
   // into or out of the planner change the hook count and React threw
   // ("Application error: a client-side exception") — the invoice page's
   // "Edit plan" link crashed on every plan.
-  if (pathname === '/party-planner' || pathname === '/party-builder') return null
+  //
+  // `/i/<slug>` (the public evite) is a guest's page, not part of the site: no nav.
+  if (pathname === '/party-planner' || pathname === '/party-builder' || isInvitePath(pathname)) return null
 
   return (
     <header

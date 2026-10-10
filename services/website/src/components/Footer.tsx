@@ -1,9 +1,23 @@
+'use client'
+
 import Link from 'next/link'
 import Image from 'next/image'
+import { usePathname } from 'next/navigation'
 import { Phone, Mail, MapPin, Instagram, Facebook, MessageCircle, Clock } from 'lucide-react'
+import { isInvitePath } from '@/lib/evites/chrome'
 
 export default function Footer() {
+  const pathname = usePathname()
+
+  // A guest's invitation (`/i/<slug>`) is not part of the site: no footer, and no
+  // fade-out spacer above it (which used to live in the root layout and so could
+  // not be hidden with it). EVERY early return goes AFTER every hook: the footer
+  // is in the root layout and survives a client-side navigation (navHookOrder.test.ts).
+  if (isInvitePath(pathname)) return null
+
   return (
+    <>
+    <div className="h-40 bg-gradient-to-b from-transparent to-[#BCCDEB]" aria-hidden="true" />
     <footer className="bg-[#BCCDEB] text-hampton-navy">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
 
@@ -129,5 +143,6 @@ export default function Footer() {
         &copy; {new Date().getFullYear()} Host Hampton. All rights reserved.
       </div>
     </footer>
+    </>
   )
 }

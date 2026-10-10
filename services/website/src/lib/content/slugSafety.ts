@@ -87,6 +87,10 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/gift-cards/success',
   '/glow-party',
   '/halloween-craft-party',
+  // The public EVITE (spec §7.1). `/i/<anything>` is owned by this route, so a
+  // CMS slug under `i/` can never render. (Spec says "add /i"; the tripwire below
+  // compares against the page route as it is on disk, `/i/[slug]`.)
+  '/i/[slug]',
   '/kids-party-menu',
   '/kids-party-menu/success',
   '/kids-party-menu/summary',

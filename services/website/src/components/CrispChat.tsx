@@ -2,9 +2,10 @@
 
 import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
+import { isInvitePath } from '@/lib/evites/chrome'
 
 // Pages where the chat bubble is hidden entirely
-const HIDDEN_PAGES = ['/party-quote', '/kids-party-menu']
+const HIDDEN_PAGES = ['/party-quote', '/kids-party-menu', '/i']
 
 declare global {
   interface Window {
@@ -28,6 +29,10 @@ export default function CrispChat() {
   // Inject Crisp script once
   useEffect(() => {
     if (!websiteId || loaded.current || document.getElementById('crisp-js')) return
+    // Never LOAD the widget on a guest's invitation: the page URL there is the
+    // capability to see a child's party, and Crisp records the URL of every page
+    // it runs on. (Hiding the bubble alone would still load it.)
+    if (isInvitePath(pathname)) return
     loaded.current = true
 
     window.$crisp = []
@@ -38,7 +43,7 @@ export default function CrispChat() {
     script.src = 'https://client.crisp.chat/l.js'
     script.async = true
     document.head.appendChild(script)
-  }, [websiteId])
+  }, [websiteId, pathname])
 
   // Show/hide based on current route
   useEffect(() => {

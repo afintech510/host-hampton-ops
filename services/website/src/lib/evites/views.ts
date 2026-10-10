@@ -110,3 +110,30 @@ export const EVITE_PARTY_THEME_COLUMNS = ['id', 'name', 'slug', 'pricing_item_id
 
 /** `booking_payments` columns `inviteState` needs (the pair `sumPayments()` reads). */
 export const EVITE_PAYMENT_COLUMNS = ['amount_cents', 'payment_type'] as const
+
+/**
+ * What the PUBLIC page `/i/[slug]` reads from `evites` (spec §7.4). The facts
+ * need the invitation-specific choices; the OG card needs the stored object
+ * names. Nothing about renders in flight (`render_claim`, `render_error`),
+ * calendar bookkeeping, consent or the slug history: a column added later stays
+ * private until somebody decides otherwise. `id` and `booking_id` are for the
+ * server only and are never serialised to the browser.
+ */
+export const EVITE_PAGE_COLUMNS = [
+  'id',
+  'booking_id',
+  'slug',
+  'template_slug',
+  'theme_word',
+  'theme_sub',
+  'host_contact_name',
+  'host_contact_phone',
+  'show_host_contact',
+  'host_note',
+  'gift_note',
+  'rsvp_deadline',
+  'image_key',
+  'invite_object',
+  'og_object',
+  'archived_at',
+] as const

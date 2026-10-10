@@ -9,6 +9,24 @@ const nextConfig = {
     domains: ['ychnlroczjhwimouecxz.supabase.co'],
     formats: ['image/webp'],
   },
+  async headers() {
+    return [
+      // The public EVITE (`/i/<slug>`): the URL is the capability to see a child's
+      // party. `X-Robots-Tag` says noindex on the response itself (the page also
+      // carries a robots meta tag, because a header is invisible to a tool that
+      // reads the HTML); `Referrer-Policy: no-referrer` stops that URL travelling
+      // in a `Referer` header to anything the page or a link on it reaches.
+      // Spec §7.1, §13. Declared here rather than in src/middleware.ts, which
+      // exists only to case-fold one printed path and should stay that small.
+      {
+        source: '/i/:path*',
+        headers: [
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+        ],
+      },
+    ]
+  },
   async redirects() {
     return [
       // cm-cheer pages are retired but kept in the repo as a template. Redirect

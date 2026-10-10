@@ -226,6 +226,15 @@ const DELIBERATELY_PUBLIC = new Set([
   'POST trucker-inquiry',
   'POST unsubscribe',
   'POST vendor-registration',
+  // The EVITE view beacon (spec §7.1). Public because it is called by a stranger's
+  // browser on a page a guest opened from a text message: the only credential is
+  // the slug, which is the capability to see the invitation. It writes one
+  // PII-free `evite_events` row (the write lives in lib/evites/analytics.ts, so R5
+  // reads that module's result, not this route's). Rate-limited FIRST on the same
+  // `eviteViewRule` as the page, because it answers 404 vs 204 and is therefore an
+  // enumeration oracle for the slug suffix; a 404 for every unavailable case.
+  // P06 adds the RSVP routes here.
+  'POST i/[slug]/event',
   // Portal auth's own front door: it must be reachable without a session,
   // because handing one out is what it does. Audited by link 14.
   'GET portal/auth',

@@ -4,6 +4,7 @@ import Script from 'next/script'
 import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { META_PIXEL_ID } from '@/lib/metaPixel'
+import { isMetaPixelBlockedPath } from '@/lib/evites/chrome'
 
 /**
  * Meta Pixel, mounted once in the root layout.
@@ -32,6 +33,12 @@ export default function MetaPixel() {
   // in the root layout, so that cost would be site-wide.
   useEffect(() => {
     if (!META_PIXEL_ID) return
+    // A guest's invitation (`/i/<slug>`) and the host's invitation page send Meta
+    // NOTHING (spec §7.1, §13). Skipped BEFORE the bootstrap bookkeeping, so
+    // landing on one and walking into the site still gets exactly one PageView:
+    // the inline script counts that page, and this effect then treats it as the
+    // first run.
+    if (isMetaPixelBlockedPath(pathname)) return
     // Skip the first run: the inline script already counted this page view.
     if (!bootstrapped.current) {
       bootstrapped.current = true
@@ -41,6 +48,11 @@ export default function MetaPixel() {
   }, [pathname])
 
   if (!META_PIXEL_ID) return null
+
+  // After every hook (navHookOrder.test.ts): this component is in the root layout
+  // and survives a client-side navigation. Not rendered, so the init script (and
+  // its first PageView) never loads on these pages.
+  if (isMetaPixelBlockedPath(pathname)) return null
 
   return (
     <Script id="meta-pixel" strategy="afterInteractive">

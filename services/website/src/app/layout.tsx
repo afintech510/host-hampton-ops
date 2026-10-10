@@ -198,7 +198,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <AppointmentBanner />
             {children}
           </main>
-          <div className="h-40 bg-gradient-to-b from-transparent to-[#BCCDEB]" aria-hidden="true" />
+          {/* The fade-out spacer above the footer lives INSIDE <Footer />, so it goes with it on /i/. */}
           <Footer />
           <BenchworksAttribution />
           <CartDrawer />

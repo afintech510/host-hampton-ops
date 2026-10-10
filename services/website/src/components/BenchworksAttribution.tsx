@@ -1,4 +1,14 @@
+'use client'
+
+import { usePathname } from 'next/navigation'
+import { isInvitePath } from '@/lib/evites/chrome'
+
 export default function BenchworksAttribution() {
+  const pathname = usePathname()
+
+  // A guest's invitation (`/i/<slug>`) carries no agency credit. After every hook.
+  if (isInvitePath(pathname)) return null
+
   return (
     <aside className="bg-[#AEC0DE] border-t border-hampton-navy/15">
       <a
