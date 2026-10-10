@@ -242,8 +242,8 @@ describe('adminHooks.notifyPartyCancelled (the P09 seam)', () => {
     jest.restoreAllMocks()
   })
 
-  it('the stub queues nothing and says why', async () => {
-    expect(await notifyPartyCancelled({} as never, 'ev')).toEqual({ ok: true, queued: false, reason: 'not-built' })
+  it('the installed hook queues nothing while EVITES_SENDS is off, and says why', async () => {
+    expect(await notifyPartyCancelled({} as never, 'ev')).toEqual({ ok: true, queued: false, reason: 'sends-off' })
   })
 
   it('swapping the property replaces the behaviour; a throw becomes {ok:false}', async () => {

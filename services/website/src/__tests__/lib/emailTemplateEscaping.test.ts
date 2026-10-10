@@ -59,6 +59,9 @@ const TEMPLATE_SOURCES = [
   'lib/email-templates/appointments.ts',
   'lib/email-templates/event-newsletter.ts',
   'lib/email-templates/reminders.ts',
+  // The ten EVITE bodies (P09). Text escaped once at entry (`escapeFields`), every URL through
+  // `mailHref` / `mailHrefExternal`, and a plain-text half that is never escaped.
+  'lib/email-templates/evites.ts',
   'lib/planPayment.ts',
   'lib/planShare.ts',
   // The post-party photo booth album. Its interpolations are the customer's
@@ -445,6 +448,9 @@ describe('the file list cannot go stale', () => {
     // The offline-ticket writer. Its only markup is `ticketConfirmationHtml`,
     // which is audited above; every value it passes in is escaped at entry there.
     'lib/offlineTicket.ts',
+    // The ONE Resend call for evites. It builds no markup: the bodies are
+    // `lib/email-templates/evites.ts`, audited above, and arrive here finished.
+    'lib/evites/mail.ts',
   ]
 
   /**
@@ -469,6 +475,7 @@ describe('the file list cannot go stale', () => {
     'lib/email-templates/marketing-emails.ts',
     'lib/email-templates/appointments.ts',
     'lib/email-templates/reminders.ts',
+    'lib/email-templates/evites.ts',
   ]
 
   it('every exported template escapes its input at entry', () => {

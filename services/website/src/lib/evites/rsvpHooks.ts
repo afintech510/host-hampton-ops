@@ -4,16 +4,18 @@
  *   onRsvpCreated   after a POST:           `new_rsvp` -> parent, `rsvp_confirmed` -> guest (P09)
  *   onRsvpChanged   after a material PATCH: `rsvp_changed` -> parent (P09)
  *
- * P06 ships NO-OP defaults. P09 fills them in (claim in `evite_sends`, then send);
- * until then an RSVP saves and nothing is emailed. They are properties of one
- * mutable object so a test can `jest.spyOn(rsvpHooks, 'onRsvpCreated')` and P09
- * can replace the implementation without touching the route.
+ * P06 shipped NO-OP defaults; P09 installs the real ones (`inlineSends.ts`: claim in
+ * `evite_sends`, then send), which do nothing while `EVITES_SENDS` is off. They are
+ * properties of one mutable object so a test can `jest.spyOn(rsvpHooks, 'onRsvpCreated')`
+ * and swap the implementation without touching the route.
  *
  * The route calls them through `fireRsvpHook`, which:
  *   - is NOT awaited by the request (a slow provider must not slow a guest);
  *   - never throws and never rejects (an email failure must never turn a saved
  *     RSVP into an error page: the guest already has their answer in).
  */
+
+import { sendOnRsvpChanged, sendOnRsvpCreated } from '@/lib/evites/inlineSends'
 
 export interface RsvpHookContext {
   eviteId: string
@@ -27,8 +29,8 @@ export interface RsvpHookContext {
 export type RsvpHook = (ctx: RsvpHookContext) => void | Promise<void>
 
 export const rsvpHooks: { onRsvpCreated: RsvpHook; onRsvpChanged: RsvpHook } = {
-  onRsvpCreated: () => undefined,
-  onRsvpChanged: () => undefined,
+  onRsvpCreated: sendOnRsvpCreated,
+  onRsvpChanged: sendOnRsvpChanged,
 }
 
 export function fireRsvpHook(name: keyof typeof rsvpHooks, ctx: RsvpHookContext): void {

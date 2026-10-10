@@ -17,7 +17,7 @@
  */
 
 type Row = Record<string, unknown>
-type Filter = { kind: 'eq' | 'is' | 'lt' | 'contains' | 'in'; col: string; val: unknown }
+type Filter = { kind: 'eq' | 'is' | 'lt' | 'contains' | 'in' | 'ilike'; col: string; val: unknown }
 type DbError = { message: string; code?: string }
 type Result = { data: unknown; error: DbError | null; count?: number | null }
 
@@ -43,6 +43,11 @@ export interface FakeEviteDbOptions {
   generated?: Record<string, (row: Row) => Row>
   /** A CHECK stand-in per table: an error message for a row the database would refuse, else null. Runs on INSERT and UPDATE. */
   checks?: Record<string, (row: Row) => string | null>
+  /**
+   * UNIQUE indexes per table (P09): an INSERT that would repeat the values of `cols` fails with Postgres' own
+   * `23505` and the index name in the message. `nullsNotDistinct` mirrors `NULLS NOT DISTINCT` (two NULLs collide).
+   */
+  uniques?: Record<string, Array<{ name: string; cols: string[]; nullsNotDistinct?: boolean }>>
   /** `supabase.rpc(name, args)` handlers. */
   rpcs?: Record<string, (args: Record<string, unknown>, tables: Record<string, Row[]>) => { data: unknown; error: DbError | null }>
 }
@@ -56,6 +61,25 @@ export interface InjectedError {
   message?: string
   /** Fire this many times then stop (default: forever). */
   times?: number
+}
+
+/** A column name as PostgREST reads it: `metadata->>bounce_type` reaches into a jsonb column. */
+function valueAt(row: Row, col: string): unknown {
+  const at = col.indexOf('->>')
+  if (at < 0) return row[col]
+  const base = row[col.slice(0, at)]
+  const key = col.slice(at + 3)
+  if (base && typeof base === 'object' && !Array.isArray(base)) {
+    const v = (base as Row)[key]
+    return v === undefined || v === null ? null : String(v)
+  }
+  return null
+}
+
+/** A LIKE pattern as a case-insensitive regex (`%` any run, `_` any one character). */
+function likeRegex(pattern: string): RegExp {
+  const body = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.')
+  return new RegExp(`^${body}$`, 'i')
 }
 
 export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
@@ -84,11 +108,13 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
 
   const matches = (row: Row, filters: Filter[]) =>
     filters.every((f) => {
-      const v = row[f.col]
+      const v = valueAt(row, f.col)
       if (f.kind === 'eq') return v === f.val
+      if (f.kind === 'ilike') return typeof v === 'string' && typeof f.val === 'string' && likeRegex(f.val).test(v)
       if (f.kind === 'is') return f.val === null ? v === null || v === undefined : v === f.val
       if (f.kind === 'contains') return Array.isArray(v) && Array.isArray(f.val) && f.val.every((x) => v.includes(x))
       if (f.kind === 'in') return Array.isArray(f.val) && f.val.includes(v)
+      if (typeof v === 'number' && typeof f.val === 'number') return v < f.val
       return typeof v === 'string' && typeof f.val === 'string' && v < f.val
     })
 
@@ -136,6 +162,10 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
       this.filters.push({ kind: 'is', col, val })
       return this
     }
+    ilike(col: string, val: unknown) {
+      this.filters.push({ kind: 'ilike', col, val })
+      return this
+    }
     in(col: string, val: unknown) {
       this.filters.push({ kind: 'in', col, val })
       return this
@@ -170,6 +200,16 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
         const full: Row = { ...base, ...(opts.generated?.[this.table]?.(base) ?? {}) }
         const bad = opts.checks?.[this.table]?.(full)
         if (bad) return { data: null, error: { message: bad, code: '23514' } }
+        for (const u of opts.uniques?.[this.table] ?? []) {
+          const same = rows.some((r) =>
+            u.cols.every((c) => {
+              const a = r[c] ?? null
+              const b = full[c] ?? null
+              return a === b && (a !== null || u.nullsNotDistinct === true)
+            }),
+          )
+          if (same) return { data: null, error: { message: `duplicate key value violates unique constraint "${u.name}"`, code: '23505' } }
+        }
         inserts.push({ table: this.table, row: { ...this.patch } })
         ;(tables[this.table] ??= []).push(full)
         return { data: this.returning ? [project(full, this.returnCols)] : null, error: null }

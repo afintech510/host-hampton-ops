@@ -697,11 +697,11 @@ describe('POST notify_cancelled', () => {
     expect(hook).not.toHaveBeenCalled()
   })
 
-  it('calls the hook for a cancelled party; the P08 stub sends nothing and says so', async () => {
+  it('calls the hook for a cancelled party; with EVITES_SENDS off the real hook sends nothing and says so', async () => {
     db = makeAdminDb({ booking: { status: 'cancelled' } })
     const res = await post({ action: 'notify_cancelled' })
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ ok: true, queued: false, reason: 'not-built' })
+    expect(await res.json()).toMatchObject({ ok: true, queued: false, reason: 'sends-off' })
     expect(audits()).toHaveLength(1)
     expect(audits()[0]).toMatchObject({ booking_id: BOOKING_ID, modified_by: 'ADMIN' })
   })

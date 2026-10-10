@@ -4,16 +4,18 @@
  *
  *   notifyPartyCancelled(supabase, eviteId) -> { ok, queued, reason?, ... }
  *
- * P08 ships a NO-OP default: it sends nothing and says so (`queued: false`,
- * `reason: 'not-built'`). P09 replaces `adminHooks.notifyPartyCancelled` with the
- * real claim-in-`evite_sends`-then-send, without touching the route. Same pattern
- * as `rsvpHooks`: a property of one mutable object so a test (or P09) can swap it.
+ * P08 shipped a NO-OP default (`reason: 'not-built'`). P09 installs the real one,
+ * `sendPartyCancelledNotices` (`inlineSends.ts`: claim in `evite_sends`, send, stamp
+ * `cancelled_notice_at`), without touching the route. With `EVITES_SENDS` off it sends
+ * nothing and says so (`reason: 'sends-off'`). Same pattern as `rsvpHooks`: a property
+ * of one mutable object so a test can swap it.
  *
  * `notifyPartyCancelled` never throws: the admin gets an `{ok:false}` answer, not
  * a 500, when the hook blows up.
  */
 
 import type { getSupabase } from '@/lib/supabase'
+import { sendPartyCancelledNotices } from '@/lib/evites/inlineSends'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -22,14 +24,21 @@ export interface NotifyCancelledResult {
   /** True only when guests were actually queued / sent a cancellation. */
   queued: boolean
   reason?: string
-  /** How many guest emails the real implementation handled (P09). */
+  /** How many guest emails the real implementation sent or queued for retry (P09). */
   count?: number
+  /** P09 detail, counts only: sent now, failed (queued for retry), stopped by a guardrail, already handled. */
+  sent?: number
+  failed?: number
+  skipped?: number
+  duplicate?: number
+  /** True when this call recorded `evites.cancelled_notice_at`. */
+  stamped?: boolean
 }
 
 export const adminHooks: {
   notifyPartyCancelled: (supabase: Supa, eviteId: string) => NotifyCancelledResult | Promise<NotifyCancelledResult>
 } = {
-  notifyPartyCancelled: () => ({ ok: true, queued: false, reason: 'not-built' }),
+  notifyPartyCancelled: (supabase, eviteId) => sendPartyCancelledNotices(supabase, eviteId),
 }
 
 export async function notifyPartyCancelled(supabase: Supa, eviteId: string): Promise<NotifyCancelledResult> {

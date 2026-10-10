@@ -137,3 +137,58 @@ export const EVITE_PAGE_COLUMNS = [
   'og_object',
   'archived_at',
 ] as const
+
+/**
+ * What the SEND path reads from `evites` (P09; spec §9). Everything the facts need,
+ * plus the calendar and lifecycle bookkeeping the sends key on (`cal_version`,
+ * `cal_changed_at`, `went_live_at`, `cancelled_notice_at`) and the stored image names.
+ * SERVER-ONLY: nothing here is ever serialised to a browser.
+ */
+export const EVITE_SEND_COLUMNS = [
+  'id',
+  'booking_id',
+  'slug',
+  'template_slug',
+  'theme_word',
+  'theme_sub',
+  'host_contact_name',
+  'host_contact_phone',
+  'show_host_contact',
+  'host_note',
+  'gift_note',
+  'rsvp_deadline',
+  'image_key',
+  'invite_object',
+  'og_object',
+  'render_inputs_hash',
+  'cal_version',
+  'cal_changed_at',
+  'went_live_at',
+  'cancelled_notice_at',
+  'archived_at',
+  'created_at',
+] as const
+
+/**
+ * What the SEND path reads from `evite_rsvps`. This list DOES carry `reminder_email`
+ * (the recipient of a guest email) and `edit_nonce` (to sign the guest's own edit link),
+ * which is exactly why it is a separate list from every browser-facing one above:
+ * SERVER-ONLY, used to build one email and dropped. Never club fields, IP or the phone.
+ */
+export const EVITE_SEND_RSVP_COLUMNS = [
+  'id',
+  'evite_id',
+  'status',
+  'revision',
+  'parent_name',
+  'children',
+  'adult_count',
+  'has_allergy',
+  'allergy_note',
+  'note_to_honoree',
+  'reminder_email',
+  'reminder_opt_out_at',
+  'cal_version_seen',
+  'edit_nonce',
+  'created_at',
+] as const
