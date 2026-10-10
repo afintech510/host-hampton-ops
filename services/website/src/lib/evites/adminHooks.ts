@@ -33,6 +33,10 @@ export interface NotifyCancelledResult {
   duplicate?: number
   /** True when this call recorded `evites.cancelled_notice_at`. */
   stamped?: boolean
+  /** P09b: new ledger claims this call made (sent + failed + stopped by a guardrail; not duplicates). */
+  claimed?: number
+  /** P09b: the guest list was cut short by the caller's budget; the party is not yet stamped announced. */
+  truncated?: boolean
 }
 
 export const adminHooks: {

@@ -165,6 +165,8 @@ describe('R0: the cron surface cannot go stale', () => {
       // registry (lib/appointmentEvents.ts). A rename, not a new job — the
       // count above is unchanged and so is the schedule in AGENTS.md §8.
       'appointment-reminders', 'weekly-town-drafts',
+      // Added with the EVITE feature (P09b). Unscheduled until the crontab line is added on the box.
+      'evite-sends',
     ]) {
       expect(names).toContain(known)
     }

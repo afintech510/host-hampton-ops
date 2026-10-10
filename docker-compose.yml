@@ -241,6 +241,20 @@ services:
       # "true". Off 2026-10-04 because the first 40 signed as Adam; back on
       # 2026-10-06 once the copy said Allie.
       - REVIEW_ASK_SMS_ENABLED=${REVIEW_ASK_SMS_ENABLED:-false}
+      # EVITE (party invitations; docs/specs/evites/03-architecture-spec.md §14, §16).
+      # EVITES_PAGES gates creation, pages and renders; EVITES_SENDS gates every evite
+      # email. Each is off | pilot | on, and ANYTHING else (unset, empty, a typo) reads as
+      # off (lib/evites/config.ts). `pilot` means only the bookings in EVITES_PILOT_REFS
+      # (comma-separated refs). /api/cron/evite-sends is not scheduled until a crontab
+      # line is added on the box.
+      - EVITES_PAGES=${EVITES_PAGES:-off}
+      - EVITES_SENDS=${EVITES_SENDS:-off}
+      - EVITES_PILOT_REFS=${EVITES_PILOT_REFS:-}
+      # Meta Conversions API (ViewContent on /i/* only). Unset token = no-op.
+      - META_CAPI_ACCESS_TOKEN=${META_CAPI_ACCESS_TOKEN:-}
+      - META_GRAPH_VERSION=${META_GRAPH_VERSION:-}
+      # Brevo list id for Birthday Club opt-ins. Unset = no list add (logged).
+      - BREVO_BIRTHDAY_CLUB_LIST_ID=${BREVO_BIRTHDAY_CLUB_LIST_ID:-}
     networks:
       - hampton_net
 

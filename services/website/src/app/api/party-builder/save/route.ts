@@ -16,6 +16,7 @@ import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { attributionFromBody } from '@/lib/attribution'
 import { shouldAdvanceToAwaitingDeposit } from '@/lib/pipelineStages'
+import { ensureEviteNonFatal } from '@/lib/evites/ensureNonFatal'
 
 function formatDate(dateStr: string): string {
   try {
@@ -481,6 +482,11 @@ export async function POST(req: NextRequest) {
         bookingRef,
       }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
     }
+
+    // The invitation (spec §2.1). BOTH branches above (a new plan, and an existing one this save
+    // adopted) arrive here with `bookingId` set and the booking written, so one call covers them.
+    // NON-FATAL: it never changes the answer below, whatever it does.
+    await ensureEviteNonFatal(supabase, bookingId)
 
     // Generate portal token — through the ONE minter. This route was the eighth
     // copy of `generatePortalToken` → raw `portal_tokens` insert → error logged

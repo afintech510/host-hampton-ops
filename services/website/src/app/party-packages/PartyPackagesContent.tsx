@@ -363,6 +363,8 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
       contactName: formData.fullName,
       contactEmail: formData.email,
       contactPhone: formData.phone,
+      // The invitation prints the birthday child's name; /api/quote/save screens it on the server.
+      childName: formData.childName || '',
     }
 
     try {

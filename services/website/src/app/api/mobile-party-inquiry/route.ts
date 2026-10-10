@@ -10,6 +10,8 @@ import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref, telHref } from '@/lib/emailSafety'
 import { guardRate, intakeRule } from '@/lib/rateLimit'
 import { logInteraction } from '@/lib/contactInteractions'
+import { ensureEviteNonFatal } from '@/lib/evites/ensureNonFatal'
+import { screenIntakeChildName } from '@/lib/evites/intakeChildName'
 import {
   emptyIntakeRecord,
   landedSomewhere,
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest) {
   // The first touch, screened at entry (lib/attribution.ts). One reader for
   // every intake route, and it accepts the pre-053 `utm` field name too.
   const attribution = attributionFromBody(body)
-  const { name, email, phone, date, details, marketingConsent, utm } = body
+  const { name, email, phone, date, details, marketingConsent, utm, childName } = body
 
   if (!name || !email || !details) {
     return NextResponse.json({ error: 'Name, email, and details are required' }, { status: 400 })
@@ -79,6 +81,8 @@ export async function POST(req: NextRequest) {
     contactEmail: email,
     contactPhone: phone || null,
     partyDate: date || null,
+    // Optional "Birthday child's first name" (the invitation prints it), screened here.
+    childName: screenIntakeChildName(childName),
     notes: details || null,
     eventType: 'mobile party',
     source: 'website_form',
@@ -184,6 +188,10 @@ export async function POST(req: NextRequest) {
 
     await notifyOwnerSms(leadSmsLine({ kind: 'MOBILE party inquiry', name, phone, email, date, extra: String(details).slice(0, 160) }))
   }
+
+  // The invitation (spec §2.1). After the plan write and `recordInboundEvent` (lib/plan.ts ordering), and
+  // NON-FATAL: it never changes the answer below, whatever it does.
+  await ensureEviteNonFatal(getSupabase(), plan.bookingId)
 
   const missing = missingFrom(recorded)
 

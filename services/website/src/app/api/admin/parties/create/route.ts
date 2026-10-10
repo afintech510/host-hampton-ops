@@ -11,6 +11,7 @@ import { partyQuoteSentHtml } from '@/lib/emailTemplates'
 import type { BookingLineItem } from '@/types/booking-flow'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { isPartyType, PARTY_TYPES } from '@/lib/pipelineStages'
+import { ensureEviteNonFatal } from '@/lib/evites/ensureNonFatal'
 
 function formatDate(dateStr: string): string {
   try {
@@ -149,6 +150,10 @@ export async function POST(req: NextRequest) {
       sourceDetail: 'Party Plan — Admin Created',
       serviceInterests: ['kids_party'],
     })
+
+    // The invitation (spec §2.1). After the booking write; this route records no inbound event. NON-FATAL:
+    // it never changes the answer below, whatever it does.
+    await ensureEviteNonFatal(supabase, booking.id as string)
 
     // Generate the portal token. This DID read its error — and then called it
     // "non-fatal" and mailed the link anyway, which is precisely the failure:

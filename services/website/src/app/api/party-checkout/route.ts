@@ -14,6 +14,7 @@ import { publicOrigin } from '@/lib/publicOrigin'
 import { attributionFromBody } from '@/lib/attribution'
 import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { isPayableStatus } from '@/lib/portalWrite'
+import { ensureEviteNonFatal } from '@/lib/evites/ensureNonFatal'
 
 export async function POST(req: NextRequest) {
   const limited = guardRate(req, plannerRule('party-checkout'))
@@ -258,6 +259,10 @@ export async function POST(req: NextRequest) {
     // first_touch_event_id can only be stamped once the event exists; the
     // booking is inserted first on purpose. Fill-once, never fatal.
     await linkFirstTouchEvent(booking.id, firstEventId)
+
+    // The invitation (spec §2.1). After the booking write and `recordInboundEvent` (lib/plan.ts ordering),
+    // and NON-FATAL: it never changes the answer below, whatever it does.
+    await ensureEviteNonFatal(supabase, booking.id as string)
 
     // Prepare line items for the admin email
     const emailLineItems = screened.lineItems.map(item => ({

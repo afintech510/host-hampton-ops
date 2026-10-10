@@ -5,6 +5,7 @@ import { upsertContact } from '@/lib/contacts'
 import { enqueueBookingReminders, enqueueReviewRequest } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
 import { classifyPartyType, isPartyType } from '@/lib/pipelineStages'
+import { ensureEviteNonFatal } from '@/lib/evites/ensureNonFatal'
 
 export const dynamic = 'force-dynamic'
 
@@ -112,6 +113,10 @@ export async function POST(req: NextRequest) {
         bookingRef,
       }).catch(err => console.error('Sequence enrollment error (non-fatal):', err))
     }
+
+    // The invitation (spec §2.1). After the booking write; this route records no inbound event. NON-FATAL:
+    // it never changes the answer below, whatever it does.
+    await ensureEviteNonFatal(supabase, booking?.id)
 
     return NextResponse.json({ booking: { id: booking?.id, booking_ref: bookingRef }, success: true })
   } catch (err) {

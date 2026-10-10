@@ -59,6 +59,10 @@ const SEND_LIBS = [
   'lib/smsSegments.ts',
   'lib/ownerNotify.ts',
   'lib/marketing/budget.ts',
+  // Added with P09b (the evite scheduler). The due times and the selection (cronDue), and the tick that claims
+  // and sends (cronTick). Both compose WHEN an outbound customer email goes, so both belong to R1 (no setHours).
+  'lib/evites/cronDue.ts',
+  'lib/evites/cronTick.ts',
 ] as const
 
 /** Cron routes that send, or that fill a queue something else sends from. */
@@ -90,6 +94,10 @@ const SEND_ROUTES = [
   // `scheduled_reminders`; send-reminders delivers it. A queue-filler, like
   // event-reminders and birthday-rebooking, so it belongs here.
   'app/api/cron/review-asks/route.ts',
+  // Added with P09b. The evite scheduler: claims and sends guest reminders, the lead preview and the parent's
+  // headcount through lib/evites/sendOne.ts. EMAIL ONLY, so the SMS quiet-hours rule does not reach it; the
+  // lead preview keeps its own 09:00-20:00 ET window (cronDue.leadPreviewVerdict).
+  'app/api/cron/evite-sends/route.ts',
 ] as const
 
 const ALL = [...SEND_LIBS, ...SEND_ROUTES]
@@ -167,7 +175,7 @@ describe('R0 — the surface is enumerated exactly', () => {
   it('every listed module exists on disk', () => {
     const missing = ALL.filter(rel => !fs.existsSync(path.join(SRC, rel)))
     expect(missing).toEqual([])
-    expect(ALL.length).toBe(23)
+    expect(ALL.length).toBe(26)
   })
 
   it('every cron route that sends or enqueues is in SEND_ROUTES', () => {

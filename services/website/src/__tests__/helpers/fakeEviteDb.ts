@@ -17,7 +17,7 @@
  */
 
 type Row = Record<string, unknown>
-type Filter = { kind: 'eq' | 'is' | 'lt' | 'contains' | 'in' | 'ilike'; col: string; val: unknown }
+type Filter = { kind: 'eq' | 'is' | 'lt' | 'lte' | 'gt' | 'gte' | 'neq' | 'notnull' | 'contains' | 'in' | 'ilike'; col: string; val: unknown }
 type DbError = { message: string; code?: string }
 type Result = { data: unknown; error: DbError | null; count?: number | null }
 
@@ -114,8 +114,14 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
       if (f.kind === 'is') return f.val === null ? v === null || v === undefined : v === f.val
       if (f.kind === 'contains') return Array.isArray(v) && Array.isArray(f.val) && f.val.every((x) => v.includes(x))
       if (f.kind === 'in') return Array.isArray(f.val) && f.val.includes(v)
-      if (typeof v === 'number' && typeof f.val === 'number') return v < f.val
-      return typeof v === 'string' && typeof f.val === 'string' && v < f.val
+      if (f.kind === 'neq') return v !== f.val
+      // `.not(col, 'is', null)` (P09b): the column has a value.
+      if (f.kind === 'notnull') return v !== null && v !== undefined
+      // The ordered comparisons (P09b adds lte / gt / gte): a NULL never compares, as in SQL.
+      if (v === null || v === undefined) return false
+      const cmp = (a: number | string, b: number | string) => (f.kind === 'lt' ? a < b : f.kind === 'lte' ? a <= b : f.kind === 'gt' ? a > b : a >= b)
+      if (typeof v === 'number' && typeof f.val === 'number') return cmp(v, f.val)
+      return typeof v === 'string' && typeof f.val === 'string' && cmp(v, f.val)
     })
 
   /** What `.select(cols)` hands back: the named columns, or `{id}` for a bare `.select()` (the legacy behaviour). */
@@ -189,6 +195,28 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
     }
     lt(col: string, val: unknown) {
       this.filters.push({ kind: 'lt', col, val })
+      return this
+    }
+    lte(col: string, val: unknown) {
+      this.filters.push({ kind: 'lte', col, val })
+      return this
+    }
+    gt(col: string, val: unknown) {
+      this.filters.push({ kind: 'gt', col, val })
+      return this
+    }
+    gte(col: string, val: unknown) {
+      this.filters.push({ kind: 'gte', col, val })
+      return this
+    }
+    neq(col: string, val: unknown) {
+      this.filters.push({ kind: 'neq', col, val })
+      return this
+    }
+    /** Only the form the cron uses: `.not(col, 'is', null)`. */
+    not(col: string, op: string, val: unknown) {
+      if (op !== 'is' || val !== null) throw new Error(`fakeEviteDb: .not(${col}, ${op}, ...) is not faked`)
+      this.filters.push({ kind: 'notnull', col, val: null })
       return this
     }
     private run(): Result {

@@ -180,8 +180,11 @@ function dayBeforeEnd(ctx: SendContext): Date | null {
   return Number.isFinite(d.getTime()) ? d : null
 }
 
-/** When this message stops being sendable, or null if it cannot be worked out (the send is then skipped). */
-function sendableUntil(type: EviteSendType, ctx: SendContext): Date | null {
+/**
+ * When this message stops being sendable, or null if it cannot be worked out (the send is then skipped).
+ * Exported so the cron's selection (`cronDue.ts`) uses THE SAME window the sender enforces (P09b).
+ */
+export function sendableUntil(type: EviteSendType, ctx: SendContext): Date | null {
   const win = ctx.facts.window
   switch (type) {
     case 'lead_preview': {

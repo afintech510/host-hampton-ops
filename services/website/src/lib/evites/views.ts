@@ -162,6 +162,7 @@ export const EVITE_SEND_COLUMNS = [
   'og_object',
   'render_inputs_hash',
   'cal_version',
+  'cal_inputs_hash',
   'cal_changed_at',
   'went_live_at',
   'cancelled_notice_at',

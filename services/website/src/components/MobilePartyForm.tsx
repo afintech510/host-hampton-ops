@@ -7,7 +7,7 @@ import { getAttribution } from '@/lib/utm'
 import HeardAboutSelect, { heardAboutFields } from '@/components/HeardAboutSelect'
 
 export default function MobilePartyForm({ prefillDetails = '' }: { prefillDetails?: string }) {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', date: '', details: prefillDetails })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', date: '', childName: '', details: prefillDetails })
   const [consent, setConsent] = useState(false)
   const [heardAbout, setHeardAbout] = useState('')
   const [heardAboutNote, setHeardAboutNote] = useState('')
@@ -115,6 +115,21 @@ export default function MobilePartyForm({ prefillDetails = '' }: { prefillDetail
               className="w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-pink/40"
             />
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-hampton-navy uppercase tracking-wide mb-1">
+            Birthday child&apos;s first name <span className="text-hampton-navy/50 normal-case tracking-normal">(optional)</span>
+          </label>
+          <input
+            type="text"
+            maxLength={40}
+            value={form.childName}
+            onChange={set('childName')}
+            placeholder="Mia"
+            autoComplete="off"
+            className="w-full border border-hampton-pink/30 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-hampton-pink/40"
+          />
         </div>
 
         <div>

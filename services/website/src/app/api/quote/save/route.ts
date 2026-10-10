@@ -11,6 +11,9 @@ import { escapeHtml } from '@/lib/escapeHtml'
 import { mailHref } from '@/lib/emailSafety'
 import { guardRate, intakeRule } from '@/lib/rateLimit'
 import { logInteraction } from '@/lib/contactInteractions'
+import { getSupabase } from '@/lib/supabase'
+import { ensureEviteNonFatal } from '@/lib/evites/ensureNonFatal'
+import { screenIntakeChildName } from '@/lib/evites/intakeChildName'
 import {
   emptyIntakeRecord,
   landedSomewhere,
@@ -121,7 +124,6 @@ export async function POST(req: NextRequest) {
   }
 
   if (contactId) {
-    const { getSupabase } = await import('@/lib/supabase')
     recorded.interaction = await logInteraction(getSupabase(), {
       contactId,
       type: 'form_submission',
@@ -140,6 +142,9 @@ export async function POST(req: NextRequest) {
     partyDate: partyDate || null,
     partyTime: partyTime || null,
     guestCount: screenPublicGuestCount(quoteData?.guestCount),
+    // The invitation prints this name. It rides in `quoteData` (the quote builders set it), so it is
+    // screened here rather than trusted: bounded, control characters removed (spec §2.1).
+    childName: screenIntakeChildName((quoteData as { childName?: unknown } | null)?.childName),
     notes: boundedSummary,
     eventType: 'kids birthday party',
     source: 'website_form',
@@ -214,6 +219,10 @@ export async function POST(req: NextRequest) {
     if (!recorded.ownerNotified) console.error('quote/save: owner notification did NOT send —', JSON.stringify(results[1]).slice(0, 300))
     await notifyOwnerSms(leadSmsLine({ kind: 'saved party quote', name, phone, email, date: slotDisplay, extra: summary ? String(summary).slice(0, 120) : null }))
   }
+
+  // The invitation (spec §2.1). After the plan write and `recordInboundEvent` (lib/plan.ts ordering), and
+  // NON-FATAL: it never changes the answer below, whatever it does.
+  await ensureEviteNonFatal(getSupabase(), plan.bookingId)
 
   const missing = missingFrom(recorded)
   if (!landedSomewhere(recorded)) {

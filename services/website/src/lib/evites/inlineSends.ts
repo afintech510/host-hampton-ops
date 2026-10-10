@@ -77,7 +77,17 @@ export async function sendOnRsvpChanged(ctx: RsvpHookContext): Promise<void> {
   await attempt(getSupabase(), 'rsvp_changed', ctx.eviteId, ctx.rsvpId, ctx.revision)
 }
 
-export async function sendPartyCancelledNotices(supabase: Supa, eviteId: string, now: Date = new Date()): Promise<NotifyCancelledResult> {
+/**
+ * `opts.budget` (P09b, the cron): stop after this many NEW claims. A duplicate (somebody already owns it)
+ * does not spend budget. When the guest list was cut short the party is NOT stamped announced, so the next
+ * tick carries on from where this one stopped.
+ */
+export async function sendPartyCancelledNotices(
+  supabase: Supa,
+  eviteId: string,
+  now: Date = new Date(),
+  opts: { budget?: number } = {},
+): Promise<NotifyCancelledResult> {
   if (eviteSendsMode() === 'off') return { ok: true, queued: false, reason: 'sends-off' }
   const gate = await readSendGate(supabase, eviteId)
   if (gate.kind === 'unavailable') return { ok: false, queued: false, reason: 'unavailable' }
@@ -105,7 +115,13 @@ export async function sendPartyCancelledNotices(supabase: Supa, eviteId: string,
   )
 
   const counts = { sent: 0, failed: 0, skipped: 0, duplicate: 0, unavailable: 0 }
+  let claimed = 0
+  let truncated = false
   for (const g of eligible) {
+    if (opts.budget !== undefined && claimed >= opts.budget) {
+      truncated = true
+      break
+    }
     let r: ClaimAndSendResult
     try {
       r = await claimAndSend(supabase, { evite_id: eviteId, rsvp_id: g.id, send_type: 'party_cancelled', ref_version: ev.data.cal_version + 1 }, { now })
@@ -115,6 +131,7 @@ export async function sendPartyCancelledNotices(supabase: Supa, eviteId: string,
       continue
     }
     note('party_cancelled', r)
+    if (r.kind === 'sent' || r.kind === 'failed' || r.kind === 'skipped') claimed += 1
     if (r.kind === 'sent') counts.sent += 1
     else if (r.kind === 'failed') counts.failed += 1
     else if (r.kind === 'skipped' || r.kind === 'disabled') counts.skipped += 1
@@ -125,7 +142,7 @@ export async function sendPartyCancelledNotices(supabase: Supa, eviteId: string,
   // Every eligible guest now has a claim (sent, or failed and queued for retry): mark the party announced.
   // Only while it is still NULL, and read back, so a second click cannot move the original time.
   let stamped = false
-  if (counts.unavailable === 0) {
+  if (counts.unavailable === 0 && !truncated) {
     const s = await supabase.from('evites').update({ cancelled_notice_at: now.toISOString() }).eq('id', eviteId).is('cancelled_notice_at', null).select('id')
     if (s.error) console.error(`evites/inline: cancelled_notice_at not recorded for ${eviteId}: ${s.error.message}`)
     else stamped = ((s.data ?? []) as unknown[]).length > 0
@@ -142,5 +159,7 @@ export async function sendPartyCancelledNotices(supabase: Supa, eviteId: string,
     skipped: counts.skipped,
     duplicate: counts.duplicate,
     stamped,
+    claimed,
+    ...(truncated ? { truncated: true } : {}),
   }
 }

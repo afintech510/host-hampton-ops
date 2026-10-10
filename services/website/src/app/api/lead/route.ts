@@ -8,6 +8,9 @@ import { recordInboundEvent } from '@/lib/agent/events'
 import { ensureLeadPlan, linkFirstTouchEvent } from '@/lib/plan'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { logInteraction } from '@/lib/contactInteractions'
+import { getSupabase } from '@/lib/supabase'
+import { ensureEviteNonFatal } from '@/lib/evites/ensureNonFatal'
+import { screenIntakeChildName } from '@/lib/evites/intakeChildName'
 import { guardRate, intakeRule } from '@/lib/rateLimit'
 import {
   boundedIntakeText,
@@ -39,6 +42,7 @@ export async function POST(req: NextRequest) {
     fullName,
     email,
     phone,
+    childName,
     childAge,
     guestCount,
     partyTheme,
@@ -113,7 +117,6 @@ export async function POST(req: NextRequest) {
     // Through `logInteraction`: this was a raw insert inside a try/catch that
     // discarded the SQLSTATE, which is how five months of refused rows went
     // unnoticed elsewhere (rule 19).
-    const { getSupabase } = await import('@/lib/supabase')
     recorded.interaction = await logInteraction(getSupabase(), {
       contactId,
       type: 'form_submission',
@@ -143,6 +146,9 @@ export async function POST(req: NextRequest) {
     partyDate: preferredDate || null,
     partyTime: timeOfDay || null,
     guestCount: screenedGuests,
+    // Optional "Birthday child's first name" (the invitation prints it). Screened here; the form's
+    // maxLength is a courtesy. Null is fine: the invitation then reads "BIRTHDAY STAR".
+    childName: screenIntakeChildName(childName),
     childAge: Number(childAge) || null,
     notes: [boundedTheme ? `Theme: ${boundedTheme}` : null, boundedNotes].filter(Boolean).join('\n') || null,
     eventType: eventType || null,
@@ -260,6 +266,10 @@ export async function POST(req: NextRequest) {
   } else {
     console.warn('RESEND_API_KEY not set — skipping lead notification email')
   }
+
+  // The invitation (spec §2.1). After the plan write and `recordInboundEvent` (lib/plan.ts ordering), and
+  // NON-FATAL: it never changes the answer below, whatever it does.
+  await ensureEviteNonFatal(getSupabase(), plan.bookingId)
 
   const missing = missingFrom(recorded)
   if (!landedSomewhere(recorded)) {
