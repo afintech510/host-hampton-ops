@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { formatMoney, calculateCardFee } from '@/lib/partyPricing'
 import type { PartyBooking } from '@/types/booking-flow'
 import { PAYMENT_METHODS } from '@/types/booking-flow'
 import type { PaymentMethod } from '@/types/booking-flow'
-import { loadStripe } from '@stripe/stripe-js'
+import PortalCardPayment from './PortalCardPayment'
 import { CUSTOMER_STAGE_LABELS, PAYMENT_LABELS, partyStatuses, etToday, type BookingStage } from '@/lib/bookingStatus'
 import { sumPayments } from '@/lib/bookingBalance'
 
@@ -63,11 +63,12 @@ function MyBookingInner() {
   const [payProcessing, setPayProcessing] = useState(false)
   const [payError, setPayError] = useState('')
   const [payInstructions, setPayInstructions] = useState('')
-  const [checkoutReady, setCheckoutReady] = useState(false)
-  const checkoutRef = useRef<HTMLDivElement>(null)
-  const embeddedCheckoutRef = useRef<any>(null)
+  // The PaymentIntent a card payment is waiting on (`/api/portal/pay` answers a
+  // card with a PaymentIntent secret, rendered by <PortalCardPayment>).
+  const [cardIntent, setCardIntent] = useState<{ clientSecret: string; paymentIntentId: string | null } | null>(null)
+  const [justPaid, setJustPaid] = useState(false)
 
-  const paymentSuccess = params.get('payment') === 'success'
+  const paymentSuccess = params.get('payment') === 'success' || params.get('paid') === '1' || justPaid
   const sessionId = params.get('session_id')
 
   useEffect(() => { fetchBooking() }, [])
@@ -144,12 +145,7 @@ function MyBookingInner() {
     setPayError('')
     setPayInstructions('')
 
-    // Destroy previous embedded checkout if any
-    if (embeddedCheckoutRef.current) {
-      embeddedCheckoutRef.current.destroy()
-      embeddedCheckoutRef.current = null
-    }
-    setCheckoutReady(false)
+    setCardIntent(null)
 
     const res = await fetch('/api/portal/pay', {
       method: 'POST',
@@ -175,51 +171,18 @@ function MyBookingInner() {
       return
     }
 
-    // Embedded Stripe checkout
+    // A card answers with a PaymentIntent secret (no `url`): mount a Payment
+    // Element on it. A Checkout Session redirect is kept only as a fallback.
     if (resData.clientSecret) {
-      try {
-        const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-        if (!stripeKey) {
-          setPayError('Stripe configuration error')
-          setPayProcessing(false)
-          return
-        }
-        const stripe = await loadStripe(stripeKey)
-        if (!stripe) {
-          setPayError('Failed to load payment processor')
-          setPayProcessing(false)
-          return
-        }
-        const checkout = await stripe.initEmbeddedCheckout({
-          clientSecret: resData.clientSecret,
-        })
-        setPayProcessing(false)
-        setCheckoutReady(true)
-        // Mount after state update
-        setTimeout(() => {
-          if (checkoutRef.current) {
-            checkout.mount(checkoutRef.current)
-            embeddedCheckoutRef.current = checkout
-          }
-        }, 50)
-      } catch (err: any) {
-        setPayError(err.message || 'Payment setup failed')
-        setPayProcessing(false)
-      }
+      setCardIntent({ clientSecret: resData.clientSecret, paymentIntentId: resData.paymentIntentId || null })
+      setPayProcessing(false)
     } else if (resData.url) {
-      // Fallback to redirect
       window.location.href = resData.url
+    } else {
+      setPayError('Unexpected response from the server. Please try again.')
+      setPayProcessing(false)
     }
   }
-
-  // Cleanup embedded checkout on unmount
-  useEffect(() => {
-    return () => {
-      if (embeddedCheckoutRef.current) {
-        embeddedCheckoutRef.current.destroy()
-      }
-    }
-  }, [])
 
   if (loading) {
     return (
@@ -370,7 +333,7 @@ function MyBookingInner() {
                     setShowPayment(true)
                     setPaymentType(isDeposit ? 'deposit' : 'full')
                     setPayInstructions('')
-                    setCheckoutReady(false)
+                    setCardIntent(null)
                   }}
                   className="mt-4 bg-[#1a2744] text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-[#2a3754] transition-colors"
                 >
@@ -382,24 +345,19 @@ function MyBookingInner() {
             {/* Inline Payment Form */}
             {showPayment && payable && (
               <div className="bg-white rounded-xl shadow-sm p-6">
-                {checkoutReady ? (
-                  <>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-display text-lg text-[#1a2744]">Enter Card Details</h3>
-                      <button
-                        onClick={() => {
-                          if (embeddedCheckoutRef.current) {
-                            embeddedCheckoutRef.current.destroy()
-                            embeddedCheckoutRef.current = null
-                          }
-                          setCheckoutReady(false)
-                          setShowPayment(false)
-                        }}
-                        className="text-xs text-gray-400 hover:text-gray-600"
-                      >Cancel</button>
-                    </div>
-                    <div ref={checkoutRef} />
-                  </>
+                {cardIntent ? (
+                  <PortalCardPayment
+                    clientSecret={cardIntent.clientSecret}
+                    paymentIntentId={cardIntent.paymentIntentId}
+                    payLabel={`Pay ${formatMoney(getPayAmountCents() + cardFee)}`}
+                    onCancel={() => { setCardIntent(null); setShowPayment(false) }}
+                    onSuccess={() => {
+                      setCardIntent(null)
+                      setShowPayment(false)
+                      setJustPaid(true)
+                      fetchBooking()
+                    }}
+                  />
                 ) : payInstructions ? (
                   <div className="text-center">
                     <h3 className="font-display text-lg text-[#1a2744] mb-3">Payment Instructions</h3>

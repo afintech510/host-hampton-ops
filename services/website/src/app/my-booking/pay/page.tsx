@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { formatMoney, calculateCardFee } from '@/lib/partyPricing'
 import type { PaymentMethod } from '@/types/booking-flow'
 import { PAYMENT_METHODS } from '@/types/booking-flow'
+import PortalCardPayment from '../PortalCardPayment'
 
 export default function PayPage() {
   const router = useRouter()
@@ -15,6 +16,8 @@ export default function PayPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [instructions, setInstructions] = useState('')
+  // The PaymentIntent a card payment is waiting on (see PortalCardPayment).
+  const [cardIntent, setCardIntent] = useState<{ clientSecret: string; paymentIntentId: string | null } | null>(null)
 
   useEffect(() => {
     fetch('/api/portal/booking')
@@ -54,7 +57,13 @@ export default function PayPage() {
       return
     }
 
-    if (data.url) {
+    // `/api/portal/pay` answers a card with a PaymentIntent secret and no `url`,
+    // so this has to be decided BEFORE the instructions fall-through below —
+    // otherwise a card request rendered an empty "Payment Instructions" panel.
+    if (data.clientSecret) {
+      setCardIntent({ clientSecret: data.clientSecret, paymentIntentId: data.paymentIntentId || null })
+      setSubmitting(false)
+    } else if (data.url) {
       window.location.href = data.url
     } else {
       setInstructions(data.instructions || '')
@@ -74,7 +83,15 @@ export default function PayPage() {
           Balance due: <strong className="text-[#1a2744]">{formatMoney(balanceCents)}</strong>
         </p>
 
-        {instructions ? (
+        {cardIntent ? (
+          <PortalCardPayment
+            clientSecret={cardIntent.clientSecret}
+            paymentIntentId={cardIntent.paymentIntentId}
+            payLabel={`Pay ${formatMoney(amountCents + cardFee)}`}
+            onCancel={() => setCardIntent(null)}
+            onSuccess={() => router.push('/my-booking?paid=1')}
+          />
+        ) : instructions ? (
           <div className="bg-[#F6F1EB] rounded-xl p-6 text-center">
             <p className="text-[#1a2744] font-medium mb-2">Payment Instructions</p>
             <p className="text-gray-600 text-sm">{instructions}</p>
