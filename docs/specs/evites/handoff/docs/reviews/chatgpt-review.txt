@@ -1,0 +1,1054 @@
+1. Simplicity critique
+
+My biggest pushback: you are trying to make the RSVP form do too much.
+
+The RSVP is not the lead-capture moment. The RSVP is the trust moment. Your job is to get the parent through it quickly, then earn the right to ask for marketing permission.
+
+Partiful is a useful reference here: its RSVP starts with the response and then asks for basic identity/verification; its questionnaire is a separate configurable layer.  Paperless Post similarly treats guest questions as an event-management feature rather than the invitation itself. 
+
+I would change your fields
+
+Required:
+
+* Attending: Yes / No / Maybe
+* Parent name
+* Child first name
+* Parent mobile only if needed for event communication
+* Adults staying: 0 / 1 / 2+
+
+Conditional:
+
+* Food allergy? Yes / No
+    * If yes → “Please tell us what we should know”
+* Additional child → child first name
+
+Optional:
+
+* Email
+* Child birthday month
+
+Marketing: NOT part of the core RSVP.
+
+I would actually make parent mobile optional unless the guest explicitly chooses SMS communication. If someone says “No marketing” but you’re requiring their mobile anyway, you’ve created unnecessary privacy friction.
+
+Ideal flow
+
+Screen 1 — Beautiful invite
+
+🎀 Cora’s 8th Birthday
+SPA DAY ✨
+Saturday, November 14
+2:00–4:00 PM
+Host Hampton
+
+Will your child be joining us?
+
+[ YES, WE’LL BE THERE ]
+[ NOT THIS TIME ]
+[ MAYBE ]
+
+No form yet.
+
+⸻
+
+Screen 2 — RSVP details
+
+If YES:
+
+Who’s coming?
+
+Child’s first name
+[ Cora ]
+
+Parent/guardian name
+[ Sarah ]
+
+Then:
+
+Will an adult be staying?
+○ Yes, 1
+○ Yes, 2
+○ No
+
+Then:
+
+Any food allergies we should know about?
+○ No
+○ Yes → [details]
+
+Done.
+
+That’s the core RSVP.
+
+⸻
+
+Screen 3 — Confirmation / delight
+
+✨ You’re on the list!
+
+We can’t wait to celebrate with Cora.
+
+Saturday, November 14 · 2:00 PM
+
+We’ll send any important party updates here.
+
+Then—and only then:
+
+Want birthday perks from Host Hampton?
+
+Get $100 toward your child’s first Host Hampton party, plus first dibs on new themes and special events.
+
+☐ Yes, send me Host Hampton birthday perks by email
+☐ Yes, I’d also like occasional party updates by text
+
+You can unsubscribe anytime. We won’t share your information.
+
+The exact legal language should be reviewed for your actual SMS program/terms, but conceptually this is the right separation.
+
+Don’t ask for email + SMS + birthday + offers + social follow + referral all on the RSVP screen.
+
+That is how you turn a magical invitation into a lead-gen form.
+
+⸻
+
+2. Host experience
+
+The host experience should feel almost ridiculously easy.
+
+The product isn’t:
+
+“Create an invitation.”
+
+It’s:
+
+“Your party is ready to share.”
+
+After booking:
+
+Screen
+
+Cora’s SPA DAY invitation is ready!
+
+[ gorgeous invitation preview ]
+
+Saturday · 2:00 PM · Host Hampton
+
+Share with your guests
+
+[ TEXT MY INVITATION ]
+
+Small secondary options:
+
+Copy link · Save invitation
+
+That’s it.
+
+Don’t make Mom choose:
+
+* font
+* colors
+* wording
+* RSVP settings
+* guest questions
+* invitation format
+* URL
+* theme
+
+You already know all of it.
+
+Paperless Post emphasizes personalization, but that is appropriate for a general-purpose invitation product.  Host Hampton should be more like a premium concierge service: “We already made it beautiful for you.”
+
+Make it feel like hers
+
+The invitation should prominently say:
+
+Cora’s Birthday
+
+You’re invited to celebrate with us!
+
+Not:
+
+HOST HAMPTON PRESENTS…
+
+Host Hampton should be the subtle venue/provider brand.
+
+Think:
+
+Personal event → powered by Host Hampton
+
+rather than:
+
+Host Hampton advertisement → featuring someone’s birthday.
+
+The share button
+
+On iPhone:
+
+Text My Invitation
+
+should invoke the native share mechanism / SMS composer as directly as technically feasible.
+
+The message should already be written:
+
+🎀 You’re invited to Cora’s SPA DAY birthday party!
+
+Saturday, November 14 · 2–4 PM
+Host Hampton
+
+RSVP here: [link]
+
+Mom shouldn’t have to type anything.
+
+That’s consistent with how mainstream invitation products emphasize sharing by text/link and real-time RSVP management. 
+
+⸻
+
+3. Lead capture mechanics
+
+Here’s my ranking.
+
+Rank	Tactic	Expected impact
+1	Post-RSVP $100 birthday offer	Very high
+2	Birthday-month capture	Very high
+3	Free premium add-on	High
+4	Dedicated Birthday Club	High
+5	Post-party personalized offer	High
+6	QR code at party	Medium-high
+7	Goody-bag card	Medium
+8	Shared photo album	Medium
+9	Host referral credit	Medium-high
+10	SMS opt-in	Medium initially, high long-term
+
+#1 — $100 first-party offer
+
+I’d test:
+
+Want a birthday party like this one?
+
+Get $100 off your child’s first Host Hampton party.
+
+☐ Yes! Send me my birthday perk.
+
+This is much stronger than:
+
+“Subscribe to our newsletter.”
+
+Nobody wants a newsletter.
+
+They may want $100 toward their child’s birthday.
+
+I’d make it valid for 12 months, not 30 days. You’re dealing with children’s birthdays. Artificial urgency will hurt trust.
+
+#2 — Birthday month
+
+Ask after RSVP:
+
+When’s your child’s birthday?
+January · February · March…
+
+I would not require the date.
+
+Month is enough to trigger the marketing engine.
+
+Then:
+
+We’ll send you a birthday reminder and your Host Hampton birthday perk when your month gets close. 💕
+
+That is genuinely useful rather than creepy.
+
+#3 — Free add-on
+
+I’d test this against $100 off.
+
+For example:
+
+Your Host Hampton birthday perk
+
+Book your first party and choose a complimentary Glow Upgrade, Hair Tinsel, or Glitter Tattoo Station.
+
+Why I like this:
+
+A $100 discount teaches the customer that Host Hampton can be negotiated.
+
+A $100-ish value-add reinforces that Host Hampton is premium.
+
+This is particularly important for your affluent Hamptons segment.
+
+I’d A/B test:
+
+A: $100 off
+B: complimentary premium add-on
+
+My initial bet for Host Hampton: B wins on brand; A wins on raw conversion.
+
+#4 — Birthday Club
+
+Don’t call it a newsletter.
+
+Call it:
+
+Host Hampton Birthday Club
+
+Position it as:
+
+Birthday inspiration, new themes and a special birthday perk each year.
+
+That feels like membership rather than marketing.
+
+#5 — Ask after RSVP, not before
+
+This is probably the most important funnel decision.
+
+RSVP → confirmation → optional offer
+
+not:
+
+RSVP → marketing checkbox → continue
+
+The first is:
+
+“Thanks for coming!”
+
+The second feels like:
+
+“Give us your data before we’ll let you RSVP.”
+
+Exact wording I’d test
+
+Email:
+
+☐ Yes! I’d love Host Hampton birthday perks by email.
+Send me my $100 birthday credit, new theme ideas and occasional party specials.
+
+SMS:
+
+☐ Yes, send me occasional Host Hampton party updates by text.
+
+Then separately explain the applicable SMS terms/frequency and opt-out mechanism in your consent disclosure.
+
+The FCC has emphasized that consumers must have a reasonable way to revoke consent from texting, and opt-out handling needs to be operationally reliable. 
+
+⸻
+
+4. The party itself as a funnel
+
+This is where I think you’re leaving a lot on the table.
+
+You have something Facebook ads can never buy:
+
+10–20 parents have physically experienced your product.
+
+And unlike an Instagram visitor, they’ve just watched their child have an amazing time.
+
+At check-in
+
+Don’t put a giant marketing QR code on the front desk.
+
+Instead:
+
+“Cora’s Party ✨”
+
+with a small QR:
+
+See the party photos
+
+That QR opens the shared album.
+
+⸻
+
+During the party
+
+Take great photos.
+
+But here’s the important part:
+
+The photo experience is the lead magnet.
+
+Afterward:
+
+Your Host Hampton party photos are ready!
+
+View + download the photos from Cora’s party.
+
+Then:
+
+Planning a birthday of your own?
+
+Get your $100 birthday perk
+
+That’s a much more natural transition than:
+
+“Join our mailing list.”
+
+Evite and Partiful both recognize the value of a shared photo/event experience; Evite explicitly includes shared photo albums, while Partiful allows guests to upload photos to the event page. 
+
+Goody-bag insert
+
+I’d absolutely do this.
+
+Small, beautiful card:
+
+Loved celebrating with us?
+
+Your child’s birthday could be next. 🎀
+
+$100 Host Hampton Birthday Perk
+
+Scan to claim.
+
+QR → personalized landing page.
+
+Not:
+
+Follow us on Instagram
+Like us on Facebook
+Visit our website
+Join our email list
+Leave us a review
+
+That’s five asks.
+
+One QR. One action.
+
+Important: don’t ask for a review from guests
+
+They didn’t purchase the party.
+
+The host did.
+
+Guest parents should be asked to consider booking, not reviewing a service they didn’t buy.
+
+⸻
+
+5. Follow-up sequence
+
+I would make this birthday-driven, not “weekly newsletter” driven.
+
+Immediately after RSVP
+
+Email
+
+You’re officially on the list for Cora’s party! 🎀
+We can’t wait to celebrate.
+
+No sales pitch.
+
+1–2 days after party
+
+Hope [child] had the best time! Here’s where you can see the party photos.
+
+And if it’s your turn to plan a birthday someday, your Host Hampton birthday perk is waiting for you.
+
+~90 days before birthday month
+
+If birthday month is known:
+
+Hi Sarah! [Child]’s birthday month is coming up 🎀
+Want some party inspiration? Here are a few of our newest Host Hampton themes.
+
+No offer yet.
+
+~60 days before
+
+Planning [Child]’s birthday yet?
+We have a few fun ideas for [age]-year-olds—including our newest [theme].
+
+CTA:
+
+See birthday themes
+
+~30–45 days before
+
+Now offer:
+
+It’s almost [Child]’s birthday! 🎂
+Your $100 Host Hampton birthday perk is ready whenever you are.
+
+CTA:
+
+Plan the party
+
+Birthday month
+
+One final message:
+
+Happy birthday month to [Child]! 🎉
+If you’re still looking for a party, we’d love to celebrate with you.
+
+Then stop.
+
+Rule I’d impose
+
+Maximum 1 marketing email/month outside the birthday window.
+
+And probably zero SMS marketing initially unless someone explicitly opts into it.
+
+SMS should be your high-value channel for:
+
+* reservation reminders
+* important event updates
+* opted-in promotions
+
+Not:
+
+“HEY!!! NEW THEME!!!”
+
+That will burn your list.
+
+CAN-SPAM requires a clear mechanism for recipients to opt out of marketing email. 
+
+⸻
+
+6. Referral loop
+
+Yes.
+
+And I would tell the host parent upfront—but subtly.
+
+I’d make the host confirmation say:
+
+One more thing…
+
+If one of your party guests ends up celebrating with us too, we’ll send $100 Host Hampton credit your way.
+
+No referral codes needed—we’ll automatically connect the booking to your party.
+
+That’s excellent psychologically.
+
+It turns the host into your salesperson without asking them to sell.
+
+But don’t make the invitation say:
+
+“Refer your friends and earn $100!”
+
+That’s tacky.
+
+The invitation belongs to the birthday child.
+
+The referral mechanism belongs in the host dashboard/confirmation.
+
+Track it automatically
+
+Each party gets:
+
+party_id
+
+Each guest RSVP gets:
+
+guest_id
+
+Every guest receives a unique:
+
+referral_token
+
+If that parent eventually books:
+
+booking.referral_source = guest_id
+
+Then:
+
+Guest books → host gets $100 credit
+
+I’d cap it at perhaps $300 per original party initially.
+
+And don’t pay cash.
+
+Host Hampton credit is better.
+
+⸻
+
+7. Viral/delight features
+
+I’d only build three.
+
+1. Animated invitation
+
+Absolutely.
+
+Not a crazy video.
+
+Something like:
+
+✨ Cora’s SPA DAY ✨
+
+with subtle movement:
+
+* sparkle
+* theme animation
+* date appearing
+* CTA
+
+It should feel like a tiny digital invitation rather than a webpage.
+
+Build it.
+
+⸻
+
+2. Countdown
+
+On the RSVP page:
+
+12 days until Cora’s SPA DAY ✨
+
+Small delight, very low engineering complexity.
+
+Build it.
+
+⸻
+
+3. “Leave a birthday note”
+
+After RSVP:
+
+Want to leave Cora a birthday message?
+
+[ Happy Birthday, Cora! 💕 ]
+
+The host sees the messages.
+
+That’s potentially much more emotionally sticky than another marketing feature.
+
+Build it if the database/UI cost is trivial.
+
+I would NOT build initially
+
+* social login
+* guest accounts
+* comments/feed
+* guest-to-guest messaging
+* elaborate animation engine
+* polls
+* GIF reactions
+* AI-generated invitations
+* contact syncing
+* native app
+
+Partiful already demonstrates how quickly event products can become feature-rich—questionnaires, photo albums, guest lists, messaging, privacy controls, etc. 
+
+You don’t need to become Partiful.
+
+You’re building a beautiful party-specific RSVP/CRM layer for Host Hampton.
+
+⸻
+
+8. Risks
+
+1. You’re collecting more child data than you need
+
+I’d eliminate:
+
+* full child name
+* exact DOB
+* child email
+* child phone
+* address
+* unnecessary profile information
+
+First name + perhaps birthday month is plenty.
+
+COPPA treats children’s names, online contact information and other identifiers as personal information, and special obligations can apply when information is collected directly from children. 
+
+Your system should therefore make it extremely clear:
+
+This RSVP is completed by a parent/guardian.
+
+Don’t design the experience as though children are the users.
+
+⸻
+
+2. Allergies
+
+This is more sensitive than a normal RSVP field.
+
+Don’t use:
+
+“Tell us anything about your child.”
+
+Use:
+
+Food allergies or dietary concerns?
+
+Then collect only what’s operationally necessary.
+
+Don’t let allergies become part of a marketing profile.
+
+⸻
+
+3. Guest list exposure
+
+Don’t automatically show:
+
+Sarah + Emma + Emma’s mom + phone number…
+
+to everyone.
+
+The host can see the guest list.
+
+Guests should probably see only:
+
+12 friends are coming 🎉
+
+or nothing at all.
+
+Partiful specifically provides controls for anonymizing guest lists and hiding guest counts, which is a good signal that this is a real privacy consideration in event products. 
+
+⸻
+
+4. “You gave us your phone number, therefore marketing”
+
+Absolutely not.
+
+Your architecture should have distinct consent states:
+
+transactional_event_sms
+marketing_email
+marketing_sms
+
+Not:
+
+marketing_consent = true
+
+And store:
+
+* timestamp
+* consent language/version
+* source/party
+* channel
+* IP/user-agent if appropriate
+* opt-out timestamp
+
+⸻
+
+5. Data security
+
+You’re accumulating a very attractive local-parent database:
+
+name + phone + email + child name + birthday month + allergy information.
+
+That needs to be treated seriously.
+
+New York’s SHIELD Act requires businesses maintaining covered private information to maintain reasonable administrative, technical and physical safeguards. 
+
+At minimum:
+
+* Supabase RLS
+* no guest-to-guest data leakage
+* admin MFA
+* separate production credentials
+* encrypted transport
+* minimal retention
+* audit logging for admin access
+* don’t expose raw Supabase IDs in public URLs
+* signed/unguessable invitation tokens
+
+And I’d seriously consider deleting old allergy data after the event/retention period rather than keeping it forever.
+
+⸻
+
+6. The biggest brand risk
+
+Making Mom feel like she accidentally enrolled her friends into Host Hampton marketing.
+
+This could kill the product.
+
+The golden rule:
+
+The birthday invitation is never an advertisement.
+
+The marketing happens after the guest has received what they came for.
+
+⸻
+
+9. Metrics
+
+Don’t drown yourself in analytics.
+
+Track these five.
+
+1. Invitation → RSVP conversion
+
+Target [ESTIMATE]: 70–90%
+
+Measure:
+
+unique invitation visitors → completed RSVP
+
+This is your core UX metric.
+
+⸻
+
+2. RSVP completion rate
+
+Target [ESTIMATE]: >85%
+
+Once someone starts the RSVP:
+
+started RSVP → completed RSVP
+
+If this is <80%, your form is too long or confusing.
+
+⸻
+
+3. Marketing opt-in rate
+
+This is your money metric.
+
+Track separately:
+
+* email opt-in
+* SMS opt-in
+* either-channel opt-in
+
+Initial target [ESTIMATE]: 25–40%
+
+I would be thrilled with 40%+ from a genuinely optional post-RSVP offer.
+
+Don’t optimize toward 80% by making the UX coercive.
+
+⸻
+
+4. Guest → booking conversion
+
+The ultimate metric:
+
+opted-in guest families → Host Hampton bookings
+
+Target [ESTIMATE]: 3–10% over 12 months.
+
+Don’t judge this after 30 days. Kids’ birthdays are annual and seasonal.
+
+⸻
+
+5. Revenue per party guest
+
+This is the metric I’d obsess over.
+
+Example:
+
+10 guests
+× 35% opt-in
+× 5% booking
+= 0.175 bookings per party
+
+At a hypothetical $900 average booking:
+
+$157.50 incremental expected booking revenue per original party
+
+That’s the actual economics of this system.
+
+And that’s why I would absolutely build it.
+
+⸻
+
+10. If you were building v1 in 2 weeks
+
+Here’s where I’d be ruthless.
+
+IN
+
+1. Automatic invitation generation
+
+Booking → invitation automatically populated.
+
+Fields:
+
+* child’s name
+* theme
+* date
+* time
+* address
+* host/venue
+* RSVP deadline
+
+⸻
+
+2. Beautiful mobile invitation
+
+One URL.
+
+Fast-loading.
+
+Excellent iMessage preview.
+
+Theme-specific artwork.
+
+⸻
+
+3. One-tap sharing
+
+TEXT MY INVITATION
+
+Native share/SMS flow with prewritten copy.
+
+⸻
+
+4. RSVP
+
+Three choices:
+
+Yes / No / Maybe
+
+Yes collects:
+
+* parent name
+* child first name
+* adult count
+* allergy yes/no + details
+
+That’s it.
+
+⸻
+
+5. Host dashboard
+
+Live:
+
+12 attending
+2 maybe
+4 haven’t responded
+
+Guest table:
+
+Child	Parent	Adults	Allergy	RSVP
+Emma	Sarah	1	No	Yes
+
+⸻
+
+6. Post-RSVP Birthday Club
+
+This is the lead-generation engine.
+
+Beautiful confirmation:
+
+Want birthday perks from Host Hampton?
+
+Get $100 toward your child’s first party + birthday inspiration.
+
+☐ Email me my birthday perk
+
+Birthday month: [dropdown]
+
+Then separately:
+
+☐ I’d also like occasional Host Hampton updates by text.
+
+⸻
+
+7. Automatic referral attribution
+
+Every RSVP gets a hidden attribution token.
+
+If that person later books:
+
+host gets credit.
+
+No complicated referral UI.
+
+⸻
+
+8. Basic photo/thank-you landing page
+
+Even if the shared album isn’t fully automated yet:
+
+Loved Cora’s party?
+
+Plan your child’s celebration → $100 birthday perk.
+
+⸻
+
+9. Supabase consent/audit fields
+
+Build this correctly now.
+
+Don’t bolt compliance onto the database later.
+
+⸻
+
+10. Analytics
+
+Events:
+
+invite_created
+invite_viewed
+share_clicked
+rsvp_started
+rsvp_completed
+marketing_offer_viewed
+email_opted_in
+sms_opted_in
+birthday_month_saved
+photo_page_viewed
+booking_started
+booking_completed
+referral_booking
+
+⸻
+
+OUT
+
+I would explicitly not build:
+
+* guest accounts
+* passwords
+* native app
+* contact syncing
+* guest messaging
+* social feed
+* elaborate photo album
+* guest profiles
+* AI personalization
+* automated SMS to guests
+* advanced CRM
+* loyalty points
+* coupons marketplace
+* public event discovery
+* guest-to-guest networking
+* complicated host invitation customization
+
+⸻
+
+My strongest recommendation
+
+I’d actually rename the product internally from “e-vite system” to something like:
+
+Host Hampton Party Pass
+
+Because you’re not really building an invitation tool.
+
+You’re building a closed-loop customer acquisition system disguised as a fantastic invitation experience.
+
+The flywheel becomes:
+
+Booking
+↓
+Beautiful personalized invite
+↓
+Host shares in one tap
+↓
+Guest RSVPs in <30 sec
+↓
+Guest has a delightful experience
+↓
+Optional Birthday Club
+↓
+Birthday month captured
+↓
+Personalized nurture
+↓
+Guest books
+↓
+Original host receives Host Hampton credit
+↓
+New party creates another 10–20 prospects
+
+That’s much more powerful than simply replacing Canva.
+
+And there’s an important strategic insight here: don’t try to maximize the number of contacts you collect. Maximize the number of parents who voluntarily identify themselves as “I might want a Host Hampton party someday.”
+
+Those are fundamentally different goals.
+
+If you make the RSVP experience feel like a lead form, you’ll collect fewer good leads—and potentially damage the social trust that makes the whole distribution mechanism work in the first place.
+
+The existing invitation products validate the basic interaction model—shareable link, mobile RSVP, guest questions, real-time guest management and photo sharing—but Host Hampton has an advantage they don’t: every event is already a qualified, geographically relevant customer-acquisition opportunity. 
+
+That’s the moat I’d build around.

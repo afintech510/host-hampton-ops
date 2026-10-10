@@ -77,3 +77,6 @@ client_secret_*.json
 # The skills themselves are upstream code, re-installable and versioned there —
 # but .agents/product-marketing.md IS ours and is tracked deliberately.
 .agents/skills/
+
+# EVITE design source SVGs (9 MB, reference only - kept out of the public repo)
+docs/specs/evites/handoff/assets/glow/source-svg/

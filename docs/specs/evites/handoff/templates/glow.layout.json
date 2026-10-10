@@ -1,0 +1,237 @@
+{
+  "theme_slug": "glow",
+  "name": "Glow Party (neon)",
+  "canvas": {
+    "width": 1085,
+    "height": 1530,
+    "units": "css px; background images are 2x (2170x3059)"
+  },
+  "background": "assets/glow/background-plain.png",
+  "og_background": "assets/glow/background-plain.png",
+  "fonts": {
+    "display_lines": "Monoton",
+    "outline": "Bungee Outline",
+    "script": "Neonderthaw",
+    "body": "Poppins (400, 600)"
+  },
+  "slots": [
+    {
+      "id": "invited_line",
+      "type": "text",
+      "static": "You're invited to a",
+      "top": 118,
+      "align": "center",
+      "font": "Poppins",
+      "weight": 400,
+      "size": 30,
+      "letterSpacing": "0.33em",
+      "transform": "uppercase",
+      "color": "#fbf9f1",
+      "opacity": 0.95
+    },
+    {
+      "id": "theme_word",
+      "type": "text",
+      "default": "GLOW",
+      "top": 160,
+      "align": "center",
+      "font": "Monoton",
+      "size": 250,
+      "lineHeight": 1,
+      "fill": {
+        "gradient": [
+          "#ff3df2",
+          "#ffd23f",
+          "#3dd9ff",
+          "#b84dff"
+        ],
+        "direction": "90deg"
+      },
+      "glow": [
+        "#ff3df2 10px",
+        "#8a3dff 26px"
+      ]
+    },
+    {
+      "id": "theme_sub",
+      "type": "text",
+      "default": "PARTY",
+      "top": 470,
+      "align": "center",
+      "font": "Bungee Outline",
+      "size": 138,
+      "lineHeight": 1,
+      "color": "#ff5a6e",
+      "glowColor": "#ff3355"
+    },
+    {
+      "id": "icon_strip",
+      "type": "image",
+      "src": "assets/glow/icon-strip.png",
+      "top": 700,
+      "align": "center",
+      "width": 820
+    },
+    {
+      "id": "honoree_name",
+      "type": "text",
+      "bind": "honoree_name",
+      "top": 835,
+      "align": "center",
+      "font": "Bungee Outline",
+      "size": 165,
+      "lineHeight": 1,
+      "transform": "uppercase",
+      "color": "#fff028",
+      "glowColor": "#ffe100",
+      "maxWidth": 960,
+      "autoShrink": true,
+      "minSize": 90
+    },
+    {
+      "id": "age_row",
+      "type": "row",
+      "top": 1035,
+      "align": "center",
+      "gap": 22,
+      "children": [
+        {
+          "id": "age",
+          "bind": "honoree_age_ordinal",
+          "example": "7th",
+          "font": "Bungee Outline",
+          "size": 128,
+          "color": "#ffffff",
+          "glowColor": "#c77dff"
+        },
+        {
+          "id": "birthday_word",
+          "static": "Birthday!",
+          "font": "Neonderthaw",
+          "size": 132,
+          "color": "#ffffff",
+          "glowColor": "#ff4fd8"
+        }
+      ],
+      "maxWidth": 1000,
+      "autoShrink": true
+    },
+    {
+      "id": "date_time",
+      "type": "text",
+      "bind": "date_time_display",
+      "example": "Saturday, November 14 \u00b7 2\u20134 PM",
+      "previewStateText": "Pick your date",
+      "top": 1292,
+      "align": "center",
+      "font": "Poppins",
+      "weight": 600,
+      "size": 36,
+      "letterSpacing": "0.04em",
+      "transform": "uppercase",
+      "color": "#fbf9f1",
+      "maxWidth": 760,
+      "autoShrink": true
+    },
+    {
+      "id": "location",
+      "type": "text",
+      "bind": "location_display",
+      "example": "Host Hampton \u00b7 295 Montauk Hwy, Speonk",
+      "top": 1345,
+      "align": "center",
+      "font": "Poppins",
+      "weight": 400,
+      "size": 25,
+      "letterSpacing": "0.06em",
+      "color": "#fbf9f1",
+      "maxWidth": 760,
+      "autoShrink": true
+    },
+    {
+      "id": "host_contact",
+      "type": "text",
+      "bind": "host_contact_line",
+      "template": "Any questions? Ask {host_contact_name} \u00b7 {host_contact_phone}",
+      "showWhen": "show_host_contact",
+      "top": 1388,
+      "align": "center",
+      "font": "Poppins",
+      "weight": 400,
+      "size": 25,
+      "letterSpacing": "0.06em",
+      "color": "#ffd6f6",
+      "maxWidth": 760,
+      "autoShrink": true,
+      "defaults": {
+        "host_contact_name": "Allie",
+        "host_contact_phone": "631-998-9325"
+      }
+    }
+  ],
+  "glow_text_shadow": "0 0 6px {c}, 0 0 18px {c}, 0 0 40px {c}",
+  "og_card": {
+    "size": [
+      1200,
+      630
+    ],
+    "format": "jpeg",
+    "quality": 82,
+    "maxBytes": 300000,
+    "layout": "portrait invite left (height 560, radius 14), right column: kicker 'You're invited', title '{NAME}'S {THEME} PARTY' (Bungee Outline 74, #fff028), date line, place line, host contact line, 'Tap to RSVP' pill (#ff3df2)",
+    "reference": "mocks/og_card_mia.jpg"
+  },
+  "layers": [
+    {
+      "id": "bar",
+      "type": "shape",
+      "left": 170,
+      "top": 653,
+      "width": 745,
+      "height": 7,
+      "radius": 4,
+      "fill": "linear-gradient(90deg,#ff2bd6,#b45cff 55%,#3d8bff)",
+      "glow": "0 0 8px #ff2bd6,0 0 22px #a24bff,0 0 40px #5b6bff"
+    },
+    {
+      "id": "bracket_left",
+      "type": "shape",
+      "left": 135,
+      "top": 1285,
+      "width": 30,
+      "height": 148,
+      "border": "5px solid #ff3df2 (no right side)",
+      "radius": "32px 0 0 32px",
+      "glow": "0 0 10px #ff3df2,0 0 24px #c92bff"
+    },
+    {
+      "id": "bracket_right",
+      "type": "shape",
+      "left": 920,
+      "top": 1285,
+      "width": 30,
+      "height": 148,
+      "border": "5px solid #ff3df2 (no left side)",
+      "radius": "0 32px 32px 0",
+      "glow": "0 0 10px #ff3df2,0 0 24px #c92bff"
+    },
+    {
+      "id": "squiggle_left",
+      "type": "image",
+      "src": "assets/glow/squiggle.png",
+      "left": 70,
+      "top": 430,
+      "height": 210,
+      "rotate": -40
+    },
+    {
+      "id": "squiggle_top_right",
+      "type": "image",
+      "src": "assets/glow/squiggle.png",
+      "left": 960,
+      "top": -10,
+      "height": 170,
+      "rotate": 10
+    }
+  ]
+}

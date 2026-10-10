@@ -1,0 +1,103 @@
+1. Simplicity critique
+Parents and guests will drop off hardest at three places: (1) any friction after the host taps Share, (2) the first screen of the guest form if it feels like work, and (3) any second screen or “almost done” moment. Guests are already in a text thread; they’re half-distracted and will abandon a form that looks longer than 4–5 fields or requires keyboard switching more than twice.
+Cut or merge aggressively:
+	•	Kill “maybe.” Yes / No is cleaner and gives the studio better prep numbers. Maybe creates ambiguity the host then has to chase.
+	•	Merge child name(s) into a single free-text field (“Kids attending”) instead of repeating name fields. Most parties have 1–2 kids per family.
+	•	Make adults-staying a simple number stepper (0–4) instead of a text field.
+	•	Allergies becomes an optional single free-text line that only appears if they choose Yes.
+	•	Email is optional and secondary; mobile is the primary identifier.
+	•	Birthday month should not be asked at RSVP. It’s high-friction and low-value at that moment. Capture it later if at all.
+Ideal guest flow (mobile-only, one primary screen + confirmation):
+Screen 1 (RSVP form, <30 seconds):
+	•	Big visual of the invite (theme, kid’s name, date/time, location) at top so they know what they’re answering.
+	•	Yes / No toggle (default neither selected).
+	•	If Yes: – Kids attending (free text, placeholder “Emma & Jack”) – Parent name – Parent mobile (pre-filled if possible from device, but don’t rely on it) – Adults staying (stepper 0–4, default 1 or 2) – Allergies (optional free text, collapsed by default)
+	•	Two unchecked checkboxes stacked cleanly: “Text me party updates from the host” (SMS consent) “Send me Host Hampton offers & a birthday discount” (marketing)
+	•	Single primary button: “RSVP”
+Screen 2 (instant confirmation):
+	•	“You’re in! [Host name] will see your RSVP.”
+	•	Optional micro-delight: “Want a reminder the day before?” (one-tap, uses the SMS consent they already gave).
+	•	Tiny footer link to the privacy note.
+No account, no second form, no “add another child” loops, no photo upload, no message to the birthday kid at this stage. Host sees a live list of name + yes/no + kids + adults + allergies + mobile (for them only). Studio sees aggregate headcount + allergies list.
+2. Host experience
+The host must feel they are sending their invitation, not Host Hampton’s lead magnet. One-tap share is non-negotiable. After booking, the parent lands on a success screen with the generated invite preview and a single large “Share Invite” button that opens the native share sheet with the link + a pre-written short message (“Emma’s birthday party – RSVP here”). No editing required, no Canva, no “customize colors.”
+Make it feel theirs:
+	•	The invite design uses the exact theme they booked, child’s name in large type, and the studio’s location or “at our home” for mobile parties. No Host Hampton logo on the guest-facing invite image itself (logo can live in the small footer of the RSVP page).
+	•	After they share, show a live RSVP dashboard that feels private and useful (“8 yes, 2 no, 3 pending”). Add a gentle “Text everyone who hasn’t RSVP’d yet” button that opens their own Messages app with the same link — still their phone, their contacts.
+	•	Post-RSVP, let them download a clean PNG of the invite for Instagram stories if they want. That reinforces ownership.
+Anything that makes them edit, choose fonts, or feel they are distributing a brochure will kill share rates. The product should feel like a nicer, automatic version of the Canva PNG they already send — not a marketing system.
+3. Lead capture mechanics
+Ranked by expected impact on opted-in guest leads (assuming ~12–15 invited families per party):
+	1	Clear value exchange at the exact moment of RSVP — Offer a specific, time-limited perk tied to their own child’s birthday. Wording (unchecked): “Text me a $50 credit toward my child’s Host Hampton party (valid 12 months).” Highest conversion because the benefit is concrete and personal. Ask during RSVP.
+	2	Post-RSVP soft capture — After they hit RSVP, a second micro-screen or modal: “Want early access to new themes + a free goody-bag upgrade when you book?” Still optional, one checkbox. Slightly lower friction because the “hard” RSVP is already done.
+	3	Birthday-month perk framing — “We’ll text you a special offer the month your child turns [age].” This feels helpful rather than salesy. Capture birthday month only after they opt in, not before.
+	4	On-site QR at the party — Large, beautiful QR on a table tent or the welcome wall that says “Scan for party photos + $25 off your next booking.” Converts the warmest audience (parents who just watched the party). Highest intent, lower volume.
+	5	Thank-you text 24–48 hours after the party — From the host’s perspective it looks like a studio follow-up, but only to those who already opted in: “Thanks for celebrating with [Child]! Here’s the photo album + a little something for your next party.”
+	6	Free add-on instead of pure discount — “Free slime station upgrade or extra 15 minutes when you book within 6 months.” Sometimes outperforms pure dollar discounts with this demographic because it feels like experience, not couponing.
+	7	Double opt-in clarity — Separate SMS consent from marketing consent, both unchecked. The marketing one should lead with the benefit, not the brand: “Send me offers & birthday discounts.”
+	8	Host-side social proof in the RSVP list — When the host sees “12 families RSVP’d,” a small note: “X of your guests opted in for updates — they’ll get party reminders automatically.” Makes the host feel the system is helping them, which increases willingness to share next time.
+	9	After-party goody-bag insert — Physical card with QR + short code: “Scan for the photo album + $40 credit.” Physical + digital compounds.
+	10	Referral-adjacent ask only after value is delivered — Never ask for the guest’s friends list. Instead, after they receive photos, a light “Know another parent who’d love this?” with a unique link. Low volume, high quality.
+Avoid any dark patterns. The host will notice and will stop sharing if their friends complain.
+4. The party itself as a funnel
+Treat the studio (or mobile setup) as the highest-intent conversion surface.
+	•	Welcome wall or entrance has a large, on-brand QR: “Scan for live photos + your $25 party credit.” Staff can mention it once casually.
+	•	Mid-party, a quick group photo moment that is framed as “for the album.” Parents already have their phones out.
+	•	Goody bags include a small, beautiful insert (not a flyer) with the QR and one line: “Your photos + a thank-you credit are waiting.”
+	•	Immediately after the party (same day or next morning), the studio texts the host the private album link and a short note they can forward. Simultaneously, opted-in guests get the same album + the credit offer.
+	•	Shared album should be password-free or use a simple code so friction is near zero. Make it downloadable in one tap.
+The goal is that every guest parent leaves with (a) emotional residue from a great party and (b) a zero-friction path to claim value for their own child.
+5. Follow-up sequence
+Only message people who explicitly opted in. Sequence is birthday-month aware where possible.
+	•	Day 0–1 after party: Photo album + soft credit (“Here’s the album from [Child]’s party. Your $50 credit is ready whenever you are.”).
+	•	7–10 days later: One short “still thinking about themes?” message only if they haven’t engaged.
+	•	Birthday-month window (if known): 3–4 weeks before the child’s birthday month, a single message: “Emma’s birthday is coming up — here’s your Host Hampton credit and this season’s new themes.”
+	•	Off-season nurture: At most one message every 6–8 weeks, always value-first (new theme launch, limited spots, or a real tip). Never a pure “book now.”
+	•	Channel priority: SMS first (highest open rates for this demographic), email only as backup or for longer content. Never both on the same day.
+Spam avoidance rule: if someone doesn’t engage with two consecutive messages, move them to a once-per-quarter digest or suppress. Respect is the brand.
+6. Referral loop
+Yes, reward the host, and tell them up front in a low-pressure way.
+After the party, when you send the host the album: “If any of your guests book a party in the next 12 months and mention you, we’ll credit $100 toward your next booking or send you a gift card.” Keep the language clean and non-commission-sounding.
+Do not put the referral offer on the guest-facing invite or RSVP form — that makes the host feel instrumentalized. Mention it only to the host after they have already experienced the value. Track via a simple “How did you hear about us?” on the booking form or a unique host code if volume justifies it.
+7. Viral/delight features
+Only build the ones that increase share rate or guest completion without adding complexity:
+	•	Subtle theme animation on the invite preview (glow particles for Glow party, soft confetti for others). Must be lightweight so the link preview still loads instantly.
+	•	One-tap “Add to Calendar” on the confirmation screen.
+	•	Optional short personal note from the host that appears at the top of the RSVP page (“Can’t wait to celebrate with you! – Sarah”). Pre-filled blank, host can add in 10 seconds if they want.
+	•	Live headcount that updates for the host (“12 kids so far”) — this is practical delight.
+	•	Post-RSVP, a tiny “Send a note to the birthday kid” that is optional and private (goes only to the host). Skip if it adds a second screen.
+Skip countdowns, guest books, photo uploads at RSVP, and anything that requires the guest to create content. Those kill completion rates.
+8. Risks
+	•	TCPA / consent risk: Even with unchecked boxes, if the language is ambiguous or you text people who only consented to “party updates,” you create exposure. Mitigation: crystal-clear separate checkboxes, store timestamp + exact language version, and never mix the two lists.
+	•	Host backlash: If guests feel the RSVP was a sales pitch, the host hears about it and stops using the tool. Mitigation: keep marketing language benefit-first and minimal; never put Host Hampton offers above the RSVP fields.
+	•	Kids’ data sensitivity: Even first names + mobile of the parent can feel creepy if over-collected. Mitigation: collect the absolute minimum, never ask for the child’s full birthday or photo at RSVP, and be transparent in a one-line privacy note.
+	•	Brand dilution: An invite that feels like a lead-gen form undermines the upscale positioning. Mitigation: the guest-facing invite image must look like a beautiful paperless invitation, not a coupon.
+	•	Deliverability and carrier filtering: High volume of similar SMS from a new number can get filtered. Mitigation: proper 10DLC registration, varied message content, and low frequency.
+9. Metrics
+Track these five tightly:
+	1	Host share rate (% of booked parties that generate at least one guest RSVP via the link). Target: >70% within 3 months.
+	2	Guest completion rate (% of unique link opens that submit an RSVP). Target: >55–60% (Partiful-style flows often clear 50%+ when friction is low).
+	3	Marketing opt-in rate among guests who RSVP Yes. Target: 35–50% with a strong, specific offer.
+	4	Lead-to-booking conversion (opted-in guests who book within 12 months). Early target: 8–12%.
+	5	Host referral rate (bookings that credit a previous host). Track absolute number and % of total bookings.
+Secondary but useful: time-to-first-RSVP after share, and allergy capture completeness (for ops).
+10. If you were building v1 in 2 weeks
+In:
+	•	Auto-generated invite image + unique short link from booking data.
+	•	Native share sheet with pre-filled text.
+	•	Single-screen mobile RSVP (Yes/No, kids text, parent name, mobile, adults stepper, optional allergies, two unchecked consents).
+	•	Live host dashboard (list + headcount + allergies).
+	•	Studio view of aggregate headcount + allergies.
+	•	Basic SMS to host when new RSVPs come in.
+	•	Confirmation screen with calendar add.
+	•	Simple post-party photo album link (manual upload is fine for v1).
+Out:
+	•	Birthday month capture at RSVP.
+	•	Any guest messaging or notes.
+	•	Animations beyond a static high-quality image.
+	•	Host customization of the invite.
+	•	Automated referral tracking/credits.
+	•	Email capture as required.
+	•	Complex analytics or A/B testing infrastructure.
+	•	On-site QR flows (add in week 3–4 once the core RSVP works).
+Ship the core loop that replaces the Canva PNG and gives you the guest data. Everything else is iteration after you see real completion and opt-in numbers.
