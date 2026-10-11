@@ -1,10 +1,12 @@
 import type { Metadata } from 'next'
 import { notFound, permanentRedirect } from 'next/navigation'
 import { InviteCanvas } from '@/components/evites/InviteCanvas'
+import InviteImage from '@/components/evites/InviteImage'
 import RsvpIsland from '@/components/evites/RsvpIsland'
+import ScaledCanvas from '@/components/evites/ScaledCanvas'
 import ViewBeacon from '@/components/evites/ViewBeacon'
 import { computeSizes } from '@/lib/evites/layout'
-import { honoreeFirstName, invitePageModel, inviteMetadata, unavailableMetadata, type RibbonTone } from '@/lib/evites/pageModel'
+import { honoreeFirstName, inviteImageUrl, invitePageModel, inviteMetadata, unavailableMetadata, type RibbonTone } from '@/lib/evites/pageModel'
 import type { OwnRsvp } from '@/lib/evites/rsvpView'
 import { templateFor } from '@/lib/evites/templates'
 import { loadInvite } from './loadInvite'
@@ -63,6 +65,8 @@ export default async function InvitePage({ params, searchParams }: Props) {
   const model = invitePageModel(r.state, r.facts)
   const template = templateFor(r.facts.templateSlug)
   const sizes = computeSizes(template, r.facts)
+  // The stored picture when a render exists (a plain responsive <img>); the web canvas only before the first render.
+  const image = inviteImageUrl(r.evite, process.env.SUPABASE_URL)
 
   // Only a live party takes RSVPs. The caller's own answer (if their cookie verifies) and the current club wording.
   let own: OwnRsvp | null = null
@@ -85,16 +89,27 @@ export default async function InvitePage({ params, searchParams }: Props) {
         </div>
       )}
 
-      <div className="hh-inv-frame">
-        <div className="hh-inv-canvas">
+      {image ? (
+        <InviteImage src={image} alt={`${r.facts.title}. ${r.facts.dateLine}`} maxWidth={540} eager className="hh-inv-img" />
+      ) : (
+        <ScaledCanvas frameClassName="hh-inv-frame" canvasClassName="hh-inv-canvas" initialScale={0.316}>
           <InviteCanvas template={template} facts={r.facts} sizes={sizes} mode="web" />
-        </div>
-      </div>
+        </ScaledCanvas>
+      )}
 
-      {/* The canvas is a picture to a screen reader; the same facts, as text. */}
+      {/* The picture is an image to a screen reader; the same facts, as text. */}
       <section aria-label="Party details" className="mt-5 rounded-xl bg-white/10 px-4 py-3 text-sm">
         <p className="font-semibold">{model.details.dateLine}</p>
-        <p className="text-white/80">{model.details.placeLine}</p>
+        <p className="text-white/80">
+          {model.details.placeMapsUrl ? (
+            // A plain anchor to Google Maps; the picture itself cannot carry a link.
+            <a href={model.details.placeMapsUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+              {model.details.placeLine}
+            </a>
+          ) : (
+            model.details.placeLine
+          )}
+        </p>
         {model.details.hostContactLine && <p className="mt-1 text-white/70">{model.details.hostContactLine}</p>}
       </section>
 

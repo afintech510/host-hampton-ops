@@ -151,6 +151,65 @@ describe('a live invitation', () => {
   })
 })
 
+describe('the picture, and the link to the map', () => {
+  const STORED = { image_key: KEY, invite_object: 'invite-v3-ab12.jpg', og_object: 'og-v3-ab12.jpg' }
+  const URL_ = `https://proj.supabase.co/storage/v1/object/public/evites/${KEY}/invite-v3-ab12.jpg`
+
+  it('with no render yet it draws the scaled web canvas (no <img> of a stored file)', async () => {
+    const out = await html()
+    expect(out).toContain('hh-inv-frame')
+    expect(out).toContain('hh-inv-canvas')
+    expect(out).not.toContain('data-invite-image')
+    expect(out).not.toMatch(/atan2|cqw/) // the unscaling CSS is gone
+  })
+
+  it('with a stored render it shows the portrait JPEG: responsive, eager, reserved box, meaningful alt', async () => {
+    mockDb = makeDb({ evite: STORED })
+    const out = await html()
+    expect(out).toContain(`src="${URL_}"`)
+    expect(out).toContain('data-invite-image')
+    expect(out).toContain('loading="eager"')
+    expect(out).toContain('decoding="async"')
+    expect(out).toMatch(/alt="Mia(&#x27;|')s Glow Party[.] Saturday, November 14/)
+    expect(out).toMatch(/max-width:540px/)
+    expect(out).toContain('aspect-ratio:1085 / 1530')
+    expect(out).not.toContain('hh-inv-canvas')
+  })
+
+  it('a stored name that is not what the renderer writes falls back to the canvas', async () => {
+    mockDb = makeDb({ evite: { ...STORED, invite_object: '../../etc/passwd.jpg' } })
+    const out = await html()
+    expect(out).not.toContain('data-invite-image')
+    expect(out).toContain('hh-inv-canvas')
+  })
+
+  const anchors = (out: string): string[] => out.match(/<a [^>]*>[^<]*<[/]a>/g) ?? []
+  const mapLinks = (out: string): string[] => anchors(out).filter((x) => x.includes('google.com/maps'))
+
+  it('the studio place line is a new-tab link to Google Maps for the studio address', async () => {
+    const links = mapLinks(await html())
+    expect(links).toHaveLength(1)
+    expect(links[0]).toContain('href="https://www.google.com/maps/dir/?api=1&amp;destination=295%20Montauk%20Hwy%2C%20Speonk%2C%20NY%2011972"')
+    expect(links[0]).toContain('target="_blank"')
+    expect(links[0]).toContain('rel="noopener noreferrer"')
+    expect(links[0]).toContain('>Host Hampton')
+  })
+
+  it('a mobile party with an address links that address; one without an address has no link', async () => {
+    mockDb = makeDb({ booking: { party_tags: { location_type: 'mobile', location_address: '12 Dune Rd, Westhampton, NY 11977' } } })
+    const links = mapLinks(await html())
+    expect(links).toHaveLength(1)
+    expect(links[0]).toContain('href="https://www.google.com/maps/search/?api=1&amp;query=12%20Dune%20Rd%2C%20Westhampton%2C%20NY%2011977"')
+    expect(links[0]).toContain('rel="noopener noreferrer"')
+
+    newRequest()
+    mockDb = makeDb({ booking: { party_tags: { location_type: 'mobile' } } })
+    const none = await html()
+    expect(mapLinks(none)).toHaveLength(0)
+    expect(none).toContain('Location to be confirmed')
+  })
+})
+
 describe('the other visible states (spec §4 copy)', () => {
   it('preview: a Preview ribbon, the booking note, "Pick your date", and no RSVP', async () => {
     mockDb = makeDb({ booking: { status: 'awaiting_deposit' }, payments: [] })

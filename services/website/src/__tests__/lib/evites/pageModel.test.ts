@@ -4,6 +4,8 @@ import {
   invitePageModel,
   longDateText,
   OG_CARD,
+  inviteImageUrl,
+  placeMapsUrl,
   ogImageUrl,
   PREVIEW_NOTE,
   ribbonFor,
@@ -31,6 +33,35 @@ describe('ribbons (spec §4 copy per state)', () => {
   it('RSVP is offered only when live', () => {
     for (const s of ['preview', 'needs_time', 'closed'] as const) expect(invitePageModel(s, factsFor(s)).showRsvp).toBe(false)
     expect(invitePageModel('live', factsFor('live')).showRsvp).toBe(true)
+  })
+})
+
+describe('the stored invitation picture and the map link', () => {
+  const ok = { image_key: KEY, invite_object: 'invite-v1-abcd.jpg' }
+
+  it('is the invite object in the evites bucket; null when anything is missing or malformed', () => {
+    expect(inviteImageUrl(ok, SUPA + '/')).toBe(`${SUPA}/storage/v1/object/public/evites/${KEY}/invite-v1-abcd.jpg`)
+    expect(inviteImageUrl(ok, undefined)).toBeNull()
+    expect(inviteImageUrl({ image_key: null, invite_object: null }, SUPA)).toBeNull()
+    expect(inviteImageUrl({ image_key: KEY, invite_object: null }, SUPA)).toBeNull()
+    expect(inviteImageUrl({ image_key: 'short', invite_object: 'invite-v1-abcd.jpg' }, SUPA)).toBeNull()
+    expect(inviteImageUrl({ image_key: KEY, invite_object: 'og-v1-abcd.jpg' }, SUPA)).toBeNull()
+    expect(inviteImageUrl({ image_key: KEY, invite_object: 'invite-v1-abcd.jpg/../x.jpg' }, SUPA)).toBeNull()
+  })
+
+  it('the map link: studio directions, a search for a mobile address, nothing without one', () => {
+    expect(placeMapsUrl({ locationType: 'studio', calendarLocation: 'Host Hampton, 295 Montauk Hwy, Speonk, NY 11972' })).toBe(
+      'https://www.google.com/maps/dir/?api=1&destination=295%20Montauk%20Hwy%2C%20Speonk%2C%20NY%2011972',
+    )
+    expect(placeMapsUrl({ locationType: 'mobile', calendarLocation: '12 Dune Rd, Westhampton' })).toBe(
+      'https://www.google.com/maps/search/?api=1&query=12%20Dune%20Rd%2C%20Westhampton',
+    )
+    expect(placeMapsUrl({ locationType: 'mobile', calendarLocation: null })).toBeNull()
+    expect(placeMapsUrl({ locationType: 'mobile', calendarLocation: '   ' })).toBeNull()
+  })
+
+  it('the model carries the link in details', () => {
+    expect(invitePageModel('live', factsFor('live')).details.placeMapsUrl).toContain('google.com/maps/dir/')
   })
 })
 

@@ -11,11 +11,16 @@
  * Accept, return=representation, count=exact with HEAD, rpc). An unsupported request is a loud 501, so a new
  * query in the app fails the test instead of silently reading nothing.
  *
+ * Storage: GET /storage/v1/object/public/evites/<key>/<object> serves one fixture JPEG (the 1085 x 1530 Glow
+ * background from public/evites/), so an invitation with a stored render exercises the page's <img> path.
+ *
  * Test hooks (never reachable through the app): GET /__state, POST /__reset.
  */
 
 import http from 'node:http'
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const PORT = Number(process.env.MOCK_SUPABASE_PORT || 54399)
 
@@ -28,6 +33,11 @@ function etDate(days) {
 const EVITE_ID = '11111111-1111-4111-8111-111111111111'
 const BOOKING_ID = '22222222-2222-4222-8222-222222222222'
 const SLUG = 'mia-glow-7kq2'
+const BOOKING2_ID = '44444444-4444-4444-8444-444444444444'
+/** A second booking (HH-E2E-2), identical but for a stored render (image_key + invite_object + og_object), for the <img> path. */
+const IMG_SLUG = 'mia-glow-mg47'
+const IMG_KEY = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
+const FIXTURE_JPEG = fileURLToPath(new URL('../../public/evites/glow/background.jpg', import.meta.url))
 
 function seed() {
   return {
@@ -52,6 +62,26 @@ function seed() {
         previous_slugs: [],
         created_at: '2026-10-01T12:00:00Z',
       },
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        booking_id: BOOKING2_ID,
+        slug: IMG_SLUG,
+        template_slug: 'glow',
+        theme_word: null,
+        theme_sub: null,
+        host_contact_name: null,
+        host_contact_phone: null,
+        show_host_contact: true,
+        host_note: null,
+        gift_note: null,
+        rsvp_deadline: null,
+        image_key: IMG_KEY,
+        invite_object: 'invite-v1-ab12.jpg',
+        og_object: 'og-v1-ab12.jpg',
+        archived_at: null,
+        previous_slugs: [],
+        created_at: '2026-10-01T12:00:00Z',
+      },
     ],
     bookings: [
       {
@@ -72,9 +102,33 @@ function seed() {
         quote_snapshot: null,
         created_at: '2026-10-01T12:00:00Z',
       },
+      {
+        id: BOOKING2_ID,
+        booking_ref: 'HH-E2E-2',
+        status: 'deposit_paid',
+        party_type: 'in_studio_theme',
+        event_type: null,
+        party_date: etDate(30),
+        party_time: '14:00',
+        package_type: 'Glow Party',
+        guest_count_approx: 12,
+        child_name: 'Mia',
+        child_age: 7,
+        contact_name: 'Pat Example',
+        contact_email: 'pat@example.com',
+        party_tags: { location_type: 'host_hampton' },
+        quote_snapshot: null,
+        created_at: '2026-10-01T12:00:00Z',
+      },
     ],
-    booking_payments: [{ id: 'p1', booking_id: BOOKING_ID, amount_cents: 25000, payment_type: 'deposit' }],
-    booking_line_items: [{ id: 'l1', booking_id: BOOKING_ID, name: 'Glow Party', category: 'theme', pricing_item_id: 'pi-glow' }],
+    booking_payments: [
+      { id: 'p1', booking_id: BOOKING_ID, amount_cents: 25000, payment_type: 'deposit' },
+      { id: 'p2', booking_id: BOOKING2_ID, amount_cents: 25000, payment_type: 'deposit' },
+    ],
+    booking_line_items: [
+      { id: 'l1', booking_id: BOOKING_ID, name: 'Glow Party', category: 'theme', pricing_item_id: 'pi-glow' },
+      { id: 'l2', booking_id: BOOKING2_ID, name: 'Glow Party', category: 'theme', pricing_item_id: 'pi-glow' },
+    ],
     party_themes: [{ id: 't1', name: 'Glow Party', slug: 'glow-party', pricing_item_id: 'pi-glow' }],
     evite_consent_texts: [{ version: 'club-v1', channel: 'email', wording: 'Send me party & craft ideas from Host Hampton', created_at: '2026-10-10T00:00:00Z' }],
     evite_rsvps: [],
@@ -209,6 +263,10 @@ async function handle(req, res) {
     return send(res, 200, { ok: true })
   }
   if (url.pathname === '/__health') return send(res, 200, { ok: true })
+  if (url.pathname.startsWith('/storage/v1/object/public/evites/')) {
+    res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'no-store' })
+    return res.end(readFileSync(FIXTURE_JPEG))
+  }
 
   const m = /^\/rest\/v1\/(.+)$/.exec(url.pathname)
   if (!m) return send(res, 404, { message: 'not found' })

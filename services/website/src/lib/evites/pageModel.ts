@@ -15,6 +15,7 @@ import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { etToUtc, PARTY_TZ } from '@/lib/partyTime'
 import type { InviteFacts } from '@/lib/evites/facts'
 import type { EvitePageRow, VisibleInviteState } from '@/lib/evites/resolve'
+import { STUDIO_MAPS_URL } from '@/lib/studioLocation'
 
 /** The share card is always 1200x630 JPEG (render.ts `OG_WIDTH` x `OG_HEIGHT`). */
 export const OG_CARD = { width: 1200, height: 630, type: 'image/jpeg' } as const
@@ -37,7 +38,7 @@ export interface InvitePageModel {
   /** True only for `live`: the RSVP island is mounted. */
   showRsvp: boolean
   /** The date / place / host lines as plain text (the canvas is an image to a screen reader). */
-  details: { dateLine: string; placeLine: string; hostContactLine: string | null }
+  details: { dateLine: string; placeLine: string; hostContactLine: string | null; placeMapsUrl: string | null }
   hostNote: string | null
   giftNote: string | null
   /** 'Sunday, November 8', or null. Not shown once the party has happened. */
@@ -76,12 +77,24 @@ export function ribbonFor(state: VisibleInviteState): InviteRibbon | null {
   }
 }
 
+/**
+ * Where "get directions" goes: the studio's own directions link for a studio party, a Google Maps
+ * search for a mobile party's address, and null when there is no address (nothing to link).
+ * `calendarLocation` is the raw address for a mobile party; the studio never needs it.
+ */
+export function placeMapsUrl(facts: Pick<InviteFacts, 'locationType' | 'calendarLocation'>): string | null {
+  if (facts.locationType === 'studio') return STUDIO_MAPS_URL
+  const address = (facts.calendarLocation ?? '').trim()
+  if (!address) return null
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+}
+
 export function invitePageModel(state: VisibleInviteState, facts: InviteFacts): InvitePageModel {
   return {
     state,
     ribbon: ribbonFor(state),
     showRsvp: state === 'live',
-    details: { dateLine: facts.dateLine, placeLine: facts.placeLine, hostContactLine: facts.hostContactLine },
+    details: { dateLine: facts.dateLine, placeLine: facts.placeLine, hostContactLine: facts.hostContactLine, placeMapsUrl: placeMapsUrl(facts) },
     hostNote: facts.hostNote,
     giftNote: facts.giftNote,
     rsvpByText: state !== 'closed' && facts.rsvpDeadline ? longDateText(facts.rsvpDeadline) : null,
@@ -92,6 +105,20 @@ export function invitePageModel(state: VisibleInviteState, facts: InviteFacts): 
 
 const IMAGE_KEY = /^[0-9a-f]{32}$/
 const OG_OBJECT = /^og-v\d{1,6}-[0-9a-f]{4}\.jpg$/
+
+const INVITE_OBJECT = /^invite-v\d{1,6}-[0-9a-f]{4}\.jpg$/
+
+/**
+ * The stored portrait invitation (same folder as the share card), or null when no render has
+ * landed yet or the stored names are not what the renderer writes. The page then draws the web
+ * canvas instead. `supabaseUrl` is `SUPABASE_URL`, passed in so a test can pin it.
+ */
+export function inviteImageUrl(evite: Pick<EvitePageRow, 'image_key' | 'invite_object'>, supabaseUrl: string | undefined): string | null {
+  const base = (supabaseUrl ?? '').trim().replace(/\/+$/, '')
+  if (!base || !evite.image_key || !evite.invite_object) return null
+  if (!IMAGE_KEY.test(evite.image_key) || !INVITE_OBJECT.test(evite.invite_object)) return null
+  return `${base}/storage/v1/object/public/evites/${evite.image_key}/${evite.invite_object}`
+}
 
 /** The static fallback card, absolute against the CANONICAL origin (never a request header). */
 export function defaultOgImageUrl(): string {

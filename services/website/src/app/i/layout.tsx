@@ -25,18 +25,19 @@ export const metadata: Metadata = {
  * fixed Nav). Nav, Footer and the rest of the chrome return null on `/i/`, so
  * `-mt-20` takes the padding back and the invitation owns the whole viewport.
  *
- * The scaling is pure CSS, so a bot and a person get the same HTML and there is
- * no layout jump: the canvas is drawn 1085 x 1530 and scaled to its frame's width
- * (`cqw`). Browsers without container-query units or CSS trig fall back to a fixed
- * 375px-wide card.
+ * The invitation is the stored portrait JPEG (`InviteImage`, plain CSS: width 100%,
+ * max-width 540px, a reserved aspect-ratio box). Only before the first render lands is the
+ * 1085 x 1530 web canvas drawn instead, and `ScaledCanvas` scales it from the frame's MEASURED
+ * width. It used to be `scale(tan(atan2(100cqw, 1085px)))`, which a phone could accept in
+ * `@supports` and then fail to resolve, leaving the canvas unscaled and the frame blank.
  */
 const CSS = `
 ${fontFaceCss()}
 .hh-inv-root{margin-top:-5rem;min-height:100vh;min-height:100dvh;background:#1b0630;color:#fff;display:flex;flex-direction:column;align-items:center;padding:1.25rem 1rem 3rem;font-family:'Poppins',system-ui,sans-serif}
-.hh-inv-col{width:100%;max-width:30rem}
-.hh-inv-frame{position:relative;width:min(100%,30rem);aspect-ratio:1085/1530;margin:0 auto;overflow:hidden;border-radius:14px;container-type:inline-size;box-shadow:0 0 28px rgba(138,61,255,.45)}
-.hh-inv-canvas{position:absolute;left:0;top:0;width:1085px;height:1530px;transform-origin:0 0;transform:scale(.3456)}
-@supports (width:1cqw) and (transform:scale(tan(atan2(1px,1px)))){.hh-inv-canvas{transform:scale(tan(atan2(100cqw,1085px)))}}
+.hh-inv-col{width:100%;max-width:33.75rem}
+.hh-inv-frame{position:relative;width:100%;max-width:33.75rem;aspect-ratio:1085/1530;margin:0 auto;overflow:hidden;border-radius:14px;box-shadow:0 0 28px rgba(138,61,255,.45)}
+.hh-inv-canvas{position:absolute;left:0;top:0;transform-origin:0 0}
+.hh-inv-img{border-radius:14px;box-shadow:0 0 28px rgba(138,61,255,.45)}
 `
 
 export default function InviteLayout({ children }: { children: React.ReactNode }) {

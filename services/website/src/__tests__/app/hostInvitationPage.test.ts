@@ -105,6 +105,17 @@ describe('with a portal session', () => {
     expect(out).toMatch(/<button[^>]*data-share="text"[^>]*disabled/)
   })
 
+  it('with a stored render the host page shows the last picture, even while a redraw is pending', async () => {
+    mockDb = makeHostDb({ evite: { image_key: 'c'.repeat(32), invite_object: 'invite-v2-ab12.jpg', og_object: 'og-v2-ab12.jpg', render_inputs_hash: 'stale' } })
+    const out = await html()
+    expect(out).toContain('src="https://p.supabase.co/storage/v1/object/public/evites/' + 'c'.repeat(32) + '/invite-v2-ab12.jpg"')
+    expect(out).toContain('data-invite-image')
+    expect(out).toMatch(/max-width:400px/)
+    expect(out).not.toContain('class="hh-hi-canvas"')
+    expect(out).toContain('Updating your invitation')
+    expect(out).not.toMatch(/atan2|cqw/)
+  })
+
   it('the canvas on the page is the web canvas with the web fonts declared', async () => {
     const out = await html()
     expect(out).toContain('@font-face')

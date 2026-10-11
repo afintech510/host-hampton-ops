@@ -6,6 +6,8 @@ import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { NOINDEX } from '@/lib/seo'
 import { InviteCanvas } from '@/components/evites/InviteCanvas'
 import HostInvitation from '@/components/evites/HostInvitation'
+import InviteImage from '@/components/evites/InviteImage'
+import ScaledCanvas from '@/components/evites/ScaledCanvas'
 import { fontFaceCss } from '@/lib/evites/fontFaces'
 import { computeSizes } from '@/lib/evites/layout'
 import { composeHostView, readHostRows } from '@/lib/evites/hostView'
@@ -37,9 +39,9 @@ export const metadata: Metadata = {
 
 const FRAME_CSS = `
 ${fontFaceCss()}
-.hh-hi-frame{position:relative;width:100%;aspect-ratio:1085/1530;overflow:hidden;border-radius:10px;container-type:inline-size;background:#1b0630}
-.hh-hi-canvas{position:absolute;left:0;top:0;width:1085px;height:1530px;transform-origin:0 0;transform:scale(.27)}
-@supports (width:1cqw) and (transform:scale(tan(atan2(1px,1px)))){.hh-hi-canvas{transform:scale(tan(atan2(100cqw,1085px)))}}
+.hh-hi-frame{position:relative;width:100%;max-width:25rem;aspect-ratio:1085/1530;margin:0 auto;overflow:hidden;border-radius:10px;background:#1b0630}
+.hh-hi-canvas{position:absolute;left:0;top:0;transform-origin:0 0}
+.hh-hi-img{border-radius:10px;background:#1b0630}
 `
 
 function Message({ title, body, action }: { title: string; body: string; action?: { href: string; label: string } }) {
@@ -89,11 +91,15 @@ export default async function HostInvitationPage() {
       <HostInvitation
         initial={payload}
         preview={
-          <div className="hh-hi-frame">
-            <div className="hh-hi-canvas">
+          // The LAST stored picture when there is one (even while a redraw is pending: the page says "Updating your
+          // invitation"), a plain responsive <img>; the web canvas only before the first render.
+          payload.images.invite ? (
+            <InviteImage src={payload.images.invite} alt={`${facts.title}. ${facts.dateLine}`} maxWidth={400} className="hh-hi-img" />
+          ) : (
+            <ScaledCanvas frameClassName="hh-hi-frame" canvasClassName="hh-hi-canvas" initialScale={0.3}>
               <InviteCanvas template={template} facts={facts} sizes={sizes} mode="web" />
-            </div>
-          </div>
+            </ScaledCanvas>
+          )
         }
       />
     </div>
