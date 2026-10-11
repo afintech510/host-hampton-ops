@@ -9,11 +9,16 @@ import {
   BOOKING_DEPOSIT_CENTS,
   screenTipCents,
 } from '@/lib/partyPricing'
+import { purposeAcceptsTip } from '@/lib/planPayLinks'
 import {
+  INVOICE_PAY_PURPOSES,
+  MIN_PARTIAL_PAYMENT_CENTS,
   billedTotalCents,
   depositIsSeparateFor,
   isUnpricedPlan,
   planMoney,
+  resolveInvoicePayment,
+  screenInvoicePayPurpose,
   type BilledItem,
   type PaymentRow,
   type PlanMoney,
@@ -102,7 +107,7 @@ export async function POST(req: NextRequest) {
   // POSTed `amount_cents` but the route expected `amountCents` — they never
   // matched, which surfaced as the "Minimum payment is $50" error on every
   // amount. Accepting both keeps any in-flight clients working.
-  const amountCents = (body.amountCents ?? body.amount_cents) as number | undefined
+  const requestedAmountCents = (body.amountCents ?? body.amount_cents) as number | undefined
   const tipCents = (body.tipCents ?? body.tip_cents) as number | undefined
   const { paymentMethod, embedded, paymentType } = body as {
     paymentMethod: 'card' | 'cash' | 'venmo' | 'zelle'
@@ -110,10 +115,28 @@ export async function POST(req: NextRequest) {
     paymentType?: 'deposit' | 'partial' | 'final'
   }
 
-  // Any positive amount is allowed. Customers can chip away at the balance
-  // however they want — admin used to gate this at $50/$99, but per UX
-  // request 2026-05-24 we lift the floor entirely.
-  if (!amountCents || amountCents <= 0) {
+  // ── `purpose`: the invoice page names WHAT it is paying, not how much ──────
+  //
+  // `/plan/[ref]/summary`'s in-page card form posts `purpose` =
+  // `deposit | balance | partial` (lib/planBalance.ts `resolveInvoicePayment`).
+  // For `deposit` and `balance` the figure is derived below from the invoice and
+  // the request's amount is not read at all; `partial` is the one bounded custom
+  // value. A request with NO purpose is `/my-booking`, which picks its own amount
+  // up to the ceiling further down — unchanged.
+  const invoicePurpose = screenInvoicePayPurpose(body.purpose)
+  if (invoicePurpose === null) {
+    return NextResponse.json(
+      { error: `Unknown payment purpose. Expected one of: ${INVOICE_PAY_PURPOSES.join(', ')}.` },
+      { status: 400 },
+    )
+  }
+
+  // A customer-chosen amount must be a positive number. `deposit` / `balance`
+  // name none: their figure comes from the plan.
+  if (
+    (invoicePurpose === undefined || invoicePurpose === 'partial') &&
+    (!requestedAmountCents || requestedAmountCents <= 0)
+  ) {
     return NextResponse.json({ error: 'Enter a valid amount' }, { status: 400 })
   }
 
@@ -202,6 +225,28 @@ export async function POST(req: NextRequest) {
   const reservationOwedCents =
     derivedMoney && isUnpricedPlan(derivedMoney.money.totalCents) ? derivedMoney.money.depositOwedCents : 0
 
+  // ── What is being paid, when the request named a purpose ──────────────────
+  //
+  // Derived from the same `planMoney` the invoice prints, so the button and the
+  // document cannot quote different money. If that could not be worked out, a
+  // purposeful request is refused rather than falling back to the column: the
+  // whole point of naming a purpose is that no figure comes from the browser,
+  // and "could not read the invoice" must not quietly become "charge what the
+  // browser said" (rule 12).
+  let amountCents: number
+  if (invoicePurpose) {
+    if (!derivedMoney) {
+      return NextResponse.json({ error: 'Could not work out what is owed — try again.' }, { status: 503 })
+    }
+    const resolved = resolveInvoicePayment(derivedMoney.money, invoicePurpose, requestedAmountCents)
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.reason }, { status: 409 })
+    }
+    amountCents = resolved.amountCents
+  } else {
+    amountCents = requestedAmountCents as number
+  }
+
   if (!hasColumnBalance && reservationOwedCents <= 0) {
     return NextResponse.json(
       { error: 'There is no balance to pay on this booking right now. Give us a call if that looks wrong.' },
@@ -259,16 +304,45 @@ export async function POST(req: NextRequest) {
   // even quoted is both wrong and the double-charge.
   const isReservationPayment = pricedCeiling <= 0 && reservationOwedCents > 0
   const isFinalPayment = !isReservationPayment && effectiveAmount >= balanceCents
+  // A purposeful request never lets the body name the type: `deposit` is a
+  // deposit, and `balance` / `partial` are whatever the amount turns out to be
+  // against the ceiling (`final` if it clears the debt, `partial` if it does not).
+  const namedType = invoicePurpose ? (invoicePurpose === 'deposit' ? 'deposit' : undefined) : screenedType
   const resolvedType = isReservationPayment
     ? 'deposit'
-    : (screenedType ?? (isFinalPayment ? 'final' : 'partial'))
+    : (namedType ?? (isFinalPayment ? 'final' : 'partial'))
+
+  // ── The part-payment floor, on the server ────────────────────────────────
+  //
+  // `/my-booking` and `/my-booking/pay` tell the customer "Minimum $50" and
+  // enforce it in the browser only. The floor is `min($50, what is left)`, so
+  // clearing the last $30 is always allowed. A deposit and a final payment are
+  // exempt by construction: the first is a fixed figure, the second ends the debt.
+  if (resolvedType === 'partial') {
+    const floorCents = Math.min(MIN_PARTIAL_PAYMENT_CENTS, balanceCents)
+    if (effectiveAmount < floorCents) {
+      return NextResponse.json(
+        { error: `The smallest part payment is ${formatMoney(floorCents)}.` },
+        { status: 400 },
+      )
+    }
+  }
 
   // Tip handling — added only on card payments. Tip lifts the Stripe charge
   // but doesn't count toward the booking balance (it's a gratuity for the
   // helpers, not party fees). Bounded, because it is the one figure on this
   // route with no server-side ceiling of its own: an unbounded tip is an
   // unbounded charge, and a fat-fingered one is a refund conversation.
-  const safeTipCents = screenTipCents(tipCents)
+  //
+  // On the invoice's own purposes the same rule the Payment Link keeps applies
+  // (`purposeAcceptsTip`): the final payment of a party WITH a team, nothing
+  // else. A studio rental is the room — Adam, 2026-09-23 — and a part payment is
+  // not the "final" one the tip belongs with. The legacy no-purpose caller keeps
+  // its own tip UI exactly as it was.
+  const tipAllowed =
+    invoicePurpose === undefined ||
+    purposeAcceptsTip(invoicePurpose === 'balance' ? 'balance' : 'custom', booking.party_type)
+  const safeTipCents = tipAllowed ? screenTipCents(tipCents) : 0
 
   if (paymentMethod === 'card') {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
@@ -324,6 +398,15 @@ export async function POST(req: NextRequest) {
       clientSecret: intent.client_secret,
       paymentIntentId: intent.id,
       method: 'card',
+      // What this charge is, so the invoice's button can read back the figure the
+      // SERVER settled on rather than the one the page displayed: the two differ
+      // when the stored balance is lower than the invoice (the ceiling above) or
+      // a part payment was clamped to what is left.
+      paymentType: resolvedType,
+      amountCents: effectiveAmount,
+      tipCents: safeTipCents,
+      feeCents: cardFeeCents,
+      chargeCents: totalChargeCents,
     })
   }
 

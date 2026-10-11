@@ -70,7 +70,9 @@ import {
 import { ensureInvoiceNumber } from '@/lib/invoiceNumber'
 import { planAccess } from '@/lib/planAccess'
 import { quoteFor, purposeAcceptsTip } from '@/lib/planPayLinks'
-import { isUnpricedPlan } from '@/lib/planBalance'
+import { isUnpricedPlan, partialPaymentBounds } from '@/lib/planBalance'
+import { isPayableStatus } from '@/lib/portalWrite'
+import { waiverOffer } from '@/lib/waiverOffer'
 import {
   RECOMMENDED_TIP_RATE,
   TIP_PRESET_PERCENTS,
@@ -84,8 +86,10 @@ import {
   PrintButton,
   AdminCustomCharge,
   SecurityHoldPanel,
+  WaiverPanel,
   PartyAddressForm,
   type PayOption,
+  type PartialConfig,
 } from './PayPanel'
 import { shouldAskForPartyAddress } from '@/lib/partyAddress'
 import './invoice.css'
@@ -126,11 +130,19 @@ function InvoiceBody({
   ref_,
   payOptions,
   isAdminView,
+  embedded,
+  partial,
+  waiver,
 }: {
   invoice: PlanInvoice
   ref_: string
   payOptions: PayOption[]
   isAdminView: boolean
+  /** Pay in-page through `/api/portal/pay`, or mint a hosted Payment Link. */
+  embedded: boolean
+  partial: PartialConfig | undefined
+  /** The room-rental waiver: offer the button, say it is done, or draw nothing. */
+  waiver: 'offer' | 'signed' | null
 }) {
   const { booking, content, partyType } = invoice
   // What we should actually ask this customer for right now: the deposit while
@@ -490,6 +502,28 @@ function InvoiceBody({
           </div>
         )}
 
+        {/* ============ RENTAL AGREEMENT & WAIVER — studio rentals only ============
+
+            `waiver` is `waiverOffer()`'s answer, computed on the server, and the
+            route behind the button re-asks it. Drawn only for a studio rental
+            that is not cancelled, not over and has SignWell configured — and,
+            for a CUSTOMER, only once the booking is real (a deposit has landed):
+            the document is the contract for a rental and its figures are
+            prefilled from this invoice, so a quote that may still change should
+            not be signed. An admin sees it from the start, to copy the link.
+            The section is `no-print` while it is a button: a printed invoice
+            with a heading and no way to act on it is a dead end.
+        */}
+        {waiver && (
+          <div className={waiver === 'offer' ? 'invoice-section no-print' : 'invoice-section'}>
+            <h2>Rental Agreement &amp; Waiver</h2>
+            <p className="section-sub">
+              Your studio rental comes with a rental agreement and liability waiver, signed online.
+            </p>
+            <WaiverPanel ref_={ref_} state={waiver} isAdmin={isAdminView} />
+          </div>
+        )}
+
         {/* ============ PAID IN FULL ============ */}
         {settled && (
           <div className="pay-section invoice-section" style={{ textAlign: 'center' }}>
@@ -561,7 +595,7 @@ function InvoiceBody({
               document pointing somewhere sensible.
             */}
             {payOptions.length > 0 ? (
-              <PayPanel ref_={ref_} options={payOptions} />
+              <PayPanel ref_={ref_} options={payOptions} embedded={embedded} partial={partial} />
             ) : (
               <Link className="action" href={`/my-booking?ref=${encodeURIComponent(ref_)}`}>
                 View your booking
@@ -808,6 +842,46 @@ export default async function PlanSummaryPage({
     }
   }
 
+  // ── In-page card form, or the hosted Payment Link ────────────────────────
+  //
+  // A customer pays in this page (`/api/portal/pay` → Payment Element). That
+  // route reads the `hh_portal` cookie, which an admin viewing the page does not
+  // have, so an admin keeps the Payment Link buttons — and wants the URL anyway.
+  // `isPayableStatus` is the route's own gate: a status it would refuse (a
+  // `completed` party with a tab outstanding) falls back to the Payment Link
+  // rather than showing a button that answers "no longer taking payments".
+  const embedded = !access.isAdmin && isPayableStatus(invoice.booking.status)
+  const bounds = embedded && !isCancelled ? partialPaymentBounds(invoice) : null
+  const partial: PartialConfig | undefined = bounds ? { ...bounds, feePercent: 3 } : undefined
+
+  // ── The room-rental waiver ───────────────────────────────────────────────
+  //
+  // The signed timestamps are read here, not added to `INVOICE_BOOKING_COLUMNS`:
+  // that list is what every invoice consumer (the PDF, the email, SignWell's
+  // prefill) receives, and a signature date is only this page's business. A
+  // failed read draws nothing, which is the safe direction — the button is a
+  // convenience, and the route behind it re-asks.
+  let waiver: 'offer' | 'signed' | null = null
+  if (invoice.partyType === 'studio_rental') {
+    const { data: signedRow, error: signedErr } = await supabase
+      .from('bookings')
+      .select('checkin_agreement_signed_at, agreement_signed_at')
+      .eq('id', invoice.booking.id)
+      .maybeSingle()
+    if (signedErr) {
+      console.error('plan summary: waiver state unreadable for', ref, '—', signedErr.message)
+    } else {
+      const offer = waiverOffer({
+        booking: invoice.booking,
+        signedAt: signedRow?.checkin_agreement_signed_at ?? signedRow?.agreement_signed_at ?? null,
+      })
+      if (offer.state === 'signed') waiver = 'signed'
+      else if (offer.state === 'offer' && (isAdminView || !isQuoteStage(invoice.booking, invoice.paidCents))) {
+        waiver = 'offer'
+      }
+    }
+  }
+
   // `?paid=1` is where Stripe sends them back. The webhook usually lands first,
   // but it is not guaranteed to, so this promises nothing about the balance
   // below — a banner claiming a payment the ledger has not recorded yet would be
@@ -870,7 +944,15 @@ export default async function PlanSummaryPage({
           This plan is cancelled, so it cannot take a payment. Please call or text (631) 998-9325.
         </div>
       )}
-      <InvoiceBody invoice={invoice} ref_={ref} payOptions={payOptions} isAdminView={isAdminView} />
+      <InvoiceBody
+        invoice={invoice}
+        ref_={ref}
+        payOptions={payOptions}
+        isAdminView={isAdminView}
+        embedded={embedded}
+        partial={partial}
+        waiver={waiver}
+      />
     </div>
   )
 }

@@ -9,8 +9,12 @@
  * this file were compromised entirely, the worst it could ask for is "a deposit
  * link" or "a balance link", both of which the server prices itself.
  *
- * The one exception is the admin custom amount, which is an admin-only field
- * whose value the server caps at what the plan owes. See lib/planPayLinks.ts.
+ * There are two exceptions, and both are bounded by the server:
+ *   * the admin custom amount, capped at what the plan owes (lib/planPayLinks.ts);
+ *   * the customer's "pay part of the balance" amount — at least $50 (or what is
+ *     left, if less) and clamped to what is left, enforced by
+ *     `resolveInvoicePayment` in lib/planBalance.ts. The browser's min/max are
+ *     for the human; they are not the guard.
  *
  * `money()` is deliberately NOT imported here: it lives in lib/planInvoice.ts
  * alongside `getSupabase`, and pulling that into a client bundle to format a
@@ -18,6 +22,7 @@
  */
 
 import { useState } from 'react'
+import PortalCardPayment from '../../../my-booking/PortalCardPayment'
 
 export interface TipPreset {
   percent: number
@@ -44,6 +49,28 @@ export interface PayOption {
   detail: string
   /** Present only on the final payment — see `purposeAcceptsTip`. */
   tip?: TipConfig
+}
+
+/**
+ * The bounds of a part payment, for display. The server (`resolveInvoicePayment`)
+ * re-derives and re-enforces both — a browser that ignored them would be refused,
+ * not obeyed. Offered only to a customer paying in-page (never to an admin, whose
+ * tool is the custom link) and only once the deposit is paid.
+ */
+export interface PartialConfig {
+  minCents: number
+  maxCents: number
+  feePercent: number
+}
+
+/** What `/api/portal/pay` settled on — the figures the card button must read back. */
+interface CardIntent {
+  clientSecret: string
+  paymentIntentId: string | null
+  amountCents: number
+  tipCents: number
+  feeCents: number
+  chargeCents: number
 }
 
 /**
@@ -227,9 +254,120 @@ function TipJar({
   )
 }
 
-/** The pay buttons. Rendered inside the invoice's own payment section. */
-export function PayPanel({ ref_, options }: { ref_: string; options: PayOption[] }) {
+/**
+ * "Pay part of the balance" — a bounded custom amount, in-page only.
+ *
+ * The one place on this panel where a figure comes from the customer, which is
+ * why the bounds are shown and also re-enforced by the server: `min`/`max` here
+ * are for the human, `resolveInvoicePayment` is for the money. Whatever is typed,
+ * the card form that follows is labelled with what the SERVER settled on.
+ */
+function PartialPayForm({
+  partial,
+  disabled,
+  onSubmit,
+}: {
+  partial: PartialConfig
+  disabled: boolean
+  onSubmit: (amountCents: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [dollars, setDollars] = useState('')
+  const cents = Math.round(Number(dollars) * 100)
+  const valid = dollars.trim() !== '' && Number.isFinite(cents) && cents >= partial.minCents && cents <= partial.maxCents
+  const feeCents = Math.round(cents * (partial.feePercent / 100))
+
+  if (!open) {
+    return (
+      <div style={{ marginTop: 10 }}>
+        <button type="button" style={linkBtn} disabled={disabled} onClick={() => setOpen(true)}>
+          Pay part of the balance instead
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="tip-jar" style={{ marginTop: 14, textAlign: 'left' }}>
+      <div className="tip-jar-head">Pay part of the balance</div>
+      <p className="tip-jar-note">
+        Choose any amount from <strong>{usd(partial.minCents)}</strong> up to your full balance of{' '}
+        <strong>{usd(partial.maxCents)}</strong>. Whatever is left stays on this invoice, and you can pay
+        it the same way whenever you like.
+      </p>
+      <div className="tip-jar-row">
+        <label className="tip-custom">
+          <span aria-hidden="true">$</span>
+          <input
+            type="number"
+            min={partial.minCents / 100}
+            max={partial.maxCents / 100}
+            step="0.01"
+            inputMode="decimal"
+            aria-label="Amount to pay in dollars"
+            placeholder="Amount"
+            disabled={disabled}
+            value={dollars}
+            onChange={e => setDollars(e.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          style={{ ...btn, padding: '10px 28px', fontSize: 14, opacity: disabled || !valid ? 0.6 : 1 }}
+          disabled={disabled || !valid}
+          onClick={() => onSubmit(cents)}
+        >
+          Continue to card
+        </button>
+        <button type="button" style={linkBtn} disabled={disabled} onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+      <div className="tip-jar-total">
+        {valid ? (
+          <>
+            {usd(cents)} + {usd(feeCents)} card fee = <strong>{usd(cents + feeCents)}</strong> charged
+            {partial.maxCents - cents > 0 ? <> &mdash; {usd(partial.maxCents - cents)} would remain.</> : <>.</>}
+          </>
+        ) : (
+          <>
+            {usd(partial.minCents)} minimum. A {partial.feePercent}% card fee applies; Venmo and Zelle avoid it.
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The pay buttons. Rendered inside the invoice's own payment section.
+ *
+ * Two modes, and which one is a SERVER decision (`embedded`):
+ *
+ *   * **embedded** — the customer's own session. The buttons open Stripe's card
+ *     form right here, on this page, through `/api/portal/pay` (a PaymentIntent)
+ *     and the same `PortalCardPayment` Payment Element `/my-booking` uses. No
+ *     redirect, and no second pay path: that route and
+ *     `/api/party-builder/confirm-session` / the `payment_intent.succeeded`
+ *     webhook already record exactly this.
+ *   * **not embedded** — an admin looking at the page (no portal cookie, so
+ *     `/api/portal/pay` would 401), or a booking `/api/portal/pay` refuses
+ *     (`completed`). The buttons mint a hosted Stripe Payment Link, as they
+ *     always have; an admin wants the URL to send on in any case.
+ */
+export function PayPanel({
+  ref_,
+  options,
+  embedded = false,
+  partial,
+}: {
+  ref_: string
+  options: PayOption[]
+  embedded?: boolean
+  partial?: PartialConfig
+}) {
   const { busy, setBusy, error, setError } = useBusy()
+  const [card, setCard] = useState<CardIntent | null>(null)
   // Lives on the panel, not on the jar, because it has to reach `pay()`.
   // Seeded with the recommended 10% when a tip is on offer (see TipJar's
   // header). Computed in the initialiser rather than an effect, so the first
@@ -239,6 +377,34 @@ export function PayPanel({ ref_, options }: { ref_: string; options: PayOption[]
     () => options.find(o => o.tip)?.tip?.recommendedCents ?? 0,
   )
 
+  /**
+   * Ask `/api/portal/pay` for a PaymentIntent and open the card form in place.
+   * Posts a `purpose` — never an amount, except a part payment's bounded one.
+   */
+  async function startCard(purpose: 'deposit' | 'balance' | 'partial', extra: Record<string, unknown>) {
+    setError(null)
+    setBusy(purpose)
+    const { ok, data } = await postJson('/api/portal/pay', { paymentMethod: 'card', purpose, ...extra })
+    setBusy(null)
+    if (
+      !ok ||
+      typeof data.clientSecret !== 'string' ||
+      typeof data.chargeCents !== 'number' ||
+      typeof data.amountCents !== 'number'
+    ) {
+      setError(typeof data.error === 'string' ? data.error : 'Could not start the payment — please try again.')
+      return
+    }
+    setCard({
+      clientSecret: data.clientSecret,
+      paymentIntentId: typeof data.paymentIntentId === 'string' ? data.paymentIntentId : null,
+      amountCents: data.amountCents,
+      tipCents: typeof data.tipCents === 'number' ? data.tipCents : 0,
+      feeCents: typeof data.feeCents === 'number' ? data.feeCents : 0,
+      chargeCents: data.chargeCents,
+    })
+  }
+
   async function pay(purpose: string) {
     setError(null)
     setBusy(purpose)
@@ -247,6 +413,10 @@ export function PayPanel({ ref_, options }: { ref_: string; options: PayOption[]
     // (`purposeAcceptsTip`) and re-clamps (`screenTipCents`) regardless — this
     // is the display agreeing with the server, not the client deciding.
     const tip = option?.tip ? Math.max(0, Math.round(tipCents)) : 0
+    if (embedded) {
+      await startCard(purpose as 'deposit' | 'balance', tip > 0 ? { tipCents: tip } : {})
+      return
+    }
     const { ok, data } = await postJson(`/api/plan/${encodeURIComponent(ref_)}/pay-link`, {
       purpose,
       ...(tip > 0 ? { tipCents: tip } : {}),
@@ -264,6 +434,34 @@ export function PayPanel({ ref_, options }: { ref_: string; options: PayOption[]
 
   if (options.length === 0) return null
 
+  // The card form replaces the buttons while it is open. Leaving them up would
+  // invite a second click that opens a second PaymentIntent beside the live one.
+  if (card) {
+    const lines = [
+      `${usd(card.amountCents)}`,
+      ...(card.tipCents > 0 ? [`${usd(card.tipCents)} tip`] : []),
+      ...(card.feeCents > 0 ? [`${usd(card.feeCents)} card fee`] : []),
+    ]
+    return (
+      <div className="no-print" style={{ textAlign: 'left', maxWidth: 460, margin: '0 auto' }}>
+        <p className="section-sub" style={{ marginBottom: 14 }}>
+          {lines.join(' + ')} = <strong>{usd(card.chargeCents)}</strong> charged to your card.
+        </p>
+        <PortalCardPayment
+          clientSecret={card.clientSecret}
+          paymentIntentId={card.paymentIntentId}
+          payLabel={`Pay ${usd(card.chargeCents)}`}
+          returnPath={`/plan/${encodeURIComponent(ref_)}/summary?paid=1`}
+          onCancel={() => setCard(null)}
+          // A full navigation, not a router refresh: this is a server-rendered
+          // document and the cheapest way to be certain every figure on it is
+          // re-read is to load it again.
+          onSuccess={() => window.location.assign(`/plan/${encodeURIComponent(ref_)}/summary?paid=1`)}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="no-print">
       {options.map(o => (
@@ -278,7 +476,9 @@ export function PayPanel({ ref_, options }: { ref_: string; options: PayOption[]
             <TipJar tip={o.tip} tipCents={tipCents} setTipCents={setTipCents} disabled={busy !== null} />
           )}
           <button type="button" style={{ ...btn, opacity: busy ? 0.6 : 1 }} disabled={busy !== null} onClick={() => pay(o.purpose)}>
-            {busy === o.purpose ? 'Opening Stripe…' : o.tip && tipCents > 0 ? `${o.cta} + ${usd(tipCents)} tip` : o.cta}
+            {busy === o.purpose
+              ? embedded ? 'Loading card form…' : 'Opening Stripe…'
+              : o.tip && tipCents > 0 ? `${o.cta} + ${usd(tipCents)} tip` : o.cta}
           </button>
           {/*
             `detail` is the server's static charge line. When there is a jar it
@@ -294,6 +494,13 @@ export function PayPanel({ ref_, options }: { ref_: string; options: PayOption[]
           )}
         </div>
       ))}
+      {embedded && partial && (
+        <PartialPayForm
+          partial={partial}
+          disabled={busy !== null}
+          onSubmit={cents => startCard('partial', { amountCents: cents })}
+        />
+      )}
       {error && (
         <p style={{ color: '#b00020', fontSize: 13, margin: '10px 0 0' }} role="alert">
           {error}
@@ -378,6 +585,84 @@ export function SecurityHoldPanel({
         An authorization on your card, not a charge — it is released after your rental once the
         space is confirmed in good condition. You can also do this with us in person on the day.
       </div>
+      {error && (
+        <p style={{ color: '#b00020', fontSize: 13, margin: '10px 0 0' }} role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The room-rental waiver — the SignWell Studio Rental Agreement & Liability
+ * Waiver, reached through the same tokenised `/checkin/<token>` link the
+ * pre-arrival text carries (details first, then the agreement).
+ *
+ * Kept out of `PayPanel` for the reason `SecurityHoldPanel` is: it takes no money
+ * and must not sit among the buttons that do. The page decides the state
+ * (`waiverOffer`); the route re-asks it before minting, so a stale page cannot
+ * obtain a link the rules refuse.
+ *
+ *   * the customer is taken straight to the link;
+ *   * an admin gets it COPIED instead — an admin viewing the page wants a URL to
+ *     send on (that is the only way an admin can get this link today), not to be
+ *     taken through the customer's check-in themselves.
+ */
+export function WaiverPanel({
+  ref_,
+  state,
+  isAdmin,
+}: {
+  ref_: string
+  state: 'offer' | 'signed'
+  isAdmin: boolean
+}) {
+  const { busy, setBusy, error, setError, done, setDone } = useBusy()
+
+  async function open() {
+    setError(null)
+    setDone(null)
+    setBusy('waiver')
+    const { ok, data } = await postJson(`/api/plan/${encodeURIComponent(ref_)}/waiver-link`, {})
+    if (!ok || typeof data.url !== 'string') {
+      setBusy(null)
+      setError(typeof data.error === 'string' ? data.error : 'Could not open the waiver — please try again.')
+      return
+    }
+    if (isAdmin) {
+      await navigator.clipboard?.writeText(data.url).catch(() => {})
+      setBusy(null)
+      setDone(data.url)
+      return
+    }
+    // `busy` stays set on the way out: a second click mints a second token.
+    window.location.href = data.url
+  }
+
+  if (state === 'signed') {
+    return (
+      <div className="section-sub" style={{ marginTop: 10, marginBottom: 0 }}>
+        ✓ Your <strong>rental agreement &amp; waiver</strong> is signed &mdash; nothing further to do.
+      </div>
+    )
+  }
+
+  return (
+    <div className="no-print" style={{ marginTop: 10 }}>
+      <button type="button" style={{ ...btn, opacity: busy ? 0.6 : 1 }} disabled={busy !== null} onClick={open}>
+        {busy ? 'Opening…' : isAdmin ? 'Copy the rental waiver link' : 'Sign your room rental waiver'}
+      </button>
+      <div className="section-sub" style={{ marginTop: 6, marginBottom: 0, fontSize: 12 }}>
+        {isAdmin
+          ? 'Admin · copies the customer’s check-in link (details, then the agreement). Nothing is sent. Valid until the day of the rental.'
+          : 'Takes a couple of minutes: confirm your details, then sign the rental agreement and liability waiver. Please complete it before your rental.'}
+      </div>
+      {done && (
+        <p style={{ color: '#1a6b3a', fontSize: 13, margin: '8px 0 0', wordBreak: 'break-all' }}>
+          Copied: {done}
+        </p>
+      )}
       {error && (
         <p style={{ color: '#b00020', fontSize: 13, margin: '10px 0 0' }} role="alert">
           {error}
