@@ -43,6 +43,7 @@ import { RESERVED_PREFIXES, type Locale } from '@/lib/content/slug'
 export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/',
   '/admin',
+  '/admin/applications',
   '/admin/events',
   '/admin/lead/[ref]',
   '/admin/market-vendors',
@@ -57,6 +58,9 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/book/success',
   '/canvas-bags',
   '/canvas-tote-activation',
+  // A redirect in next.config.js (to /join-the-team). Redirects run before routes,
+  // so a CMS page published at this slug would never render either.
+  '/careers',
   '/checkin/[token]',
   // The market. Reserved for the reason this list exists at all: a static route
   // silently WINS over the [...slug] catch-all, so a CMS page created at one of
@@ -91,6 +95,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   // CMS slug under `i/` can never render. (Spec says "add /i"; the tripwire below
   // compares against the page route as it is on disk, `/i/[slug]`.)
   '/i/[slug]',
+  '/join-the-team',
   '/kids-party-menu',
   '/kids-party-menu/success',
   '/kids-party-menu/summary',

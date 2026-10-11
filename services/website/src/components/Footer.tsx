@@ -83,6 +83,7 @@ export default function Footer() {
               { href: '/reviews',           label: 'Reviews' },
               { href: '/faq',               label: 'FAQ' },
               { href: '/contact-us',        label: 'Contact Us' },
+              { href: '/join-the-team',     label: 'Join the Team' },
 
               { href: '/privacy-policy',    label: 'Privacy Policy' },
               { href: '/terms-of-service',  label: 'Terms of Service' },

@@ -1,6 +1,17 @@
-# Careers page — `/join-the-team` (plan, not built)
+# Careers page — `/join-the-team`
 
-Status: **planning**, 2026-10-11. Nothing here is implemented yet.
+Status: **built and deployed**, 2026-10-11. Planned the same day; the spec below is what was
+built, with two differences:
+
+- The migration is **071**, not 070. 070 was taken that day by the evite template choice
+  (`evites.template_choice`, applied live). Applied by psql on the box before the deploy.
+- Owner alerts go to **`ownerEmail()`** (OWNER_NOTIFY_EMAIL), not `info@hosthampton.com`, until
+  the routing test (pre-build check 1) is confirmed delivered. The switch is
+  `INFO_INBOX_CONFIRMED` in `lib/careersNotify.ts`; flip it only on a confirmed delivery.
+
+Files: `lib/careers.ts` (roles, pay, every option list), `lib/jobApplication.ts` (the server
+screen), `lib/email-templates/careers.ts`, `api/careers/apply`, `app/join-the-team`,
+`admin/applications` + `api/admin/applications`. Tripwire: `publicIntakeSurface.test.ts` R11.
 
 ## Decisions (Adam, 2026-10-11)
 
@@ -100,7 +111,7 @@ painting"** (required checkbox — this is the must).
 
 ## Build spec
 
-### 1. Migration 070 — `job_applications`
+### 1. Migration 071 — `job_applications` (planned as 070)
 
 Apply by hand via psql on the box **before** deploying. Columns as the original prompt, plus:
 `is_18_plus boolean not null`, `weekday_availability text`, `has_car boolean`,

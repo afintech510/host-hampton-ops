@@ -184,6 +184,11 @@ const DELIBERATELY_PUBLIC = new Set([
   'GET booking-types',
   'POST canvas-bag-inquiry',
   'POST cart-checkout',
+  // A job application from /join-the-team (migration 071). Public because an
+  // applicant is a stranger filling in a form. Rate-limited first, honeypot,
+  // every answer screened against lib/careers.ts, and — R11 below — it never
+  // touches the lead machinery: an applicant is not a lead.
+  'POST careers/apply',
   // Vendor registration for a market. Public because a vendor is a stranger
   // filling in a form — the same shape as every other intake here. The page it
   // is posted from is unlisted and noindex, but the ROUTE is open and is
@@ -953,5 +958,77 @@ describe('R10: the email lookup, including the spelling link 17 could not see', 
     expect(src).toMatch(/\.in\('contact_phone',\s*phoneVariants\)/)
     // And the hand-rolled quoter that existed only to make `.or()` safe is gone.
     expect(src).not.toMatch(/function\s+orValue/)
+  })
+})
+
+/* ── R11: a job applicant is not a lead ───────────────────────────────────── */
+
+describe('R11: /api/careers/apply never reaches the lead machinery', () => {
+  /**
+   * Every other intake route calls `upsertContact` (Brevo marketing list + Quo
+   * SMS contacts), `enrollInSequence`, `ensureLeadPlan` and `recordInboundEvent`
+   * (the booking agent). An applicant who went through any of them would be
+   * marketed party packages and answered by a model drafting a party quote.
+   *
+   * Checked in the route AND in every `@/lib/` module it imports, because the
+   * likeliest way this breaks is a helper that "just also upserts the contact".
+   */
+  const LEAD_MACHINERY =
+    /upsertContact\s*\(|enrollInSequence\s*\(|ensureLeadPlan\s*\(|recordInboundEvent\s*\(|logInteraction\s*\(|linkFirstTouchEvent\s*\(|from\(\s*'(?:contacts|bookings|contact_interactions|ingested_messages)'\s*\)/
+  const h = HANDLERS.find(x => id(x) === 'POST careers/apply')
+
+  it('exists and is classified public', () => {
+    expect(h).toBeDefined()
+    expect(gateOf(h!)).toBe('public')
+  })
+
+  it('neither the route nor any lib module it imports touches contacts, plans, sequences or the agent', () => {
+    expect(h!.file).not.toMatch(LEAD_MACHINERY)
+    const imported = [...h!.file.matchAll(/from\s+'@\/lib\/([\w/.-]+)'/g)].map(m => m[1])
+    const examined: string[] = []
+    for (const mod of imported) {
+      const abs = path.join(LIB_ROOT, `${mod}.ts`)
+      // ownerNotify / rateLimit / supabase / publicIntake / attribution / seo are
+      // shared infrastructure that never writes a contact; still READ, not assumed.
+      if (!fs.existsSync(abs)) continue
+      const src = decomment(fs.readFileSync(abs, 'utf8'))
+      expect(`${mod}: ${LEAD_MACHINERY.test(src) ? 'TOUCHES LEAD MACHINERY' : 'ok'}`).toBe(`${mod}: ok`)
+      examined.push(mod)
+    }
+    // Count what was examined, or an import-regex that matches nothing passes.
+    expect(examined).toEqual(expect.arrayContaining(['careers', 'jobApplication', 'careersNotify', 'email-templates/careers']))
+    expect(examined.length).toBeGreaterThanOrEqual(8)
+  })
+
+  it('the rate limit is the FIRST statement of the handler', () => {
+    const open = h!.body.indexOf('{', h!.body.indexOf(')'))
+    const first = h!.body.slice(open + 1).trimStart()
+    expect(first).toMatch(/^const\s+limited\s*=\s*guardRate\s*\(\s*req\s*,\s*intakeRule\(/)
+  })
+
+  it('the honeypot is checked before anything is written, mailed or texted', () => {
+    const pot = h!.body.search(/body\.website/)
+    expect(pot).toBeGreaterThan(-1)
+    for (const effect of [/\.insert\s*\(/, /emails\.send\s*\(/, /notifyOwnerSms\s*\(/]) {
+      const at = h!.body.search(effect)
+      expect(at).toBeGreaterThan(pot)
+    }
+  })
+
+  it('answers 503 when NOTHING landed, before it can answer success', () => {
+    const guard = /if\s*\(\s*!recorded\.application\s*&&\s*!recorded\.ownerNotified\s*\)\s*\{(?:(?!\bif\s*\()[\s\S])*?status:\s*503/
+    expect(h!.body).toMatch(guard)
+    expect(h!.body.search(/success:\s*true,\s*ref/)).toBeGreaterThan(h!.body.search(guard))
+    // The insert result is read, not discarded.
+    expect(h!.body).toMatch(/const\s*\{\s*data:\s*inserted,\s*error:\s*insertErr\s*\}\s*=\s*await/)
+  })
+
+  it('the owner alert is judged on its RESULT, and results[0] is the owner send', () => {
+    expect(h!.body).toMatch(/recorded\.ownerNotified\s*=\s*settledOk\(\s*results\[0\]\s*\)/)
+    const sends = [...h!.body.matchAll(/resend\.emails\.send\s*\(\s*\{/g)].map(m => m.index ?? 0)
+    expect(sends).toHaveLength(2)
+    expect(h!.body.slice(sends[0], sends[1])).toMatch(/to:\s*alertTo\b/)
+    expect(h!.body.slice(sends[1])).toMatch(/to:\s*row\.email\b/)
+    expect(h!.body).toMatch(/const\s+alertTo\s*=\s*careersAlertEmail\(\)/)
   })
 })

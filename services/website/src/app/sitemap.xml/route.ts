@@ -63,6 +63,7 @@ const STATIC_ROUTES: Entry[] = [
   { path: '/reviews', changefreq: 'monthly', priority: 0.6 },
   { path: '/faq', changefreq: 'monthly', priority: 0.5 },
   { path: '/contact-us', changefreq: 'yearly', priority: 0.6 },
+  { path: '/join-the-team', changefreq: 'monthly', priority: 0.5, lastmod: '2026-10-11' },
   { path: '/book', changefreq: 'monthly', priority: 0.8 },
   // Indexable lead-capture pages that were routable and crawlable but absent
   // from the sitemap. A sitemap that omits its own indexable pages is not

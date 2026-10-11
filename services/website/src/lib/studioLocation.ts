@@ -38,8 +38,13 @@
  */
 export const STUDIO_STREET = '295 Montauk Hwy'
 
+/** The parts of the locality, for structured data that wants them separately. */
+export const STUDIO_TOWN = 'Speonk'
+export const STUDIO_REGION = 'NY'
+export const STUDIO_POSTAL_CODE = '11972'
+
 /** Town, state and ZIP. */
-export const STUDIO_LOCALITY = 'Speonk, NY 11972'
+export const STUDIO_LOCALITY = `${STUDIO_TOWN}, ${STUDIO_REGION} ${STUDIO_POSTAL_CODE}`
 
 /** The one-line form for a document: "295 Montauk Hwy, Speonk, NY 11972". */
 export const STUDIO_ADDRESS_LINE = `${STUDIO_STREET}, ${STUDIO_LOCALITY}`
