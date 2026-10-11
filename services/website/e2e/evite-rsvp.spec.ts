@@ -185,6 +185,13 @@ test('host page, with a stored render: the JPEG fits the phone, and "Updating yo
   expect(box.width).toBeLessThanOrEqual(400.5)
   await expect(page.getByText('Updating your invitation').first()).toBeVisible()
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/host-image-375.png`, fullPage: true })
+  // The heading area sits on the site's blue-to-cream fade (body background, as on /party-packages), not a flat fill.
+  const wrapperBg = await page.locator('main > div').first().evaluate((el) => getComputedStyle(el).backgroundColor)
+  expect(['rgba(0, 0, 0, 0)', 'transparent']).toContain(wrapperBg)
+  if (SHOTS) {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.screenshot({ path: `${SHOTS}/host-image-desktop.png`, fullPage: true })
+  }
 })
 
 test('Yes takes three screens, answers with this RSVP only, and sets an HttpOnly edit cookie', async ({ page, request, context }) => {

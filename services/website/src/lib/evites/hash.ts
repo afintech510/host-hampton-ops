@@ -27,7 +27,7 @@
 import { createHash } from 'crypto'
 import type { InviteFacts } from '@/lib/evites/facts'
 
-export const RENDER_LAYOUT_TAG = 'glow-v2'
+export const RENDER_LAYOUT_TAG = 'glow-v3'
 
 /** JSON with sorted keys; Dates as ISO strings; `undefined` omitted. */
 export function canonicalJson(value: unknown): string {

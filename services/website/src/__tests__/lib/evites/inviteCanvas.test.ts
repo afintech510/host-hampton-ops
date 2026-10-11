@@ -137,7 +137,7 @@ describe('InviteCanvas - slots that come and go', () => {
 
   it('a shrunken slot keeps the box it would fill at nominal size (GLOW with a long override)', () => {
     const html = web(factsFor({}, { theme_word: 'ABCDEFGHIJKL' }))
-    const box = tags(html, 'div').find((d) => d.includes('top:160px')) as string
+    const box = tags(html, 'div').find((d) => d.includes('top:201px')) as string
     expect(box).toContain('height:250px')
     const text = tags(html, 'div').find((d) => d.includes('background-clip:text')) as string
     expect(text).not.toContain('font-size:250px')

@@ -146,7 +146,7 @@ describe('evites templates - schema', () => {
 
   it('the Glow numbers are the spike\'s (tops and sizes the mock was checked with)', () => {
     const byId = (id: string) => allSlots(GLOW_TEMPLATE).find((s) => s.id === id) as Slot & Record<string, unknown>
-    expect([byId('invited_line').top, byId('theme_word').top, byId('theme_sub').top, byId('icon_strip').top]).toEqual([118, 160, 470, 700])
+    expect([byId('invited_line').top, byId('theme_word').top, byId('theme_sub').top, byId('icon_strip').top]).toEqual([118, 201, 470, 700])
     expect([byId('honoree_row').top, byId('age_row').top, byId('date_time').top, byId('location').top, byId('host_contact').top]).toEqual([
       835, 1035, 1292, 1345, 1388,
     ])

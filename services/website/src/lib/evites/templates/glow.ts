@@ -98,7 +98,7 @@ export const GLOW_TEMPLATE: TemplateLayout = {
       id: 'theme_word',
       type: 'text',
       bind: 'themeWord',
-      top: 160,
+      top: 201, // was 160: GLOW's ink sat 17 px under the kicker and 100 px above PARTY; 201 makes both gaps ~58 px
       font: 'monoton',
       size: 250,
       minSize: 120,

@@ -84,8 +84,9 @@ export default async function HostInvitationPage() {
   const template = templateFor(facts.templateSlug)
   const sizes = computeSizes(template, facts)
 
+  // No background of its own: the body's blue-to-cream fade (globals.css) shows through at the top, as on /party-packages.
   return (
-    <div className="min-h-screen bg-[#F6F1EB]">
+    <div className="min-h-screen">
       {/* eslint-disable-next-line react/no-danger */}
       <style dangerouslySetInnerHTML={{ __html: FRAME_CSS }} />
       <HostInvitation
