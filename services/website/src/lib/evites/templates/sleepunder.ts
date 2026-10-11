@@ -48,6 +48,8 @@ const DROP = { x: 6, y: 6, color: INK }
 
 export const SLEEPUNDER_TEMPLATE: TemplateLayout = {
   slug: 'sleepunder',
+  label: 'Sleep Under',
+  source: { canvaDesignId: 'DAHG2kUCXmE', canvaArtCopyId: 'DAHXvDFCyIg' },
   canvas: { width: 1085, height: 1530 },
   background: { web: '/evites/sleepunder/background.webp', raster: '/evites/sleepunder/background.jpg' },
   backgroundColor: '#ffffff',

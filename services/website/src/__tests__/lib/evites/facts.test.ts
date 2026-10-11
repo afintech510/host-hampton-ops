@@ -316,6 +316,19 @@ describe('evites/facts - theme', () => {
     expect([f.themeWord, f.templateSlug]).toEqual(['PAJAMA', 'sleepunder'])
   })
 
+  it('the host\'s gallery pick (template_choice) wins over the theme and over an override\'s template', () => {
+    expect(facts(booking(), evite({ template_choice: 'sleepunder' })).templateSlug).toBe('sleepunder')
+    expect(facts(booking(), evite({ template_choice: 'sleepunder', theme_word: 'neon', template_slug: 'plain' })).templateSlug).toBe('sleepunder')
+    // The pick changes the design, never the words: the theme is still the booking's.
+    expect(facts(booking(), evite({ template_choice: 'sleepunder' })).themeWord).toBe('GLOW')
+  })
+
+  it('a pick that is not a gallery design (plain, unknown, a prototype key) is ignored', () => {
+    for (const v of ['plain', 'nope', 'constructor', '', null]) {
+      expect(facts(booking(), evite({ template_choice: v })).templateSlug).toBe('glow')
+    }
+  })
+
   it('an override naming an unknown template keeps the resolved one', () => {
     expect(facts(booking(), evite({ theme_word: 'neon', template_slug: 'constructor' })).templateSlug).toBe('glow')
   })

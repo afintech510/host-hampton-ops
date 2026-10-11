@@ -5,11 +5,17 @@
  * default export, so import `{ parse }`, never the default.
  */
 declare module 'opentype.js' {
+  export interface Glyph {
+    advanceWidth?: number
+  }
   export interface Font {
     numGlyphs: number
     unitsPerEm: number
     /** 0 = .notdef, i.e. the font has no glyph for this character. */
     charToGlyphIndex(char: string): number
+    /** fit.ts's fallback measure (no GSUB): one glyph per character, then pair kerning. */
+    charToGlyph(char: string): Glyph
+    getKerningValue(left: Glyph, right: Glyph): number
     getAdvanceWidth(
       text: string,
       fontSize?: number,

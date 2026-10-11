@@ -21,9 +21,9 @@
  */
 
 import type { InviteFacts } from '@/lib/evites/facts'
-import type { FontKey } from '@/lib/evites/glyphs'
+import type { FontKey, FontWeight } from '@/lib/evites/glyphs'
 
-export type { FontKey }
+export type { FontKey, FontWeight }
 
 /** One shadow stop. A one-colour glow repeats the colour (spec §6 v1.1, B3). */
 export interface GlowStop {
@@ -66,10 +66,23 @@ export interface ImageLayer {
 
 export type Layer = ShapeLayer | ImageLayer
 
+/**
+ * Where a slot sits horizontally. Absent = the whole canvas width, centred (every Glow slot).
+ * `left`/`width` are the box in canvas px; `align` places the text (or a row's children) in it.
+ * `rotateDeg` turns the whole box about its centre (Minecraft's sideways "NOV").
+ */
+export interface SlotBox {
+  left: number
+  width: number
+  align?: 'left' | 'center' | 'right'
+  rotateDeg?: number
+}
+
 export interface TextSlot {
   id: string
   type: 'text'
   top: number
+  box?: SlotBox
   font: FontKey
   size: number
   minSize?: number
@@ -96,6 +109,7 @@ export interface ImageSlot {
   id: string
   type: 'image'
   top: number
+  box?: SlotBox
   src: string
   /** Nominal width in px; its height follows `aspect`. */
   width: number
@@ -108,6 +122,7 @@ export interface RowSlot {
   id: string
   type: 'row'
   top: number
+  box?: SlotBox
   gap: number
   maxWidth: number
   align: 'center' | 'baseline'
@@ -142,10 +157,38 @@ export interface OgCardSpec {
   portraitShadow?: string
 }
 
-export type TemplateSlug = 'glow' | 'plain' | 'sleepunder'
+/**
+ * Every invitation design. The first three are hand-built; the rest are Adam's Canva invitations
+ * (2026-10-11), one file each under `templates/`, registered in `templates/index.ts`.
+ */
+export type TemplateSlug =
+  | 'glow'
+  | 'plain'
+  | 'sleepunder'
+  | 'stitch'
+  | 'barbie-disco'
+  | 'unicorn'
+  | 'mermaid'
+  | 'minecraft'
+  | 'saddle-up'
+  | 'hello-kitty'
+  | 'pink-pony'
+  | 'two-sweet'
+  | 'construction'
+  | 'slime-pastel'
+  | 'slime-teal'
+  | 'slime-neon'
+  | 'squish'
+  | 'vroom'
+  | 'lets-glow'
+  | 'neon-party'
 
 export interface TemplateLayout {
   slug: TemplateSlug
+  /** The design's name in the host's gallery ("Watercolor Unicorn"). */
+  label?: string
+  /** The Canva design it was built from, and the text-free working copy its art was exported from. */
+  source?: { canvaDesignId: string; canvaArtCopyId: string }
   canvas: { width: 1085; height: 1530 }
   /** `web`: the page's webp. `raster`: the 1x JPEG Satori embeds. Both public paths. */
   background: { web: string; raster: string }
@@ -162,13 +205,26 @@ export interface TemplateLayout {
  * the same pairs next to the files; a test pins that the two agree, because this
  * module must not import it at runtime (that one reads the disk).
  */
-export const FONT_STYLE: Record<FontKey, { family: string; weight: 400 | 600 }> = {
+export const FONT_STYLE: Record<FontKey, { family: string; weight: FontWeight }> = {
   monoton: { family: 'Monoton', weight: 400 },
   bungee: { family: 'Bungee Outline', weight: 400 },
   neon: { family: 'Neonderthaw', weight: 400 },
   poppins400: { family: 'Poppins', weight: 400 },
   poppins600: { family: 'Poppins', weight: 600 },
   lobster: { family: 'Lobster', weight: 400 },
+  greatvibes: { family: 'Great Vibes', weight: 400 },
+  kaushan: { family: 'Kaushan Script', weight: 400 },
+  yellowtail: { family: 'Yellowtail', weight: 400 },
+  dancing700: { family: 'Dancing Script', weight: 700 },
+  fredoka600: { family: 'Fredoka', weight: 600 },
+  fredoka700: { family: 'Fredoka', weight: 700 },
+  luckiest: { family: 'Luckiest Guy', weight: 400 },
+  silkscreen700: { family: 'Silkscreen', weight: 700 },
+  montserrat500: { family: 'Montserrat', weight: 500 },
+  montserrat800: { family: 'Montserrat', weight: 800 },
+  playfair400: { family: 'Playfair Display', weight: 400 },
+  playfair700: { family: 'Playfair Display', weight: 700 },
+  stardos700: { family: 'Stardos Stencil', weight: 700 },
 }
 
 /** Font sizes in px by slot id; a row's image child is keyed by its id too and holds its WIDTH in px. */

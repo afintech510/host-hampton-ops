@@ -80,8 +80,14 @@ describe('evites/themes - resolveTheme', () => {
     expect(r.partyThemeSlug).toBe('glow-party')
   })
 
-  it('glow and sleep-under have their own templates; every other catalogue theme is plain', () => {
-    const own: Record<string, string> = { 'glow-party': 'glow', 'sleep-under-party': 'sleepunder' }
+  it('glow, sleep-under, slime, barbie and sweets start on their own designs; every other catalogue theme is plain', () => {
+    const own: Record<string, string> = {
+      'glow-party': 'glow',
+      'sleep-under-party': 'sleepunder',
+      'slime-party': 'slime-pastel',
+      'barbie-party': 'barbie-disco',
+      'sweets-treats': 'two-sweet',
+    }
     for (const t of THEMES) {
       const r = resolveTheme(bk({ package_type: t.name }), [], THEMES)
       expect(r.partyThemeSlug).toBe(t.slug)

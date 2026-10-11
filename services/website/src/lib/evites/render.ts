@@ -70,6 +70,7 @@ export const EVITE_RENDER_COLUMNS = [
   'id',
   'booking_id',
   'template_slug',
+  'template_choice',
   'theme_word',
   'theme_sub',
   'host_contact_name',

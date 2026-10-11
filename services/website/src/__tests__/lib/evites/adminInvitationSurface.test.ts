@@ -71,8 +71,8 @@ describe('P08 admin invitation surface', () => {
       const before = squash(src.slice(Math.max(0, m.index! - 220), m.index!))
       expect(before).toMatch(/const \{[^}]*\berror\b[^}]*\} = await supabase\s*\.from\(/)
     }
-    // archive, unarchive, set_theme, reslug, and the void_rsvp delete.
-    expect(examined).toBe(5)
+    // archive, unarchive, set_theme, set_design, reslug, and the void_rsvp delete.
+    expect(examined).toBe(6)
     // Each conditional update / delete is read back with .select(...) so zero rows is an answer.
     for (const m of Array.from(src.matchAll(/\.(?:update|delete)\(/g))) {
       const after = squash(src.slice(m.index!, m.index! + 330))
@@ -102,7 +102,7 @@ describe('P08 admin invitation surface', () => {
     const src = route()
     expect(src).toMatch(/import \{ logBookingChange \} from '@\/lib\/bookingAudit'/)
     expect(src).toMatch(/actor = adminActorId\(req\)/)
-    expect((src.match(/audit\(/g) ?? []).length).toBe(8) // ensure, rerender, archive, unarchive, set_theme, reslug, notify_cancelled, void_rsvp
+    expect((src.match(/audit\(/g) ?? []).length).toBe(9) // ensure, rerender, archive, unarchive, set_theme, set_design, reslug, notify_cancelled, void_rsvp
     expect(src).toMatch(/actor: adminActorId\(req\)/) // the reveal
     expect(src).not.toMatch(/\b(?:modified_by|actor|recorded_by)\s*:\s*['"](?:ADMIN|admin)['"]/)
   })

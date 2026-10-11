@@ -2,7 +2,7 @@
  * Bundled fonts, and what they can draw (spec §2 `glyphs.ts`, §3, §5).
  *
  * Every string that is bound into a rendered image has to be drawn by one of
- * six bundled latin-subset `.woff` files (`lobster` is the Sleep Under script). A character a font lacks does not
+ * the bundled latin-subset `.woff` files below. A character a font lacks does not
  * throw: Satori draws a notdef box or falls back to a network font loader, and
  * the first is a visible defect on a child's birthday card. So every
  * image-bound string passes `screenForImage()` for its slot's font first.
@@ -31,18 +31,60 @@ import fs from 'fs'
 import path from 'path'
 import { parse, type Font } from 'opentype.js'
 
-/** The spike's keys (`scripts/evite-spike/render.mjs` FONT_FILES), plus `lobster` for the Sleep Under template. */
-export type FontKey = 'monoton' | 'bungee' | 'neon' | 'poppins400' | 'poppins600' | 'lobster'
+/**
+ * The spike's keys (`scripts/evite-spike/render.mjs` FONT_FILES), `lobster` for Sleep Under, and the
+ * palette added for the Canva template set (2026-10-11): a template may only draw in a font listed
+ * here, because Satori is handed exactly these files and nothing else. All OFL or Apache-2.0
+ * (licences beside the files).
+ */
+export type FontWeight = 400 | 500 | 600 | 700 | 800
 
-export const FONT_KEYS: readonly FontKey[] = ['monoton', 'bungee', 'neon', 'poppins400', 'poppins600', 'lobster']
+export type FontKey =
+  | 'monoton'
+  | 'bungee'
+  | 'neon'
+  | 'poppins400'
+  | 'poppins600'
+  | 'lobster'
+  | 'greatvibes'
+  | 'kaushan'
+  | 'yellowtail'
+  | 'dancing700'
+  | 'fredoka600'
+  | 'fredoka700'
+  | 'luckiest'
+  | 'silkscreen700'
+  | 'montserrat500'
+  | 'montserrat800'
+  | 'playfair400'
+  | 'playfair700'
+  | 'stardos700'
 
-export const FONT_FILES: Record<FontKey, { family: string; weight: 400 | 600; file: string }> = {
+export const FONT_KEYS: readonly FontKey[] = [
+  'monoton', 'bungee', 'neon', 'poppins400', 'poppins600', 'lobster',
+  'greatvibes', 'kaushan', 'yellowtail', 'dancing700', 'fredoka600', 'fredoka700', 'luckiest', 'silkscreen700', 'montserrat500', 'montserrat800', 'playfair400', 'playfair700', 'stardos700',
+]
+
+export const FONT_FILES: Record<FontKey, { family: string; weight: FontWeight; file: string }> = {
   monoton: { family: 'Monoton', weight: 400, file: 'monoton-latin-400-normal.woff' },
   bungee: { family: 'Bungee Outline', weight: 400, file: 'bungee-outline-latin-400-normal.woff' },
   neon: { family: 'Neonderthaw', weight: 400, file: 'neonderthaw-latin-400-normal.woff' },
   poppins400: { family: 'Poppins', weight: 400, file: 'poppins-latin-400-normal.woff' },
   poppins600: { family: 'Poppins', weight: 600, file: 'poppins-latin-600-normal.woff' },
   lobster: { family: 'Lobster', weight: 400, file: 'lobster-latin-400-normal.woff' },
+  greatvibes: { family: 'Great Vibes', weight: 400, file: 'great-vibes-latin-400-normal.woff' },
+  kaushan: { family: 'Kaushan Script', weight: 400, file: 'kaushan-script-latin-400-normal.woff' },
+  yellowtail: { family: 'Yellowtail', weight: 400, file: 'yellowtail-latin-400-normal.woff' },
+  dancing700: { family: 'Dancing Script', weight: 700, file: 'dancing-script-latin-700-normal.woff' },
+  fredoka600: { family: 'Fredoka', weight: 600, file: 'fredoka-latin-600-normal.woff' },
+  fredoka700: { family: 'Fredoka', weight: 700, file: 'fredoka-latin-700-normal.woff' },
+  luckiest: { family: 'Luckiest Guy', weight: 400, file: 'luckiest-guy-latin-400-normal.woff' },
+  silkscreen700: { family: 'Silkscreen', weight: 700, file: 'silkscreen-latin-700-normal.woff' },
+  montserrat500: { family: 'Montserrat', weight: 500, file: 'montserrat-latin-500-normal.woff' },
+  montserrat800: { family: 'Montserrat', weight: 800, file: 'montserrat-latin-800-normal.woff' },
+  playfair400: { family: 'Playfair Display', weight: 400, file: 'playfair-display-latin-400-normal.woff' },
+  playfair700: { family: 'Playfair Display', weight: 700, file: 'playfair-display-latin-700-normal.woff' },
+  stardos700: { family: 'Stardos Stencil', weight: 700, file: 'stardos-stencil-latin-700-normal.woff' },
 }
 
 /** Where the `.woff` files are, resolved at call time. */

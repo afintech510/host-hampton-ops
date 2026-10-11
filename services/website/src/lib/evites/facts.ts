@@ -25,10 +25,11 @@
  *     the full address from lib/studioLocation.ts.
  *   - `rsvpDeadline` is the ISO date (`YYYY-MM-DD`) so it is hash-stable and
  *     comparable; the UI formats it.
- *   - With an evite theme override (`theme_word`/`theme_sub` set by admin
- *     `set_theme`) the evite's `template_slug` is honoured; without one the
- *     resolved theme decides. (`template_slug` defaults to 'glow' on every row,
- *     so it cannot be trusted on its own.)
+ *   - The design: `template_choice` (the host's gallery pick, migration 070)
+ *     when it names a gallery template; else, with an evite theme override
+ *     (`theme_word`/`theme_sub` set by admin `set_theme`), the evite's
+ *     `template_slug`; else the resolved theme decides. (`template_slug`
+ *     defaults to 'glow' on every row, so it cannot be trusted on its own.)
  *
  * The host contact is `Allie` and the public studio line (STUDIO_PHONE_DISPLAY).
  * NEVER lib/paymentContacts.ts: that is the Venmo/Zelle number.
@@ -43,7 +44,8 @@ import { screenForImage } from '@/lib/evites/glyphs'
 import { eviteLocationType, mobileAddressOf, mobileTown, type EviteLocationType } from '@/lib/evites/location'
 import { partyWindow, validPartyDate, type PartyWindow } from '@/lib/evites/partyWindow'
 import { resolveTheme, themeLabelOf, type EviteTemplateSlug } from '@/lib/evites/themes'
-import { fontForBind, isKnownTemplateSlug, templateFor } from '@/lib/evites/templates'
+import { fontForBind, isGallerySlug, isKnownTemplateSlug, templateFor } from '@/lib/evites/templates'
+import type { TemplateLayout, TextSlot } from '@/lib/evites/templates/types'
 import type { InviteState } from '@/lib/evites/state'
 import type { EviteBookingRow, EviteLineItemRow, EviteRow, PartyThemeRow } from '@/lib/evites/types'
 
@@ -53,6 +55,23 @@ export interface InviteFacts {
   honoreeDisplay: string
   /** "Mia's" | "our Birthday Star's": the Sleep Under card's "to celebrate Mia's 7th birthday". */
   honoreePossessive: string
+  /** "Mia" (cased as typed, see `casedName`) | "Birthday Star". */
+  honoreeName: string
+  /** '7', or null with no plausible age (the same rule as `ageOrdinal`). */
+  ageNumber: string | null
+  /** 'seven' for 1..20, else null: "Archie is turning four". */
+  ageWords: string | null
+  /** 'year old' at 1, 'years old' otherwise, null with no age: "turning 1 year old", never "1 years old". */
+  yearsOld: string | null
+  /**
+   * The date in pieces, for designs that set it as a block ("SATURDAY | 22 | AUGUST"): 'Saturday',
+   * 'November', '14', '2–4 PM'. Each is '' wherever `dateLine` would not show it (a preview has no
+   * date; a party with no start time has no `timeText`), so a slot bound to one hides itself.
+   */
+  weekdayText: string
+  monthText: string
+  dayText: string
+  timeText: string
   /** '7th', or null when the age is missing or implausible. */
   ageOrdinal: string | null
   themeWord: string
@@ -91,7 +110,7 @@ export type InviteFactsBooking = Pick<
   | 'quote_snapshot'
 >
 
-export type InviteFactsEvite = Pick<
+export type InviteFactsEvite = Partial<Pick<EviteRow, 'template_choice'>> & Pick<
   EviteRow,
   | 'template_slug'
   | 'theme_word'
@@ -106,6 +125,7 @@ export type InviteFactsEvite = Pick<
 
 export const NO_NAME_HONOREE = 'BIRTHDAY STAR'
 export const NO_NAME_POSSESSIVE = "our Birthday Star's"
+export const NO_NAME_NAME = 'Birthday Star'
 export const PICK_A_DATE = 'Pick your date'
 export const LOCATION_TBC = 'Location to be confirmed'
 export const DEFAULT_HOST_NAME = 'Allie'
@@ -139,6 +159,17 @@ function casedName(s: string): string {
   return chars.length === 0 ? '' : chars[0].toLocaleUpperCase('en-US') + chars.slice(1).join('')
 }
 
+/** The age when it is a plausible one (1..99), else null. */
+function plausibleAge(age: unknown): number | null {
+  const n = typeof age === 'number' ? age : NaN
+  return Number.isInteger(n) && n >= 1 && n <= 99 ? n : null
+}
+
+const AGE_WORDS = [
+  '', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
+]
+
 function ordinalOf(age: unknown): string | null {
   const n = typeof age === 'number' ? age : NaN
   if (!Number.isInteger(n) || n < 1 || n > 99) return null
@@ -158,14 +189,17 @@ function part(parts: Intl.DateTimeFormatPart[], type: string): string {
   return parts.find((p) => p.type === type)?.value ?? ''
 }
 
-/** 'Saturday, November 14' and 'Sat, Nov 14' for a `YYYY-MM-DD` Eastern calendar date. */
-function dateTexts(date: string): { long: string; short: string } {
+/** 'Saturday, November 14' and 'Sat, Nov 14' for a `YYYY-MM-DD` Eastern calendar date, and its pieces. */
+function dateTexts(date: string): { long: string; short: string; weekday: string; month: string; day: string } {
   const noon = etToUtc(date, 12, 0)
   const l = etFormat(noon, { weekday: 'long', month: 'long', day: 'numeric' })
   const s = etFormat(noon, { weekday: 'short', month: 'short', day: 'numeric' })
   return {
     long: `${part(l, 'weekday')}, ${part(l, 'month')} ${part(l, 'day')}`,
     short: `${part(s, 'weekday')}, ${part(s, 'month')} ${part(s, 'day')}`,
+    weekday: part(l, 'weekday'),
+    month: part(l, 'month'),
+    day: part(l, 'day'),
   }
 }
 
@@ -231,7 +265,11 @@ export function inviteFacts(
   const rawSub = typeof evite.theme_sub === 'string' ? evite.theme_sub.trim() : ''
   // "Is there an override" is asked in the Glow fonts, as it always was; what it SAYS is screened below.
   const overridden = screenForImage(rawWord, 'monoton') !== '' || screenForImage(rawSub, 'bungee') !== ''
-  const templateSlug: EviteTemplateSlug = overridden && isKnownTemplateSlug(evite.template_slug) ? evite.template_slug : resolved.templateSlug
+  // The host's (or an admin's) pick from the gallery wins (migration 070); then an admin theme override's
+  // own template; then the theme's design. An unknown or retired slug is ignored, never drawn as plain.
+  const chosen = typeof evite.template_choice === 'string' && isGallerySlug(evite.template_choice) ? evite.template_choice : null
+  const templateSlug: EviteTemplateSlug =
+    chosen ?? (overridden && isKnownTemplateSlug(evite.template_slug) ? evite.template_slug : resolved.templateSlug)
   const template = templateFor(templateSlug)
   const wordFont = fontForBind(template, ['themeWord'], 'monoton')
   const subFont = fontForBind(template, ['themeSub'], 'bungee')
@@ -252,6 +290,9 @@ export function inviteFacts(
   const possessiveName = hasName ? casedName(screenForImage(rawName as string, nameFont)) : ''
   const honoreePossessive = possessiveName !== '' ? `${possessiveName}'s` : NO_NAME_POSSESSIVE
   const ageOrdinal = ordinalOf(booking.child_age)
+  const age = plausibleAge(booking.child_age)
+  const ageNumber = age === null ? null : String(age)
+  const ageWords = age !== null && age < AGE_WORDS.length ? AGE_WORDS[age] : null
 
   const label = themeLabelOf(themeWord)
 
@@ -261,10 +302,18 @@ export function inviteFacts(
   const texts = date ? dateTexts(date) : null
   let dateLine = PICK_A_DATE
   let shortDateLine = PICK_A_DATE
+  let weekdayText = ''
+  let monthText = ''
+  let dayText = ''
+  let timeText = ''
   if (texts && state !== 'preview') {
     const withTime = partyWin !== null && state !== 'needs_time'
     dateLine = withTime ? `${texts.long}${SEP}${timeRangeText(partyWin as PartyWindow)}` : texts.long
     shortDateLine = withTime ? `${texts.short}${SEP}${timeRangeText(partyWin as PartyWindow)}` : texts.short
+    weekdayText = texts.weekday
+    monthText = texts.month
+    dayText = texts.day
+    if (withTime) timeText = timeRangeText(partyWin as PartyWindow)
   }
   dateLine = screenForImage(dateLine, 'poppins600')
   shortDateLine = screenForImage(shortDateLine, 'poppins600')
@@ -305,11 +354,19 @@ export function inviteFacts(
   else if (state === 'needs_time') description = `${title}. ${dateLine}. Start time coming soon.`
   else description = `${title}. ${dateLine}. ${cardPlaceLine}. RSVP online.`
 
-  return {
+  const facts: InviteFacts = {
     hasName,
     honoreeDisplay,
     honoreePossessive,
+    honoreeName: possessiveName !== '' ? possessiveName : NO_NAME_NAME,
     ageOrdinal,
+    ageNumber,
+    ageWords,
+    yearsOld: age === null ? null : age === 1 ? 'year old' : 'years old',
+    weekdayText,
+    monthText,
+    dayText,
+    timeText,
     themeWord,
     themeSub,
     templateSlug,
@@ -333,4 +390,25 @@ export function inviteFacts(
     shareText,
     reshareText,
   }
+  return screenForTemplate(facts, template)
+}
+
+/**
+ * The last screen (spec §3): every fact a text slot of THIS template binds is screened for that
+ * slot's font, so a template drawing the date in Silkscreen or a name in Great Vibes can never print
+ * a missing glyph. A fact bound by two slots is screened for both fonts. For Glow and plain this is a
+ * no-op: each fact they bind was already screened above for the font they draw it in.
+ */
+export function screenForTemplate(facts: InviteFacts, template: TemplateLayout): InviteFacts {
+  const out = { ...facts } as unknown as Record<string, unknown>
+  const visit = (slot: TextSlot) => {
+    if (!slot.bind) return
+    const v = out[slot.bind]
+    if (typeof v === 'string' && v !== '') out[slot.bind] = screenForImage(v, slot.font)
+  }
+  for (const s of template.slots) {
+    if (s.type === 'text') visit(s)
+    else if (s.type === 'row') for (const c of s.children) if (c.type === 'text') visit(c)
+  }
+  return out as unknown as InviteFacts
 }

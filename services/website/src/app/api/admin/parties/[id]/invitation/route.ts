@@ -14,7 +14,7 @@ import { makeSlug } from '@/lib/evites/slug'
 import { slugIsAnAlias } from '@/lib/evites/slugTaken'
 import { fireClubOptOut } from '@/lib/evites/clubHook'
 import { themeShortOf } from '@/lib/evites/themes'
-import { TEMPLATE_SLUGS } from '@/lib/evites/templates'
+import { TEMPLATE_SLUGS, galleryTemplates, isGallerySlug } from '@/lib/evites/templates'
 import { loadFactsContext } from '@/lib/evites/adminLoad'
 import { notifyPartyCancelled } from '@/lib/evites/adminHooks'
 import {
@@ -213,6 +213,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       slug: evite.slug,
       previousSlugs: evite.previous_slugs,
       templateSlug: evite.template_slug,
+      templateChoice: evite.template_choice ?? null,
       themeWord: evite.theme_word,
       themeSub: evite.theme_sub,
       renderVersion: evite.render_version,
@@ -248,6 +249,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     },
     images: { invite: inviteImageUrl(evite, supabaseUrl), og: storedOgUrl(evite, supabaseUrl) },
     templateOptions: TEMPLATE_SLUGS,
+    designOptions: galleryTemplates().map((t) => ({ slug: t.slug, label: t.label as string })),
     renderFresh,
     warnings: {
       needsTime: state === 'needs_time',
@@ -298,7 +300,7 @@ async function revealContact(req: NextRequest, supabase: Supa, bookingId: string
 
 // ------------------------------------------------------------------------------------------------ POST
 
-const ACTIONS = ['ensure', 'rerender', 'archive', 'unarchive', 'set_theme', 'reslug', 'notify_cancelled', 'void_rsvp'] as const
+const ACTIONS = ['ensure', 'rerender', 'archive', 'unarchive', 'set_theme', 'set_design', 'reslug', 'notify_cancelled', 'void_rsvp'] as const
 type Action = (typeof ACTIONS)[number]
 
 function isSlugCollision(err: { code?: string | null; message?: string | null; details?: string | null } | null): boolean {
@@ -423,6 +425,20 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         audited,
         ...(templateIgnored ? { warning: 'The template only applies together with a theme word or sub. Set one to use it.' } : {}),
       })
+    }
+
+    case 'set_design': {
+      // The host's gallery pick, made by an admin (migration 070). null = back to the theme's design.
+      const v = body.template_choice
+      if (v !== null && !isGallerySlug(v)) return json({ error: 'Unknown design' }, 400)
+      const patch = { template_choice: v as string | null }
+      const before = { template_choice: evite.template_choice ?? null }
+      const { data, error } = await supabase.from('evites').update(patch).eq('id', evite.id).select('id')
+      if (error) return json({ error: `set_design failed: ${error.message}` }, 500)
+      if (!data || data.length === 0) return json({ error: 'Invitation not found' }, 404)
+      queueRender(evite.id)
+      const audited = await audit('Invitation: design changed', before, patch)
+      return json({ ok: true, action, audited })
     }
 
     case 'reslug': {

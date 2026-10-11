@@ -19,10 +19,11 @@
  *   3. nothing matched: the `plain` template, with a theme word drawn from the
  *      first usable name above, else `BIRTHDAY`.
  *
- * Two themes have artwork of their own: `glow-party` is the `glow` template and
- * `sleep-under-party` the `sleepunder` one (`THEME_TEMPLATES`). Every other theme
- * (and every unmatched one) is `plain` = Glow art with no icon strip and its own
- * theme word.
+ * A theme with artwork of its own starts on that design (`THEME_TEMPLATES`: Glow,
+ * Sleep Under, and since the Canva set of 2026-10-11 Slime, Barbie and Sweets &
+ * Treats). Every other theme (and every unmatched one) is `plain` = Glow art with
+ * no icon strip and its own theme word. The host can switch to any gallery design
+ * on their invitation page (`evites.template_choice`, migration 070).
  *
  * Theme WORD rules (`theme_word` is `char_length BETWEEN 1 AND 12` in the
  * database): drop the filler words (party, theme, package, birthday, custom,
@@ -41,6 +42,9 @@ export type EviteTemplateSlug = TemplateSlug
 export const THEME_TEMPLATES: Readonly<Record<string, EviteTemplateSlug>> = {
   'glow-party': 'glow',
   'sleep-under-party': 'sleepunder',
+  'slime-party': 'slime-pastel',
+  'barbie-party': 'barbie-disco',
+  'sweets-treats': 'two-sweet',
 }
 
 export const GENERIC_THEME_WORD = 'BIRTHDAY'

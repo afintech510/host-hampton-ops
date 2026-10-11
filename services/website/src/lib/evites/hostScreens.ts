@@ -5,7 +5,7 @@
  *
  * Pure. Returns the `evites` columns to write, in snake_case, ready for `.update()`.
  *
- * THE ALLOW-LIST IS THIS FILE. Exactly six keys are accepted:
+ * THE ALLOW-LIST IS THIS FILE. Exactly seven keys are accepted:
  *
  *   host_note            <= 140 characters, '' -> NULL
  *   gift_note            <= 140 characters, '' -> NULL
@@ -14,6 +14,8 @@
  *   show_host_contact    boolean
  *   host_contact_name    1..40 characters, '' / null -> NULL (the studio default, "Allie")
  *   host_contact_phone   exactly NNN-NNN-NNNN, first digit 2-9; '' / null -> NULL (the studio line)
+ *   template_choice      a GALLERY template slug (`isGallerySlug`), or null -> NULL (the theme's
+ *                        design). Migration 070. `plain`, an unregistered slug or anything else is a 400
  *
  * Any other key - `id`, `slug`, `theme_word`, `render_version`, `archived_at`, `booking_id`,
  * anything - is a 400 that names it. Never ignored: a silently dropped field reads as "saved".
@@ -31,12 +33,13 @@
 import { screenName, screenNote } from '@/lib/evites/screens'
 import { validPartyDate } from '@/lib/evites/partyWindow'
 import { formatHostPhone, isHostPhone } from '@/lib/evites/hostUi'
+import { isGallerySlug } from '@/lib/evites/templates'
 
 export const HOST_NOTE_MAX = 140
 export const GIFT_NOTE_MAX = 140
 export const HOST_CONTACT_NAME_MAX = 40
 
-/** The six keys, in form order. */
+/** The seven keys, in form order (the design picker is its own control, saved on its own). */
 export const HOST_PATCH_KEYS = [
   'host_note',
   'gift_note',
@@ -44,6 +47,7 @@ export const HOST_PATCH_KEYS = [
   'show_host_contact',
   'host_contact_name',
   'host_contact_phone',
+  'template_choice',
 ] as const
 export type HostPatchKey = (typeof HOST_PATCH_KEYS)[number]
 
@@ -66,6 +70,7 @@ export interface HostPatchColumns {
   show_host_contact?: boolean
   host_contact_name?: string | null
   host_contact_phone?: string | null
+  template_choice?: string | null
 }
 
 export type HostPatchResult =
@@ -135,6 +140,14 @@ export function screenHostPatch(body: unknown, ctx: HostPatchContext): HostPatch
     if (v === null || v === '') columns.host_contact_phone = null
     else if (!isHostPhone(v)) return bad('host_contact_phone', 'Please enter a US phone number in the form NNN-NNN-NNNN, or leave it blank to use the studio line.')
     else columns.host_contact_phone = v
+  }
+
+  // ---- the design (the gallery pick)
+  if (has('template_choice')) {
+    const v = o.template_choice
+    if (v === null || v === '') columns.template_choice = null
+    else if (!isGallerySlug(v)) return bad('template_choice', 'Please choose one of the designs shown.')
+    else columns.template_choice = v
   }
 
   if (Object.keys(columns).length === 0) return bad('body', 'Nothing to update.')

@@ -65,10 +65,13 @@ function fitRow(row: RowSlot, facts: InviteFacts): InviteSizes {
     return w
   }
 
+  // A row whose first text is already small ("YOU'RE INVITED TO MIA'S" at 33 px) may still need to
+  // shrink: its floor is HARD_FLOOR or half its own size, whichever is lower, never "it cannot move".
+  const floor = Math.min(HARD_FLOOR, Math.floor(refSize / 2))
   let ref = refSize
   if (refSize > 0) {
     ref = refSize
-    while (ref > HARD_FLOOR && totalAt(ref) > row.maxWidth) ref -= 1
+    while (ref > floor && totalAt(ref) > row.maxWidth) ref -= 1
   }
   const k = refSize > 0 ? ref / refSize : 1
   for (const t of texts) out[t.slot.id] = Math.max(1, Math.floor(t.slot.size * k))

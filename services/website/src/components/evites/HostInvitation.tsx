@@ -81,6 +81,8 @@ export default function HostInvitation({ initial, preview }: Props) {
   const [saved, setSaved] = useState(false)
   const [formError, setFormError] = useState<{ field: string | null; message: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  const [designSaving, setDesignSaving] = useState<string | null>(null)
+  const [designError, setDesignError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -128,6 +130,15 @@ export default function HostInvitation({ initial, preview }: Props) {
     }
   }, [interval, refresh])
 
+  // The preview is the STORED picture (drawn on the server). When a redraw lands - `renderFresh` going
+  // false -> true on a poll - ask for the page again so the new picture replaces the old one.
+  const fresh = data.renderFresh
+  const [wasFresh, setWasFresh] = useState(fresh)
+  useEffect(() => {
+    if (fresh && !wasFresh) router.refresh()
+    setWasFresh(fresh)
+  }, [fresh, wasFresh, router])
+
   const dirty = Object.keys(patchFromForm(form, data.customize)).length > 0
 
   async function save() {
@@ -159,6 +170,34 @@ export default function HostInvitation({ initial, preview }: Props) {
       setFormError({ field: null, message: 'Could not save your changes - check your connection and try again.' })
     } finally {
       setSaving(false)
+    }
+  }
+
+  /** The gallery: one PATCH per tap, separate from the Customize form so an unsaved note is never sent with it. */
+  async function pickDesign(slug: string | null) {
+    setDesignSaving(slug ?? 'theme')
+    setDesignError(null)
+    try {
+      const res = await fetch('/api/portal/invitation', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template_choice: slug }),
+      })
+      if (res.status === 401) {
+        window.location.href = LOGIN
+        return
+      }
+      const body = (await res.json().catch(() => null)) as (HostPayload & { error?: string }) | null
+      if (!res.ok || !body) {
+        setDesignError(body?.error ?? 'Could not change the design - try again.')
+        return
+      }
+      setData(body)
+      router.refresh() // the canvas is drawn on the server
+    } catch {
+      setDesignError('Could not change the design - check your connection and try again.')
+    } finally {
+      setDesignSaving(null)
     }
   }
 
@@ -212,6 +251,8 @@ export default function HostInvitation({ initial, preview }: Props) {
       formError={formError}
       saved={saved}
       copied={copied}
+      designSaving={designSaving}
+      designError={designError}
       on={{
         form: (patch) => {
           setSaved(false)
@@ -219,6 +260,7 @@ export default function HostInvitation({ initial, preview }: Props) {
           setForm((f) => ({ ...f, ...patch }))
         },
         save: () => void save(),
+        design: (slug) => void pickDesign(slug),
         share: (kind) => void share(kind),
         copy: () => void copy(),
         download: trackShare,
