@@ -73,7 +73,7 @@ export async function recordEviteEvent(supabase: Supa, eviteId: string, event: E
  * Used ONLY when `META_GRAPH_VERSION` is unset or malformed. Documented, not
  * authoritative: set the env var to the version Meta currently lists.
  */
-export const META_GRAPH_VERSION_DEFAULT = 'v23.0'
+export const META_GRAPH_VERSION_DEFAULT = 'v26.0' // Meta's current version per developers.facebook.com/docs/graph-api/changelog/versions (released 2026-07-29), checked 2026-10-11
 export const META_CAPI_TIMEOUT_MS = 2000
 
 const GRAPH_VERSION = /^v\d{1,2}\.\d{1,2}$/

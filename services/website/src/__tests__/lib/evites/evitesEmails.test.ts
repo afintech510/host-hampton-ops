@@ -319,14 +319,12 @@ describe('invite_ready', () => {
 describe('day_before: the arrival note', () => {
   const input = { party: PARTY, guest: GUEST, links: LINKS, mapsUrl: STUDIO_MAPS_URL }
 
-  it('with the constant still a TODO, the note is omitted: the placeholder never reaches a guest', () => {
-    expect(STUDIO_ARRIVAL_NOTE_READY).toBe(false)
+  it('the worded note (Adam, 2026-10-11) is in the default day-before email, and no TODO ever is', () => {
+    expect(STUDIO_ARRIVAL_NOTE_READY).toBe(true)
+    expect(STUDIO_ARRIVAL_NOTE).toContain('Free parking right out front at 295 Montauk Hwy')
     const e = dayBeforeEmail(input)
-    for (const part of [e.html, e.text, e.subject]) {
-      expect(part).not.toMatch(/TODO/)
-      expect(part).not.toContain(STUDIO_ARRIVAL_NOTE)
-    }
-    expect(e.text).not.toContain('Getting here')
+    for (const part of [e.html, e.text, e.subject]) expect(part).not.toMatch(/TODO/)
+    expect(e.text).toContain(`Getting here: ${STUDIO_ARRIVAL_NOTE}`)
   })
 
   it('a placeholder passed in explicitly is refused too', () => {

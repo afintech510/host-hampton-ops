@@ -61,16 +61,13 @@ export const STUDIO_PHONE_E164 = '+16319989325'
 /**
  * The parking / entrance sentence in the evite DAY-BEFORE email (spec §9.1).
  *
- * TODO(Adam): this is a PLACEHOLDER. Only Adam knows where guests should park and
- * which door to use, and the email must not guess. Replace the string below with
- * the real sentence (one or two lines, written to a parent arriving with a child
- * and a gift). Until you do, `STUDIO_ARRIVAL_NOTE_READY` is false and the
- * day-before email simply leaves the note out: the placeholder can never reach a
- * guest, because the template checks the sentinel itself.
+ * Worded by Adam 2026-10-11. If it is ever reset to a string starting with the
+ * sentinel, `STUDIO_ARRIVAL_NOTE_READY` turns false and the day-before email simply
+ * leaves the note out: a placeholder can never reach a guest.
  */
 export const STUDIO_ARRIVAL_NOTE_SENTINEL = 'TODO(Adam)'
 export const STUDIO_ARRIVAL_NOTE: string =
-  'TODO(Adam): parking and entrance note for guests arriving at the studio (where to park, which door).'
+  'Free parking right out front at 295 Montauk Hwy. Look for the Host Hampton sign. Please arrive no more than 10 minutes early so we can finish setting up the magic!'
 
 /** True once `STUDIO_ARRIVAL_NOTE` has been worded (no longer starts with the TODO sentinel). */
 export const STUDIO_ARRIVAL_NOTE_READY: boolean =
