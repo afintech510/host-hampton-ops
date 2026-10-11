@@ -208,18 +208,29 @@ export function guestMultiplier(guestCountApprox: number | null | undefined): nu
 }
 
 /**
+ * What ONE line item comes to — unit × quantity, and × guests when per-head.
+ *
+ * The single definition the total below, the invoice's line amounts and the
+ * customer portal's itemised list all use, so a line can never print a figure
+ * that the total was not built from. Says nothing about `is_optional`: an
+ * optional line still has a price to quote, it just never reaches the total.
+ */
+export function lineAmountCents(item: BilledItem, guestCountApprox: number | null | undefined): number {
+  const unitTotal = item.unit_price_cents * item.quantity
+  return item.guest_multiplied ? unitTotal * guestMultiplier(guestCountApprox) : unitTotal
+}
+
+/**
  * The total of everything actually BILLED — optional add-ons excluded.
  *
  * This is what `loadPlanInvoice` puts on the document, so it is what every
  * writer of `bookings.total_cents` has to agree with.
  */
 export function billedTotalCents(items: BilledItem[], guestCountApprox: number | null | undefined): number {
-  const mult = guestMultiplier(guestCountApprox)
   let total = 0
   for (const item of items) {
     if (item.is_optional === true) continue
-    const unitTotal = item.unit_price_cents * item.quantity
-    total += item.guest_multiplied ? unitTotal * mult : unitTotal
+    total += lineAmountCents(item, guestCountApprox)
   }
   return total
 }
