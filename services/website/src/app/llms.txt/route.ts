@@ -6,6 +6,7 @@ import { STUDIO_ADDRESS_LINE, STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
 import { SITE_URL } from '@/lib/seo'
 import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 import { loadStudioThemes, usd } from '@/lib/partyCostFaq'
+import { CUSTOMIZED_FOR_THEME, HOSTED_THEME_GROUPS } from '@/lib/hostedThemes'
 
 /**
  * /llms.txt — the plain-text brief an answer engine can read in one fetch.
@@ -100,6 +101,20 @@ export async function GET() {
     add('')
   }
 
+  // The custom half of the business: themes we have hosted that are not
+  // packages. Names only, from lib/hostedThemes.ts — no figure here.
+  add(
+    '## Any theme — themes we have hosted',
+    '',
+    '- Any theme can be done, at the studio or as a mobile party. Many of the parties we host are custom themes.',
+    `- What we customize: ${CUSTOMIZED_FOR_THEME.map(c => c.title.toLowerCase()).join(', ')} (the Host Hampton EVITE).`,
+    '- Character themes are our own designs inspired by the show or game, not official or licensed parties.',
+  )
+  for (const g of HOSTED_THEME_GROUPS) {
+    add(`- ${g.title}: ${g.themes.map(t => t.name).join('; ')}`)
+  }
+  add(`- Every theme, grouped: ${SITE_URL}/party-themes`, '')
+
   add(
     '## Mobile parties (we come to you)',
     '',
@@ -129,6 +144,7 @@ export async function GET() {
     '## Key pages',
     '',
     `- [Party packages and prices](${SITE_URL}/party-packages): every in-studio theme with what is included`,
+    `- [Party themes we have hosted](${SITE_URL}/party-themes): custom themes beyond the packages — any theme on request`,
     `- [Mobile parties](${SITE_URL}/mobile-party): the station menu and the quote form`,
     `- [Kids craft parties](${SITE_URL}/mobile-craft-party): craft parties at your house or ours`,
     `- [Studio rental](${SITE_URL}/studio-rental): rates and online booking`,

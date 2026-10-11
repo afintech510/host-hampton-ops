@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { getSupabase } from '@/lib/supabase'
 import PartyPackagesContent from './PartyPackagesContent'
+import { allHostedThemes } from '@/lib/hostedThemes'
 
 export const metadata: Metadata = {
   title: 'Kids Party Packages & Pricing — Long Island',
@@ -36,5 +37,5 @@ export default async function PartyPackages() {
     // Page still renders without pricing data
   }
 
-  return <PartyPackagesContent pricingItems={pricingItems} />
+  return <PartyPackagesContent pricingItems={pricingItems} hostedThemes={allHostedThemes().map(t => t.name)} />
 }

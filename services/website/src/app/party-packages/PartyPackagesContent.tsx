@@ -166,7 +166,14 @@ function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
-export default function PartyPackagesContent({ pricingItems = [] }: { pricingItems?: PricingItem[] }) {
+export default function PartyPackagesContent({
+  pricingItems = [],
+  hostedThemes = [],
+}: {
+  pricingItems?: PricingItem[]
+  /** Themes we've hosted beyond the packages (lib/hostedThemes.ts), passed in by the server page. */
+  hostedThemes?: string[]
+}) {
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     eventType: 'Kids Birthday Party',
@@ -588,6 +595,32 @@ export default function PartyPackagesContent({ pricingItems = [] }: { pricingIte
           </div>
         )}
       </section>
+
+      {/* ── Any Theme ──
+          The packages above are the signature themes; many parties we host are
+          custom. Server-rendered so crawlers read it — see /party-themes. */}
+      {hostedThemes.length > 0 && (
+        <section className="py-10 max-w-4xl mx-auto px-4 sm:px-6">
+          <div className="bg-white rounded-3xl border border-hampton-pink/20 shadow-sm px-6 py-8 md:px-10 text-center">
+            <h2 className="font-serif text-2xl md:text-3xl text-hampton-navy mb-3">Don&apos;t See Your Theme? We Can Do Anything.</h2>
+            <p className="text-hampton-navy/70 text-sm md:text-base max-w-2xl mx-auto mb-6 leading-relaxed">
+              We customize the decor, activities, take-homes and your Host Hampton EVITE to your child&apos;s vibe.
+              Some of the themes we&apos;ve hosted:
+            </p>
+            <ul className="flex flex-wrap justify-center gap-2 mb-6">
+              {hostedThemes.map(name => (
+                <li key={name} className="px-3 py-1.5 rounded-full bg-hampton-pink/10 text-xs font-medium text-hampton-navy">
+                  {name}
+                </li>
+              ))}
+            </ul>
+            <p className="text-hampton-navy/70 text-sm">
+              Type your idea into the Party Theme box below, or{' '}
+              <Link href="/party-themes" className="text-hampton-pink font-semibold hover:underline">see every theme we&apos;ve hosted</Link>.
+            </p>
+          </div>
+        </section>
+      )}
 
       {/* ── Lead Capture Form ── */}
       <section className="py-8 max-w-2xl mx-auto px-4 sm:px-6 scroll-mt-24">

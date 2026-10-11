@@ -37,7 +37,9 @@ interface Entry {
 
 const STATIC_ROUTES: Entry[] = [
   { path: '/', changefreq: 'weekly', priority: 1.0 },
-  { path: '/party-packages', changefreq: 'weekly', priority: 0.9 },
+  { path: '/party-packages', changefreq: 'weekly', priority: 0.9, lastmod: '2026-10-11' },
+  // Every theme we have hosted, beyond the packages (lib/hostedThemes.ts).
+  { path: '/party-themes', changefreq: 'monthly', priority: 0.8, lastmod: '2026-10-11' },
   { path: '/mobile-party', changefreq: 'weekly', priority: 0.9 },
   { path: '/mobile-craft-party', changefreq: 'weekly', priority: 0.9 },
   { path: '/party-room-rental', changefreq: 'monthly', priority: 0.8 },

@@ -113,6 +113,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/party-planner',
   '/party-quote',
   '/party-room-rental',
+  '/party-themes',
   '/permanent-jewelry',
   '/plan/[ref]/summary',
   '/privacy-policy',
