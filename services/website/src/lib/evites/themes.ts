@@ -19,9 +19,10 @@
  *   3. nothing matched: the `plain` template, with a theme word drawn from the
  *      first usable name above, else `BIRTHDAY`.
  *
- * Only `glow-party` has artwork today, so it is the only `glow` template; every
- * other theme (and every unmatched one) is `plain` = Glow art with no icon strip
- * and its own theme word.
+ * Two themes have artwork of their own: `glow-party` is the `glow` template and
+ * `sleep-under-party` the `sleepunder` one (`THEME_TEMPLATES`). Every other theme
+ * (and every unmatched one) is `plain` = Glow art with no icon strip and its own
+ * theme word.
  *
  * Theme WORD rules (`theme_word` is `char_length BETWEEN 1 AND 12` in the
  * database): drop the filler words (party, theme, package, birthday, custom,
@@ -32,8 +33,15 @@
  */
 
 import type { EviteBookingRow, EviteLineItemRow, PartyThemeRow } from '@/lib/evites/types'
+import type { TemplateSlug } from '@/lib/evites/templates/types'
 
-export type EviteTemplateSlug = 'glow' | 'plain'
+export type EviteTemplateSlug = TemplateSlug
+
+/** `party_themes.slug` -> the template drawn with that theme's own artwork. Anything absent is `plain`. */
+export const THEME_TEMPLATES: Readonly<Record<string, EviteTemplateSlug>> = {
+  'glow-party': 'glow',
+  'sleep-under-party': 'sleepunder',
+}
 
 export const GENERIC_THEME_WORD = 'BIRTHDAY'
 export const DEFAULT_THEME_SUB = 'PARTY'
@@ -115,7 +123,8 @@ export function themeShortOf(themeWord: string): string {
 function build(partyThemeSlug: string | null, word: string, source: ResolvedTheme['source']): ResolvedTheme {
   return {
     partyThemeSlug,
-    templateSlug: partyThemeSlug === 'glow-party' ? 'glow' : 'plain',
+    templateSlug:
+      partyThemeSlug !== null && Object.prototype.hasOwnProperty.call(THEME_TEMPLATES, partyThemeSlug) ? THEME_TEMPLATES[partyThemeSlug] : 'plain',
     themeWord: word,
     themeSub: DEFAULT_THEME_SUB,
     label: themeLabelOf(word),

@@ -111,7 +111,7 @@ const themes = [
   },
   {
     name: 'Sleep Under Party',
-    price: 900,
+    price: 950,
     imgs: ['/images/theme-sleepunder.webp'],
     desc: 'Cozy styled tents, bedazzle a hairbrush, hairstyling, mini pink facials, and sleepover vibes.',
     extendedDesc: 'The ultimate sleepover experience \u2014 without the actual sleepover! Each guest gets their own cozy styled tent with air mattress setup. Activities include bedazzling their own hairbrush to take home, fun hairstyling sessions, and relaxing mini pink facials. All the sleepover magic, and you still pick them up at the end!',

@@ -2,7 +2,7 @@
  * Bundled fonts, and what they can draw (spec §2 `glyphs.ts`, §3, §5).
  *
  * Every string that is bound into a rendered image has to be drawn by one of
- * five bundled latin-subset `.woff` files. A character a font lacks does not
+ * six bundled latin-subset `.woff` files (`lobster` is the Sleep Under script). A character a font lacks does not
  * throw: Satori draws a notdef box or falls back to a network font loader, and
  * the first is a visible defect on a child's birthday card. So every
  * image-bound string passes `screenForImage()` for its slot's font first.
@@ -31,10 +31,10 @@ import fs from 'fs'
 import path from 'path'
 import { parse, type Font } from 'opentype.js'
 
-/** The spike's keys (`scripts/evite-spike/render.mjs` FONT_FILES). */
-export type FontKey = 'monoton' | 'bungee' | 'neon' | 'poppins400' | 'poppins600'
+/** The spike's keys (`scripts/evite-spike/render.mjs` FONT_FILES), plus `lobster` for the Sleep Under template. */
+export type FontKey = 'monoton' | 'bungee' | 'neon' | 'poppins400' | 'poppins600' | 'lobster'
 
-export const FONT_KEYS: readonly FontKey[] = ['monoton', 'bungee', 'neon', 'poppins400', 'poppins600']
+export const FONT_KEYS: readonly FontKey[] = ['monoton', 'bungee', 'neon', 'poppins400', 'poppins600', 'lobster']
 
 export const FONT_FILES: Record<FontKey, { family: string; weight: 400 | 600; file: string }> = {
   monoton: { family: 'Monoton', weight: 400, file: 'monoton-latin-400-normal.woff' },
@@ -42,6 +42,7 @@ export const FONT_FILES: Record<FontKey, { family: string; weight: 400 | 600; fi
   neon: { family: 'Neonderthaw', weight: 400, file: 'neonderthaw-latin-400-normal.woff' },
   poppins400: { family: 'Poppins', weight: 400, file: 'poppins-latin-400-normal.woff' },
   poppins600: { family: 'Poppins', weight: 600, file: 'poppins-latin-600-normal.woff' },
+  lobster: { family: 'Lobster', weight: 400, file: 'lobster-latin-400-normal.woff' },
 }
 
 /** Where the `.woff` files are, resolved at call time. */

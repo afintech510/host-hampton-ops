@@ -60,6 +60,7 @@ export function renderInputsHash(facts: InviteFacts): string {
       templateSlug: facts.templateSlug,
       hasName: facts.hasName,
       honoreeDisplay: facts.honoreeDisplay,
+      honoreePossessive: facts.honoreePossessive,
       ageOrdinal: facts.ageOrdinal,
       themeWord: facts.themeWord,
       themeSub: facts.themeSub,

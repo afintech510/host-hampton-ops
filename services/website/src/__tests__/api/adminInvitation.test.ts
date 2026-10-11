@@ -137,7 +137,7 @@ describe('GET: the card data', () => {
     expect(b.links.hostPageNote).toMatch(/sign-in/)
     expect(b.warnings).toEqual({ needsTime: false, noParentEmail: false })
     expect(b.evite.canReslug).toBe(true)
-    expect(b.templateOptions).toEqual(['glow', 'plain'])
+    expect(b.templateOptions).toEqual(['glow', 'plain', 'sleepunder'])
     expect(b.rsvps.available).toBe(true)
     expect(b.ledger).toEqual({ available: true, truncated: false, groups: [] })
   })

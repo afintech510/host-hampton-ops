@@ -80,12 +80,23 @@ describe('evites/themes - resolveTheme', () => {
     expect(r.partyThemeSlug).toBe('glow-party')
   })
 
-  it('every catalogue theme except glow is the plain template', () => {
+  it('glow and sleep-under have their own templates; every other catalogue theme is plain', () => {
+    const own: Record<string, string> = { 'glow-party': 'glow', 'sleep-under-party': 'sleepunder' }
     for (const t of THEMES) {
       const r = resolveTheme(bk({ package_type: t.name }), [], THEMES)
       expect(r.partyThemeSlug).toBe(t.slug)
-      expect(r.templateSlug).toBe(t.slug === 'glow-party' ? 'glow' : 'plain')
+      expect(r.templateSlug).toBe(own[t.slug] ?? 'plain')
     }
+  })
+
+  it('Sleep Under resolves through its theme line item to the sleepunder template', () => {
+    const r = resolveTheme(bk(), [themeLine('Sleep Under Party', 'pi-sleep')], THEMES)
+    expect(r).toMatchObject({ partyThemeSlug: 'sleep-under-party', templateSlug: 'sleepunder', themeWord: 'SLEEP UNDER', themeSub: 'PARTY', source: 'line_item' })
+  })
+
+  it('a slug that is an Object.prototype key is not a template ("constructor" is plain)', () => {
+    const r = resolveTheme(bk({ package_type: 'Constructor Party' }), [], [T('Constructor Party', 'constructor')])
+    expect(r.templateSlug).toBe('plain')
   })
 
   it('theme words are at most 12 characters, upper-case, and from the catalogue name', () => {

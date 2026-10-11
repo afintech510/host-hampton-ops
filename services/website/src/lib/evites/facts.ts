@@ -10,11 +10,12 @@
  * and a booked-but-timeless party reads the date alone.
  *
  * Every string that is bound into an IMAGE passes `screenForImage()` for the font
- * of the slot it lands in (spec §3). The slot fonts are those of the Glow layout
- * (spec §6; the `plain` template shares them): name `bungee`, theme word
- * `monoton`, theme sub `bungee`, age `bungee`, date `poppins600`, place and host
- * line `poppins400`, OG title `bungee`. The same strings feed the web page, so the
- * page and the picture can never disagree about a character.
+ * of the slot it lands in (spec §3). The name, theme word and theme sub are
+ * screened for the font of the slot that binds them in the template this invite
+ * is drawn with (`fontForBind`): Glow and plain draw them in `bungee` / `monoton` /
+ * `bungee`, Sleep Under in `lobster`. Date `poppins600`, place and host line
+ * `poppins400`, OG title `bungee` in every template. The same strings feed the web
+ * page, so the page and the picture can never disagree about a character.
  *
  * Decisions this module makes that the spec leaves open (all pinned by tests):
  *   - `honoreeDisplay` is UPPER-CASE ('MIA'); `ageOrdinal` is not ('7th') - the
@@ -42,6 +43,7 @@ import { screenForImage } from '@/lib/evites/glyphs'
 import { eviteLocationType, mobileAddressOf, mobileTown, type EviteLocationType } from '@/lib/evites/location'
 import { partyWindow, validPartyDate, type PartyWindow } from '@/lib/evites/partyWindow'
 import { resolveTheme, themeLabelOf, type EviteTemplateSlug } from '@/lib/evites/themes'
+import { fontForBind, isKnownTemplateSlug, templateFor } from '@/lib/evites/templates'
 import type { InviteState } from '@/lib/evites/state'
 import type { EviteBookingRow, EviteLineItemRow, EviteRow, PartyThemeRow } from '@/lib/evites/types'
 
@@ -49,6 +51,8 @@ export interface InviteFacts {
   hasName: boolean
   /** 'MIA' | 'BIRTHDAY STAR' (the star itself is an icon IMAGE slot, never a glyph). */
   honoreeDisplay: string
+  /** "Mia's" | "our Birthday Star's": the Sleep Under card's "to celebrate Mia's 7th birthday". */
+  honoreePossessive: string
   /** '7th', or null when the age is missing or implausible. */
   ageOrdinal: string | null
   themeWord: string
@@ -101,6 +105,7 @@ export type InviteFactsEvite = Pick<
 >
 
 export const NO_NAME_HONOREE = 'BIRTHDAY STAR'
+export const NO_NAME_POSSESSIVE = "our Birthday Star's"
 export const PICK_A_DATE = 'Pick your date'
 export const LOCATION_TBC = 'Location to be confirmed'
 export const DEFAULT_HOST_NAME = 'Allie'
@@ -220,23 +225,34 @@ export function inviteFacts(
   partyThemes: readonly PartyThemeRow[],
   state: InviteState,
 ): InviteFacts {
+  // ---- theme (resolved, then the evite's own override). First, because the template decides the fonts.
+  const resolved = resolveTheme(booking, lineItems, partyThemes)
+  const rawWord = typeof evite.theme_word === 'string' ? evite.theme_word.trim() : ''
+  const rawSub = typeof evite.theme_sub === 'string' ? evite.theme_sub.trim() : ''
+  // "Is there an override" is asked in the Glow fonts, as it always was; what it SAYS is screened below.
+  const overridden = screenForImage(rawWord, 'monoton') !== '' || screenForImage(rawSub, 'bungee') !== ''
+  const templateSlug: EviteTemplateSlug = overridden && isKnownTemplateSlug(evite.template_slug) ? evite.template_slug : resolved.templateSlug
+  const template = templateFor(templateSlug)
+  const wordFont = fontForBind(template, ['themeWord'], 'monoton')
+  const subFont = fontForBind(template, ['themeSub'], 'bungee')
+  const nameFont = fontForBind(template, ['honoreeDisplay', 'honoreePossessive'], 'bungee')
+
+  const wordOverride = rawWord !== '' ? screenForImage(rawWord, wordFont) : ''
+  const subOverride = rawSub !== '' ? screenForImage(rawSub, subFont) : ''
+  const themeWord = screenForImage(wordOverride !== '' ? wordOverride.toLocaleUpperCase('en-US') : resolved.themeWord, wordFont) || resolved.themeWord
+  const themeSub = screenForImage(subOverride !== '' ? subOverride.toLocaleUpperCase('en-US') : resolved.themeSub, subFont) || resolved.themeSub
+
   // ---- name and age
   const rawName = childNameOf(booking)
-  const nameForImage = rawName ? screenForImage(rawName.toLocaleUpperCase('en-US'), 'bungee') : ''
+  const nameForImage = rawName ? screenForImage(rawName.toLocaleUpperCase('en-US'), nameFont) : ''
   const hasName = nameForImage !== ''
   const honoreeDisplay = hasName ? nameForImage : NO_NAME_HONOREE
+  // `displayName` feeds the title and the share text, whose image font is the OG title's (`bungee`).
   const displayName = hasName ? casedName(screenForImage(rawName as string, 'bungee')) : ''
+  const possessiveName = hasName ? casedName(screenForImage(rawName as string, nameFont)) : ''
+  const honoreePossessive = possessiveName !== '' ? `${possessiveName}'s` : NO_NAME_POSSESSIVE
   const ageOrdinal = ordinalOf(booking.child_age)
 
-  // ---- theme (resolved, then the evite's own override)
-  const resolved = resolveTheme(booking, lineItems, partyThemes)
-  const wordOverride = typeof evite.theme_word === 'string' ? screenForImage(evite.theme_word.trim(), 'monoton') : ''
-  const subOverride = typeof evite.theme_sub === 'string' ? screenForImage(evite.theme_sub.trim(), 'bungee') : ''
-  const overridden = wordOverride !== '' || subOverride !== ''
-  const themeWord = screenForImage(wordOverride !== '' ? wordOverride.toLocaleUpperCase('en-US') : resolved.themeWord, 'monoton') || resolved.themeWord
-  const themeSub = screenForImage(subOverride !== '' ? subOverride.toLocaleUpperCase('en-US') : resolved.themeSub, 'bungee') || resolved.themeSub
-  const templateSlug: EviteTemplateSlug =
-    overridden && (evite.template_slug === 'glow' || evite.template_slug === 'plain') ? evite.template_slug : resolved.templateSlug
   const label = themeLabelOf(themeWord)
 
   // ---- when
@@ -292,6 +308,7 @@ export function inviteFacts(
   return {
     hasName,
     honoreeDisplay,
+    honoreePossessive,
     ageOrdinal,
     themeWord,
     themeSub,

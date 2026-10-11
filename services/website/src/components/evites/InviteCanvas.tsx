@@ -18,6 +18,8 @@
  * Glow (spec §6 v1.1): a gradient-filled slot is ONE `backgroundClip: 'text'`
  * layer plus `filter: drop-shadow(stop) drop-shadow(stop)...`, in both modes; a
  * solid-colour slot uses stacked `text-shadow`; a shape uses stacked `box-shadow`.
+ * A slot's `stroke` is `-webkit-text-stroke` (Satori draws it as an SVG stroke over
+ * the fill, as Chrome does) and its `shadow` is one more, offset, `text-shadow`.
  *
  * Letter-spacing (spec §6 v1.1, from the P01 spike): Chrome counts the trailing
  * letter-space in a centred line, Satori does not, and Satori skips the space
@@ -94,7 +96,17 @@ function textStyle(slot: TextSlot, size: number, mode: 'web' | 'satori'): CSSPro
     if (slot.glow) style.filter = dropShadowOf(slot.glow)
   } else {
     style.color = slot.color ?? '#ffffff'
-    if (slot.glow) style.textShadow = shadowOf(slot.glow)
+    // Sticker lettering (Sleep Under): a hard offset shadow and an outline, both scaled with a shrunken slot.
+    const k = size / slot.size
+    const shadows: string[] = []
+    if (slot.shadow) shadows.push(`${slot.shadow.x * k}px ${slot.shadow.y * k}px 0 ${slot.shadow.color}`)
+    if (slot.glow) shadows.push(shadowOf(slot.glow))
+    if (shadows.length > 0) style.textShadow = shadows.join(', ')
+    if (slot.stroke) {
+      const s = style as Record<string, unknown>
+      s.WebkitTextStrokeWidth = slot.stroke.width * k
+      s.WebkitTextStrokeColor = slot.stroke.color
+    }
   }
   return style
 }
@@ -215,6 +227,18 @@ function rowSlot(ctx: Ctx, row: RowSlot): ReactElement | null {
     )
   }
   if (kids.length === 0) return null
+  // A baseline row with a nominal box (Sleep Under's "Mia's 7th"): the children share a baseline in an
+  // inner group, and the group is centred in the box, so a shrunken row stays centred (spec changelog B5).
+  if (row.boxHeight !== undefined && row.align === 'baseline') {
+    return (
+      <div
+        key={row.id}
+        style={{ display: 'flex', position: 'absolute', left: 0, top: row.top, width: ctx.W, height: row.boxHeight, justifyContent: 'center', alignItems: 'center' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: row.gap, whiteSpace: 'nowrap' }}>{kids}</div>
+      </div>
+    )
+  }
   return (
     <div
       key={row.id}

@@ -12,6 +12,12 @@
  *   - `row.boxHeight`  the nominal height of a row whose children are centred in
  *                      it, so a shrunken name stays vertically centred (B5)
  *   - `row.showWhen`   the age row disappears with no age
+ *
+ * The Sleep Under template (Canva "Pastel Pink and Blue Slumber Party") added the
+ * sticker-lettering fields: `text.stroke` (an outline, `-webkit-text-stroke`,
+ * which Satori draws too), `text.shadow` (one hard offset shadow), `text.titleCase`
+ * ("SLEEP UNDER" -> "Sleep Under", for a script face that must not be set in
+ * capitals), and the `ogCard` colour fields for a LIGHT card.
  */
 
 import type { InviteFacts } from '@/lib/evites/facts'
@@ -72,9 +78,15 @@ export interface TextSlot {
   lineHeight: number
   letterSpacingEm?: number
   uppercase?: boolean
+  /** Every word capitalised and the rest lower-cased ("SLEEP UNDER" -> "Sleep Under"). Ignored with `uppercase`. */
+  titleCase?: boolean
   color?: string
   fill?: { gradient: string[]; angleDeg: number }
   glow?: Glow
+  /** An outline drawn over the glyph edge (`-webkit-text-stroke`), in px at the slot's nominal size. */
+  stroke?: { width: number; color: string }
+  /** One hard drop shadow, offset in px at the slot's nominal size. Combined with `glow` if both are set. */
+  shadow?: { x: number; y: number; color: string }
   bind?: keyof InviteFacts
   staticText?: string
   showWhen?: ShowWhen
@@ -116,10 +128,24 @@ export interface OgCardSpec {
   ctaText: 'Tap to RSVP'
   ctaBg: string
   ctaColor: string
+  /** Set the title in capitals (Glow) or as typed (a script face). Absent = capitals. */
+  titleUppercase?: boolean
+  /** Hard offset shadow and outline for the title, as in the invitation's own lettering. */
+  titleShadow?: { x: number; y: number; color: string }
+  titleStroke?: { width: number; color: string }
+  /** Body text and host-line colours. Absent = Glow's cream and pink, which only read on a dark card. */
+  textColor?: string
+  hostColor?: string
+  /** A CSS gradient drawn INSTEAD of the cropped invitation art (a light design's art is mostly white). */
+  backdrop?: string
+  /** The halo behind the portrait. Absent = Glow's violet. */
+  portraitShadow?: string
 }
 
+export type TemplateSlug = 'glow' | 'plain' | 'sleepunder'
+
 export interface TemplateLayout {
-  slug: 'glow' | 'plain'
+  slug: TemplateSlug
   canvas: { width: 1085; height: 1530 }
   /** `web`: the page's webp. `raster`: the 1x JPEG Satori embeds. Both public paths. */
   background: { web: string; raster: string }
@@ -142,6 +168,7 @@ export const FONT_STYLE: Record<FontKey, { family: string; weight: 400 | 600 }> 
   neon: { family: 'Neonderthaw', weight: 400 },
   poppins400: { family: 'Poppins', weight: 400 },
   poppins600: { family: 'Poppins', weight: 600 },
+  lobster: { family: 'Lobster', weight: 400 },
 }
 
 /** Font sizes in px by slot id; a row's image child is keyed by its id too and holds its WIDTH in px. */

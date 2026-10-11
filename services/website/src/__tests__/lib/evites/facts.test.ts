@@ -12,6 +12,7 @@ const THEMES: PartyThemeRow[] = [
   { id: 't1', name: 'Glow Party', slug: 'glow-party', pricing_item_id: 'pi-glow' },
   { id: 't2', name: 'Swiftie Party', slug: 'swiftie-party', pricing_item_id: 'pi-swift' },
   { id: 't3', name: 'K-Pop Party', slug: 'kpop-party', pricing_item_id: 'pi-kpop' },
+  { id: 't4', name: 'Sleep Under Party', slug: 'sleep-under-party', pricing_item_id: 'pi-sleep' },
 ]
 
 const booking = (over: Record<string, unknown> = {}): InviteFactsBooking => ({
@@ -296,6 +297,27 @@ describe('evites/facts - theme', () => {
   it('an evite override of theme_word / theme_sub wins, and brings its template_slug with it', () => {
     const f = facts(booking(), evite({ theme_word: 'neon', theme_sub: 'bash', template_slug: 'plain' }))
     expect([f.themeWord, f.themeSub, f.templateSlug, f.title]).toEqual(['NEON', 'BASH', 'plain', "Mia's Neon Party"])
+  })
+
+  it('Sleep Under: its own template, and the name and theme are screened for Lobster', () => {
+    const f = facts(booking({ package_type: 'Sleep Under Party' }))
+    expect([f.themeWord, f.themeSub, f.templateSlug, f.title]).toEqual(['SLEEP UNDER', 'PARTY', 'sleepunder', "Mia's Sleep Under Party"])
+    expect(f.honoreePossessive).toBe("Mia's")
+  })
+
+  it('honoreePossessive: the cased name with an apostrophe, or the Birthday Star with none', () => {
+    expect(facts(booking({ child_name: 'mia' })).honoreePossessive).toBe("Mia's")
+    expect(facts(booking({ child_name: 'DeShawn' })).honoreePossessive).toBe("DeShawn's")
+    expect(facts(booking({ child_name: null, quote_snapshot: null })).honoreePossessive).toBe("our Birthday Star's")
+  })
+
+  it('an override may pick the sleepunder template', () => {
+    const f = facts(booking(), evite({ theme_word: 'pajama', template_slug: 'sleepunder' }))
+    expect([f.themeWord, f.templateSlug]).toEqual(['PAJAMA', 'sleepunder'])
+  })
+
+  it('an override naming an unknown template keeps the resolved one', () => {
+    expect(facts(booking(), evite({ theme_word: 'neon', template_slug: 'constructor' })).templateSlug).toBe('glow')
   })
 
   it('without an override the stored template_slug (default "glow" on every row) is NOT trusted', () => {
