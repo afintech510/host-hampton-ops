@@ -135,7 +135,8 @@ describe('POST /api/careers/apply', () => {
 
     expect(mockResendSend).toHaveBeenCalledTimes(2)
     const [owner, confirm] = mockResendSend.mock.calls.map(c => c[0])
-    expect(owner.to).toBe('owner@example.com')
+    expect(owner.to).toBe('info@hosthampton.com')
+    expect(confirm.replyTo).toBe('info@hosthampton.com')
     expect(owner.replyTo).toBe('jamie@example.com')
     expect(owner.subject).toContain('Jamie Rivera')
     expect(owner.html).toContain('/admin/applications')

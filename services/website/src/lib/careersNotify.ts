@@ -18,8 +18,11 @@ import { ownerEmail } from './ownerNotify'
 
 export const CAREERS_INFO_INBOX = 'info@hosthampton.com'
 
-/** See the header. Flip only on a confirmed delivery, never on "no bounce". */
-export const INFO_INBOX_CONFIRMED = false
+/**
+ * See the header. Flip only on a confirmed delivery, never on "no bounce".
+ * CONFIRMED 2026-10-11: Adam saw the routing test arrive.
+ */
+export const INFO_INBOX_CONFIRMED = true
 
 export function careersAlertEmail(): string {
   return INFO_INBOX_CONFIRMED ? CAREERS_INFO_INBOX : ownerEmail()
