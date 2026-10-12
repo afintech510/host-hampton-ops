@@ -190,7 +190,7 @@ describe('R0 — the surface is enumerated exactly', () => {
 
     /**
      * Classified, not regex'd away. Each of these is a cron route that provably
-     * hands nothing to a mail or SMS provider; if one of them GAINS a send, it
+     * hands nothing to a CUSTOMER (an owner-only text to REVIEWER_PHONES is classified here with its reason); if one of them GAINS a customer send, it
      * has to be moved into SEND_ROUTES deliberately — which is what R1 below
      * then checks for.
      */
@@ -201,6 +201,7 @@ describe('R0 — the surface is enumerated exactly', () => {
       'app/api/cron/experiment-report/route.ts': 'writes a report row, sends nothing',
       'app/api/cron/social-calendar/route.ts': 'creates social_posts drafts',
       'app/api/cron/weekly-town-drafts/route.ts': 'creates website_content drafts',
+      'app/api/cron/cron-alert/route.ts': 'owner-only: texts REVIEWER_PHONES a watchdog message via notifyOwnerSms; no customer address is ever read',
     }
 
     const unaccounted = found.filter(
