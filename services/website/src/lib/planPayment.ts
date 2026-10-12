@@ -46,6 +46,8 @@ import { escapeHtml } from '@/lib/escapeHtml'
 import { writeLedger } from '@/lib/marketing/graph'
 import { loadPlanInvoice, money, type PlanInvoice } from '@/lib/planInvoice'
 import { mailHref } from '@/lib/emailSafety'
+import { depositApprovalFields } from '@/lib/depositApproval'
+import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 import {
   isPayPurpose,
   PAY_LINK_COLUMNS,
@@ -237,8 +239,55 @@ function paymentTypeFor(purpose: PayPurpose, creditCents: number, remainingBefor
 /** Statuses a payment is allowed to move a plan INTO. */
 function nextStatusFor(purpose: PayPurpose, newBalanceCents: number): string | null {
   if (newBalanceCents === 0) return 'paid_in_full'
-  if (purpose === 'deposit') return 'deposit_paid'
+  // A deposit approves the booking (Adam, 2026-10-12) — see lib/depositApproval.ts.
+  // Used to be `deposit_paid`, which only a person pressing "Approve Booking"
+  // ever moved on, so `booking-locks` (which locks `approved` and nothing else)
+  // never locked these.
+  if (purpose === 'deposit') return 'approved'
   return null
+}
+
+/**
+ * Create the calendar block for a booking whose deposit has just approved it.
+ * Non-fatal by construction: the payment is the record, and a calendar failure
+ * must never turn into a Stripe retry.
+ */
+async function createDepositCalendarEvent(supabase: Supa, invoice: PlanInvoice, ref: string): Promise<void> {
+  const bk = invoice.booking
+  if (!bk.party_date || !bk.party_time) return
+  try {
+    const { data: row, error } = await supabase
+      .from('bookings')
+      .select('google_calendar_event_id')
+      .eq('id', bk.id)
+      .maybeSingle()
+    // Unreadable is not "no event yet": a second block on the room is worse than none.
+    if (error) {
+      console.error(`recordPlanPayment: calendar check unreadable for ${ref} — not creating:`, error.message)
+      return
+    }
+    if ((row as { google_calendar_event_id: string | null } | null)?.google_calendar_event_id) return
+
+    const tags = (bk.party_tags ?? {}) as Record<string, unknown>
+    const studio = invoice.partyType === 'studio_rental'
+    const rentalEnd = typeof tags.rental_end_time === 'string' ? tags.rental_end_time : ''
+    const endTime = studio && /^\d{1,2}:\d{2}$/.test(rentalEnd) ? rentalEnd : addMinutes(bk.party_time, 120)
+    const eventId = await createCalendarEvent({
+      summary: `[${studio ? 'STUDIO RENTAL' : 'BOOKING'}] ${bk.contact_name || 'Party'} - ${bk.package_type || 'Party'}`,
+      startDate: bk.party_date,
+      startTime: bk.party_time,
+      endTime,
+      description: `Ref: ${ref}\nContact: ${bk.contact_name || ''} (${bk.contact_email || ''})\nGuests: ~${bk.guest_count_approx ?? ''}`,
+    })
+    if (!eventId) return
+    const { error: storeErr } = await supabase
+      .from('bookings')
+      .update({ google_calendar_event_id: eventId })
+      .eq('id', bk.id)
+    if (storeErr) console.error(`recordPlanPayment: calendar id not stored for ${ref} (non-fatal):`, storeErr.message)
+  } catch (err) {
+    console.error(`recordPlanPayment: calendar event failed for ${ref} (non-fatal):`, err instanceof Error ? err.message : err)
+  }
 }
 
 /**
@@ -446,7 +495,10 @@ export async function recordPlanPayment(
 
   const nextStatus = isCancelled ? null : nextStatusFor(target.purpose, newBalanceCents)
   if (nextStatus && nextStatus !== invoice.booking.status) {
-    const { error: stErr } = await supabase.from('bookings').update({ status: nextStatus }).eq('id', bookingId)
+    const { error: stErr } = await supabase
+      .from('bookings')
+      .update(nextStatus === 'approved' ? depositApprovalFields() : { status: nextStatus })
+      .eq('id', bookingId)
     if (stErr) {
       // Expected and survivable: an unscheduled plan cannot legally be
       // `deposit_paid`. The payment is recorded and the balance is right; the
@@ -455,6 +507,17 @@ export async function recordPlanPayment(
         `recordPlanPayment: ${ref} stays '${invoice.booking.status}' — status → '${nextStatus}' refused: ${stErr.message}`,
       )
     }
+  }
+
+  // ── The calendar entry the Approve button used to make ──────────────────
+  //
+  // Auto-approval removes the button from this booking, and the card paths
+  // (webhook `payment_intent.succeeded`) create the event themselves on the first
+  // deposit — this path never did, because a human approved it afterwards. Only
+  // when the booking has a date AND time, and only when it has no event yet, so a
+  // redelivery or a second deposit-typed payment cannot double-book the room.
+  if (nextStatus === 'approved' && !isCancelled) {
+    await createDepositCalendarEvent(supabase, invoice, ref)
   }
 
   // ── Bookkeeping (all non-fatal; the payment row is the record) ───────────

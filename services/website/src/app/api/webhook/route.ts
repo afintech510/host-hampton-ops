@@ -1,4 +1,5 @@
 import { ownerEmail } from '@/lib/ownerNotify'
+import { depositApprovalFields } from '@/lib/depositApproval'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
@@ -258,7 +259,7 @@ export async function POST(req: NextRequest) {
 
       const updateFields: Record<string, unknown> = {
         balance_due_cents: newBal,
-        status: bal.paidInFull ? 'paid_in_full' : 'pending_review',
+        ...(bal.paidInFull ? { status: 'paid_in_full' } : depositApprovalFields()),
         party_tags: { ...existingTags, date_locked: true },
       }
       if (bal.paidInFull) updateFields.paid_in_full_at = new Date().toISOString()
@@ -520,7 +521,7 @@ export async function POST(req: NextRequest) {
 
     const updateFields: Record<string, unknown> = { balance_due_cents: newBal }
     if (paymentType === 'deposit') {
-      updateFields.status = bal.paidInFull ? 'paid_in_full' : 'pending_review'
+      Object.assign(updateFields, bal.paidInFull ? { status: 'paid_in_full' } : depositApprovalFields())
       updateFields.party_tags = { ...existingTags, date_locked: true }
     } else if (bal.paidInFull) {
       updateFields.status = 'paid_in_full'
@@ -2090,7 +2091,7 @@ export async function POST(req: NextRequest) {
         const { error: updateErr } = await supabase
           .from('bookings')
           .update({
-            status: bal.paidInFull ? 'paid_in_full' : 'pending_review',
+            ...(bal.paidInFull ? { status: 'paid_in_full' } : depositApprovalFields()),
             balance_due_cents: newBal,
             party_tags: { ...existingTags, date_locked: true },
             ...(bal.paidInFull ? { paid_in_full_at: new Date().toISOString() } : {}),

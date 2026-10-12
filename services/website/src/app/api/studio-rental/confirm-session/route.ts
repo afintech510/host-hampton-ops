@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { depositApprovalFields } from '@/lib/depositApproval'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
     const existingTags = (inputs.row.party_tags as Record<string, unknown> | null) || {}
     const updateFields: Record<string, unknown> = {
       balance_due_cents: newBalance,
-      status: paidInFull ? 'paid_in_full' : 'pending_review',
+      ...(paidInFull ? { status: 'paid_in_full' } : depositApprovalFields()),
       party_tags: { ...existingTags, date_locked: true },
     }
     if (paidInFull) updateFields.paid_in_full_at = new Date().toISOString()

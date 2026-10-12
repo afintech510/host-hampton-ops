@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { depositApprovalFields } from '@/lib/depositApproval'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import Stripe from 'stripe'
 import { getSupabase } from '@/lib/supabase'
@@ -168,7 +169,7 @@ export async function POST(req: NextRequest) {
     const updateFields: Record<string, unknown> = { balance_due_cents: newBalance }
 
     if (paymentType === 'deposit') {
-      updateFields.status = 'pending_review'
+      Object.assign(updateFields, depositApprovalFields())
       const existingTags = (inputs.row.party_tags as Record<string, unknown> | null) || {}
       updateFields.party_tags = { ...existingTags, date_locked: true }
     }

@@ -519,6 +519,37 @@ describe('a studio rental part payment made on the invoice (/api/portal/pay)', (
     expect(db.rows('bookings')[0].status).toBe('paid_in_full')
   })
 
+  it('a DEPOSIT approves the booking automatically — approved, stamped system:deposit, not pending_review', async () => {
+    db.tables.bookings[0].status = 'lead'
+    db.tables.booking_payments.length = 0
+    db.tables.bookings[0].party_date = '2026-12-06'
+    db.tables.bookings[0].party_time = '09:00'
+    PI({ payment_type: 'deposit', amountCents: '25000', depositCents: '25000', cardFeeCents: '750' }, 25750)
+    const res = await post()
+    expect(res.status).toBe(200)
+    const b = db.rows('bookings')[0]
+    expect(b.status).toBe('approved')
+    expect(b.approved_by).toBe('system:deposit')
+    expect(typeof b.approved_at).toBe('string')
+    expect(b.balance_due_cents).toBe(145000)
+  })
+
+  it('a deposit that clears the whole balance is paid_in_full, not approved', async () => {
+    db.tables.bookings[0].status = 'lead'
+    db.tables.booking_payments.length = 0
+    db.tables.bookings[0].total_cents = 25000
+    PI({ payment_type: 'deposit', amountCents: '25000', depositCents: '25000', cardFeeCents: '750' }, 25750)
+    await post()
+    expect(db.rows('bookings')[0].status).toBe('paid_in_full')
+  })
+
+  it('a part payment leaves an approved booking approved', async () => {
+    db.tables.bookings[0].status = 'approved'
+    PI({ payment_type: 'partial', amountCents: '50000', depositCents: '50000', cardFeeCents: '1500' }, 51500)
+    await post()
+    expect(db.rows('bookings')[0].status).toBe('approved')
+  })
+
   it('a non-studio party keeps the Party Booking category', async () => {
     db.tables.bookings[0].party_type = 'in_studio_theme'
     PI({ payment_type: 'partial', amountCents: '50000', depositCents: '50000', cardFeeCents: '1500' }, 51500)

@@ -71,7 +71,7 @@ export async function enrollInSequence({
       }
       if (
         booked.kind === 'found' &&
-        booked.bookings.some(b => ['deposit_paid', 'confirmed'].includes(String(b.status)))
+        booked.bookings.some(b => ['deposit_paid', 'approved', 'confirmed'].includes(String(b.status)))
       ) {
         console.log(`Skipping sequence enrollment — ${maskEmail(contactEmail)} already has a booking`)
         return { kind: 'skipped-booked' }

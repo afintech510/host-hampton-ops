@@ -82,7 +82,10 @@ export function isBookingStage(v: string | null | undefined): v is BookingStage 
  * booked even when no `booking_payments` row exists — the hand-entered phone
  * bookings (`confirmed`) and parties whose money predates the payments table.
  * `approved` is deliberately NOT here: it is written by the admin Approve
- * button, which has been pressed on quotes nobody paid.
+ * button, which has been pressed on quotes nobody paid. Since 2026-10-12 a
+ * landed deposit also writes it (`lib/depositApproval.ts`, `approved_by =
+ * 'system:deposit'`) — but such a booking has a payment row, which is what makes
+ * it "booked" here, so the list stays as it is.
  */
 const BOOKED_WITHOUT_MONEY = ['deposit_paid', 'confirmed', 'modifications_locked', 'paid_in_full', 'completed']
 
