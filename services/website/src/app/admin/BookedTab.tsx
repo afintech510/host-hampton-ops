@@ -8,6 +8,7 @@ import {
   type BookingStage, type PaymentStatus,
 } from '@/lib/bookingStatus'
 import { foodSummary, type FoodSelections } from '@/lib/partyFood'
+import BookedInvitation, { useInvitationSummaries } from '@/components/admin/BookedInvitation'
 import {
   Search, ArrowUpDown, ArrowUp, ArrowDown, X, ExternalLink, Pizza, Cake,
   AlertTriangle, CheckCircle2, Users, CalendarDays, Phone, Mail, Copy,
@@ -142,6 +143,10 @@ export default function BookedTab({ headers, onLogout }: { headers: HeadersInit;
   const [linkToast, setLinkToast] = useState<{ ok: boolean; text: string } | null>(null)
   const [invitation, setInvitation] = useState<InvitationPresence>('loading')
   const selectedIdRef = useRef<string | null>(null)
+  // One batch read for the whole list (not one request per row): the per-party invitation button.
+  const { entries: invitationEntries, refresh: refreshInvitation } = useInvitationSummaries(
+    useMemo(() => parties.map(p => p.id), [parties]), headers, onLogout,
+  )
 
   /**
    * Mint a customer link — the portal, the invoice or the invitation page.
@@ -470,6 +475,14 @@ export default function BookedTab({ headers, onLogout }: { headers: HeadersInit;
                     <td className="py-2.5 px-3">
                       <div className="font-medium text-hampton-navy">{p.contact_name || '—'}</div>
                       <div className="text-xs text-gray-400 font-mono">{p.booking_ref}</div>
+                      <BookedInvitation
+                        bookingId={p.id}
+                        partyLabel={p.contact_name || p.booking_ref}
+                        entry={invitationEntries[p.id]}
+                        headers={headers}
+                        onRefresh={refreshInvitation}
+                        onLogout={onLogout}
+                      />
                     </td>
                     <td className="py-2.5 px-3">
                       <div>{p.child_name || p.package_type || '—'}</div>
@@ -646,7 +659,7 @@ function DetailPanel({
                 label="Invitation"
                 hint={
                   invitation === 'loading' ? 'Checking…'
-                    : noInvitation ? 'No invitation yet — create one in the Parties tab'
+                    : noInvitation ? 'No invitation yet — use Create invitation on its row'
                       : 'Where they manage the invite and RSVPs'
                 }
                 kind="invitation"
