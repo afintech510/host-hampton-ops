@@ -2,6 +2,7 @@ import { getSupabase } from '@/lib/supabase'
 import { LOCATIONS } from '@/lib/locations'
 import { CRAFT_PARTIES } from '@/lib/craftParties'
 import { contentPath, isShadowedByStaticRoute } from '@/lib/content/slugSafety'
+import { isEventListable } from '@/lib/eventVisibility'
 
 const BASE = 'https://www.hosthampton.com'
 
@@ -60,6 +61,7 @@ const STATIC_ROUTES: Entry[] = [
   { path: '/events', changefreq: 'weekly', priority: 0.7 },
   { path: '/gift-cards', changefreq: 'monthly', priority: 0.5 },
   { path: '/gallery', changefreq: 'monthly', priority: 0.6 },
+  { path: '/invitations', changefreq: 'monthly', priority: 0.5, lastmod: '2026-10-11' },
   { path: '/reviews', changefreq: 'monthly', priority: 0.6 },
   { path: '/faq', changefreq: 'monthly', priority: 0.5 },
   { path: '/contact-us', changefreq: 'yearly', priority: 0.6 },
@@ -157,10 +159,10 @@ export async function GET() {
 
     const { data: events, error: eventsError } = await supabase
       .from('events')
-      .select('slug, updated_at')
+      .select('slug, updated_at, event_date, has_sessions')
       .eq('is_active', true)
     if (eventsError) console.error('[sitemap] events read failed:', eventsError.message)
-    for (const e of events || []) {
+    for (const e of (events || []).filter(e => isEventListable(e))) {
       const row = e as { slug: string; updated_at: string | null }
       entries.push({ path: `/events/${row.slug}`, changefreq: 'weekly', priority: 0.6, lastmod: row.updated_at || CONTENT_LAST_MODIFIED })
     }

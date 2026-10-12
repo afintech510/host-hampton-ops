@@ -16,7 +16,7 @@ export const sampleEvent = {
     { label: 'Baseball Hat', priceCents: 4500 },
     { label: 'Tote Bag', priceCents: 5500 },
   ],
-  event_date: '2026-03-15',
+  event_date: '2099-03-15', // far future: the public routes now hide past-dated events (lib/eventVisibility)
   event_time: '2:00 PM',
   event_end_time: '4:00 PM',
   location: 'Host Hampton, 295 Montauk Hwy Suite 7, Speonk NY',

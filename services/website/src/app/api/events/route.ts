@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { isEventListable } from '@/lib/eventVisibility'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
 
   // For events with sessions, fetch upcoming sessions
   const eventsWithSessions = await Promise.all(
-    (events || []).map(async (event) => {
+    (events || []).filter(e => isEventListable(e)).map(async (event) => {
       if (!event.has_sessions) return event
       const { data: sessions } = await supabase
         .from('event_sessions')
