@@ -1,9 +1,8 @@
 # name | cron schedule (box clock is UTC) | path | max age in minutes before "gone quiet" | mode
 #
 # mode  box     = scheduled and watched
-#       cutover = currently fired by cron-job.org; flip to `box` (and delete the
-#                 cron-job.org job) to move it here. Skipped until then, so it
-#                 is neither double-fired nor falsely reported quiet.
+#       cutover = reserved for moving a job off an external scheduler: leave it here (skipped, unwatched)
+#                 until the external job is disabled, so it is neither double-fired nor falsely reported quiet.
 #
 # This file is the ONLY place a Host Hampton schedule lives. After editing it:
 #   ssh hampton-vps 'cd /opt/hosthampton && git pull --ff-only && sh scripts/cron/install.sh'
@@ -20,5 +19,5 @@ event-reminders|0 22 * * *|/api/cron/event-reminders|1560|box
 staff-reminders|0 12 * * *|/api/cron/staff-reminders|1560|box
 stripe-reconcile|0 13 * * *|/api/cron/stripe-reconcile|1560|box
 booking-locks|0 4 * * *|/api/cron/booking-locks|1560|box
-agent-dispatch|*/2 * * * *|/api/cron/agent-dispatch|10|cutover
-gmail-sync|*/3 * * * *|/api/cron/gmail-sync|10|cutover
+agent-dispatch|*/2 * * * *|/api/cron/agent-dispatch|10|box
+gmail-sync|*/3 * * * *|/api/cron/gmail-sync|10|box
