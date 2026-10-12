@@ -46,6 +46,16 @@ grep -v '^#' "$DIR/jobs.tsv" | grep -v '^[[:space:]]*$' | while IFS='|' read -r 
   fi
 
   f="$STATE/$name"
+  # Two strikes: a problem must be seen on two consecutive passes (10 min apart) before it is
+  # texted. One bad read is a glitch; two is a fact. (Added after a half-written-line race
+  # texted a false alarm and a false recovery on most passes, 2026-10-12.)
+  k="$STATE/$name.strikes"
+  if [ -n "$problem" ]; then
+    n=$(( $(cat "$k" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$k"
+    [ "$n" -ge 2 ] || continue
+  else
+    rm -f "$k"
+  fi
   if [ -n "$problem" ]; then
     prev=$(cat "$f" 2>/dev/null || echo 0)
     if [ $((NOW - prev)) -ge $REPEAT ]; then
