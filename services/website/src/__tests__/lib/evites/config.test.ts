@@ -1,6 +1,6 @@
-import { evitePagesMode, eviteSendsMode, isPilotBooking } from '@/lib/evites/config'
+import { autosendAllowedFor, eviteAutosendSince, evitePagesMode, eviteSendsMode, isPilotBooking } from '@/lib/evites/config'
 
-const KEYS = ['EVITES_PAGES', 'EVITES_SENDS', 'EVITES_PILOT_REFS'] as const
+const KEYS = ['EVITES_PAGES', 'EVITES_SENDS', 'EVITES_PILOT_REFS', 'EVITES_AUTOSEND_SINCE'] as const
 const saved: Record<string, string | undefined> = {}
 
 beforeEach(() => {
@@ -88,5 +88,43 @@ describe('evites/config isPilotBooking', () => {
     expect(isPilotBooking(null)).toBe(false)
     expect(isPilotBooking(undefined)).toBe(false)
     expect(isPilotBooking(5 as unknown as string)).toBe(false)
+  })
+})
+
+describe('evites/config EVITES_AUTOSEND_SINCE (the launch cutoff for the automatic parent emails)', () => {
+  it('unset or empty: no cutoff, so nothing is allowed automatically (fail closed)', () => {
+    expect(eviteAutosendSince()).toBeNull()
+    expect(autosendAllowedFor('2030-01-01T00:00:00Z')).toBe(false)
+    process.env.EVITES_AUTOSEND_SINCE = '  '
+    expect(eviteAutosendSince()).toBeNull()
+  })
+
+  it.each(['2026', '2026-10', '2026-10-12', '2026-10-12T00:00', '2026-10-12T00:00:00', '12 Oct 2026', 'now', 'true', '2026-13-01T00:00:00Z', '2026-10-32T00:00:00Z', '2026-10-12T24:00:00Z', '2026-10-12T00:60:00Z'])(
+    'rejects %j (not a full ISO datetime with a zone)',
+    (v) => {
+      process.env.EVITES_AUTOSEND_SINCE = v
+      expect(eviteAutosendSince()).toBeNull()
+      expect(autosendAllowedFor('2099-01-01T00:00:00Z')).toBe(false)
+    },
+  )
+
+  it('reads a full ISO datetime, with Z or an offset, trimmed', () => {
+    process.env.EVITES_AUTOSEND_SINCE = ' 2026-10-12T04:00:00Z '
+    expect(eviteAutosendSince()?.toISOString()).toBe('2026-10-12T04:00:00.000Z')
+    process.env.EVITES_AUTOSEND_SINCE = '2026-10-12T00:00:00-04:00'
+    expect(eviteAutosendSince()?.toISOString()).toBe('2026-10-12T04:00:00.000Z')
+    process.env.EVITES_AUTOSEND_SINCE = '2026-10-12T04:00Z'
+    expect(eviteAutosendSince()?.toISOString()).toBe('2026-10-12T04:00:00.000Z')
+  })
+
+  it('allows a booking created at or after the cutoff, never one before, and never one with no readable creation time', () => {
+    process.env.EVITES_AUTOSEND_SINCE = '2026-10-12T04:00:00Z'
+    expect(autosendAllowedFor('2026-10-12T04:00:00Z')).toBe(true)
+    expect(autosendAllowedFor('2026-10-12T04:00:01.500Z')).toBe(true)
+    expect(autosendAllowedFor('2026-10-12T03:59:59Z')).toBe(false)
+    expect(autosendAllowedFor(null)).toBe(false)
+    expect(autosendAllowedFor(undefined)).toBe(false)
+    expect(autosendAllowedFor('')).toBe(false)
+    expect(autosendAllowedFor('garbage')).toBe(false)
   })
 })

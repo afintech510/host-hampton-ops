@@ -102,7 +102,7 @@ describe('P08 admin invitation surface', () => {
     const src = route()
     expect(src).toMatch(/import \{ logBookingChange \} from '@\/lib\/bookingAudit'/)
     expect(src).toMatch(/actor = adminActorId\(req\)/)
-    expect((src.match(/audit\(/g) ?? []).length).toBe(9) // ensure, rerender, archive, unarchive, set_theme, set_design, reslug, notify_cancelled, void_rsvp
+    expect((src.match(/audit\(/g) ?? []).length).toBe(12) // ensure, rerender, archive, unarchive, set_theme, set_design, reslug, notify_cancelled, void_rsvp, send_invite_ready x3 (sent / skipped / failed)
     expect(src).toMatch(/actor: adminActorId\(req\)/) // the reveal
     expect(src).not.toMatch(/\b(?:modified_by|actor|recorded_by)\s*:\s*['"](?:ADMIN|admin)['"]/)
   })

@@ -1,6 +1,6 @@
 # Host Hampton EVITE — Architecture Spec (MVP)
 
-**Status: LOCKED v1.2** (2026-10-10). v1.0 locked after adversarial review; v1.1 carries Adam's post-spike decisions. The changelog at the end lists every change and its resolution.
+**Status: LOCKED v1.3** (2026-10-11). v1.0 locked after adversarial review; v1.1 carries Adam's post-spike decisions; v1.2 the review fixes; v1.3 Adam's launch ruling on booked clients and the privacy-policy text. The changelog at the end lists every change and its resolution.
 **Scope:** `02-SOW.md` · **Facts:** `01-codebase-review.md` · **Decisions:** `handoff/HANDOFF.md` §2 + review §6b.
 Changes after lock need Adam's OK and a changelog entry.
 
@@ -411,6 +411,7 @@ type Slot =
   - `set_theme` (`theme_word`, `theme_sub`, `template_slug` from the registry)
   - `reslug` (before `went_live_at` only)
   - `notify_cancelled` (sends `party_cancelled` now)
+  - `send_invite_ready` (v1.3: emails the parent their invitation link now; see §9.1. Live + fresh only, once per invitation, waives only the launch cutoff)
 - **PartiesTab card "Invitation & RSVPs":** state chip, both links, a "Needs a start time" warning, headcount vs cap ("11 of 10 kids"), allergy roll-up, notes to the birthday child, send ledger (including stuck/failed), buttons, and **Print RSVP sheet** (`window.print()` with a print stylesheet scoped to the card).
 
 ### 7.4 Slug resolution
@@ -490,8 +491,8 @@ Every unavailable outcome is `notFound()`. Read errors throw (→ 500).
 
 | send_type | To | Due / trigger | ref_version | Sendable until | Skip if |
 |---|---|---|---|---|---|
-| `lead_preview` | `contact_email` | cron: state `preview`, render fresh, evite created ≤ 1 h after the booking (intake, not backfill), booking created 10 min–14 days ago, 9am–8pm ET | 0 | 14 days | no email; **`emailSuppressed` ≠ `clear`** |
-| `invite_ready` | parent | cron: state `live`, **render fresh for live facts**, party ≥ 2 days out | 0 | `startUtc − 2d` | no email (admin card shows it); suppressed |
+| `lead_preview` | `contact_email` | cron: state `preview`, render fresh, evite created ≤ 1 h after the booking (intake, not backfill), booking created 10 min–14 days ago, 9am–8pm ET, **booking created at or after `EVITES_AUTOSEND_SINCE`** (v1.3; defence in depth) | 0 | 14 days | no email; **`emailSuppressed` ≠ `clear`** |
+| `invite_ready` | parent | **Automatic (cron) only for a booking created at or after `EVITES_AUTOSEND_SINCE`** (v1.3; unset or malformed = never automatic). Otherwise **admin request only** (`send_invite_ready`, §7.3). Both: state `live`, `went_live_at` stamped, **render fresh for live facts**, party ≥ 2 days out | 0 | `startUtc − 2d` | no email (admin card shows it); suppressed |
 | `new_rsvp` | parent | inline after POST; cron retries | revision | `startUtc` | in-memory `guardRecipient` (label `evite-host`, 40/h). Suppressed sends are skipped; the parent still sees the list |
 | `rsvp_changed` | parent | inline after a material PATCH | revision | `startUtc` | same |
 | `rsvp_confirmed` | guest | inline after POST | 0 | `startUtc` | no reminder email. Sets `cal_version_seen = cal_version` |
@@ -511,6 +512,13 @@ Every unavailable outcome is `notFound()`. Read errors throw (→ 500).
   - "Reserve your date" → `mintPortalLink` (planner, or invoice if priced). If the mint fails, the button is omitted.
   - The footer carries the physical address, the existing signed unsubscribe link and `List-Unsubscribe`.
   - Classed as a one-time follow-up to the customer's own inquiry. Not gated on `email_opt_in`, which defaults to false and means "never asked". **Gated on real opt-outs** (§9.2).
+- **Launch cutoff (v1.3, Adam 2026-10-11: "do not email booked clients the invitation; allow it to be created but not emailed unless we request. New bookings yes."):**
+  - `EVITES_AUTOSEND_SINCE` is one ISO-8601 datetime **with a zone** (`2026-10-12T04:00:00Z`), read by `eviteAutosendSince()` in `lib/evites/config.ts` and nowhere else. A booking whose `created_at` is at or after it gets the automatic `invite_ready` (and may get `lead_preview`); an earlier booking does not.
+  - **Fails closed:** unset, empty, a bare year (`2026`), a date with no time, no zone, or an impossible date all read as "no cutoff" and mean **no automatic `invite_ready` or `lead_preview` at all**. A booking with a missing or unreadable `created_at` is held too.
+  - The check lives in the cron's selection (`inviteReadyVerdict` / `leadPreviewVerdict`, reason `before-launch`, counted in `holds`), not in the sender, so the admin path below can waive exactly that one rule.
+  - Held bookings still get their invitation created (backfill), go live, and show in the host's portal at `/my-booking/invitation`; the host can view and share it. Only the email is held.
+  - `party_cancelled` and the guest reminders are unaffected: they only go to guests who RSVPed, which needs the host to have shared the link.
+- **Admin request (v1.3):** `send_invite_ready` (§7.3). Requires state `live`, `went_live_at` stamped and a fresh render (else 409 with the reason), goes through the same `claimAndSend` (so it is still once per key; a repeat answers "already sent"), and waives **only** the cutoff: `EVITES_SENDS`, the pilot list, suppression, the sendable-until window and a missing parent email all still apply. Audited with `logBookingChange`.
 - **Invite ready:** "Mia's Glow Party invitation is ready!" with an "Open my invitation" magic link (`mintPortalLink` → `/my-booking/invitation`). A failed mint marks the send `failed` (retried), never sends a dead link.
 
 ### 9.2 Suppression (`emailSuppressed`)
@@ -531,7 +539,7 @@ Every unavailable outcome is `notFound()`. Read errors throw (→ 500).
 3. **Calendar change:** for evites with `went_live_at` set, if `calInputsHash(current) ≠ cal_inputs_hash`: `cal_version + 1`, store the hash, `cal_changed_at = now()`. **Independent of rendering.** Then stale renders (2).
 4. `reclaimFailed()`.
 5. `lead_preview`.
-6. `invite_ready`.
+6. `invite_ready` (only for bookings created at or after `EVITES_AUTOSEND_SINCE`; others are counted under `holds['before-launch']` and wait for the admin's `send_invite_ready`).
 7. `party_cancelled`, `details_changed`, `week_before`, `day_before`, `final_headcount`. **50 claimed sends per tick in total.**
 8. Retention (§12).
 9. **Response:** counts per step and outcome only. Never names or addresses.
@@ -611,13 +619,13 @@ Steps:
 - **Inputs:** host phone screened (it is printed into a public image); notes length-bounded, React-escaped on the page, `escapeFields` in email, and `screenForImage` in Satori (which renders text, not HTML).
 - **URLs and headers:** absolute URLs via `publicOrigin()` / `CANONICAL_ORIGIN`. `Referrer-Policy: no-referrer` and `X-Robots-Tag: noindex` on `/i/*`.
 - **Third parties:** no browser Meta Pixel and no Ads tag on `/i/*`. Meta receives a cleaned URL only.
-- **Privacy policy:** the paragraph must cover RSVP data, reminders, the club and Meta measurement on invite pages. It is a launch prerequisite (`EVITES_PAGES=on` waits for it).
+- **Privacy policy:** the paragraph must cover RSVP data, reminders, the club and Meta measurement on invite pages. It is a launch prerequisite (`EVITES_PAGES=on` waits for it). **Done in v1.3:** `app/privacy-policy/page.tsx` section 12 "Party Invitations and RSVPs" (what a guest provides, who sees it, reminders, retention 7 / 30 / 60 days, the optional Birthday Club, search-engine and link privacy, measurement, children's information); last updated October 11, 2026.
 
 ---
 
 ## 14. Flags and rollout
 
-- **Flags:** `EVITES_PAGES` and `EVITES_SENDS`, each `off|pilot|on`, plus `EVITES_PILOT_REFS`. Mapped in `docker-compose.yml` and `.env`.
+- **Flags:** `EVITES_PAGES` and `EVITES_SENDS`, each `off|pilot|on`, plus `EVITES_PILOT_REFS` and, from v1.3, `EVITES_AUTOSEND_SINCE` (the launch cutoff for the automatic parent emails, §9.1). Mapped in `docker-compose.yml` and `.env`.
 - **Pilot:**
   1. Throwaway booking created by **direct SQL** (not `upsertContact`), on a `+evite-test` address proven absent from `contacts`.
   2. Flags to `pilot`. Admin `ensure`.
@@ -626,7 +634,7 @@ Steps:
   5. Walk the RSVP flow, calendar and link-preview matrix.
   6. Delete the payment row.
   7. Delete the booking **only after the human confirms every link was opened**.
-- **Launch (`on`):** existing booked parties ≥ 2 days out receive `invite_ready` (that is the launch announcement). Existing leads receive no preview (the 1-hour intake rule).
+- **Launch (`on`)** (v1.3, replaces the v1.0 "launch announcement"): **existing booked parties do not receive `invite_ready` automatically.** Their invitations are created and live in the portal; an admin sends the email on request (`send_invite_ready`). **Bookings created after `EVITES_AUTOSEND_SINCE` do** receive it automatically. Set `EVITES_AUTOSEND_SINCE` to the launch instant in `/opt/hosthampton/.env` (mapped in `docker-compose.yml`, default empty = no automatic parent email). Existing leads receive no preview (the 1-hour intake rule, and the same cutoff).
 
 ---
 
@@ -674,6 +682,7 @@ Steps:
 | `EVITES_PAGES` | `off\|pilot\|on`: creation, pages, renders | off |
 | `EVITES_SENDS` | `off\|pilot\|on`: every evite email | off |
 | `EVITES_PILOT_REFS` | comma-separated booking refs | empty |
+| `EVITES_AUTOSEND_SINCE` | v1.3. Full ISO datetime with a zone (e.g. `2026-10-12T04:00:00Z`). Automatic `invite_ready` / `lead_preview` only for bookings created at or after it. Unset or malformed = none (fail closed). The admin's `send_invite_ready` ignores it | empty |
 | `META_CAPI_ACCESS_TOKEN` | Conversions API token; unset = skip | unset |
 | `META_GRAPH_VERSION` | e.g. `v23.0`; checked against Meta's current list at build time | set at build |
 | `BREVO_BIRTHDAY_CLUB_LIST_ID` | club list; unset = no list add | unset |
@@ -683,6 +692,16 @@ No `NEXT_PUBLIC_*` additions. **Rotating `PORTAL_LINK_SIGNING_SECRET` would also
 ---
 
 ## Changelog
+
+**v1.3 — 2026-10-11, Adam's launch ruling on booked clients, and the privacy policy.**
+
+| # | Change | Where |
+|---|---|---|
+| D1 | **Existing bookings are not emailed their invitation automatically** (Adam: "do not email booked clients the invitation; allow it to be created but not emailed unless we request. New bookings yes."). New env var `EVITES_AUTOSEND_SINCE` (full ISO datetime with a zone; read only by `eviteAutosendSince()`). Automatic `invite_ready` goes only to bookings created at or after it; unset or malformed = never (fail closed) | §9.1, §9.3, §14, §16 |
+| D2 | The same cutoff also gates `lead_preview` (defence in depth beside the 1-hour intake rule) | §9.1 |
+| D3 | Admin action `send_invite_ready`: the "request". Live + fresh render only (409 + reason otherwise), through `claimAndSend` (once per key), audited, waives only the cutoff. Card button "Send invitation email to parent" with a confirm, and a "held" note on live invitations whose email is held | §7.3, §9.1 |
+| D4 | Admin GET carries `autosend: { configured, allowed }` | §7.3 |
+| D5 | Privacy policy section 12 "Party Invitations and RSVPs" written and published (launch prerequisite met); sections 12-13 renumbered 13-14 | §13 |
 
 **v1.2 — 2026-10-10, fixes from the adversarial review of `feat/evites` (orchestrator; for Adam's OK at the P11 gate).**
 

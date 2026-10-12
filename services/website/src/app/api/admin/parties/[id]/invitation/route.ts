@@ -4,7 +4,7 @@ import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adm
 import { logBookingChange } from '@/lib/bookingAudit'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { isPlausibleEmailAddress } from '@/lib/contactLookup'
-import { evitePagesMode, eviteSendsMode, isPilotBooking } from '@/lib/evites/config'
+import { autosendAllowedFor, eviteAutosendSince, evitePagesMode, eviteSendsMode, isPilotBooking } from '@/lib/evites/config'
 import { isEviteEligible } from '@/lib/evites/eligibility'
 import { ensureEviteForBooking, MAX_SLUG_ATTEMPTS } from '@/lib/evites/ensure'
 import { childNameOf } from '@/lib/evites/facts'
@@ -17,6 +17,7 @@ import { themeShortOf } from '@/lib/evites/themes'
 import { TEMPLATE_SLUGS, galleryTemplates, isGallerySlug } from '@/lib/evites/templates'
 import { loadFactsContext } from '@/lib/evites/adminLoad'
 import { notifyPartyCancelled } from '@/lib/evites/adminHooks'
+import { sendInviteReadyOnRequest } from '@/lib/evites/adminInviteReady'
 import {
   ADMIN_CONTACT_PRESENCE_COLUMNS,
   ADMIN_EVITE_COLUMNS,
@@ -44,13 +45,17 @@ import type { EviteBookingRow, EviteRow, EviteSendRow } from '@/lib/evites/types
  *
  *   GET   /api/admin/parties/[id]/invitation              the card's data
  *   GET   ...?reveal=<rsvpId>                             ONE RSVP's raw contact, audited
- *   POST  ...  { action: ensure | rerender | archive | unarchive | set_theme | reslug | notify_cancelled | void_rsvp }
+ *   POST  ...  { action: ensure | rerender | archive | unarchive | set_theme | reslug | notify_cancelled | void_rsvp | send_invite_ready }
  *
  * `void_rsvp` { rsvpId } deletes ONE RSVP of THIS booking's invitation (the remedy for a junk answer that a
  * link holder filled the list with). It is a hard DELETE of our own `evite_rsvps` row (its ledger rows go with it,
  * ON DELETE CASCADE), audited by id; a club member is taken off the Brevo list first-class, not left subscribed.
  *
  * `[id]` is the BOOKING id, the same id `/api/admin/parties/[id]` takes.
+ *
+ * `send_invite_ready` is the admin's "send it" for the parent's invitation email, which is NOT automatic for bookings made
+ * before launch (`EVITES_AUTOSEND_SINCE`): live + fresh render only (409 with the reason otherwise), once per invitation
+ * (the ledger key), through the same `claimAndSend` as the cron. It waives the launch cutoff and nothing else.
  *
  * Every handler opens with `isAdminAuthorized`. Every write names the human through
  * `adminActorId(req)` and is recorded with `logBookingChange` (its `modified_by`
@@ -255,6 +260,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       needsTime: state === 'needs_time',
       noParentEmail: !isPlausibleEmailAddress(booking.contact_email),
     },
+    // Whether the AUTOMATIC invite_ready email would go for this booking (EVITES_AUTOSEND_SINCE). Held = an admin must send it.
+    autosend: { configured: eviteAutosendSince() !== null, allowed: autosendAllowedFor(booking.created_at) },
     rsvps,
     summary,
     ledger,
@@ -300,7 +307,7 @@ async function revealContact(req: NextRequest, supabase: Supa, bookingId: string
 
 // ------------------------------------------------------------------------------------------------ POST
 
-const ACTIONS = ['ensure', 'rerender', 'archive', 'unarchive', 'set_theme', 'set_design', 'reslug', 'notify_cancelled', 'void_rsvp'] as const
+const ACTIONS = ['ensure', 'rerender', 'archive', 'unarchive', 'set_theme', 'set_design', 'reslug', 'notify_cancelled', 'void_rsvp', 'send_invite_ready'] as const
 type Action = (typeof ACTIONS)[number]
 
 function isSlugCollision(err: { code?: string | null; message?: string | null; details?: string | null } | null): boolean {
@@ -479,6 +486,33 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         return json({ ok: true, action, slug, previousSlug: evite.slug, audited })
       }
       return json({ error: `slug collided ${MAX_SLUG_ATTEMPTS} times; try again` }, 503)
+    }
+
+    case 'send_invite_ready': {
+      const result = await sendInviteReadyOnRequest(supabase, evite.id)
+      switch (result.kind) {
+        case 'absent':
+          return json({ error: 'Booking not found' }, 404)
+        case 'unavailable':
+          return json({ ok: false, action, error: result.error }, 503)
+        case 'refused':
+          return json({ ok: false, action, outcome: 'refused', reason: result.reason, error: result.message }, 409)
+        case 'already':
+          return json({ ok: true, action, outcome: 'already', status: result.status, message: `Already ${result.status === 'sent' ? 'sent' : `on record (${result.status})`}; nothing was sent now.` })
+        case 'skipped': {
+          const audited = await audit(`Invitation: invitation email requested but not sent (${result.reason})`)
+          return json({ ok: false, action, outcome: 'skipped', reason: result.reason, error: `Not sent: ${result.reason}`, audited }, 409)
+        }
+        case 'failed': {
+          const audited = await audit('Invitation: invitation email requested, the send failed')
+          return json({ ok: false, action, outcome: 'failed', error: 'The send failed; the retry sweep will try again.', audited }, 502)
+        }
+        case 'sent': {
+          const audited = await audit('Invitation: invitation email sent to the parent (admin request)')
+          return json({ ok: true, action, outcome: 'sent', message: 'Invitation email sent to the parent.', audited })
+        }
+      }
+      return json({ error: 'unreachable' }, 500)
     }
 
     case 'notify_cancelled': {

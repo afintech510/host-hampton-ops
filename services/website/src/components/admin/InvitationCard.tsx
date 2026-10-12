@@ -68,6 +68,8 @@ export interface InvitationPayload {
   designOptions?: Array<{ slug: string; label: string }>
   renderFresh?: boolean | null
   warnings?: { needsTime: boolean; noParentEmail: boolean }
+  /** Would the AUTOMATIC invite_ready email go for this booking (EVITES_AUTOSEND_SINCE)? Held = an admin sends it. */
+  autosend?: { configured: boolean; allowed: boolean }
   rsvps?: Section<{ rows: AdminRsvpView[] }>
   summary?: RsvpSummary | null
   ledger?: Section<{ groups: LedgerGroup[] }>
@@ -131,7 +133,7 @@ function kidsText(kids: number, cap: number | null): string {
   return cap !== null ? `${kids} of ${cap} kids` : `${kids} kid${kids === 1 ? '' : 's'}`
 }
 
-export type InvitationAction = 'ensure' | 'rerender' | 'archive' | 'unarchive' | 'set_theme' | 'set_design' | 'reslug' | 'notify_cancelled' | 'void_rsvp'
+export type InvitationAction = 'ensure' | 'rerender' | 'archive' | 'unarchive' | 'set_theme' | 'set_design' | 'reslug' | 'notify_cancelled' | 'void_rsvp' | 'send_invite_ready'
 
 export interface InvitationViewProps {
   data: InvitationPayload
@@ -264,6 +266,8 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
   const summary = data.summary
   const cancelled = data.booking?.status === 'cancelled' || data.booking?.status === 'lost'
   const archived = !!ev.archivedAt
+  const inviteReadySent = data.ledger && data.ledger.available ? data.ledger.groups.some((g) => g.sendType === 'invite_ready' && g.channel === 'email') : false
+  const inviteReadyHeld = state === 'live' && !inviteReadySent && data.autosend !== undefined && !data.autosend.allowed
 
   return (
     <div className="bg-white rounded-xl border p-5 space-y-4" data-testid="invitation-card">
@@ -283,6 +287,14 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
 
       {data.warnings?.needsTime ? <Warn>Needs a start time. Guests cannot RSVP until the party has one.</Warn> : null}
       {data.warnings?.noParentEmail ? <Warn>No parent email: share the invitation manually. Nothing can be emailed to this customer.</Warn> : null}
+      {inviteReadyHeld ? (
+        <Warn>
+          <span data-testid="invite-ready-held">
+            Invitation email held{data.autosend?.configured ? ': this party was booked before launch' : ': automatic sending is not configured'}. The parent
+            can still open and share the invitation in their portal. Use &quot;Send invitation email to parent&quot; to email it.
+          </span>
+        </Warn>
+      ) : null}
       {ev.renderError ? <Warn>Last render failed: {ev.renderError}</Warn> : null}
       {data.pagesMode === 'off' ? <Warn>Invitations are switched off (EVITES_PAGES), so the public page is not served.</Warn> : null}
 
@@ -578,6 +590,17 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
         >
           Re-mint link
         </button>
+        {state === 'live' && !archived && !cancelled ? (
+          <button
+            type="button"
+            className={btn}
+            disabled={working || !!data.warnings?.noParentEmail || inviteReadySent}
+            title={inviteReadySent ? 'Already on the email ledger' : 'Emails the parent their invitation link now'}
+            onClick={() => onAction('send_invite_ready')}
+          >
+            {busy === 'send_invite_ready' ? 'Sending...' : 'Send invitation email to parent'}
+          </button>
+        ) : null}
         {cancelled ? (
           <button type="button" className={btn} disabled={working} onClick={() => onAction('notify_cancelled')}>
             Tell guests it&apos;s cancelled
@@ -594,6 +617,7 @@ const CONFIRMS: Partial<Record<InvitationAction, string>> = {
   archive: 'Archive this invitation? The public link stops working immediately.',
   reslug: 'Mint a new invitation link? Anyone with the old link is forwarded to the new one.',
   notify_cancelled: 'Email every guest who said yes that the party is cancelled? This cannot be undone.',
+  send_invite_ready: 'Email this parent their invitation link now? It is sent once; the result appears under "Emails sent".',
   void_rsvp: 'Remove this RSVP? The answer is deleted, the headcount changes, and it cannot be restored. (A club member is also taken off the list.)',
 }
 
@@ -738,6 +762,8 @@ function describeSuccess(action: InvitationAction, body: Record<string, unknown>
       return 'New link minted. The old one forwards to it.'
     case 'void_rsvp':
       return 'RSVP removed.'
+    case 'send_invite_ready':
+      return typeof body?.message === 'string' ? body.message : body?.outcome === 'already' ? 'Already sent; nothing sent now.' : 'Invitation email sent to the parent.'
     case 'notify_cancelled':
       return body?.queued === true ? 'Cancellation emails queued.' : `Not sent: ${typeof body?.reason === 'string' ? body.reason : 'nothing queued'}.`
   }

@@ -11,7 +11,7 @@ export default function PrivacyPolicy() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16">
       <h1 className="font-serif text-3xl text-hampton-navy mb-6">Privacy Policy</h1>
       <div className="prose prose-sm text-hampton-navy space-y-4">
-        <p className="text-hampton-mauve text-sm">Last updated: September 22, 2026</p>
+        <p className="text-hampton-mauve text-sm">Last updated: October 11, 2026</p>
 
         <p>
           Host Hampton LLC (&quot;Host Hampton,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;) operates
@@ -48,7 +48,7 @@ export default function PrivacyPolicy() {
           browser type, device information, referring/exit pages, and pages viewed. We use cookies, Google
           Analytics, advertising pixels, and similar tracking technologies to understand how our site is used
           and to measure and target our advertising. Sections 4 and 6 describe this in detail, including how to
-          opt out.
+          opt out. Our online party invitations are handled differently; section 12 explains how.
         </p>
 
         <h2 className="font-semibold text-lg mt-6">2. How We Use Your Information</h2>
@@ -265,10 +265,95 @@ export default function PrivacyPolicy() {
           Our website is not directed to children under the age of 13. We do not knowingly collect personal
           information from children under 13. If we learn that we have collected personal information from a
           child under 13, we will take steps to delete that information promptly. If you believe a child has
-          provided us with personal information, please contact us.
+          provided us with personal information, please contact us. Section 12 explains how we handle the
+          first names of children that a parent or guardian includes on a party invitation RSVP.
         </p>
 
-        <h2 className="font-semibold text-lg mt-6">12. Changes to This Policy</h2>
+        <h2 className="font-semibold text-lg mt-6">12. Party Invitations and RSVPs</h2>
+        <p>
+          When you book a party, we may create an online invitation for it. The host family can share the
+          invitation&apos;s private link with their guests, and guests can RSVP on it. This section explains what
+          that involves. It applies to the invitation pages on our website (their addresses begin
+          with <strong>hosthampton.com/i/</strong>) and to the emails we send about them.
+        </p>
+
+        <h3 className="font-semibold text-base mt-4">What a guest provides when RSVPing</h3>
+        <p>When a guest RSVPs, they give us:</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>A parent or guardian&apos;s name</li>
+          <li>The <strong>first names only</strong> of the children attending, and the number of adults coming</li>
+          <li>Optionally, a note about a food allergy</li>
+          <li>Optionally, a short note to the birthday child</li>
+          <li>Optionally, an email address for reminders (or a mobile number, instead of an email)</li>
+        </ul>
+        <p>
+          A guest does not need to create an account. Giving a mobile number for an RSVP does not sign
+          you up for our text-message program described in section 3, and reminders are sent by email.
+        </p>
+
+        <h3 className="font-semibold text-base mt-4">Who can see RSVP details</h3>
+        <p>
+          Only the host family and Host Hampton staff can see RSVP details. The invitation page itself shows
+          no guest list and no counts of who is coming. We do not sell RSVP information or use it for
+          advertising.
+        </p>
+
+        <h3 className="font-semibold text-base mt-4">Reminder emails</h3>
+        <p>
+          If a guest gives an email address for reminders, we use it only to send emails about that party:
+          a confirmation, a reminder the week before and the day before, notice of any change to the date or
+          place, and notice if the party is cancelled. Every one of these emails contains a &quot;Stop
+          reminders&quot; link, and a guest can also change or withdraw their RSVP at any time using the
+          private link in those emails. These are not marketing emails.
+        </p>
+
+        <h3 className="font-semibold text-base mt-4">How long we keep it</h3>
+        <ul className="list-disc pl-5 space-y-1">
+          <li><strong>Allergy notes</strong> are deleted 7 days after the party.</li>
+          <li><strong>Reminder email addresses, mobile numbers, and the IP address</strong> recorded with an
+            RSVP are deleted 30 days after the party, unless the guest joined the Birthday Club (below).</li>
+          <li><strong>Invitations are taken offline</strong> 30 days after the party. An invitation made
+            for a party that was never booked is taken offline 60 days after it was created, or once the
+            party date has passed, whichever comes first.</li>
+        </ul>
+
+        <h3 className="font-semibold text-base mt-4">The Birthday Club (optional)</h3>
+        <p>
+          On the RSVP form there is an <strong>unchecked</strong> box to join the Host Hampton Birthday Club.
+          It is entirely optional and RSVPing works exactly the same without it. If a guest ticks it, we
+          use their email address to send party and craft ideas, and we keep a record of that consent: the
+          exact wording that was shown next to the box, the date and time, and the IP address it came from.
+          We keep that record, and the email address, until the guest unsubscribes. They can unsubscribe at
+          any time using the link in any Birthday Club email or by contacting us, and we then stop emailing them.
+          Joining the Birthday Club is separate from our other marketing lists and from text messaging.
+        </p>
+
+        <h3 className="font-semibold text-base mt-4">Invitation pages are private</h3>
+        <p>
+          Invitation pages are not indexed by search engines and ask browsers not to pass the page address
+          on to other sites. Each invitation is protected by an unguessable link, so only people the host
+          family shares it with are likely to find it. Anyone who has the link can see the invitation and
+          RSVP, so please share it only with the people you mean to invite.
+        </p>
+
+        <h3 className="font-semibold text-base mt-4">Measurement on invitation pages</h3>
+        <p>
+          We measure how invitations are used, in a deliberately limited way. Google Analytics receives only
+          a generic page address for invitation pages, never the invitation&apos;s own link and never any
+          names. <strong>No Google Ads tag and no Meta Pixel runs on invitation pages.</strong> When an
+          invitation page is viewed, we may send a single anonymous &quot;page viewed&quot; event to Meta
+          through its Conversions API, to help us measure our advertising. That event does not contain any
+          names, email addresses, phone numbers, or the invitation&apos;s link.
+        </p>
+
+        <h3 className="font-semibold text-base mt-4">Children&apos;s information</h3>
+        <p>
+          The only information about a child on an invitation or RSVP is a first name, and it is provided by a
+          parent or guardian: the host family when they book, and the parent or guardian of a guest when they
+          RSVP. We do not ask children for information, and invitations are not directed to children.
+        </p>
+
+        <h2 className="font-semibold text-lg mt-6">13. Changes to This Policy</h2>
         <p>
           We may update this Privacy Policy from time to time. We will notify you of material changes by
           posting the updated policy on this page and updating the &quot;Last updated&quot; date. Your
@@ -276,7 +361,7 @@ export default function PrivacyPolicy() {
           the updated policy.
         </p>
 
-        <h2 className="font-semibold text-lg mt-6">13. Contact Us</h2>
+        <h2 className="font-semibold text-lg mt-6">14. Contact Us</h2>
         <p>
           If you have questions about this Privacy Policy or our data practices, please contact us:
         </p>

@@ -250,6 +250,12 @@ services:
       - EVITES_PAGES=${EVITES_PAGES:-off}
       - EVITES_SENDS=${EVITES_SENDS:-off}
       - EVITES_PILOT_REFS=${EVITES_PILOT_REFS:-}
+      # Launch cutoff for the AUTOMATIC parent emails (invite_ready, lead_preview): only bookings
+      # created at or after this instant get them. A full ISO datetime WITH a zone, e.g.
+      # 2026-10-12T04:00:00Z. Unset or malformed = NO automatic invite_ready (fails closed);
+      # booked clients' invitation emails then go only when an admin presses "Send invitation
+      # email to parent" (lib/evites/config.ts, spec 03 section 9.1).
+      - EVITES_AUTOSEND_SINCE=${EVITES_AUTOSEND_SINCE:-}
       # Meta Conversions API (ViewContent on /i/* only). Unset token = no-op.
       - META_CAPI_ACCESS_TOKEN=${META_CAPI_ACCESS_TOKEN:-}
       - META_GRAPH_VERSION=${META_GRAPH_VERSION:-}

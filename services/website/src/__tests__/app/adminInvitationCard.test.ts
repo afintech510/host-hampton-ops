@@ -208,6 +208,20 @@ describe('InvitationCardView with a fixture', () => {
     expect(archived).toContain('Archived')
   })
 
+  it('send_invite_ready: the button appears for a live invitation, is asked to be confirmed, and a held booking says so', () => {
+    const base = fixture()
+    expect(view(base)).toContain('Send invitation email to parent')
+    expect(view({ ...base, state: 'preview' })).not.toContain('Send invitation email to parent')
+    expect(view({ ...base, state: 'needs_time' })).not.toContain('Send invitation email to parent')
+    const held = view({ ...base, autosend: { configured: true, allowed: false } })
+    expect(held).toContain('data-testid="invite-ready-held"')
+    expect(held).toContain('booked before launch')
+    expect(view({ ...base, autosend: { configured: true, allowed: true } })).not.toContain('invite-ready-held')
+    expect(view({ ...base, autosend: { configured: false, allowed: false } })).toContain('automatic sending is not configured')
+    expect(view({ ...base, warnings: { needsTime: false, noParentEmail: true } })).toMatch(/<button[^>]*disabled=""[^>]*>Send invitation email to parent<\/button>/)
+    expect(view({ ...base, booking: { ...base.booking!, status: 'cancelled' } })).not.toContain('Send invitation email to parent')
+  })
+
   it('buttons lock while an action is in flight', () => {
     const html = view(fixture(), { busy: 'rerender' })
     expect(html).toContain('Rendering...')

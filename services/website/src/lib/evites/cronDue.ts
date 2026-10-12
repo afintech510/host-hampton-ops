@@ -20,6 +20,7 @@
  */
 
 import { etToUtc, shiftEtDate } from '@/lib/partyTime'
+import { autosendAllowedFor } from '@/lib/evites/config'
 import { isPlausibleEmailAddress } from '@/lib/contactLookup'
 import { etHourMinute } from '@/lib/quietHours'
 import { HOUR_MS, MINUTE_MS } from '@/lib/rateLimit'
@@ -252,6 +253,8 @@ const no = (reason: string): CandidateVerdict => ({ ok: false, reason })
  */
 export function leadPreviewVerdict(ctx: SendContext, now: Date): CandidateVerdict {
   if (ctx.state !== 'preview') return no('state')
+  // Defence in depth with the not-intake rule below: the launch cutoff (EVITES_AUTOSEND_SINCE), fail closed.
+  if (!autosendAllowedFor(ctx.booking.created_at)) return no('before-launch')
   const booked = ms(ctx.booking.created_at)
   const made = ms(ctx.evite.created_at)
   if (!Number.isFinite(booked) || !Number.isFinite(made)) return no('no-dates')
@@ -267,9 +270,14 @@ export function leadPreviewVerdict(ctx: SendContext, now: Date): CandidateVerdic
   return { ok: true }
 }
 
-/** `invite_ready`: state live (and gone live), the render fresh for the LIVE facts, the party still >= 2 days out. */
-export function inviteReadyVerdict(ctx: SendContext, now: Date): CandidateVerdict {
+/**
+ * `invite_ready`: state live (and gone live), the render fresh for the LIVE facts, the party still >= 2 days out, and
+ * (for the AUTOMATIC send) a booking created at or after the launch cutoff `EVITES_AUTOSEND_SINCE`. An admin's
+ * "send it" passes `{ ignoreCutoff: true }`, which waives that one rule and no other.
+ */
+export function inviteReadyVerdict(ctx: SendContext, now: Date, opts: { ignoreCutoff?: boolean } = {}): CandidateVerdict {
   if (ctx.state !== 'live') return no('state')
+  if (!opts.ignoreCutoff && !autosendAllowedFor(ctx.booking.created_at)) return no('before-launch')
   if (!ctx.evite.went_live_at) return no('not-stamped')
   if (!parentHasEmail(ctx)) return no('no-email')
   const until = sendableUntil('invite_ready', ctx)

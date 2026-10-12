@@ -24,7 +24,7 @@ jest.mock('@/lib/supabase', () => ({ getSupabase: () => db.supabase }))
 
 const mailMock = sendEviteEmail as jest.Mock
 const renderMock = renderViaQueue as jest.Mock
-const ENV = ['EVITES_PAGES', 'EVITES_SENDS', 'EVITES_PILOT_REFS', 'PORTAL_LINK_SIGNING_SECRET', 'SUPABASE_URL'] as const
+const ENV = ['EVITES_PAGES', 'EVITES_SENDS', 'EVITES_PILOT_REFS', 'EVITES_AUTOSEND_SINCE', 'PORTAL_LINK_SIGNING_SECRET', 'SUPABASE_URL'] as const
 const saved: Record<string, string | undefined> = {}
 const clock = { now: new Date('2026-10-31T12:00:00Z') }
 
@@ -39,6 +39,8 @@ beforeEach(() => {
   for (const k of ENV) saved[k] = process.env[k]
   process.env.EVITES_PAGES = 'on'
   process.env.EVITES_SENDS = 'on'
+  // Every fixture booking (created 2026-10-01 or later) is at or after the launch cutoff; the cutoff tests move it.
+  process.env.EVITES_AUTOSEND_SINCE = '2026-09-01T00:00:00Z'
   delete process.env.EVITES_PILOT_REFS
   process.env.PORTAL_LINK_SIGNING_SECRET = 'test-signing-secret-0123456789abcdef'
   process.env.SUPABASE_URL = 'https://proj.supabase.co'
@@ -83,6 +85,7 @@ describe('the 16-day timeline: a Saturday party in November, ticked every 15 min
     // (beforeEach has not run for beforeAll: set the env the tick reads)
     process.env.EVITES_PAGES = 'on'
     process.env.EVITES_SENDS = 'on'
+    process.env.EVITES_AUTOSEND_SINCE = '2026-09-01T00:00:00Z'
     process.env.PORTAL_LINK_SIGNING_SECRET = 'test-signing-secret-0123456789abcdef'
     process.env.SUPABASE_URL = 'https://proj.supabase.co'
     __resetRateLimitForTests()
@@ -965,5 +968,98 @@ describe('v1.2 finding 9: the scan window cannot be filled by finished parties',
     const [r] = await runTicks(db, [new Date('2026-11-07T15:00:00Z')], (n) => (clock.now = n))
     expect(r.scan.unavailable).toBe(true)
     expect(rowsOf(db, 'week_before')).toHaveLength(0)
+  })
+})
+
+// ============================================================================================
+describe('the launch cutoff EVITES_AUTOSEND_SINCE (Adam, 2026-10-11: booked clients are not emailed unless we ask)', () => {
+  const T = new Date('2026-11-02T16:00:00Z') // 11:00 ET: inside the lead_preview hours
+  const LIVE_AT = new Date('2026-11-02T00:00:00Z')
+
+  /** A live, booked party whose booking was created at `createdAt`. */
+  const booked = (createdAt: string) => liveDb({ booking: { created_at: createdAt } }, LIVE_AT)
+  /** An intake lead (evite made 5 minutes after the booking) created at `createdAt`. */
+  const leadAt = async (createdAt: string) => {
+    const d = cronDb({
+      booking: { status: 'awaiting_deposit', created_at: createdAt, updated_at: createdAt },
+      evite: { created_at: new Date(Date.parse(createdAt) + 5 * MIN).toISOString() },
+      payments: [],
+    })
+    await freshenRender(d, T)
+    return d
+  }
+
+  it('unset: invite_ready is never sent automatically (fail closed), and the hold is counted', async () => {
+    delete process.env.EVITES_AUTOSEND_SINCE
+    db = await booked('2026-10-25T12:00:00Z')
+    const [r] = await runTicks(db, [T], (n) => (clock.now = n))
+    expect(rowsOf(db, 'invite_ready')).toHaveLength(0)
+    expect(mailMock).not.toHaveBeenCalled()
+    expect(r.inviteReady.holds['before-launch']).toBe(1)
+  })
+
+  it.each(['', '   ', '2026', '2026-10', '2026-10-12', '2026-10-12T00:00:00', 'yesterday', '2026-13-01T00:00:00Z', '2026-10-12T25:00:00Z', 'true'])(
+    'malformed (%j): treated as unset, nothing is sent',
+    async (bad) => {
+      process.env.EVITES_AUTOSEND_SINCE = bad
+      db = await booked('2026-10-25T12:00:00Z')
+      await runTicks(db, [T], (n) => (clock.now = n))
+      expect(rowsOf(db, 'invite_ready')).toHaveLength(0)
+      expect(mailMock).not.toHaveBeenCalled()
+    },
+  )
+
+  it('a booking created BEFORE the cutoff is not emailed; its invitation still exists and is live', async () => {
+    process.env.EVITES_AUTOSEND_SINCE = '2026-10-20T00:00:00Z'
+    db = await booked('2026-10-19T23:59:59Z')
+    await runTicks(db, ticks('2026-11-02T12:00:00Z', '2026-11-02T14:00:00Z'), (n) => (clock.now = n))
+    expect(rowsOf(db, 'invite_ready')).toHaveLength(0)
+    expect(mailMock).not.toHaveBeenCalled()
+    expect(db.tables.evites).toHaveLength(1)
+  })
+
+  it('a booking created at or AFTER the cutoff is emailed exactly once', async () => {
+    process.env.EVITES_AUTOSEND_SINCE = '2026-10-20T00:00:00Z'
+    db = await booked('2026-10-20T00:00:00Z') // exactly at the cutoff: allowed
+    await runTicks(db, ticks('2026-11-02T12:00:00Z', '2026-11-02T14:00:00Z'), (n) => (clock.now = n))
+    expect(rowsOf(db, 'invite_ready')).toHaveLength(1)
+    expect(mails().filter((m) => /invitation/i.test(m.subject))).toHaveLength(1)
+  })
+
+  it('a cutoff with an offset is read as the instant it names', async () => {
+    process.env.EVITES_AUTOSEND_SINCE = '2026-10-20T08:00:00-04:00' // = 12:00Z
+    db = await booked('2026-10-20T11:59:00Z')
+    await runTicks(db, [T], (n) => (clock.now = n))
+    expect(rowsOf(db, 'invite_ready')).toHaveLength(0)
+    db = await booked('2026-10-20T12:00:00Z')
+    await runTicks(db, [T], (n) => (clock.now = n))
+    expect(rowsOf(db, 'invite_ready')).toHaveLength(1)
+  })
+
+  it('lead_preview respects the cutoff too: before it, or unset, no preview', async () => {
+    process.env.EVITES_AUTOSEND_SINCE = '2026-11-03T00:00:00Z'
+    db = await leadAt('2026-11-02T14:00:00Z')
+    await runTicks(db, [T], (n) => (clock.now = n))
+    expect(rowsOf(db, 'lead_preview')).toHaveLength(0)
+
+    delete process.env.EVITES_AUTOSEND_SINCE
+    db = await leadAt('2026-11-02T14:00:00Z')
+    await runTicks(db, [T], (n) => (clock.now = n))
+    expect(rowsOf(db, 'lead_preview')).toHaveLength(0)
+    expect(mailMock).not.toHaveBeenCalled()
+
+    process.env.EVITES_AUTOSEND_SINCE = '2026-11-02T14:00:00Z'
+    db = await leadAt('2026-11-02T14:00:00Z')
+    await runTicks(db, [T], (n) => (clock.now = n))
+    expect(rowsOf(db, 'lead_preview')).toHaveLength(1)
+  })
+
+  it('does not hold the guest-facing mail: a held booking whose guest RSVPed still gets the week_before reminder', async () => {
+    process.env.EVITES_AUTOSEND_SINCE = '2026-12-01T00:00:00Z'
+    const A = uuid()
+    db = await liveDb({ rsvps: [guestRsvp({ id: A, reminder_email: 'a@example.com', created_at: '2026-10-20T12:00:00Z', updated_at: '2026-10-20T12:00:00Z' })] })
+    await runTicks(db, [new Date('2026-11-07T15:00:00Z')], (n) => (clock.now = n))
+    expect(rowsOf(db, 'invite_ready')).toHaveLength(0)
+    expect(rowsOf(db, 'week_before')).toHaveLength(1)
   })
 })
