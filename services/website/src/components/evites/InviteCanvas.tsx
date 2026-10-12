@@ -18,6 +18,8 @@
  * Glow (spec §6 v1.1): a gradient-filled slot is ONE `backgroundClip: 'text'`
  * layer plus `filter: drop-shadow(stop) drop-shadow(stop)...`, in both modes; a
  * solid-colour slot uses stacked `text-shadow`; a shape uses stacked `box-shadow`.
+ * A slot's `stroke` is `-webkit-text-stroke` (Satori draws it as an SVG stroke over
+ * the fill, as Chrome does) and its `shadow` is one more, offset, `text-shadow`.
  *
  * Letter-spacing (spec §6 v1.1, from the P01 spike): Chrome counts the trailing
  * letter-space in a centred line, Satori does not, and Satori skips the space
@@ -44,6 +46,7 @@ import {
   type InviteSizes,
   type RowSlot,
   type ShapeLayer,
+  type SlotBox,
   type TemplateLayout,
   type TextSlot,
 } from '@/lib/evites/templates/types'
@@ -94,7 +97,17 @@ function textStyle(slot: TextSlot, size: number, mode: 'web' | 'satori'): CSSPro
     if (slot.glow) style.filter = dropShadowOf(slot.glow)
   } else {
     style.color = slot.color ?? '#ffffff'
-    if (slot.glow) style.textShadow = shadowOf(slot.glow)
+    // Sticker lettering (Sleep Under): a hard offset shadow and an outline, both scaled with a shrunken slot.
+    const k = size / slot.size
+    const shadows: string[] = []
+    if (slot.shadow) shadows.push(`${slot.shadow.x * k}px ${slot.shadow.y * k}px 0 ${slot.shadow.color}`)
+    if (slot.glow) shadows.push(shadowOf(slot.glow))
+    if (shadows.length > 0) style.textShadow = shadows.join(', ')
+    if (slot.stroke) {
+      const s = style as Record<string, unknown>
+      s.WebkitTextStrokeWidth = slot.stroke.width * k
+      s.WebkitTextStrokeColor = slot.stroke.color
+    }
   }
   return style
 }
@@ -160,27 +173,42 @@ function imageLayer(ctx: Ctx, layer: ImageLayer): ReactElement {
   )
 }
 
+const JUSTIFY = { left: 'flex-start', center: 'center', right: 'flex-end' } as const
+
+/** The horizontal box of a slot: its own `box`, else the whole canvas, centred. */
+function boxOf(ctx: Ctx, box: SlotBox | undefined): { left: number; width: number; justify: 'flex-start' | 'center' | 'flex-end'; transform?: string } {
+  if (!box) return { left: 0, width: ctx.W, justify: 'center' }
+  return {
+    left: box.left,
+    width: box.width,
+    justify: JUSTIFY[box.align ?? 'center'],
+    ...(box.rotateDeg ? { transform: `rotate(${box.rotateDeg}deg)` } : {}),
+  }
+}
+
 function textSlot(ctx: Ctx, slot: TextSlot): ReactElement | null {
   if (!showWhenOk(slot.showWhen, ctx.facts)) return null
   const text = slotText(slot, ctx.facts)
   if (text === '') return null
   const size = ctx.sizes[slot.id] ?? slot.size
   const sp = spacingOf(slot, size, ctx.mode)
+  const b = boxOf(ctx, slot.box)
   return (
     <div
       key={slot.id}
       style={{
         display: 'flex',
         position: 'absolute',
-        left: sp.shift,
+        left: b.left + sp.shift,
         top: slot.top,
-        width: ctx.W,
+        width: b.width,
         // The box this slot fills at its nominal size: a shrunken one is centred in it.
         height: slot.size * slot.lineHeight,
         alignItems: 'center',
+        ...(b.transform ? { transform: b.transform } : {}),
       }}
     >
-      <div style={{ ...textStyle(slot, size, ctx.mode), ...sp.style, width: ctx.W, justifyContent: 'center' }}>{text}</div>
+      <div style={{ ...textStyle(slot, size, ctx.mode), ...sp.style, width: b.width, justifyContent: b.justify }}>{text}</div>
     </div>
   )
 }
@@ -188,8 +216,12 @@ function textSlot(ctx: Ctx, slot: TextSlot): ReactElement | null {
 function imageSlot(ctx: Ctx, slot: ImageSlot): ReactElement | null {
   if (!showWhenOk(slot.showWhen, ctx.facts)) return null
   const w = slot.width
+  const b = boxOf(ctx, slot.box)
   return (
-    <div key={slot.id} style={{ display: 'flex', position: 'absolute', left: 0, top: slot.top, width: ctx.W, justifyContent: 'center' }}>
+    <div
+      key={slot.id}
+      style={{ display: 'flex', position: 'absolute', left: b.left, top: slot.top, width: b.width, justifyContent: b.justify, ...(b.transform ? { transform: b.transform } : {}) }}
+    >
       {image(ctx, slot.src, w, w / slot.aspect, {})}
     </div>
   )
@@ -208,24 +240,49 @@ function rowSlot(ctx: Ctx, row: RowSlot): ReactElement | null {
     const text = slotText(child, ctx.facts)
     if (text === '') continue
     const size = ctx.sizes[child.id] ?? child.size
+    // Letter-spacing as the sizing pass measured it. No box shift: a row child is not centred alone.
     kids.push(
-      <div key={child.id} style={textStyle(child, size, ctx.mode)}>
+      <div key={child.id} style={{ ...textStyle(child, size, ctx.mode), ...spacingOf(child, size, ctx.mode).style }}>
         {text}
       </div>,
     )
   }
   if (kids.length === 0) return null
+  const b = boxOf(ctx, row.box)
+  // A baseline row with a nominal box (Sleep Under's "Mia's 7th"): the children share a baseline in an
+  // inner group, and the group is centred in the box, so a shrunken row stays centred (spec changelog B5).
+  if (row.boxHeight !== undefined && row.align === 'baseline') {
+    return (
+      <div
+        key={row.id}
+        style={{
+          display: 'flex',
+          position: 'absolute',
+          left: b.left,
+          top: row.top,
+          width: b.width,
+          height: row.boxHeight,
+          justifyContent: b.justify,
+          alignItems: 'center',
+          ...(b.transform ? { transform: b.transform } : {}),
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: row.gap, whiteSpace: 'nowrap' }}>{kids}</div>
+      </div>
+    )
+  }
   return (
     <div
       key={row.id}
       style={{
         display: 'flex',
         position: 'absolute',
-        left: 0,
+        left: b.left,
         top: row.top,
-        width: ctx.W,
+        width: b.width,
         ...(row.boxHeight !== undefined ? { height: row.boxHeight } : {}),
-        justifyContent: 'center',
+        justifyContent: b.justify,
+        ...(b.transform ? { transform: b.transform } : {}),
         alignItems: row.align,
         gap: row.gap,
         whiteSpace: 'nowrap',

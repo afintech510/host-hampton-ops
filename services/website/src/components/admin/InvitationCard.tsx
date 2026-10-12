@@ -29,6 +29,7 @@ export interface InvitationPayload {
     slug: string
     previousSlugs: string[]
     templateSlug: string
+    templateChoice?: string | null
     themeWord: string | null
     themeSub: string | null
     renderVersion: number
@@ -64,6 +65,7 @@ export interface InvitationPayload {
   links?: { publicUrl: string; hostPageUrl: string; hostPageNote: string }
   images?: { invite: string | null; og: string | null }
   templateOptions?: string[]
+  designOptions?: Array<{ slug: string; label: string }>
   renderFresh?: boolean | null
   warnings?: { needsTime: boolean; noParentEmail: boolean }
   rsvps?: Section<{ rows: AdminRsvpView[] }>
@@ -129,7 +131,7 @@ function kidsText(kids: number, cap: number | null): string {
   return cap !== null ? `${kids} of ${cap} kids` : `${kids} kid${kids === 1 ? '' : 's'}`
 }
 
-export type InvitationAction = 'ensure' | 'rerender' | 'archive' | 'unarchive' | 'set_theme' | 'reslug' | 'notify_cancelled' | 'void_rsvp'
+export type InvitationAction = 'ensure' | 'rerender' | 'archive' | 'unarchive' | 'set_theme' | 'set_design' | 'reslug' | 'notify_cancelled' | 'void_rsvp'
 
 export interface InvitationViewProps {
   data: InvitationPayload
@@ -230,6 +232,7 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
   const [word, setWord] = useState(data.evite?.themeWord ?? '')
   const [sub, setSub] = useState(data.evite?.themeSub ?? '')
   const [template, setTemplate] = useState(data.evite?.templateSlug ?? 'glow')
+  const [design, setDesign] = useState(data.evite?.templateChoice ?? '')
 
   const ev = data.evite
   const disabledBtn = 'disabled:opacity-50'
@@ -487,6 +490,35 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
         {data.ledger && data.ledger.available && data.ledger.truncated ? <p className="text-amber-700">Older sends are not shown.</p> : null}
       </div>
 
+      {/* Design (the host's gallery pick, migration 070) */}
+      {data.designOptions && data.designOptions.length > 0 ? (
+        <form
+          className="text-xs space-y-2 p-3 bg-gray-50 rounded-lg"
+          onSubmit={(e) => {
+            e.preventDefault()
+            onAction('set_design', { template_choice: design === '' ? null : design })
+          }}
+        >
+          <p className="font-medium text-[#1a2744]">
+            Design <span className="font-normal text-gray-400">(now: {facts?.templateSlug})</span>
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            <select value={design} onChange={(e) => setDesign(e.target.value)} className="border rounded px-2 py-1">
+              <option value="">Theme default</option>
+              {data.designOptions.map((d) => (
+                <option key={d.slug} value={d.slug}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className={btn} disabled={working || design === (ev.templateChoice ?? '')}>
+              {busy === 'set_design' ? 'Saving...' : 'Use design'}
+            </button>
+          </div>
+          <p className="text-gray-400">The parent can also pick one on their invitation page. Theme default = the design for the party&apos;s theme.</p>
+        </form>
+      ) : null}
+
       {/* Theme */}
       <form
         className="text-xs space-y-2 p-3 bg-gray-50 rounded-lg"
@@ -700,6 +732,8 @@ function describeSuccess(action: InvitationAction, body: Record<string, unknown>
       return 'Unarchived.'
     case 'set_theme':
       return typeof body?.warning === 'string' ? `Saved. ${body.warning}` : 'Theme saved; the image is re-rendering.'
+    case 'set_design':
+      return 'Design saved; the image is re-rendering.'
     case 'reslug':
       return 'New link minted. The old one forwards to it.'
     case 'void_rsvp':

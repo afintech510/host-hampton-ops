@@ -146,7 +146,7 @@ describe('GET: the response is exactly the host view (spec §7.2)', () => {
     const res = await get()
     expect(res.status).toBe(200)
     const body = await json(res)
-    expect(Object.keys(body).sort()).toEqual(['customize', 'deadlineRange', 'facts', 'images', 'renderFresh', 'rsvps', 'state', 'summary', 'url'])
+    expect(Object.keys(body).sort()).toEqual(['customize', 'deadlineRange', 'design', 'facts', 'images', 'renderFresh', 'rsvps', 'state', 'summary', 'url'])
     expect(Object.keys(body.facts).sort()).toEqual([
       'dateLine',
       'giftNote',
@@ -440,7 +440,7 @@ describe('PATCH', () => {
     db = makeHostDb({ evite: { image_key: KEY, invite_object: 'invite-v1-9f2c.jpg', og_object: 'og-v1-9f2c.jpg', render_inputs_hash: renderInputsHash(inviteFacts(bookingRow() as never, evitesRow() as never, LINE_ITEM_ROWS as never, THEME_ROWS as never, 'live')) } })
     expect((await json(await get())).renderFresh).toBe(true)
     const body = await json(await patch({ host_contact_name: 'Pat' }))
-    expect(Object.keys(body).sort()).toEqual(['customize', 'deadlineRange', 'facts', 'images', 'renderFresh', 'rsvps', 'state', 'summary', 'url'])
+    expect(Object.keys(body).sort()).toEqual(['customize', 'deadlineRange', 'design', 'facts', 'images', 'renderFresh', 'rsvps', 'state', 'summary', 'url'])
     expect(body.customize.host_contact_name).toBe('Pat')
     expect(body.facts.hostContactLine).toContain('Pat')
     expect(body.renderFresh).toBe(false)

@@ -17,7 +17,7 @@ describe('withEffectivePrices', () => {
     expect(t.name).toBe('Slime')
   })
 
-  it('keeps the theme price when there is no link (Sleep Under)', () => {
+  it('keeps the theme price when there is no link', () => {
     const [t] = withEffectivePrices([{ price_cents: 90000, pricing_item_id: null }], items)
     expect(t.price_cents).toBe(90000)
   })

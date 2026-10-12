@@ -215,10 +215,16 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **062**. (This line said **047** for months
+The next free migration number is **072**. (This line said **047** for months
 after it stopped being true, which is why it now says how to check rather than
 just asserting a number: the highest file in `starting_plan/` is the floor, and
 `information_schema` on the live DB is what says whether it has been APPLIED.
+**071 is `job_applications`** for the /join-the-team hiring page (2026-10-11).
+**070 is the EVITE design pick** — `evites.template_choice` (nullable; NULL = the
+theme's design), set by the host's gallery on `/my-booking/invitation` or the admin
+Invitation card; applied 2026-10-11.
+**069 is Sleep Under at $950** — its `pricing_items` row, so the planner offers it,
+linked from `party_themes`; data, applied 2026-10-11.
 **061 is the past-client review ask** — `review_ask_email` / `review_ask_sms`
 added to the `scheduled_reminders` reminder_type CHECK and `'contact'` to its
 reference_type CHECK, applied 2026-10-04.
@@ -340,7 +346,7 @@ There is **no in-container scheduler**. Scheduled work is driven externally by *
 | `/api/cron/review-asks?smsGapDays=0` | daily 14:30 UTC — **box crontab**, since 2026-10-04 | 40 people/day, email + same-day text |
 | everything else | — | **not scheduled at all** |
 
-**The box now has a crontab too** (`crontab -l` on `hampton-vps`): the two rows above run `/root/hh-cron.sh`, which calls the container by IP with `CRON_SECRET` grepped (never sourced) from `.env`, logging to `/var/log/hh-cron.log`. Everything else is still cron-job.org. Remove a job with `crontab -e`.
+**SUPERSEDED 2026-10-11 — one scheduler, and a watchdog.** The table above is history. Schedules now live in **`scripts/cron/jobs.tsv`** and nowhere else; `sh scripts/cron/install.sh` (on the box, after `git pull`) writes the managed block of root's crontab, each line calling `scripts/cron/hh-cron.sh` (container IP, `CRON_SECRET` grepped never sourced, one line per run to `/var/log/hh-cron.log`). `scripts/cron/hh-cron-watch.sh` runs every 10 minutes, and texts `REVIEWER_PHONES` (via `/api/cron/cron-alert`) when a job answers non-200 / `"ok":false` or goes quiet past its max age — once, repeated after 6 hours, with a recovery text. It runs on the box, so a dead box is its blind spot. `agent-dispatch` and `gmail-sync` are `cutover` rows: still fired by cron-job.org until their cron-job.org jobs are deleted and the row is flipped to `box`. `cronManifest.test.ts` fails the suite if a row names a missing route or schedules a job that needs a human decision (`process-sequences`, `send-campaigns`, …). **Why:** `draft-newsletter` was the only thing that archived finished events, its cron-job.org job silently stopped being called after 2026-07-18, and Bitchy Bingo was still listed on 2026-10-11 — public listings now also judge the date at read time (`lib/eventVisibility.ts`).
 
 **Nothing monitors a cron's status.** A job that has failed every day for months looks exactly like a job that works. If you are asked whether a job runs, ask nginx by path *and* status, and then ask the table that would hold its output.
 

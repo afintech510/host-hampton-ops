@@ -1,3 +1,4 @@
+import { TEMPLATE_SLUGS } from '@/lib/evites/templates'
 import { NOW, bookingRow } from '../helpers/eviteFixtures'
 import {
   ADMIN_PW,
@@ -137,7 +138,8 @@ describe('GET: the card data', () => {
     expect(b.links.hostPageNote).toMatch(/sign-in/)
     expect(b.warnings).toEqual({ needsTime: false, noParentEmail: false })
     expect(b.evite.canReslug).toBe(true)
-    expect(b.templateOptions).toEqual(['glow', 'plain'])
+    expect(b.templateOptions).toEqual(TEMPLATE_SLUGS)
+    expect(b.designOptions.map((d: { slug: string }) => d.slug)).toEqual(TEMPLATE_SLUGS.filter((s) => s !== 'plain'))
     expect(b.rsvps.available).toBe(true)
     expect(b.ledger).toEqual({ available: true, truncated: false, groups: [] })
   })

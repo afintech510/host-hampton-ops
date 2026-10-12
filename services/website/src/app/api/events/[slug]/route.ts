@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { isEventListable } from '@/lib/eventVisibility'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,7 +17,7 @@ export async function GET(
     .eq('is_active', true)
     .single()
 
-  if (error || !event) {
+  if (error || !event || !isEventListable(event)) {
     return NextResponse.json({ error: 'Event not found' }, { status: 404 })
   }
 

@@ -494,7 +494,7 @@ export async function POST(req: NextRequest) {
     const inputs = await readBalanceInputs(
       supabase,
       bookingId,
-      'total_cents, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, package_type, guest_count_approx',
+      'total_cents, party_tags, contact_name, contact_email, contact_phone, party_date, party_time, package_type, guest_count_approx, party_type',
     )
     if (!inputs.ok) {
       console.error('Party builder PI: cannot recompute balance —', inputs.message, '— asking Stripe to retry')
@@ -505,7 +505,7 @@ export async function POST(req: NextRequest) {
       total_cents: number | null; party_tags: Record<string, unknown> | null
       contact_name: string | null; contact_email: string | null; contact_phone: string | null
       party_date: string | null; party_time: string | null; package_type: string | null
-      guest_count_approx: number | null
+      guest_count_approx: number | null; party_type: string | null
     }
     /**
      * `Math.max(0, (total_cents || 0) - paidSum)` is the shape link 18 extracted
@@ -544,7 +544,10 @@ export async function POST(req: NextRequest) {
         ? `Party Deposit — ${bkRow?.package_type || 'Kids Party'}`
         : `Party ${paymentType === 'final' ? 'Final' : 'Partial'} Payment — ${bookingRef}`,
       amountCents: totalCharged,
-      category: 'Party Booking',
+      // A studio rental paid from its invoice lands here (`/api/portal/pay`), and the
+      // Payment Link path books the same money as 'Room Rental' (planPayment.ts) —
+      // one product, one bucket in the Financials tab.
+      category: bkRow?.party_type === 'studio_rental' ? 'Room Rental' : 'Party Booking',
       customerName: bkRow?.contact_name || m.contactName || null,
       reference: `pb-${bookingRef}-${paymentType}-${pi.id}`,
       notes: bkRow?.contact_email || m.contactEmail || null,

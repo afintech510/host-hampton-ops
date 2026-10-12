@@ -33,7 +33,14 @@ import { getDepositCents, BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 import { isPayableStatus } from '@/lib/portalWrite'
 import { loadPricingCatalog, type PricingCatalog } from '@/lib/pricingCatalog'
 import { loadPlanContent, type PlanContent } from '@/lib/planContent'
-import { depositIsSeparateFor, hasSecurityHold, guestMultiplier, planMoney, type PaymentRow } from '@/lib/planBalance'
+import {
+  depositIsSeparateFor,
+  hasSecurityHold,
+  guestMultiplier,
+  lineAmountCents,
+  planMoney,
+  type PaymentRow,
+} from '@/lib/planBalance'
 import type { BookingLineItem } from '@/types/booking-flow'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -312,11 +319,10 @@ export function orderLineItems(rows: BookingLineItem[], guestCount: number): Inv
     const item = r as BookingLineItem & {
       description?: string | null; is_featured?: boolean; is_optional?: boolean
     }
-    const unitTotal = item.unit_price_cents * item.quantity
     return {
       name: item.name,
       description: item.description ?? null,
-      amountCents: item.guest_multiplied ? unitTotal * guestCount : unitTotal,
+      amountCents: lineAmountCents(item, guestCount),
       quantity: item.quantity,
       isFeatured: item.is_featured === true,
       isOptional: item.is_optional === true,

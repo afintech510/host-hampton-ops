@@ -62,6 +62,10 @@ const TEMPLATE_SOURCES = [
   // The ten EVITE bodies (P09). Text escaped once at entry (`escapeFields`), every URL through
   // `mailHref` / `mailHrefExternal`, and a plain-text half that is never escaped.
   'lib/email-templates/evites.ts',
+  // The two /join-the-team emails: the owner alert and the applicant's
+  // confirmation (signed Allie). Escaped at entry; the portfolio, admin, mailto
+  // and tel links each go through their own screen.
+  'lib/email-templates/careers.ts',
   'lib/planPayment.ts',
   'lib/planShare.ts',
   // The post-party photo booth album. Its interpolations are the customer's
@@ -451,6 +455,9 @@ describe('the file list cannot go stale', () => {
     // The ONE Resend call for evites. It builds no markup: the bodies are
     // `lib/email-templates/evites.ts`, audited above, and arrive here finished.
     'lib/evites/mail.ts',
+    // The careers apply route. Its markup is lib/email-templates/careers.ts,
+    // audited above; the route passes the finished subject/html/text through.
+    'app/api/careers/apply/route.ts',
   ]
 
   /**
@@ -476,6 +483,7 @@ describe('the file list cannot go stale', () => {
     'lib/email-templates/appointments.ts',
     'lib/email-templates/reminders.ts',
     'lib/email-templates/evites.ts',
+    'lib/email-templates/careers.ts',
   ]
 
   it('every exported template escapes its input at entry', () => {

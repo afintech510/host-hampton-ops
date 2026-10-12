@@ -40,6 +40,7 @@ import { validPartyDate } from '@/lib/evites/partyWindow'
 import { honoreeFirstName } from '@/lib/evites/pageModel'
 import { inviteState, type InviteState } from '@/lib/evites/state'
 import { readThemeInputs } from '@/lib/evites/themeInputs'
+import { galleryTemplates, isGallerySlug, sampleImageOf } from '@/lib/evites/templates'
 import type { EviteBookingRow, EviteLineItemRow, EvitePaymentRow, EviteRow, EviteRsvpRow, PartyThemeRow } from '@/lib/evites/types'
 import { EVITE_BOOKING_COLUMNS, EVITE_PAGE_COLUMNS, EVITE_PAYMENT_COLUMNS, HOST_RSVP_COLUMNS } from '@/lib/evites/views'
 
@@ -254,6 +255,23 @@ export interface HostCustomize {
   host_contact_phone: string | null
 }
 
+/** One design in the host's gallery. */
+export interface HostDesignOption {
+  slug: string
+  label: string
+  /** The sample render ("Mia's 7th"), a public path. */
+  sample: string
+}
+
+/** The design picker (migration 070). */
+export interface HostDesign {
+  /** The design the invitation is drawn with now. */
+  current: string
+  /** The host's stored pick, or null when the theme's design is in use. */
+  choice: string | null
+  options: HostDesignOption[]
+}
+
 export interface HostPayload {
   state: HostVisibleState
   facts: HostFactsView
@@ -265,6 +283,7 @@ export interface HostPayload {
   customize: HostCustomize
   /** The RSVP-by date input's bounds: today (ET) ... the party date (null when there is none). */
   deadlineRange: { min: string; max: string | null }
+  design: HostDesign
 }
 
 export function composeHostView(loaded: HostLoaded, supabaseUrl: string | undefined, now: Date = new Date()): { payload: HostPayload; facts: InviteFacts } {
@@ -300,6 +319,11 @@ export function composeHostView(loaded: HostLoaded, supabaseUrl: string | undefi
       host_contact_phone: evite.host_contact_phone,
     },
     deadlineRange: { min: etDateString(now), max: validPartyDate(booking.party_date) },
+    design: {
+      current: facts.templateSlug,
+      choice: isGallerySlug(evite.template_choice) ? evite.template_choice : null,
+      options: galleryTemplates().map((t) => ({ slug: t.slug, label: t.label as string, sample: sampleImageOf(t.slug) })),
+    },
   }
   return { payload, facts }
 }

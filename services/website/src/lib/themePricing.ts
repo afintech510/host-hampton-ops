@@ -11,8 +11,9 @@ import { getSupabase } from '@/lib/supabase'
  * ChatGPT as the site contradicting itself).
  *
  * Every reader of a theme's price goes through `withEffectivePrices`. A theme
- * with no link (Sleep Under, today), or whose linked row is inactive or priced
- * at zero, falls back to its own `price_cents` — never to nothing.
+ * with no link, or whose linked row is inactive or priced at zero, falls back
+ * to its own `price_cents` — never to nothing. (Sleep Under had no link until
+ * migration 069 gave it a `pricing_items` row at $950.)
  */
 
 type Supa = SupabaseClient

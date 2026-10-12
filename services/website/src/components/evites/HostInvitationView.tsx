@@ -50,10 +50,16 @@ export interface HostViewProps {
   formError: { field: string | null; message: string } | null
   saved: boolean
   copied: boolean
+  /** The design being saved (a slug, or 'theme' for "back to the theme's design"), else null. */
+  designSaving?: string | null
+  /** A refused design pick. */
+  designError?: string | null
   /** Event handlers; absent in static renders. */
   on?: {
     form?: (patch: Partial<HostFormState>) => void
     save?: () => void
+    /** Pick a gallery design, or null for the party theme's own. Saved at once. */
+    design?: (slug: string | null) => void
     share?: (kind: 'invite' | 'reshare') => void
     copy?: () => void
     download?: () => void
@@ -116,6 +122,59 @@ function SharePanel({ props }: { props: HostViewProps }) {
           See what your guests see
         </a>
       </p>
+    </section>
+  )
+}
+
+/**
+ * The gallery (migration 070): every design as its sample picture. A tap saves at once and the
+ * invitation redraws, like a Customize save. The current design is marked; "Use my theme's design"
+ * appears once the host has picked something else. Nothing to choose once the party has happened.
+ */
+function DesignPicker({ props }: { props: HostViewProps }) {
+  const { data, on } = props
+  const design = data.design
+  if (!design || design.options.length === 0 || data.state === 'closed') return null
+  const busy = Boolean(props.designSaving)
+  return (
+    <section aria-label="Choose your design" className={CARD}>
+      <h2 className={H2}>Choose your design</h2>
+      <p className="mb-4 text-sm text-gray-500">Tap a design to use it. Your details stay the same; the picture redraws in about a minute.</p>
+      {props.designError && (
+        <p role="alert" className="mb-3 text-sm text-red-600">
+          {props.designError}
+        </p>
+      )}
+      <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+        {design.options.map((o) => {
+          const current = o.slug === design.current
+          const saving = props.designSaving === o.slug
+          return (
+            <li key={o.slug}>
+              <button
+                type="button"
+                data-design={o.slug}
+                aria-pressed={current}
+                disabled={busy || current}
+                onClick={() => on?.design?.(o.slug)}
+                className={`block w-full rounded-lg p-1 text-left transition ${current ? 'ring-2 ring-[#1a2744]' : 'ring-1 ring-gray-200 hover:ring-[#A1B5C8]'} ${busy && !saving ? 'opacity-60' : ''}`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={o.sample} alt="" width={181} height={255} loading="lazy" className="w-full rounded-md" style={{ aspectRatio: '1085 / 1530' }} />
+                <span className="mt-1 block text-xs leading-tight text-[#1a2744]">
+                  {saving ? 'Saving…' : o.label}
+                  {current && !saving ? ' ✓' : ''}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      {design.choice !== null && (
+        <button type="button" data-design="theme" disabled={busy} onClick={() => on?.design?.(null)} className={`mt-4 ${BTN_2} ${busy ? OFF : ''}`}>
+          {props.designSaving === 'theme' ? 'Saving…' : 'Use my party theme’s design'}
+        </button>
+      )}
     </section>
   )
 }
@@ -364,6 +423,7 @@ export function HostInvitationView(props: HostViewProps) {
         </div>
         <div className="space-y-6">
           <SharePanel props={props} />
+          <DesignPicker props={props} />
           <CustomizeForm props={props} />
         </div>
       </div>

@@ -16,7 +16,14 @@ export function showWhenOk(cond: ShowWhen | undefined, facts: InviteFacts): bool
   return negate ? !truthy : truthy
 }
 
-/** The text a text slot draws: its static text, else its bound fact; upper-cased when the slot says so. */
+/** "SLEEP UNDER" -> "Sleep Under", "K-POP" -> "K-Pop": the first letter of each word (after a space or hyphen) upper, the rest lower. */
+export function toTitleCase(s: string): string {
+  return s
+    .toLocaleLowerCase('en-US')
+    .replace(/(^|[\s-])(\S)/g, (_m, sep: string, c: string) => sep + c.toLocaleUpperCase('en-US'))
+}
+
+/** The text a text slot draws: its static text, else its bound fact; upper- or title-cased when the slot says so. */
 export function slotText(slot: TextSlot, facts: InviteFacts): string {
   let raw = ''
   if (slot.staticText !== undefined) raw = slot.staticText
@@ -24,5 +31,6 @@ export function slotText(slot: TextSlot, facts: InviteFacts): string {
     const v = facts[slot.bind]
     raw = typeof v === 'string' ? v : ''
   }
-  return slot.uppercase ? raw.toLocaleUpperCase('en-US') : raw
+  if (slot.uppercase) return raw.toLocaleUpperCase('en-US')
+  return slot.titleCase ? toTitleCase(raw) : raw
 }

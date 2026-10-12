@@ -48,8 +48,29 @@ export interface FitResult {
 const MEMO_MAX = 500
 const memo = new Map<string, FitResult>()
 
+/**
+ * Advance widths plus kerning, glyph by glyph, with no substitutions. The fallback for a font whose
+ * GSUB opentype.js cannot apply: Great Vibes carries a chaining-context lookup (type 6, format 2) that
+ * makes `getAdvanceWidth` THROW for any text. Satori draws that font without the lookup too.
+ */
+function plainAdvance(f: ReturnType<typeof loadFont>, text: string, size: number): number {
+  const glyphs = Array.from(text).map((ch) => f.charToGlyph(ch))
+  let units = 0
+  for (let i = 0; i < glyphs.length; i++) {
+    units += glyphs[i].advanceWidth ?? 0
+    if (i > 0) units += f.getKerningValue(glyphs[i - 1], glyphs[i])
+  }
+  return (units * size) / f.unitsPerEm
+}
+
 function widthAt(font: FontKey, text: string, size: number, letterSpacingEm: number): number {
-  const advance = loadFont(font).getAdvanceWidth(text, size, { kerning: true })
+  const f = loadFont(font)
+  let advance: number
+  try {
+    advance = f.getAdvanceWidth(text, size, { kerning: true })
+  } catch {
+    advance = plainAdvance(f, text, size)
+  }
   return advance + letterSpacingEm * size * Array.from(text).length
 }
 

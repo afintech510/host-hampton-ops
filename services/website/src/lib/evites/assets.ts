@@ -15,7 +15,7 @@
 import fs from 'fs'
 import path from 'path'
 import sharp from 'sharp'
-import { FONT_FILES, FONT_KEYS, fontDir } from '@/lib/evites/glyphs'
+import { FONT_FILES, FONT_KEYS, fontDir, type FontWeight } from '@/lib/evites/glyphs'
 import { OG_HEIGHT, OG_WIDTH } from '@/lib/evites/layout'
 import { templateAssetPaths } from '@/lib/evites/templates'
 import type { InviteAssets, TemplateLayout } from '@/lib/evites/templates/types'
@@ -23,7 +23,7 @@ import type { InviteAssets, TemplateLayout } from '@/lib/evites/templates/types'
 export interface SatoriFont {
   name: string
   data: Buffer
-  weight: 400 | 600
+  weight: FontWeight
   style: 'normal'
 }
 
@@ -61,7 +61,7 @@ export function loadTemplateAssets(template: TemplateLayout): InviteAssets {
 
 let fontsMemo: SatoriFont[] | null = null
 
-/** The five bundled `.woff` files in the shape Satori wants. */
+/** Every bundled `.woff` file in the shape Satori wants. */
 export function satoriFonts(): SatoriFont[] {
   if (fontsMemo) return fontsMemo
   fontsMemo = FONT_KEYS.map((key) => {

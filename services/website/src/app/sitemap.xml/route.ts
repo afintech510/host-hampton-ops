@@ -2,6 +2,7 @@ import { getSupabase } from '@/lib/supabase'
 import { LOCATIONS } from '@/lib/locations'
 import { CRAFT_PARTIES } from '@/lib/craftParties'
 import { contentPath, isShadowedByStaticRoute } from '@/lib/content/slugSafety'
+import { isEventListable } from '@/lib/eventVisibility'
 
 const BASE = 'https://www.hosthampton.com'
 
@@ -37,7 +38,9 @@ interface Entry {
 
 const STATIC_ROUTES: Entry[] = [
   { path: '/', changefreq: 'weekly', priority: 1.0 },
-  { path: '/party-packages', changefreq: 'weekly', priority: 0.9 },
+  { path: '/party-packages', changefreq: 'weekly', priority: 0.9, lastmod: '2026-10-11' },
+  // Every theme we have hosted, beyond the packages (lib/hostedThemes.ts).
+  { path: '/party-themes', changefreq: 'monthly', priority: 0.8, lastmod: '2026-10-11' },
   { path: '/mobile-party', changefreq: 'weekly', priority: 0.9 },
   { path: '/mobile-craft-party', changefreq: 'weekly', priority: 0.9 },
   { path: '/party-room-rental', changefreq: 'monthly', priority: 0.8 },
@@ -58,9 +61,11 @@ const STATIC_ROUTES: Entry[] = [
   { path: '/events', changefreq: 'weekly', priority: 0.7 },
   { path: '/gift-cards', changefreq: 'monthly', priority: 0.5 },
   { path: '/gallery', changefreq: 'monthly', priority: 0.6 },
+  { path: '/invitations', changefreq: 'monthly', priority: 0.5, lastmod: '2026-10-11' },
   { path: '/reviews', changefreq: 'monthly', priority: 0.6 },
   { path: '/faq', changefreq: 'monthly', priority: 0.5 },
   { path: '/contact-us', changefreq: 'yearly', priority: 0.6 },
+  { path: '/join-the-team', changefreq: 'monthly', priority: 0.5, lastmod: '2026-10-11' },
   { path: '/book', changefreq: 'monthly', priority: 0.8 },
   // Indexable lead-capture pages that were routable and crawlable but absent
   // from the sitemap. A sitemap that omits its own indexable pages is not
@@ -154,10 +159,10 @@ export async function GET() {
 
     const { data: events, error: eventsError } = await supabase
       .from('events')
-      .select('slug, updated_at')
+      .select('slug, updated_at, event_date, has_sessions')
       .eq('is_active', true)
     if (eventsError) console.error('[sitemap] events read failed:', eventsError.message)
-    for (const e of events || []) {
+    for (const e of (events || []).filter(e => isEventListable(e))) {
       const row = e as { slug: string; updated_at: string | null }
       entries.push({ path: `/events/${row.slug}`, changefreq: 'weekly', priority: 0.6, lastmod: row.updated_at || CONTENT_LAST_MODIFIED })
     }

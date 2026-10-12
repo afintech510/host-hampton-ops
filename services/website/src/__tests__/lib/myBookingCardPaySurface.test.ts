@@ -160,10 +160,13 @@ describe('P00 — the shared component is a Payment Element, not a third pattern
     expect(src).toMatch(/elements\.create\('payment'/)
   })
 
-  it('confirms with return_url = /my-booking?paid=1 and does not demand a redirect', () => {
+  it('confirms with return_url = /my-booking?paid=1 by default and does not demand a redirect', () => {
     const src = code(SHARED)
     expect(src).toMatch(/\.confirmPayment\(\{/)
-    expect(src).toMatch(/return_url:\s*`\$\{window\.location\.origin\}\/my-booking\?paid=1`/)
+    // The invoice page passes its own `returnPath`; /my-booking passes none and
+    // keeps the default — which is what this rule has always pinned.
+    expect(src).toMatch(/returnPath = '\/my-booking\?paid=1'/)
+    expect(src).toMatch(/return_url:\s*`\$\{window\.location\.origin\}\$\{returnPath\}`/)
     expect(src).toMatch(/redirect:\s*'if_required'/)
   })
 

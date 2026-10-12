@@ -14,9 +14,19 @@ const refused = (body: unknown, ctx: HostPatchContext = CTX) => {
   return r
 }
 
-describe('the allow-list is exactly six keys', () => {
+describe('the allow-list is exactly seven keys', () => {
   it('names them', () => {
-    expect([...HOST_PATCH_KEYS]).toEqual(['host_note', 'gift_note', 'rsvp_deadline', 'show_host_contact', 'host_contact_name', 'host_contact_phone'])
+    expect([...HOST_PATCH_KEYS]).toEqual(['host_note', 'gift_note', 'rsvp_deadline', 'show_host_contact', 'host_contact_name', 'host_contact_phone', 'template_choice'])
+  })
+
+  it('template_choice: a gallery design, or null for the theme default; plain and unknown slugs are refused', () => {
+    const ok = screenHostPatch({ template_choice: 'sleepunder' }, CTX)
+    expect(ok).toEqual({ ok: true, columns: { template_choice: 'sleepunder' } })
+    expect(screenHostPatch({ template_choice: null }, CTX)).toEqual({ ok: true, columns: { template_choice: null } })
+    expect(screenHostPatch({ template_choice: '' }, CTX)).toEqual({ ok: true, columns: { template_choice: null } })
+    for (const bad of ['plain', 'constructor', '__proto__', 'nope', 7, true, ['glow']]) {
+      expect(refused({ template_choice: bad }).field).toBe('template_choice')
+    }
   })
 
   it.each(['id', 'evite_id', 'booking_id', 'slug', 'previous_slugs', 'template_slug', 'theme_word', 'theme_sub', 'render_version', 'render_inputs_hash', 'image_key', 'invite_object', 'og_object', 'archived_at', 'went_live_at', 'edit_nonce', 'hostNote', '__proto__x'])(

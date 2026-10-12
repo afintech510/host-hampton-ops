@@ -10,9 +10,16 @@ import type { PaymentMethod } from '@/types/booking-flow'
 import PortalCardPayment from './PortalCardPayment'
 import { CUSTOMER_STAGE_LABELS, PAYMENT_LABELS, partyStatuses, etToday, type BookingStage } from '@/lib/bookingStatus'
 import { sumPayments } from '@/lib/bookingBalance'
+import { PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
+import type { PortalPartyDetails, DetailFact } from '@/lib/portalPartyDetails'
 
 interface PortalData {
   booking: PartyBooking
+  /**
+   * Every party detail, shaped per product by `buildPortalPartyDetails` on the
+   * server. Optional only so a response from before the deploy still renders.
+   */
+  details?: PortalPartyDetails
   /**
    * Server-derived money. Older responses may not carry it, so every read is
    * defaulted — but nothing here recomputes it, because the figure a customer
@@ -44,6 +51,29 @@ const STAGE_BADGE: Record<BookingStage, string> = {
   completed: 'bg-purple-100 text-purple-800',
   cancelled: 'bg-red-100 text-red-800',
   lost: 'bg-gray-100 text-gray-700',
+}
+
+const CARD = 'bg-white rounded-2xl shadow-sm border border-[#A1B5C8]/20 p-5 sm:p-6'
+
+function FactList({ facts, cols = true }: { facts: DetailFact[]; cols?: boolean }) {
+  return (
+    <dl className={cols ? 'grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 text-sm' : 'space-y-3 text-sm'}>
+      {facts.map(f => (
+        <div key={f.label} className="min-w-0">
+          <dt className="text-gray-400 text-xs">{f.label}</dt>
+          <dd className="text-[#1a2744] font-medium break-words whitespace-pre-line">{f.value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/** "In-studio party" pill colours. Presentation only. */
+const KIND_PILL: Record<PortalPartyDetails['kind'], string> = {
+  in_studio: 'bg-[#BCCDEB]/50 text-[#1a2744]',
+  mobile: 'bg-[#F3D9DF] text-[#7a3b4b]',
+  studio_rental: 'bg-[#E9E1D3] text-[#5b4a2f]',
+  other: 'bg-gray-100 text-gray-700',
 }
 
 function MyBookingInner() {
@@ -85,6 +115,22 @@ function MyBookingInner() {
       .catch(() => undefined)
     return () => { live = false }
   }, [])
+
+  // "Copy portal link". The link is this page with no token in it: on a device
+  // that holds the session it opens the booking, and anywhere else it lands on
+  // the sign-in page, which emails a fresh link. So it is safe to paste into a
+  // group chat — it never carries a credential.
+  const [linkCopied, setLinkCopied] = useState(false)
+  async function copyPortalLink() {
+    const url = `${window.location.origin}/my-booking`
+    try {
+      await navigator.clipboard.writeText(url)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2500)
+    } catch {
+      window.prompt('Copy your booking link:', url)
+    }
+  }
 
   // Handle return from embedded checkout
   useEffect(() => {
@@ -199,7 +245,7 @@ function MyBookingInner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F6F1EB] flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-gray-400">Loading your booking...</div>
       </div>
     )
@@ -207,7 +253,7 @@ function MyBookingInner() {
 
   if (error && !data) {
     return (
-      <div className="min-h-screen bg-[#F6F1EB] flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="bg-white rounded-xl p-8 max-w-md text-center">
           <p className="text-red-600 mb-4">{error}</p>
           <a href="/my-booking/login" className="text-[#1a2744] underline">Try logging in again</a>
@@ -239,13 +285,24 @@ function MyBookingInner() {
   const isDeposit = booking.status === 'awaiting_deposit' || (depositOwed > 0 && balance <= 0)
   const cardFee = paymentMethod === 'card' ? calculateCardFee(getPayAmountCents()) : 0
 
-  const partyDateFormatted = booking.party_date
-    ? new Date(booking.party_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-    : 'TBD'
+  const details = data.details
+  // The figure under the itemised list is the server's billed total — the same
+  // `planMoney` total the invoice prints, built from the very line amounts shown
+  // above it. The column is only a fallback for a response from before that.
+  const totalCents = data.money?.totalCents ?? booking.total_cents ?? 0
+  const hasLines = (details?.sections.length ?? 0) > 0
+  // Opening the invoice ISSUES an invoice number on first render (lib/invoiceNumber.ts),
+  // so it is a plain link — never prefetched, never embedded — and only offered once
+  // there is a quote on it. An unpriced lead's invoice is an empty page that would
+  // burn a number for nothing.
+  const invoiceHref = !data.money?.unpriced && hasLines
+    ? `/plan/${encodeURIComponent(booking.booking_ref)}/summary`
+    : null
+  const location = details?.location ?? null
 
   return (
-    <div className="min-h-screen bg-[#F6F1EB]">
-      <div className="max-w-3xl mx-auto px-4 py-10 md:py-16">
+    <div className="min-h-screen">
+      <div className="max-w-3xl mx-auto px-4 pt-8 pb-12 md:pt-14 md:pb-16">
         {(paymentSuccess || sessionId) && (
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6 text-center">
             <p className="text-green-800 font-medium">Payment received! Your balance has been updated.</p>
@@ -259,47 +316,94 @@ function MyBookingInner() {
         )}
 
         {/* Header */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <p className="text-xs text-gray-400 font-mono">{booking.booking_ref}</p>
-              <h1 className="font-display text-2xl text-[#1a2744]">
-                {booking.child_name ? `${booking.child_name}'s Party` : booking.package_type || 'Your Party'}
+        <div className={`${CARD} mb-5`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                {details && (
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide ${KIND_PILL[details.kind]}`}>
+                    {details.kindLabel}
+                  </span>
+                )}
+                <span className="text-xs text-gray-400 font-mono">{booking.booking_ref}</span>
+              </div>
+              <h1 className="font-display text-2xl sm:text-3xl text-[#1a2744] leading-tight break-words">
+                {details?.title || (booking.child_name ? `${booking.child_name}'s Party` : booking.package_type || 'Your Party')}
               </h1>
+              {details?.subtitle && <p className="text-sm text-gray-500 mt-1 break-words">{details.subtitle}</p>}
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${status.color}`}>
+            <span className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium ${status.color}`}>
               {status.label}
             </span>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
-            <div>
-              <span className="text-gray-400">Date</span>
-              <p className="text-[#1a2744] font-medium">{partyDateFormatted}</p>
+
+          {details && (
+            <div className="mt-5">
+              <FactList facts={details.facts} />
             </div>
-            <div>
-              <span className="text-gray-400">Time</span>
-              <p className="text-[#1a2744] font-medium">{booking.party_time || 'TBD'}</p>
+          )}
+
+          {location && (
+            <div className="mt-4 pt-4 border-t border-gray-100 text-sm">
+              <p className="text-gray-400 text-xs">{location.kind === 'studio' ? 'Where' : 'Party address'}</p>
+              {location.kind === 'studio' ? (
+                <a href={location.mapsUrl} target="_blank" rel="noopener" className="text-[#1a2744] font-medium underline decoration-[#A1B5C8] underline-offset-2">
+                  Host Hampton studio · {location.line}
+                </a>
+              ) : (
+                <>
+                  <p className="text-[#1a2744] font-medium break-words">{location.address || 'Not on file yet'}</p>
+                  {location.needsAddress && (
+                    <p className="text-amber-700 text-xs mt-1">
+                      We still need the full street address for your party team.{' '}
+                      {invoiceHref
+                        ? <>You can add it on your <a href={invoiceHref} className="underline">invoice page</a>, or text us.</>
+                        : <>Just text it to us on {PUBLIC_PHONE_DISPLAY}.</>}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
-            <div>
-              <span className="text-gray-400">Guests</span>
-              <p className="text-[#1a2744] font-medium">{booking.guest_count_approx || '—'}</p>
-            </div>
-            <div>
-              <span className="text-gray-400">Theme</span>
-              <p className="text-[#1a2744] font-medium">{booking.package_type || '—'}</p>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Modification banner */}
         {!permissions.canEditFull && permissions.fullReason && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
             <p className="text-amber-800 text-sm">{permissions.fullReason}</p>
           </div>
         )}
 
+        {/* Your links: invoice, the planner/rental editor, and this portal itself */}
+        <div className={`${CARD} mb-5`}>
+          <h2 className="font-display text-lg text-[#1a2744] mb-3">Your links</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {invoiceHref && (
+              <a href={invoiceHref} className="flex items-center justify-between gap-2 rounded-xl border border-[#1a2744]/15 px-4 py-3 text-sm font-medium text-[#1a2744] hover:bg-[#1a2744]/5 transition-colors">
+                <span>View &amp; print invoice</span><span aria-hidden>→</span>
+              </a>
+            )}
+            {details?.editLink && (
+              <a href={details.editLink.href} className="flex items-center justify-between gap-2 rounded-xl border border-[#1a2744]/15 px-4 py-3 text-sm font-medium text-[#1a2744] hover:bg-[#1a2744]/5 transition-colors">
+                <span>{details.editLink.label}</span><span aria-hidden>→</span>
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={copyPortalLink}
+              className="flex items-center justify-between gap-2 rounded-xl border border-[#1a2744]/15 px-4 py-3 text-sm font-medium text-[#1a2744] hover:bg-[#1a2744]/5 transition-colors text-left"
+            >
+              <span>{linkCopied ? 'Link copied!' : 'Copy my booking portal link'}</span><span aria-hidden>⧉</span>
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mt-3">
+            Your portal link opens this page. On a new phone or computer, just enter your email at{' '}
+            <a href="/my-booking/login" className="underline">sign in</a> and we&rsquo;ll send you a fresh link.
+          </p>
+        </div>
+
         {hasInvitation && (
-          <div className="bg-white rounded-xl shadow-sm p-6 mb-6 flex items-center justify-between flex-wrap gap-3">
+          <div className={`${CARD} mb-5 flex items-center justify-between flex-wrap gap-3`}>
             <div>
               <h2 className="font-display text-lg text-[#1a2744]">Your invitation</h2>
               <p className="text-sm text-gray-500">See your party invitation, send it to your guests and watch the RSVPs come in.</p>
@@ -310,37 +414,73 @@ function MyBookingInner() {
           </div>
         )}
 
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* Left: Line Items */}
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="font-display text-lg text-[#1a2744] mb-4">Party Details</h2>
-            {(booking.line_items || []).map((item, idx) => {
-              const itemTotal = item.guest_multiplied
-                ? item.unit_price_cents * item.quantity * (booking.guest_count_approx || 1)
-                : item.unit_price_cents * item.quantity
-              const isDiscount = item.unit_price_cents < 0
-              return (
-                <div key={idx} className="flex justify-between py-2 border-b border-gray-100 last:border-0 text-sm">
-                  <span className={isDiscount ? 'text-amber-600' : 'text-gray-700'}>
-                    {item.name}
-                    {item.quantity > 1 && <span className="text-gray-400 ml-1">x{item.quantity}</span>}
-                  </span>
-                  <span className={`font-medium ${isDiscount ? 'text-amber-600' : 'text-[#1a2744]'}`}>
-                    {itemTotal !== 0 ? formatMoney(itemTotal) : 'Included'}
-                  </span>
-                </div>
-              )
-            })}
-            <div className="flex justify-between pt-3 mt-2 border-t-2 border-[#1a2744] text-[#1a2744] font-semibold">
-              <span>Total</span>
-              <span>{formatMoney(booking.total_cents || 0)}</span>
-            </div>
-          </div>
+        <div className="grid md:grid-cols-5 gap-5">
+          {/* Left: everything they chose */}
+          <div className="md:col-span-3 space-y-5">
+            {details && details.choices.length > 0 && (
+              <div className={CARD}>
+                <h2 className="font-display text-lg text-[#1a2744] mb-3">Food &amp; cake</h2>
+                <FactList facts={details.choices} />
+              </div>
+            )}
 
-          {/* Right: Balance + Payment */}
-          <div className="space-y-6">
+            <div className={CARD}>
+              <h2 className="font-display text-lg text-[#1a2744] mb-1">
+                {details?.kind === 'studio_rental' ? 'Rental details' : 'Party details'}
+              </h2>
+              {!hasLines ? (
+                <p className="text-sm text-gray-500 mt-2">
+                  We&rsquo;re still putting your quote together &mdash; everything you&rsquo;ve chosen will appear here
+                  as soon as we&rsquo;ve confirmed the details with you.
+                </p>
+              ) : (
+                <>
+                  {details?.sections.map(section => (
+                    <div key={section.key} className="mt-4">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#8FA8BF] mb-1">{section.title}</h3>
+                      {section.lines.map((line, idx) => {
+                        const isDiscount = line.amountCents < 0
+                        return (
+                          <div key={idx} className="flex justify-between gap-3 py-2 border-b border-gray-100 last:border-0 text-sm">
+                            <div className="min-w-0">
+                              <span className={isDiscount ? 'text-amber-700' : 'text-gray-700'}>
+                                {line.name}
+                                {line.quantityLabel && <span className="text-gray-400 ml-1">{line.quantityLabel}</span>}
+                              </span>
+                              {line.optional && (
+                                <span className="ml-2 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 align-middle">
+                                  Optional · not in total
+                                </span>
+                              )}
+                              {line.description && <p className="text-xs text-gray-400 mt-0.5 break-words">{line.description}</p>}
+                            </div>
+                            <span className={`shrink-0 font-medium ${isDiscount ? 'text-amber-700' : 'text-[#1a2744]'}`}>
+                              {line.amountCents === 0 ? 'Included' : isDiscount ? `-${formatMoney(-line.amountCents)}` : formatMoney(line.amountCents)}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))}
+                  <div className="flex justify-between pt-3 mt-3 border-t-2 border-[#1a2744] text-[#1a2744] font-semibold">
+                    <span>Total</span>
+                    <span>{formatMoney(totalCents)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {details && details.notes.length > 0 && (
+              <div className={CARD}>
+                <h2 className="font-display text-lg text-[#1a2744] mb-3">Notes</h2>
+                <FactList facts={details.notes} cols={false} />
+              </div>
+            )}
+          </div>
+          {/* Right: Balance + Payment — FIRST on a phone, so the Pay button is not under the whole itemised list */}
+          <div className="md:col-span-2 space-y-5 order-first md:order-none">
             {/* Balance card */}
-            <div className="bg-white rounded-xl shadow-sm p-6 text-center">
+            <div className={`${CARD} text-center`}>
               <p className="text-gray-400 text-xs mb-1">
                 {balance <= 0 && depositOwed > 0 ? 'Deposit to Reserve' : 'Balance Due'}
               </p>
@@ -369,7 +509,7 @@ function MyBookingInner() {
 
             {/* Inline Payment Form */}
             {showPayment && payable && (
-              <div className="bg-white rounded-xl shadow-sm p-6">
+              <div className={CARD}>
                 {cardIntent ? (
                   <PortalCardPayment
                     clientSecret={cardIntent.clientSecret}
@@ -514,7 +654,7 @@ function MyBookingInner() {
 
             {/* Guest count editor */}
             {permissions.canEditGuestCount && (
-              <div className="bg-white rounded-xl shadow-sm p-6">
+              <div className={CARD}>
                 <h3 className="text-sm font-medium text-[#1a2744] mb-3">Adjust Guest Count</h3>
                 <div className="flex items-center gap-3 mb-3">
                   <button
@@ -541,7 +681,7 @@ function MyBookingInner() {
 
             {/* Payment History */}
             {(booking.payments || []).length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm p-6">
+              <div className={CARD}>
                 <h3 className="text-sm font-medium text-[#1a2744] mb-3">Payment History</h3>
                 {(booking.payments || []).map((p, idx) => (
                   <div key={idx} className="flex justify-between py-2 border-b border-gray-100 last:border-0 text-sm">

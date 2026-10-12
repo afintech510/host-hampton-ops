@@ -24,6 +24,7 @@ const CREAM = '#fbf9f1'
 
 export const GLOW_TEMPLATE: TemplateLayout = {
   slug: 'glow',
+  label: 'Neon Glow',
   canvas: { width: 1085, height: 1530 },
   background: { web: '/evites/glow/background.webp', raster: '/evites/glow/background.jpg' },
   backgroundColor: '#1b0630',

@@ -70,6 +70,7 @@ export const EVITE_RENDER_COLUMNS = [
   'id',
   'booking_id',
   'template_slug',
+  'template_choice',
   'theme_word',
   'theme_sub',
   'host_contact_name',
@@ -253,14 +254,15 @@ export async function renderEvite(supabase: Supa, eviteId: string, opts: RenderO
 
     const portraitWidth = Math.round((template.ogCard.portraitHeight * template.canvas.width) / template.canvas.height)
     const portrait = await sharp(invite).resize(portraitWidth, template.ogCard.portraitHeight, { fit: 'fill' }).jpeg({ quality: 90 }).toBuffer()
-    const texts = ogTexts(facts)
+    const texts = ogTexts(facts, template)
     const ogSvg = await satori(
       OgCard({
         template,
         texts,
         sizes: ogSizes(texts, template),
         portraitSrc: `data:image/jpeg;base64,${portrait.toString('base64')}`,
-        backgroundSrc: await ogBackgroundUri(template),
+        // A template with a `backdrop` draws a gradient instead, and never reads its art for the card.
+        backgroundSrc: template.ogCard.backdrop ? '' : await ogBackgroundUri(template),
       }),
       { width: OG_WIDTH, height: OG_HEIGHT, fonts, embedFont: true },
     )

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Calendar, Clock } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import EventFilters from './EventFilters'
+import { isEventListable } from '@/lib/eventVisibility'
 
 export const metadata: Metadata = {
   title: 'Events & Workshops | Host Hampton',
@@ -43,7 +44,7 @@ export default async function EventsPage() {
     .order('event_date', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false })
 
-  const allEvents = (events || []) as EventRow[]
+  const allEvents = ((events || []) as EventRow[]).filter(e => isEventListable(e))
   const categories = Array.from(new Set(allEvents.map(e => e.category)))
 
   return (

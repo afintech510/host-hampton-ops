@@ -9,6 +9,10 @@
  * column holding the kicker, the title, the date, the place, the host line and the
  * "Tap to RSVP" pill. The text and its sizes come from `ogTexts()` / `ogSizes()`
  * in `lib/evites/layout.ts`, so every string passed `screenForImage` and was fitted.
+ *
+ * The colours default to Glow's (cream text on the violet art). A light template
+ * (Sleep Under) sets `textColor`, `hostColor`, `portraitShadow` and a `backdrop`
+ * gradient in its `ogCard`, plus an outline and hard shadow on its script title.
  */
 
 import type { ReactElement } from 'react'
@@ -21,7 +25,7 @@ export interface OgCardProps {
   sizes: OgSizes
   /** `data:` URI of the portrait, already downscaled to the card's portrait size. */
   portraitSrc: string
-  /** `data:` URI of the card background, already cropped to 1200x630. */
+  /** `data:` URI of the card background, already cropped to 1200x630. Unused when the template has a `backdrop`. */
   backgroundSrc: string
 }
 
@@ -34,8 +38,13 @@ export function OgCard({ template, texts, sizes, portraitSrc, backgroundSrc }: O
   const spec = template.ogCard
   const portraitWidth = Math.round((spec.portraitHeight * template.canvas.width) / template.canvas.height)
   const poppins = FONT_STYLE.poppins400
-  const bungee = FONT_STYLE[spec.titleFont]
+  const titleFace = FONT_STYLE[spec.titleFont]
   const glow = spec.glow.stops.map((s) => `0 0 ${s.radius}px ${s.color}`).join(', ')
+  const titleShadow = spec.titleShadow ? `${spec.titleShadow.x}px ${spec.titleShadow.y}px 0 ${spec.titleShadow.color}, ${glow}` : glow
+  const titleStroke = spec.titleStroke ? { WebkitTextStrokeWidth: spec.titleStroke.width, WebkitTextStrokeColor: spec.titleStroke.color } : {}
+  const background = spec.backdrop
+    ? { backgroundImage: spec.backdrop }
+    : { backgroundImage: `url(${backgroundSrc})`, backgroundSize: '1200px 630px' }
 
   const line = (key: string, text: string, size: number, extra: Record<string, string | number> = {}): ReactElement => (
     <div key={key} style={{ display: 'flex', fontSize: size, lineHeight: 1.5, whiteSpace: 'nowrap', ...extra }}>
@@ -54,12 +63,13 @@ export function OgCard({ template, texts, sizes, portraitSrc, backgroundSrc }: O
       key="title"
       style={{
         display: 'flex',
-        fontFamily: bungee.family,
-        fontWeight: bungee.weight,
+        fontFamily: titleFace.family,
+        fontWeight: titleFace.weight,
         fontSize: sizes.title,
         lineHeight: 1.05,
         color: spec.titleColor,
-        textShadow: glow,
+        textShadow: titleShadow,
+        ...titleStroke,
         margin: '14px 0 26px 0',
       }}
     >
@@ -68,7 +78,7 @@ export function OgCard({ template, texts, sizes, portraitSrc, backgroundSrc }: O
     line('date', texts.date, sizes.date),
     line('place', texts.place, sizes.place),
   ]
-  if (texts.host) column.push(line('host', texts.host, sizes.host, { color: '#ffd6f6', marginTop: 6 }))
+  if (texts.host) column.push(line('host', texts.host, sizes.host, { color: spec.hostColor ?? '#ffd6f6', marginTop: 6 }))
   column.push(
     <div key="cta" style={{ display: 'flex', marginTop: 24 }}>
       <div
@@ -98,9 +108,8 @@ export function OgCard({ template, texts, sizes, portraitSrc, backgroundSrc }: O
         padding: `0 ${OG_PADDING_X}px`,
         boxSizing: 'border-box',
         backgroundColor: template.backgroundColor,
-        backgroundImage: `url(${backgroundSrc})`,
-        backgroundSize: '1200px 630px',
-        color: '#fbf9f1',
+        ...background,
+        color: spec.textColor ?? '#fbf9f1',
         fontFamily: poppins.family,
         fontWeight: poppins.weight,
         overflow: 'hidden',
@@ -115,7 +124,7 @@ export function OgCard({ template, texts, sizes, portraitSrc, backgroundSrc }: O
           width: portraitWidth,
           height: spec.portraitHeight,
           borderRadius: spec.radius,
-          boxShadow: '0 0 40px #b84dff88, 0 10px 30px #0008',
+          boxShadow: spec.portraitShadow ?? '0 0 40px #b84dff88, 0 10px 30px #0008',
           marginRight: OG_GAP,
         }}
       />

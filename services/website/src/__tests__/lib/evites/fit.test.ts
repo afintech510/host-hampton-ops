@@ -1,5 +1,5 @@
 import { fitFontSize } from '@/lib/evites/fit'
-import { loadFont } from '@/lib/evites/glyphs'
+import { FONT_KEYS, loadFont } from '@/lib/evites/glyphs'
 
 /** The name slot of the Glow layout: Bungee Outline, 165 px, 90 px floor, 960 px wide. */
 const NAME = { font: 'bungee' as const, size: 165, minSize: 90, maxWidth: 960 }
@@ -79,5 +79,14 @@ describe('evites/fit - fitFontSize', () => {
     const r = fitFontSize({ ...NAME, text: 'BIRTHDAY STAR', maxWidth: 960 - 150 })
     expect(r.size).toBeGreaterThanOrEqual(90)
     expect(r.fits).toBe(true)
+  })
+
+  // Great Vibes' GSUB has a lookup opentype.js cannot apply, and `getAdvanceWidth` used to THROW on it,
+  // which failed every render of a template drawn in it. Every bundled font must measure.
+  it.each(FONT_KEYS.map((k) => [k]))('%s measures a long line without throwing, and it shrinks to fit', (k) => {
+    const r = fitFontSize({ text: "Anastasiaelizabeth's 12th", font: k, size: 120, minSize: 10, maxWidth: 600 })
+    expect(r.width).toBeGreaterThan(0)
+    expect(r.width).toBeLessThanOrEqual(600)
+    expect(r.size).toBeLessThan(120)
   })
 })

@@ -171,6 +171,10 @@ export default async function Home() {
         <ThemeTileGrid themes={themes} />
         <div className="text-center mt-8">
           <Link href="/party-packages" className="btn-secondary">View All Packages & Pricing</Link>
+          <p className="text-hampton-navy/70 text-sm mt-5">
+            Don&apos;t see your theme? We&apos;ve done Minecraft, Stitch, mermaids, cowgirls, construction and more.{' '}
+            <Link href="/party-themes" className="underline underline-offset-2">See every theme we&apos;ve hosted</Link>.
+          </p>
         </div>
       </section>
 

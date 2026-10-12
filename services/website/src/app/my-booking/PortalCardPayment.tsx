@@ -29,6 +29,7 @@ export default function PortalCardPayment({
   payLabel,
   onSuccess,
   onCancel,
+  returnPath = '/my-booking?paid=1',
 }: {
   clientSecret: string
   paymentIntentId: string | null
@@ -36,6 +37,12 @@ export default function PortalCardPayment({
   payLabel: string
   onSuccess: () => void
   onCancel: () => void
+  /**
+   * Only the fallback Stripe requires to exist — the intent is created with
+   * `allow_redirects: 'never'`, so a card payment settles in place and nothing
+   * ever navigates here. `/plan/<ref>/summary` passes its own page.
+   */
+  returnPath?: string
 }) {
   const mountRef = useRef<HTMLDivElement>(null)
   const stripeRef = useRef<StripeInstance | null>(null)
@@ -98,7 +105,7 @@ export default function PortalCardPayment({
     try {
       const { error: confirmError } = await stripeRef.current.confirmPayment({
         elements: elementsRef.current,
-        confirmParams: { return_url: `${window.location.origin}/my-booking?paid=1` },
+        confirmParams: { return_url: `${window.location.origin}${returnPath}` },
         redirect: 'if_required',
       })
       if (confirmError) {

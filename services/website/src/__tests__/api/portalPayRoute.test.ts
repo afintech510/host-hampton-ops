@@ -287,7 +287,7 @@ describe('the rate limit', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
     const r = (): any => ({
       headers: { get: (n: string) => (n === 'cookie' ? 'hh_portal=x' : n === 'cf-connecting-ip' ? '203.0.113.7' : null) },
-      json: async () => ({ amountCents: 100, paymentMethod: 'card', paymentType: 'partial' }),
+      json: async () => ({ amountCents: 5_000, paymentMethod: 'card', paymentType: 'partial' }),
     })
     let refused = 0
     for (let i = 0; i < 40; i++) {

@@ -6,6 +6,7 @@ import TicketForm from './TicketForm'
 import ImageGallery from './ImageGallery'
 import { buildEventSchema } from '@/lib/eventSchema'
 import { NOINDEX, OG_DEFAULTS, SITE_URL } from '@/lib/seo'
+import { isEventListable } from '@/lib/eventVisibility'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,7 +62,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
     .eq('is_active', true)
     .single()
 
-  if (!event) notFound()
+  if (!event || !isEventListable(event)) notFound()
 
   let sessions: any[] = []
   if (event.has_sessions) {

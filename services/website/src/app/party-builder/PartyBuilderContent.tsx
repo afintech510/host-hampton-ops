@@ -9,6 +9,7 @@ import { loadStripe } from '@stripe/stripe-js'
 import { formatMoney, calculateCardFee, getDepositCents, getCategoryLockState, type LockCategory } from '@/lib/partyPricing'
 import { FALLBACK_CATALOG, mobileBaseCentsFor, type PricingCatalog } from '@/lib/pricingCatalog'
 import MyPartiesModal from './MyPartiesModal'
+import ClientNav from '@/components/ClientNav'
 import ChangesModal from './ChangesModal'
 import SendMessageModal from './SendMessageModal'
 import { diffPlanSnapshots } from './planDiff'
@@ -2135,6 +2136,17 @@ export default function PartyBuilderContent({
             <p className="text-xs font-semibold tracking-[0.25em] text-hampton-navy/50 uppercase">
               Booking {loadedBooking.booking_ref}
             </p>
+            {/* Not in admin mode: the admin token is not a portal session, so
+                My Booking would land on the sign-in page. Invoice only once
+                there is a quote — opening one issues an invoice number. */}
+            {!isAdmin && (
+              <ClientNav
+                current="planner"
+                ref_={loadedBooking.booking_ref}
+                showInvoice={(loadedBooking.total_cents ?? 0) > 0}
+                className="mt-3"
+              />
+            )}
           </>
         ) : (
           <>

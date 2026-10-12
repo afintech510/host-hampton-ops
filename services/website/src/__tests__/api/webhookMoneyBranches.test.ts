@@ -461,3 +461,68 @@ describe('cart metadata', () => {
     expect(customerEmails()).toEqual([])   // Adam IS emailed: that is the alert
   })
 })
+
+/* ──────────────────────────── a studio rental paid from its invoice, in-page ── */
+
+describe('a studio rental part payment made on the invoice (/api/portal/pay)', () => {
+  const PI = (meta: Record<string, string>, amount: number) => {
+    mockConstructEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_studio_1', amount, metadata: { type: 'party_builder', booking_ref: 'HH-TEST-S', booking_id: 'bk-s', ...meta } } },
+    })
+  }
+
+  beforeEach(() => {
+    db.tables.bookings.push({
+      id: 'bk-s', booking_ref: 'HH-TEST-S', party_type: 'studio_rental', total_cents: 170000,
+      status: 'deposit_paid', contact_email: 'adam@easternbuilding.supply', contact_name: 'Studio Customer',
+    })
+    db.tables.booking_payments.push({ id: 'p0', booking_id: 'bk-s', amount_cents: 25000, payment_type: 'deposit' })
+  })
+
+  it('credits the $500 named in BOTH keys — not the $515.00 charged — and books it as Room Rental', async () => {
+    PI({ payment_type: 'partial', amountCents: '50000', depositCents: '50000', cardFeeCents: '1500', tipCents: '0' }, 51500)
+    const res = await post()
+    expect(res.status).toBe(200)
+
+    const paid = db.rows('booking_payments').filter(r => r.stripe_payment_intent_id === 'pi_studio_1')
+    expect(paid).toHaveLength(1)
+    expect(paid[0].amount_cents).toBe(50000)
+    expect(paid[0].card_fee_cents).toBe(1500)
+    expect(paid[0].total_charged_cents).toBe(51500)
+    expect(paid[0].payment_type).toBe('partial')
+
+    // $1,700 − ($250 + $500) = $950 still owed; a part payment is not "paid in full".
+    expect(db.rows('bookings')[0].balance_due_cents).toBe(95000)
+    expect(db.rows('bookings')[0].status).toBe('deposit_paid')
+
+    const fin = db.rows('financial_transactions')
+    expect(fin).toHaveLength(1)
+    expect(fin[0].amount_cents).toBe(51500)
+    expect(fin[0].category).toBe('Room Rental')
+  })
+
+  it('a redelivery of the same PaymentIntent is a no-op, not a second $500', async () => {
+    PI({ payment_type: 'partial', amountCents: '50000', depositCents: '50000', cardFeeCents: '1500' }, 51500)
+    await post()
+    await post()
+    expect(db.rows('booking_payments').filter(r => r.stripe_payment_intent_id === 'pi_studio_1')).toHaveLength(1)
+    expect(db.rows('financial_transactions')).toHaveLength(1)
+    expect(db.rows('bookings')[0].balance_due_cents).toBe(95000)
+  })
+
+  it('the final payment clears the balance and marks the booking paid in full', async () => {
+    PI({ payment_type: 'final', amountCents: '145000', depositCents: '145000', cardFeeCents: '4350' }, 149350)
+    const res = await post()
+    expect(res.status).toBe(200)
+    expect(db.rows('bookings')[0].balance_due_cents).toBe(0)
+    expect(db.rows('bookings')[0].status).toBe('paid_in_full')
+  })
+
+  it('a non-studio party keeps the Party Booking category', async () => {
+    db.tables.bookings[0].party_type = 'in_studio_theme'
+    PI({ payment_type: 'partial', amountCents: '50000', depositCents: '50000', cardFeeCents: '1500' }, 51500)
+    await post()
+    expect(db.rows('financial_transactions')[0].category).toBe('Party Booking')
+  })
+})

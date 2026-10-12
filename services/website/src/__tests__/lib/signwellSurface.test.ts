@@ -125,6 +125,7 @@ describe('R0 — the surface is what this test thinks it is', () => {
       'app/api/studio-rental/checkout/route.ts',    // creates the studio document
       'app/api/portal/booking/route.ts',            // names the columns in its output allow-list
       'app/api/admin/marketing/consent/route.ts',   // admin-gated: CREATES a consent release, consumes no events
+      'app/api/plan/[ref]/waiver-link/route.ts',    // READS both signature columns to refuse a re-sign; mints a check-in link, consumes no events
     ])
     expect(found.filter(f => !allowed.has(f))).toEqual([])
   })

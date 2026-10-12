@@ -208,18 +208,29 @@ export function guestMultiplier(guestCountApprox: number | null | undefined): nu
 }
 
 /**
+ * What ONE line item comes to — unit × quantity, and × guests when per-head.
+ *
+ * The single definition the total below, the invoice's line amounts and the
+ * customer portal's itemised list all use, so a line can never print a figure
+ * that the total was not built from. Says nothing about `is_optional`: an
+ * optional line still has a price to quote, it just never reaches the total.
+ */
+export function lineAmountCents(item: BilledItem, guestCountApprox: number | null | undefined): number {
+  const unitTotal = item.unit_price_cents * item.quantity
+  return item.guest_multiplied ? unitTotal * guestMultiplier(guestCountApprox) : unitTotal
+}
+
+/**
  * The total of everything actually BILLED — optional add-ons excluded.
  *
  * This is what `loadPlanInvoice` puts on the document, so it is what every
  * writer of `bookings.total_cents` has to agree with.
  */
 export function billedTotalCents(items: BilledItem[], guestCountApprox: number | null | undefined): number {
-  const mult = guestMultiplier(guestCountApprox)
   let total = 0
   for (const item of items) {
     if (item.is_optional === true) continue
-    const unitTotal = item.unit_price_cents * item.quantity
-    total += item.guest_multiplied ? unitTotal * mult : unitTotal
+    total += lineAmountCents(item, guestCountApprox)
   }
   return total
 }
@@ -291,6 +302,142 @@ export function paidTowardDepositCents(
   const typed = paidAsDepositCents(payments)
   if (depositIsSeparate) return typed
   return Math.max(typed, Math.max(0, paidTowardTotal))
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// What a customer paying from the invoice may be charged
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * The smallest PART payment the invoice offers: $50.
+ *
+ * Not invented for this feature — `/my-booking` and `/my-booking/pay` have
+ * always told the customer "Minimum $50" (both enforce `amountCents < 5000` in
+ * the browser). What was missing was the same floor on the server, so a request
+ * that skipped the page could charge $1 and 3% of a dollar. It is also far above
+ * Stripe's own 50-cent floor, so a part payment can never be refused by Stripe
+ * after the customer has typed a card in.
+ *
+ * The floor is `min(this, what is still owed)`: a customer with $30 left must be
+ * able to pay $30, and that is the whole reason it is not a flat constant.
+ */
+export const MIN_PARTIAL_PAYMENT_CENTS = 5000
+
+/**
+ * The three things the invoice's in-page card form can ask to pay. NOT the same
+ * list as `booking_pay_links_purpose_check` (`deposit | balance | custom`):
+ * `partial` has no Payment Link — it is a PaymentIntent only — so it is not a
+ * `PayPurpose` and must never be minted as one.
+ */
+export const INVOICE_PAY_PURPOSES = ['deposit', 'balance', 'partial'] as const
+export type InvoicePayPurpose = (typeof INVOICE_PAY_PURPOSES)[number]
+
+/**
+ * The purpose this request names, `null` if it named something else, `undefined`
+ * if it named nothing (the legacy `/my-booking` caller, which picks its own
+ * amount). Same three outcomes as `screenPortalPaymentType`, for the same reason:
+ * a present-but-unknown value is an error, never a fallback.
+ */
+export function screenInvoicePayPurpose(value: unknown): InvoicePayPurpose | null | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') return null
+  const v = value.trim().toLowerCase()
+  return (INVOICE_PAY_PURPOSES as readonly string[]).includes(v) ? (v as InvoicePayPurpose) : null
+}
+
+/** The slice of `PlanMoney` the part-payment rules read. */
+export type PartialPayInput = Pick<PlanMoney, 'totalCents' | 'outstandingCents' | 'depositOwedCents'>
+
+/**
+ * The range a customer may choose a part payment from — or `null` when the
+ * invoice should not offer one.
+ *
+ *   * **Not on an unpriced plan.** There is no balance to take part of.
+ *   * **Not while the deposit is owed.** The deposit is what books the date
+ *     ("required to book"), and a part payment before it lands money on a plan
+ *     whose status stays `lead`. "Part of the balance" means the balance, which
+ *     exists once the deposit has been paid.
+ *   * **Not when the whole thing is within the floor.** At or under $50 owed,
+ *     "pay part of it" and "pay it" are the same button.
+ *
+ * `maxCents` is everything still outstanding: a deposit is part of the price
+ * (`depositOwedCents` is capped by `outstandingCents`), so the ceiling is
+ * `outstandingCents`, never `outstanding + deposit`.
+ */
+export function partialPaymentBounds(m: PartialPayInput): { minCents: number; maxCents: number } | null {
+  if (isUnpricedPlan(m.totalCents)) return null
+  if (!(m.outstandingCents > MIN_PARTIAL_PAYMENT_CENTS)) return null
+  if (m.depositOwedCents > 0) return null
+  return { minCents: MIN_PARTIAL_PAYMENT_CENTS, maxCents: m.outstandingCents }
+}
+
+export type InvoicePaymentResolution =
+  | {
+      ok: true
+      /** Credited against the plan. Always derived here, never read off the request. */
+      amountCents: number
+      /** Within `booking_payments_payment_type_check`, and never `refund`. */
+      paymentType: 'deposit' | 'partial' | 'final'
+    }
+  | { ok: false; reason: string }
+
+/**
+ * Turn "what the customer pressed" into "what they will be charged FOR".
+ *
+ * Pure, so the arithmetic that decides a card charge is testable without a
+ * database or a Stripe key. The one rule everything else here serves is the one
+ * `lib/planPayLinks.ts` opens with: **the amount is computed from the plan,
+ * server-side.** `deposit` and `balance` read no figure from the request at all;
+ * `partial` is the single exception, and it is a BOUNDED custom value:
+ *
+ *   * at least `min(MIN_PARTIAL_PAYMENT_CENTS, outstanding)`;
+ *   * **clamped** to what is still owed — a part payment can never exceed the
+ *     debt, and a customer typing $2,000 against $1,450 pays $1,450 and is told
+ *     so, rather than being refused after finding the figure.
+ *
+ * A request that reaches or passes the whole balance is recorded as `final`, so
+ * the ledger row says what the money did.
+ */
+export function resolveInvoicePayment(
+  m: PartialPayInput,
+  purpose: InvoicePayPurpose,
+  requestedCents?: unknown,
+): InvoicePaymentResolution {
+  if (purpose === 'deposit') {
+    if (!(m.depositOwedCents > 0)) {
+      return {
+        ok: false,
+        reason:
+          m.outstandingCents <= 0 && !isUnpricedPlan(m.totalCents)
+            ? 'This plan is paid in full.'
+            : 'The deposit on this plan is already paid.',
+      }
+    }
+    return { ok: true, amountCents: m.depositOwedCents, paymentType: 'deposit' }
+  }
+
+  if (isUnpricedPlan(m.totalCents)) {
+    return { ok: false, reason: 'This plan has no priced items yet, so there is no balance to pay.' }
+  }
+  if (!(m.outstandingCents > 0)) return { ok: false, reason: 'This plan is paid in full.' }
+
+  if (purpose === 'balance') {
+    return { ok: true, amountCents: m.outstandingCents, paymentType: 'final' }
+  }
+
+  // purpose === 'partial'
+  if (m.depositOwedCents > 0) {
+    return { ok: false, reason: 'Please pay the deposit first — it is what books your date.' }
+  }
+  const n = typeof requestedCents === 'number' ? requestedCents : typeof requestedCents === 'string' ? Number(requestedCents) : NaN
+  if (!Number.isFinite(n) || n <= 0) return { ok: false, reason: 'Enter an amount.' }
+  const requested = Math.round(n)
+  const minCents = Math.min(MIN_PARTIAL_PAYMENT_CENTS, m.outstandingCents)
+  if (requested < minCents) {
+    return { ok: false, reason: `The smallest part payment is $${(minCents / 100).toFixed(2)}.` }
+  }
+  const amountCents = Math.min(requested, m.outstandingCents)
+  return { ok: true, amountCents, paymentType: amountCents >= m.outstandingCents ? 'final' : 'partial' }
 }
 
 export interface PlanMoney {

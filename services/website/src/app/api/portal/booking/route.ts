@@ -14,6 +14,12 @@ import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { screenPublicGuestCount, MAX_PUBLIC_GUEST_COUNT } from '@/lib/publicIntake'
 import { isEditableStatus, isPayableStatus, partyDateIsSet } from '@/lib/portalWrite'
 import { PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
+import {
+  buildPortalPartyDetails,
+  PORTAL_INTERNAL_ROW_KEYS,
+  PORTAL_SELECTION_COLUMNS,
+  type PortalLineItem,
+} from '@/lib/portalPartyDetails'
 
 /**
  * A plan with no date has no cutoff to be past.
@@ -51,8 +57,17 @@ function modificationPermission(
  *
  * An ALLOW-list, not a deny-list, so a column added by the next migration is
  * private until somebody decides otherwise.
+ *
+ * `notes` was on this list and is not any more (2026-10-11). It is a shared
+ * scratch column, not the customer's notes — the newest rows include "Created
+ * by admin … NOTHING SENT TO THE CUSTOMER" and "confirm before chasing" — and
+ * nothing on the page read it, so the only place it went was a customer's
+ * network tab. `party_tags` is still SELECTED, because the unlock flag and the
+ * party details are derived from it, but it is stripped from the response along
+ * with the planner keys: see `PORTAL_INTERNAL_ROW_KEYS` in
+ * lib/portalPartyDetails.ts, which also explains the `->>` reads.
  */
-const PORTAL_BOOKING_COLUMNS = [
+const PORTAL_BOOKING_FIELDS: readonly string[] = [
   'id', 'booking_ref', 'status', 'event_type', 'party_type',
   'party_date', 'party_time', 'package_type', 'guest_count_approx',
   'child_name', 'child_age',
@@ -60,7 +75,7 @@ const PORTAL_BOOKING_COLUMNS = [
   'deposit_amount', 'total_cents', 'balance_due_cents', 'card_fee_rate',
   'refund_amount_cents', 'paid_in_full_at',
   'modification_cutoff', 'guest_count_cutoff',
-  'party_tags', 'notes',
+  'party_tags',
   'payment_method_preference', 'photo_gallery_url', 'invoice_number',
   'agreement_signed_at', 'agreement_pdf_url',
   'security_deposit_status',
@@ -69,7 +84,16 @@ const PORTAL_BOOKING_COLUMNS = [
   'checkin_city', 'checkin_state', 'checkin_postal_code',
   'checkin_agreement_signed_at', 'checkin_agreement_pdf_url',
   'created_at', 'updated_at',
-].join(', ')
+]
+
+const PORTAL_BOOKING_COLUMNS = PORTAL_BOOKING_FIELDS.join(', ') + ', ' + PORTAL_SELECTION_COLUMNS
+
+/**
+ * What leaves this route is PICKED from the allow-list, not the row minus a
+ * deny-list: the planner aliases and the raw tags are selected only to derive
+ * `details`, and anything a future select adds stays private by default.
+ */
+const PORTAL_RESPONSE_FIELDS = PORTAL_BOOKING_FIELDS.filter(k => !PORTAL_INTERNAL_ROW_KEYS.includes(k))
 
 const CANCELLED_REASON =
   `This booking has been cancelled. Give us a call on ${PUBLIC_PHONE_DISPLAY} if that looks wrong.`
@@ -143,9 +167,33 @@ export async function GET(req: NextRequest) {
     reservationDepositCents: isPayableStatus(booking.status) ? BOOKING_DEPOSIT_CENTS : 0,
   })
 
+  const permissions = {
+    // A cancelled booking is not editable however far off its date is, and
+    // the PATCH below refuses it — the page must not show an editor the
+    // server will reject (rule 10: the two have to say the same thing).
+    canEditFull: editable && (unlocked || fullMod.allowed),
+    canEditGuestCount: editable && (unlocked || guestMod.allowed),
+    fullReason: !editable ? CANCELLED_REASON : unlocked ? undefined : fullMod.reason,
+    guestCountReason: !editable ? CANCELLED_REASON : unlocked ? undefined : guestMod.reason,
+  }
+
+  // Every party detail the page lists, per product. Its "change my plan" link
+  // is offered under exactly the permission above, so the page cannot point a
+  // customer at an editor this route would then refuse.
+  const details = buildPortalPartyDetails({
+    row: booking,
+    lineItems: items as PortalLineItem[],
+    canEditFull: permissions.canEditFull,
+  })
+
+  // The allow-listed fields only. The raw tags and the planner keys were read
+  // to DERIVE `details`, which is the customer-facing form of both.
+  const publicRow: Record<string, unknown> = {}
+  for (const k of PORTAL_RESPONSE_FIELDS) if (k in booking) publicRow[k] = booking[k]
+
   return NextResponse.json({
     booking: {
-      ...booking,
+      ...publicRow,
       line_items: lineItemsRes.data || [],
       payments: paymentsRes.data || [],
       modifications: modificationsRes.data || [],
@@ -157,15 +205,8 @@ export async function GET(req: NextRequest) {
       balanceDueCents: money.balanceDueCents,
       unpriced: isUnpricedPlan(totalCents),
     },
-    permissions: {
-      // A cancelled booking is not editable however far off its date is, and
-      // the PATCH below refuses it — the page must not show an editor the
-      // server will reject (rule 10: the two have to say the same thing).
-      canEditFull: editable && (unlocked || fullMod.allowed),
-      canEditGuestCount: editable && (unlocked || guestMod.allowed),
-      fullReason: !editable ? CANCELLED_REASON : unlocked ? undefined : fullMod.reason,
-      guestCountReason: !editable ? CANCELLED_REASON : unlocked ? undefined : guestMod.reason,
-    },
+    details,
+    permissions,
   })
 }
 

@@ -53,6 +53,7 @@ export default function Footer() {
             {[
               { href: '/kids-party-menu',    label: 'Design Your Party' },
               { href: '/party-packages',     label: 'Kids Theme Parties' },
+              { href: '/party-themes',       label: 'Any Theme — Our Past Themes' },
               { href: '/mobile-craft-party', label: 'Mobile Craft Parties' },
               { href: '/shower-venue',       label: 'Baby & Bridal Showers' },
               { href: '/party-room-rental',  label: 'Room Rental' },
@@ -79,9 +80,11 @@ export default function Footer() {
             {[
               { href: '/book',              label: 'Reserve Your Date' },
               { href: '/gallery',           label: 'Party Gallery' },
+              { href: '/invitations',       label: 'Invitation Designs' },
               { href: '/reviews',           label: 'Reviews' },
               { href: '/faq',               label: 'FAQ' },
               { href: '/contact-us',        label: 'Contact Us' },
+              { href: '/join-the-team',     label: 'Join the Team' },
 
               { href: '/privacy-policy',    label: 'Privacy Policy' },
               { href: '/terms-of-service',  label: 'Terms of Service' },

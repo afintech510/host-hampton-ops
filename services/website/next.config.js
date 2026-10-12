@@ -35,6 +35,11 @@ const nextConfig = {
       { source: '/cm-cheer/order', destination: '/fundraiser', permanent: false },
       { source: '/cm-cheer/orders', destination: '/fundraiser', permanent: false },
 
+      // The careers page lives at /join-the-team (the ads print that URL);
+      // /careers is the address people guess. Declared here, not as a stub
+      // page — a page that only calls redirect() sends no Location header.
+      { source: '/careers', destination: '/join-the-team', permanent: true },
+
       // `/vendor-registration` is the SPRING Market vendor form. It stayed live
       // and indexable long after that market passed, still selling a $46.35
       // booth for an event in March, because the market's name was hard-coded

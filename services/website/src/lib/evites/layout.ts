@@ -65,10 +65,13 @@ function fitRow(row: RowSlot, facts: InviteFacts): InviteSizes {
     return w
   }
 
+  // A row whose first text is already small ("YOU'RE INVITED TO MIA'S" at 33 px) may still need to
+  // shrink: its floor is HARD_FLOOR or half its own size, whichever is lower, never "it cannot move".
+  const floor = Math.min(HARD_FLOOR, Math.floor(refSize / 2))
   let ref = refSize
   if (refSize > 0) {
     ref = refSize
-    while (ref > HARD_FLOOR && totalAt(ref) > row.maxWidth) ref -= 1
+    while (ref > floor && totalAt(ref) > row.maxWidth) ref -= 1
   }
   const k = refSize > 0 ? ref / refSize : 1
   for (const t of texts) out[t.slot.id] = Math.max(1, Math.floor(t.slot.size * k))
@@ -121,10 +124,14 @@ export interface OgSizes {
 
 export const OG_KICKER = "YOU'RE INVITED"
 
-export function ogTexts(facts: InviteFacts): OgTexts {
+export function ogTexts(facts: InviteFacts, template?: TemplateLayout): OgTexts {
   // facts.title is "Mia's Glow Party" / "Glow Birthday Party" / "Birthday Party": the same words as the
   // spec's two OG formulas, and right for a generic theme too (no "BIRTHDAY BIRTHDAY PARTY").
-  const title = screenForImage(facts.title.toLocaleUpperCase('en-US'), 'bungee')
+  // Capitals in Bungee for Glow; as typed in a script face (Sleep Under's Lobster), screened for THAT font.
+  const spec = template?.ogCard
+  const titleFont = spec?.titleFont ?? 'bungee'
+  const titleText = spec?.titleUppercase === false ? facts.title : facts.title.toLocaleUpperCase('en-US')
+  const title = screenForImage(titleText, titleFont)
   const host = facts.hostContactLine ? screenForImage(facts.hostContactLine.replace(/^Any questions\?/, 'Questions?'), 'poppins400') : null
   return {
     kicker: OG_KICKER,
