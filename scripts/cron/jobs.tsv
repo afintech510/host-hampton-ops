@@ -21,3 +21,4 @@ stripe-reconcile|0 13 * * *|/api/cron/stripe-reconcile|1560|box
 booking-locks|0 4 * * *|/api/cron/booking-locks|1560|box
 agent-dispatch|*/2 * * * *|/api/cron/agent-dispatch|10|box
 gmail-sync|*/3 * * * *|/api/cron/gmail-sync|10|box
+archive-review-texts|11-59/15 * * * *|/api/cron/archive-review-texts|45|box

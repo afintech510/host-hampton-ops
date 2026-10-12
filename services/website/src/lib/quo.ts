@@ -186,6 +186,96 @@ export async function findQuoContactByExternalId(externalId: string): Promise<st
   }
 }
 
+// ── Conversation status (the dated API) ────────────────────────────────────
+//
+// Marking a conversation Done lives only in Quo's DATED API: no `/v1` prefix,
+// and a `Quo-Api-Version` header instead. Measured 2026-10-08 against the live
+// workspace: `POST /conversations/{CN…}/mark-as-done` answers 200 and the thread
+// leaves the inbox. Same raw-key Authorization as everything above.
+
+const QUO_DATED_BASE = 'https://api.quo.com'
+const QUO_API_VERSION = '2026-03-30'
+
+async function quoDated(method: 'GET' | 'POST', path: string): Promise<{ status: number; json: any }> {
+  const res = await fetch(`${QUO_DATED_BASE}${path}`, {
+    method,
+    headers: { Authorization: quoAuthHeader(), 'Quo-Api-Version': QUO_API_VERSION },
+  })
+  let json: any = null
+  try { json = await res.json() } catch { /* empty or non-JSON body */ }
+  return { status: res.status, json }
+}
+
+export interface QuoMessageRef {
+  conversationId: string
+  phoneNumberId: string
+}
+
+/** The conversation a sent message landed in, or null if it could not be read. */
+export async function getQuoMessageRef(messageId: string): Promise<QuoMessageRef | null> {
+  try {
+    const { status, json } = await quoDated('GET', `/messages/${encodeURIComponent(messageId)}`)
+    const d = json?.data
+    if (status !== 200 || !d?.conversationId || !d?.phoneNumberId) {
+      console.error('quo:getMessage error:', status)
+      return null
+    }
+    return { conversationId: d.conversationId, phoneNumberId: d.phoneNumberId }
+  } catch (err) {
+    console.error('quo:getMessage exception:', err)
+    return null
+  }
+}
+
+export interface QuoConversation {
+  id: string
+  lastActivityId: string | null
+}
+
+/**
+ * Every conversation on one Quo number updated at or after `sinceIso`, keyed by
+ * id. Null when ANY page fails — a partial map would read "not listed" for a
+ * thread that simply sat on the page that failed.
+ */
+export async function listQuoConversationsSince(
+  phoneNumberId: string,
+  sinceIso: string,
+): Promise<Map<string, QuoConversation> | null> {
+  const out = new Map<string, QuoConversation>()
+  let after: string | null = null
+  try {
+    for (let page = 0; page < 20; page++) {
+      const qs = new URLSearchParams({ phoneNumberId, 'updatedAt[gte]': sinceIso, limit: '50' })
+      if (after) qs.set('after', after)
+      const { status, json } = await quoDated('GET', `/conversations?${qs}`)
+      if (status !== 200 || !Array.isArray(json?.data)) {
+        console.error('quo:listConversations error:', status)
+        return null
+      }
+      for (const c of json.data) out.set(c.id, { id: c.id, lastActivityId: c.lastActivityId ?? null })
+      after = json.nextCursor ?? null
+      if (!after) return out
+    }
+    console.error('quo:listConversations stopped at the 20-page ceiling')
+    return null
+  } catch (err) {
+    console.error('quo:listConversations exception:', err)
+    return null
+  }
+}
+
+/** Move a conversation out of the inbox into Done. Sends nothing to anyone. */
+export async function markQuoConversationDone(conversationId: string): Promise<boolean> {
+  try {
+    const { status } = await quoDated('POST', `/conversations/${encodeURIComponent(conversationId)}/mark-as-done`)
+    if (status !== 200) console.error('quo:markDone error:', status)
+    return status === 200
+  } catch (err) {
+    console.error('quo:markDone exception:', err)
+    return false
+  }
+}
+
 /**
  * Send SMS messages to multiple contacts in sequence via Quo.
  *
