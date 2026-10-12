@@ -24,7 +24,7 @@ alert() { # $1 = message ; returns 0 only if a text was accepted
 
 grep -v '^#' "$DIR/jobs.tsv" | grep -v '^[[:space:]]*$' | while IFS='|' read -r name sched path maxage mode; do
   [ "$mode" = "box" ] || continue
-  last=$(awk -v p="$path" '$2==p {l=$0} END {print l}' "$LOG" 2>/dev/null)
+  last=$(awk -v p="$path" '$2==p && $3 ~ /^[0-9][0-9][0-9]$/ {l=$0} END {print l}' "$LOG" 2>/dev/null)
   problem=""
   [ -f "$STATE/$name.seen" ] || echo "$NOW" > "$STATE/$name.seen"
   if [ -z "$last" ]; then
