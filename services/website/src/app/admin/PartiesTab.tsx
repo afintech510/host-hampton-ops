@@ -150,16 +150,6 @@ function StatusBadges({ stage, payment, size = 'xs' }: { stage: BookingStage; pa
   )
 }
 
-const CHECKIN_STATUS: Record<string, { label: string; color: string }> = {
-  pending: { label: 'Not started', color: 'bg-gray-100 text-gray-700' },
-  started: { label: 'Details in', color: 'bg-amber-100 text-amber-800' },
-  complete: { label: 'Complete', color: 'bg-green-100 text-green-800' },
-}
-
-function checkinBadge(status: string | null | undefined) {
-  return CHECKIN_STATUS[status || 'pending'] ?? CHECKIN_STATUS.pending
-}
-
 /**
  * The stages and labels come from lib/bookingStatus.ts, which the API route
  * reads too — a second copy here is how the UI and the API end up disagreeing
@@ -196,17 +186,9 @@ interface PipelineCounts {
 
 export default function PartiesTab({
   headers,
-  onOpenInbox,
 }: {
   headers: HeadersInit
   onLogout: () => void
-  /**
-   * Jump to the Inbox tab, focused on a review code. "HH-…-0208 is already open
-   * for this plan, handle that one first" used to be a dead end — it named the
-   * draft and gave you no way to reach it. Optional so the tab still renders if
-   * a caller does not pass it.
-   */
-  onOpenInbox?: (reviewCode: string) => void
 }) {
   const [bookings, setBookings] = useState<PartyBookingSummary[]>([])
   const [total, setTotal] = useState(0)
@@ -225,7 +207,6 @@ export default function PartiesTab({
   const [selected, setSelected] = useState<PartyDetail | null>(null)
   const [actionLoading, setActionLoading] = useState('')
   const [copyToast, setCopyToast] = useState('')
-  const [changeMessage, setChangeMessage] = useState('')
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState('cash')
   const [payNotes, setPayNotes] = useState('')
@@ -236,8 +217,6 @@ export default function PartiesTab({
   const [discountName, setDiscountName] = useState('')
   const [discountAmount, setDiscountAmount] = useState('')
   const [showDiscount, setShowDiscount] = useState(false)
-  const [agentNote, setAgentNote] = useState('')
-  const [agentResult, setAgentResult] = useState<{ ok: boolean; message: string; reviewCode?: string | null } | null>(null)
 
   // New Party Plan form state
   const [showNewForm, setShowNewForm] = useState(false)
@@ -323,9 +302,6 @@ export default function PartiesTab({
   async function fetchDetail(id: string) {
     const res = await fetch(`/api/admin/parties/${id}`, { headers })
     const data = await res.json()
-    // Scoped to one plan — carrying "HH-2026-0313 drafted" onto the next plan
-    // would read as if that one had been drafted too.
-    if (id !== selected?.id) { setAgentNote(''); setAgentResult(null) }
     setSelected(data)
   }
 
@@ -364,33 +340,6 @@ export default function PartiesTab({
     await fetchBookings()
     setActionLoading('')
     return data
-  }
-
-  async function draftWithAgent() {
-    if (!selected) return
-    setActionLoading('draft_with_agent')
-    setAgentResult(null)
-    const res = await fetch(`/api/admin/parties/${selected.id}`, {
-      method: 'POST',
-      headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'draft_with_agent', note: agentNote || undefined }),
-    })
-    const data = await res.json().catch(() => ({}))
-    setActionLoading('')
-    if (res.ok) {
-      setAgentNote('')
-      setAgentResult({
-        ok: true,
-        message: `${data.reviewCode} drafted — texted to ${data.reviewersTexted} reviewer${data.reviewersTexted === 1 ? '' : 's'}. Approve it in Inbox or by SMS.`,
-      })
-    } else {
-      setAgentResult({
-        ok: false,
-        message: data.error || 'Could not draft a reply',
-        reviewCode: data.reviewCode ?? null,
-      })
-    }
-    await fetchDetail(selected.id)
   }
 
   async function openPortal() {
@@ -473,26 +422,6 @@ export default function PartiesTab({
     await fetchDetail(selected.id)
     setActionLoading('')
     setCopyToast(res.ok ? `Link texted to ${data.to}` : (data.error || 'Failed to send text'))
-    setTimeout(() => setCopyToast(''), 3000)
-  }
-
-  async function sendCheckinLink() {
-    if (!selected) return
-    if (!selected.contact_phone) {
-      setCopyToast('No phone number on file')
-      setTimeout(() => setCopyToast(''), 2500)
-      return
-    }
-    setActionLoading('send_checkin_link')
-    const res = await fetch(`/api/admin/parties/${selected.id}`, {
-      method: 'POST',
-      headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'send_checkin_link' }),
-    })
-    const data = await res.json()
-    await fetchDetail(selected.id)
-    setActionLoading('')
-    setCopyToast(res.ok ? `Check-in link texted to ${data.to}` : (data.error || 'Failed to send check-in link'))
     setTimeout(() => setCopyToast(''), 3000)
   }
 
@@ -1142,57 +1071,6 @@ export default function PartiesTab({
           <div className="bg-white rounded-xl border p-5">
             <h3 className="text-sm font-medium text-[#1a2744] mb-3">Actions</h3>
             <div className="space-y-2">
-              {/* ── Draft reply with agent ─────────────────────────────
-                  The path for a lead the agent never heard about: a phone call,
-                  or a plan typed into the New Party form. It enqueues an inbound
-                  event and drafts for it, so the reply still goes to the
-                  reviewers for approval — this button cannot reach a customer.
-                  Disabled while in flight, which is the client-side half of the
-                  double-click guard; the server has three more. */}
-              <div className="p-3 bg-[#1a2744]/5 rounded-lg space-y-2">
-                <textarea
-                  value={agentNote}
-                  onChange={e => setAgentNote(e.target.value)}
-                  placeholder="What did they ask for? (optional — e.g. notes from a phone call)"
-                  rows={2}
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-                <button
-                  onClick={draftWithAgent}
-                  disabled={!!actionLoading}
-                  title={
-                    selected.contact_email || selected.contact_phone
-                      ? 'Drafts a reply and texts it to the reviewers for approval'
-                      : 'Add an email or phone to this plan first'
-                  }
-                  className="w-full bg-[#1a2744] text-white py-2 rounded-lg text-sm font-medium hover:bg-[#2a3754] disabled:opacity-50"
-                >
-                  {actionLoading === 'draft_with_agent' ? 'Drafting…' : '✍️ Draft reply with agent'}
-                </button>
-                {agentResult && (
-                  <p className={`text-xs ${agentResult.ok ? 'text-green-700' : 'text-amber-700'}`}>
-                    {agentResult.message}
-                    {/* The way out of the dead end: the refusal names a draft,
-                        so make the name the way to reach it. */}
-                    {agentResult.reviewCode && onOpenInbox && (
-                      <>
-                        {' '}
-                        <button
-                          type="button"
-                          onClick={() => onOpenInbox(agentResult.reviewCode!)}
-                          className="underline font-semibold text-[#1a2744] hover:text-hampton-blue"
-                        >
-                          Open {agentResult.reviewCode} in Inbox →
-                        </button>
-                      </>
-                    )}
-                  </p>
-                )}
-                <p className="text-[11px] text-[#1a2744]/50">
-                  Goes to the reviewers for approval. Nothing reaches the customer from here.
-                </p>
-              </div>
-
               {(selected.status === 'pending_review' || selected.status === 'deposit_paid') && (
                 <button
                   onClick={() => doAction('approve')}
@@ -1202,23 +1080,6 @@ export default function PartiesTab({
                   {actionLoading === 'approve' ? 'Approving...' : 'Approve Booking'}
                 </button>
               )}
-
-              <div>
-                <textarea
-                  value={changeMessage}
-                  onChange={e => setChangeMessage(e.target.value)}
-                  placeholder="Message to customer..."
-                  rows={2}
-                  className="w-full border rounded-lg px-3 py-2 text-sm mb-1"
-                />
-                <button
-                  onClick={() => { doAction('request_changes', { message: changeMessage }); setChangeMessage('') }}
-                  disabled={!changeMessage || !!actionLoading}
-                  className="w-full bg-amber-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50"
-                >
-                  Send Message to Customer
-                </button>
-              </div>
 
               <button
                 onClick={sendPortalLink}
@@ -1274,49 +1135,20 @@ export default function PartiesTab({
                 </button>
               </div>
 
-              {/* ── Pre-arrival check-in ─────────────────────── */}
-              <div className="p-3 bg-gray-50 rounded-lg space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-[#1a2744]">Check-In</span>
-                  <span className={`text-xs px-2 py-1 rounded-full ${checkinBadge(selected.checkin_status).color}`}>
-                    {checkinBadge(selected.checkin_status).label}
-                  </span>
-                </div>
-
-                <ul className="text-xs text-[#1a2744]/70 space-y-0.5">
-                  <li>{selected.checkin_started_at ? '✓' : '○'} Details &amp; marketing opt-in</li>
-                  <li>{selected.checkin_agreement_signed_at ? '✓' : '○'} Agreement &amp; waiver signed</li>
-                </ul>
-
-                {selected.checkin_agreement_pdf_url ? (
-                  <a
-                    href={selected.checkin_agreement_pdf_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block text-xs text-blue-700 underline"
-                  >
-                    View signed agreement (PDF)
-                  </a>
-                ) : null}
-
-                <button
-                  onClick={sendCheckinLink}
-                  disabled={!!actionLoading || !selected.contact_phone}
-                  title={selected.contact_phone ? `Text check-in link to ${selected.contact_phone}` : 'No phone number on file'}
-                  className="w-full bg-[#1a2744] text-white py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              {/* The Check-In module lived here. Removed 2026-10-11: one booking
+                  ever completed it (HH-PTY-K7P2M, 2026-09-27) and the automatic
+                  check-in texts are off (CHECKIN_LINKS_ENABLED). The /checkin
+                  route, its webhook and the `send_checkin_link` action remain. */}
+              {selected.checkin_agreement_pdf_url ? (
+                <a
+                  href={selected.checkin_agreement_pdf_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-xs text-blue-700 underline px-1"
                 >
-                  {actionLoading === 'send_checkin_link'
-                    ? 'Texting...'
-                    : selected.checkin_status === 'complete'
-                      ? '📱 Resend Check-In Link'
-                      : '📱 Send Check-In Link'}
-                </button>
-
-                <p className="text-[11px] text-[#1a2744]/50">
-                  Also texts automatically 36 hours before and at 6am on the day. Both stop once
-                  check-in is complete.
-                </p>
-              </div>
+                  View signed check-in agreement (PDF)
+                </a>
+              ) : null}
 
               {/* Post-party: email + text the Fotoshare album with the review ask */}
               <div className="p-3 bg-gray-50 rounded-lg space-y-2">

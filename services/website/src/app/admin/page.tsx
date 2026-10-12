@@ -461,11 +461,6 @@ function AdminDashboard({
               key={`parties-${refreshKey}`}
               headers={headers}
               onLogout={onLogout}
-              onOpenInbox={code => {
-                setInboxFocus(code)
-                setActiveTab('inbox')
-                setSidebarOpen(false)
-              }}
             />
           )}
           {activeTab === 'photos' && (

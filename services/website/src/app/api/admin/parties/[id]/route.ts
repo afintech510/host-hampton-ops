@@ -47,11 +47,15 @@ import { isPartyType } from '@/lib/pipelineStages'
  *
  * `invoice` is the clean, printable quote at /plan/<ref>/summary — the view Adam
  * asked to be able to hand a customer without them having to walk the planner.
+ *
+ * `invitation` is the host's own invitation page, where the parent shares the
+ * invite and watches RSVPs. It reads the booking from the cookie this link sets.
  */
 function portalDestination(name: unknown, bookingRef: string): string | undefined {
   switch (name) {
     case 'planner': return '/party-planner'
     case 'invoice': return `/plan/${encodeURIComponent(bookingRef)}/summary`
+    case 'invitation': return '/my-booking/invitation'
     default: return undefined // the portal itself
   }
 }

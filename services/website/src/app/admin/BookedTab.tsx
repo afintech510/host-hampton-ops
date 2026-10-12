@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { formatMoney } from '@/lib/partyPricing'
 import { PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
 import {
@@ -10,7 +10,7 @@ import {
 import { foodSummary, type FoodSelections } from '@/lib/partyFood'
 import {
   Search, ArrowUpDown, ArrowUp, ArrowDown, X, ExternalLink, Pizza, Cake,
-  AlertTriangle, CheckCircle2, Clock, Users, CalendarDays, Phone, Mail,
+  AlertTriangle, CheckCircle2, Users, CalendarDays, Phone, Mail, Copy,
 } from 'lucide-react'
 
 /**
@@ -81,6 +81,11 @@ interface PartyDetail extends BookedParty {
   payments?: { id: string; payment_type: string; payment_method: string; amount_cents: number; paid_at: string; recorded_by: string; notes: string | null }[]
 }
 
+/** The customer links the panel can mint. `portal` sends no destination — the same link as the Parties tab. */
+type LinkKind = 'portal' | 'invoice' | 'invitation'
+const LINK_LABELS: Record<LinkKind, string> = { portal: 'Portal', invoice: 'Invoice', invitation: 'Invitation' }
+type InvitationPresence = 'loading' | 'exists' | 'none' | 'unknown'
+
 type SortKey = 'party_date' | 'contact_name' | 'total_cents' | 'paid_cents' | 'balance_cents' | 'status' | 'party_type'
 type TimeFilter = 'upcoming' | 'past' | 'all'
 type PaidFilter = 'all' | 'balance_due' | 'paid_in_full'
@@ -133,38 +138,74 @@ export default function BookedTab({ headers, onLogout }: { headers: HeadersInit;
 
   const [selected, setSelected] = useState<PartyDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [invoiceBusy, setInvoiceBusy] = useState(false)
+  const [linkBusy, setLinkBusy] = useState<string | null>(null)
+  const [linkToast, setLinkToast] = useState<{ ok: boolean; text: string } | null>(null)
+  const [invitation, setInvitation] = useState<InvitationPresence>('loading')
+  const selectedIdRef = useRef<string | null>(null)
 
   /**
-   * Open the clean printable invoice.
+   * Mint a customer link — the portal, the invoice or the invitation page.
    *
-   * NOT a plain link to `/plan/<ref>/summary`: that page is gated by
-   * `planAccess`, which takes an `hh_admin` session cookie or the customer's own
-   * `hh_portal` cookie for that exact ref, and deliberately NOT the shared admin
-   * password — a Bearer header a browser never sends on a navigation. Half of
-   * the ways into this panel would have got a 404 from an href. Minting a portal
-   * link works from both doors and hands back the same URL you would give the
-   * customer.
+   * NOT plain links to `/plan/<ref>/summary` or `/my-booking/invitation`: both
+   * are gated by the customer's own `hh_portal` cookie (the invoice also takes
+   * an `hh_admin` session), and deliberately NOT the shared admin password — a
+   * Bearer header a browser never sends on a navigation. Minting a portal link
+   * works from every door and is the same URL you would give the customer.
+   * Every click mints a fresh token, so a copied link is never a stale one.
    */
-  async function openInvoice(p: BookedParty) {
-    setInvoiceBusy(true)
+  async function mintLink(p: BookedParty, destination: LinkKind): Promise<string | null> {
+    const r = await fetch(`/api/admin/parties/${p.id}`, {
+      method: 'POST',
+      headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'generate_portal_url',
+        ...(destination === 'portal' ? {} : { destination }),
+      }),
+    })
+    if (r.status === 401) { onLogout(); return null }
+    const data = await r.json().catch(() => ({}))
+    if (!r.ok || !data?.portalUrl) throw new Error(data?.error || `Could not make the link (${r.status})`)
+    return data.portalUrl as string
+  }
+
+  function flash(ok: boolean, text: string) {
+    setLinkToast({ ok, text })
+    setTimeout(() => setLinkToast(cur => (cur?.text === text ? null : cur)), 3000)
+  }
+
+  async function openLink(p: BookedParty, kind: LinkKind) {
+    setLinkBusy(`open:${kind}`)
     // Opened before the await: a popup blocker only trusts a window opened
-    // inside the click's own task, and this one is two round-trips away.
+    // inside the click's own task, and this one is a round-trip away.
     const win = window.open('', '_blank')
     try {
-      const r = await fetch(`/api/admin/parties/${p.id}`, {
-        method: 'POST',
-        headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'generate_portal_url', destination: 'invoice' }),
-      })
-      if (r.status === 401) { win?.close(); onLogout(); return }
-      const data = await r.json().catch(() => ({}))
-      if (data?.portalUrl && win) win.location.href = data.portalUrl
+      const url = await mintLink(p, kind)
+      if (url && win) win.location.href = url
       else win?.close()
-    } catch {
+    } catch (e) {
       win?.close()
+      flash(false, e instanceof Error ? e.message : 'Could not make the link')
     } finally {
-      setInvoiceBusy(false)
+      setLinkBusy(null)
+    }
+  }
+
+  async function copyLink(p: BookedParty, kind: LinkKind) {
+    setLinkBusy(`copy:${kind}`)
+    try {
+      const url = await mintLink(p, kind)
+      if (!url) return
+      try {
+        await navigator.clipboard.writeText(url)
+        flash(true, `${LINK_LABELS[kind]} link copied — send this to the customer`)
+      } catch {
+        // Non-secure context / older browser: show it so it can still be copied.
+        window.prompt(`Copy this ${LINK_LABELS[kind].toLowerCase()} link:`, url)
+      }
+    } catch (e) {
+      flash(false, e instanceof Error ? e.message : 'Could not make the link')
+    } finally {
+      setLinkBusy(null)
     }
   }
 
@@ -190,9 +231,31 @@ export default function BookedTab({ headers, onLogout }: { headers: HeadersInit;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /**
+   * Does this party have an invitation? The invitation page says "isn't
+   * available" without one, so the buttons are disabled rather than handing a
+   * customer a link to an empty page. A failed read leaves them enabled.
+   */
+  async function loadInvitationPresence(p: BookedParty) {
+    setInvitation('loading')
+    let next: InvitationPresence = 'unknown'
+    try {
+      const r = await fetch(`/api/admin/parties/${p.id}/invitation`, { headers })
+      const body = await r.json().catch(() => null)
+      if (r.ok && body) next = body.evite ? 'exists' : 'none'
+    } catch {
+      /* stays 'unknown' */
+    }
+    // The panel may have moved on to another party while this was in flight.
+    if (selectedIdRef.current === p.id) setInvitation(next)
+  }
+
   async function openDetail(p: BookedParty) {
     // Show what we already have immediately, then fill in line items + payments.
+    selectedIdRef.current = p.id
     setSelected(p)
+    setLinkToast(null)
+    void loadInvitationPresence(p)
     setDetailLoading(true)
     try {
       const r = await fetch(`/api/admin/parties/${p.id}`, { headers })
@@ -477,9 +540,12 @@ export default function BookedTab({ headers, onLogout }: { headers: HeadersInit;
         <DetailPanel
           party={selected}
           loading={detailLoading}
-          onClose={() => setSelected(null)}
-          onOpenInvoice={() => openInvoice(selected)}
-          invoiceBusy={invoiceBusy}
+          onClose={() => { selectedIdRef.current = null; setSelected(null) }}
+          onOpenLink={kind => openLink(selected, kind)}
+          onCopyLink={kind => copyLink(selected, kind)}
+          linkBusy={linkBusy}
+          linkToast={linkToast}
+          invitation={invitation}
         />
       )}
     </div>
@@ -527,15 +593,19 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
 }
 
 function DetailPanel({
-  party, loading, onClose, onOpenInvoice, invoiceBusy,
+  party, loading, onClose, onOpenLink, onCopyLink, linkBusy, linkToast, invitation,
 }: {
   party: PartyDetail
   loading: boolean
   onClose: () => void
-  onOpenInvoice: () => void
-  invoiceBusy: boolean
+  onOpenLink: (kind: LinkKind) => void
+  onCopyLink: (kind: LinkKind) => void
+  linkBusy: string | null
+  linkToast: { ok: boolean; text: string } | null
+  invitation: InvitationPresence
 }) {
   const guests = party.guest_count_approx || 1
+  const noInvitation = invitation === 'none'
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
@@ -545,22 +615,54 @@ function DetailPanel({
             <h3 className="font-serif text-lg text-hampton-navy">{party.contact_name || 'Booking'}</h3>
             <p className="text-xs text-gray-400 font-mono">{party.booking_ref}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onOpenInvoice}
-              disabled={invoiceBusy}
-              className="text-xs inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-gray-300 disabled:opacity-50"
-              title="Open the customer-facing invoice for this party"
-            >
-              {invoiceBusy ? 'Opening…' : <>Invoice <ExternalLink className="w-3 h-3" /></>}
-            </button>
-            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <div className="p-5 space-y-5">
+          {/* Customer links. Each click mints a fresh signed link; "Open" signs
+              THIS browser into the customer's portal for that party. */}
+          <section>
+            <SectionTitle>Customer links</SectionTitle>
+            <div className="space-y-1.5">
+              <LinkRow
+                label="Portal"
+                hint="Their party planner"
+                kind="portal"
+                busy={linkBusy}
+                onOpen={onOpenLink}
+                onCopy={onCopyLink}
+              />
+              <LinkRow
+                label="Invoice"
+                hint="Clean, printable quote"
+                kind="invoice"
+                busy={linkBusy}
+                onOpen={onOpenLink}
+                onCopy={onCopyLink}
+              />
+              <LinkRow
+                label="Invitation"
+                hint={
+                  invitation === 'loading' ? 'Checking…'
+                    : noInvitation ? 'No invitation yet — create one in the Parties tab'
+                      : 'Where they manage the invite and RSVPs'
+                }
+                kind="invitation"
+                busy={linkBusy}
+                disabled={noInvitation || invitation === 'loading'}
+                onOpen={onOpenLink}
+                onCopy={onCopyLink}
+              />
+            </div>
+            {linkToast && (
+              <p className={`text-xs mt-2 ${linkToast.ok ? 'text-emerald-700' : 'text-red-700'}`} role="status">
+                {linkToast.text}
+              </p>
+            )}
+          </section>
+
           {/* Money */}
           <div className="grid grid-cols-3 gap-2">
             <MiniStat label="Total" value={party.total_cents ? formatMoney(party.total_cents) : '—'} />
@@ -612,7 +714,6 @@ function DetailPanel({
               <Row label="Theme">{party.package_type || '—'}</Row>
               <Row label="Child">{party.child_name ? `${party.child_name}${party.child_age ? `, age ${party.child_age}` : ''}` : '—'}</Row>
               <Row label="Type">{PARTY_TYPE_LABELS[party.party_type || 'unknown'] ?? party.party_type}</Row>
-              <Row Icon={Clock} label="Check-in">{party.checkin_status || 'pending'}</Row>
             </dl>
           </section>
 
@@ -683,6 +784,37 @@ function DetailPanel({
             </section>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function LinkRow({
+  label, hint, kind, busy, disabled, onOpen, onCopy,
+}: {
+  label: string
+  hint: string
+  kind: LinkKind
+  busy: string | null
+  disabled?: boolean
+  onOpen: (kind: LinkKind) => void
+  onCopy: (kind: LinkKind) => void
+}) {
+  const btn = 'text-xs inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-gray-300 hover:text-hampton-navy disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:text-gray-600'
+  const off = disabled || busy !== null
+  return (
+    <div className="flex items-center justify-between gap-3 py-1">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-hampton-navy">{label}</p>
+        <p className="text-xs text-gray-400 truncate">{hint}</p>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button onClick={() => onOpen(kind)} disabled={off} className={btn} title={`Open the ${label.toLowerCase()} in a new tab`}>
+          {busy === `open:${kind}` ? 'Opening…' : <>Open <ExternalLink className="w-3 h-3" /></>}
+        </button>
+        <button onClick={() => onCopy(kind)} disabled={off} className={btn} title={`Copy a ${label.toLowerCase()} link to send the customer`}>
+          {busy === `copy:${kind}` ? 'Copying…' : <>Copy <Copy className="w-3 h-3" /></>}
+        </button>
       </div>
     </div>
   )
