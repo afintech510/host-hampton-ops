@@ -510,7 +510,7 @@ function InvoiceBody({
             for a CUSTOMER, only once the booking is real (a deposit has landed):
             the document is the contract for a rental and its figures are
             prefilled from this invoice, so a quote that may still change should
-            not be signed. An admin sees it from the start, to copy the link.
+            not be signed. An admin sees it from the start, to open the link.
             The section is `no-print` while it is a button: a printed invoice
             with a heading and no way to act on it is a dead end.
         */}

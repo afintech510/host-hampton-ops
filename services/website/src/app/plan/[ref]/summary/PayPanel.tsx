@@ -605,9 +605,8 @@ export function SecurityHoldPanel({
  * obtain a link the rules refuse.
  *
  *   * the customer is taken straight to the link;
- *   * an admin gets it COPIED instead — an admin viewing the page wants a URL to
- *     send on (that is the only way an admin can get this link today), not to be
- *     taken through the customer's check-in themselves.
+ *   * an admin gets it opened in a NEW TAB instead, so the invoice stays where it
+ *     is. The URL is also printed under the button, to copy from if it is needed.
  */
 export function WaiverPanel({
   ref_,
@@ -624,14 +623,19 @@ export function WaiverPanel({
     setError(null)
     setDone(null)
     setBusy('waiver')
+    // The tab is opened inside the click, before the await: a window opened
+    // after the round trip is no longer a user gesture and popup blockers eat it.
+    const tab = isAdmin ? window.open('', '_blank') : null
     const { ok, data } = await postJson(`/api/plan/${encodeURIComponent(ref_)}/waiver-link`, {})
     if (!ok || typeof data.url !== 'string') {
+      tab?.close()
       setBusy(null)
       setError(typeof data.error === 'string' ? data.error : 'Could not open the waiver — please try again.')
       return
     }
     if (isAdmin) {
-      await navigator.clipboard?.writeText(data.url).catch(() => {})
+      if (tab) tab.location.href = data.url
+      else window.open(data.url, '_blank')
       setBusy(null)
       setDone(data.url)
       return
@@ -651,16 +655,16 @@ export function WaiverPanel({
   return (
     <div className="no-print" style={{ marginTop: 10 }}>
       <button type="button" style={{ ...btn, opacity: busy ? 0.6 : 1 }} disabled={busy !== null} onClick={open}>
-        {busy ? 'Opening…' : isAdmin ? 'Copy the rental waiver link' : 'Sign your room rental waiver'}
+        {busy ? 'Opening…' : isAdmin ? 'Open the rental waiver in a new tab' : 'Sign your room rental waiver'}
       </button>
       <div className="section-sub" style={{ marginTop: 6, marginBottom: 0, fontSize: 12 }}>
         {isAdmin
-          ? 'Admin · copies the customer’s check-in link (details, then the agreement). Nothing is sent. Valid until the day of the rental.'
+          ? 'Admin · opens the customer’s check-in link (details, then the agreement) in a new tab. Nothing is sent. Valid until the day of the rental.'
           : 'Takes a couple of minutes: confirm your details, then sign the rental agreement and liability waiver. Please complete it before your rental.'}
       </div>
       {done && (
         <p style={{ color: '#1a6b3a', fontSize: 13, margin: '8px 0 0', wordBreak: 'break-all' }}>
-          Copied: {done}
+          Opened: {done}
         </p>
       )}
       {error && (
