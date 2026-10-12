@@ -8,6 +8,7 @@ import { InviteCanvas } from '@/components/evites/InviteCanvas'
 import HostInvitation from '@/components/evites/HostInvitation'
 import InviteImage from '@/components/evites/InviteImage'
 import ScaledCanvas from '@/components/evites/ScaledCanvas'
+import ClientNav from '@/components/ClientNav'
 import { fontFaceCss } from '@/lib/evites/fontFaces'
 import { computeSizes } from '@/lib/evites/layout'
 import { composeHostView, readHostRows } from '@/lib/evites/hostView'
@@ -89,6 +90,7 @@ export default async function HostInvitationPage() {
     <div className="min-h-screen">
       {/* eslint-disable-next-line react/no-danger */}
       <style dangerouslySetInnerHTML={{ __html: FRAME_CSS }} />
+      <ClientNav current="invitation" ref_={bookingRef} className="px-4 pt-6" />
       <HostInvitation
         initial={payload}
         preview={

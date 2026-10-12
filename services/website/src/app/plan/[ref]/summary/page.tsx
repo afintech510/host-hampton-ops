@@ -891,6 +891,14 @@ export default async function PlanSummaryPage({
   return (
     <div className="hh-invoice">
       <div className="action-bar no-print">
+        {/* The way back to everything else the customer manages. Not offered to an
+            admin: their `hh_admin` cookie is not a portal session, so it would
+            land them on the sign-in page. */}
+        {!isAdminView && (
+          <Link className="action" href="/my-booking">
+            My Booking
+          </Link>
+        )}
         {/* In-studio theme only — see canEditPlanInBuilder for why. */}
         {canEditPlanInBuilder(invoice.partyType) && (
           <Link className="action" href={`/party-planner?ref=${encodeURIComponent(ref)}`}>

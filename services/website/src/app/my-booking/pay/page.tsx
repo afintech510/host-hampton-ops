@@ -6,9 +6,11 @@ import { formatMoney, calculateCardFee } from '@/lib/partyPricing'
 import type { PaymentMethod } from '@/types/booking-flow'
 import { PAYMENT_METHODS } from '@/types/booking-flow'
 import PortalCardPayment from '../PortalCardPayment'
+import ClientNav from '@/components/ClientNav'
 
 export default function PayPage() {
   const router = useRouter()
+  const [bookingRef, setBookingRef] = useState<string | null>(null)
   const [balanceCents, setBalanceCents] = useState(0)
   const [amountCents, setAmountCents] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card')
@@ -27,6 +29,7 @@ export default function PayPage() {
       })
       .then(d => {
         if (!d) return
+        setBookingRef(d.booking.booking_ref || null)
         setBalanceCents(d.booking.balance_due_cents || 0)
         setAmountCents(d.booking.balance_due_cents || 0)
         setLoading(false)
@@ -76,7 +79,8 @@ export default function PayPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F6F1EB] flex items-center justify-center px-4 py-16">
+    <div className="min-h-screen bg-[#F6F1EB] flex flex-col items-center justify-center gap-5 px-4 py-16">
+      <ClientNav current="pay" ref_={bookingRef} />
       <div className="bg-white rounded-2xl shadow-lg max-w-md w-full p-8">
         <h1 className="font-display text-2xl text-[#1a2744] text-center mb-2">Make a Payment</h1>
         <p className="text-gray-500 text-sm text-center mb-6">
