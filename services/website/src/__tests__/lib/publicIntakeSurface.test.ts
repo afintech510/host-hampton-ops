@@ -228,6 +228,12 @@ const DELIBERATELY_PUBLIC = new Set([
   'GET appointments/[slug]/book',
   'POST appointments/[slug]/book',
   'GET themes',
+  // The /invitations look-book redraws every EVITE design as a visitor types a
+  // name, age, date and time. Public because the visitor is anyone browsing the
+  // site. Reads no table, writes nothing, sends nothing: it returns the text and
+  // fitted sizes for made-up studio invitations (lib/evites/showcase.ts).
+  // Rate-limited first. A POST body so a child's name stays out of URLs and logs.
+  'POST invitations/showcase',
   'POST trucker-inquiry',
   'POST unsubscribe',
   'POST vendor-registration',

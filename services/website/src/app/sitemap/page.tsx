@@ -72,6 +72,7 @@ const sections: { title: string; links: LinkItem[] }[] = [
     title: 'Information',
     links: [
       { href: '/gallery', label: 'Party Gallery', description: 'Photos from real parties in the studio and at home', icon: <Images className={iconClass} /> },
+      { href: '/invitations', label: 'Invitation Designs', description: 'Every Host Hampton EVITE design, with your child’s name and party date', icon: <Images className={iconClass} /> },
       { href: '/faq', label: 'FAQ', description: 'Answers on booking, deposits, travel, ages and what’s included', icon: <HelpCircle className={iconClass} /> },
       { href: '/contact-us', label: 'Contact Us', description: 'Get in touch — we respond within 24 hours', icon: <Phone className={iconClass} /> },
       { href: '/join-the-team', label: 'Join the Team', description: 'Now hiring Party Leads and Party Helpers — weekends, 18+', icon: <Users className={iconClass} /> },

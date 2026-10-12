@@ -96,6 +96,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   // compares against the page route as it is on disk, `/i/[slug]`.)
   '/i/[slug]',
   '/join-the-team',
+  '/invitations',
   '/kids-party-menu',
   '/kids-party-menu/success',
   '/kids-party-menu/summary',

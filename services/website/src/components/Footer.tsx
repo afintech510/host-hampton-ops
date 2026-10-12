@@ -80,6 +80,7 @@ export default function Footer() {
             {[
               { href: '/book',              label: 'Reserve Your Date' },
               { href: '/gallery',           label: 'Party Gallery' },
+              { href: '/invitations',       label: 'Invitation Designs' },
               { href: '/reviews',           label: 'Reviews' },
               { href: '/faq',               label: 'FAQ' },
               { href: '/contact-us',        label: 'Contact Us' },

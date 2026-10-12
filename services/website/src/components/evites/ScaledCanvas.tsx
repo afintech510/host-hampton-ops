@@ -43,16 +43,19 @@ export default function ScaledCanvas({ frameClassName, canvasClassName, initialS
   useIsoLayoutEffect(() => {
     const el = frame.current
     if (!el) return
-    const measure = () => {
-      const w = el.getBoundingClientRect().width
+    // The LAYOUT width, not `getBoundingClientRect()`: that one includes CSS transforms, so a frame
+    // inside a tilted or animating card (the /invitations look-book) measured short and the canvas
+    // was drawn too small for its box. `contentRect` is fractional; `offsetWidth` is the fallback.
+    const measure = (w: number = el.offsetWidth) => {
       if (w > 0) setScale(w / CANVAS_W)
     }
     measure()
     if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', measure)
-      return () => window.removeEventListener('resize', measure)
+      const onResize = () => measure()
+      window.addEventListener('resize', onResize)
+      return () => window.removeEventListener('resize', onResize)
     }
-    const ro = new ResizeObserver(measure)
+    const ro = new ResizeObserver((entries) => measure(entries[0]?.contentRect.width))
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
