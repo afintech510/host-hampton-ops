@@ -15,8 +15,8 @@ BLOCK=$(mktemp); CUR=$(mktemp); NEW=$(mktemp)
     [ "$mode" = "box" ] || continue
     echo "$sched sh $DIR/hh-cron.sh \"$path\" >> /var/log/hh-cron.log 2>&1 # $name"
   done
-  # The watchdog (hh-cron-watch.sh) is NOT installed: Adam turned the texts off 2026-10-12 after it
-  # sent ~89 false alerts. Re-adding it is a deliberate decision, not a side effect of install.sh.
+  echo "*/10 * * * * sh $DIR/hh-cron-watch.sh >> /var/log/hh-cron-watch.log 2>&1 # cron-watch (silent unless broken)"
+  echo "30 12 * * * sh $DIR/hh-cron-watch.sh --digest >> /var/log/hh-cron-watch.log 2>&1 # cron-watch daily digest"
   echo "$END"
 } > "$BLOCK"
 
