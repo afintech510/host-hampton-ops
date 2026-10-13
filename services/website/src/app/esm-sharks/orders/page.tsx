@@ -25,6 +25,8 @@ const ESM_SHARKS_THEME: FundraiserDashboardTheme = {
   personLabel: FUNDRAISER_TEAMS['esm-sharks'].personLabel,
   collectsTeacher: FUNDRAISER_TEAMS['esm-sharks'].collectsTeacher,
   organizerShort: 'PTO',
+  // The printed order form comes back to the PTO; this is where those get keyed.
+  paperEntry: true,
   headerBar: 'bg-esmInk',
   headerBorder: 'border-esmSilver',
   accentText: 'text-esmNavy',

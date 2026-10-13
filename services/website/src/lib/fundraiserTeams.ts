@@ -68,6 +68,15 @@ export interface FundraiserTeam {
    * false for a squad. When false the route stores NULL whatever was posted.
    */
   collectsTeacher: boolean
+  /**
+   * Who a cash payment is handed to, as the confirmation email says it
+   * (`cashBadge` for the owner's copy, `cashRecipient` mid-sentence). Per team
+   * because the Sharks' cash goes to the PTO, not a coach, and an email telling
+   * a parent to bring cash to a coach who does not exist is how an order stays
+   * unpaid.
+   */
+  cashBadge: string
+  cashRecipient: string
   /** Who receives a copy of every new-order notification. Absent = Host Hampton only. */
   organizerEmail?: string
 }
@@ -85,6 +94,8 @@ export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
     ordersPath: '/cm-cheer/orders',
     personLabel: 'Athlete',
     collectsTeacher: false,
+    cashBadge: 'CASH TO COACH',
+    cashRecipient: 'your coach',
   },
   'esm-sharks': {
     slug: 'esm-sharks',
@@ -102,6 +113,8 @@ export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
     ordersPath: '/esm-sharks/orders',
     personLabel: 'Child',
     collectsTeacher: true,
+    cashBadge: 'CASH TO PTO',
+    cashRecipient: 'the PTO',
     organizerEmail: 'Eastporttuttlepto@gmail.com',
   },
 }

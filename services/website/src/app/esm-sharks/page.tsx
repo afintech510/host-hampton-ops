@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import Script from 'next/script'
 import {
   isLoosePatchInput,
+  PATCH_EXTRA_PRICE_CENTS,
   patchOrderLine,
   patchPriceDollars,
   totalPatchQty,
@@ -331,7 +332,7 @@ export default function ESMSharksPage() {
      * Driven by `data-tier="patch"` — an explicit opt-in, NOT an id prefix. Every
      * product row is a patch choice now, so ids like `qty-hat-navy-circle` sit
      * in the same page; a prefix rule would be one rename away from charging a
-     * $25 hat at the $6.65 patch tier. See `lib/fundraiserPatches.ts`.
+     * $25 hat at the patch tier. See `lib/fundraiserPatches.ts`.
      */
     function looseSelections(): PatchSelection[] {
       const out: PatchSelection[] = []
@@ -828,7 +829,7 @@ export default function ESMSharksPage() {
                   <div className="flex-grow">
                     <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">Patches On Their Own</h3>
                     <p className="text-esmNavy font-black text-2xl mt-1 mb-2">$8.00 <span className="text-sm font-bold text-gray-500 tracking-normal normal-case">(any 3 for $20)</span></p>
-                    <p className="text-sm text-gray-600 mb-3 leading-relaxed">Iron-on patches to put wherever you like. Mix the two designs however you want — three is three.</p>
+                    <p className="text-sm text-gray-600 mb-3 leading-relaxed">Iron-on patches to put wherever you like. Mix the two designs however you want — three is three. Each patch after the third is ${PATCH_EXTRA_PRICE_CENTS / 100}.</p>
                   </div>
                   <div className="mt-auto pt-4 border-t border-gray-100">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">How many of each</p>
@@ -960,7 +961,7 @@ export default function ESMSharksPage() {
                 </label>
                 <label className="cursor-pointer group">
                   <input type="radio" name="paymentMethod" value="cash" className="peer sr-only" />
-                  <div className="py-4 px-2 border-2 border-gray-200 bg-white rounded-xl text-center peer-checked:border-esmNavy peer-checked:text-esmNavy peer-checked:bg-esmMist transition-all text-sm font-bold text-gray-600 uppercase group-hover:border-gray-300">Cash (To Coach)</div>
+                  <div className="py-4 px-2 border-2 border-gray-200 bg-white rounded-xl text-center peer-checked:border-esmNavy peer-checked:text-esmNavy peer-checked:bg-esmMist transition-all text-sm font-bold text-gray-600 uppercase group-hover:border-gray-300">Cash To PTO</div>
                 </label>
               </div>
               <div id="digitalPaymentInfo" className="hidden bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm mb-2 flex-col md:flex-row items-center gap-4 sm:gap-6">

@@ -66,6 +66,19 @@ const PRODUCTS = [
  */
 const VENMO_HANDLE = '@Eastport-tuttlepto-1'
 
+/**
+ * The home-delivery fee, READ from the server's own constant rather than retyped.
+ * This flyer said "$7" for weeks after the PTO dropped it to $5 (2026-09-16),
+ * because the figure was a literal here. Paper cannot be corrected.
+ */
+const DELIVERY_FEE = (() => {
+  const src = readFileSync(join(ROOT, 'services/website/src/lib/fundraiserDelivery.ts'), 'utf8')
+  const m = src.match(/export const HOME_DELIVERY_FEE_CENTS = (\d+)/)
+  if (!m) throw new Error('Could not read HOME_DELIVERY_FEE_CENTS — refusing to print a delivery price.')
+  const cents = Number(m[1])
+  return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`
+})()
+
 const b64 = async (file, width) => {
   const buf = await sharp(join(IMAGES, file)).resize({ width, withoutEnlargement: true }).webp({ quality: 78 }).toBuffer()
   return `data:image/webp;base64,${buf.toString('base64')}`
@@ -94,7 +107,7 @@ const productCards = PRODUCTS.map((p, i) => `
         </div>`).join('')
 
 const payLine = VENMO_HANDLE
-  ? `Pay by <b>Venmo (${esc(VENMO_HANDLE)})</b> or send cash in with your child.`
+  ? `Pay by <b>Venmo (${esc(VENMO_HANDLE)})</b> or send cash to the PTO with your child.`
   : `Pay by <b>Venmo</b> or send <b>cash</b> in with your child — the order page shows you how.`
 
 const html = `<!DOCTYPE html>
@@ -245,7 +258,7 @@ const html = `<!DOCTYPE html>
   <div class="deliv">
     <span><b>🎒 FREE</b> &mdash; we hand it to your child in class.</span>
     <span class="free">or</span>
-    <span><b>🚚 $7</b> to your door &mdash; <b>100% donated to the PTO.</b></span>
+    <span><b>🚚 ${DELIVERY_FEE}</b> to your door &mdash; <b>100% donated to the PTO.</b></span>
   </div>
 
   <div class="ft">
@@ -273,7 +286,7 @@ const html = `<!DOCTYPE html>
       <ol class="steps">
         <li>Scan with your camera.</li>
         <li>Pick items + your child&rsquo;s name.</li>
-        <li>Pay by Venmo or cash.</li>
+        <li>Pay by Venmo or cash to the PTO.</li>
       </ol>
       <div class="url">${esc(ORDER_URL.replace('https://www.', ''))}</div>
     </div>
@@ -282,7 +295,7 @@ const html = `<!DOCTYPE html>
   <div class="deliv">
     <span><b>🎒 FREE</b> in class</span>
     <span class="free">or</span>
-    <span><b>🚚 $7</b> to your door &mdash; <b>100% to the PTO</b></span>
+    <span><b>🚚 ${DELIVERY_FEE}</b> to your door &mdash; <b>100% to the PTO</b></span>
   </div>
 
   <div class="ft">Spirit wear produced by Host Hampton, Eastport NY.</div>

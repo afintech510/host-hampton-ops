@@ -22,13 +22,13 @@ describe('patchPriceCents', () => {
   })
 
   it('charges the tier rate beyond the third patch', () => {
-    expect(patchPriceCents(4)).toBe(2665)
-    expect(patchPriceCents(5)).toBe(3330)
-    expect(patchPriceCents(10)).toBe(2000 + 7 * 665)
+    expect(patchPriceCents(4)).toBe(2600)
+    expect(patchPriceCents(5)).toBe(3200)
+    expect(patchPriceCents(10)).toBe(2000 + 7 * 600)
   })
 
   it('never returns a fraction of a cent', () => {
-    // 6.65 * 3 in floating point is 19.949999999999996. Anything that leaks a
+    // Fractional-dollar prices (the old 6.65) float to 19.949999999999996. Anything that leaks a
     // float here gets compared for equality against the server's sum.
     for (let n = 0; n <= 40; n++) {
       expect(Number.isInteger(patchPriceCents(n))).toBe(true)
@@ -43,7 +43,7 @@ describe('patchPriceCents', () => {
 
   it('reports dollars for the page total', () => {
     expect(patchPriceDollars(3)).toBe(20)
-    expect(patchPriceDollars(5)).toBe(33.3)
+    expect(patchPriceDollars(5)).toBe(32)
   })
 })
 
@@ -148,7 +148,7 @@ describe('isLoosePatchInput', () => {
   it('does not tier a PRODUCT row whose id or name mentions a patch', () => {
     // The trap the old `id.startsWith('qty-patch')` rule set: every product is
     // a patch choice now, so patch-shaped ids and names are everywhere. None of
-    // them may pick up $6.65 patch pricing on a $25 hat.
+    // them may pick up tiered patch pricing on a $25 hat.
     const productRows = [
       { id: 'qty-patch-hat-navy', dataset: { name: 'Navy Trucker Hat — Circle Patch', price: '25' } },
       { id: 'qty-hat-navy-circle', dataset: { name: 'Navy Trucker Hat — Circle Patch', price: '25' } },

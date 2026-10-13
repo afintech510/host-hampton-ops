@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
     const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
     const paymentBadge = paymentMethod === 'venmo'
       ? '<span style="background:#008CFF;color:#fff;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;">VENMO</span>'
-      : '<span style="background:#22c55e;color:#fff;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;">CASH TO COACH</span>'
+      : `<span style="background:#22c55e;color:#fff;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;">${escapeHtml(team.cashBadge)}</span>`
 
     // The emails quote the STORED total, not the posted one. Asking a customer
     // for a number the order book does not hold is rule 10 with money on it.
@@ -289,9 +289,9 @@ export async function POST(req: NextRequest) {
     </div>` : `
     <div style="background:#f0fdf4;border-radius:8px;padding:14px;border:1px solid #bbf7d0;margin-bottom:16px;">
       <p style="margin:0;font-size:14px;font-weight:700;">💵 Payment Reminder</p>
-      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please bring <strong>$${storedTotal} cash</strong> to your coach. Reference order <strong>${escapeHtml(order.order_ref)}</strong>.</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555;">Please bring <strong>$${storedTotal} cash</strong> to ${escapeHtml(team.cashRecipient)}. Reference order <strong>${escapeHtml(order.order_ref)}</strong>.</p>
     </div>`}
-    <p style="font-size:12px;color:#aaa;text-align:center;margin-top:16px;">Questions? Contact your coach or reply to this email.</p>
+    <p style="font-size:12px;color:#aaa;text-align:center;margin-top:16px;">Questions? Contact ${escapeHtml(team.cashRecipient)} or reply to this email.</p>
   </div>
 </div>`,
       }),

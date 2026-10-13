@@ -24,8 +24,8 @@
  * line that names its own composition — "Patches (2x Circle, 1x Script)" — is
  * both the honest arithmetic and a packing instruction.
  *
- * Everything is computed in whole CENTS. `6.65 * 3` in floating point is
- * 19.949999999999996, and this figure is compared for equality against the
+ * Everything is computed in whole CENTS. Fractional-dollar prices float
+ * (the old `6.65 * 3` was 19.949999999999996), and this figure is compared for equality against the
  * server's own sum in `screenCmCheerTotals`; a hundredth of a cent of drift
  * there writes a spurious "did not match the items" note onto a real order.
  *
@@ -40,8 +40,8 @@ export const PATCH_UNIT_PRICE_CENTS = 800
 export const PATCH_TIER_QTY = 3
 /** What those first three cost together. */
 export const PATCH_TIER_PRICE_CENTS = 2000
-/** Each patch beyond the third, at the tier's implied unit rate. */
-export const PATCH_EXTRA_PRICE_CENTS = 665
+/** Each patch beyond the third: a flat $6 (was 665, the tier's implied rate, until 2026-10-12). */
+export const PATCH_EXTRA_PRICE_CENTS = 600
 /** What a patch costs us, the same for either design. */
 export const PATCH_COST_CENTS = 500
 
@@ -128,7 +128,7 @@ export function patchOrderLine(selections: PatchSelection[]): FundraiserLine | n
  * element's id. It used to be `id.startsWith('qty-patch')`, and now that every
  * product carries a patch there are ids like `qty-hat-navy-circle` in the same
  * page — an id-prefix rule is one unlucky rename away from charging a $25 hat
- * at a $6.65 patch tier. A product row has to ASK for the tier to get it, and
+ * at the patch tier. A product row has to ASK for the tier to get it, and
  * no product row does.
  */
 export function isLoosePatchInput(el: { dataset?: Record<string, string | undefined> }): boolean {

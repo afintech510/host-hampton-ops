@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { CheckCircle, XCircle, ChevronDown, ChevronUp, Download, RefreshCw, LogOut } from 'lucide-react'
+import PaperOrderForm from '@/components/PaperOrderForm'
 
 /**
  * The organizer order book, shared by every fundraiser.
@@ -57,6 +58,11 @@ export interface FundraiserDashboardTheme {
    * distrust the rest of the numbers.
    */
   organizerShort: string
+  /**
+   * Show "Add paper order". Only for a team with a server-side price list
+   * (`lib/fundraiserCatalog.ts`) — the Sharks today; the API refuses the rest.
+   */
+  paperEntry?: boolean
   /**
    * Full Tailwind class strings, not fragments. Tailwind scans source text, so
    * a class assembled at runtime (`bg-${x}-600`) is never emitted into the CSS.
@@ -216,7 +222,7 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
     // The address is searchable too — "who else is on Oak Street" is how a
     // delivery run actually gets planned.
     return o.athlete_name.toLowerCase().includes(q) || o.parent_name.toLowerCase().includes(q)
-      || o.email.toLowerCase().includes(q) || o.order_ref.toLowerCase().includes(q)
+      || (o.email || '').toLowerCase().includes(q) || o.order_ref.toLowerCase().includes(q)
       || (o.delivery_address || '').toLowerCase().includes(q)
       || (o.teacher_name || '').toLowerCase().includes(q)
   })
@@ -249,7 +255,7 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
   const totalRevenue = nonCancelled.reduce((s, o) => s + o.subtotal_cents, 0)
   /**
    * What the school keeps: `subtotal − cost`, summed over everything not
-   * cancelled. The delivery fee is costed at zero, so all $7 of it lands here.
+   * cancelled. The delivery fee is costed at zero, so all of it lands here.
    *
    * `|| 0` is kept even though the API now sends the field. A browser holding
    * an older bundle, or a row written before the column existed, must read as
@@ -458,6 +464,18 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
           </div>
         </div>
 
+        {theme.paperEntry && (
+          <PaperOrderForm
+            teamSlug={theme.teamSlug}
+            token={token}
+            personLabel={theme.personLabel}
+            onSaved={() => { fetchOrders() }}
+            focusRing={theme.focusRing}
+            darkButton={theme.darkButton}
+            accentText={theme.accentText}
+          />
+        )}
+
         {/* Orders list */}
         <div className="space-y-2">
           {loading && <p className="text-center text-gray-400 py-10 text-sm">Loading orders…</p>}
@@ -504,8 +522,12 @@ export default function FundraiserOrdersDashboard({ theme }: { theme: Fundraiser
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
                       <p className="text-xs font-bold text-gray-400 uppercase mb-2">Contact</p>
-                      <p className="text-sm"><span className="text-gray-500">Email:</span> <a href={`mailto:${order.email}`} className="font-medium text-zinc-900 hover:underline">{order.email}</a></p>
-                      <p className="text-sm"><span className="text-gray-500">Phone:</span> <a href={`tel:${order.phone}`} className="font-medium text-zinc-900 hover:underline">{order.phone}</a></p>
+                      {order.email
+                        ? <p className="text-sm"><span className="text-gray-500">Email:</span> <a href={`mailto:${order.email}`} className="font-medium text-zinc-900 hover:underline">{order.email}</a></p>
+                        : <p className="text-sm text-gray-400 italic">No email on file</p>}
+                      {order.phone
+                        ? <p className="text-sm"><span className="text-gray-500">Phone:</span> <a href={`tel:${order.phone}`} className="font-medium text-zinc-900 hover:underline">{order.phone}</a></p>
+                        : <p className="text-sm text-gray-400 italic">No phone on file</p>}
 
                       <p className="text-xs font-bold text-gray-400 uppercase mt-3 mb-2">Fulfilment</p>
                       {isHomeDelivery(order) ? (

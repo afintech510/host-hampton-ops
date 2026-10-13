@@ -53,7 +53,7 @@ parent lands on look like one thing.
    `VENMO_HANDLE` is `null` today, so the flyer says "the order page shows you
    how" and lets the page — one place, changed once — name the account. See the
    warning below.
-4. **Both fulfilment options appear, with the free one first.** "$7 to your door,
+4. **Both fulfilment options appear, with the free one first.** "$5 to your door,
    100% donated to the PTO" is a reason to spend more, not a fee to bury; and a
    parent who did not know there was a free option feels charged for nothing.
 5. **No deadline unless somebody gives you one.** An invented "order by Friday"
