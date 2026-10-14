@@ -6,7 +6,7 @@ import { getSupabase } from '@/lib/supabase'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { mailToHref } from '@/lib/emailSafety'
 import { screenCmCheerTotals, VALID_PAYMENT_METHODS } from '@/lib/cmCheerOrder'
-import { resolveFundraiserTeam, screenTeacherName } from '@/lib/fundraiserTeams'
+import { resolveFundraiserTeam, screenTeacherName, teamTakesVenmo } from '@/lib/fundraiserTeams'
 import { reconcileDeliveryItems, screenDelivery } from '@/lib/fundraiserDelivery'
 import { guardRate, intakeRule } from '@/lib/rateLimit'
 
@@ -64,6 +64,12 @@ export async function POST(req: NextRequest) {
   const team = resolveFundraiserTeam(postedTeam)
   if (!team) {
     return NextResponse.json({ error: 'Unknown fundraiser' }, { status: 400 })
+  }
+
+  // A team with no verified Venmo account takes cash only. The page hides the
+  // option; this is the half a hand-built request cannot get around.
+  if (paymentMethod === 'venmo' && !teamTakesVenmo(team)) {
+    return NextResponse.json({ error: 'Venmo is not set up for this fundraiser yet — please choose cash' }, { status: 400 })
   }
 
   // Required for a school PTO (the handout pile is sorted by classroom),

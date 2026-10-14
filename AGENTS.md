@@ -215,10 +215,11 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **072**. (This line said **047** for months
+The next free migration number is **073**. (This line said **047** for months
 after it stopped being true, which is why it now says how to check rather than
 just asserting a number: the highest file in `starting_plan/` is the floor, and
 `information_schema` on the live DB is what says whether it has been APPLIED.
+**072 is the `rse` fundraiser team** — `/rse-merch` (Remsenburg-Speonk Elementary): `'rse'` added to `cm_cheer_orders_team_check` and an `RSE-` branch with its own `rse_order_seq` in `generate_cm_cheer_order_ref()`; applied 2026-10-13.
 **071 is `job_applications`** for the /join-the-team hiring page (2026-10-11).
 **070 is the EVITE design pick** — `evites.template_choice` (nullable; NULL = the
 theme's design), set by the host's gallery on `/my-booking/invitation` or the admin

@@ -135,6 +135,8 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/return-policy',
   '/review/[token]',
   '/reviews',
+  '/rse-merch',
+  '/rse-merch/orders',
   '/shower-venue',
   '/signup',
   '/signup-sheet',

@@ -7,6 +7,12 @@ describe('caseFoldRedirect — printed QR paths typed in capitals', () => {
     expect(caseFoldRedirect('/Esm-Sharks')).toBe('/esm-sharks')
   })
 
+  it('redirects the capitalised RSE merch path to the real one', () => {
+    expect(caseFoldRedirect('/RSE-MERCH')).toBe('/rse-merch')
+    expect(caseFoldRedirect('/Rse-Merch')).toBe('/rse-merch')
+    expect(caseFoldRedirect('/rse-merch')).toBeNull()
+  })
+
   it('never redirects the lowercase path to itself', () => {
     expect(caseFoldRedirect('/esm-sharks')).toBeNull()
   })

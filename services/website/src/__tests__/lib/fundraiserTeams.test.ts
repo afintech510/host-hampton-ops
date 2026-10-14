@@ -7,6 +7,7 @@ import {
   isFundraiserTeamSlug,
   resolveFundraiserTeam,
   screenTeacherName,
+  teamTakesVenmo,
   MAX_TEACHER_NAME_LENGTH,
 } from '@/lib/fundraiserTeams'
 
@@ -51,6 +52,7 @@ describe('resolveFundraiserTeam', () => {
       expect(resolveFundraiserTeam(slug)?.slug).toBe(slug)
     }
     expect(resolveFundraiserTeam('esm-sharks')?.slug).toBe('esm-sharks')
+    expect(resolveFundraiserTeam('rse')?.slug).toBe('rse')
   })
 
   it('refuses an unknown team rather than defaulting it', () => {
@@ -110,14 +112,33 @@ describe('the team table itself', () => {
   it('never points two teams at the same Venmo account', () => {
     // Two fundraisers sharing a payment handle means neither booster club can
     // tell which of their parents actually paid.
-    const handles = FUNDRAISER_TEAM_SLUGS.map(s => FUNDRAISER_TEAMS[s].venmoHandle.toLowerCase())
+    // A team with no account yet ('') is not a shared account.
+    const handles = FUNDRAISER_TEAM_SLUGS.map(s => FUNDRAISER_TEAMS[s].venmoHandle.toLowerCase()).filter(Boolean)
     expect(new Set(handles).size).toBe(handles.length)
+  })
+})
+
+describe('teamTakesVenmo', () => {
+  it('is true only for a team with a real handle AND link', () => {
+    expect(teamTakesVenmo(FUNDRAISER_TEAMS['esm-sharks'])).toBe(true)
+    expect(teamTakesVenmo(FUNDRAISER_TEAMS['cm-cheer'])).toBe(true)
+    expect(teamTakesVenmo({ ...FUNDRAISER_TEAMS['esm-sharks'], venmoUrl: ' ' })).toBe(false)
+    expect(teamTakesVenmo({ ...FUNDRAISER_TEAMS['esm-sharks'], venmoHandle: '' })).toBe(false)
+  })
+
+  it('keeps RSE cash-only until its account is verified', () => {
+    // Flip this the day the RSE handle is set — on purpose, with the handle in
+    // the same commit, never by inventing one to make a test pass.
+    expect(teamTakesVenmo(FUNDRAISER_TEAMS.rse)).toBe(false)
+    expect(FUNDRAISER_TEAMS.rse.venmoEmailHandle).toBe('')
   })
 })
 
 describe('agreement with the database', () => {
   const repoRoot = path.resolve(__dirname, '../../../../..')
-  const migration = path.join(repoRoot, 'starting_plan', 'migration_051_fundraiser_team.sql')
+  // 051 created the team column and trigger; each later team REPLACES both, so
+  // the newest migration that does is the one production runs.
+  const migration = path.join(repoRoot, 'starting_plan', 'migration_072_rse_fundraiser_team.sql')
 
   /**
    * `order_ref` is minted by a DB trigger; `orderPrefix` here is a display copy.

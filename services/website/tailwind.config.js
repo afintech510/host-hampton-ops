@@ -17,6 +17,12 @@ module.exports = {
         'esmInk':    '#071628', // near-black navy for headers
         'esmSilver': '#A2AAAD', // true silver, the secondary
         'esmMist':   '#E6E9EC', // silver tint for fills
+        // RSE (Remsenburg-Speonk Elementary) merch — royal blue + butter yellow,
+        // sampled from the PTO's own artwork.
+        'rseBlue':   '#004AAD', // the RSE lettering blue, the primary
+        'rseInk':    '#0A1F4F', // deep navy for headers (the crest's dark ring)
+        'rseYellow': '#FFDE59', // the rooster yellow
+        'rseCream':  '#FFF7D6', // yellow tint for fills
       },
       fontFamily: {
         serif: ['Playfair Display', 'Georgia', 'serif'],

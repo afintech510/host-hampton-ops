@@ -13,7 +13,7 @@ import { NextResponse, type NextRequest } from 'next/server'
  * Deliberately an allowlist, not "lowercase every path": plan refs, portal
  * tokens and review links carry capitals that mean something.
  */
-export const CASE_FOLDED_PATHS = new Set(['/esm-sharks'])
+export const CASE_FOLDED_PATHS = new Set(['/esm-sharks', '/rse-merch'])
 
 export function caseFoldRedirect(pathname: string): string | null {
   const lower = pathname.toLowerCase()

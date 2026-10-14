@@ -117,6 +117,37 @@ export const FUNDRAISER_TEAMS: Record<string, FundraiserTeam> = {
     cashRecipient: 'the PTO',
     organizerEmail: 'Eastporttuttlepto@gmail.com',
   },
+  rse: {
+    slug: 'rse',
+    name: 'RSE Merch',
+    // Helen Schulz and Rebecca Sieger asked for the merch revamp (2026-10-12).
+    // Whether the money is the PTO's is to be confirmed with them; the label is
+    // the school's PTO as rsufsd.org/pto names it.
+    organization: 'Remsenburg-Speonk Elementary PTO',
+    // NO VENMO YET, deliberately empty. A payment handle typed from a guess is a
+    // parent's money sent to a stranger (the ESM page ran on a placeholder for
+    // weeks). `teamTakesVenmo` hides the option on the page and the order route
+    // refuses `venmo` until the real account is set here.
+    venmoHandle: '',
+    venmoUrl: '',
+    venmoEmailHandle: '',
+    orderPrefix: 'RSE-',
+    emailAccent: '#004AAD',
+    ordersPath: '/rse-merch/orders',
+    personLabel: 'Child',
+    collectsTeacher: true,
+    cashBadge: 'CASH TO PTO',
+    cashRecipient: 'the PTO',
+  },
+}
+
+/**
+ * Whether this fundraiser can be paid by Venmo yet. A team with no verified
+ * handle offers cash only — the page hides the option and the order route
+ * refuses it, so neither can point a parent at an account nobody has checked.
+ */
+export function teamTakesVenmo(team: FundraiserTeam): boolean {
+  return team.venmoHandle.trim() !== '' && team.venmoUrl.trim() !== ''
 }
 
 /** The value written when a page posts without saying which team it is. */
