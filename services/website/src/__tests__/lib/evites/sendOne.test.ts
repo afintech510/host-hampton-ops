@@ -119,6 +119,39 @@ describe('new_rsvp (inline, to the parent)', () => {
     expect(ledger()[0]).toMatchObject({ send_type: 'new_rsvp', ref_version: 1, rsvp_id: PARENT_RSVP, status: 'sent', provider_id: 're_ok', attempts: 1 })
   })
 
+  it('links the guest list, the planner and (priced) the invoice, all from ONE portal token', async () => {
+    db = makeSendDb({ rsvps: [rsvpRow({ id: PARENT_RSVP })], booking: { total_cents: 75000 } })
+    await sendOnRsvpCreated(ctx)
+    expect(db.tables.portal_tokens).toHaveLength(1)
+    const t = mails()[0].text
+    const auth = 'https://www\\.hosthampton\\.com/api/portal/auth\\?ref=HH-TEST-1&token=([\\w-]+)&redirect='
+    const host = t.match(new RegExp(`See all your RSVPs: ${auth}%2Fmy-booking%2Finvitation`))
+    const planner = t.match(new RegExp(`Party planner: ${auth}%2Fparty-planner`))
+    const invoice = t.match(new RegExp(`Invoice: ${auth}%2Fplan%2FHH-TEST-1%2Fsummary`))
+    expect(host && planner && invoice).toBeTruthy()
+    expect(new Set([host![1], planner![1], invoice![1]]).size).toBe(1)
+  })
+
+  it('an unpriced plan gets no invoice link (it would be an empty page)', async () => {
+    db = makeSendDb({ rsvps: [rsvpRow({ id: PARENT_RSVP })], booking: { total_cents: null } })
+    await sendOnRsvpCreated(ctx)
+    expect(mails()[0].text).toContain('Party planner: ')
+    expect(mails()[0].text).not.toContain('Invoice: ')
+  })
+
+  it('a token that will not mint still sends the RSVP: bare guest-list link, no planner or invoice button', async () => {
+    db = makeSendDb({ rsvps: [rsvpRow({ id: PARENT_RSVP })], booking: { total_cents: 75000 } })
+    db.errors.push({ table: 'portal_tokens', op: 'insert', message: 'refused' })
+    await sendOnRsvpCreated(ctx)
+    expect(mails()).toHaveLength(1)
+    const t = mails()[0].text
+    expect(t).toContain('See all your RSVPs: https://www.hosthampton.com/my-booking/invitation')
+    expect(t).not.toContain('Party planner:')
+    expect(t).not.toContain('Invoice:')
+    expect(t).not.toContain('token=')
+    expect(ledger()[0]).toMatchObject({ status: 'sent' })
+  })
+
   it('a duplicate claim sends nothing: calling the hook twice is one email', async () => {
     db = makeSendDb({ rsvps: [rsvpRow({ id: PARENT_RSVP })] })
     await sendOnRsvpCreated(ctx)

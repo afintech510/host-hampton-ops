@@ -35,7 +35,7 @@ import type { getSupabase } from '@/lib/supabase'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { etToUtc, shiftEtDate } from '@/lib/partyTime'
 import { isPlausibleEmailAddress } from '@/lib/contactLookup'
-import { mintPortalLink } from '@/lib/portalLinkMint'
+import { mintPortalLink, mintPortalLinks } from '@/lib/portalLinkMint'
 import { generateUnsubscribeToken } from '@/lib/unsubscribeLink'
 import { ownerEmail } from '@/lib/ownerNotify'
 import { guardRecipient, HOUR_MS } from '@/lib/rateLimit'
@@ -144,6 +144,34 @@ function partyOf(facts: InviteFacts): EviteMailParty {
 function urlsOf(slug: string): { invite: string; calendar: string; host: string } {
   const invite = `${CANONICAL_ORIGIN}/i/${slug}`
   return { invite, calendar: `${invite}/cal`, host: `${CANONICAL_ORIGIN}/my-booking/invitation` }
+}
+
+/**
+ * The host's three ways back in from an RSVP email: their guest list, the party planner and (once the
+ * plan is priced) the invoice. ONE signed portal token backs all three (`mintPortalLinks`), because the
+ * invoice answers 404 to anyone without a portal session for that booking, so a bare link to it is a
+ * dead one. If the token cannot be minted, or the price cannot be read, the email still goes: the guest
+ * list falls back to the bare page (it asks them to sign in) and the other two buttons are left out.
+ * The RSVP is the news; a missing button must never cost the host the message.
+ */
+async function hostPortalLinks(
+  supabase: Supa,
+  booking: SendContext['booking'],
+  bareHostUrl: string,
+): Promise<{ hostUrl: string; plannerUrl: string | null; invoiceUrl: string | null }> {
+  const bare = { hostUrl: bareHostUrl, plannerUrl: null, invoiceUrl: null }
+  const ref = booking.booking_ref
+  if (!ref) return bare
+  const tot = await supabase.from('bookings').select('total_cents').eq('id', booking.id).maybeSingle<{ total_cents: number | null }>()
+  if (tot.error) console.error(`evites/sendOne: total read failed for the RSVP email links: ${tot.error.message}`)
+  const priced = !tot.error && !!tot.data && !isUnpricedPlan(Number(tot.data.total_cents ?? 0))
+  const minted = await mintPortalLinks(supabase, booking.id, ref, {
+    host: '/my-booking/invitation',
+    planner: '/party-planner',
+    invoice: `/plan/${encodeURIComponent(ref)}/summary`,
+  })
+  if (!minted.ok) return bare
+  return { hostUrl: minted.urls.host, plannerUrl: minted.urls.planner, invoiceUrl: priced ? minted.urls.invoice : null }
 }
 
 function childNamesOf(children: unknown): string[] {
@@ -322,6 +350,7 @@ async function prepare(supabase: Supa, send: ClaimedSend, ctx: SendContext): Pro
       if (guardRecipient(to.toLowerCase(), { label: HOST_NOTIFY_LABEL, max: HOST_NOTIFY_MAX_PER_HOUR, windowMs: HOUR_MS }, now.getTime())) {
         return skip('host-rate-limited')
       }
+      const links = await hostPortalLinks(supabase, booking, urls.host)
       const input = {
         party,
         recipientFirstName: firstToken(booking.contact_name),
@@ -333,7 +362,7 @@ async function prepare(supabase: Supa, send: ClaimedSend, ctx: SendContext): Pro
           hasAllergy: rsvp.has_allergy,
           allergyNote: rsvp.allergy_note,
         },
-        hostUrl: urls.host,
+        ...links,
       }
       return { kind: 'ready', to, mail: type === 'new_rsvp' ? newRsvpEmail(input) : rsvpChangedEmail(input) }
     }

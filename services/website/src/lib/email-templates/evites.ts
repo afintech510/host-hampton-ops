@@ -110,8 +110,12 @@ export interface ParentRsvpInput {
     hasAllergy: boolean | null
     allergyNote: string | null
   }
-  /** `/my-booking/invitation` */
+  /** `/my-booking/invitation`: a signed portal link when one minted, else the bare page (it asks them to sign in). */
   hostUrl: string
+  /** A signed link to `/party-planner`, or null (no link minted): the button is then left out. */
+  plannerUrl?: string | null
+  /** A signed link to `/plan/<ref>/summary`, or null (unpriced, or no link minted): the button is then left out. */
+  invoiceUrl?: string | null
 }
 
 export interface GuestMailInput {
@@ -204,6 +208,19 @@ function listItem(lead: string, rest: string): string {
 function button(href: string | null | undefined, label: string): string {
   if (!mailHref(href)) return ''
   return `<p style="text-align:center;margin:0 0 14px;"><a href="${mailHref(href)}" style="display:inline-block;background:${BRAND.navy};color:#ffffff;padding:12px 28px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;">${label}</a></p>`
+}
+
+/** Outlined buttons side by side; each href is screened and a link that fails its screen is left out. */
+function secondaryButtons(links: Array<{ href: string | null | undefined; label: string }>): string {
+  const kept = links.filter((l) => mailHref(l.href))
+  if (kept.length === 0) return ''
+  const anchors = kept
+    .map(
+      (l) =>
+        `<a href="${mailHref(l.href)}" style="display:inline-block;margin:0 6px 8px;border:2px solid ${BRAND.navy};color:${BRAND.navy};padding:9px 22px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:bold;">${l.label}</a>`,
+    )
+    .join('')
+  return `<p style="text-align:center;margin:0 0 14px;">${anchors}</p>`
 }
 
 /** An inline link; a URL that fails its screen leaves the words, unlinked. */
@@ -379,8 +396,14 @@ function parentRsvpEmail(raw: ParentRsvpInput, d: ParentRsvpInput, changed: bool
     ${paragraph(firstNameHello(d.recipientFirstName))}
     ${paragraph(changed ? `A guest changed their answer for ${hd.label}.` : `Someone just answered the invitation to ${hd.label}.`)}
     ${detailCard(rows)}
-    ${button(raw.hostUrl, 'See your guest list')}`
+    ${button(raw.hostUrl, 'See all your RSVPs')}
+    ${secondaryButtons([
+      { href: raw.plannerUrl, label: 'Party planner' },
+      { href: raw.invoiceUrl, label: 'Invoice' },
+    ])}`
 
+  const plannerOk = !!mailHref(raw.plannerUrl)
+  const invoiceOk = !!mailHref(raw.invoiceUrl)
   const text = [
     firstNameHello(raw.recipientFirstName),
     '',
@@ -392,7 +415,9 @@ function parentRsvpEmail(raw: ParentRsvpInput, d: ParentRsvpInput, changed: bool
       ? [`Kids: ${kidsText(raw.rsvp.childNames)}`, `Adults: ${adultsText(raw.rsvp.adultCount, raw.rsvp.adultCount === 2)}`, `Allergies: ${allergyText}`]
       : []),
     '',
-    `See your guest list: ${raw.hostUrl}`,
+    `See all your RSVPs: ${raw.hostUrl}`,
+    ...(plannerOk ? [`Party planner: ${raw.plannerUrl}`] : []),
+    ...(invoiceOk ? [`Invoice: ${raw.invoiceUrl}`] : []),
     '',
     SIGNATURE_TEXT,
   ].join('\n')

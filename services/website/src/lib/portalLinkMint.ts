@@ -69,3 +69,39 @@ export async function mintPortalLink(
 
   return { ok: true, url: buildPortalUrl(bookingRef, token, destination), expiresAt }
 }
+
+export type MintedLinks<K extends string> =
+  | { ok: true; urls: Record<K, string>; expiresAt: Date }
+  | { ok: false; reason: string }
+
+/**
+ * Several links into one booking's portal from ONE token row: the guest list, the planner and the
+ * invoice in a single email. A token is deliberately reusable (`/api/portal/auth` stamps `used_at`
+ * but does not burn it), and the landing page is the separate `redirect` parameter, checked there
+ * against `safePortalRedirect`. So one row backs every link, and an email with three links writes
+ * one token, not three. Same failure contract as `mintPortalLink`: `ok: false` means NO link works.
+ */
+export async function mintPortalLinks<K extends string>(
+  supabase: MinimalClient,
+  bookingId: string,
+  bookingRef: string,
+  destinations: Record<K, string>,
+): Promise<MintedLinks<K>> {
+  const { token, hash, expiresAt } = generatePortalToken(bookingRef, portalSigningSecret())
+
+  const { error } = await supabase
+    .from('portal_tokens')
+    .insert({ booking_id: bookingId, token_hash: hash, expires_at: expiresAt.toISOString() })
+
+  if (error) {
+    console.error(
+      `PORTAL LINKS NOT MINTED for ${bookingRef}: ${error.message} — ` +
+        'no email should be sent containing these links, because they would not work.',
+    )
+    return { ok: false, reason: error.message }
+  }
+
+  const urls = {} as Record<K, string>
+  for (const k of Object.keys(destinations) as K[]) urls[k] = buildPortalUrl(bookingRef, token, destinations[k])
+  return { ok: true, urls, expiresAt }
+}

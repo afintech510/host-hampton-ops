@@ -241,6 +241,28 @@ describe('the copy rules', () => {
     expect(e.subject).toContain("can't make it")
   })
 
+  it('the RSVP email links the host to the planner and the invoice, and leaves out a link it was not given', () => {
+    const rsvp = { status: 'yes' as const, parentName: 'Gina', childNames: ['Ava'], adultCount: 1 as const, hasAllergy: false, allergyNote: null }
+    const planner = 'https://www.hosthampton.com/api/portal/auth?ref=HH-1&token=t&redirect=%2Fparty-planner'
+    const invoice = 'https://www.hosthampton.com/api/portal/auth?ref=HH-1&token=t&redirect=%2Fplan%2FHH-1%2Fsummary'
+    const both = newRsvpEmail({ party: PARTY, recipientFirstName: 'Pat', rsvp, hostUrl: HOST_URL, plannerUrl: planner, invoiceUrl: invoice })
+    expect(both.text).toContain(`See all your RSVPs: ${HOST_URL}`)
+    expect(both.text).toContain(`Party planner: ${planner}`)
+    expect(both.text).toContain(`Invoice: ${invoice}`)
+    expect(both.html).toContain('>Party planner</a>')
+    expect(both.html).toContain('>Invoice</a>')
+
+    const none = newRsvpEmail({ party: PARTY, recipientFirstName: 'Pat', rsvp, hostUrl: HOST_URL, plannerUrl: null, invoiceUrl: null })
+    expect(none.text).not.toContain('Party planner:')
+    expect(none.text).not.toContain('Invoice:')
+    expect(none.html).not.toContain('>Invoice</a>')
+
+    // A link that fails its URL screen renders no button, never a different link.
+    const hostile = newRsvpEmail({ party: PARTY, recipientFirstName: 'Pat', rsvp, hostUrl: HOST_URL, invoiceUrl: 'javascript:alert(1)' })
+    expect(hostile.html).not.toContain('javascript:')
+    expect(hostile.text).not.toContain('Invoice:')
+  })
+
   it('final_headcount: totals, the cap, the allergy roll-up, the guest notes', () => {
     const e = emails.final_headcount
     expect(e.text).toContain('Kids: 7 of 10 expected')
