@@ -78,6 +78,9 @@ export function renderInputsHash(facts: InviteFacts): string {
       cardPlaceLine: facts.cardPlaceLine,
       hostContactLine: facts.hostContactLine,
       title: facts.title,
+      // A host's own art (migration 073). `undefined` when absent, which `canonicalJson` OMITS: adding this
+      // key must not change the hash of any existing invitation (that would re-render every one of them).
+      customArt: facts.customArt ?? undefined,
     }),
   )
 }

@@ -24,13 +24,14 @@ import { STITCH_TEMPLATE } from '@/lib/evites/templates/stitch'
 import { TWO_SWEET_TEMPLATE } from '@/lib/evites/templates/two-sweet'
 import { UNICORN_TEMPLATE } from '@/lib/evites/templates/unicorn'
 import { VROOM_TEMPLATE } from '@/lib/evites/templates/vroom'
-import type { FontKey, TemplateLayout, TemplateSlug } from '@/lib/evites/templates/types'
+import type { FontKey, RegisteredTemplateSlug, TemplateLayout, TemplateSlug } from '@/lib/evites/templates/types'
 
 /**
  * Every design, in GALLERY order (the host sees them in this order): glow and neon, slime,
  * sleepovers and glam, animals, characters, little ones. `plain` is last and never shown.
+ * A host's own invitation (`custom`) is deliberately absent: see `lib/evites/customArt.ts`.
  */
-export const TEMPLATES: Readonly<Record<TemplateSlug, TemplateLayout>> = {
+export const TEMPLATES: Readonly<Record<RegisteredTemplateSlug, TemplateLayout>> = {
   glow: GLOW_TEMPLATE,
   'lets-glow': LETS_GLOW_TEMPLATE,
   'neon-party': NEON_PARTY_TEMPLATE,
@@ -53,9 +54,9 @@ export const TEMPLATES: Readonly<Record<TemplateSlug, TemplateLayout>> = {
   plain: PLAIN_TEMPLATE,
 }
 
-export const TEMPLATE_SLUGS = Object.keys(TEMPLATES) as TemplateSlug[]
+export const TEMPLATE_SLUGS = Object.keys(TEMPLATES) as RegisteredTemplateSlug[]
 
-export function isKnownTemplateSlug(slug: unknown): slug is TemplateSlug {
+export function isKnownTemplateSlug(slug: unknown): slug is RegisteredTemplateSlug {
   return typeof slug === 'string' && Object.prototype.hasOwnProperty.call(TEMPLATES, slug)
 }
 
@@ -74,7 +75,7 @@ export function galleryTemplates(): TemplateLayout[] {
   })
 }
 
-export function isGallerySlug(slug: unknown): slug is TemplateSlug {
+export function isGallerySlug(slug: unknown): slug is RegisteredTemplateSlug {
   return isKnownTemplateSlug(slug) && galleryTemplates().some((t) => t.slug === slug)
 }
 

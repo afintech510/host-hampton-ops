@@ -283,7 +283,8 @@ export interface HostPayload {
   customize: HostCustomize
   /** The RSVP-by date input's bounds: today (ET) ... the party date (null when there is none). */
   deadlineRange: { min: string; max: string | null }
-  design: HostDesign
+  /** Null when the party has its own art (migration 073, `custom_art`): no picker is offered. */
+  design: HostDesign | null
 }
 
 export function composeHostView(loaded: HostLoaded, supabaseUrl: string | undefined, now: Date = new Date()): { payload: HostPayload; facts: InviteFacts } {
@@ -319,11 +320,14 @@ export function composeHostView(loaded: HostLoaded, supabaseUrl: string | undefi
       host_contact_phone: evite.host_contact_phone,
     },
     deadlineRange: { min: etDateString(now), max: validPartyDate(booking.party_date) },
-    design: {
-      current: facts.templateSlug,
-      choice: isGallerySlug(evite.template_choice) ? evite.template_choice : null,
-      options: galleryTemplates().map((t) => ({ slug: t.slug, label: t.label as string, sample: sampleImageOf(t.slug) })),
-    },
+    // The party's own art outranks any pick (facts.ts), so a picker would offer choices that change nothing.
+    design: facts.customArt
+      ? null
+      : {
+          current: facts.templateSlug,
+          choice: isGallerySlug(evite.template_choice) ? evite.template_choice : null,
+          options: galleryTemplates().map((t) => ({ slug: t.slug, label: t.label as string, sample: sampleImageOf(t.slug) })),
+        },
   }
   return { payload, facts }
 }

@@ -26,6 +26,7 @@ export const ADMIN_EVITE_COLUMNS = [
   'previous_slugs',
   'template_slug',
   'template_choice',
+  'custom_art',
   'theme_word',
   'theme_sub',
   'host_contact_name',

@@ -12,7 +12,7 @@ import ClientNav from '@/components/ClientNav'
 import { fontFaceCss } from '@/lib/evites/fontFaces'
 import { computeSizes } from '@/lib/evites/layout'
 import { composeHostView, readHostRows } from '@/lib/evites/hostView'
-import { templateFor } from '@/lib/evites/templates'
+import { templateForFacts } from '@/lib/evites/customArt'
 
 /**
  * The host's page for their own invitation (spec §7.2): the invite, its state, the Share panel,
@@ -82,7 +82,7 @@ export default async function HostInvitationPage() {
   }
 
   const { payload, facts } = composeHostView(read.loaded, process.env.SUPABASE_URL, now)
-  const template = templateFor(facts.templateSlug)
+  const template = templateForFacts(facts, process.env.SUPABASE_URL)
   const sizes = computeSizes(template, facts)
 
   // No background of its own: the body's blue-to-cream fade (globals.css) shows through at the top, as on /party-packages.

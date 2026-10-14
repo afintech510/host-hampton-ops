@@ -25,7 +25,8 @@
  *     the full address from lib/studioLocation.ts.
  *   - `rsvpDeadline` is the ISO date (`YYYY-MM-DD`) so it is hash-stable and
  *     comparable; the UI formats it.
- *   - The design: `template_choice` (the host's gallery pick, migration 070)
+ *   - The design: the host's own art (`custom_art`, migration 073) above all; then
+ *     `template_choice` (the host's gallery pick, migration 070)
  *     when it names a gallery template; else, with an evite theme override
  *     (`theme_word`/`theme_sub` set by admin `set_theme`), the evite's
  *     `template_slug`; else the resolved theme decides. (`template_slug`
@@ -44,6 +45,7 @@ import { screenForImage } from '@/lib/evites/glyphs'
 import { eviteLocationType, mobileAddressOf, mobileTown, type EviteLocationType } from '@/lib/evites/location'
 import { partyWindow, validPartyDate, type PartyWindow } from '@/lib/evites/partyWindow'
 import { resolveTheme, themeLabelOf, type EviteTemplateSlug } from '@/lib/evites/themes'
+import { customArtPath } from '@/lib/evites/customArt'
 import { fontForBind, isGallerySlug, isKnownTemplateSlug, templateFor } from '@/lib/evites/templates'
 import type { TemplateLayout, TextSlot } from '@/lib/evites/templates/types'
 import type { InviteState } from '@/lib/evites/state'
@@ -76,7 +78,13 @@ export interface InviteFacts {
   ageOrdinal: string | null
   themeWord: string
   themeSub: string
+  /** 'custom' whenever `customArt` is set; otherwise the gallery pick, the admin override or the theme's design. */
   templateSlug: EviteTemplateSlug
+  /**
+   * The host's own finished invitation (migration 073): `<image_key>/<custom_art>` in Storage, or null.
+   * When set it IS the picture (`customTemplate`) and outranks every template choice.
+   */
+  customArt: string | null
   /** 'Pick your date' | 'Saturday, November 14' | 'Saturday, November 14 · 2–4 PM' */
   dateLine: string
   /** 'Pick your date' | 'Sat, Nov 14' | 'Sat, Nov 14 · 2–4 PM' */
@@ -110,7 +118,7 @@ export type InviteFactsBooking = Pick<
   | 'quote_snapshot'
 >
 
-export type InviteFactsEvite = Partial<Pick<EviteRow, 'template_choice'>> & Pick<
+export type InviteFactsEvite = Partial<Pick<EviteRow, 'template_choice' | 'custom_art' | 'image_key'>> & Pick<
   EviteRow,
   | 'template_slug'
   | 'theme_word'
@@ -267,9 +275,13 @@ export function inviteFacts(
   const overridden = screenForImage(rawWord, 'monoton') !== '' || screenForImage(rawSub, 'bungee') !== ''
   // The host's (or an admin's) pick from the gallery wins (migration 070); then an admin theme override's
   // own template; then the theme's design. An unknown or retired slug is ignored, never drawn as plain.
+  // A host's own art (migration 073) outranks all three: it is the whole picture, set by an admin on purpose.
+  const customArt = customArtPath(evite)
   const chosen = typeof evite.template_choice === 'string' && isGallerySlug(evite.template_choice) ? evite.template_choice : null
-  const templateSlug: EviteTemplateSlug =
-    chosen ?? (overridden && isKnownTemplateSlug(evite.template_slug) ? evite.template_slug : resolved.templateSlug)
+  const templateSlug: EviteTemplateSlug = customArt
+    ? 'custom'
+    : chosen ?? (overridden && isKnownTemplateSlug(evite.template_slug) ? evite.template_slug : resolved.templateSlug)
+  // `custom` is not in the registry, so this is `plain` for it: the fonts the words are screened for.
   const template = templateFor(templateSlug)
   const wordFont = fontForBind(template, ['themeWord'], 'monoton')
   const subFont = fontForBind(template, ['themeSub'], 'bungee')
@@ -370,6 +382,7 @@ export function inviteFacts(
     themeWord,
     themeSub,
     templateSlug,
+    customArt,
     dateLine,
     shortDateLine,
     window: partyWin,

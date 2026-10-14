@@ -51,9 +51,10 @@ import { inviteFacts, type InviteFactsEvite } from '@/lib/evites/facts'
 import { renderInputsHash } from '@/lib/evites/hash'
 import { computeSizes, ogSizes, ogTexts, OG_HEIGHT, OG_WIDTH } from '@/lib/evites/layout'
 import { inviteState } from '@/lib/evites/state'
-import { templateFor } from '@/lib/evites/templates'
+import { templateForFacts } from '@/lib/evites/customArt'
 import { readThemeInputs } from '@/lib/evites/themeInputs'
 import { EVITE_BOOKING_COLUMNS, EVITE_PAYMENT_COLUMNS } from '@/lib/evites/views'
+import type { InviteAssets } from '@/lib/evites/templates/types'
 import type { EviteBookingRow, EvitePaymentRow } from '@/lib/evites/types'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -71,6 +72,7 @@ export const EVITE_RENDER_COLUMNS = [
   'booking_id',
   'template_slug',
   'template_choice',
+  'custom_art',
   'theme_word',
   'theme_sub',
   'host_contact_name',
@@ -173,6 +175,21 @@ async function takeClaim(supabase: Supa, eviteId: string, token: string, now: Da
   return stale.data && stale.data.length > 0 ? 'claimed' : 'busy'
 }
 
+/**
+ * The one image a `custom` template draws, keyed the way `customTemplate(path)` names it. A failed
+ * download is a render FAILURE (`custom-art-unreadable`), never a fallback to some other design: the
+ * previous picture keeps being served, which is the right answer for a blip.
+ */
+async function customArtAssets(supabase: Supa, path: string): Promise<InviteAssets> {
+  const { data, error } = await supabase.storage.from(EVITE_BUCKET).download(path)
+  if (error) throw new RenderFailure(`custom-art-unreadable: ${error.message}`.slice(0, 200))
+  if (!data) throw new RenderFailure('custom-art-unreadable: no data')
+  const bytes = Buffer.from(await data.arrayBuffer())
+  // Normalised here rather than trusted: whatever was uploaded, Satori is handed a 1085x1530 JPEG.
+  const jpeg = await sharp(bytes).resize(1085, 1530, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
+  return { [path]: `data:image/jpeg;base64,${jpeg.toString('base64')}` }
+}
+
 async function toJpeg(svg: string, background: string, quality: number): Promise<Buffer> {
   return sharp(Buffer.from(svg)).flatten({ background }).jpeg({ quality, mozjpeg: true }).toBuffer()
 }
@@ -238,9 +255,10 @@ export async function renderEvite(supabase: Supa, eviteId: string, opts: RenderO
     token = myToken
 
     // ---- 3-5. draw -----------------------------------------------------------------------------
-    const template = templateFor(facts.templateSlug)
+    // A host's own art (migration 073) is read from Storage, never from `public/`: see lib/evites/customArt.ts.
+    const template = templateForFacts(facts)
     const sizes = computeSizes(template, facts)
-    const assets = loadTemplateAssets(template)
+    const assets = facts.customArt ? await customArtAssets(supabase, facts.customArt) : loadTemplateAssets(template)
     const fonts = satoriFonts()
     const { default: satori } = await import('satori')
 

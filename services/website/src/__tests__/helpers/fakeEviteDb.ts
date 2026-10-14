@@ -55,7 +55,7 @@ export interface FakeEviteDbOptions {
 export interface InjectedError {
   /** Table (or 'storage') and operation the error applies to. */
   table: string
-  op: 'select' | 'update' | 'upload' | 'insert' | 'delete'
+  op: 'select' | 'update' | 'upload' | 'download' | 'insert' | 'delete'
   /** Only when this returns true for the patch / path (default: always). */
   when?: (info: { patch?: Row; path?: string; filters?: Filter[] }) => boolean
   message?: string
@@ -333,6 +333,15 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
           uploaded.set(key, Buffer.from(body))
           uploads.push({ bucket, path, bytes: body.length, options })
           return { data: { path }, error: null }
+        },
+        // Reads back whatever is in `uploaded` (seed it directly for a pre-existing object). Like the real
+        // client, a missing object is an ERROR, not empty data.
+        download: async (path: string) => {
+          const err = injected('storage', 'download', { path })
+          if (err) return { data: null, error: err }
+          const buf = uploaded.get(`${bucket}/${path}`)
+          if (!buf) return { data: null, error: { message: 'Object not found' } }
+          return { data: { arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) }, error: null }
         },
       }),
     },

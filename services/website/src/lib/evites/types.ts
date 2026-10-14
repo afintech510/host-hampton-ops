@@ -11,6 +11,8 @@ export interface EviteRow {
   template_slug: string
   /** Migration 070: the design the host or an admin chose; NULL = the theme's design. */
   template_choice: string | null
+  /** Migration 073: the host's own finished invitation, an object in this row's `image_key` Storage folder. */
+  custom_art: string | null
   theme_word: string | null
   theme_sub: string | null
   host_contact_name: string | null

@@ -182,6 +182,16 @@ export type TemplateSlug =
   | 'vroom'
   | 'lets-glow'
   | 'neon-party'
+  /**
+   * A host's OWN finished invitation (migration 073, `evites.custom_art`). Never registered in
+   * `TEMPLATES`, so no picker, admin override or `templateFor` can reach it: it is built per party by
+   * `customTemplate()` in `lib/evites/customArt.ts` around art that lives in Storage, never in this
+   * repository (a public one, and the art is a real child's photo).
+   */
+  | 'custom'
+
+/** Every slug with a template in the registry: all of them except the per-party `custom`. */
+export type RegisteredTemplateSlug = Exclude<TemplateSlug, 'custom'>
 
 export interface TemplateLayout {
   slug: TemplateSlug
@@ -190,7 +200,7 @@ export interface TemplateLayout {
   /** The Canva design it was built from, and the text-free working copy its art was exported from. */
   source?: { canvaDesignId: string; canvaArtCopyId: string }
   canvas: { width: 1085; height: 1530 }
-  /** `web`: the page's webp. `raster`: the 1x JPEG Satori embeds. Both public paths. */
+  /** `web`: the page's webp. `raster`: the 1x JPEG Satori embeds. Both public paths (a `custom` template's are Storage). */
   background: { web: string; raster: string }
   /** The colour behind (and flattened under) the art. */
   backgroundColor: string

@@ -8,7 +8,7 @@ import ViewBeacon from '@/components/evites/ViewBeacon'
 import { computeSizes } from '@/lib/evites/layout'
 import { honoreeFirstName, inviteImageUrl, invitePageModel, inviteMetadata, unavailableMetadata, type RibbonTone } from '@/lib/evites/pageModel'
 import type { OwnRsvp } from '@/lib/evites/rsvpView'
-import { templateFor } from '@/lib/evites/templates'
+import { templateForFacts } from '@/lib/evites/customArt'
 import { loadInvite } from './loadInvite'
 import { loadRsvpPanel } from './loadOwnRsvp'
 
@@ -63,7 +63,7 @@ export default async function InvitePage({ params, searchParams }: Props) {
   if (r.kind !== 'ok') notFound()
 
   const model = invitePageModel(r.state, r.facts)
-  const template = templateFor(r.facts.templateSlug)
+  const template = templateForFacts(r.facts, process.env.SUPABASE_URL)
   const sizes = computeSizes(template, r.facts)
   // The stored picture when a render exists (a plain responsive <img>); the web canvas only before the first render.
   const image = inviteImageUrl(r.evite, process.env.SUPABASE_URL)
