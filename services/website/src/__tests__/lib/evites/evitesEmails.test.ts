@@ -336,6 +336,33 @@ describe('invite_ready', () => {
       expect(() => inviteReadyEmail({ party: PARTY, recipientFirstName: 'Pat', magicUrl: bad })).toThrow(/did not survive/)
     }
   })
+
+  const MAGIC = 'https://www.hosthampton.com/api/portal/auth?ref=HH-1&token=t&redirect=%2Fmy-booking%2Finvitation'
+  const IMG = 'https://x.supabase.co/storage/v1/object/public/evites/abc/invite-v1-aaaa.jpg'
+
+  it('shows the invitation picture, linked to the invitation page; leaves it out when there is none or it fails its screen', () => {
+    const e = inviteReadyEmail({ party: PARTY, recipientFirstName: 'Pat', magicUrl: MAGIC, imageUrl: IMG })
+    expect(e.html).toContain(`<img src="${IMG}"`)
+    expect(e.html).toMatch(/<a href="https:\/\/www\.hosthampton\.com\/api\/portal\/auth[^"]*"><img /)
+    expect(inviteReadyEmail({ party: PARTY, recipientFirstName: 'Pat', magicUrl: MAGIC }).html).not.toContain('<img')
+    expect(inviteReadyEmail({ party: PARTY, recipientFirstName: 'Pat', magicUrl: MAGIC, imageUrl: 'javascript:alert(1)' }).html).not.toContain('<img')
+  })
+
+  it('explains how it works, naming the real buttons; the design step only when there is a picker', () => {
+    const withPicker = inviteReadyEmail({ party: PARTY, recipientFirstName: 'Pat', magicUrl: MAGIC, canChooseDesign: true })
+    for (const s of ['Text My Invitation', 'Copy link', 'Download image', 'Customize', "Re-share with people who haven't answered", 'a week before and the day before', 'final headcount']) {
+      expect(withPicker.text).toContain(s)
+    }
+    expect(withPicker.text).toContain('Choose your design')
+    expect(withPicker.text).toMatch(/^5\. We'll handle the reminders\./m)
+
+    const ownArt = inviteReadyEmail({ party: PARTY, recipientFirstName: 'Pat', magicUrl: MAGIC, canChooseDesign: false })
+    expect(ownArt.text).not.toContain('Choose your design')
+    expect(ownArt.text).toMatch(/^4\. We'll handle the reminders\./m)
+    // The plain-text half is never escaped.
+    expect(ownArt.text).not.toContain('&rsquo;')
+    expect(ownArt.text).toContain('(631) 998-9325')
+  })
 })
 
 describe('day_before: the arrival note', () => {

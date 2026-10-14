@@ -38,6 +38,7 @@ import {
   STUDIO_ARRIVAL_NOTE_READY,
   STUDIO_ARRIVAL_NOTE_SENTINEL,
   STUDIO_LOCALITY,
+  STUDIO_PHONE_DISPLAY,
   STUDIO_STREET,
 } from '@/lib/studioLocation'
 
@@ -97,6 +98,10 @@ export interface InviteReadyInput {
   recipientFirstName: string | null
   /** The minted `/my-booking/invitation` magic link. REQUIRED: the template refuses to render without a usable one. */
   magicUrl: string
+  /** The stored invitation picture (an external https URL). Absent or unscreenable = no picture; the email still works. */
+  imageUrl?: string | null
+  /** True when the host may still pick another design (no art of their own): adds that step. */
+  canChooseDesign?: boolean
 }
 
 export interface ParentRsvpInput {
@@ -332,25 +337,78 @@ export function inviteReadyEmail(raw: InviteReadyInput): EviteEmail {
   // link in the one email whose whole point is the link is worse than no email.
   if (!mailHref(raw.magicUrl)) throw new Error('invite_ready: the invitation link did not survive its URL screen, so the email is not built')
 
+  // The picture links to the same page as the button: it is the thing people will tap.
+  const picture = mailHrefExternal(raw.imageUrl)
+    ? `<p style="text-align:center;margin:0 0 20px;"><a href="${mailHref(raw.magicUrl)}"><img src="${mailHrefExternal(raw.imageUrl)}" alt="Your invitation" width="300" style="max-width:100%;height:auto;border-radius:12px;border:0;"></a></p>`
+    : ''
+
+  // Fixed wording, no party data: each step is its HTML (button names in bold) and its plain-text twin.
+  // Every promise here is something the system does: the per-RSVP email (new_rsvp), the guest
+  // reminders (week_before, day_before: guests who left an email), the host's final_headcount.
+  const steps: Array<{ lead: string; html: string; text: string }> = [
+    {
+      lead: 'Send it to your guests.',
+      html: 'Tap <strong>Text My Invitation</strong> to text it from your phone, or <strong>Copy link</strong> to paste it into a group chat, an email or the class list. <strong>Download image</strong> saves the picture.',
+      text: 'Tap "Text My Invitation" to text it from your phone, or "Copy link" to paste it into a group chat, an email or the class list. "Download image" saves the picture.',
+    },
+    {
+      lead: 'Watch the RSVPs come in.',
+      html: 'Guests answer online, with no app or account. We email you each RSVP as it arrives, and your guest list (kids, adults and any allergies) is always on your invitation page.',
+      text: 'Guests answer online, with no app or account. We email you each RSVP as it arrives, and your guest list (kids, adults and any allergies) is always on your invitation page.',
+    },
+    {
+      lead: 'Make it yours.',
+      html: 'Under <strong>Customize</strong> you can add a note for your guests, a gift note and an RSVP-by date, and choose who guests contact with questions.',
+      text: 'Under "Customize" you can add a note for your guests, a gift note and an RSVP-by date, and choose who guests contact with questions.',
+    },
+    ...(raw.canChooseDesign
+      ? [
+          {
+            lead: 'Prefer another look?',
+            html: 'Pick a different design under <strong>Choose your design</strong>. Your party details carry over.',
+            text: 'Pick a different design under "Choose your design". Your party details carry over.',
+          },
+        ]
+      : []),
+    {
+      lead: 'We&rsquo;ll handle the reminders.',
+      html: 'Guests who leave an email get a reminder a week before and the day before, and you&rsquo;ll get a final headcount just before the party. Waiting on a few answers? <strong>Re-share with people who haven&rsquo;t answered</strong> gives you a ready-made reminder to text them.',
+      text: "Guests who leave an email get a reminder a week before and the day before, and you'll get a final headcount just before the party. Waiting on a few answers? \"Re-share with people who haven't answered\" gives you a ready-made reminder to text them.",
+    },
+  ]
+  const stepsHtml =
+    `<ol style="color:${BRAND.gray};font-size:15px;line-height:1.7;margin:0 0 20px;padding-left:22px;">` +
+    steps.map((s) => `<li style="margin:0 0 10px;"><strong style="color:${BRAND.navy};">${s.lead}</strong> ${s.html}</li>`).join('') +
+    `</ol>`
+  const plainLead = (s: string) => s.replace(/&rsquo;/g, "'")
+
   const body = `
     ${paragraph(firstNameHello(d.recipientFirstName))}
-    ${paragraph(`Your party is booked, so ${hd.label} invitation is ready to share. Open it, text it to your guests, and the RSVPs will show up in one list for you.`)}
+    ${paragraph(`Your party is booked, so ${hd.label} invitation is ready to share!`)}
+    ${picture}
     ${detailCard([
       { label: 'When', value: d.party.dateLine },
       { label: 'Where', value: d.party.placeLine },
     ])}
     ${button(raw.magicUrl, 'Open my invitation')}
-    ${paragraph('Tip: tap <strong>Text my invitation</strong> on that page to send it straight from your phone.')}`
+    <h2 style="color:${BRAND.navy};font-size:18px;font-weight:normal;margin:24px 0 12px;">How it works</h2>
+    ${stepsHtml}
+    ${paragraph(`Questions about your invitation or your party? Call or text us at ${STUDIO_PHONE_DISPLAY}.`)}`
 
   const text = [
     firstNameHello(raw.recipientFirstName),
     '',
-    `Your party is booked, so ${rw.label} invitation is ready to share. Open it, text it to your guests, and the RSVPs will show up in one list for you.`,
+    `Your party is booked, so ${rw.label} invitation is ready to share!`,
     '',
     `When: ${raw.party.dateLine}`,
     `Where: ${raw.party.placeLine}`,
     '',
     `Open my invitation: ${raw.magicUrl}`,
+    '',
+    'HOW IT WORKS',
+    ...steps.map((s, i) => `${i + 1}. ${plainLead(s.lead)} ${s.text}`),
+    '',
+    `Questions about your invitation or your party? Call or text us at ${STUDIO_PHONE_DISPLAY}.`,
     '',
     SIGNATURE_TEXT,
   ].join('\n')

@@ -335,7 +335,15 @@ async function prepare(supabase: Supa, send: ClaimedSend, ctx: SendContext): Pro
       return {
         kind: 'ready',
         to,
-        mail: inviteReadyEmail({ party, recipientFirstName: firstToken(booking.contact_name), magicUrl: minted.url }),
+        mail: inviteReadyEmail({
+          party,
+          recipientFirstName: firstToken(booking.contact_name),
+          magicUrl: minted.url,
+          // `renderFresh` was checked above, so this is the picture the invitation shows now.
+          imageUrl: storedImageUrl(evite, 'invite', process.env.SUPABASE_URL),
+          // A party with its own art (migration 073) has no design picker to point at.
+          canChooseDesign: !facts.customArt,
+        }),
       }
     }
 
