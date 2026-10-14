@@ -46,6 +46,11 @@ const DELIVERY_FEE_SHORT = `$${HOME_DELIVERY_FEE_CENTS / 100}`
  * RSE's own patch designs (Helen Schulz and Rebecca Sieger, 2026-10-12): the
  * rooster, the varsity letters, Reggie on his skateboard, and the heart.
  *
+ * Weekender ($95) and pickleball bag ($65) added 2026-10-13 take a patch like
+ * the totes, but in the colours CB Station actually makes them in (see
+ * `COLORS`). The PERSONALIZE section sells letter patches ($5/letter), the
+ * bead and clicky keychains, and the tassel charm — see `CUSTOM_ITEMS`.
+ *
  * The crewneck sweatshirt ($60, added 2026-10-13) is the exception: a fixed
  * design sold by colour and SIZE — see `SWEATSHIRT`. Its photos are AI-generated
  * on-model mockups, upscaled with Replicate recraft-crisp-upscale.
@@ -68,19 +73,44 @@ const PATCHES = [
   { key: 'heart', label: 'Heart', art: '/images/rse-patch-heart.webp', name: 'Heart Patch' },
 ] as const
 
+/**
+ * Every colour any RSE product comes in. Each product names its own subset:
+ * CB Station makes the tote, bag and hat in royal blue and yellow, but the
+ * weekender only in yellow (waxed) or navy, and the pickleball bag only in navy.
+ */
 const COLORS = [
   // `short` is the row label: "Royal Blue · Rooster" truncates on a phone.
   { key: 'blue', label: 'Royal Blue', short: 'Blue', swatch: '#1E40C8' },
   { key: 'yellow', label: 'Yellow', short: 'Yellow', swatch: '#F9D71C' },
+  { key: 'navy', label: 'Navy', short: 'Navy', swatch: '#1B2A4A' },
 ] as const
 
-const DEFAULT_COLOR = COLORS[0].key
+type ColorKey = (typeof COLORS)[number]['key']
+
+function colorsOf(keys: readonly ColorKey[]) {
+  return keys.map((k) => COLORS.find((c) => c.key === k)!)
+}
+
+/**
+ * Full class strings for a CHOSEN colour or patch button — module level so the
+ * first render and the effect agree, and literal so Tailwind emits them.
+ */
+const ACTIVE_CLASSES: Record<string, string> = {
+  blue: 'border-rseBlue bg-rseBlue text-white',
+  yellow: 'border-rseYellow bg-rseYellow text-rseInk',
+  navy: 'border-rseInk bg-rseInk text-white',
+  // The patches are full-colour art, so a filled button would swallow the
+  // thumbnail. A cream fill with a blue border reads as "chosen".
+  patch: 'border-rseBlue bg-rseCream text-rseBlue',
+}
+const IDLE_CLASSES = 'border-gray-200 bg-white text-gray-500'
+
 const DEFAULT_PATCH = PATCHES[0].key
 
 /** Every combination is rendered: `/images/rse-<product>-<colour>-<patch>.webp`. */
-function shotsFor(product: string): Record<string, string> {
+function shotsFor(product: string, colors: readonly ColorKey[]): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const c of COLORS) for (const p of PATCHES) out[`${c.key}-${p.key}`] = `/images/rse-${product}-${c.key}-${p.key}.webp`
+  for (const c of colors) for (const p of PATCHES) out[`${c}-${p.key}`] = `/images/rse-${product}-${c}-${p.key}.webp`
   return out
 }
 
@@ -90,24 +120,47 @@ const PRODUCTS = [
     title: 'Medium Canvas Tote',
     price: 40,
     cost: 30,
+    colors: ['blue', 'yellow'],
     blurb: 'Heavy cotton canvas boat tote with colour handles and base, finished with your patch on the front.',
-    shots: shotsFor('tote'),
+    shots: shotsFor('tote', ['blue', 'yellow']),
   },
   {
     key: 'bag',
     title: 'Canvas Makeup Bag',
     price: 25,
     cost: 18.75,
+    colors: ['blue', 'yellow'],
     blurb: 'Zippered canvas pouch with a colour base and wrist loop. Pencils, snacks, hair ties — whatever.',
-    shots: shotsFor('bag'),
+    shots: shotsFor('bag', ['blue', 'yellow']),
   },
   {
     key: 'hat',
     title: 'Trucker Hat',
     price: 25,
     cost: 18.75,
+    colors: ['blue', 'yellow'],
     blurb: 'Foam-front mesh-back snapback with your patch stitched on the front panel.',
-    shots: shotsFor('hat'),
+    shots: shotsFor('hat', ['blue', 'yellow']),
+  },
+  {
+    key: 'weekender',
+    title: 'Weekender Bag',
+    price: 95,
+    cost: 55,
+    // Two different CB Station bags with one silhouette: the yellow is their
+    // waxed-canvas weekender, the navy their canvas weekender with navy trim.
+    colors: ['yellow', 'navy'],
+    blurb: 'Roomy zip-top weekender with leather handles and a shoulder strap. Yellow is waxed canvas; navy is natural canvas with navy trim.',
+    shots: shotsFor('weekender', ['yellow', 'navy']),
+  },
+  {
+    key: 'pickleball',
+    title: 'Pickleball Bag',
+    price: 65,
+    cost: 35,
+    colors: ['navy'],
+    blurb: 'Navy canvas court bag that fits two paddles, with a zip compartment for keys, a water bottle or a towel.',
+    shots: shotsFor('pickleball', ['navy']),
   },
 ] as const
 
@@ -130,6 +183,8 @@ const SWEATSHIRT = {
   shots: { blue: '/images/rse-sweatshirt-blue.webp', yellow: '/images/rse-sweatshirt-yellow.webp' },
 } as const
 
+const SWEAT_COLORS = colorsOf(['blue', 'yellow'])
+
 const SIZES = [
   { key: 'ys', label: 'Youth S' },
   { key: 'ym', label: 'Youth M' },
@@ -143,17 +198,87 @@ const SIZES = [
 
 /** Every combination of one product, in the order the rows are drawn. */
 function variantsOf(p: (typeof PRODUCTS)[number]) {
-  return COLORS.flatMap((c) =>
+  return colorsOf(p.colors).flatMap((c) =>
     PATCHES.map((patch) => ({
       id: `qty-${p.key}-${c.key}-${patch.key}`,
       color: c,
       patch,
       /** What a human reads in the order book, the CSV and both emails. */
       name: `${c.label} ${p.title} — ${patch.name}`,
-      img: (p.shots[`${c.key}-${patch.key}`] ?? null) as string | null,
+      img: ((p.shots as Record<string, string>)[`${c.key}-${patch.key}`] ?? null) as string | null,
     })),
   )
 }
+
+/** The tassel charm: a plain product, one quantity box per colour. */
+const CHARM = {
+  key: 'charm',
+  title: 'Tassel Bag Charm',
+  price: 10,
+  cost: 2,
+  blurb: 'Faux leather tassel with a gold cap and clasp. Clip it on a tote, a backpack or your keys.',
+  colors: colorsOf(['blue', 'yellow']),
+  shots: { blue: '/images/rse-charm-blue.webp', yellow: '/images/rse-charm-yellow.webp' } as Record<string, string>,
+}
+
+/**
+ * PERSONALIZED ITEMS — each carries text the parent types, so it cannot be a
+ * quantity box: every name is its own order line, added with "+ Add" and built
+ * by `customLines()` in the effect. `perLetter` prices by letter count (letter
+ * patches); otherwise the price is flat per item.
+ *
+ * Text is reduced to A–Z (and 0–9 where `digits`) as it is typed, so what lands
+ * in the order book is exactly what gets made. The order route escapes item
+ * names in both emails; the cap here keeps a line readable.
+ */
+const CUSTOM_ITEMS = [
+  {
+    key: 'letters',
+    title: 'Letter Patches',
+    price: 5,
+    cost: 1,
+    perLetter: true,
+    maxLength: 10,
+    digits: false,
+    addLabel: 'Add a name',
+    img: '/images/rse-letters.webp',
+    blurb: 'Chenille varsity letters in royal blue and yellow. Put a name on anything above, or take them loose and iron them on yourself.',
+  },
+  {
+    key: 'beads',
+    title: 'Chunky Bead Keychain',
+    price: 12,
+    cost: 3,
+    perLetter: false,
+    maxLength: 10,
+    digits: true,
+    addLabel: 'Add a keychain',
+    img: '/images/rse-keychain-beads.webp',
+    blurb: 'Chunky letter beads: RSE in blue and yellow on one side, your word on the other.',
+  },
+  {
+    key: 'clicky',
+    title: 'Clicky Key Keychain',
+    price: 18,
+    cost: 5,
+    perLetter: false,
+    maxLength: 7,
+    digits: true,
+    addLabel: 'Add a keychain',
+    img: '/images/rse-keychain-clicky.webp',
+    blurb: 'A 3D-printed fidget keychain with real clicky keyboard keys spelling the name. Up to 7 letters.',
+  },
+] as const
+
+/** Where a set of letter patches goes — loose, or onto one of the products above. */
+const LETTER_TARGETS = [
+  { value: 'loose', label: 'Loose (I’ll iron them on)' },
+  { value: SWEATSHIRT.title, label: `On my ${SWEATSHIRT.title}` },
+  ...PRODUCTS.map((p) => ({ value: p.title as string, label: `On my ${p.title}` })),
+]
+
+/** Base colours for the clicky keychain. */
+const CLICKY_BASES = colorsOf(['blue', 'yellow'])
 
 export default function RSEMerchPage() {
   useEffect(() => {
@@ -196,20 +321,14 @@ export default function RSEMerchPage() {
      * row and the photo together by `syncCard`. A preview, never the order:
      * only the quantity boxes decide what gets made.
      */
-    const ACTIVE = {
-      blue: ['border-rseBlue', 'bg-rseBlue', 'text-white'],
-      yellow: ['border-rseYellow', 'bg-rseYellow', 'text-rseInk'],
-      // The patches are full-colour art, so a filled button would swallow the
-      // thumbnail. A cream fill with a blue border reads as "chosen".
-      patch: ['border-rseBlue', 'bg-rseCream', 'text-rseBlue'],
-    }
-    const IDLE = ['border-gray-200', 'bg-white', 'text-gray-500']
-    const ALL_ACTIVE = [...ACTIVE.blue, ...ACTIVE.yellow, ...ACTIVE.patch]
+    const activeOf = (k: string) => (ACTIVE_CLASSES[k] || ACTIVE_CLASSES.patch).split(' ')
+    const IDLE = IDLE_CLASSES.split(' ')
+    const ALL_ACTIVE = Object.values(ACTIVE_CLASSES).flatMap((c) => c.split(' '))
 
     function syncCard(key: string) {
       const card = document.getElementById(`card-${key}`)
       if (!card) return
-      const color = card.dataset.color || DEFAULT_COLOR
+      const color = card.dataset.color || card.dataset.defaultColor || ''
       const patch = card.dataset.patch || DEFAULT_PATCH
 
       const row = document.querySelector(
@@ -251,7 +370,7 @@ export default function RSEMerchPage() {
         const on = axis === 'color' ? btn.dataset.value === color : btn.dataset.value === patch
         btn.classList.remove(...ALL_ACTIVE, ...IDLE)
         if (!on) { btn.classList.add(...IDLE); return }
-        btn.classList.add(...(axis === 'patch' ? ACTIVE.patch : ACTIVE[btn.dataset.value as 'blue' | 'yellow']))
+        btn.classList.add(...activeOf(axis === 'patch' ? 'patch' : btn.dataset.value || ''))
       })
     }
 
@@ -275,7 +394,7 @@ export default function RSEMerchPage() {
         row.addEventListener('click', () => {
           const card = document.getElementById(`card-${row.dataset.product}`)
           if (!card) return
-          card.dataset.color = row.dataset.color || DEFAULT_COLOR
+          card.dataset.color = row.dataset.color || card.dataset.defaultColor || ''
           card.dataset.patch = row.dataset.patch || DEFAULT_PATCH
           syncCard(row.dataset.product || '')
         })
@@ -295,7 +414,7 @@ export default function RSEMerchPage() {
         const el = b as HTMLElement
         const on = el.dataset.value === color
         el.classList.remove(...ALL_ACTIVE, ...IDLE)
-        el.classList.add(...(on ? ACTIVE[el.dataset.value as 'blue' | 'yellow'] : IDLE))
+        el.classList.add(...(on ? activeOf(el.dataset.value || '') : IDLE))
       })
       document.querySelectorAll('.sweat-col').forEach((c) => {
         const el = c as HTMLElement
@@ -306,7 +425,7 @@ export default function RSEMerchPage() {
     function setupSweatshirt() {
       document.querySelectorAll('.sweat-color-btn').forEach((b) => {
         const el = b as HTMLElement
-        el.addEventListener('click', () => showSweatColor(el.dataset.value || DEFAULT_COLOR))
+        el.addEventListener('click', () => showSweatColor(el.dataset.value || SWEAT_COLORS[0].key))
       })
     }
 
@@ -314,11 +433,152 @@ export default function RSEMerchPage() {
     function resetCombos() {
       document.querySelectorAll('[id^="card-"]').forEach((c) => {
         const card = c as HTMLElement
-        card.dataset.color = DEFAULT_COLOR
+        card.dataset.color = card.dataset.defaultColor || ''
         card.dataset.patch = DEFAULT_PATCH
         syncCard(card.id.replace(/^card-/, ''))
       })
-      showSweatColor(DEFAULT_COLOR)
+      showSweatColor(SWEAT_COLORS[0].key)
+      showCharmColor(CHARM.colors[0].key)
+    }
+
+    /** The charm's colour buttons: swap the photo, nothing else. */
+    function showCharmColor(color: string) {
+      const img = document.getElementById('img-charm') as HTMLImageElement | null
+      if (img && CHARM.shots[color]) img.src = CHARM.shots[color]
+      document.querySelectorAll('.charm-color-btn').forEach((b) => {
+        const el = b as HTMLElement
+        el.classList.remove(...ALL_ACTIVE, ...IDLE)
+        el.classList.add(...(el.dataset.value === color ? activeOf(color) : IDLE))
+      })
+    }
+
+    function setupCharm() {
+      document.querySelectorAll('.charm-color-btn').forEach((b) => {
+        const el = b as HTMLElement
+        el.addEventListener('click', () => showCharmColor(el.dataset.value || CHARM.colors[0].key))
+      })
+    }
+
+    // --- Personalized items: one row per name, built here rather than in JSX
+    //     because the rows are added and removed by the parent. ---
+    const CUSTOM_BY_KEY = Object.fromEntries(CUSTOM_ITEMS.map((c) => [c.key, c]))
+
+    /** A–Z (and 0–9 where allowed), upper case, capped — exactly what gets made. */
+    function cleanText(raw: string, item: (typeof CUSTOM_ITEMS)[number]): string {
+      const allowed = item.digits ? /[^A-Z0-9]/g : /[^A-Z]/g
+      return raw.toUpperCase().replace(allowed, '').slice(0, item.maxLength)
+    }
+
+    function rowPrice(item: (typeof CUSTOM_ITEMS)[number], text: string): number {
+      return item.perLetter ? text.length * item.price : item.price
+    }
+
+    function refreshRowPrice(row: HTMLElement) {
+      const item = CUSTOM_BY_KEY[row.dataset.custom || '']
+      const input = row.querySelector('.custom-text') as HTMLInputElement | null
+      const label = row.querySelector('.custom-price')
+      if (!item || !input || !label) return
+      const text = input.value
+      label.textContent = item.perLetter
+        ? (text ? `${text.length} × $${item.price} = $${rowPrice(item, text)}` : `$${item.price} / letter`)
+        : `$${item.price}`
+    }
+
+    function addCustomRow(key: string) {
+      const item = CUSTOM_BY_KEY[key]
+      const list = document.getElementById(`rows-${key}`)
+      if (!item || !list) return
+      const row = document.createElement('div')
+      row.className = 'custom-row flex flex-wrap items-center gap-2 bg-slate-50 rounded-lg p-2'
+      row.dataset.custom = key
+
+      const input = document.createElement('input')
+      input.type = 'text'
+      input.className = 'custom-text flex-1 min-w-[7rem] px-3 py-2 border-2 border-slate-200 rounded-lg bg-white font-bold uppercase tracking-widest text-rseBlue outline-none focus:border-rseBlue'
+      input.placeholder = 'EMMA'
+      input.maxLength = item.maxLength
+      input.setAttribute('aria-label', `${item.title} — the ${item.perLetter ? 'letters' : 'word'}`)
+      input.addEventListener('input', () => {
+        const clean = cleanText(input.value, item)
+        if (clean !== input.value) input.value = clean
+        refreshRowPrice(row)
+        calculateTotal()
+      })
+      row.appendChild(input)
+
+      const select = document.createElement('select')
+      select.className = 'custom-option px-2 py-2 border-2 border-slate-200 rounded-lg bg-white text-xs font-bold text-gray-700'
+      const options = key === 'letters'
+        ? LETTER_TARGETS
+        : key === 'clicky'
+          ? CLICKY_BASES.map((c) => ({ value: c.label, label: `${c.label} base` }))
+          : []
+      for (const o of options) {
+        const opt = document.createElement('option')
+        opt.value = o.value
+        opt.textContent = o.label
+        select.appendChild(opt)
+      }
+      if (options.length) {
+        select.setAttribute('aria-label', key === 'letters' ? 'Where the letters go' : 'Keychain base colour')
+        row.appendChild(select)
+      }
+
+      const price = document.createElement('span')
+      price.className = 'custom-price text-xs font-bold text-rseBlue whitespace-nowrap'
+      row.appendChild(price)
+
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'custom-remove w-8 h-8 rounded-lg bg-white border-2 border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-600 font-bold'
+      remove.textContent = '×'
+      remove.setAttribute('aria-label', 'Remove')
+      remove.addEventListener('click', () => { row.remove(); calculateTotal() })
+      row.appendChild(remove)
+
+      list.appendChild(row)
+      refreshRowPrice(row)
+      input.focus()
+    }
+
+    function setupCustom() {
+      document.querySelectorAll('.custom-add').forEach((b) => {
+        const el = b as HTMLElement
+        el.addEventListener('click', () => addCustomRow(el.dataset.custom || ''))
+      })
+    }
+
+    /**
+     * One order line per personalized row that has text. Rows left empty are
+     * reported by `emptyCustomRows()` and stop the order rather than vanishing.
+     */
+    function customLines() {
+      const out: Array<{ name: string; qty: number; unit_price: number; line_total: number; cost_per_unit: number }> = []
+      document.querySelectorAll('.custom-row').forEach((r) => {
+        const row = r as HTMLElement
+        const item = CUSTOM_BY_KEY[row.dataset.custom || '']
+        const text = (row.querySelector('.custom-text') as HTMLInputElement | null)?.value || ''
+        if (!item || !text) return
+        const option = (row.querySelector('.custom-option') as HTMLSelectElement | null)?.value || ''
+        const unit = rowPrice(item, text)
+        const cost = item.perLetter ? text.length * item.cost : item.cost
+        let name: string
+        if (item.key === 'letters') {
+          name = `Letter Patches "${text}" (${text.length}) — ${option === 'loose' ? 'loose, to iron on' : `on my ${option}`}`
+        } else if (item.key === 'clicky') {
+          name = `${item.title} (${option} base) — "${text}"`
+        } else {
+          name = `${item.title} — RSE / "${text}"`
+        }
+        out.push({ name, qty: 1, unit_price: unit, line_total: unit, cost_per_unit: cost })
+      })
+      return out
+    }
+
+    function emptyCustomRows(): number {
+      let n = 0
+      document.querySelectorAll('.custom-row .custom-text').forEach((i) => { if (!(i as HTMLInputElement).value) n++ })
+      return n
     }
 
     // --- Payment radios ---
@@ -378,6 +638,8 @@ export default function RSEMerchPage() {
       const patchQty = totalPatchQty(looseSelections())
       total += patchPriceDollars(patchQty)
       updatePatchHint(patchQty)
+
+      for (const line of customLines()) total += line.line_total
 
       if (isHomeDelivery()) total += HOME_DELIVERY_FEE
       const display = document.getElementById('totalPriceDisplay')
@@ -467,7 +729,13 @@ export default function RSEMerchPage() {
         const patchLine = patchOrderLine(looseSelections())
         if (patchLine) pushLine(patchLine)
 
+        // Then each personalized item, one line per name.
+        if (emptyCustomRows() > 0) { alertCustom('Type a name in each personalized item, or remove it.'); return }
+        for (const line of customLines()) pushLine(line)
+
         if (!hasItems) { alertCustom('Please select at least one item.'); return }
+        // The order route takes at most 40 lines.
+        if (itemsData.length > 39) { alertCustom('That is a lot of lines — please split it into two orders.'); return }
 
         // Delivery is a charge ON an order, appended after the product loop so
         // it can never be the only thing in one.
@@ -552,6 +820,7 @@ export default function RSEMerchPage() {
         const addrBox = document.getElementById('deliveryAddressBox'); if (addrBox) addrBox.classList.add('hidden')
         const addrField = document.getElementById('deliveryAddress') as HTMLTextAreaElement | null
         if (addrField) addrField.required = false
+        document.querySelectorAll('.custom-row').forEach((r) => r.remove())
         resetCombos()
         calculateTotal()
         finalSubmitBtn.innerHTML = 'CONFIRM & SUBMIT'
@@ -562,6 +831,8 @@ export default function RSEMerchPage() {
     setupQuantityButtons()
     setupComboControls()
     setupSweatshirt()
+    setupCharm()
+    setupCustom()
     setupPaymentRadios()
     setupDeliveryRadios()
     setupFormSubmit()
@@ -616,7 +887,7 @@ export default function RSEMerchPage() {
                 <div className="p-2 bg-rseBlue/10 rounded-lg text-rseBlue"><i data-lucide="shopping-bag" className="w-6 h-6"></i></div>
                 <h2 className="text-xl sm:text-3xl font-bold text-rseInk font-oswald uppercase tracking-wide">The Merch</h2>
               </div>
-              <p className="text-sm text-gray-600 mb-3 ml-1">Everything comes in royal blue or yellow. Totes, makeup bags and hats are finished with the patch of your choice.</p>
+              <p className="text-sm text-gray-600 mb-3 ml-1">Totes, makeup bags, hats and bags are finished with the patch of your choice. Want a name on it? See Personalize It below.</p>
 
               {/* The four designs, shown once up front so the rows below are
                   recognisable at thumbnail size. */}
@@ -640,17 +911,15 @@ export default function RSEMerchPage() {
                 <div id="sweat-card" className="md:col-span-2 bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <div className="flex gap-2 mb-3">
-                      {COLORS.map((c) => (
+                      {SWEAT_COLORS.map((c, i) => (
                         <button
                           key={c.key}
                           type="button"
                           className={`sweat-color-btn flex-1 py-1.5 border-2 text-xs font-bold uppercase rounded-md transition-colors ${
-                            c.key === DEFAULT_COLOR
-                              ? 'border-rseBlue bg-rseBlue text-white'
-                              : 'border-gray-200 bg-white text-gray-500'
+                            i === 0 ? ACTIVE_CLASSES[c.key] : IDLE_CLASSES
                           }`}
                           data-value={c.key}
-                          data-src={SWEATSHIRT.shots[c.key]}
+                          data-src={SWEATSHIRT.shots[c.key as 'blue' | 'yellow']}
                           data-alt={`${c.label} ${SWEATSHIRT.title}`}
                         >
                           {c.label}
@@ -658,7 +927,7 @@ export default function RSEMerchPage() {
                       ))}
                     </div>
                     <div className="w-full aspect-[4/5] bg-slate-100 rounded-lg overflow-hidden">
-                      <img id="img-sweatshirt" src={SWEATSHIRT.shots[DEFAULT_COLOR]} alt={`${COLORS[0].label} ${SWEATSHIRT.title}`} className="w-full h-full object-cover object-top" />
+                      <img id="img-sweatshirt" src={SWEATSHIRT.shots[SWEAT_COLORS[0].key as 'blue' | 'yellow']} alt={`${SWEAT_COLORS[0].label} ${SWEATSHIRT.title}`} className="w-full h-full object-cover object-top" />
                     </div>
                   </div>
                   <div className="flex flex-col">
@@ -672,7 +941,7 @@ export default function RSEMerchPage() {
                         <thead>
                           <tr>
                             <th></th>
-                            {COLORS.map((c) => (
+                            {SWEAT_COLORS.map((c) => (
                               <th key={c.key} data-color={c.key} className="sweat-col rounded-t-md px-1 pb-1.5 pt-1 text-[10px] font-bold uppercase tracking-wide text-gray-600">
                                 <span className="inline-flex items-center gap-1.5">
                                   <span className="w-3 h-3 rounded-full border border-black/20" style={{ background: c.swatch }}></span>
@@ -686,7 +955,7 @@ export default function RSEMerchPage() {
                           {SIZES.map((s) => (
                             <tr key={s.key}>
                               <td className="py-1 pr-2 text-[11px] font-bold uppercase tracking-wide text-gray-700 whitespace-nowrap">{s.label}</td>
-                              {COLORS.map((c) => {
+                              {SWEAT_COLORS.map((c) => {
                                 const id = `qty-${SWEATSHIRT.key}-${c.key}-${s.key}`
                                 const name = `${c.label} ${SWEATSHIRT.title} — ${s.label}`
                                 return (
@@ -723,7 +992,8 @@ export default function RSEMerchPage() {
                     <div
                       key={product.key}
                       id={`card-${product.key}`}
-                      data-color={DEFAULT_COLOR}
+                      data-color={product.colors[0]}
+                      data-default-color={product.colors[0]}
                       data-patch={DEFAULT_PATCH}
                       className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full"
                     >
@@ -731,24 +1001,29 @@ export default function RSEMerchPage() {
                           highlighted so the effect is always visible on the box
                           that actually orders. */}
                       <div className="space-y-2 mb-3">
-                        <div className="flex gap-2">
-                          {COLORS.map((c) => (
-                            <button
-                              key={c.key}
-                              type="button"
-                              className={`combo-btn flex-1 py-1.5 border-2 text-xs font-bold uppercase rounded-md transition-colors ${
-                                c.key === DEFAULT_COLOR
-                                  ? 'border-rseBlue bg-rseBlue text-white'
-                                  : 'border-gray-200 bg-white text-gray-500'
-                              }`}
-                              data-product={product.key}
-                              data-axis="color"
-                              data-value={c.key}
-                            >
-                              {c.label}
-                            </button>
-                          ))}
-                        </div>
+                        {/* One colour needs no chooser — say it instead. */}
+                        {product.colors.length > 1 ? (
+                          <div className="flex gap-2">
+                            {colorsOf(product.colors).map((c, i) => (
+                              <button
+                                key={c.key}
+                                type="button"
+                                className={`combo-btn flex-1 py-1.5 border-2 text-xs font-bold uppercase rounded-md transition-colors ${
+                                  i === 0 ? ACTIVE_CLASSES[c.key] : IDLE_CLASSES
+                                }`}
+                                data-product={product.key}
+                                data-axis="color"
+                                data-value={c.key}
+                              >
+                                {c.label}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className={`py-1.5 border-2 text-xs font-bold uppercase rounded-md text-center ${ACTIVE_CLASSES[product.colors[0]]}`}>
+                            {colorsOf(product.colors)[0].label} only
+                          </p>
+                        )}
                         <div className="grid grid-cols-4 gap-1.5">
                           {PATCHES.map((p) => (
                             <button
@@ -890,6 +1165,99 @@ export default function RSEMerchPage() {
                   </div>
                 </div>
 
+              </div>
+            </div>
+
+            {/* PERSONALIZE — letters, keychains and the charm. The first
+                three are one row per name (built in the effect); the charm
+                is an ordinary quantity box per colour. */}
+            <div className="p-4 md:p-8 border-b border-gray-100 bg-rseCream/40">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2 bg-rseBlue/10 rounded-lg text-rseBlue"><i data-lucide="sparkles" className="w-6 h-6"></i></div>
+                <h2 className="text-xl sm:text-3xl font-bold text-rseInk font-oswald uppercase tracking-wide">Personalize It</h2>
+              </div>
+              <p className="text-sm text-gray-600 mb-6 ml-1">Add a name in chenille letters, or make a keychain that&apos;s all theirs.</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {CUSTOM_ITEMS.map((item) => (
+                  <div key={item.key} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full">
+                    <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden">
+                      <img src={item.img} alt={item.title} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-grow">
+                      <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">{item.title}</h3>
+                      <p className="text-rseBlue font-black text-2xl mt-1 mb-2">
+                        ${item.price}.00{item.perLetter && <span className="text-sm font-bold text-gray-500 tracking-normal normal-case"> per letter</span>}
+                      </p>
+                      <p className="text-sm text-gray-600 mb-3 leading-relaxed">{item.blurb}</p>
+                      <p className="text-[11px] text-gray-400 mb-3">Up to {item.maxLength} {item.digits ? 'letters or numbers' : 'letters'}.</p>
+                    </div>
+                    <div className="mt-auto pt-4 border-t border-gray-100">
+                      <div id={`rows-${item.key}`} className="space-y-2 mb-3"></div>
+                      <button
+                        type="button"
+                        className="custom-add w-full py-2.5 border-2 border-dashed border-rseBlue/50 rounded-lg text-rseBlue text-xs font-bold uppercase tracking-widest hover:bg-rseCream transition-colors"
+                        data-custom={item.key}
+                      >
+                        + {item.addLabel}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <div id="charm-card" className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full">
+                  <div className="flex gap-2 mb-3">
+                    {CHARM.colors.map((c, i) => (
+                      <button
+                        key={c.key}
+                        type="button"
+                        className={`charm-color-btn flex-1 py-1.5 border-2 text-xs font-bold uppercase rounded-md transition-colors ${
+                          i === 0 ? ACTIVE_CLASSES[c.key] : IDLE_CLASSES
+                        }`}
+                        data-value={c.key}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="w-full aspect-square bg-slate-100 rounded-lg mb-4 overflow-hidden">
+                    <img id="img-charm" src={CHARM.shots[CHARM.colors[0].key]} alt={CHARM.title} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-grow">
+                    <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">{CHARM.title}</h3>
+                    <p className="text-rseBlue font-black text-2xl mt-1 mb-2">${CHARM.price}.00</p>
+                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">{CHARM.blurb}</p>
+                  </div>
+                  <div className="mt-auto pt-4 border-t border-gray-100 space-y-2">
+                    {CHARM.colors.map((c) => {
+                      const id = `qty-${CHARM.key}-${c.key}`
+                      const name = `${c.label} ${CHARM.title}`
+                      return (
+                        <div key={c.key} className="flex items-center gap-2 bg-slate-50 rounded-lg p-1.5">
+                          <span className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="w-3 h-3 rounded-full flex-none border border-black/20" style={{ background: c.swatch }}></span>
+                            <span className="text-[11px] font-bold uppercase tracking-wide text-gray-700 truncate">{c.label}</span>
+                          </span>
+                          <div className="flex items-center border-2 border-slate-200 rounded-lg bg-white overflow-hidden flex-none">
+                            <button type="button" className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target={id}>&minus;</button>
+                            <input
+                              type="number"
+                              id={id}
+                              data-name={name}
+                              className="qty-input w-9 text-center font-bold text-rseBlue outline-none py-1 text-sm"
+                              data-price={CHARM.price}
+                              data-cost={CHARM.cost}
+                              min="0"
+                              defaultValue="0"
+                              aria-label={name}
+                            />
+                            <button type="button" className="px-3 py-1.5 bg-rseBlue text-white font-bold hover:bg-rseInk transition-colors increment-btn" data-target={id}>+</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
 
