@@ -46,6 +46,10 @@ const DELIVERY_FEE_SHORT = `$${HOME_DELIVERY_FEE_CENTS / 100}`
  * RSE's own patch designs (Helen Schulz and Rebecca Sieger, 2026-10-12): the
  * rooster, the varsity letters, Reggie on his skateboard, and the heart.
  *
+ * The crewneck sweatshirt ($60, added 2026-10-13) is the exception: a fixed
+ * design sold by colour and SIZE — see `SWEATSHIRT`. Its photos are AI-generated
+ * on-model mockups, upscaled with Replicate recraft-crisp-upscale.
+ *
  * The product photos are MOCKUPS, not photography: the real blanks from
  * cbstation.com with each patch rendered as embroidery (Replicate
  * flux-kontext-pro, background removed) and placed on them. Every combination
@@ -105,6 +109,36 @@ const PRODUCTS = [
     blurb: 'Foam-front mesh-back snapback with your patch stitched on the front panel.',
     shots: shotsFor('hat'),
   },
+] as const
+
+/**
+ * The crewneck sweatshirt — a FIXED design, so its axes are colour and SIZE,
+ * not colour and patch: the varsity letters on the chest and Reggie on the
+ * front, as in the mockups (2026-10-13). One quantity box per colour-and-size,
+ * the same "no hidden state" rule as the cards below, laid out as a size table
+ * with a column per colour so sixteen boxes stay readable.
+ *
+ * Its rows are ordinary `.qty-input`s with `data-price` / `data-cost`, so the
+ * total, the summary and the posted line items treat them exactly like a tote.
+ */
+const SWEATSHIRT = {
+  key: 'sweatshirt',
+  title: 'Crewneck Sweatshirt',
+  price: 60,
+  cost: 35,
+  blurb: 'Soft fleece crewneck with the varsity RSE letters on the chest and Reggie on the front.',
+  shots: { blue: '/images/rse-sweatshirt-blue.webp', yellow: '/images/rse-sweatshirt-yellow.webp' },
+} as const
+
+const SIZES = [
+  { key: 'ys', label: 'Youth S' },
+  { key: 'ym', label: 'Youth M' },
+  { key: 'yl', label: 'Youth L' },
+  { key: 'as', label: 'Adult S' },
+  { key: 'am', label: 'Adult M' },
+  { key: 'al', label: 'Adult L' },
+  { key: 'axl', label: 'Adult XL' },
+  { key: 'axxl', label: 'Adult 2XL' },
 ] as const
 
 /** Every combination of one product, in the order the rows are drawn. */
@@ -248,6 +282,34 @@ export default function RSEMerchPage() {
       })
     }
 
+    /**
+     * The sweatshirt's colour buttons: a PREVIEW, like the others. They swap
+     * the photo and highlight that colour's column of quantity boxes, so the
+     * effect of the button is visible on the boxes that actually order.
+     */
+    function showSweatColor(color: string) {
+      const img = document.getElementById('img-sweatshirt') as HTMLImageElement | null
+      const btn = document.querySelector(`.sweat-color-btn[data-value="${color}"]`) as HTMLElement | null
+      if (img && btn?.dataset.src) { img.src = btn.dataset.src; img.alt = btn.dataset.alt || '' }
+      document.querySelectorAll('.sweat-color-btn').forEach((b) => {
+        const el = b as HTMLElement
+        const on = el.dataset.value === color
+        el.classList.remove(...ALL_ACTIVE, ...IDLE)
+        el.classList.add(...(on ? ACTIVE[el.dataset.value as 'blue' | 'yellow'] : IDLE))
+      })
+      document.querySelectorAll('.sweat-col').forEach((c) => {
+        const el = c as HTMLElement
+        el.classList.toggle('bg-rseCream', el.dataset.color === color)
+      })
+    }
+
+    function setupSweatshirt() {
+      document.querySelectorAll('.sweat-color-btn').forEach((b) => {
+        const el = b as HTMLElement
+        el.addEventListener('click', () => showSweatColor(el.dataset.value || DEFAULT_COLOR))
+      })
+    }
+
     /** Point every card back at the default combination — on load and after a reset. */
     function resetCombos() {
       document.querySelectorAll('[id^="card-"]').forEach((c) => {
@@ -256,6 +318,7 @@ export default function RSEMerchPage() {
         card.dataset.patch = DEFAULT_PATCH
         syncCard(card.id.replace(/^card-/, ''))
       })
+      showSweatColor(DEFAULT_COLOR)
     }
 
     // --- Payment radios ---
@@ -498,6 +561,7 @@ export default function RSEMerchPage() {
 
     setupQuantityButtons()
     setupComboControls()
+    setupSweatshirt()
     setupPaymentRadios()
     setupDeliveryRadios()
     setupFormSubmit()
@@ -552,7 +616,7 @@ export default function RSEMerchPage() {
                 <div className="p-2 bg-rseBlue/10 rounded-lg text-rseBlue"><i data-lucide="shopping-bag" className="w-6 h-6"></i></div>
                 <h2 className="text-xl sm:text-3xl font-bold text-rseInk font-oswald uppercase tracking-wide">The Merch</h2>
               </div>
-              <p className="text-sm text-gray-600 mb-3 ml-1">Every piece comes in royal blue or yellow, finished with the patch of your choice.</p>
+              <p className="text-sm text-gray-600 mb-3 ml-1">Everything comes in royal blue or yellow. Totes, makeup bags and hats are finished with the patch of your choice.</p>
 
               {/* The four designs, shown once up front so the rows below are
                   recognisable at thumbnail size. */}
@@ -571,6 +635,87 @@ export default function RSEMerchPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+                {/* SWEATSHIRT — full width, photo beside a size-by-colour table. */}
+                <div id="sweat-card" className="md:col-span-2 bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex gap-2 mb-3">
+                      {COLORS.map((c) => (
+                        <button
+                          key={c.key}
+                          type="button"
+                          className={`sweat-color-btn flex-1 py-1.5 border-2 text-xs font-bold uppercase rounded-md transition-colors ${
+                            c.key === DEFAULT_COLOR
+                              ? 'border-rseBlue bg-rseBlue text-white'
+                              : 'border-gray-200 bg-white text-gray-500'
+                          }`}
+                          data-value={c.key}
+                          data-src={SWEATSHIRT.shots[c.key]}
+                          data-alt={`${c.label} ${SWEATSHIRT.title}`}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="w-full aspect-[4/5] bg-slate-100 rounded-lg overflow-hidden">
+                      <img id="img-sweatshirt" src={SWEATSHIRT.shots[DEFAULT_COLOR]} alt={`${COLORS[0].label} ${SWEATSHIRT.title}`} className="w-full h-full object-cover object-top" />
+                    </div>
+                  </div>
+                  <div className="flex flex-col">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-rseBlue mb-1">New</p>
+                    <h3 className="text-xl font-bold text-gray-900 font-oswald uppercase">{SWEATSHIRT.title}</h3>
+                    <p className="text-rseBlue font-black text-2xl mt-1 mb-2">${SWEATSHIRT.price}.00</p>
+                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">{SWEATSHIRT.blurb}</p>
+                    <div className="mt-auto pt-4 border-t border-gray-100">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">How many of each size</p>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr>
+                            <th></th>
+                            {COLORS.map((c) => (
+                              <th key={c.key} data-color={c.key} className="sweat-col rounded-t-md px-1 pb-1.5 pt-1 text-[10px] font-bold uppercase tracking-wide text-gray-600">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="w-3 h-3 rounded-full border border-black/20" style={{ background: c.swatch }}></span>
+                                  {c.short}
+                                </span>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {SIZES.map((s) => (
+                            <tr key={s.key}>
+                              <td className="py-1 pr-2 text-[11px] font-bold uppercase tracking-wide text-gray-700 whitespace-nowrap">{s.label}</td>
+                              {COLORS.map((c) => {
+                                const id = `qty-${SWEATSHIRT.key}-${c.key}-${s.key}`
+                                const name = `${c.label} ${SWEATSHIRT.title} — ${s.label}`
+                                return (
+                                  <td key={c.key} data-color={c.key} className="sweat-col px-1 py-1">
+                                    <div className="flex items-center justify-center border-2 border-slate-200 rounded-lg bg-white overflow-hidden w-fit mx-auto">
+                                      <button type="button" className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 decrement-btn" data-target={id}>&minus;</button>
+                                      <input
+                                        type="number"
+                                        id={id}
+                                        data-name={name}
+                                        className="qty-input w-8 text-center font-bold text-rseBlue outline-none py-0.5 text-sm"
+                                        data-price={SWEATSHIRT.price}
+                                        data-cost={SWEATSHIRT.cost}
+                                        min="0"
+                                        defaultValue="0"
+                                        aria-label={name}
+                                      />
+                                      <button type="button" className="px-2.5 py-1 bg-rseBlue text-white font-bold hover:bg-rseInk transition-colors increment-btn" data-target={id}>+</button>
+                                    </div>
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
 
                 {PRODUCTS.map((product) => {
                   const variants = variantsOf(product)
