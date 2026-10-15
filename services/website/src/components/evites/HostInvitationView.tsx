@@ -421,15 +421,13 @@ export function HostInvitationView(props: HostViewProps) {
             {data.facts.hostContactLine && <p className="mt-1 text-gray-500">{data.facts.hostContactLine}</p>}
           </section>
         </div>
+        {/* RSVPs sit right under Share (Adam, 2026-10-14): once it is sent, the answers are what a host comes back for. */}
         <div className="space-y-6">
           <SharePanel props={props} />
+          <RsvpList props={props} />
           <DesignPicker props={props} />
           <CustomizeForm props={props} />
         </div>
-      </div>
-
-      <div className="mt-6">
-        <RsvpList props={props} />
       </div>
     </div>
   )
