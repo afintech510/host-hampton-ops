@@ -61,6 +61,7 @@ export default function Footer() {
               // (/party-room-rental and /sitemap) despite being one of the three
               // money pages. An orphan cannot rank.
               { href: '/studio-rental',      label: 'Studio Rental' },
+              { href: '/fantasy-football-draft-party', label: 'Fantasy Draft Nights' },
               { href: '/permanent-jewelry',  label: 'Permanent Jewelry' },
               { href: '/events',             label: 'Events & Classes' },
               { href: '/first-birthday-parties', label: 'First Birthdays' },

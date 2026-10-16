@@ -528,6 +528,7 @@ const ASKING_FORMS = [
   'components/MobilePartyForm.tsx',
   'components/ContactForm.tsx',
   'components/RoomRentalLeadForm.tsx',
+  'components/DraftPartyLeadForm.tsx',
   'app/trucker-hat-bar/InquiryForm.tsx',
   'app/party-packages/PartyPackagesContent.tsx',
   'app/kids-party-menu/KidsPartyMenuContent.tsx',

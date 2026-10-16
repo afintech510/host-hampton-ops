@@ -95,6 +95,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   // CMS slug under `i/` can never render. (Spec says "add /i"; the tripwire below
   // compares against the page route as it is on disk, `/i/[slug]`.)
   '/i/[slug]',
+  '/fantasy-football-draft-party',
   '/join-the-team',
   '/invitations',
   '/kids-party-menu',

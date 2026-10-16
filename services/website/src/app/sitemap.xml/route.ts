@@ -45,6 +45,7 @@ const STATIC_ROUTES: Entry[] = [
   { path: '/mobile-craft-party', changefreq: 'weekly', priority: 0.9 },
   { path: '/party-room-rental', changefreq: 'monthly', priority: 0.8 },
   { path: '/studio-rental', changefreq: 'monthly', priority: 0.8 },
+  { path: '/fantasy-football-draft-party', changefreq: 'monthly', priority: 0.8, lastmod: '2026-10-16' },
   { path: '/kids-party-menu', changefreq: 'monthly', priority: 0.8 },
   { path: '/party-quote', changefreq: 'monthly', priority: 0.7 },
   { path: '/party-builder', changefreq: 'monthly', priority: 0.6 },

@@ -36,6 +36,7 @@ const sections: { title: string; links: LinkItem[] }[] = [
       { href: '/communion-party', label: 'Communion Party', description: 'First communion celebration packages', icon: <Church className={iconClass} /> },
       { href: '/party-room-rental', label: 'Party Room Rental', description: 'Private studio space for your event — 3-hour and full-day blocks', icon: <DoorOpen className={iconClass} /> },
       { href: '/studio-rental', label: 'Hourly Studio Rental', description: 'Studio by the hour for photo shoots, meetings, workshops and classes', icon: <DoorOpen className={iconClass} /> },
+      { href: '/fantasy-football-draft-party', label: 'Fantasy Football Draft Party Room', description: 'Weeknight private room for your league draft — room only or with food', icon: <Users className={iconClass} /> },
       { href: '/permanent-jewelry', label: 'Permanent Jewelry', description: 'Custom-welded bracelets, anklets, and necklaces', icon: <Gem className={iconClass} /> },
       { href: '/fundraiser', label: 'Fundraisers', description: 'Host a fundraiser event at our venue', icon: <Heart className={iconClass} /> },
       { href: '/gift-cards', label: 'Gift Cards', description: 'Give a Host Hampton gift card for any party or service', icon: <Gift className={iconClass} /> },

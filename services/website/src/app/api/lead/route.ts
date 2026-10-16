@@ -22,6 +22,7 @@ import {
   MAX_INTAKE_NAME_CHARS,
 } from '@/lib/publicIntake'
 import { attributionFromBody } from '@/lib/attribution'
+import { DRAFT_PARTY_SOURCE_PAGE } from '@/lib/draftParty'
 
 export const dynamic = 'force-dynamic'
 
@@ -83,8 +84,11 @@ export async function POST(req: NextRequest) {
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null
 
   // Build service interests from event type / source page
+  // A draft night IS a room rental (same room, same booking flow); the
+  // source_page tag on the plan is what tells the two apart.
+  const isRoomRental = sourcePage === 'party-room-rental' || sourcePage === DRAFT_PARTY_SOURCE_PAGE
   const serviceInterests: string[] = []
-  if (sourcePage === 'party-room-rental') serviceInterests.push('room-rental')
+  if (isRoomRental) serviceInterests.push('room-rental')
   else if (eventType === 'Kids Birthday Party') serviceInterests.push('kids-party')
   else if (eventType === 'Studio Rental') serviceInterests.push('party-room')
   else if (eventType === 'Mobile Services') serviceInterests.push('mobile')
@@ -230,10 +234,11 @@ export async function POST(req: NextRequest) {
     ]
 
     // Customer auto-response for all lead types
-    const isRoomRental = sourcePage === 'party-room-rental'
-    const subject = isRoomRental
-      ? 'Your Room Rental Inquiry — Host Hampton'
-      : `Your ${eventType || 'Party'} Inquiry — Host Hampton`
+    const subject = sourcePage === DRAFT_PARTY_SOURCE_PAGE
+      ? 'Your Fantasy Draft Night Inquiry — Host Hampton'
+      : isRoomRental
+        ? 'Your Room Rental Inquiry — Host Hampton'
+        : `Your ${eventType || 'Party'} Inquiry — Host Hampton`
 
     const confirmBookLink = isRoomRental
       ? bookLink

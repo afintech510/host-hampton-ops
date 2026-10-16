@@ -226,6 +226,13 @@ export default async function PartyRoomRental() {
             first birthday or a milestone celebration. Bring your own decorations, food and vendors
             — it is never shared with another group.
           </p>
+          <p className="text-hampton-navy max-w-2xl mx-auto mt-3 text-sm leading-relaxed">
+            Running your league&apos;s draft?{' '}
+            <Link href="/fantasy-football-draft-party" className="font-semibold underline underline-offset-2 hover:text-hampton-blue">
+              See our weeknight fantasy football draft nights
+            </Link>
+            .
+          </p>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {useCases.map(u => (

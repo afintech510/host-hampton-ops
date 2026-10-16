@@ -91,6 +91,7 @@ const localBusinessSchema = {
     'Kids birthday parties', 'Mobile craft parties', 'Slime parties', 'Spa parties', 'Glow parties',
     'Arts and crafts parties', 'Toddler and first birthday parties', 'Sweet 16 parties',
     'Baby and bridal showers', 'Trucker hat bar', 'Permanent jewelry', 'Party room rental',
+    'Fantasy football draft parties',
   ],
   url: 'https://www.hosthampton.com',
   telephone: '+16319989325',
