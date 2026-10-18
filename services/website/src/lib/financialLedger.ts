@@ -45,6 +45,7 @@
  */
 
 import { isUniqueViolation } from './planPayment'
+import { noteStripeLedgerWrite } from './ledgerCapture'
 
 /** Sources `financial_transactions_source_check` permits. */
 export const FINANCIAL_SOURCES = ['stripe', 'godaddy', 'squarespace', 'honeybook', 'cash', 'other'] as const
@@ -103,7 +104,12 @@ export async function recordLedgerEntry(
     reference: entry.reference,
     notes: entry.notes || null,
   })
-  if (!error) return 'written'
+  if (!error) {
+    // A NEW Stripe row is the once-per-payment signal behind the owner's
+    // payment email (lib/ledgerCapture.ts). A no-op outside the webhook.
+    if (entry.source === 'stripe') noteStripeLedgerWrite(entry)
+    return 'written'
+  }
   if (isUniqueViolation(error)) return 'duplicate'
   console.error(
     `FINANCIAL ROW NOT WRITTEN for ${entry.source}/${entry.reference} ` +

@@ -51,6 +51,8 @@ import {
 } from '@/lib/appointmentEvents'
 import { appointmentConfirmationHtml, appointmentAdminNotifyHtml } from '@/lib/email-templates/appointments'
 import { readBalanceInputs, computeBalance } from '@/lib/bookingBalance'
+import { newLedgerCapture, runWithLedgerCapture } from '@/lib/ledgerCapture'
+import { sendStripePaymentNotice } from '@/lib/stripePaymentNotice'
 
 /**
  * Record a Stripe payment in the unified financial_transactions table.
@@ -188,6 +190,27 @@ export async function POST(req: NextRequest) {
     console.error('Webhook signature error:', message)
     return NextResponse.json({ error: message }, { status: 400 })
   }
+
+  // Every new Stripe row this delivery writes to the books is collected, and the
+  // owner gets one detailed email about it (lib/stripePaymentNotice.ts). In a
+  // `finally`, so a branch that recorded the money and then failed a later step
+  // still reports it: its retry will find the row `duplicate` and stay silent.
+  const capture = newLedgerCapture()
+  try {
+    return await runWithLedgerCapture(capture, () => handleVerifiedEvent(req, event, stripe, supabase))
+  } finally {
+    if (capture.writes.length > 0) {
+      await sendStripePaymentNotice({ event, writes: capture.writes, stripe, supabase })
+    }
+  }
+}
+
+async function handleVerifiedEvent(
+  req: NextRequest,
+  event: Stripe.Event,
+  stripe: Stripe,
+  supabase: ReturnType<typeof getSupabase>,
+): Promise<NextResponse> {
 
   // ── Payment Intent succeeded (in-page Payment Element flow) ──
   // This fires for the planner deposit + additional payment flows that were

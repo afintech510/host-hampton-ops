@@ -118,13 +118,15 @@ afterAll(() => { process.env = originalEnv })
 /* ───────────────────────────────────────────────── idempotency (redelivery) ── */
 
 describe('Stripe redelivers — and used to be paid for twice', () => {
-  it('a redelivered event_ticket issues ONE ticket, ONE financial row, TWO emails total', async () => {
+  it('a redelivered event_ticket issues ONE ticket, ONE financial row, THREE emails total', async () => {
     fire({ metadata: TICKET_META })
     expect((await post()).status).toBe(200)
 
     expect(db.count('event_tickets')).toBe(1)
     expect(db.count('financial_transactions')).toBe(1)
-    expect(mockResendSend).toHaveBeenCalledTimes(2)   // customer + owner
+    // customer + owner ticket note + the owner's Stripe payment notice
+    expect(mockResendSend).toHaveBeenCalledTimes(3)
+    expect(mockResendSend.mock.calls.filter(c => /^Stripe payment /.test(c[0]?.subject ?? '')).length).toBe(1)
     expect(db.rows('events')[0].available_tickets).toBe(8)
 
     // Same event, again — exactly what Stripe does when a delivery times out.
@@ -150,7 +152,7 @@ describe('Stripe redelivers — and used to be paid for twice', () => {
     expect((await post()).status).toBe(200)
     expect(db.count('gift_cards')).toBe(1)
     const firstCode = db.rows('gift_cards')[0].code
-    expect(mockResendSend).toHaveBeenCalledTimes(3)   // recipient + purchaser + owner
+    expect(mockResendSend).toHaveBeenCalledTimes(4)   // recipient + purchaser + owner + Stripe payment notice
 
     mockResendSend.mockClear()
     fire({ metadata: GC })

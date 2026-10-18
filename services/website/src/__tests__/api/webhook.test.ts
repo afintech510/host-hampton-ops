@@ -179,8 +179,8 @@ describe('POST /api/webhook', () => {
       qty: 2,
     }))
 
-    // Should send 2 emails
-    expect(mockResendSend).toHaveBeenCalledTimes(2)
+    // Customer + owner ticket note + the owner's Stripe payment notice
+    expect(mockResendSend).toHaveBeenCalledTimes(3)
   })
 
   it('decrements session tickets when sessionId present', async () => {

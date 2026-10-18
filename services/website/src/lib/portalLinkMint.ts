@@ -52,8 +52,17 @@ export async function mintPortalLink(
   bookingRef: string,
   /** Destination path, e.g. `/party-planner`. Defaults to the portal itself. */
   destination?: string,
+  /**
+   * A shorter life than the default 30 days. The daily RSVP digest mints one
+   * link per party per day; 48 hours keeps those from piling up as live tokens.
+   */
+  opts?: { ttlHours?: number },
 ): Promise<MintedLink> {
-  const { token, hash, expiresAt } = generatePortalToken(bookingRef, portalSigningSecret())
+  const minted = generatePortalToken(bookingRef, portalSigningSecret())
+  const { token, hash } = minted
+  const ttlMs = opts?.ttlHours && opts.ttlHours > 0 ? opts.ttlHours * 3_600_000 : null
+  const expiresAt =
+    ttlMs && Date.now() + ttlMs < minted.expiresAt.getTime() ? new Date(Date.now() + ttlMs) : minted.expiresAt
 
   const { error } = await supabase
     .from('portal_tokens')

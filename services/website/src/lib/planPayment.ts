@@ -55,6 +55,7 @@ import {
   type PayLinkRow,
 } from '@/lib/planPayLinks'
 import { planMoney, type PaymentRow } from '@/lib/planBalance'
+import { noteStripeLedgerWrite } from '@/lib/ledgerCapture'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -536,21 +537,33 @@ export async function recordPlanPayment(
       if (error) console.error('recordPlanPayment: modification log (non-fatal):', error.message)
     })
 
+  const finRow = {
+    date: new Date().toISOString().split('T')[0],
+    description: `${invoice.docTitle.replace(/ (Quotation|Invoice)$/, '')} — ${target.purpose} (${ref})`,
+    amount_cents: chargedCents,
+    source: 'stripe',
+    category: invoice.partyType === 'studio_rental' ? 'Room Rental' : 'Party Booking',
+    customer_name: invoice.booking.contact_name,
+    reference: `stripe-${session.id}`,
+    notes: invoice.booking.contact_email,
+  }
   await supabase
     .from('financial_transactions')
-    .insert({
-      date: new Date().toISOString().split('T')[0],
-      description: `${invoice.docTitle.replace(/ (Quotation|Invoice)$/, '')} — ${target.purpose} (${ref})`,
-      amount_cents: chargedCents,
-      source: 'stripe',
-      category: invoice.partyType === 'studio_rental' ? 'Room Rental' : 'Party Booking',
-      customer_name: invoice.booking.contact_name,
-      reference: `stripe-${session.id}`,
-      notes: invoice.booking.contact_email,
-    })
+    .insert(finRow)
     .then(({ error }) => {
       if (error && !isUniqueViolation(error)) {
         console.error('recordPlanPayment: financial txn (non-fatal):', error.message)
+      }
+      // A new row means a new payment: the owner's payment email (lib/ledgerCapture.ts).
+      if (!error) {
+        noteStripeLedgerWrite({
+          description: finRow.description,
+          amountCents: finRow.amount_cents,
+          category: finRow.category,
+          customerName: finRow.customer_name,
+          reference: finRow.reference,
+          notes: finRow.notes,
+        })
       }
     })
 

@@ -82,6 +82,15 @@ const TEMPLATE_SOURCES = [
   // from Stripe — a billing name, a decline message, a dispute reason — which is
   // to say from whoever filled in the card form, so all of it is escaped.
   'lib/stripeAftermath.ts',
+  // The owner's one-email-per-Stripe-payment note (2026-10-18). Every value —
+  // billing name, email, metadata, ledger description — passes through
+  // `escapeHtml` in `textRow`/`row`; the dashboard and receipt links through
+  // `mailHrefExternal`.
+  'lib/stripePaymentNotice.ts',
+  // The owner's daily RSVP digest (2026-10-18). Parent names, children's names
+  // and allergy notes are typed by guests, so every one goes through
+  // `escapeHtml`; the host and invitation links through `mailHref`.
+  'lib/evites/rsvpDigest.ts',
   // The reconciliation monitor's alert. Its one interpolation is a JSON dump of
   // the report, escaped whole.
   'app/api/cron/stripe-reconcile/route.ts',

@@ -11,6 +11,9 @@
 # enrollments), send-campaigns (944-person blast radius), draft-newsletter,
 # social-calendar, weekly-town-drafts, birthday-rebooking, agent-distill,
 # experiment-report. See AGENTS.md section 8.
+# agent-dispatch was removed 2026-10-18: Adam does not use AI drafting, and
+# AGENT_ENABLED=false on the box. To bring it back, set the flag AND restore
+#   agent-dispatch|*/2 * * * *|/api/cron/agent-dispatch|10|box
 send-reminders|*/15 * * * *|/api/cron/send-reminders|45|box
 review-asks|30 14 * * *|/api/cron/review-asks?perDay=15|1560|box
 evite-sends|7-59/15 * * * *|/api/cron/evite-sends|45|box
@@ -19,6 +22,6 @@ event-reminders|0 22 * * *|/api/cron/event-reminders|1560|box
 staff-reminders|0 12 * * *|/api/cron/staff-reminders|1560|box
 stripe-reconcile|0 13 * * *|/api/cron/stripe-reconcile|1560|box
 booking-locks|0 4 * * *|/api/cron/booking-locks|1560|box
-agent-dispatch|*/2 * * * *|/api/cron/agent-dispatch|10|box
 gmail-sync|*/3 * * * *|/api/cron/gmail-sync|10|box
 archive-review-texts|11-59/15 * * * *|/api/cron/archive-review-texts|45|box
+rsvp-digest|0 12 * * *|/api/cron/rsvp-digest|1560|box

@@ -98,6 +98,9 @@ const SEND_ROUTES = [
   // headcount through lib/evites/sendOne.ts. EMAIL ONLY, so the SMS quiet-hours rule does not reach it; the
   // lead preview keeps its own 09:00-20:00 ET window (cronDue.leadPreviewVerdict).
   'app/api/cron/evite-sends/route.ts',
+  // Added 2026-10-18. The owner's daily RSVP digest (lib/evites/rsvpDigest.ts): one Resend email to
+  // `ownerEmail()`, never a guest or host. A sender, so not NOT_A_SENDER; owner-only, so no quiet-hours rule.
+  'app/api/cron/rsvp-digest/route.ts',
 ] as const
 
 const ALL = [...SEND_LIBS, ...SEND_ROUTES]
@@ -175,7 +178,7 @@ describe('R0 — the surface is enumerated exactly', () => {
   it('every listed module exists on disk', () => {
     const missing = ALL.filter(rel => !fs.existsSync(path.join(SRC, rel)))
     expect(missing).toEqual([])
-    expect(ALL.length).toBe(26)
+    expect(ALL.length).toBe(27)
   })
 
   it('every cron route that sends or enqueues is in SEND_ROUTES', () => {
