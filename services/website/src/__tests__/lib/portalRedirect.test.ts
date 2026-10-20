@@ -1,4 +1,4 @@
-import { PORTAL_REDIRECT_PATHS, safePortalRedirect } from '@/lib/portalRedirect'
+import { PORTAL_REDIRECT_PATHS, defaultPortalLanding, safePortalRedirect } from '@/lib/portalRedirect'
 import { readSrc } from '../helpers/sourceScan'
 
 /**
@@ -12,12 +12,20 @@ import { readSrc } from '../helpers/sourceScan'
  */
 
 describe('safePortalRedirect', () => {
-  it.each(['/my-booking', '/my-booking/invitation', '/party-builder', '/party-planner'])('accepts %s', (p) => {
+  it.each(['/my-booking', '/my-booking/invitation', '/party-builder', '/party-planner', '/studio-rental'])('accepts %s', (p) => {
     expect(safePortalRedirect(p)).toBe(p)
   })
 
-  it('the list is what the auth route has always honoured, plus the invitation page', () => {
-    expect([...PORTAL_REDIRECT_PATHS]).toEqual(['/my-booking', '/my-booking/invitation', '/party-builder', '/party-planner'])
+  it('the list is what the auth route has always honoured, plus the invitation page and the studio planner', () => {
+    expect([...PORTAL_REDIRECT_PATHS]).toEqual(['/my-booking', '/my-booking/invitation', '/party-builder', '/party-planner', '/studio-rental'])
+  })
+
+  it('a studio booking lands on the studio planner by default, everything else on the party planner', () => {
+    expect(defaultPortalLanding({ event_type: 'studio-rental' })).toBe('/studio-rental')
+    // `/studio-rental` manage mode reads event_type, so an old room-rental row is NOT sent there.
+    expect(defaultPortalLanding({ event_type: 'room-rental' })).toBe('/party-planner')
+    expect(defaultPortalLanding({ event_type: 'kids birthday party' })).toBe('/party-planner')
+    expect(defaultPortalLanding(null)).toBe('/party-planner')
   })
 
   it.each([
@@ -79,6 +87,6 @@ describe('the three doors use that one list and keep no list of their own', () =
   it('the auth route no longer spells a redirect list of its own', () => {
     const src = readSrc('app', 'api', 'portal', 'auth', 'route.ts')
     expect(src).not.toMatch(/allowedRedirects/)
-    expect(src).toMatch(/safePortalRedirect\(\s*req\.nextUrl\.searchParams\.get\('redirect'\)\s*,\s*ref\s*\)/)
+    expect(src).toMatch(/safePortalRedirect\(\s*req\.nextUrl\.searchParams\.get\('redirect'\)\s*,\s*ref\s*\)\s*\?\?\s*defaultPortalLanding\(booking\)/)
   })
 })

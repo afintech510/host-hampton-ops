@@ -128,7 +128,7 @@ export interface CustomRentalPrice {
 }
 
 /** '14:00' → '2:00 PM'. Input is the admin's own 'HH:mm'. */
-function time12(hhmm: string): string {
+export function time12(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number)
   const suffix = h >= 12 ? 'PM' : 'AM'
   return `${h % 12 === 0 ? 12 : h % 12}:${String(m || 0).padStart(2, '0')} ${suffix}`

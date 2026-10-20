@@ -250,6 +250,108 @@ describe('send_client_links — the text obeys the SMS rules', () => {
   })
 })
 
+/*
+ * A studio rental's planner and portal are /studio-rental (manage mode). Until
+ * 2026-10-20 the planner link, the portal link and the approval email all landed
+ * a renter in the PARTY planner, and /studio-rental was not even on the sign-in
+ * redirect allow-list — so no link of any kind could reach it.
+ */
+const STUDIO = {
+  event_type: 'studio-rental', party_type: 'studio_rental', status: 'lead', party_time: '11:00',
+  party_date: '2026-11-08', balance_due_cents: 60000, guest_count_approx: 10, google_calendar_event_id: null,
+  party_tags: { rental_start_time: '11:00', rental_end_time: '14:00', rental_hours: 3, event_label: '1st Birthday' },
+}
+
+describe('studio rentals — links open the studio planner, never the party planner', () => {
+  it('planner + invoice: the planner link lands on /studio-rental and is worded as the rental', async () => {
+    const d = db(STUDIO)
+    mockGetSupabase.mockReturnValue(d.client)
+    const b = { ...BOOKING, ...STUDIO }
+    body = {
+      action: 'send_client_links', confirm: true, links: ['planner', 'invoice'], email: true, sms: true,
+      emailSubject: defaultEmailSubject(b, ['planner', 'invoice']),
+      emailBody: defaultEmailBody(b, ['planner', 'invoice']),
+      smsBody: defaultSmsBody(b, ['planner', 'invoice']),
+    }
+    const res: any = await POST(req(), { params })
+    expect(res.status).toBe(200)
+    const mail = mockResendSend.mock.calls[0][0]
+    expect(mail.text).toMatch(/redirect=%2Fstudio-rental/)
+    expect(mail.text).toMatch(/redirect=%2Fplan%2FHH-PTY-LINKS%2Fsummary/)
+    expect(mail.text).not.toMatch(/party-planner/)
+    expect(mail.text).toContain('Studio rental planner')
+    expect(mockSendSMSVia.mock.calls[0][2]).toMatch(/Plan your studio rental .*redirect=%2Fstudio-rental/)
+    const log = d.rows('booking_modifications').find((m: any) => m.change_summary.startsWith('Links sent'))
+    expect(log.change_summary).toContain('studio rental planner + invoice')
+  })
+
+  it('the portal link lands on /studio-rental too', async () => {
+    const d = db(STUDIO)
+    mockGetSupabase.mockReturnValue(d.client)
+    body = { ...defaults(['portal']), sms: false }
+    await POST(req(), { params })
+    expect(mockResendSend.mock.calls[0][0].text).toMatch(/redirect=%2Fstudio-rental/)
+  })
+
+  it('Open Portal mints a /studio-rental link for a rental and the party planner for a party', async () => {
+    const d = db(STUDIO)
+    mockGetSupabase.mockReturnValue(d.client)
+    body = { action: 'generate_portal_url' }
+    expect((await POST(req(), { params }) as any).json().portalUrl).toMatch(/redirect=%2Fstudio-rental/)
+
+    mockGetSupabase.mockReturnValue(db().client)
+    expect((await POST(req(), { params }) as any).json().portalUrl).not.toMatch(/redirect=/)
+  })
+})
+
+describe('approve — a studio rental is confirmed as a rental', () => {
+  it('emails the studio confirmation with the planner + invoice links, on ONE token, and blocks the rented window', async () => {
+    const { createCalendarEvent } = jest.requireMock('@/lib/googleCalendar')
+    createCalendarEvent.mockResolvedValue('gcal_1')
+    const d = db(STUDIO)
+    mockGetSupabase.mockReturnValue(d.client)
+    body = { action: 'approve' }
+
+    const res: any = await POST(req(), { params })
+    expect(res.status).toBe(200)
+    expect(res.json().emailed).toBe(true)
+    expect(d.rows('bookings')[0].status).toBe('approved')
+
+    const mail = mockResendSend.mock.calls[0][0]
+    expect(mail.subject).toBe('Your Studio Rental is Confirmed! — HH-PTY-LINKS')
+    expect(mail.html).toMatch(/redirect=%2Fstudio-rental/)
+    expect(mail.html).toMatch(/redirect=%2Fplan%2FHH-PTY-LINKS%2Fsummary/)
+    expect(mail.html).not.toMatch(/party-planner/)
+    expect(mail.html).toContain('11:00 AM – 2:00 PM')
+    expect(mail.html).toContain('Remaining Balance:</strong> $600')
+    expect(d.rows('portal_tokens')).toHaveLength(1)
+    expect(mockSendSMSVia).not.toHaveBeenCalled()
+
+    expect(createCalendarEvent).toHaveBeenCalledWith(expect.objectContaining({
+      summary: expect.stringMatching(/^\[STUDIO RENTAL\] Jessica Smith/),
+      startDate: '2026-11-08', startTime: '11:00', endTime: '14:00',
+    }))
+    expect(d.rows('bookings')[0].google_calendar_event_id).toBe('gcal_1')
+  })
+
+  it('does not add a second calendar block when the rental already has one', async () => {
+    const { createCalendarEvent } = jest.requireMock('@/lib/googleCalendar')
+    const d = db({ ...STUDIO, google_calendar_event_id: 'gcal_existing' })
+    mockGetSupabase.mockReturnValue(d.client)
+    body = { action: 'approve' }
+    await POST(req(), { params })
+    expect(createCalendarEvent).not.toHaveBeenCalled()
+  })
+
+  it('a party is still confirmed as a party', async () => {
+    const d = db({ status: 'pending_review' })
+    mockGetSupabase.mockReturnValue(d.client)
+    body = { action: 'approve' }
+    await POST(req(), { params })
+    expect(mockResendSend.mock.calls[0][0].subject).toBe('Your Party is Confirmed! — HH-PTY-LINKS')
+  })
+})
+
 describe('lib/clientLinks — the defaults are sendable as written', () => {
   const ALL = ['invite', 'planner', 'invoice', 'portal'] as const
   it.each([[['invite']], [['planner']], [['invoice']], [['portal']], [[...ALL]]])('%j', (links) => {

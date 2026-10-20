@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
-import { mintPortalLink } from '@/lib/portalLinkMint'
+import { mintPortalLink, mintPortalLinks } from '@/lib/portalLinkMint'
 import { formatMoney, screenTipCents } from '@/lib/partyPricing'
-import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml } from '@/lib/emailTemplates'
+import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml, studioRentalApprovedHtml } from '@/lib/emailTemplates'
 import { createCalendarEvent, addMinutes, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
-import { studioRentalRateWith, hoursBetween, customHourlyRateCents, customHourlyRentalPrice, isWeekendDate } from '@/lib/studioRental'
+import { studioRentalRateWith, hoursBetween, customHourlyRateCents, customHourlyRentalPrice, isWeekendDate, time12 } from '@/lib/studioRental'
 import { loadPricingCatalog, loadLineItemAddOns } from '@/lib/pricingCatalog'
 import { draftForBookingByHand } from '@/lib/agent/manualDraft'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
@@ -16,9 +16,10 @@ import {
 } from '@/lib/photoAlbum'
 import { checkSmsQuietHours } from '@/lib/quietHours'
 import {
-  CLIENT_LINK_LABELS, checkPlaceholders, clientLinksEmailHtml, fillLinks, placeholdersIn,
+  checkPlaceholders, clientLinkLabel, clientLinksEmailHtml, fillLinks, isStudioRentalBooking, placeholdersIn,
   screenBody, screenLinkKinds, screenSubject, type Placeholder,
 } from '@/lib/clientLinks'
+import { defaultPortalLanding } from '@/lib/portalRedirect'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { findContactsByPhone, isPlausibleEmailAddress } from '@/lib/contactLookup'
 import { ownerEmail } from '@/lib/ownerNotify'
@@ -55,13 +56,22 @@ import { isPartyType } from '@/lib/pipelineStages'
  *
  * `invitation` is the host's own invitation page, where the parent shares the
  * invite and watches RSVPs. It reads the booking from the cookie this link sets.
+ *
+ * A studio rental's planner AND portal are `/studio-rental` (manage mode: times,
+ * add-ons, guest count, payments). Until 2026-10-20 both went to the party
+ * planner, so the admin had no way to open — or send — a rental's own page.
  */
-function portalDestination(name: unknown, bookingRef: string): string | undefined {
+function portalDestination(
+  name: unknown,
+  booking: { booking_ref: string; event_type?: string | null },
+): string | undefined {
   switch (name) {
-    case 'planner': return '/party-planner'
-    case 'invoice': return `/plan/${encodeURIComponent(bookingRef)}/summary`
+    case 'planner': return defaultPortalLanding(booking)
+    case 'invoice': return `/plan/${encodeURIComponent(booking.booking_ref)}/summary`
     case 'invitation': return '/my-booking/invitation'
-    default: return undefined // the portal itself
+    // The portal itself. Explicit for a rental; the auth route's own default
+    // agrees, but the admin should not depend on a second file to be right.
+    default: return isStudioRentalBooking(booking) ? '/studio-rental' : undefined
   }
 }
 
@@ -302,6 +312,72 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       summary: 'Booking approved',
     })
 
+    const partyDateFormatted = booking.party_date
+      ? new Date(booking.party_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+      : 'TBD'
+
+    // A studio rental is confirmed as a RENTAL: its own calendar block at the
+    // rented window, and an email whose links open the studio planner and the
+    // invoice. It used to get "[PARTY] … 2 hrs" and "Your Party is Confirmed!"
+    // with a link that landed the renter in the party planner.
+    if (isStudioRentalBooking(booking)) {
+      const tags = (booking.party_tags as Record<string, unknown> | null) || {}
+      const start = typeof tags.rental_start_time === 'string' ? tags.rental_start_time : (booking.party_time as string | null)
+      const end = typeof tags.rental_end_time === 'string' ? tags.rental_end_time : null
+
+      if (booking.party_date && start && end && !booking.google_calendar_event_id) {
+        const evId = await createCalendarEvent({
+          summary: `[STUDIO RENTAL] ${booking.contact_name || 'Rental'} — ${(tags.event_label as string) || 'Event'}`,
+          startDate: booking.party_date,
+          startTime: start,
+          endTime: end,
+          description: `Ref: ${booking.booking_ref}\nContact: ${booking.contact_name || ''}\nGuests: ~${booking.guest_count_approx || ''}`,
+        }).catch(err => { console.error('GCal error:', err); return null })
+        if (evId) {
+          const { error: evErr } = await supabase.from('bookings').update({ google_calendar_event_id: evId }).eq('id', id)
+          if (evErr) console.error(`approve: calendar event ${evId} created but not saved on ${booking.booking_ref}:`, evErr.message)
+        }
+      }
+
+      const links = await mintPortalLinks(supabase, id, booking.booking_ref, {
+        planner: portalDestination('planner', booking) as string,
+        invoice: portalDestination('invoice', booking) as string,
+      })
+      if (!links.ok) {
+        return NextResponse.json({ error: `Booking approved, but the links could not be minted (${links.reason}) — no email was sent.` }, { status: 503 })
+      }
+
+      let emailed = false
+      if (process.env.RESEND_API_KEY && booking.contact_email) {
+        const { Resend } = await import('resend')
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        const { error: mailErr } = await resend.emails.send({
+          from, to: booking.contact_email, replyTo: ownerEmail(),
+          subject: `Your Studio Rental is Confirmed! — ${booking.booking_ref}`,
+          html: studioRentalApprovedHtml({
+            customerName: booking.contact_name || '',
+            bookingRef: booking.booking_ref,
+            rentalDate: partyDateFormatted,
+            rentalTime: start && end ? `${time12(start)} – ${time12(end)}` : start ? time12(start) : 'TBD',
+            balanceFormatted: formatMoney(booking.balance_due_cents || 0),
+            plannerUrl: links.urls.planner,
+            invoiceUrl: links.urls.invoice,
+          }),
+        })
+        if (mailErr) console.error(`approve: studio confirmation email failed for ${booking.booking_ref}:`, mailErr.message)
+        else emailed = true
+      }
+
+      await logBookingChange(supabase, {
+        bookingId: id, actor: adminActorId(req),
+        summary: emailed
+          ? 'Studio rental confirmation emailed (studio rental planner + invoice links)'
+          : 'Studio rental confirmation NOT emailed — check the email address and Resend config',
+      })
+      return NextResponse.json({ ok: true, action: 'approved', emailed })
+    }
+
     // Create GCal event
     if (booking.party_date && booking.party_time) {
       const endTime = addMinutes(booking.party_time, 120)
@@ -318,10 +394,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const minted = await mintPortalLink(supabase, id, booking.booking_ref)
     if (!minted.ok) return NextResponse.json({ error: `Could not mint a portal link (${minted.reason}) — nothing was sent.` }, { status: 503 })
     const portalUrl = minted.url
-
-    const partyDateFormatted = booking.party_date
-      ? new Date(booking.party_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-      : 'TBD'
 
     if (process.env.RESEND_API_KEY) {
       const { Resend } = await import('resend')
@@ -646,7 +718,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (action === 'send_portal_link' || action === 'generate_portal_url') {
     const minted = await mintPortalLink(
-      supabase, id, booking.booking_ref, portalDestination(body.destination, booking.booking_ref),
+      supabase, id, booking.booking_ref, portalDestination(body.destination, booking),
     )
     if (!minted.ok) return NextResponse.json({ error: `Could not mint a portal link (${minted.reason}) — nothing was sent.` }, { status: 503 })
     const portalUrl = minted.url
@@ -798,10 +870,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const urls: Partial<Record<Placeholder, string>> = {}
     if (inviteUrl) urls.invite = inviteUrl
     const minted: Array<[Placeholder, string | undefined]> = [
-      ['rsvps', portalDestination('invitation', booking.booking_ref)],
-      ['planner', portalDestination('planner', booking.booking_ref)],
-      ['invoice', portalDestination('invoice', booking.booking_ref)],
-      ['portal', undefined],
+      ['rsvps', portalDestination('invitation', booking)],
+      ['planner', portalDestination('planner', booking)],
+      ['invoice', portalDestination('invoice', booking)],
+      ['portal', portalDestination('portal', booking)],
     ]
     for (const [p, destination] of minted) {
       if (!used.has(p)) continue
@@ -837,7 +909,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       else failures.push('Text failed to send — check the number and Quo config')
     }
 
-    const what = kinds.map(k => CLIENT_LINK_LABELS[k].toLowerCase()).join(' + ')
+    const what = kinds.map(k => clientLinkLabel(k, booking).toLowerCase()).join(' + ')
     await logBookingChange(supabase, {
       bookingId: id, actor: adminActorId(req),
       summary: sentVia.length

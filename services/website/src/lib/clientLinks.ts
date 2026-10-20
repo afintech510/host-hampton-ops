@@ -65,6 +65,20 @@ export interface ClientLinkBooking {
   booking_ref?: string | null
 }
 
+/**
+ * A studio rental's planner is `/studio-rental` (manage mode), not the party
+ * planner. Same test as that page and `defaultPortalLanding`: `event_type`.
+ */
+export function isStudioRentalBooking(b: Pick<ClientLinkBooking, 'event_type'>): boolean {
+  return b.event_type === 'studio-rental'
+}
+
+/** The label for a link on THIS booking — "Studio rental planner" for a rental. */
+export function clientLinkLabel(k: ClientLinkKind, b: Pick<ClientLinkBooking, 'event_type'>): string {
+  if (k === 'planner' && isStudioRentalBooking(b)) return 'Studio rental planner'
+  return CLIENT_LINK_LABELS[k]
+}
+
 function firstName(contactName: string | null | undefined): string {
   return (contactName || '').trim().split(/\s+/)[0] || 'there'
 }
@@ -128,7 +142,11 @@ function inviteOwner(b: ClientLinkBooking): string {
 export function defaultSmsBody(b: ClientLinkBooking, kinds: readonly ClientLinkKind[]): string {
   const lines = [`Hi ${firstName(b.contact_name)}! It's Allie from Host Hampton 🎉`]
   if (kinds.includes('invite')) lines.push(`Here's ${inviteOwner(b)} invitation to share with your guests: {invite}`)
-  if (kinds.includes('planner')) lines.push(`Plan your party (theme, add-ons, guest count): {planner}`)
+  if (kinds.includes('planner')) {
+    lines.push(isStudioRentalBooking(b)
+      ? `Plan your studio rental (times, add-ons, guest count): {planner}`
+      : `Plan your party (theme, add-ons, guest count): {planner}`)
+  }
   if (kinds.includes('invoice')) lines.push(`Your invoice: {invoice}`)
   if (kinds.includes('portal')) lines.push(`Your booking (details & payments): {portal}`)
   lines.push('Reply STOP to opt out')
@@ -140,7 +158,7 @@ export function defaultEmailSubject(b: ClientLinkBooking, kinds: readonly Client
   if (kinds.length === 1) {
     switch (kinds[0]) {
       case 'invite': return `${inviteOwner(b) === 'your' ? 'Your' : inviteOwner(b)} party invitation is ready! 🎉`
-      case 'planner': return `Plan ${occasion} with Host Hampton`
+      case 'planner': return isStudioRentalBooking(b) ? 'Plan your studio rental with Host Hampton' : `Plan ${occasion} with Host Hampton`
       case 'invoice': return `Your Host Hampton invoice${b.booking_ref ? ` — ${b.booking_ref}` : ''}`
       case 'portal': return `Your Host Hampton booking${b.booking_ref ? ` — ${b.booking_ref}` : ''}`
     }
@@ -155,9 +173,14 @@ export function defaultEmailBody(b: ClientLinkBooking, kinds: readonly ClientLin
       `Invitation — share this link with your guests:\n{invite}\n\nSee who's coming and change the design:\n{rsvps}`,
     )
   }
-  if (kinds.includes('planner')) blocks.push(`Party planner — choose your theme, add-ons and guest count:\n{planner}`)
+  const studio = isStudioRentalBooking(b)
+  if (kinds.includes('planner')) {
+    blocks.push(studio
+      ? `Studio rental planner — your times, add-ons and guest count:\n{planner}`
+      : `Party planner — choose your theme, add-ons and guest count:\n{planner}`)
+  }
   if (kinds.includes('invoice')) blocks.push(`Your invoice:\n{invoice}`)
-  if (kinds.includes('portal')) blocks.push(`Your booking — party details and payments:\n{portal}`)
+  if (kinds.includes('portal')) blocks.push(`Your booking — ${studio ? 'rental' : 'party'} details and payments:\n{portal}`)
   blocks.push('Just reply to this email if you have any questions!', 'Allie\nHost Hampton')
   return blocks.join('\n\n')
 }

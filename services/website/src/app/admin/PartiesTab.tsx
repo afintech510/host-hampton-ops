@@ -12,6 +12,7 @@ import { FALLBACK_STUDIO_RATES, type StudioRates } from '@/lib/pricingCatalog'
 import { foodSelectionsFromColumns, readFoodSelections } from '@/lib/partyFood'
 import PhotoAlbumSender from './PhotoAlbumSender'
 import ClientLinksSender from './ClientLinksSender'
+import { isStudioRentalBooking } from '@/lib/clientLinks'
 import InvitationCard from '@/components/admin/InvitationCard'
 
 interface PartyBookingSummary {
@@ -751,6 +752,8 @@ export default function PartiesTab({
     depositCents: selected.deposit_amount,
   })
   const isClosed = selectedStatus.stage === 'cancelled' || selectedStatus.stage === 'lost'
+  // Its planner/portal is /studio-rental, not the party planner (lib/clientLinks.ts).
+  const isStudioRental = isStudioRentalBooking({ event_type: (selected as PartyDetail).event_type ?? null })
 
   return (
     <div>
@@ -1042,9 +1045,17 @@ export default function PartiesTab({
           <div className="bg-white rounded-xl border p-5">
             <h3 className="text-sm font-medium text-[#1a2744] mb-3">Actions</h3>
             <div className="space-y-2">
-              {(selected.status === 'pending_review' || selected.status === 'deposit_paid') && (
+              {/* `lead` too: a priced lead the owner has agreed to (a hand-built
+                  quote, a converted studio rental) had no way to be confirmed. */}
+              {(selected.status === 'lead' || selected.status === 'pending_review' || selected.status === 'deposit_paid') && (
                 <button
-                  onClick={() => doAction('approve')}
+                  onClick={() => {
+                    const who = selected.contact_name || 'the customer'
+                    const what = isStudioRental
+                      ? 'a "Studio Rental Confirmed" email with their studio rental planner link and invoice link'
+                      : 'a "Party Confirmed" email with their booking portal link'
+                    if (confirm(`Approve this booking? This emails ${who} ${what}.`)) doAction('approve')
+                  }}
                   disabled={!!actionLoading}
                   className="w-full bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
                 >
@@ -1072,7 +1083,7 @@ export default function PartiesTab({
                 disabled={!!actionLoading}
                 className="w-full border-2 border-[#1a2744] text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-[#1a2744]/5 disabled:opacity-50"
               >
-                {actionLoading === 'generate_portal_url' ? 'Opening...' : 'Open Portal (New Tab)'}
+                {actionLoading === 'generate_portal_url' ? 'Opening...' : isStudioRental ? 'Open Studio Rental Planner (New Tab)' : 'Open Portal (New Tab)'}
               </button>
 
               <button
@@ -1080,7 +1091,7 @@ export default function PartiesTab({
                 disabled={!!actionLoading}
                 className="w-full border-2 border-[#1a2744]/40 text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-[#1a2744]/5 disabled:opacity-50"
               >
-                {copyToast || 'Copy Portal Link'}
+                {copyToast || (isStudioRental ? 'Copy Studio Rental Planner Link' : 'Copy Portal Link')}
               </button>
 
               {/* ── The clean quote/invoice ──────────────────────

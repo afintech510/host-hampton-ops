@@ -977,6 +977,47 @@ export function partyApprovedHtml(raw: { customerName: string; bookingRef: strin
 </body></html>`
 }
 
+/* ── Studio Rental Approved (customer) ───────────────────────── */
+
+/**
+ * The studio-rental twin of `partyApprovedHtml`. A renter's page is the studio
+ * planner (`/studio-rental`, manage mode), not the party portal, and Adam wants
+ * the invoice beside it — so this carries two links, both minted on one token.
+ */
+export function studioRentalApprovedHtml(raw: {
+  customerName: string; bookingRef: string; rentalDate: string; rentalTime: string
+  balanceFormatted: string; plannerUrl: string; invoiceUrl: string
+}): string {
+  const d = escapeFields(raw)
+  const firstName = d.customerName.split(' ')[0] || 'there'
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:${BRAND.bodyBg};">
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;background:#ffffff;">
+  <div style="background:${BRAND.headerBg};padding:36px 40px;text-align:center;">
+    <p style="color:${BRAND.navy};opacity:0.6;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Host Hampton · Speonk, NY</p>
+    <h1 style="color:${BRAND.navy};font-size:28px;margin:0;font-weight:normal;">Your Studio Rental is Confirmed!</h1>
+  </div>
+  <div style="padding:36px 40px;">
+    <p style="font-size:16px;color:${BRAND.navy};margin:0 0 20px;">Hi ${firstName},</p>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Great news — your studio rental <strong>${d.bookingRef}</strong> has been approved!</p>
+    <div style="background:${BRAND.bodyBg};border-radius:8px;padding:20px 24px;margin:0 0 24px;">
+      <p style="color:${BRAND.navy};margin:0 0 8px;"><strong>Date:</strong> ${d.rentalDate}</p>
+      <p style="color:${BRAND.navy};margin:0 0 8px;"><strong>Time:</strong> ${d.rentalTime}</p>
+      <p style="color:${BRAND.navy};margin:0;"><strong>Remaining Balance:</strong> ${d.balanceFormatted}</p>
+    </div>
+    <p style="color:${BRAND.gray};line-height:1.7;margin:0 0 24px;">Use your studio rental planner to adjust your times, add-ons and guest count, and to make payments.</p>
+    ${payButton(mailHref(raw.plannerUrl), 'Open Your Studio Rental')}
+    ${mailHref(raw.invoiceUrl) ? `<p style="text-align:center;margin:0 0 28px;"><a href="${mailHref(raw.invoiceUrl)}" style="color:${BRAND.navy};font-weight:bold;">View your invoice</a></p>` : ''}
+    <p style="font-size:14px;color:${BRAND.gray};line-height:1.8;margin:0;">
+      Questions? Reach out anytime:<br>${contactBlock}
+    </p>
+  </div>
+  ${footerTagline("We can't wait to host you!")}
+</div>
+</body></html>`
+}
+
 /* ── Party Changes Requested (customer) ──────────────────────── */
 
 export function partyChangesRequestedHtml(raw: { customerName: string; bookingRef: string; adminMessage: string; portalUrl: string }): string {

@@ -28,7 +28,23 @@ export const PORTAL_REDIRECT_PATHS: readonly string[] = [
   '/my-booking/invitation',
   '/party-builder',
   '/party-planner',
+  // The studio-rental planner: in manage mode for a studio booking's portal cookie.
+  // Missing until 2026-10-20, so no sign-in link could land a renter there and every
+  // "planner" link a studio customer got opened the PARTY planner instead.
+  '/studio-rental',
 ]
+
+/**
+ * Where a signed-in customer lands when the link names no page: the studio-rental
+ * planner for a studio booking, the party planner for everything else.
+ *
+ * `/studio-rental` opens in manage mode only for `event_type = 'studio-rental'` (see
+ * its page), so that is the test — an older `room-rental` row would land on a blank
+ * new-booking form, which is worse than the party planner.
+ */
+export function defaultPortalLanding(booking: { event_type?: string | null } | null | undefined): string {
+  return booking?.event_type === 'studio-rental' ? '/studio-rental' : '/party-planner'
+}
 
 /** The redirect if it is allowed, else null. */
 export function safePortalRedirect(raw: unknown, authenticatedRef?: string): string | null {

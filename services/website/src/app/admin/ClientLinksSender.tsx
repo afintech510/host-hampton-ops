@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import {
-  CLIENT_LINK_KINDS, CLIENT_LINK_LABELS, EMAIL_BODY_MAX_LENGTH, SMS_BODY_MAX_LENGTH, SUBJECT_MAX_LENGTH,
-  checkPlaceholders, defaultEmailBody, defaultEmailSubject, defaultSmsBody,
+  CLIENT_LINK_KINDS, EMAIL_BODY_MAX_LENGTH, SMS_BODY_MAX_LENGTH, SUBJECT_MAX_LENGTH,
+  checkPlaceholders, clientLinkLabel, defaultEmailBody, defaultEmailSubject, defaultSmsBody, isStudioRentalBooking,
   type ClientLinkKind,
 } from '@/lib/clientLinks'
 
@@ -25,6 +25,11 @@ const LINK_HINTS: Record<ClientLinkKind, string> = {
   planner: 'pick theme, add-ons, guest count',
   invoice: 'the printable quote / invoice',
   portal: 'party details and payments',
+}
+
+const STUDIO_LINK_HINTS: Partial<Record<ClientLinkKind, string>> = {
+  planner: 'the studio rental page: times, add-ons, guest count, pay',
+  portal: 'opens the studio rental page too',
 }
 
 /**
@@ -84,7 +89,7 @@ export default function ClientLinksSender({
 
   async function send() {
     if (!canSend) return
-    const what = links.map(k => CLIENT_LINK_LABELS[k]).join(' + ')
+    const what = links.map(k => clientLinkLabel(k, booking)).join(' + ')
     const targets = [
       viaEmail ? `email ${booking.contact_email}` : null,
       viaSms ? `text ${booking.contact_phone}` : null,
@@ -138,11 +143,11 @@ export default function ClientLinksSender({
                   className="accent-[#1a2744] mt-1"
                 />
                 <span>
-                  {CLIENT_LINK_LABELS[k]}
+                  {clientLinkLabel(k, booking)}
                   <span className="text-xs text-gray-400">
                     {' '}— {blocked
                       ? booking.invitation_status === 'archived' ? 'invitation is archived' : 'no invitation yet (create it above)'
-                      : LINK_HINTS[k]}
+                      : (isStudioRentalBooking(booking) && STUDIO_LINK_HINTS[k]) || LINK_HINTS[k]}
                   </span>
                 </span>
               </label>
