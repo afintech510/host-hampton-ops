@@ -72,6 +72,9 @@ const TEMPLATE_SOURCES = [
   // first name and an admin-typed occasion phrase, both escaped at entry; the
   // two links go through `mailHrefExternal`.
   'lib/photoAlbum.ts',
+  // "Send links to client". Its markup is built line by line from the admin's
+  // wording: every typed piece through escapeHtml, every link through `mailHref`.
+  'lib/clientLinks.ts',
   'lib/unclaimedPayment.ts',
   // Same shape as unclaimedPayment: an owner-facing "this money arrived and we
   // cannot place it" note, built inline. Its interpolations are a payer name and

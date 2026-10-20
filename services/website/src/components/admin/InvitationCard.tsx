@@ -621,13 +621,15 @@ const CONFIRMS: Partial<Record<InvitationAction, string>> = {
   void_rsvp: 'Remove this RSVP? The answer is deleted, the headcount changes, and it cannot be restored. (A club member is also taken off the list.)',
 }
 
-export default function InvitationCard({ bookingId, headers, status, partyType, partyTags }: {
+export default function InvitationCard({ bookingId, headers, status, partyType, partyTags, onChanged }: {
   bookingId: string
   headers: HeadersInit
   /** Echoes of the booking so the card stays hidden for a booking that could never have an invitation. */
   status?: string | null
   partyType?: string | null
   partyTags?: unknown
+  /** After a create / archive / unarchive, so the page's "Send links" panel sees the invitation. */
+  onChanged?: () => void
 }) {
   const [data, setData] = useState<InvitationPayload | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -673,6 +675,7 @@ export default function InvitationCard({ bookingId, headers, status, partyType, 
         setMessage({ ok: false, text: describeFailure(action, body, res.status) })
       } else {
         setMessage({ ok: true, text: describeSuccess(action, body) })
+        if (action === 'ensure' || action === 'archive' || action === 'unarchive') onChanged?.()
       }
       await load()
     } catch {

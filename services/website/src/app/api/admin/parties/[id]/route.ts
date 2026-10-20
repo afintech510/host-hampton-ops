@@ -15,6 +15,11 @@ import {
   screenFotoshareUrl, screenOccasion, photoAlbumText, photoAlbumEmailHtml,
 } from '@/lib/photoAlbum'
 import { checkSmsQuietHours } from '@/lib/quietHours'
+import {
+  CLIENT_LINK_LABELS, checkPlaceholders, clientLinksEmailHtml, fillLinks, placeholdersIn,
+  screenBody, screenLinkKinds, screenSubject, type Placeholder,
+} from '@/lib/clientLinks'
+import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { findContactsByPhone, isPlausibleEmailAddress } from '@/lib/contactLookup'
 import { ownerEmail } from '@/lib/ownerNotify'
 import { writeLedger } from '@/lib/marketing/graph'
@@ -85,17 +90,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
   const supabase = getSupabase()
 
-  const [bookingRes, lineItemsRes, paymentsRes, modificationsRes, addOnCatalog] = await Promise.all([
+  const [bookingRes, lineItemsRes, paymentsRes, modificationsRes, addOnCatalog, eviteRes] = await Promise.all([
     supabase.from('bookings').select('*').eq('id', id).single(),
     supabase.from('booking_line_items').select('*').eq('booking_id', id).order('sort_order'),
     supabase.from('booking_payments').select('*').eq('booking_id', id).order('paid_at', { ascending: false }),
     supabase.from('booking_modifications').select('*').eq('booking_id', id).order('created_at', { ascending: false }),
     loadLineItemAddOns(supabase),
+    supabase.from('evites').select('archived_at').eq('booking_id', id).maybeSingle(),
   ])
 
   if (bookingRes.error) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
+
+  // For the "Send links to client" panel's hint only; the send re-reads it.
+  const invitation_status: 'none' | 'archived' | 'ready' | 'unknown' = eviteRes.error
+    ? 'unknown'
+    : !eviteRes.data ? 'none' : eviteRes.data.archived_at ? 'archived' : 'ready'
 
   return NextResponse.json({
     ...bookingRes.data,
@@ -103,6 +114,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     payments: paymentsRes.data || [],
     modifications: modificationsRes.data || [],
     addOnCatalog,
+    invitation_status,
   })
 }
 
@@ -704,6 +716,140 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
 
     return NextResponse.json({ ok: true, action: 'portal_sms_sent', to: booking.contact_phone })
+  }
+
+  // ── "Send links to client" — invitation / planner / invoice / portal ──
+  // The panel posts the exact wording (the default from lib/clientLinks.ts, or
+  // the admin's edit of it) with PLACEHOLDERS for the links. The links are
+  // minted here, only once every check has passed, so a refused send leaves no
+  // live sign-in token behind — and none is ever echoed back or written to the
+  // audit trail, because each one IS a sign-in.
+  if (action === 'send_client_links') {
+    if (body.confirm !== true) {
+      return NextResponse.json({ error: 'Sending to a client must be confirmed' }, { status: 400 })
+    }
+    const kinds = screenLinkKinds(body.links)
+    if (kinds.length === 0) return NextResponse.json({ error: 'Pick at least one link to send' }, { status: 400 })
+    const wantsEmail = body.email === true
+    const wantsSms = body.sms === true
+    if (!wantsEmail && !wantsSms) return NextResponse.json({ error: 'Pick email, text, or both' }, { status: 400 })
+    if (booking.status === 'cancelled' || booking.status === 'lost') {
+      return NextResponse.json({ error: `This booking is ${booking.status} — nothing was sent.` }, { status: 409 })
+    }
+
+    const email = typeof booking.contact_email === 'string' ? booking.contact_email.trim() : ''
+    const phone = typeof booking.contact_phone === 'string' ? booking.contact_phone.trim() : ''
+    if (wantsEmail && !isPlausibleEmailAddress(email)) {
+      return NextResponse.json({ error: 'No valid email address on this booking — untick Email or fix it first.' }, { status: 409 })
+    }
+    if (wantsSms && !phone) {
+      return NextResponse.json({ error: 'No phone number on this booking — untick Text or add one first.' }, { status: 409 })
+    }
+
+    const problems: string[] = []
+    let subject = ''
+    let emailBody = ''
+    let smsBody = ''
+    if (wantsEmail) {
+      const s = screenSubject(body.emailSubject)
+      const b = screenBody(body.emailBody, 'email')
+      if (!s.ok) problems.push(s.reason); else subject = s.text
+      if (!b.ok) problems.push(b.reason); else { emailBody = b.text; problems.push(...checkPlaceholders(emailBody, kinds, 'email')) }
+    }
+    if (wantsSms) {
+      const b = screenBody(body.smsBody, 'text')
+      if (!b.ok) problems.push(b.reason); else { smsBody = b.text; problems.push(...checkPlaceholders(smsBody, kinds, 'text')) }
+    }
+    if (problems.length > 0) return NextResponse.json({ error: problems.join(' '), problems }, { status: 400 })
+
+    // The public invitation link. Three outcomes: a failed read is not "no invitation".
+    let inviteUrl: string | null = null
+    if (kinds.includes('invite')) {
+      const { data: ev, error: evErr } = await supabase
+        .from('evites')
+        .select('slug, archived_at')
+        .eq('booking_id', id)
+        .maybeSingle<{ slug: string; archived_at: string | null }>()
+      if (evErr) return NextResponse.json({ error: 'Could not read the invitation — try again. Nothing was sent.' }, { status: 503 })
+      if (!ev) return NextResponse.json({ error: 'This party has no invitation yet — create it in the Invitation card first. Nothing was sent.' }, { status: 409 })
+      if (ev.archived_at) return NextResponse.json({ error: 'The invitation is archived, so its link does not work — unarchive it first. Nothing was sent.' }, { status: 409 })
+      inviteUrl = `${CANONICAL_ORIGIN}/i/${encodeURIComponent(ev.slug)}`
+    }
+
+    // The text is checked BEFORE anything is minted or sent, so a text-only
+    // send outside 8am–9pm (or to a STOPped number) changes nothing at all.
+    let smsBlocked: string | null = null
+    if (wantsSms) {
+      const quiet = checkSmsQuietHours(new Date())
+      const stop = quiet.kind === 'open' ? await phoneHasExplicitStop(supabase, phone) : null
+      if (quiet.kind !== 'open') smsBlocked = 'Text NOT sent — it is outside 8am–9pm. Send again with only Text ticked after 8am.'
+      else if (stop === 'stopped') smsBlocked = 'Text NOT sent — this number has a STOP (opt-out) on file.'
+      else if (stop !== 'clear') smsBlocked = 'Text NOT sent — could not check this number for a STOP. Try again.'
+    }
+    const sendEmail = wantsEmail
+    const sendSms = wantsSms && !smsBlocked
+    if (!sendEmail && !sendSms) return NextResponse.json({ error: smsBlocked, failures: [smsBlocked] }, { status: 409 })
+
+    // Mint only the links that will actually be in a message that goes out.
+    const used = new Set([
+      ...(sendEmail ? placeholdersIn(emailBody) : []),
+      ...(sendSms ? placeholdersIn(smsBody) : []),
+    ])
+    const urls: Partial<Record<Placeholder, string>> = {}
+    if (inviteUrl) urls.invite = inviteUrl
+    const minted: Array<[Placeholder, string | undefined]> = [
+      ['rsvps', portalDestination('invitation', booking.booking_ref)],
+      ['planner', portalDestination('planner', booking.booking_ref)],
+      ['invoice', portalDestination('invoice', booking.booking_ref)],
+      ['portal', undefined],
+    ]
+    for (const [p, destination] of minted) {
+      if (!used.has(p)) continue
+      const link = await mintPortalLink(supabase, id, booking.booking_ref, destination)
+      if (!link.ok) return NextResponse.json({ error: `Could not mint the ${p} link (${link.reason}) — nothing was sent.` }, { status: 503 })
+      urls[p] = link.url
+    }
+
+    const sentVia: string[] = []
+    const failures: string[] = smsBlocked ? [smsBlocked] : []
+
+    if (sendEmail) {
+      if (!process.env.RESEND_API_KEY) {
+        failures.push('Email is not configured')
+      } else {
+        const { Resend } = await import('resend')
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || 'noReply@mail.hosthampton.com'
+        const { error: mailErr } = await resend.emails.send({
+          from, to: email, replyTo: ownerEmail(),
+          subject,
+          html: clientLinksEmailHtml(emailBody, urls),
+          text: fillLinks(emailBody, urls),
+        })
+        if (mailErr) failures.push(`Email failed: ${mailErr.message}`)
+        else sentVia.push('email')
+      }
+    }
+
+    if (sendSms) {
+      const sid = await sendSMSVia('quo', normalizePhone(phone), fillLinks(smsBody, urls))
+      if (sid) sentVia.push('text')
+      else failures.push('Text failed to send — check the number and Quo config')
+    }
+
+    const what = kinds.map(k => CLIENT_LINK_LABELS[k].toLowerCase()).join(' + ')
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: sentVia.length
+        ? `Links sent to customer (${what}) via ${sentVia.join(' + ')}${failures.length ? `; ${failures.join('; ')}` : ''}`
+        : `Links NOT sent (${what}): ${failures.join('; ')}`,
+      newData: { links: kinds, sent_via: sentVia },
+    })
+
+    if (sentVia.length === 0) {
+      return NextResponse.json({ error: failures.join(' ') || 'Nothing was sent', failures }, { status: 502 })
+    }
+    return NextResponse.json({ ok: true, action: 'client_links_sent', sentVia, failures })
   }
 
   // Text the customer their pre-arrival check-in link. Any staff may do this.

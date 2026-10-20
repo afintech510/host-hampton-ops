@@ -11,6 +11,7 @@ import { sumPayments, computeBalance } from '@/lib/bookingBalance'
 import { FALLBACK_STUDIO_RATES, type StudioRates } from '@/lib/pricingCatalog'
 import { foodSelectionsFromColumns, readFoodSelections } from '@/lib/partyFood'
 import PhotoAlbumSender from './PhotoAlbumSender'
+import ClientLinksSender from './ClientLinksSender'
 import InvitationCard from '@/components/admin/InvitationCard'
 
 interface PartyBookingSummary {
@@ -130,6 +131,8 @@ interface PartyDetail extends PartyBookingSummary {
   modifications: { id: string; modified_by: string; change_summary: string; created_at: string }[]
   /** Standard priced add-ons (Photobooth, Face Painter, …) for the Add Item autocomplete. */
   addOnCatalog?: { name: string; priceCents: number; guestMultiplied: boolean }[]
+  /** For "Send links to client": whether there is an invitation to send. */
+  invitation_status?: 'none' | 'archived' | 'ready' | 'unknown'
 }
 
 /**
@@ -390,39 +393,6 @@ export default function PartiesTab({
       window.prompt('Copy this portal link:', data.portalUrl)
     }
     setTimeout(() => setCopyToast(''), 2500)
-  }
-
-  async function sendPortalLink() {
-    // Emails AND texts the portal link to the customer in one action.
-    const data = await doAction('send_portal_link')
-    if (!data) return
-    const via: string[] = data.sentVia || []
-    setCopyToast(
-      via.length
-        ? `Portal link sent via ${via.join(' + ')}`
-        : 'Link generated but not delivered — check email/phone on file',
-    )
-    setTimeout(() => setCopyToast(''), 3000)
-  }
-
-  async function textPortalLink() {
-    if (!selected) return
-    if (!selected.contact_phone) {
-      setCopyToast('No phone number on file')
-      setTimeout(() => setCopyToast(''), 2500)
-      return
-    }
-    setActionLoading('send_portal_sms')
-    const res = await fetch(`/api/admin/parties/${selected.id}`, {
-      method: 'POST',
-      headers: { ...Object.fromEntries(new Headers(headers).entries()), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'send_portal_sms' }),
-    })
-    const data = await res.json()
-    await fetchDetail(selected.id)
-    setActionLoading('')
-    setCopyToast(res.ok ? `Link texted to ${data.to}` : (data.error || 'Failed to send text'))
-    setTimeout(() => setCopyToast(''), 3000)
   }
 
   async function deleteBooking() {
@@ -1065,6 +1035,7 @@ export default function PartiesTab({
             status={selected.status}
             partyType={selected.party_type}
             partyTags={(selected as PartyDetail).party_tags}
+            onChanged={() => fetchDetail(selected.id)}
           />
 
           {/* Actions */}
@@ -1081,22 +1052,20 @@ export default function PartiesTab({
                 </button>
               )}
 
-              <button
-                onClick={sendPortalLink}
-                disabled={!!actionLoading}
-                className="w-full bg-[#A1B5C8] text-white py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
-              >
-                {actionLoading === 'send_portal_link' ? 'Sending...' : 'Send Portal Link (Email + Text)'}
-              </button>
-
-              <button
-                onClick={textPortalLink}
-                disabled={!!actionLoading || !selected.contact_phone}
-                title={selected.contact_phone ? `Text link to ${selected.contact_phone}` : 'No phone number on file'}
-                className="w-full bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
-              >
-                {actionLoading === 'send_portal_sms' ? 'Texting...' : '📱 Text Link to Client'}
-              </button>
+              {/* Replaces "Send Portal Link (Email + Text)" and "Text Link to Client" */}
+              <div className="p-3 bg-gray-50 rounded-lg space-y-2">
+                <span className="text-sm font-medium text-[#1a2744]">Send links to client</span>
+                <ClientLinksSender
+                  key={`${selected.id}:${(selected as PartyDetail).invitation_status ?? ''}`}
+                  booking={{
+                    ...selected,
+                    event_type: (selected as PartyDetail).event_type ?? null,
+                    invitation_status: (selected as PartyDetail).invitation_status,
+                  }}
+                  headers={headers}
+                  onSent={() => fetchDetail(selected.id)}
+                />
+              </div>
 
               <button
                 onClick={openPortal}
