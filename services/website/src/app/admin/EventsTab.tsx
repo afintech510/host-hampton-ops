@@ -396,7 +396,7 @@ function EventForm({
         <ImageUploader
           images={form.images}
           onChange={imgs => set('images', imgs)}
-          token={headers.Authorization.replace('Bearer ', '')}
+          authorization={headers.Authorization}
         />
       </div>
 
@@ -616,10 +616,13 @@ function BundlePricingEditor({ tiers, onChange }: { tiers: BundleTier[]; onChang
 
 /* ─── Image Uploader ────────────────────────────────── */
 
+// `authorization` is absent on the per-person (hh_admin cookie) login, where the
+// cookie authenticates the upload on its own. Reading `.replace` off it crashed
+// the whole Edit Event form for anyone signed in that way.
 function ImageUploader({
-  images, onChange, token,
+  images, onChange, authorization,
 }: {
-  images: EventImage[]; onChange: (imgs: EventImage[]) => void; token: string
+  images: EventImage[]; onChange: (imgs: EventImage[]) => void; authorization?: string
 }) {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
@@ -641,7 +644,7 @@ function ImageUploader({
       try {
         const res = await fetch('/api/admin/events/upload', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: authorization ? { Authorization: authorization } : {},
           body: formData,
         })
         if (res.ok) {
@@ -1073,7 +1076,7 @@ function EmailComposer({
   const [showImageInput, setShowImageInput] = useState(false)
   const [imageUrl, setImageUrl] = useState('')
   const [uploading, setUploading] = useState(false)
-  const token = headers.Authorization.replace('Bearer ', '')
+  const authorization = headers.Authorization
 
   function exec(cmd: string, value?: string) {
     document.execCommand(cmd, false, value)
@@ -1125,7 +1128,7 @@ function EmailComposer({
     try {
       const res = await fetch('/api/admin/events/upload', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authorization ? { Authorization: authorization } : {},
         body: formData,
       })
       if (res.ok) {
