@@ -152,6 +152,10 @@ services:
       # 21 real customers' contact details. Adam's own ADMIN_PASSWORD / hh_admin
       # cookie also works on those routes.
       - CM_CHEER_PASSWORD=${CM_CHEER_PASSWORD}
+      # The Leaders tab on /troop2514 (lib/troopAuth.ts). Fails closed when unset:
+      # only an HH admin session gets in. Shared with the troop's co-leaders, who
+      # must never hold the admin login.
+      - TROOP_LEADER_PASSWORD=${TROOP_LEADER_PASSWORD:-}
       - BREVO_API_KEY=${BREVO_API_KEY}
       - BREVO_DEFAULT_LIST_ID=${BREVO_DEFAULT_LIST_ID:-}
       - BREVO_SENDER_EMAIL=${BREVO_SENDER_EMAIL:-hosthampton295@gmail.com}

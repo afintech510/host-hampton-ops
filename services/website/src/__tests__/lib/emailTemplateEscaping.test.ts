@@ -66,6 +66,9 @@ const TEMPLATE_SOURCES = [
   // confirmation (signed Allie). Escaped at entry; the portfolio, admin, mailto
   // and tel links each go through their own screen.
   'lib/email-templates/careers.ts',
+  // The troop board's leader alert and absence confirmation (/troop2514).
+  // Escaped at entry; the one link goes through `mailHref`.
+  'lib/email-templates/troop.ts',
   'lib/planPayment.ts',
   'lib/planShare.ts',
   // The post-party photo booth album. Its interpolations are the customer's
@@ -470,6 +473,9 @@ describe('the file list cannot go stale', () => {
     // The careers apply route. Its markup is lib/email-templates/careers.ts,
     // audited above; the route passes the finished subject/html/text through.
     'app/api/careers/apply/route.ts',
+    // The troop board's family forms. Markup is lib/email-templates/troop.ts,
+    // audited above; the route passes the finished subject/html/text through.
+    'app/api/troop/[troop]/submit/route.ts',
   ]
 
   /**
@@ -496,6 +502,7 @@ describe('the file list cannot go stale', () => {
     'lib/email-templates/reminders.ts',
     'lib/email-templates/evites.ts',
     'lib/email-templates/careers.ts',
+    'lib/email-templates/troop.ts',
   ]
 
   it('every exported template escapes its input at entry', () => {

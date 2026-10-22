@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { isInvitePath } from '@/lib/evites/chrome'
 
 // Pages where the chat bubble is hidden entirely
-const HIDDEN_PAGES = ['/party-quote', '/kids-party-menu', '/i']
+const HIDDEN_PAGES = ['/party-quote', '/kids-party-menu', '/i', '/troop2514']
 
 declare global {
   interface Window {

@@ -149,6 +149,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/studio-rental',
   '/terms-of-service',
   '/toddler-party',
+  '/troop2514',
   '/trucker-hat-bar',
   '/unsubscribe',
   '/vendor-registration',

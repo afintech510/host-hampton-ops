@@ -137,7 +137,7 @@ const id = (h: Handler) => `${h.method} ${h.route}`
 
 /* ── Classification ───────────────────────────────────────────────────────── */
 
-type Gate = 'admin' | 'cm-cheer' | 'portal-required' | 'plan-scoped' | 'provider-signature' | 'public'
+type Gate = 'admin' | 'cm-cheer' | 'troop-leader' | 'portal-required' | 'plan-scoped' | 'provider-signature' | 'public'
 
 /**
  * How this handler decides whether the caller may proceed.
@@ -151,6 +151,9 @@ type Gate = 'admin' | 'cm-cheer' | 'portal-required' | 'plan-scoped' | 'provider
 function gateOf(h: Handler): Gate {
   if (/isAdminAuthorized\s*\(/.test(h.body)) return 'admin'
   if (/isCmCheerAuthorized\s*\(/.test(h.body)) return 'cm-cheer'
+  // The troop board's Leaders tab (lib/troopAuth.ts). Matched on the REFUSAL,
+  // not the call, so a handler that merely mentions it does not read as gated.
+  if (/if\s*\(\s*!\s*isTroopLeaderAuthorized\s*\(\s*req\s*\)\s*\)\s*return\b/.test(h.body)) return 'troop-leader'
   if (/handleSignwellWebhook\s*\(/.test(h.body)) return 'provider-signature'
   /*
    * `planAccess` is a gate in its own right — it answers "is the human in front
@@ -234,6 +237,14 @@ const DELIBERATELY_PUBLIC = new Set([
   // fitted sizes for made-up studio invitations (lib/evites/showcase.ts).
   // Rate-limited first. A POST body so a child's name stays out of URLs and logs.
   'POST invitations/showcase',
+  // The troop family board (/troop2514, migration 074). Public because the page
+  // is: Allie shares the link with one Girl Scouts troop. GET returns the public
+  // view only (no inbox, no leader emails, no scout names); the two POSTs write
+  // one row each, rate-limited first, honeypot, screened by lib/troop.ts, and
+  // never touch the lead machinery — a troop parent is not a lead.
+  'GET troop/[troop]',
+  'POST troop/[troop]/snack',
+  'POST troop/[troop]/submit',
   'POST trucker-inquiry',
   'POST unsubscribe',
   'POST vendor-registration',

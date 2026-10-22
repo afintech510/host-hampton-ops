@@ -24,7 +24,15 @@ export function isHostInvitationPath(pathname: string | null | undefined): boole
   return typeof pathname === 'string' && (pathname === '/my-booking/invitation' || pathname.startsWith('/my-booking/invitation/'))
 }
 
+/**
+ * The troop family board (/troop2514): a page about children, shared by link with
+ * one Girl Scouts troop. Not a Host Hampton marketing surface, so no ad pixel.
+ */
+export function isTroopBoardPath(pathname: string | null | undefined): boolean {
+  return typeof pathname === 'string' && /^\/troop\d+(\/|$)/.test(pathname)
+}
+
 /** Where the Meta Pixel must not load and must not fire PageView. */
 export function isMetaPixelBlockedPath(pathname: string | null | undefined): boolean {
-  return isInvitePath(pathname) || isHostInvitationPath(pathname)
+  return isInvitePath(pathname) || isHostInvitationPath(pathname) || isTroopBoardPath(pathname)
 }

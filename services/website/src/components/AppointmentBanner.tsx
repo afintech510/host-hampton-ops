@@ -58,6 +58,7 @@ const HIDDEN_PREFIXES = [
   '/r/',
   '/s/',
   '/i/', // a guest's evite: no site promotions on a child's invitation
+  '/troop', // a Girl Scouts troop's family board, shared by link
 ]
 
 export default function AppointmentBanner() {
