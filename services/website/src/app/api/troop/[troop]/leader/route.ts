@@ -2,9 +2,10 @@
  * /api/troop/[troop]/leader — the Leaders tab on the troop board.
  *
  *   GET  → everything: all posts, the whole schedule, snack claims WITH the
- *          scout's name, the inbox, and the settings including leader emails.
+ *          scout's name, the inbox, the families who opted in to updates, and
+ *          the settings including leader emails.
  *   POST → one action: save/delete an announcement or schedule item, clear or
- *          fill a snack date, mark an inbox item done, save Setup.
+ *          fill a snack date, mark an inbox item done, remove a family, save Setup.
  *
  * Gated by `isTroopLeaderAuthorized` (TROOP_LEADER_PASSWORD, or an HH admin
  * session). Rate-limited BEFORE the gate, so the shared password cannot be
@@ -25,6 +26,7 @@ import {
   SCHEDULE_COLUMNS,
   SNACK_COLUMNS,
   INBOX_COLUMNS,
+  FAMILY_COLUMNS,
 } from '@/lib/troop'
 
 export const dynamic = 'force-dynamic'
@@ -41,7 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: { troop: strin
   if (!cfg) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const supabase = getSupabase()
-  const [posts, sched, snacks, inbox, settings] = await Promise.all([
+  const [posts, sched, snacks, inbox, settings, families] = await Promise.all([
     supabase.from('troop_posts').select(POST_COLUMNS).eq('troop', cfg.number).order('post_date', { ascending: false }).limit(200),
     supabase
       .from('troop_schedule')
@@ -53,9 +55,10 @@ export async function GET(req: NextRequest, { params }: { params: { troop: strin
     supabase.from('troop_snack_claims').select(SNACK_COLUMNS).eq('troop', cfg.number),
     supabase.from('troop_inbox').select(INBOX_COLUMNS).eq('troop', cfg.number).order('created_at', { ascending: false }).limit(300),
     supabase.from('troop_settings').select('welcome, leader_names, leader_emails').eq('troop', cfg.number).maybeSingle(),
+    supabase.from('troop_families').select(FAMILY_COLUMNS).eq('troop', cfg.number).order('parent_name', { ascending: true }).limit(500),
   ])
 
-  const failed = [posts, sched, snacks, inbox, settings].find(r => r.error)
+  const failed = [posts, sched, snacks, inbox, settings, families].find(r => r.error)
   if (failed) {
     console.error('troop leader: read failed —', failed.error?.code, failed.error?.message)
     return NextResponse.json({ error: "Couldn't load. Please try again." }, { status: 503 })
@@ -67,6 +70,7 @@ export async function GET(req: NextRequest, { params }: { params: { troop: strin
       schedule: sched.data ?? [],
       snacks: snacks.data ?? [],
       inbox: inbox.data ?? [],
+      families: families.data ?? [],
       settings: settings.data ?? { welcome: null, leader_names: [], leader_emails: [] },
     },
     { headers: { 'Cache-Control': 'no-store' } },
@@ -150,6 +154,11 @@ export async function POST(req: NextRequest, { params }: { params: { troop: stri
       ;({ error } = await supabase.from('troop_snack_claims').upsert({ ...s.value, troop }, { onConflict: 'schedule_id' }))
       break
     }
+
+    case 'remove_family':
+      if (!id) return bad('Missing id')
+      ;({ error } = await supabase.from('troop_families').delete().eq('id', id).eq('troop', troop))
+      break
 
     case 'toggle_done':
       if (!id) return bad('Missing id')

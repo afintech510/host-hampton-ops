@@ -89,6 +89,25 @@ export const SCHEDULE_COLUMNS = 'id, title, kind, event_date, start_time, end_ti
 export const SNACK_COLUMNS = 'schedule_id, parent_name, scout_name, item'
 export const INBOX_COLUMNS =
   'id, kind, scout_name, parent_name, email, reply_to, missed_date, idea_kind, body, anonymous, done, created_at'
+export const FAMILY_COLUMNS = 'id, parent_name, scout_name, email, phone, consented_at'
+
+/** A family who opted in to updates (migration 076). Leaders only. */
+export interface TroopFamily {
+  id: string
+  parent_name: string
+  scout_name: string | null
+  email: string
+  phone: string | null
+  consented_at: string
+}
+
+/**
+ * The exact sentence a parent agrees to on the "Get updates" tab, stored on
+ * their row. The form imports this too, so what they read is what is recorded.
+ */
+export function familyConsentText(troopName: string, withPhone: boolean): string {
+  return `Yes, send me ${troopName} updates and announcements by email${withPhone ? ' and text message' : ''}.`
+}
 
 /**
  * What the PUBLIC board shows of a snack claim: who is bringing what. Never the
@@ -199,6 +218,40 @@ export function screenSnackClaim(
   if (!scheduleId) return { ok: false, error: 'Pick a date first.' }
   if (!parent || !scout || !item) return { ok: false, error: 'Please fill in all three fields.' }
   return { ok: true, value: { schedule_id: scheduleId, parent_name: parent, scout_name: scout, item } }
+}
+
+/** At least ten digits, as typed (leaders text from their own phones). */
+export function cleanPhone(raw: unknown): Screened<string | null> {
+  const s = cleanText(raw, 30)
+  if (!s) return { ok: true, value: null }
+  const digits = s.replace(/\D/g, '')
+  if (digits.length < 10 || digits.length > 11 || !/^[\d\s()+.-]+$/.test(s)) {
+    return { ok: false, error: 'That phone number does not look right.' }
+  }
+  return { ok: true, value: s }
+}
+
+export function screenFamilySignup(
+  body: Record<string, unknown>,
+  troopName: string,
+): Screened<{ parent_name: string; scout_name: string | null; email: string; phone: string | null; consent_text: string }> {
+  const parent = cleanText(body.name, 60)
+  const email = cleanText(body.email, 120)
+  if (!parent || !email) return { ok: false, error: 'Please add your name and email.' }
+  if (!isEmail(email)) return { ok: false, error: 'That email address does not look right.' }
+  const phone = cleanPhone(body.phone)
+  if (!phone.ok) return phone
+  if (body.consent !== true) return { ok: false, error: 'Please tick the box to say yes to updates.' }
+  return {
+    ok: true,
+    value: {
+      parent_name: parent,
+      scout_name: cleanText(body.scout, 60) || null,
+      email,
+      phone: phone.value,
+      consent_text: familyConsentText(troopName, !!phone.value),
+    },
+  }
 }
 
 export function screenPost(body: Record<string, unknown>): Screened<Omit<TroopPost, 'id'>> {

@@ -5,6 +5,8 @@ import {
   screenSnackClaim,
   screenScheduleItem,
   screenSettings,
+  screenFamilySignup,
+  familyConsentText,
   isIsoDate,
   fmtLongDate,
 } from '@/lib/troop'
@@ -83,5 +85,18 @@ describe('troop board', () => {
     expect(isTroopBoardPath('/troop2514')).toBe(true)
     expect(isTroopBoardPath('/troopers')).toBe(false)
     expect(isMetaPixelBlockedPath('/troop2514')).toBe(true)
+  })
+
+  it('a family sign-up needs a name, a real email and the consent box', () => {
+    const ok = screenFamilySignup({ name: 'Dana P.', email: 'Dana@Example.com', phone: '(631) 555-0134', consent: true }, 'Troop X')
+    expect(ok.ok && ok.value.email).toBe('Dana@Example.com')
+    expect(ok.ok && ok.value.consent_text).toBe(familyConsentText('Troop X', true))
+    expect(ok.ok && ok.value.consent_text).toContain('text message')
+    const noPhone = screenFamilySignup({ name: 'Dana', email: 'd@e.co', consent: true }, 'Troop X')
+    expect(noPhone.ok && noPhone.value.consent_text).not.toContain('text')
+    expect(screenFamilySignup({ name: 'Dana', email: 'd@e.co', consent: false }, 'T').ok).toBe(false)
+    expect(screenFamilySignup({ name: 'Dana', email: 'd@e.co', consent: 'yes' }, 'T').ok).toBe(false)
+    expect(screenFamilySignup({ name: '', email: 'd@e.co', consent: true }, 'T').ok).toBe(false)
+    expect(screenFamilySignup({ name: 'Dana', email: 'd@e.co', phone: '555-12', consent: true }, 'T').ok).toBe(false)
   })
 })

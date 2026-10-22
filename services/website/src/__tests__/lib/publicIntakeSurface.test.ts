@@ -243,6 +243,9 @@ const DELIBERATELY_PUBLIC = new Set([
   // one row each, rate-limited first, honeypot, screened by lib/troop.ts, and
   // never touch the lead machinery — a troop parent is not a lead.
   'GET troop/[troop]',
+  // The Get updates opt-in (migration 076): one troop_families row, upserted on the
+  // database's own lowercase of the email; consent box required, rate-limited first.
+  'POST troop/[troop]/join',
   'POST troop/[troop]/snack',
   'POST troop/[troop]/submit',
   'POST trucker-inquiry',

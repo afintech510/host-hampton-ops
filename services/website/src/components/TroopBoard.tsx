@@ -13,8 +13,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+// Client-safe (no server imports): the consent sentence a parent reads must be
+// the one the server records.
+import { familyConsentText } from '@/lib/troop'
 
-/* ── Types (mirrors lib/troop.ts; kept local so this bundle imports no server code) ── */
+/* ── Types (mirrors lib/troop.ts) ── */
 
 interface Post { id: string; title: string; body: string; post_date: string; pinned: boolean }
 interface Sched {
@@ -31,13 +34,15 @@ interface InboxItem {
   email: string | null; reply_to: string | null; missed_date: string | null; idea_kind: string | null
   body: string | null; anonymous: boolean; done: boolean; created_at: string
 }
+interface Family { id: string; parent_name: string; scout_name: string | null; email: string; phone: string | null; consented_at: string }
 interface LeaderData {
-  posts: Post[]; schedule: Sched[]; snacks: SnackClaim[]; inbox: InboxItem[]
+  posts: Post[]; schedule: Sched[]; snacks: SnackClaim[]; inbox: InboxItem[]; families: Family[]
   settings: { welcome: string | null; leader_names: string[]; leader_emails: string[] }
 }
 
 const FAMILY_TABS = [
   { id: 'news', label: 'News' },
+  { id: 'updates', label: 'Get updates' },
   { id: 'schedule', label: 'Schedule' },
   { id: 'snacks', label: 'Snacks' },
   { id: 'absent', label: "Can't make it" },
@@ -254,6 +259,18 @@ export default function TroopBoard({ troop }: { troop: string }) {
           <section className="tb-card">
             <h2>Announcements</h2>
             {!board ? <p className="tb-empty">Loading troop news…</p> : <Posts posts={board.posts} />}
+            <div className="tb-cta">
+              <span>Want troop news by email or text?</span>
+              <button type="button" className="small" onClick={() => go('updates')}>Get updates</button>
+            </div>
+          </section>
+        )}
+
+        {tab === 'updates' && (
+          <section className="tb-card">
+            <h2>Get troop updates</h2>
+            <p className="tb-sub">Leave your details and the leaders will send you troop news and announcements. Only leaders see this list.</p>
+            <UpdatesForm api={api} troopName={troopName} />
           </section>
         )}
 
@@ -363,6 +380,7 @@ export default function TroopBoard({ troop }: { troop: string }) {
                   go('news')
                 }}
                 hasToken={!!token}
+                notify={toast}
               />
             ) : (
               <SignIn
@@ -565,6 +583,56 @@ function FamilyForm({
   )
 }
 
+function UpdatesForm({ api, troopName }: { api: string; troopName: string }) {
+  const { busy, err, setErr, send } = useSubmit(api)
+  const [phone, setPhone] = useState('')
+  const [consent, setConsent] = useState(false)
+  const [done, setDone] = useState(false)
+  if (done) {
+    return <OkBox title="You're on the list!" text="The leaders will send you troop news and announcements." onAgain={() => setDone(false)} />
+  }
+  return (
+    <form
+      noValidate
+      onSubmit={async e => {
+        e.preventDefault()
+        const f = e.currentTarget
+        const fd = new FormData(f)
+        const name = String(fd.get('name') || '').trim()
+        const email = String(fd.get('email') || '').trim()
+        if (!name || !email) return setErr('Please add your name and email.')
+        if (!consent) return setErr('Please tick the box to say yes to updates.')
+        const ok = await send('/join', {
+          name,
+          email,
+          phone: phone.trim(),
+          scout: String(fd.get('scout') || '').trim(),
+          consent,
+          website: fd.get('website'),
+        })
+        if (ok) {
+          f.reset()
+          setPhone('')
+          setConsent(false)
+          setDone(true)
+        }
+      }}
+    >
+      <div className="tb-grid2">
+        <label>Your name<input name="name" required maxLength={60} autoComplete="name" /></label>
+        <label>Scout&apos;s name <small>Optional</small><input name="scout" maxLength={60} autoComplete="off" /></label>
+      </div>
+      <label>Email<input name="email" type="email" required maxLength={120} autoComplete="email" /></label>
+      <label>Cell phone <small>Optional, for texts</small><input name="phone" type="tel" maxLength={30} autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value)} /></label>
+      <label className="tb-check"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /> {familyConsentText(troopName, phone.trim() !== '')}</label>
+      <p className="tb-small">To stop getting updates, just tell a leader.</p>
+      <label className="tb-hp" aria-hidden="true">Website<input tabIndex={-1} name="website" autoComplete="off" /></label>
+      {err ? <p className="tb-err">{err}</p> : null}
+      <div className="tb-actions"><button type="submit" disabled={busy}>{busy ? 'Signing up…' : 'Sign me up'}</button></div>
+    </form>
+  )
+}
+
 function IdeaForm({ api }: { api: string }) {
   const { busy, err, setErr, send } = useSubmit(api)
   const [anon, setAnon] = useState(false)
@@ -714,6 +782,7 @@ function ConfirmButton({ label, onConfirm }: { label: string; onConfirm: () => v
 
 const LEADER_TABS = [
   { id: 'inbox', label: 'Inbox' },
+  { id: 'families', label: 'Families' },
   { id: 'posts', label: 'Announcements' },
   { id: 'sched', label: 'Schedule' },
   { id: 'snk', label: 'Snacks' },
@@ -721,7 +790,7 @@ const LEADER_TABS = [
 ] as const
 
 function LeaderPanel({
-  data, troop, upcomingSnackSlots, action, onFill, onSignOut, hasToken,
+  data, troop, upcomingSnackSlots, action, onFill, onSignOut, hasToken, notify,
 }: {
   data: LeaderData
   troop: string
@@ -730,6 +799,7 @@ function LeaderPanel({
   onFill: (scheduleId: string) => void
   onSignOut: () => void
   hasToken: boolean
+  notify: (msg: string) => void
 }) {
   const [sub, setSub] = useState<(typeof LEADER_TABS)[number]['id']>('inbox')
   const [filter, setFilter] = useState<'all' | InboxItem['kind']>('all')
@@ -740,6 +810,16 @@ function LeaderPanel({
   const open = data.inbox.filter(i => !i.done).length
   const inbox = data.inbox.filter(i => filter === 'all' || i.kind === filter)
 
+  function downloadCsv(rows: string[][], name: string) {
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `troop-${troop}-${name}-${todayStr()}.csv`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
   function exportCsv() {
     const rows = [['type', 'received', 'scout', 'parent_or_name', 'date_missed', 'kind', 'text_or_note', 'contact', 'anonymous', 'done']]
     data.inbox.forEach(i =>
@@ -748,13 +828,23 @@ function LeaderPanel({
         i.body || '', i.email || i.reply_to || '', i.anonymous ? 'yes' : '', i.done ? 'yes' : '',
       ]),
     )
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `troop-${troop}-inbox-${todayStr()}.csv`
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    downloadCsv(rows, 'inbox')
+  }
+
+  function exportFamilies() {
+    const rows = [['parent', 'scout', 'email', 'phone', 'signed_up']]
+    data.families.forEach(f => rows.push([f.parent_name, f.scout_name || '', f.email, f.phone || '', f.consented_at]))
+    downloadCsv(rows, 'families')
+  }
+
+  async function copyList(values: string[], what: string) {
+    if (!values.length) return notify(`No ${what} yet.`)
+    try {
+      await navigator.clipboard.writeText(values.join(', '))
+      notify(`Copied ${values.length} ${what}`)
+    } catch {
+      notify("Couldn't copy. Try Export CSV instead.")
+    }
   }
 
   return (
@@ -784,6 +874,33 @@ function LeaderPanel({
             {inbox.length ? inbox.map(it => <InboxRow key={it.id} it={it} onToggle={() => action({ action: 'toggle_done', id: it.id, done: !it.done }, it.done ? 'Reopened' : 'Marked done')} />) : (
               <p className="tb-empty">Nothing here yet. Absence notes, ideas and messages from families show up in this inbox.</p>
             )}
+          </div>
+        </>
+      )}
+
+      {sub === 'families' && (
+        <>
+          <p className="tb-small">
+            {data.families.length} {data.families.length === 1 ? 'family has' : 'families have'} signed up for updates on the Get updates tab.
+            Copy the list into an email or a group text.
+          </p>
+          <div className="tb-actions" style={{ marginTop: 10 }}>
+            <button type="button" className="secondary small" onClick={() => copyList(data.families.map(f => f.email), 'emails')}>Copy emails</button>
+            <button type="button" className="secondary small" onClick={() => copyList(data.families.flatMap(f => (f.phone ? [f.phone] : [])), 'phone numbers')}>Copy phones</button>
+            <button type="button" className="secondary small" onClick={exportFamilies}>Export CSV</button>
+          </div>
+          <div className="tb-adm-list">
+            {data.families.length ? data.families.map(f => (
+              <div key={f.id} className="tb-adm-row">
+                <div className="top">
+                  <div>
+                    <b>{f.parent_name}</b>{f.scout_name ? <span className="tb-meta" style={{ display: 'inline' }}> · {f.scout_name}</span> : null}
+                    <p><a href={`mailto:${f.email}`}>{f.email}</a>{f.phone ? <> · <a href={`tel:${f.phone.replace(/[^\d+]/g, '')}`}>{f.phone}</a></> : null}</p>
+                  </div>
+                  <ConfirmButton label="Remove" onConfirm={() => action({ action: 'remove_family', id: f.id }, 'Removed')} />
+                </div>
+              </div>
+            )) : <p className="tb-empty">No one has signed up yet. Share the Get updates tab: hosthampton.com/troop{troop}#updates</p>}
           </div>
         </>
       )}
@@ -1087,6 +1204,7 @@ const CSS = `
 .tb-type.message{background:var(--tb-surface-2);color:var(--tb-green-ink)}
 .tb-count{font-size:12px;font-weight:700;background:var(--tb-danger);color:#fff;border-radius:999px;padding:1px 7px;margin-left:6px}
 .tb-small{font-size:13px;color:var(--tb-muted);margin:0}
+.tb-cta{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:16px;padding:12px 14px;border-radius:14px;background:var(--tb-surface-2);font-weight:600;font-size:15px}
 .tb-foot{text-align:center;font-size:13px;color:var(--tb-muted);padding:0 16px 32px}
 .tb-linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--tb-green-ink);text-decoration:underline;cursor:pointer}
 .tb-card .tb-linkbtn{min-height:0;font-weight:600;padding:0;background:none;color:var(--tb-green-ink)}
