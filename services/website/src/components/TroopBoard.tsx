@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 interface Post { id: string; title: string; body: string; post_date: string; pinned: boolean }
 interface Sched {
-  id: string; title: string; kind: 'meeting' | 'event'; event_date: string; start_time: string
+  id: string; title: string; kind: 'meeting' | 'event'; event_date: string; start_time: string | null
   end_time: string | null; location: string | null; notes: string | null; needs_snack: boolean
 }
 interface PublicSnack { parent_name: string; item: string }
@@ -63,16 +63,26 @@ const fmtTime = (t: string | null | undefined) => {
 }
 const fmtLong = (s: string) => { const d = parseDate(s); return `${DOWL[d.getDay()]}, ${MON[d.getMonth()]} ${d.getDate()}` }
 const fmtShort = (s: string) => { const d = parseDate(s); return `${MON[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` }
-const timeRange = (s: Sched) => `${fmtTime(s.start_time)}${s.end_time ? ` to ${fmtTime(s.end_time)}` : ''}`
+const timeRange = (s: Sched) =>
+  s.start_time ? `${fmtTime(s.start_time)}${s.end_time ? ` to ${fmtTime(s.end_time)}` : ''}` : 'Time TBA'
 
 function calLink(s: Sched, troopName: string): string {
   const d = s.event_date.replace(/-/g, '')
-  const st = hhmm(s.start_time).replace(':', '')
-  const en = hhmm(s.end_time || s.start_time).replace(':', '')
+  let dates: string
+  if (s.start_time) {
+    const st = hhmm(s.start_time).replace(':', '')
+    const en = hhmm(s.end_time || s.start_time).replace(':', '')
+    dates = `${d}T${st}00/${d}T${en}00`
+  } else {
+    // No time yet: an all-day entry, which Google wants as [day, next day).
+    const next = parseDate(s.event_date)
+    next.setDate(next.getDate() + 1)
+    dates = `${d}/${next.getFullYear()}${String(next.getMonth() + 1).padStart(2, '0')}${String(next.getDate()).padStart(2, '0')}`
+  }
   const p = new URLSearchParams({
     action: 'TEMPLATE',
     text: `${troopName}: ${s.title}`,
-    dates: `${d}T${st}00/${d}T${en}00`,
+    dates,
     ctz: 'America/New_York',
     details: s.notes || '',
     location: s.location || '',
@@ -81,7 +91,7 @@ function calLink(s: Sched, troopName: string): string {
 }
 
 const sortUpcoming = (list: Sched[]) =>
-  list.filter(s => s.event_date >= todayStr()).sort((a, b) => (a.event_date + a.start_time).localeCompare(b.event_date + b.start_time))
+  list.filter(s => s.event_date >= todayStr()).sort((a, b) => (a.event_date + (a.start_time || '~')).localeCompare(b.event_date + (b.start_time || '~')))
 
 /* ── Component ── */
 
@@ -859,7 +869,7 @@ function LeaderPanel({
               <label>Type<select name="kind" defaultValue={editSched?.kind ?? 'meeting'}><option value="meeting">Meeting</option><option value="event">Event</option></select></label>
               <label>Date<input name="event_date" type="date" required defaultValue={editSched?.event_date} /></label>
               <label>Location<input name="location" maxLength={100} defaultValue={editSched?.location ?? ''} /></label>
-              <label>Starts<input name="start_time" type="time" required defaultValue={hhmm(editSched?.start_time) || '18:30'} /></label>
+              <label>Starts <small>Leave blank for Time TBA</small><input name="start_time" type="time" defaultValue={editSched ? hhmm(editSched.start_time) : '18:30'} /></label>
               <label>Ends<input name="end_time" type="time" defaultValue={editSched ? hhmm(editSched.end_time) : '19:45'} /></label>
             </div>
             <label>Notes for families<input name="notes" maxLength={200} placeholder="Wear your vest" defaultValue={editSched?.notes ?? ''} /></label>
@@ -874,7 +884,7 @@ function LeaderPanel({
               <div key={s.id} className={`tb-adm-row${s.event_date < todayStr() ? ' done' : ''}`}>
                 <div className="top">
                   <div>
-                    <div className="tb-meta">{fmtShort(s.event_date)} · {fmtTime(s.start_time)}{s.needs_snack ? ' · snack slot' : ''}</div>
+                    <div className="tb-meta">{fmtShort(s.event_date)} · {s.start_time ? fmtTime(s.start_time) : 'Time TBA'}{s.needs_snack ? ' · snack slot' : ''}</div>
                     <b>{s.title}</b>
                   </div>
                   <div className="tb-actions">

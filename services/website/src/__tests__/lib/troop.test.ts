@@ -58,6 +58,15 @@ describe('troop board', () => {
     expect(screenScheduleItem({ ...base, start_time: '25:00' }).ok).toBe(false)
   })
 
+  it('a blank start time is "Time TBA", but an end time needs a start', () => {
+    const base = { title: 'Rockettes show', event_date: '2026-11-11' }
+    const r = screenScheduleItem({ ...base, start_time: '' })
+    expect(r.ok && r.value.start_time).toBeNull()
+    expect(screenScheduleItem({ ...base }).ok).toBe(true)
+    expect(screenScheduleItem({ ...base, start_time: '', end_time: '19:00' }).ok).toBe(false)
+    expect(screenScheduleItem({ ...base, start_time: 'soon' }).ok).toBe(false)
+  })
+
   it('settings refuse a malformed leader email and de-duplicate', () => {
     expect(screenSettings({ leader_emails: ['a@b.co', 'bad'] }).ok).toBe(false)
     const r = screenSettings({ leader_emails: ['A@b.co', 'a@b.co'], leader_names: ['Ms. Kelly'] })

@@ -48,7 +48,8 @@ export interface TroopScheduleItem {
   title: string
   kind: 'meeting' | 'event'
   event_date: string
-  start_time: string
+  /** NULL = time not known yet; the page shows "Time TBA" (migration 075). */
+  start_time: string | null
   end_time: string | null
   location: string | null
   notes: string | null
@@ -212,10 +213,15 @@ export function screenScheduleItem(body: Record<string, unknown>): Screened<Omit
   const title = cleanText(body.title, 80)
   if (!title) return { ok: false, error: 'Give it a title.' }
   if (!isIsoDate(body.event_date)) return { ok: false, error: 'Pick a date.' }
+  // A blank start time means "Time TBA"; a filled-in one that does not parse is
+  // a mistake, not a TBA.
+  const blank = (v: unknown) => v === undefined || v === null || (typeof v === 'string' && v.trim() === '')
   const start = cleanTime(body.start_time)
-  if (!start) return { ok: false, error: 'Pick a start time.' }
+  if (!start && !blank(body.start_time)) return { ok: false, error: 'That start time does not look right.' }
   const end = cleanTime(body.end_time)
-  if (end && end <= start) return { ok: false, error: 'The end time is before the start time.' }
+  if (!end && !blank(body.end_time)) return { ok: false, error: 'That end time does not look right.' }
+  if (end && !start) return { ok: false, error: 'Add a start time, or clear the end time.' }
+  if (end && start && end <= start) return { ok: false, error: 'The end time is before the start time.' }
   return {
     ok: true,
     value: {
