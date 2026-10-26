@@ -1052,3 +1052,56 @@ Orchestrated build of the Host Hampton EVITE (spec `docs/specs/evites/03-archite
 - **Adversarial review + fixes.** An Opus reviewer read the whole branch: 0 blockers, 2 majors (a PATCHed reminder address escaped the per-recipient cap and the cron would mail it; club opt-in repeatable with new addresses → undeletable `contacts` rows), 7 minors + 1 low. All ten fixed with regression tests proven red on revert; migration 068 amended in place (still unapplied); spec → v1.2 (changelog C1–C10). Full suite 247 / 5634, tsc baseline, `next build` green, Playwright evite 4/4.
 - **P11 pilot (2026-10-11, each step on Adam's yes).** (1) Migration 068 applied via `/root/pg.sh` (sha-matched file), verified: 5 tables RLS-on/no policies, 3 functions, `evites` bucket public/JPEG/2 MB, `lead_source` has `evite`, `club-v1` seeded. (2) `.env` += `EVITES_PAGES=pilot`, `EVITES_SENDS=pilot`, `EVITES_PILOT_REFS=HH-PTY-EVT01` (backup `/root/.env.bak-evites-202610111153`). (3) `feat/evites` (with P00 merged, Adam's arrival note, Meta Graph `v26.0` default) pushed to `main` `12cc97b`; Action green; 200 home, 404 + noindex/no-referrer on unknown `/i/`. (5–6) Throwaway `HH-PTY-EVT01` by SQL (Testkid, Glow, `hosthampton295+evite-test@gmail.com`, absent from contacts); admin `ensure` → `testkid-glow-j335`, rendered in prod (OG 78.8 KB, 1200×630), preview page OK; manual cron → `lead_preview` sent. (7) $1 cash via admin `record_payment` (`send_receipt:false`, ledger `admin-bp-caa216a4…`) → live; cron stamped go-live, re-rendered, `invite_ready` sent, second tick idempotent; public RSVP Yes (2 kids, allergy, reminder) + No → `new_rsvp` ×2, `rsvp_confirmed`; date temporarily moved to 2026-10-12 → `cal_version` bump, re-render, `details_changed`; `week_before` correctly skipped (RSVP after due). (8) crontab `7-59/15 * * * * /root/hh-cron.sh /api/cron/evite-sends` (backup `/root/crontab.bak-evites-202610111821`). (9) Cloudflare rate-limit rule `f28dbdaf…` on `/i/*`, `/api/i/*` (20 / 10 s per IP+colo, block 10 s; Free plan), 429s observed. Pending: day_before 16:00 ET + final_headcount 16:30 ET, move date back to 10-24, Adam's link-preview matrix, cleanup (step 10), privacy-policy paragraph before `on`.
 - **Pilot feedback round (2026-10-11).** Adam: link previews work on iPhone, Android, WhatsApp. Fixed and deployed: invitation picture blank on phones / host page showing a quarter (`1667797` — pages now show the stored JPEG responsively, canvas fallback scales to its frame; studio address links to Google Maps); GLOW centred (gaps 17/100 → 58/59 px, `glow-v3`) and the host page on the site's blue fade (`b81bd30`). `BREVO_BIRTHDAY_CLUB_LIST_ID=8` set on the box (Adam). Reminders verified on the temporarily-moved date: `day_before` 16:07 ET, `final_headcount` 16:37 ET, both sent once; date moved back to 2026-10-24. `/my-booking` rework handed to a separate session (with its blue header).
+
+---
+
+## Crew scheduling (feat/crew) — 2026-10-26
+
+Build of the crew-scheduling feature from Adam's approved plan ("Staffing app plan review"). Spec v1.1: `docs/specs/crew/CREW_SPEC.md`; phase prompts beside it. Everything crew-facing is behind `CREW_ENABLED=false`.
+
+- **Phase 0 — package rewritten to v1.1.**
+  - **Docs:** `docs/specs/crew/CREW_SPEC.md` + `prompts/00–07`.
+  - **v1.1 model:**
+    - flat pay per party: crew $50→$70, Lead $70→$90, in $2.50 steps;
+    - steps: +1 worked, +2 covered, −1 early release, reset for drop-anyway or a no-show;
+    - 60-day grace, $20 tip floor;
+    - Allie as the unpaid `is_owner` Lead;
+    - standbys → Allie escalation;
+    - staffing `max(3, ceil(kids/4))`.
+  - **Platform corrections:** spec §12.
+  - **v1 mockups** are not committed (public repo, first names); they stay in the local `starting_plan/Staffing-app/`.
+  - **Reading chosen and flagged to Adam:** the +2 for covering is applied when the cover is WORKED, not at claim time. At claim time, two members could trade a cover back and forth for steps.
+- **Phase 1 — data layer.**
+  - **Migration 077** (`starting_plan/migration_077_crew_scheduling.sql`):
+    - dry-run against prod with COMMIT→ROLLBACK first;
+    - applied with `ssh hampton-vps "/root/pg.sh -v ON_ERROR_STOP=1 -f -" < file`;
+    - re-run once, which was a no-op (INSERT 0 0).
+  - **Verified after applying:**
+    - 11 `crew_*` tables with RLS on and 0 policies;
+    - 0 anon/authenticated table grants;
+    - 10 functions, none executable by anon or authenticated, all by service_role;
+    - 10 settings rows and 1 owner row (no email or phone).
+  - **Code and tests:**
+    - `lib/crew/rules.ts` v1.1, `templates.ts`, `settings.ts` (three-outcome load), `db.ts` (three-outcome reads, compare-and-swap wrappers that retry `stale` once, `insertNotification` with 23505 = duplicate), `view.ts` (allow-list projections);
+    - `findCrewMembersByEmail` in `lib/contactLookup.ts` (exact `.eq` on the generated `email_key`, plus a JS re-compare);
+    - Jest `src/__tests__/lib/crew/{rules,crewCopy,view,db}.test.ts`: 104 tests;
+    - full suite 280 suites / 6470 green; `tsc` shows no non-test errors;
+    - 13/13 mutations caught.
+  - **Race script** `scripts/crew/race-test.mjs`, against prod on throwaway `ZZ-RACE-*` rows: 15/15 pass.
+    - 5 concurrent claims → exactly 1 `assigned`. One member on two spots at once → 1 `assigned` and 1 `already_on_party`.
+    - The Lead spot is refused to a non-`can_lead` member by the function (`not_lead`) and by the trigger on a direct write.
+    - Allie can be assigned as Lead, counts as staffed, and the trigger refuses to pay her.
+    - A stale compare-and-swap changes nothing.
+    - Attendance: step 3 paid $57.50, a $12 tip records an $8 top-up, steps 3→4. The owner stays unpaid. A correction appends a void plus `no_show#2`, and a stale re-submit is refused.
+    - Cleanup verified: 0 members, parties, or events left. The tables hold only the owner row.
+  - **Party Helper discovery:** the add-on appears only as a hand-typed `booking_line_items` row (`service-add-on`, `pricing_item_id` NULL, name "Party Helper 1–5 PM + Full Clean-up…", 1 live row on 1 upcoming studio rental). The two catalogue items ("Party Helper", "Party Helper (per hour)", $30 each) are referenced by no line item. The match rule is in spec §9.
+  - **Config:** `CREW_ENABLED` / `CREW_SMS_ENABLED` (default false) and `CREW_ADMIN_EMAIL` are mapped in `docker-compose.yml`. Not added to the box `.env`: unset reads as off.
+- **Not built yet:** Phases 2–6 (crew app, admin, notifications/cron/Quo inbound, attendance UI/pay, QA). STOP for Adam's review before Phase 2.
+- **Needs Adam:**
+  1. **Minimum wage.** $50 for a 3-hour party is $16.67/hr, under the $17 LI minimum. For Christine or an attorney; not decided in code.
+  2. Whether the "Party Helper (per hour)" item counts as one helper.
+  3. The standby window, defaulted to 2 h.
+  4. The +2-at-attendance reading.
+  5. The roster.
+  6. A2P coverage for staff texts.
+  7. Careers wording.

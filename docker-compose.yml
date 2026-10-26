@@ -245,6 +245,14 @@ services:
       # "true". Off 2026-10-04 because the first 40 signed as Adam; back on
       # 2026-10-06 once the copy said Allie.
       - REVIEW_ASK_SMS_ENABLED=${REVIEW_ASK_SMS_ENABLED:-false}
+      # Crew scheduling (docs/specs/crew/CREW_SPEC.md §10, migration 077). CREW_ENABLED
+      # is OFF unless exactly "true": /crew 404s, crew login refuses, nothing is sent.
+      # The admin pages and the booking reconcile run regardless, so Allie can set
+      # up first. CREW_SMS_ENABLED (Quo, opted-in crew only) is likewise off unless
+      # "true". CREW_ADMIN_EMAIL is optional; alerts fall back to ownerEmail().
+      - CREW_ENABLED=${CREW_ENABLED:-false}
+      - CREW_SMS_ENABLED=${CREW_SMS_ENABLED:-false}
+      - CREW_ADMIN_EMAIL=${CREW_ADMIN_EMAIL:-}
       # EVITE (party invitations; docs/specs/evites/03-architecture-spec.md §14, §16).
       # EVITES_PAGES gates creation, pages and renders; EVITES_SENDS gates every evite
       # email. Each is off | pilot | on, and ANYTHING else (unset, empty, a typo) reads as

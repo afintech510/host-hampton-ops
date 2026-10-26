@@ -203,6 +203,9 @@ answers 503 — both needs-Adam, both live and tested otherwise.
 | `ADMIN_SESSION_SECRET` | **Optional.** HMAC secret for the `hh_admin` per-user admin session cookie (migration 038, plan §18). Falls back to `PORTAL_LINK_SIGNING_SECRET`, so it does not need to be set — it exists so admin sessions can be revoked independently. **Rotating it signs every admin out immediately**, which is the only instant revocation there is: the cookie carries its own 7-day expiry and is verified without a DB read, so deactivating a row in `admin_users` stops the next login rather than a live session. |
 | `CHECKIN_LINKS_ENABLED` | **Optional, OFF unless exactly `true`.** The automatic pre-arrival check-in texts (`checkin_link_36hr` / `checkin_link_dayof`). Switched off by Adam 2026-10-04 when `send-reminders` was first scheduled; the 18 queued rows were cancelled with that reason. Gated at both ends (`checkinLinksEnabled()` in `lib/checkinReminders.ts`): nothing new is enqueued and any queued row is cancelled at send. An admin's manual check-in button is unaffected. Not mapped in `docker-compose.yml` — add it there AND to `.env` to re-enable. |
 | `REVIEW_ASK_SMS_ENABLED` | **Optional, OFF unless exactly `true`.** The past-client review-ask TEXTS (`review_ask_sms`). Switched off 2026-10-04 ("stop the texts") because the first 40 signed "it's Adam" — **customer messages are always from Allie** — and switched back **ON 2026-10-06** (mapped in `docker-compose.yml`, `true` in `.env`) once the copy said Allie. The stop was about the name, never the channel; ticketed-event reminders were never meant to stop. Gated at both ends (`reviewAskTextsEnabled()` in `lib/reviewAsk.ts`): `review-asks` queues no text and charges no budget, and `send-reminders` cancels any queued one. A cancelled ask still counts as asked, so re-enabling never reaches those people. To switch off again, set it to `false` in `.env` and `up -d --build website`. |
+| `CREW_ENABLED` | **OFF unless exactly `true`** (mapped in `docker-compose.yml`, default `false`). The crew side of crew scheduling: `/crew` 404s, crew login refuses, `/api/cron/crew` skips everything but the booking reconcile, nothing is sent. The admin pages (`/admin/crew/*`) and `reconcileCrewParties` deliberately run regardless, so Allie can build the roster first. Adam flips it at launch (`docs/specs/crew/prompts/07_PHASE6_QA.md`). |
+| `CREW_SMS_ENABLED` | OFF unless exactly `true`. Crew texts on the **Quo** line, to `crew_members.sms_opt_in` members only, quiet hours deferring. Needs the A2P campaign to cover staff texts first (checked in Phase 4). |
+| `CREW_ADMIN_EMAIL` | Optional. Where Allie's crew alerts are emailed; falls back to `ownerEmail()`. |
 | `REMINDER_MAX_LATENESS_HOURS` | **Optional, default 48.** How late a `scheduled_reminders` row may be and still be SENT. Past it, `/api/cron/send-reminders` CANCELS the row with the reason on `last_outcome` instead of delivering it. 48 hours because every reminder type is date-anchored — the bodies say "tomorrow", "today", "in 7 days" — and this route is not scheduled while `event-reminders`, which fills its queue, can be. Two days of that and the queue holds false statements rather than late ones. `lib/scheduleFreshness.ts`; an unusable value falls back to the default and says so, never to "no bound". |
 | `SEQUENCE_MAX_LATENESS_DAYS` | **Optional, default 14.** How late a sequence step may be and still be sent. Past it, `/api/cron/process-sequences` PAUSES the enrollment and names it in the run summary **with the SQL to resume it**. 14 rather than 48 hours because sequence steps are relationship-anchored ("still thinking about your event?") and survive being a few days late in a way a date-anchored reminder does not. Same file, same fallback behaviour. |
 | `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | Phase-3 Gmail ingestion (`lib/gmail.ts`, `/api/cron/gmail-sync`). A **separate OAuth grant** from `GOOGLE_*`, scoped `gmail.readonly` + `gmail.modify` only. Unset is supported: the route reports `configured:false` and does nothing. |
@@ -216,10 +219,11 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **077**. (This line said **047** for months
+The next free migration number is **078**. (This line said **047** for months
 after it stopped being true, which is why it now says how to check rather than
 just asserting a number: the highest file in `starting_plan/` is the floor, and
 `information_schema` on the live DB is what says whether it has been APPLIED.
+**077 is crew scheduling** (`docs/specs/crew/CREW_SPEC.md`): eleven `crew_*` tables (RLS on, no policies, anon/authenticated privileges revoked), seven SQL functions that take a step change as a compare-and-swap (the rules live only in `lib/crew/rules.ts`), a trigger enforcing the Lead rule and the unpaid owner, the `crew_settings` seed and Allie's `is_owner` row. Applied 2026-10-26 via `/root/pg.sh`, re-run once.
 **076 is `troop_families`** — parents who opted in to updates on /troop2514's Get updates tab. `email` as typed, `email_key` GENERATED as `lower(email)`, `UNIQUE (troop, email_key)` so a re-signup upserts; `consent_text` is the exact sentence ticked. Not `contacts`. Applied 2026-10-22.
 **075 makes `troop_schedule.start_time` nullable** ("Time TBA" on /troop2514; an end time still needs a start). Applied 2026-10-22.
 **074 is the troop family board** — `troop_settings`, `troop_posts`, `troop_schedule`, `troop_snack_claims` (keyed by the schedule row, so a double-claim is a 23505) and `troop_inbox`, all carrying `troop`, service-role RLS only. For `/troop2514`; a troop parent is not a lead and nothing here touches `contacts`. Applied 2026-10-22.
@@ -777,6 +781,27 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
 **And the build pipeline itself:**
 
 - **The CI gate can be the thing that is broken, and it can be broken by its own documentation.** `.github/workflows/deploy.yml` greps `src/__tests__` for `(describe|it|test)\.skip\(` and fails the build on a hit, without excluding comments — and `publicIntakeSurface.test.ts`'s R10 comment spelled the pattern literally while explaining the rule that bans it. **Every push to main failed CI from `d611eef` until link 24 found it**, and nothing on the box was affected because `scripts/deploy.sh` SSHes in directly and bypasses the Action entirely. That is exactly why nobody noticed. **When a deploy is red, read `.github/workflows/` before assuming it is your code** — and remember that a gate refusing every build looks identical to a gate passing them (rule 10, in a pipeline).
+
+### Crew scheduling (migration 077, 2026-10-26)
+
+- **Spec v1.1 is `docs/specs/crew/CREW_SPEC.md`**, and the phase prompts are beside it. It supersedes the v1 package in `starting_plan/Staffing-app/` (local, untracked). That package's mockups stay local because this repo is public and they carry first names.
+- **Pay is flat per party: crew $50 → $70, Lead $70 → $90, in $2.50 steps.** Never hourly, and never a tier or level in front of crew. `crewCopy.test.ts` renders every template and fails on those words.
+- **The rules live in `lib/crew/rules.ts` and nowhere else.** The SQL functions take a step change as a compare-and-swap (`expected_steps` → `steps_after`, `stale` on a miss), so plpgsql never holds a second copy of the arithmetic. Change a rule in `rules.ts`, its tests, and the spec changelog.
+- **What the database enforces, whatever path writes the row:**
+  - first claim wins;
+  - one live Lead spot and one spot per member per party;
+  - a Lead spot needs `can_lead` or the owner (trigger `crew_slots_guard`, checked only when the holder or role changes);
+  - the owner is never paid;
+  - steps stay within 0..8.
+- **The +2 for covering a late cancel is applied when the party is WORKED** (`crew_slots.covered_swap_id`), never at claim time. At claim time, two members could trade a cover back and forth forever.
+- **Allie is the one `is_owner` crew row.** She has no email or phone, can lead, counts toward crew needed, and is never paid, given steps, or notified.
+- **Crew emails are looked up through `findCrewMembersByEmail` in `lib/contactLookup.ts`.**
+  - It does an exact `.eq()` on the generated `email_key`. Unlike `contacts.email`, that column cannot hold two spellings, so there is nothing case-insensitive left to do.
+  - Login codes are keyed by `member_id`, not an address.
+- **`lib/crew/view.ts` is the only shape a crew route returns.** About another member, a crew member learns a first name and whether they've confirmed, nothing else. A mobile party's address and Allie's notes go only to people on that party.
+- **The Party Helper add-on is a hand-typed line item** (`service-add-on`, `pricing_item_id` NULL, name starting "Party Helper"). The two catalogue items are referenced by nothing. Spec §9 holds the match rule.
+- **`scripts/crew/race-test.mjs` proves the guarantees against production on throwaway `ZZ-RACE-*` rows** and verifies its own cleanup by count. Re-run it after any change to migration 077's functions.
+- **Minimum wage is open, for Adam and Christine.** $50 for a 3-hour party is $16.67/hr, under the $17 Long Island minimum. Do not decide it in code.
 
 ### Link 25 — the outbound send path
 
