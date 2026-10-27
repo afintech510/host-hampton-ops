@@ -1139,3 +1139,12 @@ Build of the crew-scheduling feature from Adam's approved plan ("Staffing app pl
 - **Test parties:** `scripts/crew/seed-test-parties.sql`, applied and re-run (no change). It holds six published `TEST — …` manual parties from Oct 31 to Nov 15, with 3–6 spots each. Only test members hold spots; there are three standby rows.
   - Remove: `DELETE FROM public.crew_parties WHERE party_kind = 'manual' AND booking_id IS NULL AND title LIKE 'TEST — %';`
 - **Not built (Phase 4+):** "Can't make it" (release, cover, drop anyway), notifications, `/api/cron/crew`, the Quo inbound branch, the admin screens (Phase 3), and attendance/pay entry (Phase 5).
+- **Deployed `ccc2dfe`** (Action green). Set `CREW_TEST_LOGIN=true` in the box `.env` (backup `.env.bak-20261027T024210Z-crew-test-login`). `CREW_ENABLED` is still off.
+- **Verified in production, on the container IP:**
+  - `/crew/login` 200 with all 10 test members in the grid and no member email or phone. The only address and number on the page are the business's own, in the site-wide schema markup.
+  - `/crew` without a cookie → 307 to login. `X-Robots-Tag: noindex` is present through Cloudflare too.
+  - **test-login:** Ava and Mia → 200 + signed `hh_crew`; a throwaway REAL member, the owner and an unknown id → 403 with no cookie. A forged cookie and no cookie → 401.
+  - **Test-only mode:** a code request for the real member answered `{ok:true}` and issued 0 codes.
+  - **Ava's pages** `/crew`, `/pay`, `/availability`, `/skills`: HTML + RSC payload grepped for other members' plus-addresses, last names and ids, and for tier/level/points. 0 hits. Her rate line reads $66.00 ($85.00 leading).
+  - **As Mia (not a Lead):** the Lead spot is never offered, and claiming it anyway → 409 `not_lead`. Claim → assigned (via `claim`, 0 ledger rows) → Undo shown → unclaim → open, 0 ledger rows. Undo on a spot Allie assigned → 409. Blocking a day she works → 409. The Glow Party page shows "Ava" and no last name.
+  - The throwaway member was deleted. The test parties are back to their seeded state (10 of 24 spots taken).
