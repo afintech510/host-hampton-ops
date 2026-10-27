@@ -216,7 +216,7 @@ export default function MobileCraftPartyHub() {
 
         <div className="mt-8 text-center">
           <p className="text-sm text-hampton-navy/60">
-            Want the full menu — spa, glam, photobooth and more?{' '}
+            Want the full menu — spa, glam, braids and more?{' '}
             <Link href="/mobile-party" className="text-hampton-blue font-semibold underline underline-offset-2">See all mobile party stations →</Link>
           </p>
         </div>

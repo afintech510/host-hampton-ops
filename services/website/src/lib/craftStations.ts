@@ -3,7 +3,7 @@
  *
  * A craft-forward subset of the full mobile-party menu — the hands-on making
  * activities that match "craft party" / "art party" search intent. The full
- * mix-and-match menu (spa, glam, photobooth, etc.) still lives on /mobile-party.
+ * mix-and-match menu (spa, glam, braids, etc.) still lives on /mobile-party.
  */
 
 export interface CraftStation {

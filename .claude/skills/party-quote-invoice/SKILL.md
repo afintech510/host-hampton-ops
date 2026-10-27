@@ -166,7 +166,7 @@ merged onto a single page).
     🧖 Mobile Spa Party, ✨ Hair Tinsel, 💫 Glitter Freckles, 👜 Canvas Bag Bar,
     💅 Manicures, 🦋 Glitter Tattoos, 🟢 Slime, 📿 Bracelet Making,
     🐩 Drip Paint Balloon Dogs, 💋 Lip-Gloss Charms, 🧢 Trucker Hat Bar,
-    🏖️ Sand Art, 🎨 Canvas Painting, 📸 Photobooth, 🐶 Adopt a Puppy,
+    🏖️ Sand Art, 🎨 Canvas Painting, 🐶 Adopt a Puppy,
     🎤 KPop Backdrop, 🕶️ Sunglass Craft, 🎀 Decoden Crafts, 🐚 Seashell
     Decorating, 🌸 Perfume Making, 💇 Hair Brush Decorating, 💄 Glam Makeup,
     👛 Jelly Tote Decorating, 🪢 Beaded Braids, 🎙️ Decorate-Your-Own Microphone,

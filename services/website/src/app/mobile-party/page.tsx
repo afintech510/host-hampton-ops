@@ -67,7 +67,6 @@ const menuItems = [
   { emoji: '🧢', name: 'Trucker Hat Bar',           color: 'bg-sky-50     border-sky-200' },
   { emoji: '🏖️', name: 'Sand Art',                  color: 'bg-orange-50  border-orange-200' },
   { emoji: '🎨', name: 'Canvas Painting',           color: 'bg-violet-50  border-violet-200' },
-  { emoji: '📸', name: 'Photobooth with Backdrop',  color: 'bg-fuchsia-50 border-fuchsia-200' },
   { emoji: '🩷', name: 'Life Size Barbie Box',      color: 'bg-pink-50    border-pink-200' },
   { emoji: '📿', name: 'Bracelet Making',           color: 'bg-teal-50    border-teal-200' },
   { emoji: '🐶', name: 'Adopt a Puppy',             color: 'bg-amber-50   border-amber-200' },

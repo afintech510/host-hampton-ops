@@ -125,7 +125,7 @@ export async function GET() {
     '- We bring staffed craft and activity stations to your home, backyard, park, school or venue, with all supplies, setup and cleanup.',
     `- Spa parties at home start at $950; a spa party at the studio is the Spa Party theme price above: ${SITE_URL}/spa-party`,
     `- Pricing: the current starting packages are listed on ${SITE_URL}/mobile-party. Larger groups, extra stations and longer parties are custom-quoted from guest count, stations and location, usually within 24 hours. What we quote is what you pay.`,
-    '- Popular stations: slime, spa and mini manicures, trucker hat bar, canvas bag bar, bracelet making, glitter tattoos, sand art, canvas painting, drip-paint balloon dogs, perfume making, photobooth.',
+    '- Popular stations: slime, spa and mini manicures, trucker hat bar, canvas bag bar, bracelet making, glitter tattoos, sand art, canvas painting, drip-paint balloon dogs, perfume making.',
     `- Get a quote: ${SITE_URL}/mobile-party`,
     '',
     '## Studio rental (bring your own party)',

@@ -235,7 +235,7 @@ export const FALLBACK_MOBILE_STATIONS: MobileStation[] = [
   ['Canvas Bag Bar', '👜'], ['Manicures', '💅'], ['Glitter Tattoos', '🦋'],
   ['Slime', '🟢'], ['Bracelet Making', '📿'], ['Drip Paint Balloon Dogs', '🐩'],
   ['Lip-Gloss Charms', '💋'], ['Trucker Hat Bar', '🧢'], ['Sand Art', '🏖️'],
-  ['Canvas Painting', '🎨'], ['Photobooth', '📸'], ['Adopt a Puppy', '🐶'],
+  ['Canvas Painting', '🎨'], ['Adopt a Puppy', '🐶'],
   ['KPop Backdrop', '🎤'], ['Sunglass Craft', '🕶️'], ['Decoden Crafts', '🎀'],
   ['Seashell Decorating', '🐚'], ['Perfume Making', '🌸'],
   ['Hair Brush Decorating', '💇'], ['Glam Makeup', '💄'],
