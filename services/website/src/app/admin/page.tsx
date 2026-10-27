@@ -5,7 +5,7 @@ import {
   LogIn, ArrowLeft, RefreshCw, Calendar, Ticket, Receipt,
   Palette, Users, Megaphone, ListOrdered, LayoutDashboard,
   DollarSign, Menu, X, ChevronRight, LogOut, Sparkles, Image, Gift, Camera, CalendarClock, Rocket, TrendingUp, Inbox,
-  Instagram, ClipboardCheck
+  Instagram, ClipboardCheck, HardHat
 } from 'lucide-react'
 import EventsTab from './EventsTab'
 import CalendarConfigTab from './CalendarConfigTab'
@@ -56,6 +56,15 @@ const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[]
   { key: 'campaigns',  label: 'Campaigns',  Icon: Megaphone,       group: 'marketing' },
   { key: 'marketing',  label: 'Marketing',  Icon: Rocket,          group: 'marketing' },
   { key: 'social',     label: 'Social',     Icon: Instagram,       group: 'marketing' },
+]
+
+/**
+ * Standalone admin pages linked from the sidebar rather than rendered as a tab.
+ * Crew scheduling lives at /admin/crew with its own sub-pages (schedule,
+ * roster, rules), so it is a link, not a TabKey.
+ */
+const LINKS: { href: string; label: string; Icon: typeof Ticket; group: string }[] = [
+  { href: '/admin/crew', label: 'Crew', Icon: HardHat, group: 'manage' },
 ]
 
 const GROUP_LABELS: Record<string, string> = {
@@ -345,6 +354,12 @@ function AdminDashboard({
                         <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-50" />
                       )}
                     </button>
+                  ))}
+                  {LINKS.filter(l => l.group === group).map(({ href, label, Icon }) => (
+                    <a key={href} href={href} className="admin-sidebar-link w-full">
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span>{label}</span>
+                    </a>
                   ))}
                 </div>
               </div>
