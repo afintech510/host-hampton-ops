@@ -264,6 +264,33 @@ describe('N6: every crew message has a dedupe key built from an id', () => {
   })
 })
 
+describe('N6b: a crew member and Allie never share a dedupe key', () => {
+  /**
+   * `(dedupe_key, channel)` is ONE namespace for every recipient. A member notice and an admin alert under the
+   * same key make the second a "duplicate" that is never sent — which is how Allie's drop-anyway alert went
+   * missing in the 2026-10-27 production probe while every unit test stayed green.
+   */
+  it('no key prefix is used by both notifyMember and notifyAdmin', () => {
+    const prefixes = { member: new Set<string>(), admin: new Set<string>() }
+    let examined = 0
+    for (const f of LIBS) {
+      const src = read(f)
+      for (const [fn, set] of [['notifyMember', prefixes.member], ['notifyAdmin', prefixes.admin]] as const) {
+        for (const c of calls(src, fn)) {
+          for (const m of Array.from(c.matchAll(/`([a-z_]+):\$\{/g))) { set.add(m[1]); examined++ }
+          for (const n of Array.from(c.matchAll(/\b(\w+Key)\b/g))) {
+            const b = new RegExp('const ' + n[1] + ' = `([a-z_]+):\\$\\{').exec(src)
+            if (b) { set.add(b[1]); examined++ }
+          }
+        }
+      }
+    }
+    const shared = Array.from(prefixes.member).filter(p => prefixes.admin.has(p))
+    expect(shared).toEqual([])
+    expect(examined).toBeGreaterThanOrEqual(24)
+  })
+})
+
 describe('N7: the cron route', () => {
   const route = read('app/api/cron/crew/route.ts')
   const handler = route.slice(route.indexOf('export async function GET'))

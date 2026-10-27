@@ -169,8 +169,12 @@ export async function startCoverRequest(
     adminTemplates.coverRequested(requester.first_name, reason, asked, partyRefFor(pws.party, s), adminUrl(pws.party.id)),
     `cover_requested:${swap.id}`, { test: isTestParty(pws.party), payload: { swap_id: swap.id, party_id: pws.party.id } })
 
+  // Nobody asked = escalate NOW, without consulting a clock: `created_at` is the
+  // database's now(), a few milliseconds after this request's `now`, so comparing
+  // the two left a zero-standby request open until the next tick (found in the
+  // production probe, 2026-10-27).
   let escalated = false
-  if (ctx.now.getTime() >= standbyEscalateAt(new Date(swap.created_at), asked, s).getTime()) {
+  if (asked === 0 || ctx.now.getTime() >= standbyEscalateAt(new Date(swap.created_at), asked, s).getTime()) {
     escalated = (await escalateSwap(ctx, s, swap, pws.party)) === 'escalated'
   }
   return { kind: 'ok', data: { asked, escalated } }
@@ -294,8 +298,11 @@ export async function dropAnyway(ctx: NotifyCtx, s: CrewSettings, member: CrewMe
   await notifyMember(ctx, member, 'droppedUncovered',
     templates.droppedUncovered(ref, rateLabel(steps, s), steps >= stepsBefore && stepsBefore > 0, formatCents(s.pay.stepCents)),
     `dropped:${swapId}`, { payload: { swap_id: swapId, party_id: party.id } })
+  // Its own key: `(dedupe_key, channel)` is one namespace for crew AND Allie, so
+  // sharing the member's key made this alert a "duplicate" that never went
+  // (found in the production probe, 2026-10-27; crewNotifySurface N6b).
   await notifyAdmin(ctx, 'droppedUncovered', adminTemplates.droppedUncovered(member.first_name, ref, adminUrl(party.id)),
-    `dropped:${swapId}`, { test: isTestParty(party), payload: { swap_id: swapId, party_id: party.id } })
+    `drop_alert:${swapId}`, { test: isTestParty(party), payload: { swap_id: swapId, party_id: party.id } })
   return { kind: 'ok' }
 }
 

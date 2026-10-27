@@ -119,8 +119,11 @@ describe('a late cancel', () => {
     expect(notes()).toHaveLength(n)
   })
 
-  it('with nobody to ask it escalates to Allie at once', async () => {
+  it('with nobody to ask it escalates to Allie at once — even when the DB clock runs ahead of the app', async () => {
     db.tables.crew_standbys = []
+    // The real created_at is the database's now(), after this request's `now`.
+    const rpc = fakeCoverRpc(() => new Date(NOW.getTime() + 50))
+    db.sb.rpc = async (fn: string, args: any) => { db.rpcCalls.push({ fn, args }); return rpc(fn, args, db) }
     const r = await releaseMySpot(ctx(), S, member('a'), 's-a', 'family', null)
     expect(r).toMatchObject({ kind: 'requested', asked: 0, escalated: true })
     expect(db.tables.crew_swap_requests[0].status).toBe('escalated')
@@ -179,7 +182,11 @@ describe('a late cancel', () => {
     expect(await dropAnyway(ctx(), S, member('a'), sw2.id)).toEqual({ kind: 'ok' })
     expect(member('a').steps).toBe(3)
     expect(db.tables.crew_events.at(-1)).toMatchObject({ type: 'late_cancel_uncovered', step_before: 3, step_after: 3, waived_grace: true })
-    expect(keys()).toEqual(expect.arrayContaining([`dropped:${sw2.id}`]))
+    // BOTH the member and Allie are told — Allie's alert used to share the member's key and was swallowed.
+    expect(notes(r => r.template === 'droppedUncovered' && r.member_id === 'a' && r.channel === 'in_app')).toHaveLength(1)
+    const allie = notes(r => r.template === 'droppedUncovered' && r.member_id === null)
+    expect(allie.map(r => `${r.channel}:${r.status}`).sort()).toEqual(['email:sent', 'in_app:sent'])
+    expect(tx.email.mock.calls.some(c => c[0] === 'alerts@example.test' && /URGENT open spot/.test(c[1].email.subject))).toBe(true)
 
     // Out of grace: reset to 0.
     seed()
