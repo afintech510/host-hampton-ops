@@ -23,7 +23,7 @@ const OTHER_TIP = 87_654
 
 function member(over: Partial<CrewMemberRow>): CrewMemberRow {
   return {
-    id: 'm', first_name: 'X', last_name: null, email: null, phone: null, steps: 0, can_lead: false, is_owner: false,
+    id: 'm', first_name: 'X', last_name: null, email: null, phone: null, steps: 0, can_lead: false, is_owner: false, is_test: false,
     skills: [], status: 'active', needs_review: false, sms_opt_in: false, sms_opt_in_at: null, email_opt_in: true,
     admin_notes: null, job_application_id: null, joined_on: '2026-10-26', created_at: '', updated_at: '', ...over,
   }

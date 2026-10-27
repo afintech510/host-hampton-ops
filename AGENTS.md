@@ -219,10 +219,11 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **079**. (This line said **047** for months
+The next free migration number is **080**. (This line said **047** for months
 after it stopped being true, which is why it now says how to check rather than
 just asserting a number: the highest file in `starting_plan/` is the floor, and
 `information_schema` on the live DB is what says whether it has been APPLIED.
+**079 adds `crew_members.is_test`** and seeds ten invented test crew (no phones; emails are `hosthampton295+crew-<name>@gmail.com`). `is_test` is the ONLY kind of member the password-free test picker may log in as. Delete them before launch: `DELETE FROM crew_members WHERE is_test`. Applied 2026-10-26.
 **078 sets the crew start rate to $51 a party** (`crew_settings.pay.crew_start_cents` 5000 → 5100, only while still the 077 seed) — Adam, 2026-10-26: $17/hr for a 3-hour party. Data, applied 2026-10-26.
 **077 is crew scheduling** (`docs/specs/crew/CREW_SPEC.md`): eleven `crew_*` tables (RLS on, no policies, anon/authenticated privileges revoked), seven SQL functions that take a step change as a compare-and-swap (the rules live only in `lib/crew/rules.ts`), a trigger enforcing the Lead rule and the unpaid owner, the `crew_settings` seed and Allie's `is_owner` row. Applied 2026-10-26 via `/root/pg.sh`, re-run once.
 **076 is `troop_families`** — parents who opted in to updates on /troop2514's Get updates tab. `email` as typed, `email_key` GENERATED as `lower(email)`, `UNIQUE (troop, email_key)` so a re-signup upserts; `consent_text` is the exact sentence ticked. Not `contacts`. Applied 2026-10-22.

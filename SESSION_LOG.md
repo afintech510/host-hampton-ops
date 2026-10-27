@@ -1113,3 +1113,4 @@ Build of the crew-scheduling feature from Adam's approved plan ("Staffing app pl
   - the Quo registration covers staff texts;
   - **careers-page wording unchanged** (Phase 3 no longer touches `/join-the-team`).
   - Adam adds the roster himself once the admin form exists. Still open: contractor agreement + W-9 with Christine.
+- **Test crew (Adam: "random 10 women, just let me click a person to login"):** migration 079 adds `crew_members.is_test` (never the owner) and seeds ten invented members, applied and re-run (10 test, 3 can lead, 0 with a phone; emails are plus-addresses on the business test inbox). The click-to-log-in picker is part of Phase 2 and may act ONLY as `is_test` members. Delete them before launch.

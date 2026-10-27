@@ -43,6 +43,8 @@ export interface CrewMemberRow {
   steps: number
   can_lead: boolean
   is_owner: boolean
+  /** Migration 079: an invented member for testing. The only kind the password-free test picker may act as. */
+  is_test: boolean
   skills: string[]
   status: MemberStatus
   needs_review: boolean
@@ -146,7 +148,7 @@ export interface CrewEventRow {
 export interface PartyWithSlots { party: CrewPartyRow; slots: CrewSlotRow[] }
 
 const MEMBER_COLUMNS =
-  'id, first_name, last_name, email, phone, steps, can_lead, is_owner, skills, status, needs_review, sms_opt_in, sms_opt_in_at, email_opt_in, admin_notes, job_application_id, joined_on, created_at, updated_at'
+  'id, first_name, last_name, email, phone, steps, can_lead, is_owner, is_test, skills, status, needs_review, sms_opt_in, sms_opt_in_at, email_opt_in, admin_notes, job_application_id, joined_on, created_at, updated_at'
 
 // ── Reads ───────────────────────────────────────────────────────────────────
 
