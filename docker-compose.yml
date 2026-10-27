@@ -253,6 +253,10 @@ services:
       - CREW_ENABLED=${CREW_ENABLED:-false}
       - CREW_SMS_ENABLED=${CREW_SMS_ENABLED:-false}
       - CREW_ADMIN_EMAIL=${CREW_ADMIN_EMAIL:-}
+      # The password-free test picker on /crew/login (Adam, 2026-10-26). OFF unless
+      # exactly "true". It lists and signs in ONLY is_test crew members (migration
+      # 079), and while it is on without CREW_ENABLED, /crew admits test members only.
+      - CREW_TEST_LOGIN=${CREW_TEST_LOGIN:-false}
       # EVITE (party invitations; docs/specs/evites/03-architecture-spec.md §14, §16).
       # EVITES_PAGES gates creation, pages and renders; EVITES_SENDS gates every evite
       # email. Each is off | pilot | on, and ANYTHING else (unset, empty, a typo) reads as

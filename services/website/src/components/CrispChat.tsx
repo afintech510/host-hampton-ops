@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { isInvitePath } from '@/lib/evites/chrome'
+import { isCrewPath } from '@/lib/crewChrome'
 
 // Pages where the chat bubble is hidden entirely
 const HIDDEN_PAGES = ['/party-quote', '/kids-party-menu', '/i', '/troop2514']
@@ -33,6 +34,7 @@ export default function CrispChat() {
     // capability to see a child's party, and Crisp records the URL of every page
     // it runs on. (Hiding the bubble alone would still load it.)
     if (isInvitePath(pathname)) return
+    if (isCrewPath(pathname)) return
     loaded.current = true
 
     window.$crisp = []

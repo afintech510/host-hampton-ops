@@ -388,6 +388,66 @@ export function shiftsOverlap(a: PartyWindow, b: PartyWindow, s: CrewSettings = 
   return a.startsAt.getTime() - pre < b.endsAt.getTime() + post && b.startsAt.getTime() - pre < a.endsAt.getTime() + post
 }
 
+// ---------------------------------------------------------------------------
+// Claiming (§3.6) and blocking a day (§3.8)
+// ---------------------------------------------------------------------------
+
+export type ClaimRefusal =
+  | 'party_closed'      // not published, or already started
+  | 'inactive'          // paused, removed, or the owner (Allie is assigned, never claims)
+  | 'unavailable'       // the spot is not open
+  | 'not_lead'          // a Lead spot, and the member may not lead
+  | 'already_on_party'
+  | 'overlap'           // another party of theirs overlaps, setup and clean-up included
+  | 'blocked'           // they blocked that date or part of day
+
+/**
+ * Why this member may NOT claim this spot, or null if they may. Every §3.6
+ * condition, checked server-side before `crew_claim_slot` (which re-checks the
+ * ones the database can see, under a row lock). Overlap and availability are
+ * checked only here: the database does not know about them.
+ */
+export function claimRefusal(
+  input: {
+    party: { status: string; startsAt: Date; endsAt: Date }
+    slot: { role: SlotRole; status: string }
+    member: { status: string; canLead: boolean; isOwner: boolean }
+    alreadyOnParty: boolean
+    /** The member's OTHER live parties. */
+    otherParties: ReadonlyArray<PartyWindow>
+    blocks: ReadonlyArray<DateBlock>
+    recurring: ReadonlyArray<RecurringBlock>
+    now: Date
+  },
+  s: CrewSettings = DEFAULT_SETTINGS,
+): ClaimRefusal | null {
+  const { party, slot, member } = input
+  if (party.status !== 'published' || party.startsAt.getTime() <= input.now.getTime()) return 'party_closed'
+  if (member.status !== 'active' || member.isOwner) return 'inactive'
+  if (slot.status !== 'open') return 'unavailable'
+  if (slot.role === 'lead' && !member.canLead) return 'not_lead'
+  if (input.alreadyOnParty) return 'already_on_party'
+  const window = { startsAt: party.startsAt, endsAt: party.endsAt }
+  if (input.otherParties.some(o => shiftsOverlap(window, o, s))) return 'overlap'
+  if (isBlockedByAvailability(window, input.blocks, input.recurring)) return 'blocked'
+  return null
+}
+
+/**
+ * The parties a proposed block would collide with. "A member cannot block a
+ * day they are already working; they must use 'Can't make it'" (§3.8): a
+ * non-empty answer is a refusal. A weekly block is judged against every
+ * upcoming party the member is on.
+ */
+export function partiesBlockedBy(
+  block: { day: string; part: DayPart } | { dow: number; part: DayPart },
+  myParties: ReadonlyArray<PartyWindow>,
+): PartyWindow[] {
+  return myParties.filter(p => 'day' in block
+    ? isBlockedByAvailability(p, [block], [])
+    : isBlockedByAvailability(p, [], [{ dow: block.dow, part: block.part, active: true }]))
+}
+
 export function setupStartsAt(startsAt: Date, s: CrewSettings = DEFAULT_SETTINGS): Date {
   return new Date(startsAt.getTime() - s.shift.setupMinutes * 60_000)
 }

@@ -69,6 +69,9 @@ const TEMPLATE_SOURCES = [
   // The troop board's leader alert and absence confirmation (/troop2514).
   // Escaped at entry; the one link goes through `mailHref`.
   'lib/email-templates/troop.ts',
+  // Crew mail (lib/crew/mail.ts): the plain-text bodies from lib/crew/templates.ts,
+  // wrapped paragraph by paragraph, every piece through escapeHtml. No links in markup.
+  'lib/crew/mail.ts',
   'lib/planPayment.ts',
   'lib/planShare.ts',
   // The post-party photo booth album. Its interpolations are the customer's

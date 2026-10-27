@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { captureAttribution } from '@/lib/utm'
 import { isInvitePath } from '@/lib/evites/chrome'
+import { isCrewPath } from '@/lib/crewChrome'
 
 /**
  * Records the first touch of the visit, site-wide.
@@ -22,6 +23,7 @@ export default function AttributionCapture() {
   const pathname = usePathname()
   useEffect(() => {
     if (isInvitePath(pathname)) return
+    if (isCrewPath(pathname)) return
     captureAttribution()
   }, [pathname])
   return null

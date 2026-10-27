@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Menu, X, Phone, MessageCircle } from 'lucide-react'
 import CartButton from '@/components/CartButton'
 import { isInvitePath } from '@/lib/evites/chrome'
+import { isCrewPath } from '@/lib/crewChrome'
 
 const navLinks = [
   { href: '/party-packages',     label: 'Party Packages' },
@@ -47,6 +48,8 @@ export default function Nav() {
   //
   // `/i/<slug>` (the public evite) is a guest's page, not part of the site: no nav.
   if (pathname === '/party-planner' || pathname === '/party-builder' || isInvitePath(pathname)) return null
+  // The crew app (`/crew`) has its own shell. After every hook, like the line above.
+  if (isCrewPath(pathname)) return null
 
   return (
     <header

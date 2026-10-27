@@ -241,6 +241,66 @@ export async function getAvailability(
   }
 }
 
+/** One slot by id. */
+export async function getSlot(sb: Supa, slotId: string): Promise<Read<CrewSlotRow | null>> {
+  const { data, error } = await sb.from('crew_slots').select('*').eq('id', slotId).maybeSingle()
+  if (error) return { kind: 'unavailable', error: error.message }
+  return { kind: 'ok', data: (data as CrewSlotRow) ?? null }
+}
+
+/** Parties by id. Chunked, and one failed chunk fails the read. */
+export async function partiesByIds(sb: Supa, ids: string[]): Promise<Read<CrewPartyRow[]>> {
+  const out: CrewPartyRow[] = []
+  const unique = Array.from(new Set(ids))
+  for (let i = 0; i < unique.length; i += 150) {
+    const { data, error } = await sb.from('crew_parties').select('*').in('id', unique.slice(i, i + 150))
+    if (error) return { kind: 'unavailable', error: error.message }
+    out.push(...((data ?? []) as CrewPartyRow[]))
+  }
+  return { kind: 'ok', data: out }
+}
+
+/**
+ * id → FIRST NAME, and nothing else, for teammates. The only read of another
+ * member a crew page makes: it selects two columns so nothing more can leak
+ * into a projection by accident.
+ */
+export async function firstNamesFor(sb: Supa, memberIds: string[]): Promise<Read<Map<string, string>>> {
+  const map = new Map<string, string>()
+  const unique = Array.from(new Set(memberIds))
+  for (let i = 0; i < unique.length; i += 150) {
+    const { data, error } = await sb.from('crew_members').select('id, first_name').in('id', unique.slice(i, i + 150))
+    if (error) return { kind: 'unavailable', error: error.message }
+    for (const r of (data ?? []) as { id: string; first_name: string }[]) map.set(r.id, r.first_name)
+  }
+  return { kind: 'ok', data: map }
+}
+
+/** The party ids this member is a live standby on. */
+export async function memberStandbyPartyIds(sb: Supa, memberId: string): Promise<Read<Set<string>>> {
+  const { data, error } = await sb.from('crew_standbys').select('party_id').eq('member_id', memberId).is('withdrawn_at', null)
+  if (error) return { kind: 'unavailable', error: error.message }
+  return { kind: 'ok', data: new Set(((data ?? []) as { party_id: string }[]).map(r => r.party_id)) }
+}
+
+/** Is there a live (open or escalated) cover request on this slot? */
+export async function hasActiveSwap(sb: Supa, slotId: string): Promise<Read<boolean>> {
+  const { data, error } = await sb.from('crew_swap_requests').select('id').eq('slot_id', slotId).in('status', ['open', 'escalated']).limit(1)
+  if (error) return { kind: 'unavailable', error: error.message }
+  return { kind: 'ok', data: (data ?? []).length > 0 }
+}
+
+/**
+ * The test picker's list: active, `is_test`, never the owner. Columns are named,
+ * and the email and phone are not among them.
+ */
+export async function listTestMembers(sb: Supa): Promise<Read<Pick<CrewMemberRow, 'id' | 'first_name' | 'last_name' | 'steps' | 'can_lead'>[]>> {
+  const { data, error } = await sb.from('crew_members').select('id, first_name, last_name, steps, can_lead')
+    .eq('is_test', true).eq('status', 'active').eq('is_owner', false).order('first_name', { ascending: true })
+  if (error) return { kind: 'unavailable', error: error.message }
+  return { kind: 'ok', data: (data ?? []) as Pick<CrewMemberRow, 'id' | 'first_name' | 'last_name' | 'steps' | 'can_lead'>[] }
+}
+
 export async function listLiveStandbys(sb: Supa, partyId: string): Promise<Read<CrewStandbyRow[]>> {
   const { data, error } = await sb.from('crew_standbys').select('*').eq('party_id', partyId).is('withdrawn_at', null)
   if (error) return { kind: 'unavailable', error: error.message }

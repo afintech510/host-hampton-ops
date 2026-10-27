@@ -36,6 +36,42 @@ export function crewEnabled(): boolean {
   return process.env.CREW_ENABLED === 'true'
 }
 
+/**
+ * The password-free test picker on `/crew/login`. OFF unless exactly `true`.
+ *
+ * The site is public, so this switch can never be a way to become a REAL crew
+ * member: the picker lists, and `/api/crew/auth/test-login` signs in, only rows
+ * with `is_test` (migration 079), and while this is on without `CREW_ENABLED`
+ * the whole crew app admits test members only (`crewMemberMayEnter`).
+ */
+export function crewTestLoginEnabled(): boolean {
+  return process.env.CREW_TEST_LOGIN === 'true'
+}
+
+/**
+ * Is `/crew` reachable at all? With CREW_ENABLED it is open to the crew; with
+ * only CREW_TEST_LOGIN it is open to the invented test members and nobody else.
+ */
+export function crewAppOpen(): boolean {
+  return crewEnabled() || crewTestLoginEnabled()
+}
+
+/**
+ * May this member use the crew app right now? The ONE answer, used by the
+ * session check, both logins and the code mailer.
+ *
+ *   - active only: paused and removed members are out;
+ *   - never the owner: Allie is a crew row so she can lead, not a login;
+ *   - test-only mode (CREW_TEST_LOGIN without CREW_ENABLED): `is_test` only, so
+ *     real crew stay out until Adam launches.
+ */
+export function crewMemberMayEnter(m: { status: string; is_owner: boolean; is_test: boolean }): boolean {
+  if (!crewAppOpen()) return false
+  if (m.status !== 'active' || m.is_owner) return false
+  if (!crewEnabled() && !m.is_test) return false
+  return true
+}
+
 /** Crew texts on the Quo line. Off unless exactly `true`; also needs the member's `sms_opt_in`. */
 export function crewSmsEnabled(): boolean {
   return process.env.CREW_SMS_ENABLED === 'true'

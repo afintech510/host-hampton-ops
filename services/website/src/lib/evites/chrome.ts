@@ -3,7 +3,7 @@
  *
  * Imported by client components (Nav, Footer, BenchworksAttribution,
  * AttributionCapture, MetaPixel, GoogleAnalytics, CrispChat, the banners), so it
- * imports nothing and runs anywhere.
+ * imports nothing but `lib/crewChrome.ts` (which imports nothing) and runs anywhere.
  *
  *   /i/<slug>                  the public invitation. A guest's page: no site nav,
  *                              no footer, no third-party tracking, no attribution
@@ -13,6 +13,8 @@
  *
  * `usePathname()` can be null (outside the router); null is not an invite path.
  */
+
+import { isCrewPath } from '@/lib/crewChrome'
 
 /** `/i/<anything>`. There is no `/i` page, so the bare `/i` is not matched. */
 export function isInvitePath(pathname: string | null | undefined): boolean {
@@ -32,7 +34,7 @@ export function isTroopBoardPath(pathname: string | null | undefined): boolean {
   return typeof pathname === 'string' && /^\/troop\d+(\/|$)/.test(pathname)
 }
 
-/** Where the Meta Pixel must not load and must not fire PageView. */
+/** Where the Meta Pixel must not load and must not fire PageView. The crew app is a staff tool, not a marketing page. */
 export function isMetaPixelBlockedPath(pathname: string | null | undefined): boolean {
-  return isInvitePath(pathname) || isHostInvitationPath(pathname) || isTroopBoardPath(pathname)
+  return isInvitePath(pathname) || isHostInvitationPath(pathname) || isTroopBoardPath(pathname) || isCrewPath(pathname)
 }

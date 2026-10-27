@@ -58,6 +58,7 @@ const HIDDEN_PREFIXES = [
   '/s/',
   '/i/', // a guest's evite: no site promotions on a child's invitation
   '/troop', // a Girl Scouts troop's family board, shared by link
+  '/crew', // the crew app: a staff tool with its own shell
 ]
 
 export default function ChristmasMarketBanner() {

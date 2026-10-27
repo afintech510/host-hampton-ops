@@ -137,7 +137,7 @@ const id = (h: Handler) => `${h.method} ${h.route}`
 
 /* ── Classification ───────────────────────────────────────────────────────── */
 
-type Gate = 'admin' | 'cm-cheer' | 'troop-leader' | 'portal-required' | 'plan-scoped' | 'provider-signature' | 'public'
+type Gate = 'admin' | 'cm-cheer' | 'troop-leader' | 'crew' | 'portal-required' | 'plan-scoped' | 'provider-signature' | 'public'
 
 /**
  * How this handler decides whether the caller may proceed.
@@ -155,6 +155,11 @@ function gateOf(h: Handler): Gate {
   // not the call, so a handler that merely mentions it does not read as gated.
   if (/if\s*\(\s*!\s*isTroopLeaderAuthorized\s*\(\s*req\s*\)\s*\)\s*return\b/.test(h.body)) return 'troop-leader'
   if (/handleSignwellWebhook\s*\(/.test(h.body)) return 'provider-signature'
+  // The crew app (lib/crew/auth.ts): a signed `hh_crew` session, re-read and
+  // re-judged on every request. Matched on the REFUSAL — the gate's result
+  // returned when it is not ok — not on the call, so a handler that awaits it
+  // and carries on regardless reads as public.
+  if (/const\s+(\w+)\s*=\s*await\s+requireCrewMember\s*\(\s*req\s*\)\s*;?\s*if\s*\(\s*!\s*\1\.ok\s*\)\s*return\s+\1\.response\b/.test(h.body)) return 'crew'
   /*
    * `planAccess` is a gate in its own right — it answers "is the human in front
    * of this plan entitled to it" from the ref-scoped portal cookie or an admin
@@ -273,6 +278,17 @@ const DELIBERATELY_PUBLIC = new Set([
   'POST portal/email-auth/verify',
   'DELETE portal/my-bookings',
   'POST portal/resend-link',
+  // Crew login's front door (spec §5). The two code routes are the portal's
+  // email-code pair keyed by crew member: always `{ok:true}`, the five-guess
+  // CLAIM, rate-limited first, and 404 while the crew app is off.
+  'POST crew/auth/request',
+  'POST crew/auth/verify',
+  // Clears the caller's own cookie; touches no row.
+  'POST crew/auth/logout',
+  // The test picker (CREW_TEST_LOGIN). 404 unless that is exactly `true`; the id
+  // in the body is a request, not a credential: the member is re-read and anything
+  // but an active, is_test, non-owner row is a 403. Rate-limited first.
+  'POST crew/auth/test-login',
 ])
 
 /** Handlers that write to the database or spend money at a third party. */

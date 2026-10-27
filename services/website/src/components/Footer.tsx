@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { Phone, Mail, MapPin, Instagram, Facebook, MessageCircle, Clock } from 'lucide-react'
 import { isInvitePath } from '@/lib/evites/chrome'
+import { isCrewPath } from '@/lib/crewChrome'
 
 export default function Footer() {
   const pathname = usePathname()
@@ -14,6 +15,8 @@ export default function Footer() {
   // not be hidden with it). EVERY early return goes AFTER every hook: the footer
   // is in the root layout and survives a client-side navigation (navHookOrder.test.ts).
   if (isInvitePath(pathname)) return null
+  // The crew app (`/crew`) has its own shell.
+  if (isCrewPath(pathname)) return null
 
   return (
     <>

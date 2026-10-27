@@ -135,6 +135,12 @@ describe('next.config.js headers() for /i/:path*', () => {
     const rules = await config.headers()
     for (const r of rules) {
       if (r.source === '/i/:path*') continue
+      // The crew app is a staff tool and says noindex too — but ONLY that: none of the
+      // invitation's referrer policy rides along.
+      if (r.source === '/crew/:path*') {
+        expect(r.headers.map((h) => h.key)).toEqual(['X-Robots-Tag'])
+        continue
+      }
       expect(r.headers.map((h) => h.key)).not.toContain('X-Robots-Tag')
     }
   })

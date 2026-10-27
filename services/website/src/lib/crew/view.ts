@@ -15,7 +15,11 @@
  * of them survives `JSON.stringify` of any projection.
  */
 
-import { nextStepLabel, partyPayCents, ratesFor, type CrewSettings, type SlotRole } from '@/lib/crew/rules'
+import {
+  clampSteps, formatCents, isInGracePeriod, nextStepLabel, partyPayCents, partyRateCents, ratesFor, TIME_ZONE,
+  type CrewSettings, type SlotRole,
+} from '@/lib/crew/rules'
+import { shiftEtDate } from '@/lib/partyTime'
 import type { CrewMemberRow, CrewPartyRow, CrewSlotRow, SlotStatus } from '@/lib/crew/db'
 
 export interface CrewMeView {
@@ -196,4 +200,121 @@ export function myPayRecords(viewerId: string, rows: { slot: CrewSlotRow; party:
       paidAt: r.slot.paid_at ?? null,
     }))
     .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
+}
+
+// ── The test picker (CREW_TEST_LOGIN) ───────────────────────────────────────
+
+/** One card in "Testing: pick a crew member". Invented members only; never an email or a phone. */
+export interface TestPickView {
+  id: string
+  firstName: string
+  lastName: string | null
+  rateCents: number
+  canLead: boolean
+}
+
+export function testPickView(
+  rows: ReadonlyArray<Pick<CrewMemberRow, 'id' | 'first_name' | 'last_name' | 'steps' | 'can_lead'>>,
+  s: CrewSettings,
+): TestPickView[] {
+  return rows.map(m => ({
+    id: m.id,
+    firstName: m.first_name,
+    lastName: m.last_name ?? null,
+    rateCents: partyRateCents('crew', m.steps, s),
+    canLead: !!m.can_lead,
+  }))
+}
+
+// ── My pay: the ladder and how cancelling works, in plain words ─────────────
+
+export interface LadderRow {
+  /** 0 = the starting rate. Shown as dollars, never as a number to the crew. */
+  index: number
+  crewCents: number
+  leadCents: number | null
+  isMine: boolean
+}
+
+export function payLadder(steps: number, canLead: boolean, s: CrewSettings): LadderRow[] {
+  const mine = clampSteps(steps, s)
+  return Array.from({ length: s.pay.maxSteps + 1 }, (_, i) => ({
+    index: i,
+    crewCents: partyRateCents('crew', i, s),
+    leadCents: canLead ? partyRateCents('lead', i, s) : null,
+    isMine: i === mine,
+  }))
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/**
+ * "How cancelling works", generated from the settings so it cannot drift from
+ * what the rules do. Dollars a party only; `crewCopy.test.ts` bans the words.
+ */
+export function cancellingLines(s: CrewSettings, now: Date): string[] {
+  const step = s.pay.stepCents
+  const start = formatCents(s.pay.crewStartCents)
+  const days = s.drops.lateDropDays
+  const lines: string[] = []
+  const each = (n: number) => formatCents(Math.abs(n) * step)
+
+  lines.push(`Every party you work raises your rate by ${each(s.steps.worked)} a party, up to ${formatCents(partyRateCents('crew', s.pay.maxSteps, s))}.`)
+  if (s.steps.earlyRelease < 0) {
+    lines.push(`Can't make it, with ${plural(days, 'day', 'days')} or more notice? Your spot opens up for the rest of the crew and your rate goes down ${each(s.steps.earlyRelease)} a party.`)
+  } else {
+    lines.push(`Can't make it, with ${plural(days, 'day', 'days')} or more notice? Your spot opens up for the rest of the crew and your rate stays the same.`)
+  }
+  lines.push(`With less than ${plural(days, 'day', 'days')} notice, we ask the crew who said they can cover. You stay on the party until one of them takes it. If someone covers you, nothing changes for you.`)
+  lines.push(`If nobody covers and you drop the party anyway, your rate goes back to the starting ${start}. Not showing up does the same.`)
+  if (s.steps.covered > s.steps.worked) {
+    lines.push(`Cover someone else's party and work it, and that party raises your rate by ${each(s.steps.covered)} instead of ${each(s.steps.worked)}.`)
+  }
+  lines.push(`Tips: if your tips for a party come to less than ${formatCents(s.pay.tipFloorCents)}, Host Hampton tops them up to ${formatCents(s.pay.tipFloorCents)}.`)
+  if (isInGracePeriod(now, s)) {
+    const until = s.launch.launchDate ? shiftEtDate(s.launch.launchDate, Math.floor(s.launch.graceDays)) : null
+    lines.push(until
+      ? `While we're getting started (until ${dayLabel(until)}), none of this lowers your rate. We just keep a note.`
+      : `While we're getting started, none of this lowers your rate. We just keep a note.`)
+  }
+  return lines
+}
+
+// ── Dates, in Eastern time (the box is UTC) ─────────────────────────────────
+
+const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'short', month: 'short', day: 'numeric' })
+const timeFmt = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' })
+
+/** "Sat, Oct 31" for an ET calendar date "2026-10-31". */
+export function dayLabel(dateKey: string): string {
+  return dayFmt.format(new Date(`${dateKey}T12:00:00Z`))
+}
+
+/** "Sat, Oct 31" for an instant, in Eastern time. */
+export function partyDayLabel(iso: string): string {
+  return dayFmt.format(new Date(iso))
+}
+
+/** "1:30 PM" in Eastern time. */
+export function clockLabel(iso: string | Date): string {
+  return timeFmt.format(typeof iso === 'string' ? new Date(iso) : iso)
+}
+
+/** "1:30 PM – 4:30 PM" in Eastern time. */
+export function partyTimeLabel(startsAt: string, endsAt: string): string {
+  return `${clockLabel(startsAt)} – ${clockLabel(endsAt)}`
+}
+
+/** What a crew member is told when a claim is refused. Plain words, no rule names. */
+export function claimRefusalText(r: string): string {
+  switch (r) {
+    case 'party_closed': return 'This party is no longer open.'
+    case 'inactive': return 'Your account is paused. Talk to Allie.'
+    case 'unavailable': return 'Someone just took that spot.'
+    case 'not_lead': return 'That spot is for a Party Lead.'
+    case 'already_on_party': return "You're already on this party."
+    case 'overlap': return "You're working another party at that time."
+    case 'blocked': return "You've marked yourself unavailable then. Change it in Availability first."
+    default: return "That didn't work. Try again."
+  }
 }

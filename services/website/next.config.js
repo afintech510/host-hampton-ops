@@ -25,6 +25,13 @@ const nextConfig = {
           { key: 'Referrer-Policy', value: 'no-referrer' },
         ],
       },
+      // The crew app (prompt 03): a staff tool. Its layout also carries the
+      // robots meta tag; this says the same on every response, including the
+      // 404 it answers while CREW_ENABLED / CREW_TEST_LOGIN are off.
+      {
+        source: '/crew/:path*',
+        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+      },
     ]
   },
   async redirects() {

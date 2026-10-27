@@ -1114,3 +1114,28 @@ Build of the crew-scheduling feature from Adam's approved plan ("Staffing app pl
   - **careers-page wording unchanged** (Phase 3 no longer touches `/join-the-team`).
   - Adam adds the roster himself once the admin form exists. Still open: contractor agreement + W-9 with Christine.
 - **Test crew (Adam: "random 10 women, just let me click a person to login"):** migration 079 adds `crew_members.is_test` (never the owner) and seeds ten invented members, applied and re-run (10 test, 3 can lead, 0 with a phone; emails are plus-addresses on the business test inbox). The click-to-log-in picker is part of Phase 2 and may act ONLY as `is_test` members. Delete them before launch.
+
+## Crew scheduling Phase 2: the crew app (feat/crew) — 2026-10-26
+
+- **Shipped (code):**
+  - **Shell:** `/crew` layout (noindex, Bricolage Grotesque + Plus Jakarta Sans, crew tokens, `-mt-20` plus body background override). `isCrewPath()` in `lib/crewChrome.ts` hides Nav, Footer, the agency credit, Crisp and attribution capture (after their hooks) and blocks the Meta Pixel. `/crew` is in both banners' `HIDDEN_PREFIXES`. `X-Robots-Tag` is sent for `/crew/:path*`.
+  - **Auth (`lib/crew/auth.ts`):** the signed `hh_crew` cookie. `requireCrewMember` / `requireCrewPage` re-read the member every request through `crewMemberMayEnter`.
+    - Routes: `POST /api/crew/auth/{request,verify,logout}`. The code pair is keyed by member, uses the five-guess claim, and always answers ok.
+  - **Test login (Adam's ask):** `CREW_TEST_LOGIN` (compose default `false`).
+    - The `/crew/login` grid lists active `is_test` members: name, rate, can-lead badge, no email or phone.
+    - `POST /api/crew/auth/test-login` answers 404 with the flag off and 403 for a non-test, paused, removed or owner row. It is rate-limited.
+    - In test-only mode `/crew` admits test members only.
+  - **Pages:**
+    - `/crew`: rate card, confirm prompts, My parties, Open parties with my pay per spot (a Lead spot only for `can_lead`), Full parties, standby toggle.
+    - `/crew/parties/[id]`: 404 unless I'm on it or could take or stand by on it.
+    - `/crew/availability`: 3-month calendar, weekly blocks, due-date card. Blocking a working day is refused.
+    - `/crew/skills`: the 9 boxes plus ≤10 extras of ≤40 characters.
+    - `/crew/pay`: rates, the $51→$71 / $70→$90 ladder, how cancelling works generated from settings, my worked parties.
+  - **Writes:** `/api/crew/{claim,unclaim,confirm,standby,availability,skills}`, each `guardRate(plannerRule('crew'))` + `requireCrewMember`.
+    - Claim re-checks §3.6 with the new `claimRefusal` in `rules.ts`, then calls `crew_claim_slot`.
+    - Undo is a conditional UPDATE allowed only before `requestAt`.
+  - **Tests:** `crewTestLogin`, `crew/auth`, `crew/crewApp`, and `crew/crewSurface` (tripwire). `publicIntakeSurface` gained a `crew` gate and the four login routes; `seo.test` gained `crew/layout.tsx`. 23/23 mutations caught, from 1 to 8 reds each. Full suite 6542/6544 (the 2 reds are `fundraiserVenmoQr`'s known timeout under load; it passes alone). `tsc` shows no non-test errors, and `next build` compiles every crew route as dynamic.
+  - **Existing tripwires adjusted, not relaxed:** `navHookOrder` (the crew gate is its own line after the invite gate, so that gate is still the first return), `chromeOnInvite` (`/crew/:path*` may carry `X-Robots-Tag` and nothing else), `slugSafety` (crew routes reserved), and `emailTemplateEscaping` (`lib/crew/mail.ts` is audited). Crew mail has its own Resend call because `evitesMailSurface` holds `sendEviteEmail` to one caller.
+- **Test parties:** `scripts/crew/seed-test-parties.sql`, applied and re-run (no change). It holds six published `TEST — …` manual parties from Oct 31 to Nov 15, with 3–6 spots each. Only test members hold spots; there are three standby rows.
+  - Remove: `DELETE FROM public.crew_parties WHERE party_kind = 'manual' AND booking_id IS NULL AND title LIKE 'TEST — %';`
+- **Not built (Phase 4+):** "Can't make it" (release, cover, drop anyway), notifications, `/api/cron/crew`, the Quo inbound branch, the admin screens (Phase 3), and attendance/pay entry (Phase 5).
