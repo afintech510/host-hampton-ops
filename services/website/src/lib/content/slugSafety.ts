@@ -83,8 +83,10 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   // The crew app (staff only; lib/crewChrome.ts). Reserved like every static route.
   '/crew',
   '/crew/availability',
+  '/crew/cover/[id]',
   '/crew/login',
   '/crew/parties/[id]',
+  '/crew/parties/[id]/cant-make-it',
   '/crew/pay',
   '/crew/skills',
   '/custom-accessories',

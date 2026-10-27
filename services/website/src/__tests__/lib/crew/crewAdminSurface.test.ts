@@ -142,13 +142,29 @@ describe('R2: every write names the human', () => {
   })
 })
 
-const SEND_RE = /\b(?:sendCrewEmail|sendSMSViaQuo|sendSms|sendEmail|sendEviteEmail|notifyOwner\w*|resend\.emails|new Resend)\b/
+// Phase 4 added the crew send path (lib/crew/notify.ts) and its callers in lib/crew/cover.ts; both are named
+// here so a Phase 3 file cannot reach them directly either (crewNotifySurface.test.ts N1 holds the providers).
+const SEND_RE = /\b(?:sendCrewEmail|sendSMSViaQuo|sendSms|sendEmail|sendEviteEmail|notifyOwner\w*|resend\.emails|new Resend|notifyMember|notifyAdmin|drainCrewQueue|offerToEveryone|assignCover)\b/
+
+/**
+ * The ONE admin route that sends, added deliberately in Phase 4: Allie's "offer to everyone free that day" and
+ * "assign cover" on a late cancel. It reaches the send path only through lib/crew/cover.ts.
+ */
+const PHASE4_SENDING_ROUTE = path.join(API, 'swaps', '[id]', 'route.ts')
 
 describe('R3: Phase 3 sends nothing — except an invite, after launch', () => {
   it('the reconcile, the party actions, the loaders and the routes call no sender', () => {
-    const files = [SYNC, path.join(LIB, 'admin.ts'), path.join(LIB, 'adminActions.ts'), path.join(LIB, 'adminForms.ts'), ...ROUTES]
+    expect(ROUTES).toContain(PHASE4_SENDING_ROUTE)
+    const files = [SYNC, path.join(LIB, 'admin.ts'), path.join(LIB, 'adminActions.ts'), path.join(LIB, 'adminForms.ts'), ...ROUTES.filter(f => f !== PHASE4_SENDING_ROUTE)]
+    expect(files.length).toBeGreaterThanOrEqual(13)
     const offenders = files.filter(f => SEND_RE.test(read(f).replace(/^import[^\n]*$/gm, ''))).map(rel)
     expect(offenders).toEqual([])
+  })
+
+  it('the Phase 4 cover route sends only through lib/crew/cover.ts, never a provider', () => {
+    const src = read(PHASE4_SENDING_ROUTE)
+    expect(src).toMatch(/import \{ assignCover, offerToEveryone \} from '@\/lib\/crew\/cover'/)
+    expect(src.replace(/^import[^\n]*$/gm, '')).not.toMatch(/\b(?:sendCrewEmail|sendSMSViaQuo|notifyMember|notifyAdmin|resend\.emails|new Resend)\b/)
   })
 
   it('adminMembers sends in ONE place, inviteMember, and only after the CREW_ENABLED refusal', () => {

@@ -146,6 +146,7 @@ const SURFACE = [
   'lib/agent/triage.ts', // what does this message mean
   'lib/agent/reviewers.ts', // is this a reviewer
   'lib/gmail.ts', // the mailbox client
+  'lib/crew/inbound.ts', // a crew member's text (crew Phase 4): answered before anything below sees it
 ].sort()
 
 /** The routes an inbound message arrives at or is processed by. */
@@ -166,7 +167,7 @@ describe('R0 · the surface is walked, and every file in it is accounted for', (
       expect({ f, exists: fs.existsSync(path.join(SRC, f)) }).toEqual({ f, exists: true })
       expect(read(f).length).toBeGreaterThan(0)
     }
-    expect(SURFACE.length).toBe(8)
+    expect(SURFACE.length).toBe(9)
     expect(ROUTES.length).toBe(5)
   })
 
@@ -457,7 +458,7 @@ describe('R4 · identity is asked in exactly one place', () => {
       if (/\.(eq|ilike)\(\s*['"]phone['"]/.test(src)) offenders.push(rel)
     }
     expect(offenders).toEqual([])
-    expect(examined).toBe(12)
+    expect(examined).toBe(13)
   })
 
   it('the reviewer check is by phone number, and it is the first thing that happens', () => {
@@ -581,6 +582,52 @@ describe('R6 · both prompts an inbound message reaches are fenced properly', ()
       .filter(f => /export function flattenToOneLine/.test(read(f)))
     expect(defs).toEqual(['lib/agent/extractPlanFields.ts'])
     expect(read('lib/agent/triage.ts')).toMatch(/import \{ flattenToOneLine \}/)
+  })
+})
+
+/* ── R5b · a crew member's text (crew Phase 4) ───────────────────────────── */
+
+describe('R5b · a crew phone is answered first and goes no further', () => {
+  it('the crew branch runs after verification and the rate limit, before keyword routing and any contact write', () => {
+    const quo = read('app/api/webhooks/quo/route.ts')
+    const crew = quo.indexOf('handleCrewInboundSms({')
+    expect(crew).toBeGreaterThan(-1)
+    expect(crew).toBeGreaterThan(quo.indexOf('guardRate(req'))
+    expect(crew).toBeGreaterThan(quo.indexOf('verifyQuoWebhook('))
+    expect(crew).toBeGreaterThan(quo.indexOf('if (!verified.ok)'))
+    for (const later of ["const isStop = intent === 'stop'", 'findContactsByPhone(', 'upsertContactByPhone({', 'recordSmsOptIn(', 'recordInboundEventResult(', "from('contact_interactions')"]) {
+      expect({ later, after: quo.indexOf(later) > crew }).toEqual({ later, after: true })
+    }
+  })
+
+  it('a handled crew text RETURNS, and an unreadable roster is a 503 so Quo redelivers', () => {
+    const quo = squash('app/api/webhooks/quo/route.ts')
+    expect(quo).toMatch(/if \(crew\.kind === 'unavailable'\) \{(?:(?!\bif \()[\s\S])*?status: 503 \}\) \}/)
+    expect(quo).toMatch(/if \(crew\.kind === 'handled'\) \{ return NextResponse\.json\(/)
+  })
+
+  it('a crew STOP opts out the crew row AND every contact on the number, and fails loudly', () => {
+    const body = bodyOf(read('lib/crew/inbound.ts'), 'handleCrewInboundSms')
+    expect(body).not.toBe('')
+    const stop = body.slice(body.indexOf("if (intent === 'stop')"), body.indexOf('if (isConfirmReply(text))'))
+    expect(stop).toMatch(/\.update\(\{ sms_opt_in: false \}\)/)
+    expect(stop).toMatch(/recordSmsOptOut\(sb, from, 'quo'/)
+    expect(stop.match(/return \{ kind: 'unavailable'/g)?.length).toBeGreaterThanOrEqual(3)
+    // STOP is decided BEFORE the Y/YES branch, so "STOP" can never be read as anything else.
+    expect(body.indexOf("if (intent === 'stop')")).toBeLessThan(body.indexOf('if (isConfirmReply(text))'))
+  })
+
+  it('the crew module never creates a contact, records an agent event, or matches a phone raw', () => {
+    const src = read('lib/crew/inbound.ts') + read('lib/crew/db.ts')
+    expect(src).not.toMatch(/upsertContact|recordInboundEvent|from\('contacts'\)/)
+    expect(src).not.toMatch(/\.(eq|ilike|in)\(\s*'phone'/)
+    expect(read('lib/crew/db.ts')).toMatch(/normalizePhoneKey\(m\.phone\) === key/)
+  })
+
+  it('YES is a confirmation only as an exact reply', () => {
+    const body = bodyOf(read('lib/crew/inbound.ts'), 'isConfirmReply')
+    expect(body).toMatch(/key === 'Y' \|\| key === 'YES'/)
+    expect(body).not.toMatch(/includes\(|startsWith\(|indexOf\(/)
   })
 })
 

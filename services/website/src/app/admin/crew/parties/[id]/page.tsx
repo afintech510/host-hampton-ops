@@ -17,7 +17,7 @@ interface Fit { conflicts: Conflict[]; overlapWith: string[] }
 interface Slot {
   id: string; role: 'lead' | 'crew'; status: string; memberId: string | null; memberName: string | null; isOwner: boolean
   confirmed: boolean; assignedVia: string | null; assignedBy: string | null
-  activeCover: { id: string; status: string; reason: string; note: string | null } | null
+  activeCover: { id: string; status: string; reason: string; note: string | null; offeredToAllAt?: string | null } | null
 }
 interface Choice { id: string; name: string; canLead: boolean; isOwner: boolean; isTest: boolean; crewRateCents: number; leadRateCents: number; fitCrew: Fit; fitLead: Fit }
 interface Detail {
@@ -79,6 +79,18 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
     await load()
   }
 
+  /** A late cancel nobody took: offer it to everyone free that day, or put someone on it. */
+  async function coverAct(swapId: string, body: Record<string, unknown>, done: (data: { asked?: number }) => string) {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    const r = await api<{ error?: string; asked?: number }>(`/api/admin/crew/swaps/${swapId}`, { method: 'PATCH', body })
+    setBusy(false)
+    if (!r.ok) setError(r.data.error || 'That did not work.')
+    else setNotice(done(r.data))
+    await load()
+  }
+
   if (authed === null) return <div className="min-h-screen bg-[#F6F1EB] grid place-items-center text-hampton-navy/60">Loading…</div>
   if (!authed) return <LoginGate title="Crew party" onSignedIn={load} />
   if (!d) return <CrewFrame active="" title="Crew party"><Banner tone="error">{error || 'Loading…'}</Banner></CrewFrame>
@@ -136,6 +148,8 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
                   onAssign={(memberId, force) => act({ action: 'assign', slotId: s.id, memberId, force }, 'Assigned.')}
                   onUnassign={() => act({ action: 'unassign', slotId: s.id }, 'Unassigned; the spot is open again.')}
                   onRemove={() => act({ action: 'remove_spot', slotId: s.id }, 'Spot removed.')}
+                  onOfferAll={swapId => coverAct(swapId, { action: 'offer_all' }, x => `Offered to everyone free that day (${x.asked ?? 0} asked).`)}
+                  onAssignCover={(swapId, memberId) => coverAct(swapId, { action: 'assign', memberId }, () => 'Assigned. Both of them have been told.')}
                 />
               ))}
             </ul>
@@ -195,11 +209,13 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
   )
 }
 
-function SlotRow({ slot, members, busy, live, onAssign, onUnassign, onRemove }: {
+function SlotRow({ slot, members, busy, live, onAssign, onUnassign, onRemove, onOfferAll, onAssignCover }: {
   slot: Slot; members: Choice[]; busy: boolean; live: boolean
   onAssign: (memberId: string, force: boolean) => void; onUnassign: () => void; onRemove: () => void
+  onOfferAll: (swapId: string) => void; onAssignCover: (swapId: string, memberId: string) => void
 }) {
   const [pick, setPick] = useState('')
+  const [coverPick, setCoverPick] = useState('')
   const lead = slot.role === 'lead'
   const options = members.filter(m => !lead || m.canLead || m.isOwner)
   return (
@@ -217,7 +233,28 @@ function SlotRow({ slot, members, busy, live, onAssign, onUnassign, onRemove }: 
           {slot.activeCover && (
             <span className="text-xs text-amber-800 bg-amber-50 rounded px-2 py-0.5">
               can&apos;t make it ({slot.activeCover.reason}{slot.activeCover.note ? `: ${slot.activeCover.note}` : ''}), cover {slot.activeCover.status}
+              {slot.activeCover.offeredToAllAt ? ' · offered to everyone' : ''}
             </span>
+          )}
+          {live && slot.activeCover && (
+            <div className="w-full flex flex-wrap items-center gap-2 pl-1">
+              {!slot.activeCover.offeredToAllAt && (
+                <button disabled={busy} onClick={() => onOfferAll(slot.activeCover!.id)} className={BTN_GHOST}>Offer to everyone free that day</button>
+              )}
+              <select value={coverPick} onChange={e => setCoverPick(e.target.value)} className={INPUT} aria-label="Assign cover">
+                <option value="">Put someone on it…</option>
+                {options.filter(m => m.id !== slot.memberId).map(m => {
+                  const fit = lead ? m.fitLead : m.fitCrew
+                  const notes = fit.conflicts.map(c => CONFLICT_LABEL[c])
+                  return (
+                    <option key={m.id} value={m.id} disabled={fit.conflicts.includes('on_party')}>
+                      {m.name}{m.isOwner ? ' (Allie)' : ''}{m.isTest ? ' [test]' : ''}{notes.length ? ` — ${notes.join(', ')}` : ''}
+                    </option>
+                  )
+                })}
+              </select>
+              <button disabled={busy || !coverPick} onClick={() => onAssignCover(slot.activeCover!.id, coverPick)} className={BTN_PRIMARY}>Assign cover</button>
+            </div>
           )}
           {live && slot.status === 'assigned' && !slot.activeCover && (
             <button disabled={busy} onClick={onUnassign} className={`${BTN_DANGER} ml-auto`}>Unassign</button>

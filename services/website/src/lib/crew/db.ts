@@ -17,6 +17,7 @@
  */
 
 import type { getSupabase } from '@/lib/supabase'
+import { normalizePhoneKey } from '@/lib/contactLookup'
 import {
   classifyDrop, isInGracePeriod, stepAfter, type CrewSettings, type DayPart, type SlotRole,
 } from '@/lib/crew/rules'
@@ -307,6 +308,26 @@ export async function listLiveStandbys(sb: Supa, partyId: string): Promise<Read<
   return { kind: 'ok', data: (data ?? []) as CrewStandbyRow[] }
 }
 
+/**
+ * The crew members a texting number belongs to: never the owner, never a removed
+ * member. Matched by `normalizePhoneKey` in JS, never by a raw `phone` filter —
+ * the roster stores `+1` + the key, but a phone typed some other way must still
+ * match, and AGENTS.md §11 bans comparing a phone number raw. The roster is a
+ * dozen rows, so reading every phone is cheap and exact.
+ */
+export async function crewMembersByPhone(sb: Supa, phone: string): Promise<Read<CrewMemberRow[]>> {
+  const key = normalizePhoneKey(phone)
+  if (!key) return { kind: 'ok', data: [] }
+  const { data, error } = await sb.from('crew_members').select(MEMBER_COLUMNS)
+    .not('phone', 'is', null).eq('is_owner', false).neq('status', 'removed')
+  if (error) return { kind: 'unavailable', error: error.message }
+  const rows = (data ?? []) as unknown as CrewMemberRow[]
+  return {
+    kind: 'ok',
+    data: rows.filter(m => normalizePhoneKey(m.phone) === key).sort((a, b) => a.created_at.localeCompare(b.created_at)),
+  }
+}
+
 // ── Notifications ───────────────────────────────────────────────────────────
 
 export interface NotificationInsert {
@@ -315,7 +336,8 @@ export interface NotificationInsert {
   template: string
   dedupe_key: string
   payload?: Record<string, unknown>
-  status?: 'queued' | 'sent' | 'failed' | 'skipped'
+  /** 'sending' (migration 081) is a claim: the INSERT itself took the row, and the send follows. */
+  status?: 'queued' | 'sending' | 'sent' | 'failed' | 'skipped'
   scheduled_for?: string
   error?: string | null
 }

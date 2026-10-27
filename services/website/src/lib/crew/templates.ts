@@ -148,6 +148,15 @@ export const templates = {
     )
   },
 
+  /** Allie widened a late cancel to everyone free that day: not only the standbys. */
+  coverOpen(requesterFirst: string, p: PartyRef, role: 'lead' | 'crew', payLabel: string): Rendered {
+    return r(
+      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.timeLabel}. You're free that day, want ${spotWord(role)} (${payLabel})? ${p.url}`,
+      `Spot open: ${p.theme}, ${p.dayLabel}`,
+      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.timeLabel}, and you're free that day: ${spotWord(role)}, ${payLabel}. First to claim gets it, and covering a late cancel counts as two parties toward your rate.\n${p.url}`,
+    )
+  },
+
   coveredRequester(p: PartyRef): Rendered {
     return r(
       `You're covered for ${p.theme} ${p.dayLabel}. Your rate doesn't change. Thanks for asking early!`,
@@ -248,6 +257,18 @@ export const adminTemplates = {
     return {
       subject: `No standby took it: ${p.theme}, ${p.dayLabel}`,
       text: `No standby has taken ${memberFirst}'s spot at ${p.theme}, ${p.dayLabel} ${p.timeLabel}. Offer it to everyone free that day, or assign someone:\n${adminUrl}`,
+    }
+  },
+  coverTaken(memberFirst: string, coverFirst: string, p: PartyRef, adminUrl: string) {
+    return {
+      subject: `Covered: ${p.theme}, ${p.dayLabel}`,
+      text: `${coverFirst} took ${memberFirst}'s spot at ${p.theme}, ${p.dayLabel} ${p.timeLabel}. Nothing changes for ${memberFirst}.\n${adminUrl}`,
+    }
+  },
+  coverWithdrawn(memberFirst: string, p: PartyRef, adminUrl: string) {
+    return {
+      subject: `Cancel withdrawn: ${memberFirst}, ${p.theme} ${p.dayLabel}`,
+      text: `${memberFirst} can make ${p.theme}, ${p.dayLabel} after all and withdrew the cover request. They're still on.\n${adminUrl}`,
     }
   },
   coverUnclaimed(memberFirst: string, p: PartyRef, adminUrl: string) {

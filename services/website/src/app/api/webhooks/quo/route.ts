@@ -6,6 +6,7 @@ import { recordSmsOptOut, recordSmsOptIn, smsKeywordIntent } from '@/lib/smsOptO
 import { recordInboundEventResult } from '@/lib/agent/events'
 import { verifyQuoWebhook } from '@/lib/inboundWebhookVerify'
 import { guardRate, webhookRule } from '@/lib/rateLimit'
+import { handleCrewInboundSms } from '@/lib/crew/inbound'
 // Deliberately lib/agent/reviewers, NOT lib/agent/reviewLoop: this route must
 // not be able to reach the customer-send path, even transitively.
 import { isReviewerPhone } from '@/lib/agent/reviewers'
@@ -115,6 +116,20 @@ export async function POST(req: NextRequest) {
   if (!from) return NextResponse.json({ received: true })
 
   const supabase = getSupabase()
+
+  // ── Crew first (crew spec §6). A crew member's phone is answered here and
+  // goes no further: Y/YES confirms their next party (YES is also a carrier
+  // START word, so this must come before the keyword routing below), STOP opts
+  // them out as crew AND as any contact on the number, HELP replies. It never
+  // becomes a `contacts` row and never reaches recordInboundEvent.
+  const crew = await handleCrewInboundSms({ sb: supabase, now: new Date(), from, text, messageId })
+  if (crew.kind === 'unavailable') {
+    console.error(`quo:webhook crew branch could not act — asking Quo to retry: ${crew.error}`)
+    return NextResponse.json({ error: 'crew lookup failed' }, { status: 503 })
+  }
+  if (crew.kind === 'handled') {
+    return NextResponse.json({ received: true, crew: true, action: crew.action })
+  }
 
   const isStop = intent === 'stop'
 

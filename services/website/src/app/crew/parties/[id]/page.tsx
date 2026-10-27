@@ -85,7 +85,7 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
 
       {v.mySlot && b.upcoming && !b.canUndo && (
         <p className="crew-note crew-info">
-          Can&apos;t make it? Tell Allie as soon as you can. Asking the standbys from here is coming soon.
+          Can&apos;t make it? <Link className="crew-link" href={`/crew/parties/${v.id}/cant-make-it`}>Tell us here</Link>. The sooner, the better.
         </p>
       )}
     </main>

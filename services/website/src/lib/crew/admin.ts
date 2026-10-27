@@ -379,7 +379,7 @@ export interface AdminSlotView {
   confirmed: boolean
   assignedVia: CrewSlotRow['assigned_via']
   assignedBy: string | null
-  activeCover: { id: string; status: string; reason: string; note: string | null } | null
+  activeCover: { id: string; status: string; reason: string; note: string | null; offeredToAllAt: string | null } | null
 }
 
 export interface AdminMemberChoice {
@@ -467,7 +467,9 @@ export async function loadAdminParty(sb: Supa, partyId: string, s: CrewSettings)
         confirmed: !!sl.confirmed_at,
         assignedVia: sl.assigned_via,
         assignedBy: sl.assigned_by,
-        activeCover: cover ? { id: cover.id, status: cover.status, reason: cover.reason, note: cover.reason_note } : null,
+        activeCover: cover
+          ? { id: cover.id, status: cover.status, reason: cover.reason, note: cover.reason_note, offeredToAllAt: cover.offered_to_all_at }
+          : null,
       }
     })
 

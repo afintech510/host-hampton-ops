@@ -25,3 +25,4 @@ booking-locks|0 4 * * *|/api/cron/booking-locks|1560|box
 gmail-sync|*/3 * * * *|/api/cron/gmail-sync|10|box
 archive-review-texts|11-59/15 * * * *|/api/cron/archive-review-texts|45|box
 rsvp-digest|0 12 * * *|/api/cron/rsvp-digest|1560|box
+crew|*/5 * * * *|/api/cron/crew|15|box

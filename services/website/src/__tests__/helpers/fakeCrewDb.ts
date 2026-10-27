@@ -106,6 +106,11 @@ export function fakeCrewDb(seed: Record<string, Row[]> = {}, opts: { rpc?: (fn: 
       lte: (c: string, v: any) => { filters.push(r => r[c] != null && r[c] <= v); return chain },
       lt: (c: string, v: any) => { filters.push(r => r[c] != null && r[c] < v); return chain },
       gt: (c: string, v: any) => { filters.push(r => r[c] != null && r[c] > v); return chain },
+      like: (c: string, pat: string) => {
+        const re = new RegExp('^' + pat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.') + '$')
+        filters.push(r => typeof r[c] === 'string' && re.test(r[c]))
+        return chain
+      },
       ilike: (c: string, pat: string) => {
         const re = new RegExp('^' + pat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.') + '$', 'i')
         filters.push(r => typeof r[c] === 'string' && re.test(r[c]))
@@ -158,6 +163,81 @@ function defaultsFor(table: string): Row {
       return { status: 'queued' }
     default:
       return {}
+  }
+}
+
+/**
+ * `crew_release_slot`, `crew_claim_swap` and `crew_drop_uncovered` as migration
+ * 077 writes them: the same refusals in the same order, the compare-and-swap on
+ * steps, and the ledger rows. `now` is the test's clock (the SQL uses now()).
+ */
+export function fakeCoverRpc(now: () => Date) {
+  return (fn: string, a: any, db: FakeCrewDb) => {
+    const T = (n: string) => (db.tables[n] ??= [])
+    const iso = now().toISOString()
+    const cas = (memberId: string, expected: number, after: number) => {
+      const m = T('crew_members').find(r => r.id === memberId)
+      if (!m || m.steps !== expected) return false
+      m.steps = after
+      return true
+    }
+    const event = (row: Record<string, any>) => T('crew_events').push({ id: `ev-${T('crew_events').length + 1}`, occurred_at: iso, ...row })
+    if (fn === 'crew_release_slot') {
+      const slot = T('crew_slots').find(r => r.id === a.p_slot_id)
+      if (!slot || slot.status !== 'assigned' || slot.member_id !== a.p_member_id) return { data: 'not_yours', error: null }
+      const party = T('crew_parties').find(r => r.id === slot.party_id)
+      if (new Date(party.starts_at).getTime() <= now().getTime()) return { data: 'started', error: null }
+      if (a.p_kind === 'late_cancel') {
+        if (T('crew_swap_requests').some(r => r.slot_id === slot.id && ['open', 'escalated'].includes(r.status))) return { data: 'already_requested', error: null }
+        T('crew_swap_requests').push({
+          id: `00000000-0000-4000-9000-${String(T('crew_swap_requests').length + 1).padStart(12, '0')}`, slot_id: slot.id,
+          requester_id: a.p_member_id, slot_role: slot.role, reason: a.p_reason, reason_note: a.p_note, status: 'open',
+          notice_hours: a.p_notice_hours, standbys_notified_at: null, escalated_at: null, offered_to_all_at: null, warned_at: null,
+          claimed_by: null, claimed_at: null, resolved_at: null, created_at: iso,
+        })
+        return { data: 'requested', error: null }
+      }
+      if (!cas(a.p_member_id, a.p_expected_steps, a.p_steps_after)) return { data: 'stale', error: null }
+      Object.assign(slot, { status: 'open', member_id: null, assigned_at: null, assigned_via: null, confirmed_at: null })
+      event({ member_id: a.p_member_id, type: 'early_release', step_before: a.p_expected_steps, step_after: a.p_steps_after, waived_grace: a.p_waived_grace })
+      return { data: 'released', error: null }
+    }
+    if (fn === 'crew_claim_swap') {
+      const m = T('crew_members').find(r => r.id === a.p_member_id)
+      if (!m || m.status !== 'active' || (m.is_owner && !a.p_by_admin)) return { data: 'inactive', error: null }
+      const swap = T('crew_swap_requests').find(r => r.id === a.p_swap_id)
+      if (!swap || !['open', 'escalated'].includes(swap.status)) return { data: 'unavailable', error: null }
+      if (swap.requester_id === m.id) return { data: 'own_request', error: null }
+      const slot = T('crew_slots').find(r => r.id === swap.slot_id)
+      if (slot.status !== 'assigned' || slot.member_id !== swap.requester_id) return { data: 'unavailable', error: null }
+      const party = T('crew_parties').find(r => r.id === slot.party_id)
+      if (party.status !== 'published' || new Date(party.starts_at).getTime() <= now().getTime()) return { data: 'party_closed', error: null }
+      if (slot.role === 'lead' && !(m.can_lead || m.is_owner)) return { data: 'not_lead', error: null }
+      if (!a.p_by_admin && !swap.offered_to_all_at && !T('crew_standbys').some(r => r.party_id === party.id && r.member_id === m.id && !r.withdrawn_at)) {
+        return { data: 'not_standby', error: null }
+      }
+      if (T('crew_slots').some(r => r.party_id === party.id && r.member_id === m.id && ['assigned', 'completed', 'no_show'].includes(r.status))) {
+        return { data: 'already_on_party', error: null }
+      }
+      Object.assign(slot, { member_id: m.id, assigned_at: iso, assigned_via: a.p_by_admin ? 'admin' : 'cover', confirmed_at: iso, covered_swap_id: swap.id })
+      Object.assign(swap, { status: 'claimed', claimed_by: m.id, claimed_at: iso, resolved_at: iso })
+      const req = T('crew_members').find(r => r.id === swap.requester_id)
+      event({ member_id: swap.requester_id, type: 'late_cancel_covered', step_before: req.steps, step_after: req.steps })
+      event({ member_id: m.id, type: 'cover_claimed', step_before: m.steps, step_after: m.steps })
+      return { data: 'claimed', error: null }
+    }
+    if (fn === 'crew_drop_uncovered') {
+      const swap = T('crew_swap_requests').find(r => r.id === a.p_swap_id)
+      if (!swap || !['open', 'escalated'].includes(swap.status) || swap.requester_id !== a.p_member_id) return { data: 'unavailable', error: null }
+      const slot = T('crew_slots').find(r => r.id === swap.slot_id)
+      if (slot.status !== 'assigned' || slot.member_id !== a.p_member_id) return { data: 'unavailable', error: null }
+      if (!cas(a.p_member_id, a.p_expected_steps, a.p_steps_after)) return { data: 'stale', error: null }
+      Object.assign(slot, { status: 'open', member_id: null, assigned_at: null, assigned_via: null, confirmed_at: null })
+      Object.assign(swap, { status: 'dropped_uncovered', resolved_at: iso })
+      event({ member_id: a.p_member_id, type: 'late_cancel_uncovered', step_before: a.p_expected_steps, step_after: a.p_steps_after, waived_grace: a.p_waived_grace })
+      return { data: 'dropped', error: null }
+    }
+    return { data: null, error: { message: `no rpc ${fn}` } }
   }
 }
 

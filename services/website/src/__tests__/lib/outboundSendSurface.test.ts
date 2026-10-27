@@ -63,6 +63,13 @@ const SEND_LIBS = [
   // and sends (cronTick). Both compose WHEN an outbound customer email goes, so both belong to R1 (no setHours).
   'lib/evites/cronDue.ts',
   'lib/evites/cronTick.ts',
+  // Added with crew Phase 4 (2026-10-27). Crew are not customers, but these compose WHEN a text goes to a real
+  // person's phone, so the local-time, quiet-hours and logging rules apply to them exactly as to a customer's.
+  // notify.ts is the one crew send path (in-app, email, SMS, and the queue drain); jobs.ts decides when each
+  // cron-driven crew message is due; cover.ts sends the late-cancel cover offers.
+  'lib/crew/notify.ts',
+  'lib/crew/jobs.ts',
+  'lib/crew/cover.ts',
 ] as const
 
 /** Cron routes that send, or that fill a queue something else sends from. */
@@ -101,6 +108,11 @@ const SEND_ROUTES = [
   // Added 2026-10-18. The owner's daily RSVP digest (lib/evites/rsvpDigest.ts): one Resend email to
   // `ownerEmail()`, never a guest or host. A sender, so not NOT_A_SENDER; owner-only, so no quiet-hours rule.
   'app/api/cron/rsvp-digest/route.ts',
+  // Added with crew Phase 4 (2026-10-27). The crew tick: confirmation requests and reminders, cover offers and
+  // escalations, Allie's alerts, and the crew_notifications queue (texts quiet hours held, the reconcile's
+  // partyCancelled notices). Its audience is crew and Allie, never a customer; its texts are deferred by quiet
+  // hours inside lib/crew/notify.ts, which R2b below holds.
+  'app/api/cron/crew/route.ts',
 ] as const
 
 const ALL = [...SEND_LIBS, ...SEND_ROUTES]
@@ -178,7 +190,8 @@ describe('R0 — the surface is enumerated exactly', () => {
   it('every listed module exists on disk', () => {
     const missing = ALL.filter(rel => !fs.existsSync(path.join(SRC, rel)))
     expect(missing).toEqual([])
-    expect(ALL.length).toBe(27)
+    // 27 → 31 with crew Phase 4: lib/crew/{notify,jobs,cover}.ts and app/api/cron/crew.
+    expect(ALL.length).toBe(31)
   })
 
   it('every cron route that sends or enqueues is in SEND_ROUTES', () => {

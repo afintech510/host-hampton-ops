@@ -16,7 +16,7 @@ const party: PartyRef = {
 }
 
 const SAMPLES: Record<string, unknown> = {
-  p: party, firstName: 'Sam', requesterFirst: 'Sam', memberFirst: 'Sam', loginUrl: 'https://www.hosthampton.com/crew/login',
+  p: party, firstName: 'Sam', requesterFirst: 'Sam', memberFirst: 'Sam', coverFirst: 'Jo', loginUrl: 'https://www.hosthampton.com/crew/login',
   code: '123456', payLabel: '$58.50', dueLabel: 'Tue 5pm', address: '295 Montauk Hwy, Speonk, NY 11972',
   newRateLabel: '$55.00', rateLabel: '$51.00', resetRateLabel: '$51.00', stepLabel: '$2.50', waived: false, role: 'lead',
   url: 'https://www.hosthampton.com/crew', adminUrl: 'https://www.hosthampton.com/admin/crew', monthLabel: 'December',
