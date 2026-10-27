@@ -187,13 +187,18 @@ describe('R5: the reconcile never removes a spot and never moves a step', () => 
   it('no delete; the one crew_slots update cancels spots of a party it just claimed as cancelled', () => {
     const src = read(SYNC)
     expect(src).not.toMatch(/\.delete\(/)
+    // Exactly two: the cancel path's, and the studio-rental Lead-spot → crew-spot change
+    // (Adam, 2026-10-27), which may touch only an OPEN, UNHELD spot and only its role.
     const updates = Array.from(src.matchAll(/from\('crew_slots'\)\s*\.update\(/g))
-    expect(updates).toHaveLength(1)
-    const at = updates[0].index as number
-    expect(squash(src.slice(at, at + 200))).toMatch(/^from\('crew_slots'\) ?\.update\(\{ status: 'cancelled' \}\)/)
+    expect(updates).toHaveLength(2)
+    const stmts = updates.map(u => squash(src.slice(u.index as number, (u.index as number) + 220)))
+    expect(stmts.filter(s => /^from\('crew_slots'\) ?\.update\(\{ status: 'cancelled' \}\)/.test(s))).toHaveLength(1)
+    const crewify = stmts.filter(s => /^from\('crew_slots'\) ?\.update\(\{ role: 'crew' \}\)/.test(s))
+    expect(crewify).toHaveLength(1)
+    expect(crewify[0]).toMatch(/^from\('crew_slots'\) ?\.update\(\{ role: 'crew' \}\) ?\.in\('id', u\.crewifySlotIds\) ?\.eq\('party_id', u\.partyId\) ?\.eq\('status', 'open'\) ?\.is\('member_id', null\)/)
     const body = functionBody(src, 'applyReconcile')
     const claim = body.search(/from\('crew_parties'\)\s*\.update\(\{ status: 'cancelled'/)
-    const slots = body.search(/from\('crew_slots'\)\s*\.update\(/)
+    const slots = body.search(/from\('crew_slots'\)\s*\.update\(\{ status: 'cancelled'/)
     expect(claim).toBeGreaterThan(0)
     expect(slots).toBeGreaterThan(claim)
     // The slot cancel only runs for a WON claim: the 0-row branch continues first.

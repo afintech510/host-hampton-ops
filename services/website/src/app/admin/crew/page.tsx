@@ -187,7 +187,7 @@ export default function CrewSchedulePage() {
                   <td className="px-4 py-3">{p.guestCount ?? '—'}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={p.staffed >= p.needed ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>{p.staffed}/{p.needed}</span>
-                    {!p.leadFilled && <div className="text-red-700 text-xs">no Lead</div>}
+                    {!p.leadFilled && p.kind !== 'studio_rental' && <div className="text-red-700 text-xs">no Lead</div>}
                     {p.unconfirmed > 0 && <div className="text-amber-700 text-xs">{p.unconfirmed} unconfirmed</div>}
                   </td>
                   <td className="px-4 py-3">{p.status === 'draft' || p.status === 'published' ? p.available : '—'}</td>

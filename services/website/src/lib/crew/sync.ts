@@ -37,7 +37,7 @@ import { sumPayments } from '@/lib/bookingBalance'
 import { partyWindow, validPartyDate, PARTY_START_EARLIEST_MIN, PARTY_START_LATEST_MIN } from '@/lib/evites/partyWindow'
 import { eviteLocationType, mobileAddressOf } from '@/lib/evites/location'
 import { STUDIO_ADDRESS_LINE } from '@/lib/studioLocation'
-import { etDateString, etToUtc, parseTime } from '@/lib/partyTime'
+import { etDateString, etToUtc } from '@/lib/partyTime'
 import { slotsForParty, slotRolesFor, type CrewSettings, type SlotRole } from '@/lib/crew/rules'
 import {
   insertNotification, type CrewPartyRow, type CrewSlotRow, type PartyKind, type PartyWithSlots, type Read,
@@ -90,6 +90,8 @@ export interface ReconcileBooking {
 export interface HelperLine {
   booking_id: string
   name: string | null
+  /** Where a hand-typed helper line often says its hours ("a party helper from 1:00–5:00 PM"). */
+  description?: string | null
   category: string | null
   pricing_item_id: string | null
   quantity: number | null
@@ -140,18 +142,22 @@ function isPerHourItem(name: string | null | undefined): boolean {
  * except the per-hour item, whose quantity is HOURS: one helper per such line
  * (Adam, 2026-10-26).
  */
-export function partyHelperCount(lines: ReadonlyArray<HelperLine>, items: ReadonlyArray<HelperItem>): { count: number; perHour: boolean } {
-  const itemIds = new Set(items.map(i => i.id))
+function helperMatch(li: HelperLine, items: ReadonlyArray<HelperItem>): { hourly: boolean } | null {
+  if (li.is_optional) return null
+  const byItem = !!li.pricing_item_id && items.some(i => i.id === li.pricing_item_id)
+  const byName = (li.category ?? '') === 'service-add-on' && /^party helper/i.test((li.name ?? '').trim())
+  if (!byItem && !byName) return null
   const perHourIds = new Set(items.filter(i => isPerHourItem(i.name)).map(i => i.id))
+  return { hourly: (li.pricing_item_id ? perHourIds.has(li.pricing_item_id) : false) || (!byItem && isPerHourItem(li.name)) }
+}
+
+export function partyHelperCount(lines: ReadonlyArray<HelperLine>, items: ReadonlyArray<HelperItem>): { count: number; perHour: boolean } {
   let count = 0
   let perHour = false
   for (const li of lines) {
-    if (li.is_optional) continue
-    const byItem = !!li.pricing_item_id && itemIds.has(li.pricing_item_id)
-    const byName = (li.category ?? '') === 'service-add-on' && /^party helper/i.test((li.name ?? '').trim())
-    if (!byItem && !byName) continue
-    const hourly = (li.pricing_item_id ? perHourIds.has(li.pricing_item_id) : false) || (!byItem && isPerHourItem(li.name))
-    if (hourly) {
+    const m = helperMatch(li, items)
+    if (!m) continue
+    if (m.hourly) {
       count += 1
       perHour = true
       continue
@@ -168,43 +174,74 @@ function tagsOf(v: unknown): Record<string, unknown> {
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null)
 
-/**
- * A studio rental's window, from the rental tags the checkout writes
- * (`rental_start_time` / `rental_end_time` / `rental_hours`), on `party_date`
- * in Eastern time. The start obeys `partyWindow`'s 08:00–21:00 screen (a
- * "2:00" with no AM/PM is 2 AM and is not believed). No end and no hours is
- * "we do not know", never a guessed three hours.
- */
-export function rentalWindow(b: Pick<ReconcileBooking, 'party_date' | 'party_time' | 'party_tags'>): { startsAt: Date; endsAt: Date } | null {
-  const date = validPartyDate(b.party_date)
-  if (!date) return null
-  const tags = tagsOf(b.party_tags)
-  const startRaw = str(tags.rental_start_time) ?? str(b.party_time)
-  if (!startRaw) return null
-  const st = parseTime(startRaw)
-  if (!st || st.minutes > 59) return null
-  const startMin = st.hours * 60 + st.minutes
-  if (startMin < PARTY_START_EARLIEST_MIN || startMin > PARTY_START_LATEST_MIN) return null
+const TIME_RANGE = /\b(\d{1,2})(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\s*(?:-|–|—|to|until)\s*(\d{1,2})(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)/i
 
-  let endMin: number | null = null
-  const endRaw = str(tags.rental_end_time)
-  if (endRaw) {
-    const en = parseTime(endRaw)
-    if (en && en.minutes <= 59) endMin = en.hours * 60 + en.minutes
-  } else {
-    const hours = Number(tags.rental_hours)
-    if (Number.isFinite(hours) && hours > 0 && hours <= 16) endMin = startMin + Math.round(hours * 60)
-  }
-  if (endMin == null || endMin <= startMin || endMin > 24 * 60) return null
-
-  const startsAt = etToUtc(date, st.hours, st.minutes)
-  const endsAt = new Date(startsAt.getTime() + (endMin - startMin) * 60_000)
-  if (!Number.isFinite(startsAt.getTime())) return null
-  return { startsAt, endsAt }
+function to24(h12: number, meridiem: string): number {
+  const pm = /^p/i.test(meridiem)
+  if (h12 === 12) return pm ? 12 : 0
+  return pm ? h12 + 12 : h12
 }
 
-export function crewWindowFor(b: ReconcileBooking, kind: Exclude<PartyKind, 'manual'>): { startsAt: Date; endsAt: Date } | null {
-  if (kind === 'studio_rental') return rentalWindow(b)
+/**
+ * A time range written in words — "1–5 PM", "1:00–5:00 PM", "11 to 2pm",
+ * "10am-2pm" — as Eastern minutes after midnight. The END must carry AM/PM; a
+ * start without one takes the end's, unless that would put it at or after the
+ * end ("11–2 PM" is 11 AM to 2 PM). The start obeys `partyWindow`'s
+ * 08:00–21:00 screen. Anything else is null: a guessed time is worse than
+ * "needs a time", because a crew member plans their day around it.
+ */
+export function helperTimeRange(text: string | null | undefined): { startMin: number; endMin: number } | null {
+  const m = TIME_RANGE.exec(text ?? '')
+  if (!m) return null
+  const sh = Number(m[1]), sm = Number(m[2] ?? 0), eh = Number(m[4]), em = Number(m[5] ?? 0)
+  if (sh < 1 || sh > 12 || eh < 1 || eh > 12) return null
+  const endMin = to24(eh, m[6]) * 60 + em
+  let startMin: number
+  if (m[3]) {
+    startMin = to24(sh, m[3]) * 60 + sm
+  } else {
+    startMin = to24(sh, m[6]) * 60 + sm
+    if (startMin >= endMin) startMin = to24(sh, /^p/i.test(m[6]) ? 'am' : 'pm') * 60 + sm
+  }
+  if (startMin < PARTY_START_EARLIEST_MIN || startMin > PARTY_START_LATEST_MIN) return null
+  if (endMin <= startMin || endMin > 24 * 60) return null
+  return { startMin, endMin }
+}
+
+/**
+ * A studio rental's crew window is the HELPER's time, not the rental's (Adam,
+ * 2026-10-27: "this is a room rental, not a normal party … we only need to add
+ * a crew for the time specified"). It is read from the Party Helper line
+ * items themselves — the name first, then the description — on `party_date`
+ * in Eastern time. Several helper lines span the earliest start to the latest
+ * end. No stated time is "needs a time", never the whole rental.
+ */
+export function helperWindow(
+  b: Pick<ReconcileBooking, 'party_date'>, lines: ReadonlyArray<HelperLine>, items: ReadonlyArray<HelperItem>,
+): { startsAt: Date; endsAt: Date } | null {
+  const date = validPartyDate(b.party_date)
+  if (!date) return null
+  let start: number | null = null
+  let end: number | null = null
+  for (const li of lines) {
+    if (!helperMatch(li, items)) continue
+    const r = helperTimeRange(li.name) ?? helperTimeRange(li.description)
+    if (!r) continue
+    start = start == null ? r.startMin : Math.min(start, r.startMin)
+    end = end == null ? r.endMin : Math.max(end, r.endMin)
+  }
+  if (start == null || end == null) return null
+  const startsAt = etToUtc(date, Math.floor(start / 60), start % 60)
+  if (!Number.isFinite(startsAt.getTime())) return null
+  return { startsAt, endsAt: new Date(startsAt.getTime() + (end - start) * 60_000) }
+}
+
+/** The crew window. A rental's needs its helper lines; every other kind is `partyWindow()`. */
+export function crewWindowFor(
+  b: ReconcileBooking, kind: Exclude<PartyKind, 'manual'>,
+  helper: { lines: ReadonlyArray<HelperLine>; items: ReadonlyArray<HelperItem> } = { lines: [], items: [] },
+): { startsAt: Date; endsAt: Date } | null {
+  if (kind === 'studio_rental') return helperWindow(b, helper.lines, helper.items)
   const w = partyWindow({
     party_date: b.party_date,
     party_time: b.party_time,
@@ -251,13 +288,23 @@ export function neededSpots(
   return slotsForParty({ guestCount }, s)
 }
 
-/** The roles to ADD so `live` spots become `needed`: a Lead first if the party has none. Never a removal. */
-export function rolesToAdd(liveSlots: ReadonlyArray<Pick<CrewSlotRow, 'role' | 'status'>>, needed: number): SlotRole[] {
+/**
+ * The spots a party of this kind starts with. A studio rental has NO Lead
+ * spot: what was bought is a helper, and a Lead or a helper may take it
+ * (Adam, 2026-10-27). Every other party has exactly one Lead.
+ */
+export function rolesFor(kind: PartyKind, count: number): SlotRole[] {
+  if (kind === 'studio_rental') return Array.from({ length: Math.max(1, Math.floor(count)) }, () => 'crew' as const)
+  return slotRolesFor(count)
+}
+
+/** The roles to ADD so `live` spots become `needed`: a Lead first if the party should have one and has none. Never a removal. */
+export function rolesToAdd(liveSlots: ReadonlyArray<Pick<CrewSlotRow, 'role' | 'status'>>, needed: number, kind: PartyKind = 'manual'): SlotRole[] {
   const live = liveSlots.filter(sl => sl.status !== 'cancelled')
   const missing = Math.max(0, Math.min(MAX_PARTY_SLOTS, needed) - live.length)
   if (missing === 0) return []
   const hasLead = live.some(sl => sl.role === 'lead')
-  return hasLead ? Array.from({ length: missing }, () => 'crew' as const) : slotRolesFor(missing)
+  return hasLead || kind === 'studio_rental' ? Array.from({ length: missing }, () => 'crew' as const) : slotRolesFor(missing)
 }
 
 // ── The plan ────────────────────────────────────────────────────────────────
@@ -288,6 +335,12 @@ export interface UpdatePlan {
   expectedUpdatedAt: string
   patch: Partial<Pick<CrewPartyRow, 'party_kind' | 'title' | 'theme' | 'starts_at' | 'ends_at' | 'guest_count' | 'location' | 'sync_flags'>>
   addRoles: SlotRole[]
+  /**
+   * OPEN, unheld Lead spots on a studio rental, to become crew spots (a rental
+   * has no Lead spot, Adam 2026-10-27). Only open and unheld: never a spot
+   * somebody is on.
+   */
+  crewifySlotIds: string[]
 }
 
 export interface CancelPlan {
@@ -369,14 +422,16 @@ export function planReconcile(inputs: ReconcileInputs, s: CrewSettings, now: Dat
 
     const kind = crewKindOf(b)
     const booked = stage === 'booked'
-    const helpers = kind === 'studio_rental' ? partyHelperCount(linesByBooking.get(b.id) ?? [], inputs.helperItems) : { count: 0, perHour: false }
+    const helperLines = linesByBooking.get(b.id) ?? []
+    const helper = { lines: helperLines, items: inputs.helperItems }
+    const helpers = kind === 'studio_rental' ? partyHelperCount(helperLines, inputs.helperItems) : { count: 0, perHour: false }
 
     // ── No crew party yet: create one, only for a booked, eligible, timed party.
     if (!existing) {
       if (!booked) continue
       if (!kind) { plan.unclassified.push(b.booking_ref); continue }
       if (kind === 'studio_rental' && helpers.count === 0) { plan.rentalsWithoutHelper.push(b.booking_ref); continue }
-      const window = crewWindowFor(b, kind)
+      const window = crewWindowFor(b, kind, helper)
       if (!window) { plan.needsTime.push(b.booking_ref); continue }
       if (window.startsAt.getTime() <= now.getTime()) continue
       const theme = crewThemeOf(b)
@@ -401,7 +456,7 @@ export function planReconcile(inputs: ReconcileInputs, s: CrewSettings, now: Dat
           status: 'draft',
           sync_flags: sortedFlags(flags),
         },
-        roles: slotRolesFor(Math.max(1, needed)),
+        roles: rolesFor(kind, Math.max(1, needed)),
       })
       plan.flagged.push({ bookingRef: b.booking_ref, partyId: null, flags: sortedFlags(flags) })
       continue
@@ -435,7 +490,7 @@ export function planReconcile(inputs: ReconcileInputs, s: CrewSettings, now: Dat
       } else if (loc.location !== p.location) {
         patch.location = loc.location
       }
-      const window = crewWindowFor(b, kind)
+      const window = crewWindowFor(b, kind, helper)
       if (!window) {
         flags.add('needs_time')
         plan.needsTime.push(b.booking_ref)
@@ -457,13 +512,16 @@ export function planReconcile(inputs: ReconcileInputs, s: CrewSettings, now: Dat
     const needed = neededSpots(kindNow, guestCount, p.slots_override, helpers.count, s)
     const liveSlots = live.slots.filter(sl => sl.status !== 'cancelled')
     // Spots are added only for a booked party we still recognise; never removed.
-    if (booked && kind && !(kind === 'studio_rental' && helpers.count === 0)) addRoles = rolesToAdd(liveSlots, needed)
+    if (booked && kind && !(kind === 'studio_rental' && helpers.count === 0)) addRoles = rolesToAdd(liveSlots, needed, kindNow)
     if (liveSlots.length > needed) flags.add('over_staffed')
+    const crewifySlotIds = kindNow === 'studio_rental'
+      ? liveSlots.filter(sl => sl.role === 'lead' && sl.status === 'open' && !sl.member_id).map(sl => sl.id)
+      : []
 
     const nextFlags = sortedFlags(flags)
     if (!sameFlags(nextFlags, p.sync_flags ?? [])) patch.sync_flags = nextFlags
-    if (Object.keys(patch).length > 0 || addRoles.length > 0) {
-      plan.updates.push({ partyId: p.id, bookingRef: b.booking_ref, expectedUpdatedAt: p.updated_at, patch, addRoles })
+    if (Object.keys(patch).length > 0 || addRoles.length > 0 || crewifySlotIds.length > 0) {
+      plan.updates.push({ partyId: p.id, bookingRef: b.booking_ref, expectedUpdatedAt: p.updated_at, patch, addRoles, crewifySlotIds })
     }
     plan.flagged.push({ bookingRef: b.booking_ref, partyId: p.id, flags: nextFlags })
   }
@@ -514,7 +572,7 @@ export async function loadReconcileInputs(sb: Supa, now: Date): Promise<Read<Rec
 
   const rentalIds = bookings.filter(b => crewKindOf(b) === 'studio_rental').map(b => b.id)
   const lines = await chunked<HelperLine>(rentalIds, c => sb.from('booking_line_items')
-    .select('booking_id, name, category, pricing_item_id, quantity, is_optional').in('booking_id', c))
+    .select('booking_id, name, description, category, pricing_item_id, quantity, is_optional').in('booking_id', c))
   if (lines.kind !== 'ok') return { kind: 'unavailable', error: `booking_line_items: ${lines.error}` }
 
   const { data: items, error: iErr } = await sb.from('pricing_items').select('id, name').ilike('name', 'party helper%')
@@ -642,6 +700,12 @@ export async function applyReconcile(sb: Supa, plan: ReconcilePlan, actor: strin
     if (error) { summary.errors.push(`${u.bookingRef}: update: ${error.message}`); continue }
     if ((data ?? []).length === 0) { summary.raced++; continue }
     summary.updated++
+    if (u.crewifySlotIds.length > 0) {
+      // Conditioned on still open and unheld: a claim that landed since the read keeps its Lead spot.
+      const { error: rErr } = await sb.from('crew_slots').update({ role: 'crew' })
+        .in('id', u.crewifySlotIds).eq('party_id', u.partyId).eq('status', 'open').is('member_id', null).select('id')
+      if (rErr) summary.errors.push(`${u.bookingRef}: lead spot to crew: ${rErr.message}`)
+    }
     const s = await insertSlots(sb, u.partyId, u.addRoles)
     if (!s.ok) summary.errors.push(`${u.bookingRef}: spots: ${s.error}`)
     else summary.spotsAdded += s.n

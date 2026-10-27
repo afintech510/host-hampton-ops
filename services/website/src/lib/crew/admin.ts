@@ -240,7 +240,8 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
           alerts.push({ kind: 'unconfirmed', severity: 'warn', text: `${nameOf(sl.member_id)} has not confirmed ${label(p)}.`, partyId: p.id, memberId: sl.member_id ?? undefined })
         }
       }
-      if (!leadFilled && nowMs >= leadAlertAt(startsAt, s).getTime()) {
+      // A studio rental has no Lead spot, so it can never be "missing" one.
+      if (p.party_kind !== 'studio_rental' && !leadFilled && nowMs >= leadAlertAt(startsAt, s).getTime()) {
         alerts.push({ kind: 'no_lead', severity: 'urgent', text: `No Party Lead yet: ${label(p)}.`, partyId: p.id })
       }
     }

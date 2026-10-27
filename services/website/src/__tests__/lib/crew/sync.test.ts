@@ -6,7 +6,7 @@
  * idempotency and the compare-and-swap are exercised, not assumed.
  */
 import {
-  crewKindOf, crewTitleOf, neededSpots, partyHelperCount, planReconcile, reconcileCrewParties, rentalWindow,
+  crewKindOf, crewTitleOf, neededSpots, partyHelperCount, planReconcile, reconcileCrewParties, helperTimeRange, helperWindow, rolesFor,
   rolesToAdd, loadReconcileInputs, applyReconcile,
 } from '@/lib/crew/sync'
 import { DEFAULT_SETTINGS } from '@/lib/crew/rules'
@@ -116,15 +116,52 @@ describe('pure helpers', () => {
       .toEqual({ count: 0, perHour: false })
   })
 
-  it('rentalWindow: the rental tags in Eastern time; no end and no hours is unknown, never a guessed 3 hours', () => {
-    const w = rentalWindow({ party_date: '2026-11-08', party_time: null, party_tags: { rental_start_time: '10:30', rental_end_time: '13:30' } })
-    expect(w?.startsAt.toISOString()).toBe('2026-11-08T15:30:00.000Z') // 10:30 EST
-    expect(w?.endsAt.toISOString()).toBe('2026-11-08T18:30:00.000Z')
-    expect(rentalWindow({ party_date: '2026-11-08', party_time: null, party_tags: { rental_start_time: '10:00', rental_hours: 4 } })?.endsAt.toISOString())
-      .toBe('2026-11-08T19:00:00.000Z')
-    expect(rentalWindow({ party_date: '2026-11-08', party_time: '10:00', party_tags: {} })).toBeNull()
-    expect(rentalWindow({ party_date: '2026-11-08', party_time: null, party_tags: { rental_start_time: '2:00', rental_end_time: '5:00' } })).toBeNull()
-    expect(rentalWindow({ party_date: '2026-11', party_time: null, party_tags: { rental_start_time: '10:00', rental_end_time: '12:00' } })).toBeNull()
+  it.each([
+    ['Party Helper 1–5 PM + Full Clean-up & Garbage Disposal', 13 * 60, 17 * 60],
+    ['a party helper from 1:00–5:00 PM, then full clean-up', 13 * 60, 17 * 60],
+    ['Helper 11–2 PM', 11 * 60, 14 * 60],
+    ['Helper 10am-2pm', 10 * 60, 14 * 60],
+    ['Helper 10:30 AM to 1:30 PM', 10 * 60 + 30, 13 * 60 + 30],
+    ['Helper 6 to 9pm', 18 * 60, 21 * 60],
+  ])('helperTimeRange reads %s', (text, startMin, endMin) => {
+    expect(helperTimeRange(text)).toEqual({ startMin, endMin })
+  })
+
+  it.each([
+    'Party Helper',                  // no time at all
+    'Party Helper 1-5',              // no AM/PM: 1 AM is not believed
+    'Party Helper 9-11',             // no AM/PM at all is ambiguous, even inside opening hours
+    'Party Helper 2–5 AM',           // before 08:00
+    'Party Helper 5–1 PM',           // ends before it starts
+    'Studio Rental — Weekend 3 hrs', // a duration is not a time
+  ])('helperTimeRange refuses %s', text => {
+    expect(helperTimeRange(text)).toBeNull()
+  })
+
+  it("helperWindow: a rental's crew window is the HELPER's time on the party date, never the whole rental", () => {
+    const items = [{ id: HELPER_ITEM, name: 'Party Helper' }]
+    const line = (name: string, extra: Record<string, unknown> = {}) =>
+      ({ booking_id: 'x', name, category: 'service-add-on', pricing_item_id: null, quantity: 1, is_optional: false, ...extra })
+    const w = helperWindow({ party_date: '2026-12-06' }, [line('Party Helper 1–5 PM + Full Clean-up')], items)
+    expect(w?.startsAt.toISOString()).toBe('2026-12-06T18:00:00.000Z') // 1 PM EST
+    expect(w?.endsAt.toISOString()).toBe('2026-12-06T22:00:00.000Z')
+    // The description is read when the name has no time.
+    expect(helperWindow({ party_date: '2026-12-06' }, [line('Party Helper', { description: 'from 10:00 AM to 2:00 PM' })], items)?.startsAt.toISOString())
+      .toBe('2026-12-06T15:00:00.000Z')
+    // Two helper lines span both.
+    const two = helperWindow({ party_date: '2026-12-06' }, [line('Party Helper 1–5 PM'), line('Party Helper 11–3 PM')], items)
+    expect([two?.startsAt.toISOString(), two?.endsAt.toISOString()]).toEqual(['2026-12-06T16:00:00.000Z', '2026-12-06T22:00:00.000Z'])
+    // An optional line's time never counts; no stated time is "needs a time".
+    expect(helperWindow({ party_date: '2026-12-06' }, [line('Party Helper 1–5 PM', { is_optional: true })], items)).toBeNull()
+    expect(helperWindow({ party_date: '2026-12-06' }, [line('Party Helper')], items)).toBeNull()
+    expect(helperWindow({ party_date: '2026-12' }, [line('Party Helper 1–5 PM')], items)).toBeNull()
+  })
+
+  it('a rental has no Lead spot; every other party has exactly one', () => {
+    expect(rolesFor('studio_rental', 2)).toEqual(['crew', 'crew'])
+    expect(rolesFor('in_studio_theme', 3)).toEqual(['lead', 'crew', 'crew'])
+    expect(rolesToAdd([], 2, 'studio_rental')).toEqual(['crew', 'crew'])
+    expect(rolesToAdd([], 2, 'in_studio_theme')).toEqual(['lead', 'crew'])
   })
 
   it('crewTitleOf never carries a family name', () => {
@@ -162,7 +199,10 @@ describe('reconcileCrewParties against the fake database', () => {
     const slotsOf = (bookingId: string) => db.tables.crew_slots.filter(s => s.party_id === parties.find(p => p.booking_id === bookingId)!.id)
     expect(slotsOf('b-theme').map(s => s.role).sort()).toEqual(['crew', 'crew', 'lead'])
     expect(slotsOf('b-mobile')).toHaveLength(5)
-    expect(slotsOf('b-rental').map(s => s.role).sort()).toEqual(['crew', 'lead']) // 2 helpers, the optional 5 ignored
+    // 2 helpers (the optional 5 ignored), both ordinary crew spots, for the helper's 1–5 PM — not the 10–1 rental.
+    expect(slotsOf('b-rental').map(s => s.role)).toEqual(['crew', 'crew'])
+    const rental = parties.find(p => p.booking_id === 'b-rental')!
+    expect([rental.starts_at, rental.ends_at]).toEqual(['2026-11-08T18:00:00.000Z', '2026-11-08T22:00:00.000Z'])
     expect(r.summary).toMatchObject({ created: 3, spotsAdded: 10, needsTime: ['HH-NOTIME'], unclassified: ['HH-ODD'], rentalsWithoutHelper: ['HH-RENTAL-NONE'] })
 
     const theme = parties.find(p => p.booking_id === 'b-theme')!
@@ -246,6 +286,34 @@ describe('reconcileCrewParties against the fake database', () => {
     expect(b).toMatchObject({ updated: 0, raced: 1, spotsAdded: 0 })
     const id = db.tables.crew_parties.find(p => p.booking_id === 'b-theme')!.id
     expect(db.tables.crew_slots.filter(s => s.party_id === id)).toHaveLength(5)
+  })
+
+  it("an existing rental party made the old way is moved to the helper's time and its OPEN Lead spot becomes a crew spot", async () => {
+    const db = fakeCrewDb(seed())
+    await run(db)
+    const rental = db.tables.crew_parties.find(p => p.booking_id === 'b-rental')!
+    // As Phase 3 first built it: the whole 10–1 rental, one open Lead spot and one held one.
+    Object.assign(rental, { starts_at: '2026-11-08T15:00:00.000Z', ends_at: '2026-11-08T18:00:00.000Z' })
+    const [a, b] = db.tables.crew_slots.filter(s => s.party_id === rental.id)
+    Object.assign(a, { role: 'lead' })
+    db.tables.crew_slots.push({ ...b, id: 'held-lead', role: 'lead', status: 'assigned', member_id: 'm-ava' })
+    b.status = 'cancelled'
+    // (two Lead spots cannot coexist live in the real table; the held one stands in for "a claim landed")
+    const r = await run(db)
+    if (r.kind !== 'ok') throw new Error('unavailable')
+    expect([rental.starts_at, rental.ends_at]).toEqual(['2026-11-08T18:00:00.000Z', '2026-11-08T22:00:00.000Z'])
+    expect(a.role).toBe('crew')
+    expect(db.tables.crew_slots.find(s => s.id === 'held-lead')!.role).toBe('lead')
+    expect(rental.sync_flags).toEqual(['time_changed'])
+  })
+
+  it('a booked rental whose helper line states no time needs a time, and gets no crew party', async () => {
+    const db = fakeCrewDb(seed())
+    db.tables.booking_line_items.find(l => l.booking_id === 'b-rental' && !l.is_optional)!.name = 'Party Helper + Full Clean-up'
+    const r = await run(db)
+    if (r.kind !== 'ok') throw new Error('unavailable')
+    expect(r.summary.needsTime.slice().sort()).toEqual(['HH-NOTIME', 'HH-RENTAL'])
+    expect(db.tables.crew_parties.some(p => p.booking_id === 'b-rental')).toBe(false)
   })
 
   it('a party left with no spots gets its Lead back first', async () => {

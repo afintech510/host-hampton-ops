@@ -20,6 +20,7 @@ plan, "v1.1 of the Staffing-app package").
 |---|---|---|
 | v1 | 2026-10-25 | Original package: tiers, hourly rates, points, early-access windows, swap waves. |
 | **v1.1** | 2026-10-26 | Adam's model: **flat pay per party with $2.50 steps**, step resets, standbys, a guaranteed $20 tip floor, and Allie as an unpaid Lead. About 25 platform corrections (§12). |
+| v1.1 ruling | 2026-10-27 | Adam: a **studio rental is a room rental, not a party**. With a Party Helper booked, crew are needed **only for the helper's stated time** (read from the helper line item), and each spot may be taken by a Lead or a helper — a rental has **no Lead spot**. |
 | v1.1 rulings | 2026-10-26 | Adam: crew start **$51** (was $50; migration 078); the +2 for covering applies when the cover is **worked**; the per-hour Party Helper item is **one helper**; standby window **2 h**; Quo registration covers staff texts; careers-page wording **unchanged**. |
 
 ## 1. Problem and goal
@@ -103,7 +104,7 @@ Settings key `steps`: `{worked:1, covered:2, early_release:-1}`.
 
 ### 3.4 Party Lead
 
-- Every party has **exactly one Lead spot**. The DB enforces at most one live Lead spot per party.
+- Every party has **exactly one Lead spot** — except a studio rental, which has none (its spots are open to a Lead or a helper; Adam, 2026-10-27). The DB enforces at most one live Lead spot per party.
 - Only `can_lead` members or the owner may hold it. **The database enforces this with a trigger on `crew_slots`, whatever path writes the row.** The claim RPC answers `not_lead` before the trigger would fire.
 - There is no approval queue.
 - **Allie can be assigned as Lead.** She counts toward crew needed, is unpaid, and gets no steps, tips, top-ups, or notifications.
@@ -314,7 +315,7 @@ There is no single "booking confirmed" function. There are about 12 payment path
 |---|---|
 | Scope | Bookings with `party_date >= today` (ET) |
 | Trigger | `bookingStage() === 'booked'`, and an eligible type: `in_studio_theme` (including Sleep Under and minis), `mobile_party`, or `studio_rental` **only when a Party Helper line item exists** |
-| Party window | `partyWindow()`, or the rental tags for studio rentals |
+| Party window | `partyWindow()`. For a studio rental, the **Party Helper's own time**, parsed from the helper line item's name, then its description ("Party Helper 1–5 PM …"); the end must carry AM/PM. No stated time = "needs a time", never the whole rental (Adam, 2026-10-27). |
 | Theme | The existing fallback order |
 | Location | `mobileAddressOf()` for mobile parties, otherwise `STUDIO_ADDRESS_LINE`. **Never "Suite 7".** |
 
@@ -336,6 +337,7 @@ Allie can also create crew parties by hand (`booking_id` null).
 **v1 match rule:**
 - A studio-rental line item that is not `is_optional`, and either references one of those two `pricing_items`, or has category `service-add-on` and a name starting `Party Helper` (case-insensitive).
 - **Spots = sum of quantity**, except for the per-hour item. For that one, quantity is hours, so it counts as **one helper** (Adam, 2026-10-26).
+- **Every rental spot is a crew spot**: a Lead or a helper may take it, there is no Lead spot, and no "no Lead" alert (Adam, 2026-10-27).
 
 ## 10. Environment
 

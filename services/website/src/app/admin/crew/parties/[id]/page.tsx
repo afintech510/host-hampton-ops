@@ -171,6 +171,9 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
           <div className="bg-white rounded-2xl shadow-sm p-5 text-sm space-y-1.5 text-hampton-navy/80">
             <h2 className="font-semibold text-hampton-navy mb-2">Facts</h2>
             <p>Kind: {p.party_kind.replace(/_/g, ' ')}</p>
+            {p.party_kind === 'studio_rental' && (
+              <p className="text-hampton-navy/60 text-xs">A room rental with a Party Helper: the time is the helper&apos;s, and a Lead or a helper can take each spot. There is no Lead spot.</p>
+            )}
             <p>Theme: {p.theme ?? '—'}</p>
             <p>Extra pay per person: {money(p.extra_flat_cents)}</p>
             <p>Spot count: {p.slots_override ? `${p.slots_override} (set by hand)` : 'from the guest count'}</p>

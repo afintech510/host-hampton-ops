@@ -134,7 +134,8 @@ export async function addSpot(sb: Supa, partyId: string, actor: string): Promise
   if (party.status !== 'draft' && party.status !== 'published') return refuse(409, 'This party can no longer be changed.')
   const live = slots.filter(sl => sl.status !== 'cancelled')
   if (live.length >= MAX_PARTY_SLOTS) return refuse(409, `A party has ${MAX_PARTY_SLOTS} spots at most.`)
-  const role: SlotRole = live.some(sl => sl.role === 'lead') ? 'crew' : 'lead'
+  // A studio rental has no Lead spot (Adam, 2026-10-27); everything else gets its Lead back first.
+  const role: SlotRole = party.party_kind === 'studio_rental' || live.some(sl => sl.role === 'lead') ? 'crew' : 'lead'
   const { data, error } = await sb.from('crew_slots').insert({ party_id: partyId, role }).select('id').maybeSingle()
   if (error) return refuse((error as { code?: string }).code === '23505' ? 409 : 500, error.message)
   if (!data) return refuse(500, 'The spot was not created.')
@@ -174,7 +175,7 @@ export async function setSlotsOverride(sb: Supa, partyId: string, value: unknown
   const needed = value ?? (party.booking_id ? null : slotsForParty({ guestCount: party.guest_count }, s))
   // A booking party with the override cleared: the next Sync decides from the booking.
   if (needed == null) return { ok: true, added: 0 }
-  const roles = rolesToAdd(slots, needed)
+  const roles = rolesToAdd(slots, needed, party.party_kind)
   if (roles.length === 0) return { ok: true, added: 0 }
   const { data: made, error: iErr } = await sb.from('crew_slots').insert(roles.map(role => ({ party_id: partyId, role }))).select('id')
   if (iErr) return refuse(500, `Count saved, but the spots were not added: ${iErr.message}`)

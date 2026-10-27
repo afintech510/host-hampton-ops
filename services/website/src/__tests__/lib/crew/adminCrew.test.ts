@@ -319,6 +319,26 @@ describe('publish, spots and fields', () => {
     expect(await addSpot(db.sb, P, ACTOR)).toEqual({ ok: true, role: 'crew' })
   })
 
+  it('a studio rental has no Lead spot: an added spot is a crew spot, and no "no Lead" alert ever fires', async () => {
+    const db = partyDb()
+    Object.assign(db.tables.crew_parties[0], { party_kind: 'studio_rental', status: 'published', published_at: NOW.toISOString() })
+    db.tables.crew_slots = db.tables.crew_slots.filter(s => s.role === 'crew')
+    expect(await addSpot(db.sb, P, ACTOR)).toEqual({ ok: true, role: 'crew' })
+    expect(db.tables.crew_slots.filter(s => s.party_id === P).every(s => s.role === 'crew')).toBe(true)
+    expect(await setSlotsOverride(db.sb, P, 5, ACTOR, S)).toEqual({ ok: true, added: 2 })
+    expect(db.tables.crew_slots.filter(s => s.party_id === P).every(s => s.role === 'crew')).toBe(true)
+
+    // Two days out with nobody leading: a themed party alerts, a rental does not.
+    const soon = new Date('2026-11-05T12:00:00Z')
+    const rental = await loadAdminOverview(db.sb, soon, S)
+    if (rental.kind !== 'ok') throw new Error(rental.error)
+    expect(rental.data.alerts.filter(a => a.kind === 'no_lead')).toEqual([])
+    db.tables.crew_parties[0].party_kind = 'manual'
+    const themed = await loadAdminOverview(db.sb, soon, S)
+    if (themed.kind !== 'ok') throw new Error(themed.error)
+    expect(themed.data.alerts.filter(a => a.kind === 'no_lead')).toHaveLength(1)
+  })
+
   it('a raised count adds the missing spots; a lowered one removes nothing', async () => {
     const db = partyDb()
     expect(await setSlotsOverride(db.sb, P, 5, ACTOR, S)).toEqual({ ok: true, added: 2 })
