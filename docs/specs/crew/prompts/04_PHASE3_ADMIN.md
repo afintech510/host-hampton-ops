@@ -63,9 +63,9 @@ The pages are standalone `/admin/crew/*` pages modelled on `admin/applications/p
 - **The launch date** is a date picker with "Set to today", plus helper text on the 60-day grace.
 - Saves round-trip through `settingsFromRows`.
 
-## 6. `/join-the-team` copy
+## 6. `/join-the-team` — no change
 
-Replace the hourly pay line with the spec §11 item 5 wording, which Adam may edit. Update `lib/careers.ts` and JobPosting `baseSalary` to match (unit `PARTY` is not schema.org; use a `QuantitativeValue` range with a note, or drop `baseSalary` — check `seo.test.ts`). **Do not publish until Adam approves the wording.**
+Adam, 2026-10-26: **leave the careers-page wording as it is.** This phase does not touch `/join-the-team`, `lib/careers.ts` or its JobPosting.
 
 ## Acceptance
 

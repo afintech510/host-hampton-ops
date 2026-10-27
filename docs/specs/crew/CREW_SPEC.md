@@ -6,13 +6,11 @@
 **Plan of record:** the "Staffing app plan review" planning session (the finalized
 plan, "v1.1 of the Staffing-app package").
 
-> [!WARNING]
-> **Minimum wage. Flagged for Christine Parisi or an employment attorney before launch; this spec does not decide it.**
-> - $50 for a 3-hour party is **$16.67/hr**, below the 2026 Long Island minimum of **$17/hr**, and lower again when clean-up runs long.
-> - That is fine for genuine 1099 contractors and a problem if they are reclassified as employees.
-> - The reclassification facts are already present: a set rate, set shifts, paid training, and a Lead directing Helpers.
-> - In NY, tips generally cannot count toward the minimum.
-> - The app records hours (start/end, plus setup and clean-up) so that evidence exists whichever way it is ruled.
+> [!NOTE]
+> **Minimum wage — ruled by Adam, 2026-10-26: crew start at $51 a party** (migration 078).
+> - $51 for a typical 3-hour party is **$17.00/hr**, the 2026 Long Island minimum. v1.1 first said $50 ($16.67/hr).
+> - A party whose clean-up runs long still works out under $17/hr. Pay stays flat by design; the app records hours (start/end, plus setup and clean-up) so the evidence exists.
+> - The contractor agreement and W-9 are still to be reviewed with Christine Parisi before launch (§11).
 
 ---
 
@@ -22,6 +20,7 @@ plan, "v1.1 of the Staffing-app package").
 |---|---|---|
 | v1 | 2026-10-25 | Original package: tiers, hourly rates, points, early-access windows, swap waves. |
 | **v1.1** | 2026-10-26 | Adam's model: **flat pay per party with $2.50 steps**, step resets, standbys, a guaranteed $20 tip floor, and Allie as an unpaid Lead. About 25 platform corrections (§12). |
+| v1.1 rulings | 2026-10-26 | Adam: crew start **$51** (was $50; migration 078); the +2 for covering applies when the cover is **worked**; the per-hour Party Helper item is **one helper**; standby window **2 h**; Quo registration covers staff texts; careers-page wording **unchanged**. |
 
 ## 1. Problem and goal
 
@@ -63,14 +62,14 @@ Every number below lives in `crew_settings` and is editable by Allie in `/admin/
 
 | Spot | Step 0 | Each step | Step 8 (max) |
 |---|---|---|---|
-| Crew | $50.00 | +$2.50 | $70.00 |
+| Crew | $51.00 | +$2.50 | $71.00 |
 | Party Lead | $70.00 | +$2.50 | $90.00 |
 
-Settings key `pay`: `{crew_start_cents:5000, lead_start_cents:7000, step_cents:250, max_steps:8, tip_floor_cents:2000}`. `max_steps` cannot exceed 8, because the DB checks `steps BETWEEN 0 AND 8`.
+Settings key `pay`: `{crew_start_cents:5100, lead_start_cents:7000, step_cents:250, max_steps:8, tip_floor_cents:2000}`. `max_steps` cannot exceed 8, because the DB checks `steps BETWEEN 0 AND 8`.
 
 - **Pay per party is fixed.** It does not change when clean-up runs long or short. A party is typically about 3 hours.
 - **Extra pay:** a party can carry a flat `extra_flat_cents` per person, for example on a holiday weekend. It is added to everyone paid for that party.
-- **Pay is snapshotted at attendance.** It uses the step the member had **before** that party's step change. A member at step 3 working crew is paid $57.50, then moves to step 4. Leading at step 3 pays $77.50.
+- **Pay is snapshotted at attendance.** It uses the step the member had **before** that party's step change. A member at step 3 working crew is paid $58.50, then moves to step 4. Leading at step 3 pays $77.50.
 - The owner is never paid by the app.
 
 ### 3.2 How steps move
@@ -87,7 +86,7 @@ Settings key `steps`: `{worked:1, covered:2, early_release:-1}`.
 | No-show | **Reset to 0**, plus `needs_review` | Attendance marked |
 
 > [!NOTE]
-> **The +2 for covering is applied when the cover is WORKED, not when it is claimed.** If it were applied at claim time, two members could earn it in a loop: A late-cancels, B claims (+2), B late-cancels, A claims back (+2), forever, without anyone working. Applied at attendance, only the person who actually works the party is credited, and a cover followed by a no-show is a reset like any other. Flagged to Adam as the one reading of "a claim gives +2" this spec chose.
+> **The +2 for covering is applied when the cover is WORKED, not when it is claimed.** If it were applied at claim time, two members could earn it in a loop: A late-cancels, B claims (+2), B late-cancels, A claims back (+2), forever, without anyone working. Applied at attendance, only the person who actually works the party is credited, and a cover followed by a no-show is a reset like any other. **Confirmed by Adam, 2026-10-26.**
 
 - **Launch grace:** for `launch.grace_days` (60) after `launch.launch_date`, every step **loss or reset** is recorded in the ledger with `waived_grace = true` and **not applied**. Gains are always applied. While `launch_date` is unset (before launch), losses are waived too. The launch date is an ET calendar date, and grace starts at ET midnight (`etToUtc`).
 - **Starting step:** Allie sets each member's starting step when she adds them.
@@ -96,8 +95,8 @@ Settings key `steps`: `{worked:1, covered:2, early_release:-1}`.
 ### 3.3 What crew see
 
 - On login, a member sees **their own rate per party**, for crew and for Lead if they `can_lead`, and how far they are from the next step, written in plain words.
-  - "You're at $57.50 a party ($77.50 leading). Work one more party to make $60.00."
-  - At the top: "You're at the top rate: $70.00 a party."
+  - "You're at $58.50 a party ($77.50 leading). One more party makes it $61.00."
+  - At the top: "You're at the top rate: $71.00 a party."
 - **No levels, no points, no tier titles.** A test fails the suite if crew-facing copy contains `tier`, `level`, `captain`, `points`, or `pro`.
 - **No early access.** A published party goes to everyone at once.
 - Crew see their own tips once paid.
@@ -336,9 +335,7 @@ Allie can also create crew parties by hand (`booking_id` null).
 
 **v1 match rule:**
 - A studio-rental line item that is not `is_optional`, and either references one of those two `pricing_items`, or has category `service-add-on` and a name starting `Party Helper` (case-insensitive).
-- **Spots = sum of quantity**, except for the per-hour item. For that one, quantity is hours, so it counts as one helper and the booking is flagged for Allie.
-
-**Needs Adam:** whether the per-hour item should count as one helper.
+- **Spots = sum of quantity**, except for the per-hour item. For that one, quantity is hours, so it counts as **one helper** (Adam, 2026-10-26).
 
 ## 10. Environment
 
@@ -352,14 +349,10 @@ Allie can also create crew parties by hand (`booking_id` null).
 
 ## 11. Still needs Adam (non-blocking, before launch)
 
-1. **Minimum-wage review** (the warning at the top). Christine Parisi or an attorney.
-2. A contractor agreement and W-9, reviewed against item 1.
-3. The roster for about 10 people (name, email, phone, starting step, `can_lead`), entered in the admin form. **No roster file is ever committed.**
-4. Whether the Quo A2P campaign covers staff texts. Checked in Phase 4; if it does not, launch on email + in-app.
-5. Final careers-page wording. Proposed: "Party Helper $50–$70 per party + tips; Party Lead $70–$90 per party + tips. Every party includes at least $20 in tips. Paid training, paid the same day."
-6. The Party Helper per-hour item (§9).
-7. `drops.standby_window_hours` defaults to 2. Confirm.
-8. The +2-at-attendance reading (§3.2).
+1. A contractor agreement and W-9, reviewed with Christine Parisi.
+2. **The roster** for about 10 people (name, email, phone, starting step, `can_lead`). **Adam enters it in the admin form** once Phase 3 ships. **No roster file is ever committed.**
+
+Resolved 2026-10-26 (Adam): crew start $51 (§3.1, migration 078); +2 applied when the cover is worked (§3.2); the per-hour Party Helper item counts as one helper (§9); standby window 2 h; the Quo A2P registration covers staff texts; **the careers page wording stays as it is** — nothing in this build changes `/join-the-team`.
 
 ## 12. Corrections from v1 (platform)
 
@@ -386,7 +379,7 @@ Allie can also create crew parties by hand (`booking_id` null).
 - Allie as Lead counts toward crew needed and is unpaid.
 - A late cancel texts only the standbys. A standby's claim leaves the person cancelling unchanged. With no claim, Allie gets the alert.
 - Drop anyway resets to step 0; an early release costs 1 step. During grace, both are recorded and not applied.
-- Attendance: step 3 crew is paid $57.50, step 3 Lead $77.50. A $12 tip records an $8 top-up, and steps go to 4.
+- Attendance: step 3 crew is paid $58.50, step 3 Lead $77.50. A $12 tip records an $8 top-up, and steps go to 4.
 - No crew-facing response ever includes another member's phone, email, pay, tips, steps, notes, or reason.
 - Running the cron twice sends nothing twice.
 - With SMS disabled, every flow still works through in-app and email.

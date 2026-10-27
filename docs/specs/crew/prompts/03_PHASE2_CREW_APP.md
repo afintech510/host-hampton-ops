@@ -33,7 +33,7 @@
 These are server components reading only `view.ts` projections. Writes go through `/api/crew/*` route handlers (`requireCrewMember` + `guardRate(plannerRule('crew'))`).
 
 1. **`/crew`:**
-   - Rate card from `partyRateCents` and `nextStepLabel`: "You're at $57.50 a party ($77.50 leading). One more party makes it $60.00."
+   - Rate card from `partyRateCents` and `nextStepLabel`: "You're at $58.50 a party ($77.50 leading). One more party makes it $61.00."
    - Confirm prompts.
    - **My parties.**
    - **Open parties:** published, upcoming, with open spots. Each shows staffed x/y, kids, and **my pay for that spot**. A Lead spot shows only for `can_lead` members.

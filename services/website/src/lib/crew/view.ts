@@ -31,7 +31,7 @@ export interface CrewMeView {
   crewRateCents: number
   leadRateCents: number | null
   atTopRate: boolean
-  rateLine: string          // "You're at $57.50 a party ($77.50 leading). One more party makes it $60.00."
+  rateLine: string          // "You're at $58.50 a party ($77.50 leading). One more party makes it $61.00."
 }
 
 export function meView(m: CrewMemberRow, s: CrewSettings): CrewMeView {

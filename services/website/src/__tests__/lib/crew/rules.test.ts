@@ -15,9 +15,9 @@ const S = DEFAULT_SETTINGS
 const withLaunch = (launchDate: string | null, graceDays = 60): CrewSettings => ({ ...S, launch: { launchDate, graceDays } })
 
 describe('pay: flat per party', () => {
-  it('crew $50 → $70 and Lead $70 → $90 in $2.50 steps, 8 at most', () => {
-    expect(partyRateCents('crew', 0)).toBe(5000)
-    expect(partyRateCents('crew', 8)).toBe(7000)
+  it('crew $51 → $71 and Lead $70 → $90 in $2.50 steps, 8 at most', () => {
+    expect(partyRateCents('crew', 0)).toBe(5100)
+    expect(partyRateCents('crew', 8)).toBe(7100)
     expect(partyRateCents('lead', 0)).toBe(7000)
     expect(partyRateCents('lead', 8)).toBe(9000)
     for (let st = 0; st < 8; st++) {
@@ -26,21 +26,21 @@ describe('pay: flat per party', () => {
     }
   })
 
-  it('the acceptance figures: step 3 crew $57.50, step 3 Lead $77.50', () => {
-    expect(partyRateCents('crew', 3)).toBe(5750)
+  it('the acceptance figures: step 3 crew $58.50, step 3 Lead $77.50', () => {
+    expect(partyRateCents('crew', 3)).toBe(5850)
     expect(partyRateCents('lead', 3)).toBe(7750)
   })
 
   it('clamps an out-of-range step instead of paying past the top', () => {
-    expect(partyRateCents('crew', 12)).toBe(7000)
-    expect(partyRateCents('crew', -4)).toBe(5000)
-    expect(partyRateCents('crew', Number.NaN)).toBe(5000)
-    expect(partyRateCents('crew', 2.9)).toBe(5500)
+    expect(partyRateCents('crew', 12)).toBe(7100)
+    expect(partyRateCents('crew', -4)).toBe(5100)
+    expect(partyRateCents('crew', Number.NaN)).toBe(5100)
+    expect(partyRateCents('crew', 2.9)).toBe(5600)
   })
 
   it('adds the flat extra per person, and ignores a negative one', () => {
-    expect(partyPayCents('crew', 3, 1500)).toBe(7250)
-    expect(partyPayCents('crew', 3, -1500)).toBe(5750)
+    expect(partyPayCents('crew', 3, 1500)).toBe(7350)
+    expect(partyPayCents('crew', 3, -1500)).toBe(5850)
     expect(partyPayCents('lead', 0, null)).toBe(7000)
   })
 })
@@ -104,9 +104,9 @@ describe('steps', () => {
     }
   })
 
-  it('the attendance acceptance: step 3 paid $57.50, then 4', () => {
+  it('the attendance acceptance: step 3 paid $58.50, then 4', () => {
     const before = 3
-    expect(partyRateCents('crew', before)).toBe(5750)
+    expect(partyRateCents('crew', before)).toBe(5850)
     expect(stepAfter('worked', before).stepsAfter).toBe(4)
   })
 
@@ -141,9 +141,9 @@ describe('launch grace (60 days from an ET date)', () => {
 
 describe('what crew read', () => {
   it('plain words, dollars only', () => {
-    expect(nextStepLabel(3, true)).toBe("You're at $57.50 a party ($77.50 leading). One more party makes it $60.00.")
-    expect(nextStepLabel(0, false)).toBe("You're at $50.00 a party. One more party makes it $52.50.")
-    expect(nextStepLabel(8, true)).toBe("You're at the top rate: $70.00 a party ($90.00 leading).")
+    expect(nextStepLabel(3, true)).toBe("You're at $58.50 a party ($77.50 leading). One more party makes it $61.00.")
+    expect(nextStepLabel(0, false)).toBe("You're at $51.00 a party. One more party makes it $53.50.")
+    expect(nextStepLabel(8, true)).toBe("You're at the top rate: $71.00 a party ($90.00 leading).")
   })
 
   it('never says level, tier or points', () => {
@@ -153,7 +153,7 @@ describe('what crew read', () => {
   })
 
   it('ratesFor / formatCents', () => {
-    expect(ratesFor(8)).toEqual({ crewCents: 7000, leadCents: 9000, atMax: true })
+    expect(ratesFor(8)).toEqual({ crewCents: 7100, leadCents: 9000, atMax: true })
     expect(formatCents(5750)).toBe('$57.50')
     expect(formatCents(5)).toBe('$0.05')
     expect(formatCents(-800)).toBe('-$8.00')

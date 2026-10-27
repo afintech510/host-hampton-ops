@@ -34,11 +34,10 @@
 
 ## 4. Launch checklist (Adam)
 
-- [ ] The minimum-wage note (spec, top) reviewed by Christine or an attorney; the contractor agreement and W-9 are ready.
+- [ ] The contractor agreement and W-9 ready, reviewed with Christine (crew start is $51 = $17/hr for 3 hours; spec, top).
 - [ ] The roster entered in `/admin/crew/members`, with starting steps, `can_lead`, and skills.
 - [ ] `launch.launch_date` set, which starts the 60-day grace.
-- [ ] The Quo A2P campaign covers staff texts, then `CREW_SMS_ENABLED=true`.
-- [ ] Careers wording approved and published.
+- [ ] `CREW_SMS_ENABLED=true` (the Quo A2P registration covers staff texts — Adam, 2026-10-26).
 - [ ] The `crew` row in `jobs.tsv` installed on the box.
 - [ ] Throwaway crew rows deleted.
 - [ ] **`CREW_ENABLED=true`** in `.env` and `docker-compose.yml`, then `up -d --build website`.

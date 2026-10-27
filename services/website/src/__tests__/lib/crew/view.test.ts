@@ -79,7 +79,7 @@ describe('partyView', () => {
     expect(v.location).toMatch(/Mobile party/)
     expect(v.notesForCrew).toBeNull()
     expect(v.iAmStandby).toBe(false)
-    expect(v.openSpots.map(o => o.payCents)).toEqual([5750, 5750])   // MY rate, not theirs
+    expect(v.openSpots.map(o => o.payCents)).toEqual([5850, 5850])   // MY rate, not theirs
   })
 
   it('a party I am on: the address and notes, still nothing private about the others', () => {
@@ -90,7 +90,7 @@ describe('partyView', () => {
     }, S)!
     expect(v.location).toBe('1 Real St')
     expect(v.notesForCrew).toBe(SENTINELS.partyNotes)
-    expect(v.mySlot).toEqual({ slotId: 'mine', role: 'crew', status: 'assigned', confirmed: false, payCents: 5750 })
+    expect(v.mySlot).toEqual({ slotId: 'mine', role: 'crew', status: 'assigned', confirmed: false, payCents: 5850 })
     const json = JSON.stringify(v)
     for (const k of ['email', 'phone', 'notes', 'reason', 'otherId', 'paidNote'] as const) expect(json).not.toContain(SENTINELS[k])
     expect(json).not.toContain(String(OTHER_PAY))
@@ -103,13 +103,13 @@ describe('partyView', () => {
     }, S)!
     expect(v.openSpots).toEqual([
       { slotId: 'lead', role: 'lead', payCents: 7750, canClaim: false },
-      { slotId: 'c', role: 'crew', payCents: 5750, canClaim: true },
+      { slotId: 'c', role: 'crew', payCents: 5850, canClaim: true },
     ])
   })
 
   it('the extra per person is in the pay I am shown', () => {
     const v = partyView({ party: party({ extra_flat_cents: 1000 }), slots: [slot({ id: 'c' })], viewer, firstNames, standbyMemberIds: new Set() }, S)!
-    expect(v.openSpots[0].payCents).toBe(6750)
+    expect(v.openSpots[0].payCents).toBe(6850)
   })
 
   it('drafts are invisible, and so are finished parties I was not on', () => {
@@ -128,9 +128,9 @@ describe('partyView', () => {
 describe('meView', () => {
   it('my own rate in dollars, no step number anywhere', () => {
     const v = meView(member({ id: 'me', first_name: 'Sam', steps: 3, can_lead: true, admin_notes: SENTINELS.notes, needs_review: true }), S)
-    expect(v.crewRateCents).toBe(5750)
+    expect(v.crewRateCents).toBe(5850)
     expect(v.leadRateCents).toBe(7750)
-    expect(v.rateLine).toBe("You're at $57.50 a party ($77.50 leading). One more party makes it $60.00.")
+    expect(v.rateLine).toBe("You're at $58.50 a party ($77.50 leading). One more party makes it $61.00.")
     const json = JSON.stringify(v)
     expect(json).not.toContain(SENTINELS.notes)
     expect(json).not.toMatch(/"steps"|needs_review|admin_notes|is_owner|job_application/)
@@ -143,10 +143,10 @@ describe('meView', () => {
 describe('myPayRecords', () => {
   it('only my own completed slots — never another member’s pay', () => {
     const p = party({ status: 'completed' })
-    const mine = slot({ id: 'mine', status: 'completed', member_id: 'me', pay_cents: 5750, tip_cents: 1200, tip_topup_cents: 800, paid_method: 'cash', paid_note: SENTINELS.paidNote })
+    const mine = slot({ id: 'mine', status: 'completed', member_id: 'me', pay_cents: 5850, tip_cents: 1200, tip_topup_cents: 800, paid_method: 'cash', paid_note: SENTINELS.paidNote })
     const out = myPayRecords('me', [{ slot: mine, party: p }, { slot: otherSlot, party: p }])
     expect(out).toHaveLength(1)
-    expect(out[0]).toMatchObject({ payCents: 5750, tipCents: 1200, tipTopupCents: 800, paidMethod: 'cash' })
+    expect(out[0]).toMatchObject({ payCents: 5850, tipCents: 1200, tipTopupCents: 800, paidMethod: 'cash' })
     const json = JSON.stringify(out)
     expect(json).not.toContain(String(OTHER_PAY))
     expect(json).not.toContain(SENTINELS.paidNote)  // the note is Allie's

@@ -56,7 +56,7 @@ export interface CrewSettings {
 }
 
 export const DEFAULT_SETTINGS: CrewSettings = {
-  pay: { crewStartCents: 5000, leadStartCents: 7000, stepCents: 250, maxSteps: 8, tipFloorCents: 2000 },
+  pay: { crewStartCents: 5100, leadStartCents: 7000, stepCents: 250, maxSteps: 8, tipFloorCents: 2000 },
   steps: { worked: 1, covered: 2, earlyRelease: -1 },
   slotsByGuests: { minSlots: 3, kidsPerCrew: 4, maxSlots: 10 },
   shift: { setupMinutes: 30, cleanupMinutes: 30 },
@@ -253,7 +253,7 @@ export function formatCents(cents: number): string {
 
 /**
  * The plain-words line on a crew member's home screen. Dollars, never a level.
- *   "You're at $57.50 a party ($77.50 leading). One more party makes it $60.00."
+ *   "You're at $58.50 a party ($77.50 leading). One more party makes it $61.00."
  *   "You're at the top rate: $70.00 a party."
  */
 export function nextStepLabel(steps: number, canLead: boolean, s: CrewSettings = DEFAULT_SETTINGS): string {

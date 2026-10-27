@@ -219,10 +219,11 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **078**. (This line said **047** for months
+The next free migration number is **079**. (This line said **047** for months
 after it stopped being true, which is why it now says how to check rather than
 just asserting a number: the highest file in `starting_plan/` is the floor, and
 `information_schema` on the live DB is what says whether it has been APPLIED.
+**078 sets the crew start rate to $51 a party** (`crew_settings.pay.crew_start_cents` 5000 → 5100, only while still the 077 seed) — Adam, 2026-10-26: $17/hr for a 3-hour party. Data, applied 2026-10-26.
 **077 is crew scheduling** (`docs/specs/crew/CREW_SPEC.md`): eleven `crew_*` tables (RLS on, no policies, anon/authenticated privileges revoked), seven SQL functions that take a step change as a compare-and-swap (the rules live only in `lib/crew/rules.ts`), a trigger enforcing the Lead rule and the unpaid owner, the `crew_settings` seed and Allie's `is_owner` row. Applied 2026-10-26 via `/root/pg.sh`, re-run once.
 **076 is `troop_families`** — parents who opted in to updates on /troop2514's Get updates tab. `email` as typed, `email_key` GENERATED as `lower(email)`, `UNIQUE (troop, email_key)` so a re-signup upserts; `consent_text` is the exact sentence ticked. Not `contacts`. Applied 2026-10-22.
 **075 makes `troop_schedule.start_time` nullable** ("Time TBA" on /troop2514; an end time still needs a start). Applied 2026-10-22.
@@ -785,7 +786,7 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
 ### Crew scheduling (migration 077, 2026-10-26)
 
 - **Spec v1.1 is `docs/specs/crew/CREW_SPEC.md`**, and the phase prompts are beside it. It supersedes the v1 package in `starting_plan/Staffing-app/` (local, untracked). That package's mockups stay local because this repo is public and they carry first names.
-- **Pay is flat per party: crew $50 → $70, Lead $70 → $90, in $2.50 steps.** Never hourly, and never a tier or level in front of crew. `crewCopy.test.ts` renders every template and fails on those words.
+- **Pay is flat per party: crew $51 → $71, Lead $70 → $90, in $2.50 steps** (crew start moved from $50 by migration 078). Never hourly, and never a tier or level in front of crew. `crewCopy.test.ts` renders every template and fails on those words.
 - **The rules live in `lib/crew/rules.ts` and nowhere else.** The SQL functions take a step change as a compare-and-swap (`expected_steps` → `steps_after`, `stale` on a miss), so plpgsql never holds a second copy of the arithmetic. Change a rule in `rules.ts`, its tests, and the spec changelog.
 - **What the database enforces, whatever path writes the row:**
   - first claim wins;
@@ -801,7 +802,7 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
 - **`lib/crew/view.ts` is the only shape a crew route returns.** About another member, a crew member learns a first name and whether they've confirmed, nothing else. A mobile party's address and Allie's notes go only to people on that party.
 - **The Party Helper add-on is a hand-typed line item** (`service-add-on`, `pricing_item_id` NULL, name starting "Party Helper"). The two catalogue items are referenced by nothing. Spec §9 holds the match rule.
 - **`scripts/crew/race-test.mjs` proves the guarantees against production on throwaway `ZZ-RACE-*` rows** and verifies its own cleanup by count. Re-run it after any change to migration 077's functions.
-- **Minimum wage is open, for Adam and Christine.** $50 for a 3-hour party is $16.67/hr, under the $17 Long Island minimum. Do not decide it in code.
+- **Minimum wage: ruled by Adam 2026-10-26** — crew start $51, i.e. $17.00/hr for a 3-hour party. A long clean-up still dips under; pay stays flat by design and hours are recorded. The contractor agreement / W-9 review with Christine is still open.
 
 ### Link 25 — the outbound send path
 

@@ -28,7 +28,7 @@
   - **`HELP`:** replies `smsHelp`.
   - **A crew phone never creates a `contacts` row**, and never reaches the booking agent's `recordInboundEvent`.
   - Update `inboundSurface.test.ts`.
-- **Before building this,** use the Quo tools to check whether the A2P campaign covers staff texts. If it does not, launch on email + in-app and leave `CREW_SMS_ENABLED=false`.
+- **A2P:** Adam confirmed 2026-10-26 that the Quo registration covers staff texts, so SMS ships in this phase (still behind `CREW_SMS_ENABLED` and each member's `sms_opt_in`).
 
 ## 3. "Can't make it" (`/crew/parties/[id]/cant-make-it`, `POST /api/crew/slots/[id]/release`)
 
@@ -43,7 +43,7 @@
 - **Status view:**
   - who was asked (a count, no names), and time left before it escalates;
   - **Withdraw** (→ `cancelled`);
-  - **Drop anyway**, behind a dialog in dollars ("you'll go back to $50 a party"), through `crew_drop_uncovered` with `stepAfter('late_cancel_uncovered')`.
+  - **Drop anyway**, behind a dialog in dollars ("you'll go back to $51 a party"), through `crew_drop_uncovered` with `stepAfter('late_cancel_uncovered')`.
 - **Claiming** (`/crew/cover/[id]`):
   - re-check eligibility, then `crew_claim_swap`;
   - on `claimed`: `coveredRequester` + `coverClaimed`, and both notified;

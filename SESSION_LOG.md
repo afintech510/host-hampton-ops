@@ -1105,3 +1105,11 @@ Build of the crew-scheduling feature from Adam's approved plan ("Staffing app pl
   5. The roster.
   6. A2P coverage for staff texts.
   7. Careers wording.
+- **Adam's rulings, same day:**
+  - crew start **$51** (was $50): $17.00/hr for a 3-hour party. Applied as **migration 078** (updates `crew_settings.pay.crew_start_cents` only while it is still the 077 seed), run twice; `rules.ts` default, tests, race script, spec and prompts now say $51 → $71;
+  - the +2 for covering applies when the cover is **worked** (as built);
+  - the "Party Helper (per hour)" item counts as **one helper**;
+  - standby window **2 h**;
+  - the Quo registration covers staff texts;
+  - **careers-page wording unchanged** (Phase 3 no longer touches `/join-the-team`).
+  - Adam adds the roster himself once the admin form exists. Still open: contractor agreement + W-9 with Christine.

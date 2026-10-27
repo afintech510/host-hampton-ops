@@ -79,7 +79,7 @@ Each one is added to `docker-compose.yml` `environment:` and to `/opt/hosthampto
 | 0 | `01_PHASE0_PACKAGE.md` | v1.1 package written (this folder) | — |
 | 1 | `02_PHASE1_DATA.md` | Migration 077 applied; `rules.ts` + Jest; `lib/crew/{db,view,settings}.ts`; `findCrewMembersByEmail`; a race script in prod | **STOP** |
 | 2 | `03_PHASE2_CREW_APP.md` | Code login, shell, home, party detail, standby toggle, availability, skills, My pay | STOP |
-| 3 | `04_PHASE3_ADMIN.md` | Reconcile + Sync now, schedule + alerts, party detail, roster, rules editor, careers copy | STOP |
+| 3 | `04_PHASE3_ADMIN.md` | Reconcile + Sync now, schedule + alerts, party detail, roster, rules editor | STOP |
 | 4 | `05_PHASE4_CANCEL_NOTIFY.md` | Notifications, confirmations, early release, late cancel → standbys → Allie, drop anyway, cron, Quo inbound | STOP |
 | 5 | `06_PHASE5_ATTENDANCE_PAY.md` | Attendance RPC wiring, tips + top-up, Pay screen, CSV, year-end, crew earnings | STOP |
 | 6 | `07_PHASE6_QA.md` | Playwright, security review, walkthrough, launch checklist | STOP (Adam flips `CREW_ENABLED`) |

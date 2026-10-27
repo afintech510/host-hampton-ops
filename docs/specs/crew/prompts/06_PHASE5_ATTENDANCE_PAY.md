@@ -33,7 +33,7 @@
 
 ## Acceptance (prod, throwaway rows)
 
-- Step 3 working crew is paid **$57.50**, and leading at step 3 **$77.50**.
+- Step 3 working crew is paid **$58.50**, and leading at step 3 **$77.50**.
 - A $12 tip records an **$8 top-up**, and steps go 3 → 4.
 - A covered party worked: +2.
 - A no-show resets to 0 (recorded, not applied, inside grace) and sets `needs_review`.

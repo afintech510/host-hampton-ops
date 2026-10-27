@@ -14,7 +14,7 @@
  *   4. a stale compare-and-swap answers 'stale' and changes nothing;
  *   5. the owner (Allie) can be assigned as Lead by an admin, counts as
  *      staffed, and cannot be paid — the trigger refuses it;
- *   6. crew_mark_attendance writes the acceptance figures (step 3 crew $57.50,
+ *   6. crew_mark_attendance writes the acceptance figures (step 3 crew $58.50,
  *      a $12 tip with an $8 top-up, steps 3 → 4) and leaves the owner unpaid
  *      with her steps unchanged.
  *
@@ -145,7 +145,7 @@ async function main() {
     p_party_id: partyId, p_actor: 'race-test',
     p_outcomes: [
       { slot_id: s1, outcome: 'worked', expected_steps: 3, base_steps: 3, steps_after: 4, waived_grace: false,
-        pay_cents: 5750, step_at_pay: 3, extra_cents: 0, tip_cents: 1200, tip_topup_cents: 800, paid_method: 'cash' },
+        pay_cents: 5850, step_at_pay: 3, extra_cents: 0, tip_cents: 1200, tip_topup_cents: 800, paid_method: 'cash' },
       { slot_id: leadSlot, outcome: 'worked', expected_steps: owner.json[0].steps, base_steps: owner.json[0].steps,
         steps_after: owner.json[0].steps + 1, waived_grace: false, pay_cents: 7000, tip_cents: 500, tip_topup_cents: 1500 },
     ],
@@ -154,8 +154,8 @@ async function main() {
   const paidSlot = await rest('GET', `crew_slots?select=status,pay_cents,step_at_pay,tip_cents,tip_topup_cents&id=eq.${s1}`)
   const w = await rest('GET', `crew_members?select=steps&id=eq.${winner}`)
   const ps = paidSlot.json?.[0] ?? {}
-  check('step 3 crew paid $57.50, $12 tip + $8 top-up, steps 3 → 4',
-    ps.status === 'completed' && ps.pay_cents === 5750 && ps.step_at_pay === 3 && ps.tip_cents === 1200 &&
+  check('step 3 crew paid $58.50, $12 tip + $8 top-up, steps 3 → 4',
+    ps.status === 'completed' && ps.pay_cents === 5850 && ps.step_at_pay === 3 && ps.tip_cents === 1200 &&
     ps.tip_topup_cents === 800 && w.json?.[0]?.steps === 4, JSON.stringify(ps) + ` steps ${w.json?.[0]?.steps}`)
   const ownerSlot = await rest('GET', `crew_slots?select=status,pay_cents,tip_cents,tip_topup_cents&id=eq.${leadSlot}`)
   const ownerAfter = await rest('GET', `crew_members?select=steps&id=eq.${ownerId}`)
