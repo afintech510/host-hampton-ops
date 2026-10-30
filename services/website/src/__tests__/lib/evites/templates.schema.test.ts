@@ -51,9 +51,9 @@ function allSlots(t: TemplateLayout): Slot[] {
 }
 
 describe('evites templates - schema', () => {
-  it('the registry holds glow, plain, sleepunder and the 17 Canva designs, and falls back to plain for anything else', () => {
-    expect(TEMPLATE_SLUGS).toHaveLength(20)
-    for (const slug of ['glow', 'plain', 'sleepunder', 'stitch', 'minecraft', 'slime-neon', 'vroom']) expect(TEMPLATE_SLUGS).toContain(slug)
+  it('the registry holds glow, plain, sleepunder and the 18 Canva designs, and falls back to plain for anything else', () => {
+    expect(TEMPLATE_SLUGS).toHaveLength(21)
+    for (const slug of ['glow', 'plain', 'sleepunder', 'stitch', 'minecraft', 'slime-neon', 'vroom', 'paw-patrol']) expect(TEMPLATE_SLUGS).toContain(slug)
     for (const slug of TEMPLATE_SLUGS) expect(TEMPLATES[slug].slug).toBe(slug)
     expect(templateFor('glow')).toBe(GLOW_TEMPLATE)
     expect(templateFor('plain')).toBe(PLAIN_TEMPLATE)

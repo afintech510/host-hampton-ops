@@ -12,6 +12,7 @@ import { LETS_GLOW_TEMPLATE } from '@/lib/evites/templates/lets-glow'
 import { MERMAID_TEMPLATE } from '@/lib/evites/templates/mermaid'
 import { MINECRAFT_TEMPLATE } from '@/lib/evites/templates/minecraft'
 import { NEON_PARTY_TEMPLATE } from '@/lib/evites/templates/neon-party'
+import { PAW_PATROL_TEMPLATE } from '@/lib/evites/templates/paw-patrol'
 import { PINK_PONY_TEMPLATE } from '@/lib/evites/templates/pink-pony'
 import { PLAIN_TEMPLATE } from '@/lib/evites/templates/plain'
 import { SADDLE_UP_TEMPLATE } from '@/lib/evites/templates/saddle-up'
@@ -46,6 +47,7 @@ export const TEMPLATES: Readonly<Record<RegisteredTemplateSlug, TemplateLayout>>
   unicorn: UNICORN_TEMPLATE,
   mermaid: MERMAID_TEMPLATE,
   stitch: STITCH_TEMPLATE,
+  'paw-patrol': PAW_PATROL_TEMPLATE,
   squish: SQUISH_TEMPLATE,
   'two-sweet': TWO_SWEET_TEMPLATE,
   minecraft: MINECRAFT_TEMPLATE,

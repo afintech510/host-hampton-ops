@@ -182,6 +182,7 @@ export type TemplateSlug =
   | 'vroom'
   | 'lets-glow'
   | 'neon-party'
+  | 'paw-patrol'
   /**
    * A host's OWN finished invitation (migration 073, `evites.custom_art`). Never registered in
    * `TEMPLATES`, so no picker, admin override or `templateFor` can reach it: it is built per party by
