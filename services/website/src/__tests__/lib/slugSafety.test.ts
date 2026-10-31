@@ -10,16 +10,33 @@ import {
   checkSlug,
   contentPath,
   isShadowedByStaticRoute,
+  servedLocales,
   STATIC_ROUTE_PATTERNS,
   MAX_SLUG_CHARS,
   MAX_SLUG_SEGMENTS,
 } from '@/lib/content/slugSafety'
-import { RESERVED_PREFIXES, parseLocaleSlug } from '@/lib/content/slug'
+import { RESERVED_PREFIXES, parseLocaleSlug, type Locale } from '@/lib/content/slug'
 
 describe('contentPath', () => {
   it('English keeps the bare slug, Spanish lives under /es/', () => {
     expect(contentPath('party-room-rental', 'en')).toBe('/party-room-rental')
     expect(contentPath('party-room-rental', 'es')).toBe('/es/party-room-rental')
+  })
+})
+
+describe('servedLocales', () => {
+  it('counts the hand-built English page as the twin of a Spanish row', () => {
+    // The live case: only the `es` row is published, and /party-room-rental is
+    // a static page — without this the Spanish page's hreflang named only itself.
+    expect(Array.from(servedLocales('party-room-rental', new Set<Locale>(['es']))).sort()).toEqual(['en', 'es'])
+  })
+
+  it('does not invent an English page that does not exist', () => {
+    expect(Array.from(servedLocales('no-such-page-anywhere', new Set<Locale>(['es'])))).toEqual(['es'])
+  })
+
+  it('never invents a Spanish one', () => {
+    expect(Array.from(servedLocales('party-room-rental', new Set<Locale>()))).toEqual(['en'])
   })
 })
 

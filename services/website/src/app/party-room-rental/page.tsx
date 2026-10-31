@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { Check, ChevronDown, Clock, Camera, Briefcase, Palette } from 'lucide-react'
 import DynamicTypingSection from '@/components/DynamicTypingSection'
 import RoomRentalLeadForm from '@/components/RoomRentalLeadForm'
+import LanguageSwitch from '@/components/LanguageSwitch'
 import { getSupabase } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
@@ -184,6 +185,9 @@ export default async function PartyRoomRental() {
 
   return (
     <div>
+      {/* The Spanish twin is a website_content row served by app/[...slug]. */}
+      <LanguageSwitch to="es" href="/es/party-room-rental" />
+
       {/* ── Hero: Dynamic Typing ── */}
       <DynamicTypingSection
         services={ROOM_SERVICES}

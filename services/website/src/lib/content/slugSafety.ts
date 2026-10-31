@@ -227,6 +227,22 @@ export function contentPath(slug: string, locale: Locale): string {
 }
 
 /**
+ * Which locales a visitor can actually reach for this slug — drives the hreflang
+ * alternates and the language switch on a content page.
+ *
+ * A published row is not the only way a locale exists. `/es/party-room-rental`
+ * is a row, but its English twin is the hand-built `app/party-room-rental` page,
+ * which has no row (it cannot: `checkSlug` refuses a shadowed English slug). So
+ * the published index alone said the Spanish page had no English version — its
+ * hreflang listed only itself, and Google was told the pair was not a pair.
+ */
+export function servedLocales(slug: string, published: ReadonlySet<Locale>): Set<Locale> {
+  const served = new Set<Locale>(published)
+  if (isShadowedByStaticRoute(contentPath(slug, 'en'))) served.add('en')
+  return served
+}
+
+/**
  * Full pre-flight for a content slug. Called before spending on a draft, before
  * publishing, and by the admin panel to badge a row.
  */

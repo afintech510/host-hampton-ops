@@ -8,7 +8,9 @@ import {
   type ContentRow,
 } from '@/lib/content/published'
 import { ContentRenderBody } from '@/components/content/ContentRenderBody'
+import LanguageSwitch from '@/components/LanguageSwitch'
 import { htmlToPlainText, safeImageUrl } from '@/lib/content/contentSafety'
+import { contentPath, servedLocales } from '@/lib/content/slugSafety'
 import { BUSINESS_ID, ORGANIZATION_ID, OG_DEFAULTS, carriesPublishedPrice } from '@/lib/seo'
 
 /**
@@ -71,6 +73,12 @@ function structuredOf(row: ContentRow): StructuredContent {
   return s && typeof s === 'object' && !Array.isArray(s) ? (s as StructuredContent) : {}
 }
 
+async function reachableLocales(slug: string): Promise<Set<Locale>> {
+  const index = await loadPublishedIndex()
+  const published = index.state === 'found' ? localesForSlug(index.value, slug) : new Set<Locale>()
+  return servedLocales(slug, published)
+}
+
 export async function generateMetadata({ params }: { params: { slug: string[] } }): Promise<Metadata> {
   const rawSlug = (params.slug || []).join('/')
   const { locale, slug, reserved } = parseLocaleSlug(rawSlug)
@@ -85,11 +93,11 @@ export async function generateMetadata({ params }: { params: { slug: string[] } 
 
   const url = localeUrl(slug, locale)
 
-  // hreflang alternates: one entry per locale actually published for this slug.
+  // hreflang alternates: one entry per locale a visitor can reach for this slug —
+  // published rows, plus a hand-built English page (see `servedLocales`).
   // Taken from the cached index, which we have already loaded — the old code
   // issued a second Supabase query per request for exactly this.
-  const index = await loadPublishedIndex()
-  const locales = index.state === 'found' ? localesForSlug(index.value, slug) : new Set<Locale>()
+  const locales = await reachableLocales(slug)
   const languages: Record<string, string> = {}
   if (locales.has('en')) languages['en'] = localeUrl(slug, 'en')
   if (locales.has('es')) languages['es'] = localeUrl(slug, 'es')
@@ -219,6 +227,8 @@ export default async function DynamicContentPage({ params }: { params: { slug: s
 
   const row = found.value
   const jsonLd = buildJsonLd(localeUrl(slug, locale), row)
+  const other: Locale = locale === 'es' ? 'en' : 'es'
+  const hasOther = (await reachableLocales(slug)).has(other)
 
   return (
     // `lang` on the content wrapper, because the root layout hardcodes
@@ -228,6 +238,11 @@ export default async function DynamicContentPage({ params }: { params: { slug: s
     // metadata. This is not the <html> attribute, but it is the one a crawler
     // and a screen reader read for the text that actually differs.
     <main className="mx-auto max-w-3xl px-5 py-12" lang={locale}>
+      {hasOther && (
+        <div className="-mt-8 mb-6">
+          <LanguageSwitch to={other} href={contentPath(slug, other)} />
+        </div>
+      )}
       {jsonLd.map((node, i) => (
         <script
           key={i}
