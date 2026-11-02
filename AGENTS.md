@@ -213,6 +213,10 @@ answers 503 — both needs-Adam, both live and tested otherwise.
 | `GMAIL_USER` | Mailbox to ingest. Default `hosthampton295@gmail.com`. |
 | `GMAIL_HANDLED_LABEL` | Gmail label applied by the **dispatcher** once a message has actually produced a draft. Default `HH-Agent/Handled`. |
 | `GMAIL_SEEN_LABEL` | Gmail label applied by **ingestion** to every message it reads, including auto-ignored newsletters. Default `HH-Agent/Seen`. The two are separate because "the agent read this" and "the agent acted on this" are different claims, and one label on everything made a mailbox of Abercrombie promos look handled. |
+| `ASSISTANT_MODEL` | **Optional.** Model for the Manager assistant at `/admin/assistant`. Default `claude-opus-5-5`. Spend goes to `marketing_ledger` as entity `manager_assistant` under the monthly LLM budget. Not mapped in `docker-compose.yml`; add it there AND to `.env` to override. |
+| `FEATURE_MANAGER_ASSISTANT` / `FEATURE_PUBLIC_MCP` / `FEATURE_PUBLIC_MCP_INQUIRY` | **Optional kill switches.** Unset = the tenant file's value (all ON for Host Hampton). Any value other than `true` switches the module OFF; an env var can never switch ON a module the tenant file (`src/tenant/`) has off. Not mapped in `docker-compose.yml`. See `docs/white-label-and-ai-surfaces.md`. |
+
+**White-label (2026-11-02).** A business's facts live in `services/website/src/tenant/` — `index.ts` picks the tenant, and that is the one line a clone changes. `tenantSurface.test.ts` T1 is a ratchet on the brand literals still typed out elsewhere: it fails if a count goes UP; lower the ceiling when you move some. The Manager assistant can read and PROPOSE, never write: a write is a signed, actor-bound, single-use card confirmed by a human, carried out by replaying the dashboard's own admin route. The public MCP endpoint `/api/mcp` (ChatGPT/Claude connectors) is read-only except `start_inquiry`, which replays `POST /api/lead`. Full notes: `docs/white-label-and-ai-surfaces.md`.
 
 The agent never sends to a customer without an explicit human approval, never
 sends customer email through Gmail (Resend for email, Quo for SMS), and its
