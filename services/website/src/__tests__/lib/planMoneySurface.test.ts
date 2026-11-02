@@ -114,6 +114,7 @@ const MONEY_MODULES = [
   'lib/partyPricing.ts', // the deposit and the card fee
   'lib/bookingBalance.ts', // the admin/webhook answer
   'lib/stripePaymentNotice.ts', // DISPLAYS the stored balance in the owner's payment email; derives none
+  'lib/assistant/tools.ts', // DISPLAYS loadPlanInvoice's figures to the admin; its card total is billedTotalCents; writes nothing
 ].sort()
 
 /** Every file that WRITES a `bookings` money column, walked rather than listed. */
@@ -140,7 +141,7 @@ describe('R0 · the surface is walked, and every module in it is accounted for',
   it('every named arithmetic module exists on disk', () => {
     const missing = MONEY_MODULES.filter(m => !fs.existsSync(path.join(SRC, m)))
     expect(missing).toEqual([])
-    expect(MONEY_MODULES.length).toBe(9)
+    expect(MONEY_MODULES.length).toBe(10)
   })
 
   it('no arithmetic module has appeared that the list does not name', () => {
@@ -788,7 +789,7 @@ describe('R10 · a duplicate is recognised by code, not by message text', () => 
         if (!/'23505'/.test(before)) offenders.push(`${f}: ${m[0]}`)
       }
     }
-    expect(examined).toBe(9)
+    expect(examined).toBe(10)
     expect(offenders).toEqual([])
   })
 })

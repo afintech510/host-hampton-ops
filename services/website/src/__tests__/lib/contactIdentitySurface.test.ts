@@ -535,6 +535,12 @@ describe('R0 — the staleness walker', () => {
       // lowercased email IN JS and picks the OLDEST row — the same canonical-row
       // rule as `findContactsByEmail` — and writes nothing to `contacts`.
       'lib/reviewAsk.ts',
+      // The Manager assistant's find_client tool (admin-only). An email or a
+      // phone goes through findContactsByEmail / findContactsByPhone; only a
+      // NAME search reads `contacts` directly, through contactSearchFilter. It
+      // writes nothing — a new party is a proposal replayed through
+      // /api/admin/parties/create, which owns the upsert.
+      'lib/assistant/tools.ts',
     ])
 
     const touching = ALL_FILES.filter(f => /from\(['"`]contacts['"`]\)/.test(code(relative(f)))).map(relative)

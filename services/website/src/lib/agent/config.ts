@@ -40,6 +40,8 @@ export const MODEL_PRICING: Record<string, { in: number; out: number }> = {
   'claude-sonnet-5': { in: 2, out: 10 },
   'claude-sonnet-4-6': { in: 3, out: 15 },
   'claude-opus-5': { in: 5, out: 25 },
+  'claude-opus-5-5': { in: 4, out: 20 },
+  'claude-sonnet-5-5': { in: 2, out: 10 },
   'claude-fable-5-1': { in: 10, out: 50 },
   'claude-haiku-4-5-20251001': { in: 1, out: 5 },
   'claude-haiku-4-5': { in: 1, out: 5 },

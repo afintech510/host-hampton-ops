@@ -64,6 +64,7 @@ const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[]
  * roster, rules), so it is a link, not a TabKey.
  */
 const LINKS: { href: string; label: string; Icon: typeof Ticket; group: string }[] = [
+  { href: '/admin/assistant', label: 'Assistant', Icon: Sparkles, group: 'overview' },
   { href: '/admin/crew', label: 'Crew', Icon: HardHat, group: 'manage' },
 ]
 
