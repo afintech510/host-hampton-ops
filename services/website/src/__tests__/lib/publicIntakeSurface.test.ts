@@ -236,6 +236,16 @@ const DELIBERATELY_PUBLIC = new Set([
   'GET appointments/[slug]/book',
   'POST appointments/[slug]/book',
   'GET themes',
+  // The public MCP endpoint (lib/mcp/server.ts) for ChatGPT / Claude / Gemini
+  // connectors. Public because the caller is an AI assistant acting for a
+  // stranger, like every form here. Rate-limited first; every read tool calls an
+  // existing public route or loader (llms.txt, availability, events, themes,
+  // reviews), and the one write — start_inquiry — REPLAYS `POST lead`, so it is
+  // screened, attributed and limited by that route exactly as a form fill is.
+  // GET answers 405 and OPTIONS is the CORS preflight; neither reads anything.
+  'POST mcp',
+  'GET mcp',
+  'OPTIONS mcp',
   // The /invitations look-book redraws every EVITE design as a visitor types a
   // name, age, date and time. Public because the visitor is anyone browsing the
   // site. Reads no table, writes nothing, sends nothing: it returns the text and
