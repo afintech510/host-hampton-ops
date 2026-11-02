@@ -31,6 +31,7 @@
  */
 
 import type { InviteFacts } from '@/lib/evites/facts'
+import { TENANT } from '@/tenant'
 
 export type IcsMethod = 'PUBLISH' | 'CANCEL'
 
@@ -47,7 +48,7 @@ export interface IcsEvite {
   cal_version: number
 }
 
-export const ICS_PRODID = '-//Host Hampton//EVITE//EN'
+export const ICS_PRODID = `-//${TENANT.business.name}//EVITE//EN`
 export const PARTY_POPPER = '\u{1F389}'
 export const ICS_FOLD_OCTETS = 75
 

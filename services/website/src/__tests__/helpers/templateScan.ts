@@ -35,9 +35,11 @@ const DATA_ROOTS = ['d', 'data', 'p', 'params', 'row', 'item', 'i', 's', 'v', 'e
 
 /**
  * Expressions that are safe by construction and would otherwise be noise: the
- * brand palette, the shared static blocks, and pure arithmetic.
+ * brand palette, the shared static blocks, and pure arithmetic. `TENANT.*` is
+ * committed config (src/tenant/), the same kind of value as `BRAND.*`: no
+ * request or customer can reach it.
  */
-const STRUCTURALLY_SAFE = /^(?:BRAND\.[A-Za-z]+|footer|contactBlock|SITE_URL|SITE_ORIGIN)$/
+const STRUCTURALLY_SAFE = /^(?:BRAND\.[A-Za-z]+|TENANT(?:\.[A-Za-z]+)+|footer|contactBlock|SITE_URL|SITE_ORIGIN)$/
 
 export interface Interp {
   file: string

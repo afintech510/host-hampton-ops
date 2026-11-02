@@ -44,6 +44,7 @@
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { TENANT } from '@/tenant'
 
 export interface RateLimitRule {
   /** Stable name — the bucket key and the log label. */
@@ -401,7 +402,7 @@ export function rateLimitedResponse(outcome: Extract<RateLimitOutcome, { allowed
       error:
         outcome.bucket === 'caller'
           ? 'You have sent this a few times already — please wait a moment and try again.'
-          : 'We are receiving an unusual number of requests. Please try again shortly, or call us on (631) 998-9325.',
+          : `We are receiving an unusual number of requests. Please try again shortly, or call us on ${TENANT.contact.phoneDisplay}.`,
     },
     { status: 429, headers: { 'Retry-After': String(Math.max(1, outcome.retryAfterSeconds)) } },
   )

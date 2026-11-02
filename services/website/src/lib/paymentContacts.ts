@@ -22,15 +22,17 @@
  * the defaults are the live values so nothing breaks if one is unset.
  */
 
+import { TENANT } from '@/tenant'
+
 /** The Venmo/Zelle registration number, in the form a customer types. */
-export const PAYMENT_PHONE_DISPLAY = '631-599-2469'
+export const PAYMENT_PHONE_DISPLAY = TENANT.payments.phoneDisplay
 
 /** The public business line. Never a payment destination. */
-export const PUBLIC_PHONE_DISPLAY = '(631) 998-9325'
+export const PUBLIC_PHONE_DISPLAY = TENANT.contact.phoneDisplay
 
 /** Venmo handle, `@`-prefixed. */
 export function venmoHandle(): string {
-  const raw = (process.env.VENMO_HANDLE || 'HostHampton').trim().replace(/^@/, '')
+  const raw = (process.env.VENMO_HANDLE || TENANT.payments.venmoHandle).trim().replace(/^@/, '')
   return `@${raw}`
 }
 

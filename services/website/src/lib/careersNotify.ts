@@ -14,9 +14,10 @@
  * which every other owner alert already uses and which is known to deliver.
  */
 
+import { TENANT } from '@/tenant'
 import { ownerEmail } from './ownerNotify'
 
-export const CAREERS_INFO_INBOX = 'info@hosthampton.com'
+export const CAREERS_INFO_INBOX = TENANT.contact.infoEmail
 
 /**
  * See the header. Flip only on a confirmed delivery, never on "no bounce".

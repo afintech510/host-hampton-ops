@@ -12,8 +12,9 @@
  */
 
 import { STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
+import { TENANT } from '@/tenant'
 
-export const CREW_SIGNATURE = '— Allie, Host Hampton'
+export const CREW_SIGNATURE = `— ${TENANT.people.customerSignoff}, ${TENANT.business.name}`
 export const SMS_DISCLOSURE = 'Msg freq varies. Reply STOP to opt out, HELP for help.'
 
 export interface Rendered {

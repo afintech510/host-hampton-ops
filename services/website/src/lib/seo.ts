@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { TENANT } from '@/tenant'
 
 /**
  * Shared SEO constants.
@@ -22,7 +23,7 @@ import type { Metadata } from 'next'
  * and fails if a new page reintroduces the gap.
  */
 
-export const SITE_URL = 'https://www.hosthampton.com'
+export const SITE_URL = TENANT.business.siteUrl
 
 /**
  * Stable `@id`s for the two JSON-LD nodes that describe Host Hampton itself.
@@ -45,7 +46,7 @@ export const ORGANIZATION_ID = `${SITE_URL}/#organization`
  * `itemReviewed`, `publisher` and so on. Carries `name` as well as `@id` so a
  * consumer that does not resolve references still has something to show.
  */
-export const businessRef = () => ({ '@id': BUSINESS_ID, name: 'Host Hampton' }) as const
+export const businessRef = () => ({ '@id': BUSINESS_ID, name: TENANT.business.name }) as const
 
 /** The default share card. 1200x630 is the size Facebook and X both want. */
 export const OG_DEFAULT_IMAGE = {
@@ -63,7 +64,7 @@ export const OG_DEFAULT_IMAGE = {
  * a readonly tuple here fails to typecheck at all 20 call sites.
  */
 export const OG_DEFAULTS: NonNullable<Metadata['openGraph']> = {
-  siteName: 'Host Hampton',
+  siteName: TENANT.business.name,
   locale: 'en_US',
   type: 'website',
   images: [OG_DEFAULT_IMAGE],
@@ -94,7 +95,7 @@ export const MAX_TITLE_CHARS = 60
 export const MAX_DESCRIPTION_CHARS = 160
 
 /** The root layout's title template appends this to every non-absolute title. */
-export const TITLE_SUFFIX = ' | Host Hampton'
+export const TITLE_SUFFIX = ` | ${TENANT.business.name}`
 
 /**
  * Keys that make a JSON-LD node a PUBLISHED PRICE rather than a description.

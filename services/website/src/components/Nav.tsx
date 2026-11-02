@@ -8,6 +8,7 @@ import { Menu, X, Phone, MessageCircle } from 'lucide-react'
 import CartButton from '@/components/CartButton'
 import { isInvitePath } from '@/lib/evites/chrome'
 import { isCrewPath } from '@/lib/crewChrome'
+import { TENANT } from '@/tenant'
 
 const navLinks = [
   { href: '/party-packages',     label: 'Party Packages' },
@@ -73,8 +74,8 @@ export default function Nav() {
         {/* Logo */}
         <Link href="/" className="flex items-center shrink-0">
           <Image
-            src="/images/host-hampton-logo_300.png"
-            alt="Host Hampton"
+            src={TENANT.brand.logo}
+            alt={TENANT.business.name}
             width={140}
             height={48}
             className="object-contain"
@@ -104,7 +105,7 @@ export default function Nav() {
           <CartButton />
           <div className="flex items-center gap-1.5 text-sm font-bold text-hampton-navy/70">
             <a
-              href="tel:6319989325"
+              href={`tel:${TENANT.contact.phoneDigits}`}
               className="flex items-center gap-1 hover:text-hampton-navy transition-colors"
             >
               <Phone size={14} />
@@ -112,7 +113,7 @@ export default function Nav() {
             </a>
             <span className="text-hampton-navy/30">|</span>
             <a
-              href="sms:6319989325"
+              href={`sms:${TENANT.contact.phoneDigits}`}
               className="flex items-center gap-1 hover:text-hampton-navy transition-colors"
             >
               <MessageCircle size={14} />
@@ -174,12 +175,12 @@ export default function Nav() {
 
           <div className="pt-8 flex flex-col items-center gap-6 w-full">
             <div className="flex items-center gap-3 text-xl text-hampton-navy/70">
-              <a href="tel:6319989325" className="flex items-center gap-1.5 hover:text-hampton-navy transition-colors">
+              <a href={`tel:${TENANT.contact.phoneDigits}`} className="flex items-center gap-1.5 hover:text-hampton-navy transition-colors">
                 <Phone size={20} />
                 Call
               </a>
               <span className="text-hampton-navy/30">|</span>
-              <a href="sms:6319989325" className="flex items-center gap-1.5 hover:text-hampton-navy transition-colors">
+              <a href={`sms:${TENANT.contact.phoneDigits}`} className="flex items-center gap-1.5 hover:text-hampton-navy transition-colors">
                 <MessageCircle size={20} />
                 Text
               </a>

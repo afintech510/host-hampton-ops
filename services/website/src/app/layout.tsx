@@ -16,7 +16,20 @@ import ChristmasMarketBanner from '@/components/ChristmasMarketBanner'
 // the promo window in lib/appointmentEvents.ts.
 import AppointmentBanner from '@/components/AppointmentBanner'
 import { RATING } from '@/lib/reviews'
-import { OG_DEFAULTS, OG_DEFAULT_IMAGE, SITE_URL, BUSINESS_ID, ORGANIZATION_ID } from '@/lib/seo'
+import { OG_DEFAULTS, OG_DEFAULT_IMAGE, SITE_URL, BUSINESS_ID, ORGANIZATION_ID, TITLE_SUFFIX } from '@/lib/seo'
+import { TENANT } from '@/tenant'
+
+// Every business fact below comes from the tenant config; the marketing COPY
+// (title, description, knowsAbout, areaServed) is Host Hampton's own wording.
+const POSTAL_ADDRESS = {
+  '@type': 'PostalAddress',
+  streetAddress: TENANT.location.street,
+  addressLocality: TENANT.location.town,
+  addressRegion: TENANT.location.region,
+  postalCode: TENANT.location.postalCode,
+  addressCountry: TENANT.location.country,
+}
+const SAME_AS = [TENANT.social.instagram, TENANT.social.facebook, TENANT.social.googleBusiness]
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -26,11 +39,11 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://www.hosthampton.com'),
+  metadataBase: new URL(SITE_URL),
   alternates: { canonical: './' },
   title: {
     default: 'Host Hampton | Birthday Party Venue in Speonk, NY',
-    template: '%s | Host Hampton',
+    template: `%s${TITLE_SUFFIX}`,
   },
   description:
     'Private party studio in Speonk, NY. Fully hosted themed kids birthday parties at our Hamptons studio, or mobile craft parties at your home across Long Island.',
@@ -60,9 +73,9 @@ export const metadata: Metadata = {
   },
 }
 
-// Google Business Profile, confirmed by the owner 2026-09-05. Used as a `sameAs`
-// signal so Google reconciles the site and the GBP listing as one entity.
-const GBP_URL = 'https://maps.app.goo.gl/LFAKi3WzCNmcDsNV9'
+// The Google Business Profile (TENANT.social.googleBusiness, confirmed by the
+// owner 2026-09-05) is a `sameAs` signal so Google reconciles the site and the
+// GBP listing as one entity.
 
 const localBusinessSchema = {
   '@context': 'https://schema.org',
@@ -82,7 +95,7 @@ const localBusinessSchema = {
   // references both survive.
   '@type': ['LocalBusiness', 'EventVenue'],
   '@id': BUSINESS_ID,
-  name: 'Host Hampton',
+  name: TENANT.business.name,
   // The one-sentence identity an answer engine repeats. It used to omit mobile
   // parties — the page most ChatGPT referrals land on — and say "workshops".
   description:
@@ -93,31 +106,20 @@ const localBusinessSchema = {
     'Baby and bridal showers', 'Trucker hat bar', 'Permanent jewelry', 'Party room rental',
     'Fantasy football draft parties',
   ],
-  url: 'https://www.hosthampton.com',
-  telephone: '+16319989325',
-  email: 'hosthampton295@gmail.com',
-  address: {
-    '@type': 'PostalAddress',
-    streetAddress: '295 Montauk Highway',
-    addressLocality: 'Speonk',
-    addressRegion: 'NY',
-    postalCode: '11972',
-    addressCountry: 'US',
-  },
+  url: SITE_URL,
+  telephone: TENANT.contact.phoneE164,
+  email: TENANT.contact.email,
+  address: POSTAL_ADDRESS,
   geo: {
     '@type': 'GeoCoordinates',
-    latitude: 40.8432,
-    longitude: -72.6823,
+    latitude: TENANT.location.latitude,
+    longitude: TENANT.location.longitude,
   },
   openingHoursSpecification: [
     { '@type': 'OpeningHoursSpecification', dayOfWeek: ['Saturday', 'Sunday'], opens: '10:00', closes: '20:00' },
     { '@type': 'OpeningHoursSpecification', dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], opens: '12:00', closes: '19:00' },
   ],
-  sameAs: [
-    'https://www.instagram.com/hosthampton',
-    'https://www.facebook.com/hosthampton',
-    GBP_URL,
-  ],
+  sameAs: SAME_AS,
   priceRange: '$$',
   image: `${SITE_URL}/images/og-default.png`,
   parentOrganization: { '@id': ORGANIZATION_ID },
@@ -150,24 +152,13 @@ const organizationSchema = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
   '@id': ORGANIZATION_ID,
-  name: 'Host Hampton',
+  name: TENANT.business.name,
   url: SITE_URL,
-  logo: `${SITE_URL}/images/host-hampton-logo_300.png`,
-  telephone: '+16319989325',
-  email: 'hosthampton295@gmail.com',
-  address: {
-    '@type': 'PostalAddress',
-    streetAddress: '295 Montauk Highway',
-    addressLocality: 'Speonk',
-    addressRegion: 'NY',
-    postalCode: '11972',
-    addressCountry: 'US',
-  },
-  sameAs: [
-    'https://www.instagram.com/hosthampton',
-    'https://www.facebook.com/hosthampton',
-    GBP_URL,
-  ],
+  logo: `${SITE_URL}${TENANT.brand.logo}`,
+  telephone: TENANT.contact.phoneE164,
+  email: TENANT.contact.email,
+  address: POSTAL_ADDRESS,
+  sameAs: SAME_AS,
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

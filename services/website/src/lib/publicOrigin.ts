@@ -57,6 +57,7 @@
  * having been sent.
  */
 
+import { TENANT } from '@/tenant'
 import { SITE_URL } from './seo'
 
 /**
@@ -82,7 +83,7 @@ export const CANONICAL_HOST = CANONICAL_ORIGIN.replace(/^https?:\/\//, '')
  */
 export const ALLOWED_REQUEST_HOSTS: readonly string[] = [
   CANONICAL_HOST,
-  'hosthampton.com',
+  TENANT.business.apexHost,
   'localhost',
   '127.0.0.1',
 ]

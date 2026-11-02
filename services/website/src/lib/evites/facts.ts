@@ -40,6 +40,7 @@
  */
 
 import { etToUtc, PARTY_TZ } from '@/lib/partyTime'
+import { TENANT } from '@/tenant'
 import { STUDIO_ADDRESS_LINE, STUDIO_LOCALITY, STUDIO_PHONE_DISPLAY, STUDIO_STREET } from '@/lib/studioLocation'
 import { screenForImage } from '@/lib/evites/glyphs'
 import { eviteLocationType, mobileAddressOf, mobileTown, type EviteLocationType } from '@/lib/evites/location'
@@ -136,7 +137,7 @@ export const NO_NAME_POSSESSIVE = "our Birthday Star's"
 export const NO_NAME_NAME = 'Birthday Star'
 export const PICK_A_DATE = 'Pick your date'
 export const LOCATION_TBC = 'Location to be confirmed'
-export const DEFAULT_HOST_NAME = 'Allie'
+export const DEFAULT_HOST_NAME = TENANT.people.customerSignoff
 export const NAME_MAX_CHARS = 20
 
 const EN_DASH = String.fromCharCode(0x2013)

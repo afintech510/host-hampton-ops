@@ -14,10 +14,11 @@
  * Both are read at call time so tests can set process.env in beforeEach.
  */
 
+import { TENANT } from '@/tenant'
 import { sendSMSVia, normalizePhone } from './sms'
 import { gsm7Sanitize, smsSegmentInfo } from './smsSegments'
 
-export const DEFAULT_OWNER_EMAIL = 'hosthampton295@gmail.com'
+export const DEFAULT_OWNER_EMAIL = TENANT.email.ownerNotifyDefault
 
 /**
  * Segment count above which a body is logged as an error (plan §25.2).

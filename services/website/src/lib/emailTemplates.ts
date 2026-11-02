@@ -1,6 +1,7 @@
 import { escapeFields, mailHref, mailHrefExternal, mailToHref, telHref } from '@/lib/emailSafety'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { venmoHandle, zellePhone } from '@/lib/paymentContacts'
+import { TENANT } from '@/tenant'
 
 /**
  * NOTE for whoever is next. Most templates in this file interpolate
@@ -21,29 +22,29 @@ import { venmoHandle, zellePhone } from '@/lib/paymentContacts'
 const BRAND = {
   headerBg: 'linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%)',
   headerBgAdmin: 'linear-gradient(135deg,#E8C7CB 0%,#A1B5C8 100%)',
-  footerBg: '#BCCDEB',
-  bodyBg: '#F6F1EB',
+  footerBg: TENANT.brand.colors.footer,
+  bodyBg: TENANT.brand.colors.ivory,
   cardBorder: 'linear-gradient(135deg,#A1B5C8 0%,#E8C7CB 100%)',
-  navy: '#1a2744',
-  ivory: '#F6F1EB',
+  navy: TENANT.brand.colors.navy,
+  ivory: TENANT.brand.colors.ivory,
   gray: '#555',
-  ctaBg: '#1a2744',
-  ctaText: '#F6F1EB',
+  ctaBg: TENANT.brand.colors.navy,
+  ctaText: TENANT.brand.colors.ivory,
 } as const
 
 const contactBlock = `
-      <strong><a href="tel:6319989325" style="color:${BRAND.navy};text-decoration:none;">📞 (631) 998-9325</a></strong> &nbsp;·&nbsp;
-      <strong><a href="sms:6319989325" style="color:${BRAND.navy};text-decoration:none;">💬 Text Us</a></strong><br>
-      <strong><a href="mailto:hosthampton295@gmail.com" style="color:${BRAND.navy};text-decoration:none;">✉️ hosthampton295@gmail.com</a></strong>`
+      <strong><a href="${telHref(TENANT.contact.phoneDigits)}" style="color:${BRAND.navy};text-decoration:none;">📞 ${TENANT.contact.phoneDisplay}</a></strong> &nbsp;·&nbsp;
+      <strong><a href="${telHref(TENANT.contact.phoneDigits, 'sms')}" style="color:${BRAND.navy};text-decoration:none;">💬 Text Us</a></strong><br>
+      <strong><a href="${mailToHref(TENANT.contact.email)}" style="color:${BRAND.navy};text-decoration:none;">✉️ ${TENANT.contact.email}</a></strong>`
 
 const footer = `
   <div style="background:${BRAND.footerBg};padding:20px 40px;text-align:center;">
-    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway · Speonk, NY 11972</p>
+    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">${TENANT.location.street} · ${TENANT.location.town}, ${TENANT.location.region} ${TENANT.location.postalCode}</p>
   </div>`
 
 const footerTagline = (tagline: string) => `
   <div style="background:${BRAND.footerBg};padding:20px 40px;text-align:center;">
-    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">295 Montauk Highway · Speonk, NY 11972</p>
+    <p style="color:${BRAND.navy};font-size:12px;margin:0 0 4px;">${TENANT.location.street} · ${TENANT.location.town}, ${TENANT.location.region} ${TENANT.location.postalCode}</p>
     <p style="color:${BRAND.navy};opacity:0.5;font-size:11px;margin:0;">${tagline}</p>
   </div>`
 

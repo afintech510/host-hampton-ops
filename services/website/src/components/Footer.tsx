@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { Phone, Mail, MapPin, Instagram, Facebook, MessageCircle, Clock } from 'lucide-react'
 import { isInvitePath } from '@/lib/evites/chrome'
 import { isCrewPath } from '@/lib/crewChrome'
+import { TENANT } from '@/tenant'
 
 export default function Footer() {
   const pathname = usePathname()
@@ -27,18 +28,18 @@ export default function Footer() {
         {/* Brand */}
         <div>
           <div className="flex items-center gap-3 mb-4">
-            <Image src="/images/host-hampton-logo.png" alt="Host Hampton" width={36} height={36} />
-            <span className="font-serif text-lg font-bold">Host Hampton</span>
+            <Image src={TENANT.brand.logoLarge} alt={TENANT.business.name} width={36} height={36} />
+            <span className="font-serif text-lg font-bold">{TENANT.business.name}</span>
           </div>
           <p className="text-sm text-hampton-navy/70 leading-relaxed">
             A private celebration studio in Speonk, NY. Upscale Hamptons parties with hands-on hosts — fully customizable to fit any budget.
           </p>
           <div className="flex gap-3 mt-5">
-            <a href="https://instagram.com/hosthampton" target="_blank" rel="noopener noreferrer"
+            <a href={TENANT.social.instagram} target="_blank" rel="noopener noreferrer"
                className="text-hampton-navy/60 hover:text-hampton-navy transition-colors">
               <Instagram size={20} />
             </a>
-            <a href="https://facebook.com/hosthampton" target="_blank" rel="noopener noreferrer"
+            <a href={TENANT.social.facebook} target="_blank" rel="noopener noreferrer"
                className="text-hampton-navy/60 hover:text-hampton-navy transition-colors">
               <Facebook size={20} />
             </a>
@@ -109,25 +110,25 @@ export default function Footer() {
             <li>
               <a href="https://maps.app.goo.gl/dpHmDoUKSN7dXCaT8" target="_blank" rel="noopener noreferrer" className="flex gap-2 hover:text-hampton-navy transition-colors">
                 <MapPin size={16} className="shrink-0 mt-0.5 text-hampton-navy" />
-                <span>295 Montauk Hwy<br />Speonk, NY 11972</span>
+                <span>{TENANT.location.street}<br />{TENANT.location.town}, {TENANT.location.region} {TENANT.location.postalCode}</span>
               </a>
             </li>
             <li>
-              <a href="tel:6319989325" className="flex gap-2 hover:text-hampton-navy transition-colors">
+              <a href={`tel:${TENANT.contact.phoneDigits}`} className="flex gap-2 hover:text-hampton-navy transition-colors">
                 <Phone size={16} className="shrink-0 text-hampton-navy" />
-                (631) 998-9325
+                {TENANT.contact.phoneDisplay}
               </a>
             </li>
             <li>
-              <a href="sms:6319989325" className="flex gap-2 hover:text-hampton-navy transition-colors">
+              <a href={`sms:${TENANT.contact.phoneDigits}`} className="flex gap-2 hover:text-hampton-navy transition-colors">
                 <MessageCircle size={16} className="shrink-0 text-hampton-navy" />
                 Text Us
               </a>
             </li>
             <li>
-              <a href="mailto:hosthampton295@gmail.com" className="flex gap-2 hover:text-hampton-navy transition-colors">
+              <a href={`mailto:${TENANT.contact.email}`} className="flex gap-2 hover:text-hampton-navy transition-colors">
                 <Mail size={16} className="shrink-0 text-hampton-navy" />
-                hosthampton295@gmail.com
+                {TENANT.contact.email}
               </a>
             </li>
             <li className="flex gap-2">
@@ -147,7 +148,7 @@ export default function Footer() {
       </div>
 
       <div className="border-t border-hampton-navy/15 py-5 text-center text-xs text-hampton-navy/50">
-        &copy; {new Date().getFullYear()} Host Hampton. All rights reserved.
+        &copy; {new Date().getFullYear()} {TENANT.business.name}. All rights reserved.
       </div>
     </footer>
     </>

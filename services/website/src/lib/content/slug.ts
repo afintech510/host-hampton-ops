@@ -7,7 +7,9 @@
  * (/es/party-room-rental).
  */
 
-export const BASE_URL = 'https://www.hosthampton.com'
+import { TENANT } from '@/tenant'
+
+export const BASE_URL = TENANT.business.siteUrl
 
 // First path segments we must never serve from the DB, even if a row exists.
 // Static routes already win by Next precedence; this covers reserved words with

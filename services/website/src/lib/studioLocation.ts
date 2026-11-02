@@ -1,3 +1,5 @@
+import { TENANT } from '@/tenant'
+
 /**
  * Where the studio is, and the number to call — as ONE set of strings.
  *
@@ -36,12 +38,12 @@
  * whose address will not agree with itself. Every "Suite 7" in src was removed
  * in the same commit; do not reintroduce one.
  */
-export const STUDIO_STREET = '295 Montauk Hwy'
+export const STUDIO_STREET = TENANT.location.street
 
 /** The parts of the locality, for structured data that wants them separately. */
-export const STUDIO_TOWN = 'Speonk'
-export const STUDIO_REGION = 'NY'
-export const STUDIO_POSTAL_CODE = '11972'
+export const STUDIO_TOWN = TENANT.location.town
+export const STUDIO_REGION = TENANT.location.region
+export const STUDIO_POSTAL_CODE = TENANT.location.postalCode
 
 /** Town, state and ZIP. */
 export const STUDIO_LOCALITY = `${STUDIO_TOWN}, ${STUDIO_REGION} ${STUDIO_POSTAL_CODE}`
@@ -58,10 +60,10 @@ export const STUDIO_MAPS_URL =
   `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(STUDIO_ADDRESS_LINE)}`
 
 /** The public line, formatted for reading. */
-export const STUDIO_PHONE_DISPLAY = '(631) 998-9325'
+export const STUDIO_PHONE_DISPLAY = TENANT.contact.phoneDisplay
 
 /** The same number as a `tel:`/`sms:` URI body. */
-export const STUDIO_PHONE_E164 = '+16319989325'
+export const STUDIO_PHONE_E164 = TENANT.contact.phoneE164
 
 /**
  * The parking / entrance sentence in the evite DAY-BEFORE email (spec §9.1).

@@ -23,9 +23,10 @@
  */
 
 import { Resend } from 'resend'
+import { TENANT } from '@/tenant'
 
 /** The same fallback the reminder sender uses (`send-reminders/route.ts`). */
-export const DEFAULT_FROM = 'noReply@mail.hosthampton.com'
+export const DEFAULT_FROM = TENANT.email.noReplyFrom
 
 /**
  * Resend gets this long to answer. A hung call used to hold the claim until the 15-minute stuck-sending sweep

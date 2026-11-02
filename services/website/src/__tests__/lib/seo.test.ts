@@ -165,8 +165,11 @@ describe('title and description length budget', () => {
   })
 
   it('the brand suffix is what the root layout template appends', () => {
+    // The template is built from TITLE_SUFFIX itself (white-label: the suffix
+    // comes from the tenant), so assert the layout references it, not a copy.
     const layout = fs.readFileSync(path.join(APP_DIR, 'layout.tsx'), 'utf8')
-    expect(layout).toContain(`%s${TITLE_SUFFIX}`)
+    expect(layout).toContain('template: `%s${TITLE_SUFFIX}`')
+    expect(layout).toMatch(/import \{[^}]*\bTITLE_SUFFIX\b[^}]*\} from '@\/lib\/seo'/)
   })
 
   it('no craft title double-brands', () => {
