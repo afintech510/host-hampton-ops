@@ -6,6 +6,7 @@ import {
   addMinutes,
   rangesOverlap,
   DEFAULT_HOURS,
+  openTimeFor,
 } from '@/lib/googleCalendar'
 
 export interface TimeSlot {
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest) {
     if (date < minDate) continue
 
     // Business hours for this day
-    const openTime = bt.open_time || DEFAULT_HOURS[dow].open
+    const openTime = openTimeFor(bt, dow)
     const closeTime = bt.close_time || DEFAULT_HOURS[dow].close
 
     // Generate slots at configured intervals

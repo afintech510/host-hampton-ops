@@ -25,6 +25,20 @@ export const DEFAULT_HOURS: Record<number, { open: string; close: string }> = {
   6: { open: '10:00', close: '20:00' }, // Saturday
 }
 
+/**
+ * Per-day earlier opening for a booking type, over its single `open_time`
+ * column. `kids-party` opens at 11:00 every day, but Saturdays take a 10am
+ * party (Adam, 2026-11-03). Keyed by slug, then day of week (0 = Sunday).
+ */
+export const DAY_OPEN_OVERRIDES: Record<string, Partial<Record<number, string>>> = {
+  'kids-party': { 6: '10:00' },
+}
+
+/** The first slot start for a booking type on a given day of the week. */
+export function openTimeFor(bt: { slug: string; open_time: string | null }, dow: number): string {
+  return DAY_OPEN_OVERRIDES[bt.slug]?.[dow] || bt.open_time || DEFAULT_HOURS[dow].open
+}
+
 /** Refresh Google OAuth access token */
 export async function getGoogleAccessToken(): Promise<string | null> {
   const clientId = process.env.GOOGLE_CLIENT_ID
