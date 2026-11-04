@@ -32,6 +32,11 @@ it.each([
   await run()
   expect(calendarReads()).toHaveLength(1)
   for (const c of calendarReads()) expect(c.init?.cache).toBe('no-store')
+  // The access token too: a cached token expires after an hour and every call
+  // then answers 401 (measured 2026-11-04, 14:23 UTC onwards).
+  const token = calls.filter(c => c.url.includes('oauth2.googleapis.com/token'))
+  expect(token).toHaveLength(1)
+  expect(token[0].init?.cache).toBe('no-store')
 })
 
 it('reads a month as Eastern midnight to Eastern midnight', async () => {

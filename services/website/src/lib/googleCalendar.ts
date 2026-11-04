@@ -41,7 +41,14 @@ export function openTimeFor(bt: { slug: string; open_time: string | null }, dow:
   return DAY_OPEN_OVERRIDES[bt.slug]?.[dow] || bt.open_time || DEFAULT_HOURS[dow].open
 }
 
-/** Refresh Google OAuth access token */
+/**
+ * Refresh Google OAuth access token.
+ *
+ * `no-store` here too: Next 14 data-caches a POST `fetch` made from a GET route
+ * handler. On 2026-11-04 the container cached the token from 13:16 UTC, and when
+ * it expired an hour later every Calendar call from `/api/cron/calendar-sync`
+ * answered 401 until the cache was bypassed.
+ */
 export async function getGoogleAccessToken(): Promise<string | null> {
   const clientId = process.env.GOOGLE_CLIENT_ID
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET
@@ -51,6 +58,7 @@ export async function getGoogleAccessToken(): Promise<string | null> {
 
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
+    cache: 'no-store',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: clientId,
