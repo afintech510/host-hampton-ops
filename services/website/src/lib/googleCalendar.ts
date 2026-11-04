@@ -63,6 +63,14 @@ export async function getGoogleAccessToken(): Promise<string | null> {
   return data.access_token || null
 }
 
+/*
+ * Every Google Calendar READ passes `cache: 'no-store'`. Next 14 stores a GET
+ * `fetch` in its data cache by default, and on 2026-11-04 the container was
+ * measured serving one Calendar response for 20+ minutes after the calendar
+ * had changed — so the planner's availability, and the sync that writes the
+ * calendar, both acted on a calendar that no longer existed.
+ */
+
 /** Fetch Google Calendar events for a month, returning full time ranges */
 export async function getCalendarEvents(month: string): Promise<CalendarEvent[]> {
   const calendarId = process.env.GOOGLE_CALENDAR_ID
@@ -86,7 +94,7 @@ export async function getCalendarEvents(month: string): Promise<CalendarEvent[]>
       orderBy: 'startTime',
       fields: 'items(start,end,summary)',
     }),
-    { headers: { Authorization: `Bearer ${accessToken}` } }
+    { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' }
   )
 
   if (!res.ok) {
@@ -133,7 +141,7 @@ export async function listCalendarEvents(opts: { timeMin: string; q?: string }):
     if (pageToken) params.set('pageToken', pageToken)
     const res = await fetch(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' },
     ).catch(() => null)
     if (!res || !res.ok) return { ok: false, error: `Google Calendar list failed (${res ? res.status : 'network'})` }
     const data = await res.json()
@@ -153,7 +161,7 @@ export async function getCalendarEvent(eventId: string): Promise<
   if (!calendarId || !accessToken) return { ok: false, error: 'Google Calendar not configured' }
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
+    { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' },
   ).catch(() => null)
   if (res && (res.status === 404 || res.status === 410)) return { ok: true, event: null }
   if (!res || !res.ok) return { ok: false, error: `Google Calendar get failed (${res ? res.status : 'network'})` }
