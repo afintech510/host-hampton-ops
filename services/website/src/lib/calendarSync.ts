@@ -31,11 +31,12 @@ import {
 import { bookingStage, etToday, type BookingStage } from '@/lib/bookingStatus'
 import { sumPayments } from '@/lib/bookingBalance'
 import { etToUtc } from '@/lib/partyTime'
+import { DURATION_MINI_MIN, DURATION_THEME_MIN } from '@/lib/evites/partyWindow'
 
 type Supa = ReturnType<typeof getSupabase>
 
 export const CALENDAR_BOOKING_COLUMNS =
-  'id, booking_ref, status, party_type, event_type, party_date, party_time, party_tags, contact_name, contact_email, package_type, guest_count_approx, child_name, google_calendar_event_id'
+  'id, booking_ref, status, party_type, event_type, party_date, party_time, party_tags, contact_name, contact_email, package_type, guest_count_approx, child_name, google_calendar_event_id, quote_snapshot'
 
 export interface CalendarBooking {
   id: string
@@ -52,6 +53,7 @@ export interface CalendarBooking {
   guest_count_approx: number | null
   child_name: string | null
   google_calendar_event_id: string | null
+  quote_snapshot: Record<string, unknown> | null
 }
 
 /** A calendar event reduced to what the sync compares. Times are Eastern. */
@@ -67,8 +69,18 @@ export interface BookingEvent {
 
 export interface PartyWindow { date: string; start: string; end: string }
 
-/** All parties block two hours; a studio rental blocks its rented window. */
-const PARTY_MINUTES = 120
+/**
+ * A party blocks two hours, a MINI party 90 minutes — the same flag and length
+ * the invitation uses (`lib/evites/partyWindow.ts`), so the calendar and the
+ * invite cannot disagree about when a mini ends. A studio rental blocks its
+ * rented window. Mobile parties deliberately keep two hours here (travel), not
+ * the invite's 90.
+ */
+const PARTY_MINUTES = DURATION_THEME_MIN
+
+function partyMinutes(quoteSnapshot: Record<string, unknown> | null | undefined): number {
+  return quoteSnapshot?.isMiniParty === true ? DURATION_MINI_MIN : PARTY_MINUTES
+}
 
 /** The booking ref named by an event's `Ref: …` description line, or null. */
 export function refOf(description: string | null | undefined): string | null {
@@ -100,7 +112,7 @@ export function clockTime(raw: unknown): string | null {
   return `${String(h).padStart(2, '0')}:${m[2]}`
 }
 
-export function partyWindow(b: Pick<CalendarBooking, 'party_date' | 'party_time' | 'party_tags'>): PartyWindow | null {
+export function partyWindow(b: Pick<CalendarBooking, 'party_date' | 'party_time' | 'party_tags'> & Partial<Pick<CalendarBooking, 'quote_snapshot'>>): PartyWindow | null {
   if (!b.party_date || !/^\d{4}-\d{2}-\d{2}$/.test(b.party_date)) return null
   const tags = b.party_tags || {}
   const rs = clockTime(tags.rental_start_time)
@@ -108,7 +120,7 @@ export function partyWindow(b: Pick<CalendarBooking, 'party_date' | 'party_time'
   if (rs && re && re > rs) return { date: b.party_date, start: rs, end: re }
   const start = clockTime(b.party_time)
   if (!start) return null
-  const end = addMinutes(start, PARTY_MINUTES)
+  const end = addMinutes(start, partyMinutes(b.quote_snapshot))
   // A party that would run past midnight is clamped rather than wrapped.
   return { date: b.party_date, start, end: end > '23:59' ? '23:59' : end }
 }

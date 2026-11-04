@@ -9,7 +9,7 @@ function booking(over: Partial<CalendarBooking> = {}): CalendarBooking {
   return {
     id: 'b1', booking_ref: 'HH-PTY-TEST1', status: 'deposit_paid', party_type: 'in_studio_theme', event_type: 'kids-party',
     party_date: '2026-11-29', party_time: '13:00', party_tags: {}, contact_name: 'Bonnie Vahlsing', contact_email: 'b@example.com',
-    package_type: 'Party', guest_count_approx: 12, child_name: null, google_calendar_event_id: null,
+    package_type: 'Party', guest_count_approx: 12, child_name: null, google_calendar_event_id: null, quote_snapshot: null,
     ...over,
   }
 }
@@ -66,6 +66,19 @@ describe('planBookingCalendar — the calendar follows the money', () => {
     )
     expect(p.keepId).toBe('ev2')
     expect(p.ops.map(o => [o.kind, 'eventId' in o ? o.eventId : null])).toEqual([['delete', 'ev1'], ['delete', 'ev3']])
+  })
+
+  it('blocks 90 minutes for a mini party, as the invitation does (HH-2026-0765: 10:00–11:30)', () => {
+    const p = planBookingCalendar(
+      booking({ party_date: '2026-12-19', party_time: '10:00', quote_snapshot: { isMiniParty: true } }),
+      25000, [event({ date: '2026-12-19', start: '11:00', end: '13:00' })], TODAY,
+    )
+    expect(p.ops).toEqual([expect.objectContaining({
+      kind: 'move', window: { date: '2026-12-19', start: '10:00', end: '11:30' },
+    })])
+    // Not a mini: still two hours.
+    expect(partyWindow({ party_date: '2026-12-19', party_time: '10:00', party_tags: {}, quote_snapshot: { isMiniParty: false } }))
+      .toEqual({ date: '2026-12-19', start: '10:00', end: '12:00' })
   })
 
   it('uses the rented window for a studio rental', () => {
