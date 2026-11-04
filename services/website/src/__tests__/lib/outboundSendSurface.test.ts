@@ -219,6 +219,7 @@ describe('R0 — the surface is enumerated exactly', () => {
       'app/api/cron/weekly-town-drafts/route.ts': 'creates website_content drafts',
       'app/api/cron/cron-alert/route.ts': 'owner-only: texts REVIEWER_PHONES a watchdog message via notifyOwnerSms; no customer address is ever read',
       'app/api/cron/archive-review-texts/route.ts': 'marks Quo threads Done (inbox housekeeping); sends no message to anyone',
+      'app/api/cron/calendar-sync/route.ts': 'writes our own Google Calendar from the bookings table; no invites, sends no message to anyone',
     }
 
     const unaccounted = found.filter(

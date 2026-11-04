@@ -2,6 +2,8 @@
  * Google Calendar helper — shared by availability API and webhook write-back.
  */
 
+import { etToUtc } from '@/lib/partyTime'
+
 export interface CalendarEvent {
   summary?: string
   start: { date?: string; dateTime?: string }
@@ -67,10 +69,13 @@ export async function getCalendarEvents(month: string): Promise<CalendarEvent[]>
   const accessToken = await getGoogleAccessToken()
   if (!calendarId || !accessToken) return []
 
-  const timeMin = `${month}-01T00:00:00Z`
+  // The month in EASTERN time. The window used to be UTC midnight to UTC
+  // midnight, which dropped any party starting after 7–8pm ET on the last day
+  // of the month (it is already the 1st in UTC), so that slot read as free.
   const [y, m] = month.split('-').map(Number)
-  const lastDay = new Date(y, m, 0).getDate()
-  const timeMax = `${month}-${String(lastDay).padStart(2, '0')}T23:59:59Z`
+  const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+  const timeMin = etToUtc(`${month}-01`, 0).toISOString()
+  const timeMax = etToUtc(`${next}-01`, 0).toISOString()
 
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
@@ -91,6 +96,79 @@ export async function getCalendarEvents(month: string): Promise<CalendarEvent[]>
 
   const data = await res.json()
   return data.items || []
+}
+
+export interface ListedCalendarEvent {
+  id: string
+  summary?: string
+  description?: string
+  start: { date?: string; dateTime?: string }
+  end: { date?: string; dateTime?: string }
+}
+
+/**
+ * Every event ending after `timeMin`, across all pages, optionally narrowed by
+ * Google's free-text `q`. Three outcomes, not two: a failed read is
+ * `{ ok: false }`, never an empty list, because the caller deletes and creates
+ * events based on what it believes is already there.
+ */
+export async function listCalendarEvents(opts: { timeMin: string; q?: string }): Promise<
+  { ok: true; events: ListedCalendarEvent[] } | { ok: false; error: string }
+> {
+  const calendarId = process.env.GOOGLE_CALENDAR_ID
+  const accessToken = await getGoogleAccessToken().catch(() => null)
+  if (!calendarId) return { ok: false, error: 'GOOGLE_CALENDAR_ID not set' }
+  if (!accessToken) return { ok: false, error: 'no Google access token' }
+
+  const events: ListedCalendarEvent[] = []
+  let pageToken: string | undefined
+  for (let page = 0; page < 20; page++) {
+    const params = new URLSearchParams({
+      timeMin: opts.timeMin,
+      singleEvents: 'true',
+      maxResults: '250',
+      fields: 'nextPageToken,items(id,summary,description,start,end)',
+    })
+    if (opts.q) params.set('q', opts.q)
+    if (pageToken) params.set('pageToken', pageToken)
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    ).catch(() => null)
+    if (!res || !res.ok) return { ok: false, error: `Google Calendar list failed (${res ? res.status : 'network'})` }
+    const data = await res.json()
+    events.push(...(data.items || []))
+    pageToken = data.nextPageToken
+    if (!pageToken) return { ok: true, events }
+  }
+  return { ok: false, error: 'Google Calendar list did not finish in 20 pages' }
+}
+
+/** One event by id; `null` when it does not exist (404/410) or is cancelled. */
+export async function getCalendarEvent(eventId: string): Promise<
+  { ok: true; event: ListedCalendarEvent | null } | { ok: false; error: string }
+> {
+  const calendarId = process.env.GOOGLE_CALENDAR_ID
+  const accessToken = await getGoogleAccessToken().catch(() => null)
+  if (!calendarId || !accessToken) return { ok: false, error: 'Google Calendar not configured' }
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  ).catch(() => null)
+  if (res && (res.status === 404 || res.status === 410)) return { ok: true, event: null }
+  if (!res || !res.ok) return { ok: false, error: `Google Calendar get failed (${res ? res.status : 'network'})` }
+  const data = await res.json()
+  return { ok: true, event: data.status === 'cancelled' ? null : data }
+}
+
+/** An instant as Eastern `{ date: YYYY-MM-DD, time: HH:mm }`. */
+export function etParts(iso: string): { date: string; time: string } {
+  const parts = new Date(iso).toLocaleString('en-US', {
+    timeZone: 'America/New_York', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  })
+  const [datePart, timePart] = parts.split(', ')
+  const [mm, dd, yyyy] = datePart.split('/')
+  return { date: `${yyyy}-${mm}-${dd}`, time: timePart.replace(/^24:/, '00:') }
 }
 
 /** Parse Google Calendar events into date-keyed time ranges */

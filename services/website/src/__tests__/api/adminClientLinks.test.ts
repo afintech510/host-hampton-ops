@@ -42,6 +42,10 @@ jest.mock('@/lib/googleCalendar', () => ({
   createCalendarEvent: jest.fn(), addMinutes: jest.fn(() => '12:00'),
   updateCalendarEvent: jest.fn(), deleteCalendarEvent: jest.fn(),
 }))
+jest.mock('@/lib/calendarSync', () => ({
+  syncBookingCalendar: jest.fn(async () => ({ ok: true, plan: { ops: [] }, applied: 0, errors: [] })),
+  clearBookingCalendar: jest.fn(async () => ({ ok: true, deleted: 0 })),
+}))
 jest.mock('@/lib/checkinReminders', () => ({
   enqueueCheckinReminders: jest.fn(), cancelCheckinReminders: jest.fn(),
 }))
@@ -305,9 +309,8 @@ describe('studio rentals — links open the studio planner, never the party plan
 })
 
 describe('approve — a studio rental is confirmed as a rental', () => {
-  it('emails the studio confirmation with the planner + invoice links, on ONE token, and blocks the rented window', async () => {
-    const { createCalendarEvent } = jest.requireMock('@/lib/googleCalendar')
-    createCalendarEvent.mockResolvedValue('gcal_1')
+  it('emails the studio confirmation with the planner + invoice links, on ONE token, and syncs the calendar', async () => {
+    const { syncBookingCalendar } = jest.requireMock('@/lib/calendarSync')
     const d = db(STUDIO)
     mockGetSupabase.mockReturnValue(d.client)
     body = { action: 'approve' }
@@ -327,20 +330,22 @@ describe('approve — a studio rental is confirmed as a rental', () => {
     expect(d.rows('portal_tokens')).toHaveLength(1)
     expect(mockSendSMSVia).not.toHaveBeenCalled()
 
-    expect(createCalendarEvent).toHaveBeenCalledWith(expect.objectContaining({
-      summary: expect.stringMatching(/^\[STUDIO RENTAL\] Jessica Smith/),
-      startDate: '2026-11-08', startTime: '11:00', endTime: '14:00',
-    }))
-    expect(d.rows('bookings')[0].google_calendar_event_id).toBe('gcal_1')
+    // Approve no longer writes an event itself: whether the rental holds the
+    // room is lib/calendarSync.ts's decision, and it follows the deposit.
+    expect(syncBookingCalendar).toHaveBeenCalledWith(d.client, expect.any(String))
+    const { createCalendarEvent } = jest.requireMock('@/lib/googleCalendar')
+    expect(createCalendarEvent).not.toHaveBeenCalled()
   })
 
-  it('does not add a second calendar block when the rental already has one', async () => {
-    const { createCalendarEvent } = jest.requireMock('@/lib/googleCalendar')
-    const d = db({ ...STUDIO, google_calendar_event_id: 'gcal_existing' })
+  it('a calendar failure does not fail the approval', async () => {
+    const { syncBookingCalendar } = jest.requireMock('@/lib/calendarSync')
+    syncBookingCalendar.mockResolvedValueOnce({ ok: false, error: 'Google Calendar list failed (500)' })
+    const d = db(STUDIO)
     mockGetSupabase.mockReturnValue(d.client)
     body = { action: 'approve' }
-    await POST(req(), { params })
-    expect(createCalendarEvent).not.toHaveBeenCalled()
+    const res: any = await POST(req(), { params })
+    expect(res.status).toBe(200)
+    expect(res.json().emailed).toBe(true)
   })
 
   it('a party is still confirmed as a party', async () => {

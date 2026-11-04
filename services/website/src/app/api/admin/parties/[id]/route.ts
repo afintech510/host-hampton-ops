@@ -4,7 +4,7 @@ import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adm
 import { mintPortalLink, mintPortalLinks } from '@/lib/portalLinkMint'
 import { formatMoney, screenTipCents } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml, studioRentalApprovedHtml } from '@/lib/emailTemplates'
-import { createCalendarEvent, addMinutes, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
+import { syncBookingCalendar, clearBookingCalendar } from '@/lib/calendarSync'
 import { studioRentalRateWith, hoursBetween, customHourlyRateCents, customHourlyRentalPrice, isWeekendDate, time12 } from '@/lib/studioRental'
 import { loadPricingCatalog, loadLineItemAddOns } from '@/lib/pricingCatalog'
 import { draftForBookingByHand } from '@/lib/agent/manualDraft'
@@ -128,6 +128,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   })
 }
 
+/**
+ * Bring this booking's Google Calendar event in line with it. Non-fatal by
+ * construction: the booking change is the record, and the calendar-sync cron
+ * repairs anything this misses — so a calendar outage must never fail an admin
+ * action that has already been written.
+ */
+async function syncCalendar(supabase: ReturnType<typeof getSupabase>, id: string): Promise<void> {
+  const r = await syncBookingCalendar(supabase, id)
+  if (!r.ok) console.error(`admin/parties/${id}: calendar sync failed (non-fatal):`, r.error)
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
@@ -191,6 +202,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         partyTime: fresh.party_time,
       })
     }
+  }
+
+  // A moved date or time used to leave the event where it was (HH-PTY-B7T6W:
+  // moved to 11-29 13:00, still on the calendar at 11-28 12:00).
+  if (['status', 'party_date', 'party_time', 'party_tags'].some(k => updates[k] !== undefined)) {
+    await syncCalendar(supabase, id)
   }
 
   // Any per-guest line item (guest-overage, per-head add-ons) is priced off
@@ -325,19 +342,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const start = typeof tags.rental_start_time === 'string' ? tags.rental_start_time : (booking.party_time as string | null)
       const end = typeof tags.rental_end_time === 'string' ? tags.rental_end_time : null
 
-      if (booking.party_date && start && end && !booking.google_calendar_event_id) {
-        const evId = await createCalendarEvent({
-          summary: `[STUDIO RENTAL] ${booking.contact_name || 'Rental'} — ${(tags.event_label as string) || 'Event'}`,
-          startDate: booking.party_date,
-          startTime: start,
-          endTime: end,
-          description: `Ref: ${booking.booking_ref}\nContact: ${booking.contact_name || ''}\nGuests: ~${booking.guest_count_approx || ''}`,
-        }).catch(err => { console.error('GCal error:', err); return null })
-        if (evId) {
-          const { error: evErr } = await supabase.from('bookings').update({ google_calendar_event_id: evId }).eq('id', id)
-          if (evErr) console.error(`approve: calendar event ${evId} created but not saved on ${booking.booking_ref}:`, evErr.message)
-        }
-      }
+      // The calendar follows the money, not the Approve button: an approved
+      // rental with no deposit does not hold the room (lib/calendarSync.ts).
+      await syncCalendar(supabase, id)
 
       const links = await mintPortalLinks(supabase, id, booking.booking_ref, {
         planner: portalDestination('planner', booking) as string,
@@ -378,17 +385,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ ok: true, action: 'approved', emailed })
     }
 
-    // Create GCal event
-    if (booking.party_date && booking.party_time) {
-      const endTime = addMinutes(booking.party_time, 120)
-      await createCalendarEvent({
-        summary: `[PARTY] ${booking.contact_name} - ${booking.package_type || 'Party'}`,
-        startDate: booking.party_date,
-        startTime: booking.party_time,
-        endTime,
-        description: `Ref: ${booking.booking_ref}\nGuests: ~${booking.guest_count_approx}\n${booking.child_name ? `Child: ${booking.child_name}` : ''}`,
-      }).catch(err => console.error('GCal error:', err))
-    }
+    // On the calendar only once a deposit has landed — approving an unpaid quote
+    // used to block the slot for a party nobody had paid for (HH-2026-9024).
+    await syncCalendar(supabase, id)
 
     // Generate portal link & send approval email
     const minted = await mintPortalLink(supabase, id, booking.booking_ref)
@@ -470,6 +469,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Don't text a cancelled party's customer asking them to check in.
     await cancelCheckinReminders(booking.booking_ref)
 
+    // Free the slot: a cancelled party's event used to stay on the calendar
+    // forever, so the planner kept refusing that time to everybody else.
+    await syncCalendar(supabase, id)
+
     return NextResponse.json({ ok: true, action: 'cancelled' })
   }
 
@@ -521,6 +524,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       newData: { status: next },
     })
     if (action === 'mark_lost') await cancelCheckinReminders(booking.booking_ref)
+    await syncCalendar(supabase, id)
     return NextResponse.json({ ok: true, action: action === 'mark_lost' ? 'marked_lost' : 'reopened', status: next })
   }
 
@@ -701,6 +705,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (mailErr) console.error('record_payment: receipt email failed:', mailErr.message)
       }
     }
+
+    // A hand-entered deposit is what books a cash/Venmo/Zelle party, and no
+    // other path put those on the calendar at all.
+    await syncCalendar(supabase, id)
 
     return NextResponse.json({
       ok: true,
@@ -1097,8 +1105,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (action === 'delete_booking') {
     // Hard delete — children (line items, payments, modifications, portal tokens)
     // cascade automatically. Used to purge test/duplicate bookings.
-    const evId = booking.google_calendar_event_id as string | null
-    if (evId) await deleteCalendarEvent(evId).catch(() => {})
+    // Every upcoming event naming this ref, not only the stored one — duplicates
+    // were common, and a deleted booking's stray event blocks a slot forever.
+    const cleared = await clearBookingCalendar(booking.booking_ref, booking.google_calendar_event_id as string | null)
+    if (!cleared.ok) console.error(`delete_booking ${booking.booking_ref}: calendar not cleared:`, cleared.error)
 
     const { error } = await supabase.from('bookings').delete().eq('id', id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -1269,16 +1279,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     await recalcTotals(supabase, id, booking)
 
-    // Update the calendar block.
-    const summary = `[STUDIO RENTAL] ${booking.contact_name || 'Rental'} — ${(tags.event_label as string) || 'Event'}`
-    const desc = `Ref: ${booking.booking_ref}\nContact: ${booking.contact_name || ''}\nGuests: ~${booking.guest_count_approx || ''}\nUpdated by admin`
-    const evId = booking.google_calendar_event_id as string | null
-    if (evId) {
-      await updateCalendarEvent(evId, { startDate: booking.party_date as string, startTime, endTime, summary, description: desc }).catch(() => {})
-    } else {
-      const newId = await createCalendarEvent({ summary, startDate: booking.party_date as string, startTime, endTime, description: desc }).catch(() => null)
-      if (newId) await supabase.from('bookings').update({ google_calendar_event_id: newId }).eq('id', id)
-    }
+    // Move the calendar block to the new window.
+    await syncCalendar(supabase, id)
 
     await logBookingChange(supabase, {
       bookingId: id, actor: adminActorId(req),
