@@ -74,14 +74,14 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
           <h3>We&apos;re looking for cover</h3>
           <p>
             {asked.data === 0
-              ? 'Nobody had said they could cover this one, so Allie has been told.'
+              ? 'Nobody had said they could cover this one, so we are asking everyone who is free that day.'
               : `We asked ${asked.data} crew ${asked.data === 1 ? 'member' : 'members'} who said they can cover.`}
           </p>
           {live.status === 'open' && asked.data > 0 && now < escalateAt && (
-            <p>If nobody takes it by {clockLabel(escalateAt)}, Allie steps in.</p>
+            <p>If nobody takes it by {clockLabel(escalateAt)}, we ask everyone who is free that day.</p>
           )}
-          {(live.status === 'escalated' || now >= escalateAt) && <p>Allie is finding someone.</p>}
-          {live.offered_to_all_at && <p>Allie has offered it to everyone free that day.</p>}
+          {(live.status === 'escalated' || now >= escalateAt) && <p>We are finding someone.</p>}
+          {live.offered_to_all_at && <p>It has been offered to everyone free that day.</p>}
           <p className="crew-note crew-info" style={{ marginBottom: 0 }}>
             You&apos;re still on the party until someone takes it.{s.ladderEnabled ? ' If someone covers you, nothing changes for you.' : ' If someone covers you, you\'re off the hook.'}
           </p>
