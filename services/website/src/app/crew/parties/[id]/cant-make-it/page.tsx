@@ -46,7 +46,7 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
   const startsAt = new Date(party.starts_at)
   const when = `${partyDayLabel(party.starts_at)}, ${partyTimeLabel(party.starts_at, party.ends_at)}`
   const grace = isInGracePeriod(now, s)
-  const startRate = formatCents(partyRateCents('crew', 0, s))
+  const startRate = s.ladderEnabled ? formatCents(partyRateCents('crew', 0, s)) : ''
   const header = (
     <>
       <CrewTop firstName={member.first_name} isTest={member.is_test} />
@@ -62,9 +62,11 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
     const asked = await askedCount(sb, live.id)
     if (asked.kind !== 'ok') return <CrewUnavailable />
     const escalateAt = standbyEscalateAt(new Date(live.created_at), asked.data, s)
-    const dropConfirm = grace
-      ? "If you drop it now, nobody is covering it. While we're getting started your rate won't change, but Allie will see it. Drop the party?"
-      : `If you drop it with nobody covering, you'll go back to ${startRate} a party. Drop the party?`
+    const dropConfirm = !s.ladderEnabled
+      ? 'If you drop it now, nobody is covering it and the manager will have to find someone. Only drop it if you truly can\'t be there. Drop the party?'
+      : grace
+        ? "If you drop it now, nobody is covering it. While we're getting started your rate won't change, but the manager will see it. Drop the party?"
+        : `If you drop it with nobody covering, you'll go back to ${startRate} a party. Drop the party?`
     return (
       <main className="crew-wrap">
         {header}
@@ -81,7 +83,7 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
           {(live.status === 'escalated' || now >= escalateAt) && <p>Allie is finding someone.</p>}
           {live.offered_to_all_at && <p>Allie has offered it to everyone free that day.</p>}
           <p className="crew-note crew-info" style={{ marginBottom: 0 }}>
-            You&apos;re still on the party until someone takes it. If someone covers you, nothing changes for you.
+            You&apos;re still on the party until someone takes it.{s.ladderEnabled ? ' If someone covers you, nothing changes for you.' : ' If someone covers you, you\'re off the hook.'}
           </p>
         </div>
         <div className="crew-row" style={{ flexWrap: 'wrap', gap: '.75rem' }}>
@@ -98,7 +100,7 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
       <main className="crew-wrap">
         {header}
         {last?.status === 'claimed'
-          ? <p className="crew-note crew-success">You&apos;re covered. Someone took your spot, and your rate doesn&apos;t change. Thanks for asking early!</p>
+          ? <p className="crew-note crew-success">You&apos;re covered. Someone took your spot{s.ladderEnabled ? ", and your rate doesn't change" : ''}. Thanks for asking early!</p>
           : last?.status === 'dropped_uncovered'
             ? <p className="crew-note crew-warn">You&apos;re off this party. Allie knows the spot is open.</p>
             : <p className="crew-note crew-info">You&apos;re not on this party.</p>}
@@ -120,20 +122,24 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
 
   if (drop.kind === 'early_release') {
     const days = Math.floor(drop.noticeHours / 24)
-    const after = stepAfter('early_release', member.steps, s, grace)
-    const effect = after.stepsAfter < after.stepsBefore
-      ? `Your rate goes down to ${formatCents(partyRateCents('crew', after.stepsAfter, s))} a party.`
-      : grace && after.waivedGrace
-        ? "While we're getting started, your rate stays the same."
-        : 'Your rate stays the same.'
+    // With the ladder off there is no "effect" to state: the spot just reopens.
+    let effect = ''
+    if (s.ladderEnabled) {
+      const after = stepAfter('early_release', member.steps, s, grace)
+      effect = after.stepsAfter < after.stepsBefore
+        ? `Your rate goes down to ${formatCents(partyRateCents('crew', after.stepsAfter, s))} a party.`
+        : grace && after.waivedGrace
+          ? "While we're getting started, your rate stays the same."
+          : 'Your rate stays the same.'
+    }
     return (
       <main className="crew-wrap">
         {header}
         <div className="crew-card">
-          <p>You&apos;re giving {days} days&apos; notice. Thank you! Your spot opens up for the rest of the crew right away.</p>
-          <p style={{ marginBottom: 0 }}>{effect}</p>
+          <p style={effect ? undefined : { marginBottom: 0 }}>You&apos;re giving {days} days&apos; notice. Thank you! Your spot opens up for the rest of the crew right away.</p>
+          {effect && <p style={{ marginBottom: 0 }}>{effect}</p>}
         </div>
-        <CantMakeItForm slotId={mine.id} submitLabel="Release my spot" confirmText={`Release your spot? ${effect}`} />
+        <CantMakeItForm slotId={mine.id} submitLabel="Release my spot" confirmText={effect ? `Release your spot? ${effect}` : 'Release your spot? It opens up for the rest of the crew right away.'} />
       </main>
     )
   }
@@ -149,7 +155,7 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
           It&apos;s less than {s.drops.lateDropDays} days away, so we&apos;ll ask the crew who said they can cover
           {n > 0 ? ` (${n} so far)` : ''}. You stay on the party until one of them takes it.
         </p>
-        <p>If someone covers you, nothing changes for you.</p>
+        <p>{s.ladderEnabled ? 'If someone covers you, nothing changes for you.' : "If someone covers you, you're off the hook."}</p>
         {n === 0 && <p style={{ marginBottom: 0 }}>Nobody has said they can cover this one yet, so Allie will be told right away.</p>}
       </div>
       <CantMakeItForm slotId={mine.id} submitLabel="Ask for cover" confirmText="Ask the crew to cover your spot? You stay on until someone takes it." />

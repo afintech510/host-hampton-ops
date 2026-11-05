@@ -23,7 +23,7 @@ export interface SettingField {
   field: string
   label: string
   /** How the value is shown and typed. `cents` is entered in dollars. */
-  unit: 'cents' | 'steps' | 'count' | 'kids' | 'minutes' | 'hours' | 'days' | 'day_of_month' | 'date'
+  unit: 'cents' | 'steps' | 'count' | 'kids' | 'minutes' | 'hours' | 'days' | 'day_of_month' | 'date' | 'switch'
   min: number
   max: number
   integer: boolean
@@ -126,11 +126,23 @@ export const SETTING_SECTIONS: SettingSection[] = [
     help: 'Alert Allie if attendance is not marked this long after a party ends.',
     fields: [dec('alert_hours_after_end', 'Alert after', 'hours', 0, 168)],
   },
+  {
+    key: 'autopilot', title: 'Autopilot',
+    help: 'What runs by itself once crew is switched on. The manager is only told when a party is still short of crew as the day gets close, or when a late cancel finds nobody free.',
+    fields: [
+      { field: 'auto_publish', label: 'Publish new booked parties by themselves', unit: 'switch', min: 0, max: 0, integer: false, help: 'Off = new parties wait as drafts until you publish them.' },
+      { field: 'auto_publish_from', label: 'Only parties added on or after', unit: 'date', min: 0, max: 0, integer: false, help: 'Older drafts stay drafts until you publish them. Blank = every clean draft.' },
+      int('nudge_first_days_before', 'First reminder for open spots', 'days', 0, 60, 'Free crew are asked again this many days before a party that still has open spots.'),
+      int('nudge_second_days_before', 'Second reminder for open spots', 'days', 0, 60),
+      int('understaffed_days_before', 'Tell the manager if still short at', 'days', 0, 60, 'Days before the party. A missing Party Lead is raised at the Party Lead alert days if that is earlier.'),
+    ],
+  },
 ]
 
 const SECTION_PROP: Record<string, keyof CrewSettings> = {
   pay: 'pay', steps: 'steps', slots_by_guests: 'slotsByGuests', shift: 'shift', drops: 'drops',
   confirmations: 'confirmations', launch: 'launch', lead: 'lead', availability: 'availability', attendance: 'attendance',
+  autopilot: 'autopilot',
 }
 
 const camel = (s: string) => s.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase())
@@ -144,7 +156,7 @@ export function isCalendarDate(v: unknown): v is string {
   return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3]
 }
 
-export type SettingScreen = { ok: true; value: Record<string, number | string | null> } | { ok: false; error: string }
+export type SettingScreen = { ok: true; value: Record<string, number | string | boolean | null> } | { ok: false; error: string }
 
 export function screenCrewSetting(key: unknown, value: unknown): SettingScreen {
   const section = SETTING_SECTIONS.find(s => s.key === key)
@@ -155,9 +167,14 @@ export function screenCrewSetting(key: unknown, value: unknown): SettingScreen {
   const extra = Object.keys(v).filter(k => !known.has(k))
   if (extra.length) return { ok: false, error: `Unknown field: ${extra.join(', ')}.` }
 
-  const out: Record<string, number | string | null> = {}
+  const out: Record<string, number | string | boolean | null> = {}
   for (const f of section.fields) {
     const raw = v[f.field]
+    if (f.unit === 'switch') {
+      if (typeof raw !== 'boolean') return { ok: false, error: `${f.label}: yes or no.` }
+      out[f.field] = raw
+      continue
+    }
     if (f.unit === 'date') {
       if (raw === null || raw === '') { out[f.field] = null; continue }
       if (!isCalendarDate(raw)) return { ok: false, error: `${f.label}: a date like 2026-12-01, or blank for not launched.` }
@@ -183,6 +200,9 @@ export function screenCrewSetting(key: unknown, value: unknown): SettingScreen {
   }
   if (key === 'availability' && !(n('reminder_day_of_month') < n('due_day_of_month'))) {
     return { ok: false, error: 'The reminder must come before the due day.' }
+  }
+  if (key === 'autopilot' && !(n('nudge_second_days_before') < n('nudge_first_days_before'))) {
+    return { ok: false, error: 'The second reminder must come after the first (fewer days before the party).' }
   }
 
   // Round-trip: what settingsFromRows reads back must be exactly what was typed.

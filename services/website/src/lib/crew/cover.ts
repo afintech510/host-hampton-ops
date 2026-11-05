@@ -26,7 +26,7 @@ import {
 } from '@/lib/crew/db'
 import { loadAvailability, memberFit, type Conflict } from '@/lib/crew/admin'
 import {
-  formatCents, localParts, partyPayCents, partyRateCents, standbyEscalateAt, type CrewSettings, type PartyWindow, type SlotRole,
+  formatCents, localParts, partyRateCents, payLabelFor, standbyEscalateAt, type CrewSettings, type PartyWindow, type SlotRole,
 } from '@/lib/crew/rules'
 import { adminTemplates, templates } from '@/lib/crew/templates'
 import { crewLink, isTestParty, notifyAdmin, notifyMember, partyRefFor, type NotifyCtx } from '@/lib/crew/notify'
@@ -116,6 +116,8 @@ export async function eligibleFor(
       if (excludeIds.includes(m.id)) return false
       if (candidates !== 'all' && !candidates.has(m.id)) return false
       if (m.is_test && party.booking_id) return false
+      // …and a TEST party is never offered to a real person (launch: test parties may still be up on day one).
+      if (!m.is_test && isTestParty(party)) return false
       return memberFit(m, { id: party.id, startsAt, endsAt }, live, windows.get(m.id) ?? [], avail.data, s, role).conflicts.length === 0
     }),
   }
@@ -136,7 +138,7 @@ export async function escalateSwap(
   const first = who.kind === 'ok' && who.data ? who.data.first_name : 'A crew member'
   const ref = partyRefFor(party, s)
   await notifyAdmin(ctx, 'coverEscalated', adminTemplates.coverEscalated(first, ref, adminUrl(party.id)), `cover_escalated:${swap.id}`,
-    { test: isTestParty(party), payload: { swap_id: swap.id, party_id: party.id } })
+    { test: isTestParty(party), info: true, payload: { swap_id: swap.id, party_id: party.id } })
   return 'escalated'
 }
 
@@ -155,8 +157,8 @@ export async function startCoverRequest(
   const ref = partyRefFor(pws.party, s, coverPath(swap.id))
   let asked = 0
   for (const m of eligible.data) {
-    const pay = formatCents(partyPayCents(swap.slot_role, m.steps, pws.party.extra_flat_cents, s))
-    const r = await notifyMember(ctx, m, 'coverOffer', templates.coverOffer(requester.first_name, ref, swap.slot_role, pay),
+    const pay = payLabelFor(swap.slot_role, m.steps, pws.party.extra_flat_cents, s)
+    const r = await notifyMember(ctx, m, 'coverOffer', templates.coverOffer(requester.first_name, ref, swap.slot_role, pay, s.ladderEnabled),
       `cover:${swap.id}:${m.id}`, { payload: { swap_id: swap.id, party_id: pws.party.id } })
     if (r.kind === 'done') asked++
   }
@@ -167,7 +169,7 @@ export async function startCoverRequest(
   const reason = swap.reason_note ? `${swap.reason}: ${swap.reason_note}` : swap.reason
   await notifyAdmin(ctx, 'coverRequested',
     adminTemplates.coverRequested(requester.first_name, reason, asked, partyRefFor(pws.party, s), adminUrl(pws.party.id)),
-    `cover_requested:${swap.id}`, { test: isTestParty(pws.party), payload: { swap_id: swap.id, party_id: pws.party.id } })
+    `cover_requested:${swap.id}`, { test: isTestParty(pws.party), info: true, payload: { swap_id: swap.id, party_id: pws.party.id } })
 
   // Nobody asked = escalate NOW, without consulting a clock: `created_at` is the
   // database's now(), a few milliseconds after this request's `now`, so comparing
@@ -225,11 +227,12 @@ export async function releaseMySpot(
       const waived = steps >= stepsBefore
       const ref = partyRefFor(party, s)
       await notifyMember(ctx, member, 'earlyReleased',
-        templates.earlyReleased(ref, rateLabel(steps, s), waived, formatCents(s.pay.stepCents)),
+        templates.earlyReleased(ref, rateLabel(steps, s), waived, formatCents(s.pay.stepCents), s.ladderEnabled),
         `early_release:${tenure(before)}`, { payload: { party_id: party.id } })
       const noticeDays = Math.floor((new Date(party.starts_at).getTime() - ctx.now.getTime()) / DAY_MS)
       await notifyAdmin(ctx, 'spotReleased', adminTemplates.spotReleased(member.first_name, ref, noticeDays, adminUrl(party.id)),
-        `spot_released:${tenure(before)}`, { test: isTestParty(party), payload: { party_id: party.id, reason } })
+        `spot_released:${tenure(before)}`, { test: isTestParty(party), info: true, payload: { party_id: party.id, reason } })
+      await offerOpenedSpot(ctx, s, party.id, before, member.id)
       return { kind: 'released', rateCents: partyRateCents('crew', steps, s), waived }
     }
     case 'requested': {
@@ -273,7 +276,7 @@ export async function withdrawCover(ctx: NotifyCtx, s: CrewSettings, member: Cre
   if (cover.kind === 'ok' && cover.data) {
     const party = cover.data.pws.party
     await notifyAdmin(ctx, 'coverWithdrawn', adminTemplates.coverWithdrawn(member.first_name, partyRefFor(party, s), adminUrl(party.id)),
-      `cover_withdrawn:${swapId}`, { test: isTestParty(party), payload: { swap_id: swapId, party_id: party.id } })
+      `cover_withdrawn:${swapId}`, { test: isTestParty(party), info: true, payload: { swap_id: swapId, party_id: party.id } })
   }
   return { kind: 'ok' }
 }
@@ -296,7 +299,7 @@ export async function dropAnyway(ctx: NotifyCtx, s: CrewSettings, member: CrewMe
   const steps = after.kind === 'ok' && after.data ? after.data.steps : stepsBefore
   const ref = partyRefFor(party, s)
   await notifyMember(ctx, member, 'droppedUncovered',
-    templates.droppedUncovered(ref, rateLabel(steps, s), steps >= stepsBefore && stepsBefore > 0, formatCents(s.pay.stepCents)),
+    templates.droppedUncovered(ref, rateLabel(steps, s), steps >= stepsBefore && stepsBefore > 0, formatCents(s.pay.stepCents), s.ladderEnabled),
     `dropped:${swapId}`, { payload: { swap_id: swapId, party_id: party.id } })
   // Its own key: `(dedupe_key, channel)` is one namespace for crew AND Allie, so
   // sharing the member's key made this alert a "duplicate" that never went
@@ -313,16 +316,16 @@ async function afterClaim(ctx: NotifyCtx, s: CrewSettings, cover: CoverContext, 
   const ref = partyRefFor(party, s)
   const payload = { swap_id: cover.swap.id, party_id: party.id }
   if (req.kind === 'ok' && req.data) {
-    await notifyMember(ctx, req.data, 'coveredRequester', templates.coveredRequester(ref), `covered:${cover.swap.id}`, { payload })
+    await notifyMember(ctx, req.data, 'coveredRequester', templates.coveredRequester(ref, s.ladderEnabled), `covered:${cover.swap.id}`, { payload })
   }
   if (claimer.kind === 'ok' && claimer.data) {
-    const pay = formatCents(partyPayCents(cover.swap.slot_role, claimer.data.steps, party.extra_flat_cents, s))
-    await notifyMember(ctx, claimer.data, 'coverClaimed', templates.coverClaimed(ref, pay), `cover_claimed:${cover.swap.id}`, { payload })
+    const pay = payLabelFor(cover.swap.slot_role, claimer.data.steps, party.extra_flat_cents, s)
+    await notifyMember(ctx, claimer.data, 'coverClaimed', templates.coverClaimed(ref, pay, s.ladderEnabled), `cover_claimed:${cover.swap.id}`, { payload })
   }
   const reqFirst = req.kind === 'ok' && req.data ? req.data.first_name : 'A crew member'
   const coverFirst = claimer.kind === 'ok' && claimer.data ? claimer.data.first_name : 'Someone'
   await notifyAdmin(ctx, 'coverTaken', adminTemplates.coverTaken(reqFirst, coverFirst, ref, adminUrl(party.id)),
-    `cover_taken:${cover.swap.id}`, { test: isTestParty(party), payload })
+    `cover_taken:${cover.swap.id}`, { test: isTestParty(party), info: true, payload })
 }
 
 const CONFLICT_TEXT: Record<Conflict, string> = {
@@ -377,6 +380,78 @@ function whyNot(cover: CoverContext, member: CrewMemberRow, s: CrewSettings): st
 
 // ── Allie's side ────────────────────────────────────────────────────────────
 
+/**
+ * AUTOPILOT, early release: a spot just reopened, so the WAITLIST (the live
+ * standbys who could actually work it) gets first pick. Everyone else hears about
+ * it from the open-spot nudges. Best effort: the release already happened, and a
+ * failed read here only means the waitlist waits for the next nudge. One message
+ * per person per assignment (`opened:{tenure}:{member}`).
+ */
+async function offerOpenedSpot(ctx: NotifyCtx, s: CrewSettings, partyId: string, released: CrewSlotRow, releaserId: string): Promise<number> {
+  const [standbys, fresh] = await Promise.all([listLiveStandbys(ctx.sb, partyId), getPartyWithSlots(ctx.sb, partyId)])
+  if (standbys.kind !== 'ok' || fresh.kind !== 'ok' || !fresh.data) return 0
+  const pws = fresh.data
+  if (pws.party.status !== 'published' || new Date(pws.party.starts_at).getTime() <= ctx.now.getTime()) return 0
+  const eligible = await eligibleFor(ctx.sb, s, pws, released.role, new Set(standbys.data.map(r => r.member_id)), [releaserId])
+  if (eligible.kind !== 'ok') return 0
+  const ref = partyRefFor(pws.party, s)
+  let asked = 0
+  for (const m of eligible.data) {
+    const pay = payLabelFor(released.role, m.steps, pws.party.extra_flat_cents, s)
+    const r = await notifyMember(ctx, m, 'spotOpened', templates.spotOpened(ref, released.role, pay), `opened:${tenure(released)}:${m.id}`,
+      { payload: { party_id: partyId } })
+    if (r.kind === 'done' && r.channels.in_app === 'sent') asked++
+  }
+  return asked
+}
+
+/** The members a cover request's standby round already went to (their in-app rows, so it is what was actually sent). */
+async function askedMemberIds(sb: Supa, swapId: string): Promise<Read<string[]>> {
+  const { data, error } = await sb.from('crew_notifications').select('dedupe_key')
+    .like('dedupe_key', `cover:${swapId}:%`).eq('channel', 'in_app')
+  if (error) return { kind: 'unavailable', error: error.message }
+  const prefix = `cover:${swapId}:`
+  return { kind: 'ok', data: ((data ?? []) as { dedupe_key: string }[]).map(r => r.dedupe_key.slice(prefix.length)).filter(Boolean) }
+}
+
+/** The actor on the record when the system, not the manager, widens a cover request. */
+export const AUTOPILOT_ACTOR = 'system:crew-autopilot'
+
+/**
+ * AUTOPILOT, late cancel: the standby window passed with no claim (the swap is
+ * `escalated`), so offer the spot to everyone free that day instead of leaving it
+ * for the manager, who is told it happened (in-app only) and emailed only if
+ * nobody at all could be asked. Retry-safe: the offer marks `offered_to_all_at`
+ * first, and if the rest could not be read the mark is taken back so the next
+ * tick tries again (every message has its own dedupe key, so nobody is asked twice).
+ */
+export async function autoOfferToEveryone(
+  ctx: NotifyCtx, s: CrewSettings, swap: Pick<CrewSwapRow, 'id' | 'requester_id'>, party: CrewPartyRow,
+): Promise<'offered' | 'nobody_free' | 'not_needed' | 'unavailable'> {
+  const res = await offerToEveryone(ctx, s, swap.id, AUTOPILOT_ACTOR)
+  if (res.kind === 'refused') return 'not_needed'
+  if (res.kind === 'unavailable') {
+    await ctx.sb.from('crew_swap_requests').update({ offered_to_all_at: null })
+      .eq('id', swap.id).eq('offered_to_all_at', ctx.now.toISOString())
+    return 'unavailable'
+  }
+  const who = await getMember(ctx.sb, swap.requester_id)
+  const first = who.kind === 'ok' && who.data ? who.data.first_name : 'A crew member'
+  const ref = partyRefFor(party, s)
+  const opts = { test: isTestParty(party), payload: { swap_id: swap.id, party_id: party.id } }
+  // "Nobody free" means nobody at all was ever asked: a standby who got the first
+  // round and did not answer was asked, and the manager need not be told otherwise.
+  const standbys = await askedMemberIds(ctx.sb, swap.id)
+  const total = res.asked + (standbys.kind === 'ok' ? standbys.data.length : 0)
+  if (total === 0) {
+    await notifyAdmin(ctx, 'coverNobodyFree', adminTemplates.coverNobodyFree(first, ref, adminUrl(party.id)), `cover_nobody:${swap.id}`, opts)
+    return 'nobody_free'
+  }
+  await notifyAdmin(ctx, 'coverOfferedToAll', adminTemplates.coverOfferedToAll(first, ref, total, adminUrl(party.id)),
+    `cover_offered:${swap.id}`, { ...opts, info: true })
+  return 'offered'
+}
+
 /** "Offer to everyone free that day": set `offered_to_all_at`, then ask every eligible member. */
 export async function offerToEveryone(
   ctx: NotifyCtx, s: CrewSettings, swapId: string, actor: string,
@@ -393,13 +468,16 @@ export async function offerToEveryone(
   if (new Date(pws.party.starts_at).getTime() <= ctx.now.getTime()) return { kind: 'refused', status: 409, error: 'The party already started.' }
   const req = await getMember(ctx.sb, swap.requester_id)
   const reqFirst = req.kind === 'ok' && req.data ? req.data.first_name : 'A crew member'
-  const eligible = await eligibleFor(ctx.sb, s, pws, swap.slot_role, 'all', [swap.requester_id])
+  // A standby already has this request's link (`cover:{swap}:{member}`): asking them again is noise.
+  const already = await askedMemberIds(ctx.sb, swap.id)
+  if (already.kind !== 'ok') return { kind: 'unavailable' }
+  const eligible = await eligibleFor(ctx.sb, s, pws, swap.slot_role, 'all', [swap.requester_id, ...already.data])
   if (eligible.kind !== 'ok') return { kind: 'unavailable' }
   const ref = partyRefFor(pws.party, s, coverPath(swap.id))
   let asked = 0
   for (const m of eligible.data) {
-    const pay = formatCents(partyPayCents(swap.slot_role, m.steps, pws.party.extra_flat_cents, s))
-    const r = await notifyMember(ctx, m, 'coverOpen', templates.coverOpen(reqFirst, ref, swap.slot_role, pay), `cover_all:${swap.id}:${m.id}`,
+    const pay = payLabelFor(swap.slot_role, m.steps, pws.party.extra_flat_cents, s)
+    const r = await notifyMember(ctx, m, 'coverOpen', templates.coverOpen(reqFirst, ref, swap.slot_role, pay, s.ladderEnabled), `cover_all:${swap.id}:${m.id}`,
       { payload: { swap_id: swap.id, party_id: pws.party.id } })
     if (r.kind === 'done') asked++
   }

@@ -5,7 +5,7 @@ import { requireCrewPage } from '@/lib/crew/page'
 import { isUuid } from '@/lib/crew/auth'
 import { loadCrewSettings } from '@/lib/crew/settings'
 import { firstNamesFor, memberStandbyPartyIds } from '@/lib/crew/db'
-import { formatCents, partyPayCents } from '@/lib/crew/rules'
+import { payLabelFor } from '@/lib/crew/rules'
 import { loadCover } from '@/lib/crew/cover'
 import { partyDayLabel, partyTimeLabel, partyView } from '@/lib/crew/view'
 import CrewTop, { CrewUnavailable } from '../../_components/CrewTop'
@@ -65,7 +65,7 @@ export default async function CoverPage({ params }: { params: { id: string } }) 
   const view = partyView({ party, slots: pws.slots, viewer: member, firstNames: new Map(), standbyMemberIds: new Set() }, s)
   if (!view) notFound()
   const who = names.data.get(swap.requester_id) ?? 'A crew member'
-  const pay = formatCents(partyPayCents(swap.slot_role, member.steps, party.extra_flat_cents, s))
+  const pay = payLabelFor(swap.slot_role, member.steps, party.extra_flat_cents, s)
   const mayAsk = standby.data.has(party.id) || !!swap.offered_to_all_at
   const leadBlocked = swap.slot_role === 'lead' && !member.can_lead
 
@@ -79,7 +79,7 @@ export default async function CoverPage({ params }: { params: { id: string } }) 
           <dt className="crew-muted">Party</dt><dd style={{ margin: 0 }}>{party.theme || party.title}</dd>
           <dt className="crew-muted">When</dt><dd style={{ margin: 0 }}>{partyDayLabel(party.starts_at)}, {partyTimeLabel(party.starts_at, party.ends_at)}</dd>
           <dt className="crew-muted">Where</dt><dd style={{ margin: 0 }}>{view.location}</dd>
-          <dt className="crew-muted">Spot</dt><dd style={{ margin: 0 }}>{swap.slot_role === 'lead' ? 'Party Lead' : 'Crew'}, <strong>{pay}</strong></dd>
+          <dt className="crew-muted">Spot</dt><dd style={{ margin: 0 }}>{swap.slot_role === 'lead' ? 'Party Lead' : 'Crew'}{pay && <>, <strong>{pay}</strong></>}</dd>
         </dl>
       </div>
       {leadBlocked
@@ -88,8 +88,8 @@ export default async function CoverPage({ params }: { params: { id: string } }) 
           ? <p className="crew-note crew-info">This one is for the crew who said they can cover it. If Allie opens it to everyone, you&apos;ll get a text.</p>
           : (
             <>
-              <p>First to claim gets it. Once you&apos;ve worked it, covering a late cancel counts as two parties toward your rate.</p>
-              <ActionButton endpoint={`/api/crew/swaps/${swap.id}/claim`} label={`Take it (${pay})`} busyLabel="Claiming…" redirectTo={`/crew/cover/${swap.id}`} />
+              <p>First to claim gets it.{s.ladderEnabled ? " Once you've worked it, covering a late cancel counts as two parties toward your rate." : ''}</p>
+              <ActionButton endpoint={`/api/crew/swaps/${swap.id}/claim`} label={pay ? `Take it (${pay})` : 'Take it'} busyLabel="Claiming…" redirectTo={`/crew/cover/${swap.id}`} />
             </>
           )}
     </main>

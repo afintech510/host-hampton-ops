@@ -48,7 +48,7 @@ export default function TestPicker({ members }: { members: TestPickView[] }) {
           {members.map(m => (
             <button key={m.id} type="button" className="crew-pick" onClick={() => pick(m.id)} disabled={busy !== null}>
               <strong>{m.firstName}{m.lastName ? ` ${m.lastName}` : ''}</strong>
-              <span className="crew-small crew-muted" style={{ display: 'block' }}>{formatCents(m.rateCents)} a party</span>
+              {m.rateCents != null && <span className="crew-small crew-muted" style={{ display: 'block' }}>{formatCents(m.rateCents)} a party</span>}
               {m.canLead && <span className="crew-chip crew-info" style={{ marginTop: '.3rem' }}>Can lead</span>}
               {busy === m.id && <span className="crew-small" style={{ display: 'block' }}>Signing in…</span>}
             </button>

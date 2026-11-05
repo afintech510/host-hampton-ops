@@ -55,7 +55,7 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
           <dt className="crew-muted">Crew</dt><dd style={{ margin: 0 }}>{v.staffed} of {v.needed} spots taken</dd>
           {v.mySlot && (<>
             <dt className="crew-muted">Your spot</dt>
-            <dd style={{ margin: 0 }}>{v.mySlot.role === 'lead' ? 'Party Lead' : 'Crew'}, <strong>{formatCents(v.mySlot.payCents)}</strong></dd>
+            <dd style={{ margin: 0 }}>{v.mySlot.role === 'lead' ? 'Party Lead' : 'Crew'}{v.mySlot.payCents != null && <>, <strong>{formatCents(v.mySlot.payCents)}</strong></>}</dd>
           </>)}
         </dl>
       </div>

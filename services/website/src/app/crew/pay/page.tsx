@@ -37,17 +37,44 @@ export default async function CrewPayPage() {
   const ladder = payLadder(member.steps, me.canLead, s)
   const total = records.reduce((sum, r) => sum + (r.payCents ?? 0) + (r.extraCents ?? 0) + (r.tipCents ?? 0) + (r.tipTopupCents ?? 0), 0)
 
+  // Launch mode (pay figures hidden): this is "How it works" — cancelling and
+  // cover only. No rate, no ladder, no pay records.
+  if (!s.payVisible) {
+    return (
+      <main className="crew-wrap">
+        <CrewTop firstName={me.firstName} isTest={member.is_test} />
+        <h1>How it works</h1>
+        <p className="crew-muted" style={{ marginTop: 0 }}>Pick parties you can work, confirm them when we ask, and tell us early if something changes.</p>
+        <h2>If you can&apos;t make it</h2>
+        <div className="crew-card">
+          <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
+            {cancellingLines(s, new Date()).map((line, i) => <li key={i} style={{ marginBottom: '.45rem' }}>{line}</li>)}
+          </ul>
+        </div>
+        <h2>Backup</h2>
+        <div className="crew-card">
+          <p style={{ margin: 0 }}>
+            A party is full? Tap <strong>I can cover (standby)</strong> on it. If someone on the crew can&apos;t make it, standbys are asked first.
+          </p>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="crew-wrap">
       <CrewTop firstName={me.firstName} isTest={member.is_test} />
       <h1>My pay</h1>
-      <div className="crew-rate">
-        <p className="crew-rate-big">{me.rateLine}</p>
-        <p className="crew-small" style={{ opacity: 0.85, marginTop: '.35rem' }}>
-          Pay is per party, not per hour. Tips are on top.
-        </p>
-      </div>
+      {me.rateLine && (
+        <div className="crew-rate">
+          <p className="crew-rate-big">{me.rateLine}</p>
+          <p className="crew-small" style={{ opacity: 0.85, marginTop: '.35rem' }}>
+            Pay is per party, not per hour. Tips are on top.
+          </p>
+        </div>
+      )}
 
+      {ladder.length > 0 && (<>
       <h2>How your rate grows</h2>
       <div className="crew-card">
         <table className="crew-table">
@@ -65,6 +92,7 @@ export default async function CrewPayPage() {
           </tbody>
         </table>
       </div>
+      </>)}
 
       <h2>How cancelling works</h2>
       <div className="crew-card">

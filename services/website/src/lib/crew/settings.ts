@@ -24,7 +24,22 @@ export async function loadCrewSettings(supabase: Supa): Promise<CrewSettingsLoad
   const rows = (data ?? []) as { key: string; value: unknown; description: string | null }[]
   // Zero rows is not a configuration, it is a missing seed (migration 077 writes ten).
   if (rows.length === 0) return { kind: 'unavailable', error: 'crew_settings is empty' }
-  return { kind: 'ok', settings: settingsFromRows(rows), rows }
+  return { kind: 'ok', settings: settingsFromRows(rows, { ladderEnabled: crewPayLadderEnabled(), showPay: crewShowPayEnabled() }), rows }
+}
+
+/**
+ * The pay "game" — steps going up with every party worked and down or back to
+ * the start on a cancel or no-show. OFF unless exactly `true` (Adam, 2026-11-04:
+ * "initial launch just staff scheduling"). With it off no step ever moves and the
+ * crew app says nothing about rates changing; the code and the ledger stay.
+ */
+export function crewPayLadderEnabled(): boolean {
+  return process.env.CREW_PAY_LADDER === 'true'
+}
+
+/** Dollar figures anywhere in the crew app or a crew message. OFF unless exactly `true` (or the ladder is on). */
+export function crewShowPayEnabled(): boolean {
+  return process.env.CREW_SHOW_PAY === 'true'
 }
 
 /**

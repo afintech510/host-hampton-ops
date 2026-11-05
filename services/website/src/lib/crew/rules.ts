@@ -53,6 +53,28 @@ export interface CrewSettings {
   lead: { alertDaysBefore: number }
   availability: { dueDayOfMonth: number; reminderDayOfMonth: number }
   attendance: { alertHoursAfterEnd: number }
+  /** Autopilot (migration 084). Missing rows fall back to these defaults, never to "off". */
+  autopilot: {
+    autoPublish: boolean
+    /** Only parties the reconcile CREATED on or after this Eastern date are auto-published; null = no cutoff. */
+    autoPublishFrom: string | null
+    understaffedDaysBefore: number
+    nudgeFirstDaysBefore: number
+    nudgeSecondDaysBefore: number
+  }
+  /**
+   * The launch switches (2026-11-05), NOT rows in `crew_settings`: they come from
+   * the environment (`CREW_PAY_LADDER`, `CREW_SHOW_PAY`) so nobody can flip them
+   * by accident on the rules page. Both OFF unless exactly `true`.
+   *
+   *   ladderEnabled  steps move: +1 per worked party, -1 early release, reset on a
+   *                  drop-anyway / no-show. OFF = `stepAfter` answers "no change"
+   *                  for every event, so no step function ever carries a change.
+   *   payVisible     crew see dollar figures. Implied by ladderEnabled (a rate that
+   *                  moves is a rate they have to be shown).
+   */
+  ladderEnabled: boolean
+  payVisible: boolean
 }
 
 export const DEFAULT_SETTINGS: CrewSettings = {
@@ -66,7 +88,15 @@ export const DEFAULT_SETTINGS: CrewSettings = {
   lead: { alertDaysBefore: 7 },
   availability: { dueDayOfMonth: 15, reminderDayOfMonth: 10 },
   attendance: { alertHoursAfterEnd: 12 },
+  // autoPublish is OFF in code and ON in the seed (migration 084): a database that
+  // has not had the migration publishes nothing by itself.
+  autopilot: { autoPublish: false, autoPublishFrom: null, understaffedDaysBefore: 5, nudgeFirstDaysBefore: 10, nudgeSecondDaysBefore: 5 },
+  ladderEnabled: false,
+  payVisible: false,
 }
+
+/** The launch switches, read from the environment by `lib/crew/settings.ts` and handed in here. */
+export interface LaunchFlags { ladderEnabled?: boolean; showPay?: boolean }
 
 type Json = Record<string, unknown>
 
@@ -83,13 +113,13 @@ function num(obj: Json | undefined, key: string, fallback: number, min = -Infini
  * would otherwise compute a step the steps CHECK refuses, and `kids_per_crew: 0`
  * would divide by zero.
  */
-export function settingsFromRows(rows: ReadonlyArray<{ key: string; value: unknown }>): CrewSettings {
+export function settingsFromRows(rows: ReadonlyArray<{ key: string; value: unknown }>, flags: LaunchFlags = {}): CrewSettings {
   const by = new Map<string, Json>()
   for (const r of rows) if (r.value && typeof r.value === 'object' && !Array.isArray(r.value)) by.set(r.key, r.value as Json)
   const d = DEFAULT_SETTINGS
   const pay = by.get('pay'), steps = by.get('steps'), sg = by.get('slots_by_guests'), shift = by.get('shift')
   const drops = by.get('drops'), conf = by.get('confirmations'), launch = by.get('launch'), lead = by.get('lead')
-  const avail = by.get('availability'), att = by.get('attendance')
+  const avail = by.get('availability'), att = by.get('attendance'), auto = by.get('autopilot')
   const launchDate = launch?.['launch_date']
   const minSlots = num(sg, 'min_slots', d.slotsByGuests.minSlots, 1, 10)
 
@@ -136,6 +166,16 @@ export function settingsFromRows(rows: ReadonlyArray<{ key: string; value: unkno
       reminderDayOfMonth: num(avail, 'reminder_day_of_month', d.availability.reminderDayOfMonth, 1, 28),
     },
     attendance: { alertHoursAfterEnd: num(att, 'alert_hours_after_end', d.attendance.alertHoursAfterEnd, 0) },
+    autopilot: {
+      autoPublish: typeof auto?.['auto_publish'] === 'boolean' ? (auto['auto_publish'] as boolean) : d.autopilot.autoPublish,
+      autoPublishFrom: typeof auto?.['auto_publish_from'] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(auto['auto_publish_from'] as string)
+        ? (auto['auto_publish_from'] as string) : d.autopilot.autoPublishFrom,
+      understaffedDaysBefore: num(auto, 'understaffed_days_before', d.autopilot.understaffedDaysBefore, 0, 60),
+      nudgeFirstDaysBefore: num(auto, 'nudge_first_days_before', d.autopilot.nudgeFirstDaysBefore, 0, 60),
+      nudgeSecondDaysBefore: num(auto, 'nudge_second_days_before', d.autopilot.nudgeSecondDaysBefore, 0, 60),
+    },
+    ladderEnabled: flags.ladderEnabled === true,
+    payVisible: flags.ladderEnabled === true || flags.showPay === true,
   }
 }
 
@@ -209,6 +249,10 @@ export function stepAfter(
   event: StepEvent, steps: number, s: CrewSettings = DEFAULT_SETTINGS, inGrace = false,
 ): StepOutcome {
   const before = clampSteps(steps, s)
+  // The ladder is OFF at launch (CREW_PAY_LADDER): every event is "no change", so
+  // the SQL step functions are handed expected == after and write a zero delta.
+  // The arithmetic below stays the only implementation, ready for the switch.
+  if (!s.ladderEnabled) return { stepsAfter: before, stepsBefore: before, delta: 0, waivedGrace: false, wouldBe: before }
   let target: number
   switch (event) {
     case 'worked': target = before + s.steps.worked; break
@@ -249,6 +293,18 @@ export function formatCents(cents: number): string {
   const neg = cents < 0
   const abs = Math.abs(Math.round(cents))
   return `${neg ? '-' : ''}$${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`
+}
+
+/**
+ * What a crew member is told a spot pays, as a string for a message — or null
+ * while pay figures are hidden (the launch default). The ONE place a message's
+ * pay figure is produced, so "no pay in the crew app" cannot leak by a caller
+ * formatting its own.
+ */
+export function payLabelFor(
+  role: SlotRole, steps: number, extraFlatCents: number | null | undefined, s: CrewSettings = DEFAULT_SETTINGS,
+): string | null {
+  return s.payVisible ? formatCents(partyPayCents(role, steps, extraFlatCents, s)) : null
 }
 
 /**
@@ -317,6 +373,39 @@ export function unclaimedWarningAt(startsAt: Date, s: CrewSettings = DEFAULT_SET
 
 export function leadAlertAt(startsAt: Date, s: CrewSettings = DEFAULT_SETTINGS): Date {
   return new Date(startsAt.getTime() - s.lead.alertDaysBefore * 24 * HOUR_MS)
+}
+
+export interface Shortfall { crewShort: number; leadShort: boolean }
+
+const HELD_STATUSES = ['assigned', 'completed', 'no_show']
+
+/**
+ * What a published party still lacks. THE ONE definition: the understaffed alert
+ * the manager is emailed, the open-spot nudges and the page's derived alert all call
+ * it, so they cannot disagree. A studio rental is a room rental with no Lead
+ * spot (Adam, 2026-10-27), so it can never be short of one.
+ */
+export function staffingShortfall(
+  party: { party_kind: string },
+  slots: ReadonlyArray<{ role: SlotRole; status: string; member_id: string | null }>,
+): Shortfall {
+  const live = slots.filter(sl => sl.status !== 'cancelled')
+  const held = live.filter(sl => sl.member_id && HELD_STATUSES.includes(sl.status))
+  const leadShort = party.party_kind !== 'studio_rental' && !held.some(sl => sl.role === 'lead')
+  const crewShort = live.filter(sl => sl.role === 'crew' && !(sl.member_id && HELD_STATUSES.includes(sl.status))).length
+  return { crewShort, leadShort }
+}
+
+/** When the manager is told a party is still short: a missing Lead earlier (it is harder to find), crew at the autopilot setting. */
+export function understaffedAlertAt(startsAt: Date, leadShort: boolean, s: CrewSettings = DEFAULT_SETTINGS): Date {
+  const days = leadShort ? Math.max(s.lead.alertDaysBefore, s.autopilot.understaffedDaysBefore) : s.autopilot.understaffedDaysBefore
+  return new Date(startsAt.getTime() - days * 24 * HOUR_MS)
+}
+
+/** The days-out marks at which free crew are re-asked about a party that still has open spots (first, then second). */
+export function nudgeMarks(startsAt: Date, s: CrewSettings = DEFAULT_SETTINGS): { first: Date; second: Date } {
+  const at = (days: number) => new Date(startsAt.getTime() - days * 24 * HOUR_MS)
+  return { first: at(s.autopilot.nudgeFirstDaysBefore), second: at(s.autopilot.nudgeSecondDaysBefore) }
 }
 
 export function attendanceAlertAt(endsAt: Date, s: CrewSettings = DEFAULT_SETTINGS): Date {

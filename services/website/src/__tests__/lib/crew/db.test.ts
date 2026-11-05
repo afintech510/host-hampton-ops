@@ -6,6 +6,7 @@
 import { releaseSlot, dropUncovered, adminSetSteps, insertNotification, getMember, markAttendance } from '@/lib/crew/db'
 import { DEFAULT_SETTINGS, type CrewSettings } from '@/lib/crew/rules'
 import { findCrewMembersByEmail } from '@/lib/contactLookup'
+import { LADDER_ON } from '../../helpers/crewLadder'
 
 type RpcCall = { fn: string; args: Record<string, any> }
 
@@ -48,7 +49,9 @@ function fakeDb(opts: {
 }
 
 const start = new Date('2026-11-14T18:00:00Z')
-const launched = (date: string | null): CrewSettings => ({ ...DEFAULT_SETTINGS, launch: { launchDate: date, graceDays: 60 } })
+// The ladder is OFF at launch and a step moves only with it on, so the step tests run with it ON.
+const launched = (date: string | null): CrewSettings => ({ ...LADDER_ON, launch: { launchDate: date, graceDays: 60 } })
+const ladderOff = (date: string | null): CrewSettings => ({ ...DEFAULT_SETTINGS, launch: { launchDate: date, graceDays: 60 } })
 
 describe('releaseSlot', () => {
   const base = { slotId: 's', memberId: 'm', partyStartsAt: start, reason: 'sick' as const }
@@ -65,6 +68,15 @@ describe('releaseSlot', () => {
     const { sb, calls } = fakeDb({ steps: [4], rpc: () => ({ data: 'released' }) })
     await releaseSlot(sb, { ...base, now: new Date('2026-11-01T12:00:00Z'), settings: launched(null) })
     expect(calls[0].args).toMatchObject({ p_expected_steps: 4, p_steps_after: 4, p_waived_grace: true, p_meta: { would_be_steps: 3 } })
+  })
+
+  it('LADDER OFF: an early release still opens the spot, but sends expected == after, in or out of grace', async () => {
+    for (const date of ['2026-01-01', null]) {
+      const { sb, calls } = fakeDb({ steps: [4], rpc: () => ({ data: 'released' }) })
+      const r = await releaseSlot(sb, { ...base, now: new Date('2026-11-01T12:00:00Z'), settings: ladderOff(date) })
+      expect(r).toEqual({ kind: 'ok', result: 'released' })
+      expect(calls[0].args).toMatchObject({ p_kind: 'early_release', p_expected_steps: 4, p_steps_after: 4, p_waived_grace: false })
+    }
   })
 
   it('under 7 days: a cover request, no step change', async () => {
@@ -110,6 +122,16 @@ describe('dropUncovered', () => {
     const { sb, calls } = fakeDb({ steps: [6], rpc: () => ({ data: 'dropped' }) })
     await dropUncovered(sb, { swapId: 'w', memberId: 'm', now: new Date('2026-11-10T00:00:00Z'), settings: launched('2026-11-01') })
     expect(calls[0].args).toMatchObject({ p_expected_steps: 6, p_steps_after: 6, p_waived_grace: true, p_meta: { would_be_steps: 0 } })
+  })
+})
+
+describe('dropUncovered with the ladder off', () => {
+  it('drops the party but hands the SQL function expected == after, never a reset', async () => {
+    for (const date of ['2026-01-01', '2026-11-01']) {
+      const { sb, calls } = fakeDb({ steps: [6], rpc: () => ({ data: 'dropped' }) })
+      await dropUncovered(sb, { swapId: 'w', memberId: 'm', now: new Date('2026-11-10T00:00:00Z'), settings: ladderOff(date) })
+      expect(calls[0].args).toMatchObject({ p_expected_steps: 6, p_steps_after: 6, p_waived_grace: false })
+    }
   })
 })
 

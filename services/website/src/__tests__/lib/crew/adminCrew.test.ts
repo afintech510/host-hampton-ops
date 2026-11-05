@@ -5,6 +5,8 @@
  * `crew_admin_set_steps` standing in for migration 077's functions (the real
  * ones are proven against production by scripts/crew/race-test.mjs).
  */
+import fs from 'fs'
+import path from 'path'
 jest.mock('@/lib/crew/mail', () => ({ sendCrewEmail: jest.fn(async () => ({ kind: 'sent', providerId: 'p1' })) }))
 
 import { SETTING_SECTIONS, crewPhoneE164, screenCrewSetting, screenMemberInput, prefillFromApplication } from '@/lib/crew/adminForms'
@@ -25,11 +27,70 @@ const ACTOR = 'admin:allie@example.test'
 
 const PAY = { crew_start_cents: 5100, lead_start_cents: 7000, step_cents: 250, max_steps: 8, tip_floor_cents: 2000 }
 const CONF = { request_hours_before: 120, reminder_hours_before: 96, due_hours_before: 72, day_before_hours: 24 }
+const AUTO = { auto_publish: true, auto_publish_from: '2026-11-04', nudge_first_days_before: 10, nudge_second_days_before: 5, understaffed_days_before: 5 }
+
+/** The keys a migration seeds into crew_settings: the `('key', '{json}', 'description')` rows of its INSERT. */
+function seededSettingsKeys(file: string): string[] {
+  const sql = fs.readFileSync(path.join(process.cwd(), '..', '..', 'starting_plan', file), 'utf8')
+  const insert = sql.match(/INSERT INTO public\.crew_settings[\s\S]*?;\s*(?:\r?\n|$)/)
+  if (!insert) throw new Error(`no crew_settings INSERT in ${file}`)
+  return Array.from(insert[0].matchAll(/^\s*\('([a-z_]+)',\s*'\{/gm), m => m[1])
+}
 
 describe('screenCrewSetting', () => {
   it('has one section per seeded crew_settings key, and nothing else', () => {
+    // Read the seeds from disk: migration 077 wrote ten, 084 (autopilot) wrote the eleventh.
+    const m077 = seededSettingsKeys('migration_077_crew_scheduling.sql')
+    const m084 = seededSettingsKeys('migration_084_crew_autopilot.sql')
+    expect(m077).toHaveLength(10)
+    expect(m084).toEqual(['autopilot'])
+    expect(SETTING_SECTIONS.map(s => s.key).sort()).toEqual([...m077, ...m084].sort())
     expect(SETTING_SECTIONS.map(s => s.key).sort()).toEqual(
-      ['attendance', 'availability', 'confirmations', 'drops', 'launch', 'lead', 'pay', 'shift', 'slots_by_guests', 'steps'])
+      ['attendance', 'autopilot', 'availability', 'confirmations', 'drops', 'launch', 'lead', 'pay', 'shift', 'slots_by_guests', 'steps'])
+  })
+
+  describe('the autopilot section (migration 084)', () => {
+    it('accepts the seeded value, and it reads back unchanged through settingsFromRows', () => {
+      const r = screenCrewSetting('autopilot', AUTO)
+      expect(r).toEqual({ ok: true, value: AUTO })
+      expect(settingsFromRows([{ key: 'autopilot', value: (r as any).value }]).autopilot).toEqual({
+        autoPublish: true, autoPublishFrom: '2026-11-04', understaffedDaysBefore: 5, nudgeFirstDaysBefore: 10, nudgeSecondDaysBefore: 5,
+      })
+    })
+
+    it('the migration seeds exactly the fields the section edits, and the seed itself screens clean', () => {
+      const sql = fs.readFileSync(path.join(process.cwd(), '..', '..', 'starting_plan', 'migration_084_crew_autopilot.sql'), 'utf8')
+      const seed = JSON.parse(sql.match(/'(\{"auto_publish"[^']*\})'/)![1])
+      expect(Object.keys(seed).sort()).toEqual(SETTING_SECTIONS.find(s => s.key === 'autopilot')!.fields.map(f => f.field).sort())
+      expect(screenCrewSetting('autopilot', seed).ok).toBe(true)
+    })
+
+    it('takes the switch off, and a blank date as "no cutoff"', () => {
+      expect(screenCrewSetting('autopilot', { ...AUTO, auto_publish: false })).toEqual({ ok: true, value: { ...AUTO, auto_publish: false } })
+      expect(screenCrewSetting('autopilot', { ...AUTO, auto_publish_from: '' })).toEqual({ ok: true, value: { ...AUTO, auto_publish_from: null } })
+      expect(screenCrewSetting('autopilot', { ...AUTO, auto_publish_from: null }).ok).toBe(true)
+    })
+
+    it.each([
+      ['a string for the switch', { ...AUTO, auto_publish: 'true' }],
+      ['a number for the switch', { ...AUTO, auto_publish: 1 }],
+      ['a null switch', { ...AUTO, auto_publish: null }],
+      ['a missing switch', (({ auto_publish, ...rest }) => rest)(AUTO)],
+      ['an impossible cutoff date', { ...AUTO, auto_publish_from: '2026-02-30' }],
+      ['the second reminder equal to the first', { ...AUTO, nudge_first_days_before: 5, nudge_second_days_before: 5 }],
+      ['the second reminder before the first (more days out)', { ...AUTO, nudge_first_days_before: 5, nudge_second_days_before: 10 }],
+      ['a day count past 60', { ...AUTO, understaffed_days_before: 61 }],
+      ['a fractional day count', { ...AUTO, understaffed_days_before: 4.5 }],
+      ['an unknown field', { ...AUTO, texting: true }],
+    ])('refuses %s', (_label, value) => {
+      expect(screenCrewSetting('autopilot', value).ok).toBe(false)
+    })
+
+    it('says why, in words', () => {
+      expect(screenCrewSetting('autopilot', { ...AUTO, auto_publish: 'yes' })).toEqual({ ok: false, error: 'Publish new booked parties by themselves: yes or no.' })
+      expect(screenCrewSetting('autopilot', { ...AUTO, nudge_second_days_before: 10 }))
+        .toEqual({ ok: false, error: 'The second reminder must come after the first (fewer days before the party).' })
+    })
   })
 
   it('accepts the seed values, and what it accepts reads back unchanged through settingsFromRows', () => {
@@ -319,7 +380,7 @@ describe('publish, spots and fields', () => {
     expect(await addSpot(db.sb, P, ACTOR)).toEqual({ ok: true, role: 'crew' })
   })
 
-  it('a studio rental has no Lead spot: an added spot is a crew spot, and no "no Lead" alert ever fires', async () => {
+  it('a studio rental has no Lead spot: an added spot is a crew spot, and it is never "short of a Lead"', async () => {
     const db = partyDb()
     Object.assign(db.tables.crew_parties[0], { party_kind: 'studio_rental', status: 'published', published_at: NOW.toISOString() })
     db.tables.crew_slots = db.tables.crew_slots.filter(s => s.role === 'crew')
@@ -328,15 +389,41 @@ describe('publish, spots and fields', () => {
     expect(await setSlotsOverride(db.sb, P, 5, ACTOR, S)).toEqual({ ok: true, added: 2 })
     expect(db.tables.crew_slots.filter(s => s.party_id === P).every(s => s.role === 'crew')).toBe(true)
 
-    // Two days out with nobody leading: a themed party alerts, a rental does not.
+    // Two days out. The five crew spots are still open, so the rental IS short — of crew, never of a Lead.
     const soon = new Date('2026-11-05T12:00:00Z')
-    const rental = await loadAdminOverview(db.sb, soon, S)
-    if (rental.kind !== 'ok') throw new Error(rental.error)
-    expect(rental.data.alerts.filter(a => a.kind === 'no_lead')).toEqual([])
+    const short = async () => {
+      const o = await loadAdminOverview(db.sb, soon, S)
+      if (o.kind !== 'ok') throw new Error(o.error)
+      return o.data.alerts.filter(a => a.kind === 'understaffed')
+    }
+    const open = await short()
+    expect(open).toHaveLength(1)
+    expect(open[0].text).toMatch(/still needs 5 crew spots/)
+    expect(open[0].text).not.toMatch(/Party Lead/)
+    // Every crew spot held: a rental with no Lead spot has nothing to be short of.
+    for (const sl of db.tables.crew_slots.filter(x => x.party_id === P)) Object.assign(sl, { status: 'assigned', member_id: 'ava' })
+    expect(await short()).toEqual([])
+    // The same slots on a themed party: crew is full, but there is no Lead — exactly one alert, and it says so.
     db.tables.crew_parties[0].party_kind = 'manual'
-    const themed = await loadAdminOverview(db.sb, soon, S)
-    if (themed.kind !== 'ok') throw new Error(themed.error)
-    expect(themed.data.alerts.filter(a => a.kind === 'no_lead')).toHaveLength(1)
+    const themed = await short()
+    expect(themed).toHaveLength(1)
+    expect(themed[0]).toMatchObject({ severity: 'urgent', partyId: P })
+    expect(themed[0].text).toMatch(/still needs a Party Lead\./)
+    expect(themed[0].text).not.toMatch(/crew spot/)
+  })
+
+  it('the page and the cron share one window: a missing Lead 8 days out is quiet, 6 days out is an alert', async () => {
+    const db = partyDb()
+    Object.assign(db.tables.crew_parties[0], { status: 'published', published_at: NOW.toISOString() })
+    for (const sl of db.tables.crew_slots.filter(x => x.role === 'crew')) Object.assign(sl, { status: 'assigned', member_id: 'ava' })
+    const alertsAt = async (iso: string) => {
+      const o = await loadAdminOverview(db.sb, new Date(iso), S)
+      if (o.kind !== 'ok') throw new Error(o.error)
+      return o.data.alerts.filter(a => a.kind === 'understaffed')
+    }
+    const startMs = Date.parse(START)
+    expect(await alertsAt(new Date(startMs - 8 * 86_400_000).toISOString())).toEqual([])
+    expect(await alertsAt(new Date(startMs - 6 * 86_400_000).toISOString())).toHaveLength(1)
   })
 
   it('a raised count adds the missing spots; a lowered one removes nothing', async () => {

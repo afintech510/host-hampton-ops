@@ -3,7 +3,7 @@
  * `fakeCrewDb`, which enforces `(dedupe_key, channel)` as Postgres does, with
  * fake providers so nothing reaches Quo or Resend.
  */
-import { drainCrewQueue, messageDayLabel, messageTimeLabel, notifyAdmin, notifyMember, type CrewSenders } from '@/lib/crew/notify'
+import { drainCrewQueue, markCoveredByDigest, messageDayLabel, messageTimeLabel, notifyAdmin, notifyMember, renderQueued, type CrewSenders } from '@/lib/crew/notify'
 import { templates } from '@/lib/crew/templates'
 import { fakeCrewDb, type FakeCrewDb } from '../../helpers/fakeCrewDb'
 
@@ -177,7 +177,7 @@ describe('quiet hours DEFER, never cancel, and the queue delivers', () => {
   it('a held cover offer is dropped once somebody took the cover', async () => {
     db.tables.crew_swap_requests = [{ id: 'sw1', status: 'claimed' }]
     const s = senders()
-    await notifyMember({ sb: db.sb, now: QUIET, senders: s }, member() as any, 'coverOffer', templates.coverOffer('Jo', ref, 'crew', '$56.00'), 'cover:sw1:m-1',
+    await notifyMember({ sb: db.sb, now: QUIET, senders: s }, member() as any, 'coverOffer', templates.coverOffer('Jo', ref, 'crew', '$56.00', true), 'cover:sw1:m-1',
       { payload: { swap_id: 'sw1' } })
     const d = await drainCrewQueue({ sb: db.sb, now: new Date('2026-11-03T13:05:00Z'), senders: s })
     expect(d.skipped).toBe(1)
@@ -216,12 +216,74 @@ describe('notifyAdmin', () => {
   it('an in-app row with no member and an email to CREW_ADMIN_EMAIL, once; TEST alerts say so', async () => {
     const s = senders()
     const ctx = { sb: db.sb, now: OPEN_HOUR, senders: s }
-    expect(await notifyAdmin(ctx, 'noLead', { subject: 'No Lead', text: 't' }, 'no_lead:p', { test: true })).toEqual({ in_app: 'sent', email: 'sent' })
-    expect(await notifyAdmin(ctx, 'noLead', { subject: 'No Lead', text: 't' }, 'no_lead:p', { test: true })).toEqual({ in_app: 'duplicate', email: 'duplicate' })
+    expect(await notifyAdmin(ctx, 'understaffed', { subject: 'Short on crew', text: 't' }, 'understaffed:p', { test: true })).toEqual({ in_app: 'sent', email: 'sent' })
+    expect(await notifyAdmin(ctx, 'understaffed', { subject: 'Short on crew', text: 't' }, 'understaffed:p', { test: true })).toEqual({ in_app: 'duplicate', email: 'duplicate' })
     expect(s.email).toHaveBeenCalledTimes(1)
     expect(s.email.mock.calls[0][0]).toBe('alerts@example.test')
-    expect(s.email.mock.calls[0][1].email.subject).toBe('[TEST] No Lead')
+    expect(s.email.mock.calls[0][1].email.subject).toBe('[TEST] Short on crew')
     expect(rows(r => r.member_id === null)).toHaveLength(2)
+  })
+})
+
+describe('notifyAdmin: info alerts', () => {
+  it('{info: true} writes the in-app row and NO email row, and sends nothing', async () => {
+    const s = senders()
+    const ctx = { sb: db.sb, now: OPEN_HOUR, senders: s }
+    expect(await notifyAdmin(ctx, 'coverTaken', { subject: 'Covered', text: 't' }, 'cover_taken:sw1', { info: true })).toEqual({ in_app: 'sent' })
+    expect(rows(r => r.member_id === null).map(r => r.channel)).toEqual(['in_app'])
+    expect(s.email).not.toHaveBeenCalled()
+    // Still deduped on the in-app row.
+    expect(await notifyAdmin(ctx, 'coverTaken', { subject: 'Covered', text: 't' }, 'cover_taken:sw1', { info: true })).toEqual({ in_app: 'duplicate' })
+    expect(rows()).toHaveLength(1)
+  })
+
+  it('the in-app row carries the subject and text the page shows', async () => {
+    const ctx = { sb: db.sb, now: OPEN_HOUR, senders: senders() }
+    await notifyAdmin(ctx, 'spotReleased', { subject: 'Spot released', text: 'Jo released a spot' }, 'spot_released:x', { info: true, test: true })
+    expect(rows()[0].payload).toMatchObject({ subject: '[TEST] Spot released', text: 'Jo released a spot' })
+  })
+
+  it('without {info: true} the alert still emails (the ones that need a person)', async () => {
+    const s = senders()
+    const ctx = { sb: db.sb, now: OPEN_HOUR, senders: s }
+    for (const [t, k] of [['coverNobodyFree', 'cover_nobody:sw1'], ['coverUnclaimed', 'cover_unclaimed:sw1'], ['droppedUncovered', 'dropped_alert:sw1']] as const) {
+      expect(await notifyAdmin(ctx, t, { subject: `Subject for ${t}`, text: 't' }, k)).toEqual({ in_app: 'sent', email: 'sent' })
+    }
+    expect(s.email).toHaveBeenCalledTimes(3)
+    expect(rows(r => r.channel === 'email')).toHaveLength(3)
+  })
+})
+
+describe('markCoveredByDigest', () => {
+  it('records a skipped in-app marker under the ask’s own key, sends nothing, and is idempotent', async () => {
+    const s = senders()
+    const ctx = { sb: db.sb, now: OPEN_HOUR, senders: s }
+    await markCoveredByDigest(ctx, { id: 'm-1' }, 'newParty', 'new_party:p1:m-1', 'p1')
+    await markCoveredByDigest(ctx, { id: 'm-1' }, 'newParty', 'new_party:p1:m-1', 'p1')
+    expect(rows()).toHaveLength(1)
+    expect(rows()[0]).toMatchObject({ member_id: 'm-1', channel: 'in_app', dedupe_key: 'new_party:p1:m-1', status: 'skipped', error: 'sent in a digest' })
+    expect(s.sms).not.toHaveBeenCalled()
+    expect(s.email).not.toHaveBeenCalled()
+  })
+})
+
+describe('renderQueued: the launch switch', () => {
+  const row = { template: 'partyCancelled', payload: { party_id: 'p', theme: 'Glow Party', day_label: 'Thu, Nov 5', time_label: '1 PM – 4 PM' } }
+
+  it('says nothing about a rate while CREW_PAY_LADDER is off', () => {
+    delete process.env.CREW_PAY_LADDER
+    const out = renderQueued(row)!
+    for (const t of [out.sms, out.email.text, out.inApp]) expect(t).not.toMatch(/rate/i)
+  })
+
+  it('keeps the ladder sentence behind CREW_PAY_LADDER=true', () => {
+    process.env.CREW_PAY_LADDER = 'true'
+    expect(renderQueued(row)!.email.text).toMatch(/Your rate doesn't change/)
+  })
+
+  it('anything but exactly "true" is off', () => {
+    process.env.CREW_PAY_LADDER = 'yes'
+    expect(renderQueued(row)!.email.text).not.toMatch(/rate/i)
   })
 })
 

@@ -39,12 +39,18 @@ export default async function CrewHomePage() {
     <main className="crew-wrap">
       <CrewTop firstName={me.firstName} isTest={member.is_test} />
       <h1>Hi {me.firstName}!</h1>
-      <div className="crew-rate">
-        <p className="crew-rate-big">{me.rateLine}</p>
-        <p className="crew-small" style={{ opacity: 0.8, marginTop: '.35rem' }}>
-          <Link href="/crew/pay" style={{ color: '#F4B740', fontWeight: 700 }}>How your pay works</Link>
+      {me.rateLine ? (
+        <div className="crew-rate">
+          <p className="crew-rate-big">{me.rateLine}</p>
+          <p className="crew-small" style={{ opacity: 0.8, marginTop: '.35rem' }}>
+            <Link href="/crew/pay" style={{ color: '#F4B740', fontWeight: 700 }}>How your pay works</Link>
+          </p>
+        </div>
+      ) : (
+        <p className="crew-muted crew-small" style={{ marginTop: 0 }}>
+          Pick the parties you want, and set the days you can&apos;t work in <Link className="crew-link" href="/crew/availability">Availability</Link>.
         </p>
-      </div>
+      )}
 
       {confirm.length > 0 && (
         <section aria-labelledby="crew-confirm">
@@ -76,7 +82,7 @@ export default async function CrewHomePage() {
         <section aria-labelledby="crew-full">
           <h2 id="crew-full">Full parties</h2>
           <p className="crew-muted crew-small" style={{ marginTop: 0 }}>
-            Say you can cover, and if someone on the crew can&apos;t make it, you&apos;ll be among the first asked. No obligation.
+            Join the waitlist, and if someone on the crew can&apos;t make it, you&apos;ll be among the first asked. No obligation.
           </p>
           {full.map(b => <PartyCard key={b.view.id} b={b} canLead={me.canLead} />)}
         </section>

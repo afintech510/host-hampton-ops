@@ -44,7 +44,7 @@ import { checkSmsQuietHours } from '@/lib/quietHours'
 import { gsm7Sanitize, smsSegmentInfo } from '@/lib/smsSegments'
 import { checkFreshness, reminderMaxLatenessMs } from '@/lib/scheduleFreshness'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
-import { crewAdminEmail, crewEnabled, crewOnboardingEnabled, crewSmsEnabled } from '@/lib/crew/settings'
+import { crewAdminEmail, crewEnabled, crewOnboardingEnabled, crewPayLadderEnabled, crewSmsEnabled } from '@/lib/crew/settings'
 import { etDateString } from '@/lib/partyTime'
 import { getMember, insertNotification, type CrewMemberRow, type CrewPartyRow } from '@/lib/crew/db'
 import { SMS_DISCLOSURE, templates, type PartyRef, type Rendered } from '@/lib/crew/templates'
@@ -251,6 +251,21 @@ export async function notifyMember(
   return { kind: 'done', channels }
 }
 
+/**
+ * Record that one ask was folded into a digest the member was sent, so the cron
+ * does not ask again under the ask's own key. A marker, not a send: the row is
+ * `skipped` with the reason, `in_app` only, and nothing is delivered.
+ */
+export async function markCoveredByDigest(
+  ctx: NotifyCtx, member: Pick<CrewMemberRow, 'id'>, template: string, dedupeKey: string, partyId: string,
+): Promise<void> {
+  const r = await insertNotification(ctx.sb, {
+    member_id: member.id, channel: 'in_app', template, dedupe_key: dedupeKey, status: 'skipped',
+    scheduled_for: ctx.now.toISOString(), error: 'sent in a digest', payload: { party_id: partyId },
+  })
+  if (r.kind === 'failed') console.error(`crew/notify: digest marker for ${template} not written: ${r.error}`)
+}
+
 export interface AdminMessage { subject: string; text: string }
 
 /**
@@ -260,7 +275,7 @@ export interface AdminMessage { subject: string; text: string }
  */
 export async function notifyAdmin(
   ctx: NotifyCtx, template: string, msg: AdminMessage, dedupeKey: string,
-  opts: { test?: boolean; payload?: Record<string, unknown> } = {},
+  opts: { test?: boolean; payload?: Record<string, unknown>; info?: boolean } = {},
 ): Promise<Partial<Record<'in_app' | 'email', ChannelOutcome>>> {
   const subject = opts.test ? `[TEST] ${msg.subject}` : msg.subject
   const base = opts.payload ?? {}
@@ -270,6 +285,9 @@ export async function notifyAdmin(
     payload: { ...base, subject, text: msg.text },
   })
   out.in_app = inApp.kind === 'inserted' ? 'sent' : inApp.kind === 'duplicate' ? 'duplicate' : 'failed'
+  // Autopilot: "FYI, it handled it" lives on the page and is never an email. The manager's
+  // inbox is for what needs a person (the manager touch is the exception, not the log).
+  if (opts.info) return out
   const r = await insertNotification(ctx.sb, {
     member_id: null, channel: 'email', template, dedupe_key: dedupeKey, status: 'sending', payload: { ...base, subject },
   })
@@ -298,7 +316,7 @@ export function renderQueued(row: Pick<QueuedRow, 'template' | 'payload'>): Rend
     return templates.partyCancelled({
       theme: str('theme') ?? 'Your party', dayLabel: str('day_label') as string, timeLabel: str('time_label') ?? '',
       url: `${CANONICAL_ORIGIN}/crew`,
-    })
+    }, crewPayLadderEnabled())
   }
   const sms = str('sms')
   if (sms) return { sms, inApp: str('text') ?? sms, email: { subject: str('subject') ?? 'Host Hampton crew', text: sms } }

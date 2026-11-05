@@ -5,6 +5,11 @@
  *   always from Allie).
  * - Pay is dollars a party. Never a level, a tier or points —
  *   `crewCopy.test.ts` renders every template and fails on those words.
+ * - LAUNCH MODE (2026-11-05): no pay figure and no word about a rate moving.
+ *   A template that could say either takes `payLabel: string | null` (null = say
+ *   nothing about pay) and/or `ladder: boolean` (false = say nothing about rates
+ *   going up, down or resetting, or a cover "counting as two parties"). The
+ *   ladder wording is kept, behind the switch, for the day it comes back.
  * - Plain text only. Phase 4's `lib/crew/mail.ts` wraps the email half in HTML
  *   with `escapeFields` / `mailHref`; nothing here is HTML, so nothing here is
  *   escaped (the plain-text half of an email must never be).
@@ -41,6 +46,10 @@ function r(sms: string, subject: string, text: string, inApp?: string): Rendered
 }
 
 const spotWord = (role: 'lead' | 'crew') => (role === 'lead' ? 'the Party Lead spot' : 'a crew spot')
+/** " (label)" for a text, or nothing while pay is hidden. */
+const paren = (label: string | null) => (label ? ` (${label})` : '')
+/** ", label" after a comma-separated clause, or nothing. */
+const comma = (label: string | null) => (label ? `, ${label}` : '')
 
 export const templates = {
   smsDisclosure(firstName: string): Rendered {
@@ -63,7 +72,7 @@ export const templates = {
     return r(
       `Hi ${firstName}! Your Host Hampton crew account is ready: ${loginUrl}`,
       'Your Host Hampton crew account',
-      `Hi ${firstName},\n\nYour Host Hampton crew account is ready. Sign in with this email address to pick parties, set your availability and see your pay:\n${loginUrl}`,
+      `Hi ${firstName},\n\nYour Host Hampton crew account is ready. Sign in with this email address to pick parties and set your availability:\n${loginUrl}`,
     )
   },
 
@@ -97,20 +106,51 @@ If you didn't ask for it, you can ignore this email.`,
     )
   },
 
-  newParty(p: PartyRef, payLabel: string): Rendered {
+  newParty(p: PartyRef, payLabel: string | null): Rendered {
     const kids = p.kids ? `, ${p.kids} kids` : ''
     return r(
-      `New party: ${p.theme} ${p.dayLabel} ${p.timeLabel}${kids}, ${payLabel}. Claim a spot: ${p.url}`,
+      `New party: ${p.theme} ${p.dayLabel} ${p.timeLabel}${kids}${comma(payLabel)}. Claim a spot: ${p.url}`,
       `New party: ${p.theme}, ${p.dayLabel}`,
-      `${p.theme} on ${p.dayLabel}, ${p.timeLabel}${kids}. ${payLabel} for you.\nClaim a spot: ${p.url}`,
+      `${p.theme} on ${p.dayLabel}, ${p.timeLabel}${kids}.${payLabel ? ` ${payLabel} for you.` : ''}\nClaim a spot: ${p.url}`,
     )
   },
 
-  claimConfirmed(p: PartyRef, payLabel: string): Rendered {
+  /** The same party, still short of crew, as it gets closer. `spots` is how many are open for THIS person. */
+  openSpots(p: PartyRef, spots: number, payLabel: string | null): Rendered {
+    const n = `${spots} ${spots === 1 ? 'spot' : 'spots'}`
     return r(
-      `You're on ${p.theme} ${p.dayLabel} ${p.timeLabel} (${payLabel}). Details: ${p.url}`,
+      `Still need crew: ${p.theme} ${p.dayLabel} ${p.timeLabel}, ${n} open${comma(payLabel)}. Can you take one? ${p.url}`,
+      `Still need crew: ${p.theme}, ${p.dayLabel}`,
+      `${p.theme} on ${p.dayLabel}, ${p.timeLabel} still has ${n} open.${payLabel ? ` ${payLabel} for you.` : ''} If you're free, claim one here (or say you can cover and we'll ask you first if someone drops):\n${p.url}`,
+    )
+  },
+
+  /** A spot opened on a party the person is waitlisted for (someone gave notice early): first pick. */
+  spotOpened(p: PartyRef, role: 'lead' | 'crew', payLabel: string | null): Rendered {
+    return r(
+      `A spot opened on ${p.theme} ${p.dayLabel} ${p.timeLabel}. You're on the waitlist, so you get first pick: ${spotWord(role)}${paren(payLabel)}. ${p.url}`,
+      `A spot opened: ${p.theme}, ${p.dayLabel}`,
+      `Someone gave notice on ${p.theme}, ${p.dayLabel} ${p.timeLabel}, and ${spotWord(role)} is open${comma(payLabel)}. You're on the waitlist, so you get first pick. First to claim gets it:\n${p.url}`,
+    )
+  },
+
+  /** Several asks at once for one person (a batch of parties published together) as one message. */
+  partiesDigest(count: number, open: boolean, url: string): Rendered {
+    const n = `${count} ${count === 1 ? 'party' : 'parties'}`
+    return r(
+      open ? `${n} still need crew. See which ones you can take: ${url}` : `${n} just went up. See which ones you can take: ${url}`,
+      open ? `${n} still need crew` : `${n} just went up`,
+      open
+        ? `${n} still have open spots. If you're free, take the ones you want (or say you can cover):\n${url}`
+        : `${n} just went up on the schedule. Take the ones you want:\n${url}`,
+    )
+  },
+
+  claimConfirmed(p: PartyRef, payLabel: string | null): Rendered {
+    return r(
+      `You're on ${p.theme} ${p.dayLabel} ${p.timeLabel}${paren(payLabel)}. Details: ${p.url}`,
       `You're on: ${p.theme}, ${p.dayLabel}`,
-      `You're on ${p.theme}, ${p.dayLabel} ${p.timeLabel}. ${payLabel} for the party.\nDetails: ${p.url}`,
+      `You're on ${p.theme}, ${p.dayLabel} ${p.timeLabel}.${payLabel ? ` ${payLabel} for the party.` : ''}\nDetails: ${p.url}`,
     )
   },
 
@@ -152,7 +192,14 @@ If you didn't ask for it, you can ignore this email.`,
     )
   },
 
-  earlyReleased(p: PartyRef, newRateLabel: string, waived: boolean, stepLabel: string): Rendered {
+  earlyReleased(p: PartyRef, newRateLabel: string, waived: boolean, stepLabel: string, ladder: boolean): Rendered {
+    if (!ladder) {
+      return r(
+        `You're off ${p.theme} ${p.dayLabel}. Thanks for the notice!`,
+        `You're off ${p.theme}, ${p.dayLabel}`,
+        `Thanks for the notice. You're off ${p.theme}, ${p.dayLabel}, and the spot is open for someone else.`,
+      )
+    }
     const effect = waived
       ? `Your rate stays at ${newRateLabel} a party.`
       : `Your rate is now ${newRateLabel} a party; every party you work adds ${stepLabel}.`
@@ -163,48 +210,60 @@ If you didn't ask for it, you can ignore this email.`,
     )
   },
 
-  coverOffer(requesterFirst: string, p: PartyRef, role: 'lead' | 'crew', payLabel: string): Rendered {
+  coverOffer(requesterFirst: string, p: PartyRef, role: 'lead' | 'crew', payLabel: string | null, ladder: boolean): Rendered {
+    const two = ladder ? ', and covering a late cancel counts as two parties toward your rate' : ''
     return r(
-      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.timeLabel}. You're a standby, claim ${spotWord(role)} (${payLabel}): ${p.url}`,
+      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.timeLabel}. You're a standby, claim ${spotWord(role)}${paren(payLabel)}: ${p.url}`,
       `Cover needed: ${p.theme}, ${p.dayLabel}`,
-      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.timeLabel}. You're a standby, so you get first pick: ${spotWord(role)}, ${payLabel}. First to claim gets it, and covering a late cancel counts as two parties toward your rate.\n${p.url}`,
+      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.timeLabel}. You're a standby, so you get first pick: ${spotWord(role)}${comma(payLabel)}. First to claim gets it${two}.\n${p.url}`,
     )
   },
 
-  /** Allie widened a late cancel to everyone free that day: not only the standbys. */
-  coverOpen(requesterFirst: string, p: PartyRef, role: 'lead' | 'crew', payLabel: string): Rendered {
+  /** A late cancel offered to everyone free that day (the manager, or autopilot): not only the standbys. */
+  coverOpen(requesterFirst: string, p: PartyRef, role: 'lead' | 'crew', payLabel: string | null, ladder: boolean): Rendered {
+    const two = ladder ? ', and covering a late cancel counts as two parties toward your rate' : ''
     return r(
-      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.timeLabel}. You're free that day, want ${spotWord(role)} (${payLabel})? ${p.url}`,
+      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.timeLabel}. You're free that day, want ${spotWord(role)}${paren(payLabel)}? ${p.url}`,
       `Spot open: ${p.theme}, ${p.dayLabel}`,
-      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.timeLabel}, and you're free that day: ${spotWord(role)}, ${payLabel}. First to claim gets it, and covering a late cancel counts as two parties toward your rate.\n${p.url}`,
+      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.timeLabel}, and you're free that day: ${spotWord(role)}${comma(payLabel)}. First to claim gets it${two}.\n${p.url}`,
     )
   },
 
-  coveredRequester(p: PartyRef): Rendered {
+  coveredRequester(p: PartyRef, ladder: boolean): Rendered {
+    const keep = ladder ? " Your rate doesn't change." : ''
     return r(
-      `You're covered for ${p.theme} ${p.dayLabel}. Your rate doesn't change. Thanks for asking early!`,
+      `You're covered for ${p.theme} ${p.dayLabel}.${keep} Thanks for asking early!`,
       `You're covered for ${p.theme}`,
-      `Someone took your spot at ${p.theme}, ${p.dayLabel}. Your rate doesn't change.`,
+      `Someone took your spot at ${p.theme}, ${p.dayLabel}.${keep}`,
     )
   },
 
-  coverClaimed(p: PartyRef, payLabel: string): Rendered {
+  coverClaimed(p: PartyRef, payLabel: string | null, ladder: boolean): Rendered {
+    const two = ladder ? ' It counts as two parties toward your rate.' : ''
     return r(
-      `Thanks for covering! You're on ${p.theme} ${p.dayLabel} ${p.timeLabel} (${payLabel}). It counts as two parties toward your rate. ${p.url}`,
+      `Thanks for covering! You're on ${p.theme} ${p.dayLabel} ${p.timeLabel}${paren(payLabel)}.${two} ${p.url}`,
       `You're covering ${p.theme}, ${p.dayLabel}`,
-      `Thanks for covering. You're on ${p.theme}, ${p.dayLabel} ${p.timeLabel}, ${payLabel}. Once you've worked it, it counts as two parties toward your rate.\n${p.url}`,
+      `Thanks for covering. You're on ${p.theme}, ${p.dayLabel} ${p.timeLabel}${comma(payLabel)}.${ladder ? " Once you've worked it, it counts as two parties toward your rate." : ''}\n${p.url}`,
     )
   },
 
-  unclaimedWarning(p: PartyRef, resetRateLabel: string): Rendered {
+  unclaimedWarning(p: PartyRef, resetRateLabel: string, ladder: boolean): Rendered {
+    const drop = ladder ? ` (that puts you back to ${resetRateLabel} a party)` : ''
     return r(
       `Nobody has taken ${p.theme} ${p.dayLabel} yet, so you're still on. Options: ${p.url}`,
       `Still uncovered: ${p.theme}, ${p.dayLabel}`,
-      `Nobody has taken your spot at ${p.theme}, ${p.dayLabel} yet, so you're still on. You can keep waiting, keep the spot, or drop it anyway (that puts you back to ${resetRateLabel} a party): ${p.url}`,
+      `Nobody has taken your spot at ${p.theme}, ${p.dayLabel} yet, so you're still on. You can keep waiting, keep the spot, or drop it anyway${drop}: ${p.url}`,
     )
   },
 
-  droppedUncovered(p: PartyRef, rateLabel: string, waived: boolean, stepLabel: string): Rendered {
+  droppedUncovered(p: PartyRef, rateLabel: string, waived: boolean, stepLabel: string, ladder: boolean): Rendered {
+    if (!ladder) {
+      return r(
+        `You're off ${p.theme} ${p.dayLabel}. ${TENANT.people.customerSignoff} knows the spot is open.`,
+        `You're off ${p.theme}, ${p.dayLabel}`,
+        `You're off ${p.theme}, ${p.dayLabel}. ${TENANT.people.customerSignoff} knows the spot is open.`,
+      )
+    }
     const effect = waived
       ? `Your rate stays at ${rateLabel} a party for now.`
       : `You're back to ${rateLabel} a party; every party you work adds ${stepLabel}.`
@@ -231,11 +290,12 @@ If you didn't ask for it, you can ignore this email.`,
     )
   },
 
-  partyCancelled(p: PartyRef): Rendered {
+  partyCancelled(p: PartyRef, ladder: boolean): Rendered {
+    const keep = ladder ? " Your rate doesn't change." : ''
     return r(
-      `Heads up: ${p.theme} ${p.dayLabel} was cancelled. Your rate doesn't change.`,
+      `Heads up: ${p.theme} ${p.dayLabel} was cancelled.${keep}`,
       `Cancelled: ${p.theme}, ${p.dayLabel}`,
-      `${p.theme} on ${p.dayLabel} was cancelled by the family. Your rate doesn't change.`,
+      `${p.theme} on ${p.dayLabel} was cancelled by the family.${keep}`,
     )
   },
 
@@ -279,7 +339,32 @@ export const adminTemplates = {
   coverEscalated(memberFirst: string, p: PartyRef, adminUrl: string) {
     return {
       subject: `No standby took it: ${p.theme}, ${p.dayLabel}`,
-      text: `No standby has taken ${memberFirst}'s spot at ${p.theme}, ${p.dayLabel} ${p.timeLabel}. Offer it to everyone free that day, or assign someone:\n${adminUrl}`,
+      text: `No standby took ${memberFirst}'s spot at ${p.theme}, ${p.dayLabel} ${p.timeLabel}, so it is being offered to everyone free that day. You only hear about it again if it is still open 48 hours before the party.\n${adminUrl}`,
+    }
+  },
+  /** Autopilot's offer to everyone free that day went out. Information; nothing to do. */
+  coverOfferedToAll(memberFirst: string, p: PartyRef, asked: number, adminUrl: string) {
+    return {
+      subject: `Offered to everyone free: ${p.theme}, ${p.dayLabel}`,
+      text: `${memberFirst}'s spot at ${p.theme}, ${p.dayLabel} ${p.timeLabel} was offered to ${asked} crew ${asked === 1 ? 'member' : 'members'} who are free that day. ${memberFirst} stays on until someone takes it.\n${adminUrl}`,
+    }
+  },
+  /** Nobody could even be asked: this one needs a person. */
+  coverNobodyFree(memberFirst: string, p: PartyRef, adminUrl: string) {
+    return {
+      subject: `Nobody free to cover: ${p.theme}, ${p.dayLabel}`,
+      text: `${memberFirst} can't make ${p.theme}, ${p.dayLabel} ${p.timeLabel} and nobody on the crew is free to cover. ${memberFirst} stays on until you find someone:\n${adminUrl}`,
+    }
+  },
+  /** The one routine manager touch: a published party still short of crew (or a Lead) as the day nears. */
+  understaffed(p: PartyRef, crewShort: number, leadShort: boolean, daysOut: number, adminUrl: string) {
+    const need = [
+      leadShort ? 'a Party Lead' : null,
+      crewShort > 0 ? `${crewShort} crew ${crewShort === 1 ? 'spot' : 'spots'}` : null,
+    ].filter(Boolean).join(' and ')
+    return {
+      subject: `Short on crew: ${p.theme}, ${p.dayLabel}`,
+      text: `${p.theme}, ${p.dayLabel} ${p.timeLabel} is ${daysOut} ${daysOut === 1 ? 'day' : 'days'} out and still needs ${need}. The crew has been asked already.\n${adminUrl}`,
     }
   },
   coverTaken(memberFirst: string, coverFirst: string, p: PartyRef, adminUrl: string) {
@@ -304,12 +389,6 @@ export const adminTemplates = {
     return {
       subject: `URGENT open spot: ${p.theme}, ${p.dayLabel}`,
       text: `${memberFirst} dropped ${p.theme}, ${p.dayLabel} ${p.timeLabel} with nobody covering. The spot is open.\n${adminUrl}`,
-    }
-  },
-  noLead(p: PartyRef, adminUrl: string) {
-    return {
-      subject: `No Party Lead yet: ${p.theme}, ${p.dayLabel}`,
-      text: `${p.theme}, ${p.dayLabel} ${p.timeLabel} still has no Party Lead.\n${adminUrl}`,
     }
   },
   attendanceDue(p: PartyRef, adminUrl: string) {

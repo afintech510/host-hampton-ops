@@ -32,10 +32,16 @@ export interface CrewMeView {
   skills: string[]
   smsOptIn: boolean
   emailOptIn: boolean
-  crewRateCents: number
+  /** Null while pay figures are hidden (`CrewSettings.payVisible`, the launch default). */
+  crewRateCents: number | null
   leadRateCents: number | null
   atTopRate: boolean
-  rateLine: string          // "You're at $58.50 a party ($77.50 leading). One more party makes it $61.00."
+  rateLine: string | null   // "You're at $58.50 a party ($77.50 leading). One more party makes it $61.00."
+}
+
+/** A dollar figure for a crew member, or null when pay is not shown. The one gate every pay field goes through. */
+export function shownCents(cents: number, s: CrewSettings): number | null {
+  return s.payVisible ? cents : null
 }
 
 export function meView(m: CrewMemberRow, s: CrewSettings): CrewMeView {
@@ -50,10 +56,10 @@ export function meView(m: CrewMemberRow, s: CrewSettings): CrewMeView {
     skills: Array.isArray(m.skills) ? m.skills.map(String) : [],
     smsOptIn: !!m.sms_opt_in,
     emailOptIn: !!m.email_opt_in,
-    crewRateCents: r.crewCents,
-    leadRateCents: m.can_lead ? r.leadCents : null,
-    atTopRate: r.atMax,
-    rateLine: nextStepLabel(m.steps, !!m.can_lead, s),
+    crewRateCents: shownCents(r.crewCents, s),
+    leadRateCents: m.can_lead ? shownCents(r.leadCents, s) : null,
+    atTopRate: s.ladderEnabled && r.atMax,
+    rateLine: s.ladderEnabled ? nextStepLabel(m.steps, !!m.can_lead, s) : null,
   }
 }
 
@@ -67,8 +73,8 @@ export interface TeammateView {
 export interface OpenSpotView {
   slotId: string
   role: SlotRole
-  /** What THIS member would be paid for this spot, at their step. */
-  payCents: number
+  /** What THIS member would be paid for this spot, at their step. Null while pay is hidden. */
+  payCents: number | null
   /** A Lead spot is offered only to a member who may hold it. */
   canClaim: boolean
 }
@@ -78,7 +84,7 @@ export interface MySlotView {
   role: SlotRole
   status: SlotStatus
   confirmed: boolean
-  payCents: number
+  payCents: number | null
 }
 
 export interface CrewPartyView {
@@ -131,7 +137,7 @@ export function partyView(
     ? live.filter(sl => sl.status === 'open').map(sl => ({
         slotId: sl.id,
         role: sl.role,
-        payCents: partyPayCents(sl.role, viewer.steps, extra, s),
+        payCents: shownCents(partyPayCents(sl.role, viewer.steps, extra, s), s),
         canClaim: !onIt && (sl.role !== 'lead' || !!viewer.can_lead),
       }))
     : []
@@ -163,7 +169,7 @@ export function partyView(
           role: mine.role,
           status: mine.status,
           confirmed: !!mine.confirmed_at,
-          payCents: partyPayCents(mine.role, viewer.steps, extra, s),
+          payCents: shownCents(partyPayCents(mine.role, viewer.steps, extra, s), s),
         }
       : null,
     openSpots,
@@ -209,7 +215,7 @@ export interface TestPickView {
   id: string
   firstName: string
   lastName: string | null
-  rateCents: number
+  rateCents: number | null
   canLead: boolean
 }
 
@@ -221,7 +227,7 @@ export function testPickView(
     id: m.id,
     firstName: m.first_name,
     lastName: m.last_name ?? null,
-    rateCents: partyRateCents('crew', m.steps, s),
+    rateCents: shownCents(partyRateCents('crew', m.steps, s), s),
     canLead: !!m.can_lead,
   }))
 }
@@ -237,6 +243,8 @@ export interface LadderRow {
 }
 
 export function payLadder(steps: number, canLead: boolean, s: CrewSettings): LadderRow[] {
+  // No ladder, no table: with the switch off there is no "how your rate grows".
+  if (!s.ladderEnabled) return []
   const mine = clampSteps(steps, s)
   return Array.from({ length: s.pay.maxSteps + 1 }, (_, i) => ({
     index: i,
@@ -253,6 +261,15 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * what the rules do. Dollars a party only; `crewCopy.test.ts` bans the words.
  */
 export function cancellingLines(s: CrewSettings, now: Date): string[] {
+  if (!s.ladderEnabled) {
+    // Launch wording: what happens to the SPOT, never to anybody's pay.
+    const d = plural(s.drops.lateDropDays, 'day', 'days')
+    return [
+      `Can't make it, with ${d} or more notice? Your spot opens up for the rest of the crew right away.`,
+      `With less than ${d} notice, we ask the crew who said they can cover. You stay on the party until one of them takes it.`,
+      `If nobody covers and you can't make it anyway, you can drop the party and the manager will find someone. Please only do that if you truly can't be there.`,
+    ]
+  }
   const step = s.pay.stepCents
   const start = formatCents(s.pay.crewStartCents)
   const days = s.drops.lateDropDays

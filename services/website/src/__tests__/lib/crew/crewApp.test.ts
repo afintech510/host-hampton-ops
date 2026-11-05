@@ -6,6 +6,7 @@
 import { claimRefusal, DEFAULT_SETTINGS, partiesBlockedBy, type CrewSettings } from '@/lib/crew/rules'
 import { cancellingLines, payLadder, testPickView, claimRefusalText } from '@/lib/crew/view'
 import { screenSkills, splitSkills, CREW_SKILLS } from '@/lib/crew/skills'
+import { LADDER_ON, PAY_SHOWN_LADDER_OFF } from '../../helpers/crewLadder'
 
 const S = DEFAULT_SETTINGS
 // Sat 2026-11-14, 1:00–4:00 PM ET (EST, UTC-5).
@@ -117,28 +118,38 @@ describe('testPickView', () => {
   it('carries a name, a rate and can-lead, and never an email or a phone', () => {
     const row = { id: 'id-1', first_name: 'Ava', last_name: 'Martinez', steps: 3, can_lead: true,
       email: 'SENTINEL-EMAIL@example.com', phone: '+16315550199', admin_notes: 'SENTINEL-NOTE' } as any
-    const out = testPickView([row], S)
+    const out = testPickView([row], LADDER_ON)
     expect(out).toEqual([{ id: 'id-1', firstName: 'Ava', lastName: 'Martinez', rateCents: 5850, canLead: true }])
     expect(JSON.stringify(out)).not.toMatch(/SENTINEL|\+1631/)
+  })
+
+  it('at launch the rate is null: the picker names people, not dollars', () => {
+    const row = { id: 'id-1', first_name: 'Ava', last_name: 'Martinez', steps: 3, can_lead: true } as any
+    expect(testPickView([row], S)).toEqual([{ id: 'id-1', firstName: 'Ava', lastName: 'Martinez', rateCents: null, canLead: true }])
+    expect(testPickView([row], PAY_SHOWN_LADDER_OFF)[0].rateCents).toBe(5850)
   })
 })
 
 describe('payLadder', () => {
+  it('is empty while the ladder is off: there is no "how your rate grows" table at launch', () => {
+    expect(payLadder(3, true, S)).toEqual([])
+    expect(payLadder(3, true, PAY_SHOWN_LADDER_OFF)).toEqual([])
+  })
   it('runs $51 → $71 crew and $70 → $90 leading, marking my row', () => {
-    const l = payLadder(3, true, S)
+    const l = payLadder(3, true, LADDER_ON)
     expect(l).toHaveLength(9)
     expect(l[0]).toMatchObject({ crewCents: 5100, leadCents: 7000 })
     expect(l[8]).toMatchObject({ crewCents: 7100, leadCents: 9000 })
     expect(l.filter(r => r.isMine).map(r => r.index)).toEqual([3])
   })
   it('no Lead column for a member who cannot lead', () => {
-    expect(payLadder(0, false, S).every(r => r.leadCents === null)).toBe(true)
+    expect(payLadder(0, false, LADDER_ON).every(r => r.leadCents === null)).toBe(true)
   })
 })
 
 describe('cancellingLines', () => {
   const BANNED = /\b(level|levels|tier|tiers|points?|captain|crew pro|pro)\b/i
-  const launched: CrewSettings = { ...S, launch: { launchDate: '2026-01-01', graceDays: 60 } }
+  const launched: CrewSettings = { ...LADDER_ON, launch: { launchDate: '2026-01-01', graceDays: 60 } }
 
   it('says what the settings do, in dollars, with no tier words', () => {
     const lines = cancellingLines(launched, NOW)
@@ -153,14 +164,27 @@ describe('cancellingLines', () => {
   })
 
   it('says so during the launch grace', () => {
-    expect(cancellingLines(S, NOW).join(' ')).toMatch(/While we're getting started, none of this lowers your rate/)
-    const inGrace: CrewSettings = { ...S, launch: { launchDate: '2026-10-20', graceDays: 60 } }
+    expect(cancellingLines(LADDER_ON, NOW).join(' ')).toMatch(/While we're getting started, none of this lowers your rate/)
+    const inGrace: CrewSettings = { ...LADDER_ON, launch: { launchDate: '2026-10-20', graceDays: 60 } }
     expect(cancellingLines(inGrace, NOW).join(' ')).toMatch(/until Sat, Dec 19/)
   })
 
   it('follows a changed setting rather than a sentence typed once', () => {
-    const s: CrewSettings = { ...launched, drops: { ...S.drops, lateDropDays: 10 }, steps: { ...S.steps, earlyRelease: 0 } }
+    const s: CrewSettings = { ...launched, drops: { ...LADDER_ON.drops, lateDropDays: 10 }, steps: { ...LADDER_ON.steps, earlyRelease: 0 } }
     const text = cancellingLines(s, NOW).join(' ')
     expect(text).toMatch(/10 days or more notice\? Your spot opens up for the rest of the crew and your rate stays the same/)
+  })
+
+  it('LADDER OFF: three no-money lines, and not one word about rates, steps or dollars', () => {
+    for (const settings of [S, PAY_SHOWN_LADDER_OFF, { ...S, launch: { launchDate: '2026-01-01', graceDays: 60 } }]) {
+      const lines = cancellingLines(settings, NOW)
+      expect(lines).toHaveLength(3)
+      const text = lines.join(' ')
+      expect(text).not.toContain('$')
+      expect(text).not.toMatch(/\b(rate|rates|step|steps|two parties)\b/i)
+      expect(text).not.toMatch(BANNED)
+      expect(text).not.toMatch(/getting started/)
+      expect(text).toMatch(/7 days or more notice/)
+    }
   })
 })

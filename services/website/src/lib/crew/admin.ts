@@ -16,7 +16,7 @@
 
 import type { getSupabase } from '@/lib/supabase'
 import {
-  attendanceAlertAt, confirmationSchedule, isBlockedByAvailability, leadAlertAt, localParts, ratesFor,
+  attendanceAlertAt, confirmationSchedule, isBlockedByAvailability, localParts, ratesFor, staffingShortfall, understaffedAlertAt,
   shiftsOverlap, unclaimedWarningAt, type CrewSettings, type DateBlock, type PartyWindow, type RecurringBlock, type SlotRole,
 } from '@/lib/crew/rules'
 import {
@@ -118,7 +118,7 @@ export function memberFit(
 export interface AdminAlert {
   kind:
     | 'unconfirmed' | 'released' | 'cover_open' | 'cover_escalated' | 'cover_unclaimed_48h' | 'dropped'
-    | 'attendance' | 'no_lead' | 'needs_review' | 'needs_time' | 'sync_flag' | 'unclassified' | 'reactivated'
+    | 'attendance' | 'understaffed' | 'needs_review' | 'needs_time' | 'sync_flag' | 'unclassified' | 'reactivated'
   severity: 'urgent' | 'warn' | 'info'
   text: string
   partyId?: string
@@ -240,9 +240,13 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
           alerts.push({ kind: 'unconfirmed', severity: 'warn', text: `${nameOf(sl.member_id)} has not confirmed ${label(p)}.`, partyId: p.id, memberId: sl.member_id ?? undefined })
         }
       }
-      // A studio rental has no Lead spot, so it can never be "missing" one.
-      if (p.party_kind !== 'studio_rental' && !leadFilled && nowMs >= leadAlertAt(startsAt, s).getTime()) {
-        alerts.push({ kind: 'no_lead', severity: 'urgent', text: `No Party Lead yet: ${label(p)}.`, partyId: p.id })
+      // The same question the emailed alert asks (`staffingShortfall` +
+      // `understaffedAlertAt`): short of crew, or of a Lead — never for a studio
+      // rental, which has no Lead spot. One definition, so the page and the inbox agree.
+      const sf = staffingShortfall(p, pws.slots)
+      if ((sf.crewShort > 0 || sf.leadShort) && nowMs >= understaffedAlertAt(startsAt, sf.leadShort, s).getTime()) {
+        const need = [sf.leadShort ? 'a Party Lead' : null, sf.crewShort > 0 ? `${sf.crewShort} crew ${sf.crewShort === 1 ? 'spot' : 'spots'}` : null].filter(Boolean).join(' and ')
+        alerts.push({ kind: 'understaffed', severity: 'urgent', text: `Short on crew: ${label(p)} still needs ${need}.`, partyId: p.id })
       }
     }
     if (p.status === 'published' && !p.attendance_marked_at && nowMs >= attendanceAlertAt(endsAt, s).getTime()) {
@@ -302,7 +306,12 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
     if (nowMs >= unclaimedWarningAt(new Date(p.starts_at), s).getTime()) {
       alerts.push({ kind: 'cover_unclaimed_48h', severity: 'urgent', text: `Still uncovered: ${who} on ${label(p)} (${sw.reason}).`, partyId: p.id, memberId: sw.requester_id })
     } else if (sw.status === 'escalated') {
-      alerts.push({ kind: 'cover_escalated', severity: 'urgent', text: `No standby took ${who}'s spot on ${label(p)} (${sw.reason}).`, partyId: p.id, memberId: sw.requester_id })
+      // Autopilot offers an escalated cancel to everyone free; it only becomes urgent (above) at the 48-hour mark.
+      alerts.push({
+        kind: 'cover_escalated', severity: sw.offered_to_all_at ? 'warn' : 'urgent',
+        text: `No standby took ${who}'s spot on ${label(p)} (${sw.reason}).${sw.offered_to_all_at ? ' It has been offered to everyone free that day.' : ' It is being offered to everyone free that day.'}`,
+        partyId: p.id, memberId: sw.requester_id,
+      })
     } else {
       alerts.push({ kind: 'cover_open', severity: 'warn', text: `${who} can't make ${label(p)} (${sw.reason}); the standbys have been asked.`, partyId: p.id, memberId: sw.requester_id })
     }

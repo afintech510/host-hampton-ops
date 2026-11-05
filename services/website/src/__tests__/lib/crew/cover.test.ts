@@ -5,7 +5,8 @@
  * production by scripts/crew/race-test.mjs), and fake providers.
  */
 import { DEFAULT_SETTINGS, type CrewSettings } from '@/lib/crew/rules'
-import { assignCover, claimCover, dropAnyway, offerToEveryone, releaseMySpot, withdrawCover } from '@/lib/crew/cover'
+import { LADDER_ON } from '../../helpers/crewLadder'
+import { assignCover, autoOfferToEveryone, claimCover, dropAnyway, eligibleFor, offerToEveryone, releaseMySpot, withdrawCover } from '@/lib/crew/cover'
 import { runConfirmations, runCovers, runCrewJobs, runPartyAlerts, type JobsCtx } from '@/lib/crew/jobs'
 import { handleCrewInboundSms, isConfirmReply } from '@/lib/crew/inbound'
 import type { CrewSenders } from '@/lib/crew/notify'
@@ -15,8 +16,12 @@ const H = 3_600_000
 let NOW = new Date('2026-11-02T15:00:00Z')            // Mon 10:00 EST
 const START = '2026-11-05T18:00:00.000Z'              // Thu 1 PM EST: 75 h out, a late cancel
 const END = '2026-11-05T21:00:00.000Z'
-const S: CrewSettings = DEFAULT_SETTINGS              // no launch date: in grace
-const LIVE: CrewSettings = { ...DEFAULT_SETTINGS, launch: { launchDate: '2026-01-01', graceDays: 0 } }
+// The step arithmetic below runs with the pay ladder ON (it is OFF at launch: see the launch-mode blocks).
+const S: CrewSettings = LADDER_ON                     // no launch date: in grace
+const LIVE: CrewSettings = { ...LADDER_ON, launch: { launchDate: '2026-01-01', graceDays: 0 } }
+// LAUNCH MODE: ladder and pay figures off. `OFF` is in grace, `OFF_LIVE` is past it.
+const OFF: CrewSettings = DEFAULT_SETTINGS
+const OFF_LIVE: CrewSettings = { ...DEFAULT_SETTINGS, launch: { launchDate: '2026-01-01', graceDays: 0 } }
 
 const person = (id: string, over: Record<string, unknown> = {}) => ({
   id, first_name: id.toUpperCase(), last_name: null, email: `${id}@example.test`, phone: null, steps: 3, can_lead: false,
@@ -89,9 +94,11 @@ describe('a late cancel', () => {
     expect(keys()).toEqual([`cover:${swap.id}:b`, `cover_requested:${swap.id}`])
     // Not C (blocked), not D/E (not standbys), not the owner, not A.
     expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'assigned', member_id: 'a' })
-    const alert = notes(r => r.template === 'coverRequested' && r.channel === 'email')[0]
-    expect(alert.status).toBe('sent')
-    expect(tx.email.mock.calls.find(c => c[0] === 'alerts@example.test')![1].email.text).toMatch(/reason: sick: flu/)
+    // FYI alerts are in-app only (autopilot handles it): the reason is on the page, never in Allie's inbox.
+    const alert = notes(r => r.template === 'coverRequested')
+    expect(alert.map(r => r.channel)).toEqual(['in_app'])
+    expect(alert[0].payload.text).toMatch(/reason: sick: flu/)
+    expect(tx.email.mock.calls.some(c => c[0] === 'alerts@example.test')).toBe(false)
     // The cover offer to B never names the reason.
     const offer = tx.email.mock.calls.find(c => c[0] === 'b@example.test')![1]
     expect(JSON.stringify(offer)).not.toMatch(/sick|flu/)
@@ -146,8 +153,10 @@ describe('a late cancel', () => {
     const swap = db.tables.crew_swap_requests[0]
     expect(await claimCover(ctx(), S, member('e'), swap.id)).toEqual({ kind: 'refused', status: 409, error: 'Someone just took it.' })
     const offered = await offerToEveryone(ctx(), S, swap.id, 'admin:allie@example.test')
-    // B, D and E are free; C blocked the day; A is the canceller; the owner is never asked.
-    expect(offered).toEqual({ kind: 'ok', asked: 3 })
+    // D and E are free. B was already asked in the standby round (not asked twice), C blocked the
+    // day, A is the canceller, and the owner is never asked.
+    expect(offered).toEqual({ kind: 'ok', asked: 2 })
+    expect(keys(r => r.template === 'coverOpen' && r.channel === 'in_app')).toEqual([`cover_all:${swap.id}:d`, `cover_all:${swap.id}:e`])
     expect((await offerToEveryone(ctx(), S, swap.id, 'admin:allie@example.test')).kind).toBe('refused')
     expect(await claimCover(ctx(), S, member('e'), swap.id)).toEqual({ kind: 'ok' })
     expect(notes(r => r.template === 'coverOfferedToAll')[0].payload.actor).toBe('admin:allie@example.test')
@@ -284,16 +293,73 @@ describe('the cron: confirmations and alerts', () => {
     expect((await runConfirmations(jobs(), parties(), byId())).dayBefore).toBe(0)
   })
 
-  it('the no-Lead alert fires 7 days out for a party with no Lead, never for a studio rental', async () => {
-    db.tables.crew_slots = [slot('s-lead', null, { role: 'lead' }), slot('s-a', 'a')]
-    db.tables.crew_parties.push(party({ id: 'p2', booking_id: 'b2', party_kind: 'studio_rental' }))
-    db.tables.crew_slots.push(slot('s-r', null, { party_id: 'p2' }))
-    const ps = [
-      { party: db.tables.crew_parties[0] as any, slots: db.tables.crew_slots.filter(s => s.party_id === 'p1') as any[] },
-      { party: db.tables.crew_parties[1] as any, slots: db.tables.crew_slots.filter(s => s.party_id === 'p2') as any[] },
-    ]
-    expect((await runPartyAlerts(jobs(), ps)).noLead).toBe(1)
-    expect(keys()).toEqual(['no_lead:p1'])
+  describe('the understaffed alert (one per party, shared with the page)', () => {
+    const DAY = 24 * H
+    const at = (daysOut: number) => new Date(Date.parse(START) - daysOut * DAY)
+    // p1: a themed party, Lead spot open, the one crew spot held.
+    const noLead = () => {
+      db.tables.crew_slots = [slot('s-lead', null, { role: 'lead' }), slot('s-a', 'a')]
+      return [{ party: db.tables.crew_parties[0] as any, slots: db.tables.crew_slots as any[] }]
+    }
+    // p2: a studio rental; there is no Lead spot at all.
+    const rental = (crew: (string | null)[]) => {
+      db.tables.crew_parties.push(party({ id: 'p2', booking_id: 'b2', party_kind: 'studio_rental' }))
+      const rows = crew.map((m, i) => slot(`s-r${i}`, m, { party_id: 'p2' }))
+      db.tables.crew_slots.push(...rows)
+      return [{ party: db.tables.crew_parties[1] as any, slots: rows as any[] }]
+    }
+
+    it('fires for a themed party with no Lead inside the Lead window, once, and emails Allie', async () => {
+      const ps = noLead()
+      NOW = at(6)
+      expect((await runPartyAlerts(jobs(), ps)).understaffed).toBe(1)
+      expect(keys()).toEqual(['understaffed:p1'])
+      const email = notes(r => r.template === 'understaffed' && r.channel === 'email')
+      expect(email).toHaveLength(1)
+      const sent = tx.email.mock.calls.find(c => c[0] === 'alerts@example.test')![1]
+      expect(sent.email.subject).toMatch(/Short on crew/)
+      expect(sent.email.text).toMatch(/still needs a Party Lead\./)
+      expect((await runPartyAlerts(jobs(), ps)).understaffed).toBe(0)
+      expect(notes(r => r.template === 'understaffed')).toHaveLength(2)   // in_app + email, no more
+    })
+
+    it('a missing Lead is told at the Lead window (7 days), a short crew only at the crew window (5 days)', async () => {
+      const ps = noLead()
+      NOW = at(8)
+      expect((await runPartyAlerts(jobs(), ps)).understaffed).toBe(0)
+      // Lead held, one crew spot open: not short until 5 days out.
+      db.tables.crew_slots = [slot('s-lead', 'allie', { role: 'lead' }), slot('s-a', null)]
+      const crewShort = [{ party: db.tables.crew_parties[0] as any, slots: db.tables.crew_slots as any[] }]
+      NOW = at(6)
+      expect((await runPartyAlerts(jobs(), crewShort)).understaffed).toBe(0)
+      NOW = at(4)
+      expect((await runPartyAlerts(jobs(), crewShort)).understaffed).toBe(1)
+      expect(tx.email.mock.calls.find(c => c[0] === 'alerts@example.test')![1].email.text).toMatch(/still needs 1 crew spot\./)
+    })
+
+    it('a studio rental with every spot held is never short, however close the day', async () => {
+      const ps = rental(['a', 'b'])
+      NOW = at(1)
+      expect((await runPartyAlerts(jobs(), ps)).understaffed).toBe(0)
+      expect(notes(r => r.template === 'understaffed')).toHaveLength(0)
+    })
+
+    it('a studio rental with an open crew spot is short of CREW only — never of a Lead', async () => {
+      const ps = rental(['a', null])
+      NOW = at(4)
+      expect((await runPartyAlerts(jobs(), ps)).understaffed).toBe(1)
+      expect(keys()).toEqual(['understaffed:p2'])
+      const text = tx.email.mock.calls.find(c => c[0] === 'alerts@example.test')![1].email.text as string
+      expect(text).toMatch(/still needs 1 crew spot\./)
+      expect(text).not.toMatch(/Party Lead/)
+    })
+
+    it('the setting moves the moment: understaffed_days_before 9 tells a short crew 9 days out', async () => {
+      const wide: CrewSettings = { ...S, autopilot: { ...S.autopilot, understaffedDaysBefore: 9 } }
+      const ps = rental([null])
+      NOW = at(8)
+      expect((await runPartyAlerts(jobs('all', wide), ps)).understaffed).toBe(1)
+    })
   })
 
   it('attendance not marked 12 h after the end alerts Allie once', async () => {
@@ -330,6 +396,243 @@ describe('the whole tick, twice', () => {
     const r = await runCrewJobs(jobs())
     expect(r.ok).toBe(false)
     expect(r.unavailable).toContain('parties')
+  })
+})
+
+// ── LAUNCH MODE and AUTOPILOT ───────────────────────────────────────────────
+
+/** Anything that tells a crew member their pay moves, or what it is. */
+const LADDER_WORDS = /\b(rate|rates|step|steps|ladder|reset|two parties|counts as)\b/i
+const mailTo = (addr: string) => tx.email.mock.calls.filter(c => c[0] === addr).map(c => c[1].email as { subject: string; text: string })
+const noMoneyTalk = (text: string) => {
+  expect(text).not.toContain('$')
+  expect(text).not.toMatch(LADDER_WORDS)
+}
+
+describe('LAUNCH MODE: the pay ladder is off', () => {
+  describe('an early release', () => {
+    beforeEach(() => {
+      db.tables.crew_parties[0].starts_at = '2026-11-20T18:00:00.000Z'
+      db.tables.crew_parties[0].ends_at = '2026-11-20T21:00:00.000Z'
+    })
+
+    it('opens the spot and moves no step — even past the launch grace', async () => {
+      const r = await releaseMySpot(ctx(), OFF_LIVE, member('a'), 's-a', 'school', null)
+      expect(r.kind).toBe('released')
+      expect(member('a').steps).toBe(3)
+      expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'open', member_id: null })
+      expect(db.tables.crew_events[0]).toMatchObject({ type: 'early_release', step_before: 3, step_after: 3, waived_grace: false })
+      expect(db.rpcCalls.find(c => c.fn === 'crew_release_slot')!.args).toMatchObject({ p_expected_steps: 3, p_steps_after: 3 })
+    })
+
+    it('tells the member nothing about a rate, and Allie in the app only', async () => {
+      await releaseMySpot(ctx(), OFF_LIVE, member('a'), 's-a', 'school', null)
+      const mail = mailTo('a@example.test')
+      expect(mail).toHaveLength(1)
+      noMoneyTalk(mail[0].text)
+      noMoneyTalk(mail[0].subject)
+      const released = notes(r => r.template === 'spotReleased')
+      expect(released.map(r => r.channel)).toEqual(['in_app'])
+      expect(tx.email.mock.calls.some(c => c[0] === 'alerts@example.test')).toBe(false)
+    })
+  })
+
+  describe('a late cancel', () => {
+    it('drop anyway releases the spot and resets nothing, past the grace too', async () => {
+      await releaseMySpot(ctx(), OFF_LIVE, member('a'), 's-a', 'sick', null)
+      const swap = db.tables.crew_swap_requests[0]
+      expect(await dropAnyway(ctx(), OFF_LIVE, member('a'), swap.id)).toEqual({ kind: 'ok' })
+      expect(member('a').steps).toBe(3)
+      expect(db.tables.crew_events.at(-1)).toMatchObject({ type: 'late_cancel_uncovered', step_before: 3, step_after: 3, waived_grace: false })
+      expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'open', member_id: null })
+      for (const m of mailTo('a@example.test')) { noMoneyTalk(m.text); noMoneyTalk(m.subject) }
+      // This one still needs a person: Allie is emailed.
+      expect(mailTo('alerts@example.test').some(m => /URGENT open spot/.test(m.subject))).toBe(true)
+    })
+
+    it('the offer, the claim and the thank-you carry no pay figure and no ladder wording', async () => {
+      await releaseMySpot(ctx(), OFF, member('a'), 's-a', 'sick', null)
+      const swap = db.tables.crew_swap_requests[0]
+      await claimCover(ctx(), OFF, member('b'), swap.id)
+      const toB = mailTo('b@example.test')
+      expect(toB.length).toBeGreaterThanOrEqual(2)           // the offer, then "thanks for covering"
+      for (const m of toB) { noMoneyTalk(m.text); noMoneyTalk(m.subject) }
+      for (const m of mailTo('a@example.test')) { noMoneyTalk(m.text); noMoneyTalk(m.subject) }
+    })
+
+    it('with the ladder on, the same offer carries the pay figure', async () => {
+      await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+      const offer = mailTo('b@example.test')[0]
+      expect(offer.text).toContain('$')
+    })
+
+    it('an offer to everyone free carries no pay figure either', async () => {
+      await releaseMySpot(ctx(), OFF, member('a'), 's-a', 'sick', null)
+      const swap = db.tables.crew_swap_requests[0]
+      await offerToEveryone(ctx(), OFF, swap.id, 'admin:allie@example.test')
+      const toE = mailTo('e@example.test')
+      expect(toE).toHaveLength(1)
+      noMoneyTalk(toE[0].text)
+    })
+  })
+
+  describe('which alerts email Allie and which are for the page only', () => {
+    it('FYI alerts (spot released, cover requested, withdrawn, escalated, taken) are in-app only', async () => {
+      await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+      const swap = db.tables.crew_swap_requests[0]
+      await withdrawCover(ctx(), S, member('a'), swap.id)
+      await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+      const sw2 = db.tables.crew_swap_requests[1]
+      await claimCover(ctx(), S, member('b'), sw2.id)
+      const fyi = ['coverRequested', 'coverWithdrawn', 'coverTaken']
+      for (const t of fyi) {
+        const rows = notes(r => r.template === t)
+        expect(rows.length).toBeGreaterThan(0)
+        expect(rows.every(r => r.channel === 'in_app')).toBe(true)
+      }
+      expect(mailTo('alerts@example.test')).toHaveLength(0)
+    })
+
+    it('an escalation is in-app only; the 48-hour "still uncovered" warning is an email', async () => {
+      await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+      const swap = db.tables.crew_swap_requests[0]
+      const byId = new Map(db.tables.crew_members.map(m => [m.id, m as any]))
+      NOW = new Date(NOW.getTime() + 2.5 * H)
+      await runCovers(jobs(), byId)
+      expect(notes(r => r.template === 'coverEscalated').map(r => r.channel)).toEqual(['in_app'])
+      NOW = new Date(Date.parse(START) - 47 * H)
+      await runCovers(jobs(), byId)
+      expect(swap.status).toBe('escalated')
+      expect(notes(r => r.template === 'coverUnclaimed').map(r => r.channel).sort()).toEqual(['email', 'in_app'])
+      expect(mailTo('alerts@example.test').map(m => m.subject)).toEqual([expect.stringMatching(/Still uncovered at 48 hours/)])
+    })
+  })
+})
+
+describe('AUTOPILOT: a late cancel nobody took is offered to everyone free', () => {
+  const byId = () => new Map(db.tables.crew_members.map(m => [m.id, m as any]))
+
+  it('the cron escalates and offers it in the same tick, to the people the standby round did not reach', async () => {
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+    NOW = new Date(NOW.getTime() + 2.5 * H)
+    const r = await runCovers(jobs(), byId())
+    expect(r).toMatchObject({ escalated: 1, autoOffered: 1 })
+    expect(swap.offered_to_all_at).toBe(NOW.toISOString())
+    // D and E; B was a standby and already has the request, C is blocked, A is the canceller.
+    expect(keys(n => n.template === 'coverOpen' && n.channel === 'in_app')).toEqual([`cover_all:${swap.id}:d`, `cover_all:${swap.id}:e`])
+    // The record says the system did it.
+    expect(notes(n => n.dedupe_key === `cover_all:${swap.id}`)[0].payload).toMatchObject({ actor: 'system:crew-autopilot', asked: 2 })
+    // Allie is told it happened — on the page. 2 offered + 1 standby = 3 asked.
+    const told = notes(n => n.template === 'coverOfferedToAll' && n.dedupe_key === `cover_offered:${swap.id}`)
+    expect(told.map(n => n.channel)).toEqual(['in_app'])
+    expect(told[0].payload.text).toMatch(/offered to 3 crew members/)
+    expect(mailTo('alerts@example.test')).toHaveLength(0)
+  })
+
+  it('once: the next tick offers nothing and writes nothing', async () => {
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    NOW = new Date(NOW.getTime() + 2.5 * H)
+    await runCovers(jobs(), byId())
+    const n = notes().length
+    expect((await runCovers(jobs(), byId())).autoOffered).toBe(0)
+    expect(notes()).toHaveLength(n)
+  })
+
+  it('Allie hears "still uncovered" only one standby window AFTER the offer, even past the 48-hour mark', async () => {
+    NOW = new Date(Date.parse(START) - 49 * H)
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+    NOW = new Date(Date.parse(START) - 47 * H)                  // created + 2 h: escalates now, past the 48-hour mark
+    const first = await runCovers(jobs(), byId())
+    expect(first).toMatchObject({ escalated: 1, autoOffered: 1, warned: 0 })
+    expect(swap.warned_at ?? null).toBeNull()
+    expect(notes(n => n.template === 'coverUnclaimed')).toHaveLength(0)
+    NOW = new Date(NOW.getTime() + 1 * H)
+    expect((await runCovers(jobs(), byId())).warned).toBe(0)
+    NOW = new Date(NOW.getTime() + 1 * H)                       // one standby window after the offer
+    expect((await runCovers(jobs(), byId())).warned).toBe(1)
+    expect(notes(n => n.template === 'coverUnclaimed' && n.channel === 'email')).toHaveLength(1)
+  })
+
+  it('nobody free at all is the one case that emails Allie', async () => {
+    db.tables.crew_standbys = []
+    for (const id of ['b', 'd', 'e']) db.tables.crew_unavailability.push({ member_id: id, day: '2026-11-05', part: 'all_day' })
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'family', null)    // no standbys: escalated at once
+    const swap = db.tables.crew_swap_requests[0]
+    expect(swap.status).toBe('escalated')
+    const out = await autoOfferToEveryone(ctx(), S, swap, db.tables.crew_parties[0] as any)
+    expect(out).toBe('nobody_free')
+    const rows = notes(n => n.template === 'coverNobodyFree')
+    expect(rows.map(n => n.channel).sort()).toEqual(['email', 'in_app'])
+    expect(rows[0].dedupe_key).toBe(`cover_nobody:${swap.id}`)
+    expect(mailTo('alerts@example.test').some(m => /Nobody free to cover/.test(m.subject))).toBe(true)
+    expect(notes(n => n.template === 'coverOfferedToAll' && n.dedupe_key.startsWith('cover_offered:'))).toHaveLength(0)
+  })
+
+  it('a standby who was asked counts as somebody asked: no "nobody free" email', async () => {
+    for (const id of ['d', 'e']) db.tables.crew_unavailability.push({ member_id: id, day: '2026-11-05', part: 'all_day' })
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)      // B (a standby) is asked; D and E are blocked
+    const swap = db.tables.crew_swap_requests[0]
+    swap.status = 'escalated'
+    const out = await autoOfferToEveryone(ctx(), S, swap, db.tables.crew_parties[0] as any)
+    expect(out).toBe('offered')
+    expect(notes(n => n.template === 'coverNobodyFree')).toHaveLength(0)
+    expect(mailTo('alerts@example.test')).toHaveLength(0)
+  })
+
+  it('a request that was already offered (or closed) is "not_needed", and sends nothing', async () => {
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+    await offerToEveryone(ctx(), S, swap.id, 'admin:allie@example.test')
+    const n = notes().length
+    expect(await autoOfferToEveryone(ctx(), S, swap, db.tables.crew_parties[0] as any)).toBe('not_needed')
+    expect(notes()).toHaveLength(n)
+  })
+
+  it('a failed read in the middle gives the claim back, so the next tick tries again', async () => {
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+    swap.status = 'escalated'
+    db.failOn.add('select:crew_notifications')                 // askedMemberIds cannot read
+    const out = await autoOfferToEveryone(ctx(), S, swap, db.tables.crew_parties[0] as any)
+    expect(out).toBe('unavailable')
+    expect(swap.offered_to_all_at ?? null).toBeNull()
+    db.failOn.delete('select:crew_notifications')
+    expect(await autoOfferToEveryone(ctx(), S, swap, db.tables.crew_parties[0] as any)).toBe('offered')
+  })
+})
+
+describe('a TEST party is never offered to a real person', () => {
+  beforeEach(() => {
+    db.tables.crew_parties[0] = party({ booking_id: null, title: 'TEST — Glow' }) as any
+    for (const id of ['a', 'b', 'e']) member(id).is_test = true
+  })
+  const pws = () => ({ party: db.tables.crew_parties[0] as any, slots: db.tables.crew_slots as any[] })
+
+  it('eligibleFor keeps the invented members and drops the real ones', async () => {
+    const r = await eligibleFor(db.sb, S, pws(), 'crew', 'all', ['a'])
+    expect(r.kind).toBe('ok')
+    if (r.kind !== 'ok') return
+    // D is real: refused. C blocked the day. The owner is never asked.
+    expect(r.data.map(m => m.id).sort()).toEqual(['b', 'e'])
+  })
+
+  it('a real party still refuses the invented ones (the old rule, unchanged)', async () => {
+    db.tables.crew_parties[0] = party() as any
+    const r = await eligibleFor(db.sb, S, pws(), 'crew', 'all', ['a'])
+    expect(r.kind).toBe('ok')
+    if (r.kind !== 'ok') return
+    expect(r.data.map(m => m.id)).toEqual(['d'])
+  })
+
+  it('a late cancel on a TEST party asks the invented standby, and offer-to-everyone only the other invented members', async () => {
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+    expect(keys(n => n.template === 'coverOffer' && n.channel === 'in_app')).toEqual([`cover:${swap.id}:b`])
+    const offered = await offerToEveryone(ctx(), S, swap.id, 'admin:allie@example.test')
+    expect(offered).toEqual({ kind: 'ok', asked: 1 })
+    expect(notes(n => n.member_id === 'd')).toHaveLength(0)
   })
 })
 

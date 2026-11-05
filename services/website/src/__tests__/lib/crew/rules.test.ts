@@ -8,8 +8,10 @@ import {
   stepAfter, revertedSteps, isInGracePeriod, nextStepLabel, ratesFor, formatCents, requiredSlots,
   slotsForParty, slotRolesFor, classifyDrop, standbyEscalateAt, unclaimedWarningAt, leadAlertAt,
   confirmationSchedule, canUndoClaim, isBlockedByAvailability, shiftsOverlap, defaultShift, localParts,
+  payLabelFor, staffingShortfall, understaffedAlertAt, nudgeMarks,
   type CrewSettings,
 } from '@/lib/crew/rules'
+import { LADDER_ON, PAY_SHOWN_LADDER_OFF } from '../../helpers/crewLadder'
 
 const S = DEFAULT_SETTINGS
 const withLaunch = (launchDate: string | null, graceDays = 60): CrewSettings => ({ ...S, launch: { launchDate, graceDays } })
@@ -61,43 +63,43 @@ describe('tips: topped up to $20 per person', () => {
 
 describe('steps', () => {
   it('worked +1, covered +2 in place of +1, early release −1', () => {
-    expect(stepAfter('worked', 3).stepsAfter).toBe(4)
-    expect(stepAfter('worked_covered', 3).stepsAfter).toBe(5)
-    expect(stepAfter('early_release', 3).stepsAfter).toBe(2)
+    expect(stepAfter('worked', 3, LADDER_ON).stepsAfter).toBe(4)
+    expect(stepAfter('worked_covered', 3, LADDER_ON).stepsAfter).toBe(5)
+    expect(stepAfter('early_release', 3, LADDER_ON).stepsAfter).toBe(2)
   })
 
   it('never below 0, never above the max', () => {
-    expect(stepAfter('early_release', 0).stepsAfter).toBe(0)
-    expect(stepAfter('worked', 8).stepsAfter).toBe(8)
-    expect(stepAfter('worked_covered', 7).stepsAfter).toBe(8)
+    expect(stepAfter('early_release', 0, LADDER_ON).stepsAfter).toBe(0)
+    expect(stepAfter('worked', 8, LADDER_ON).stepsAfter).toBe(8)
+    expect(stepAfter('worked_covered', 7, LADDER_ON).stepsAfter).toBe(8)
   })
 
   it('a covered late cancel changes nothing; an uncovered one and a no-show reset to 0', () => {
-    expect(stepAfter('late_cancel_covered', 6).stepsAfter).toBe(6)
-    expect(stepAfter('late_cancel_uncovered', 6).stepsAfter).toBe(0)
-    expect(stepAfter('no_show', 6).stepsAfter).toBe(0)
+    expect(stepAfter('late_cancel_covered', 6, LADDER_ON).stepsAfter).toBe(6)
+    expect(stepAfter('late_cancel_uncovered', 6, LADDER_ON).stepsAfter).toBe(0)
+    expect(stepAfter('no_show', 6, LADDER_ON).stepsAfter).toBe(0)
   })
 
   it('in grace a loss is recorded, not applied — and says what it would have been', () => {
-    const o = stepAfter('no_show', 6, S, true)
+    const o = stepAfter('no_show', 6, LADDER_ON, true)
     expect(o).toEqual({ stepsAfter: 6, stepsBefore: 6, delta: 0, waivedGrace: true, wouldBe: 0 })
-    expect(stepAfter('early_release', 2, S, true)).toMatchObject({ stepsAfter: 2, waivedGrace: true, wouldBe: 1 })
-    expect(stepAfter('late_cancel_uncovered', 4, S, true)).toMatchObject({ stepsAfter: 4, waivedGrace: true })
+    expect(stepAfter('early_release', 2, LADDER_ON, true)).toMatchObject({ stepsAfter: 2, waivedGrace: true, wouldBe: 1 })
+    expect(stepAfter('late_cancel_uncovered', 4, LADDER_ON, true)).toMatchObject({ stepsAfter: 4, waivedGrace: true })
   })
 
   it('in grace a GAIN still applies, and is not marked waived', () => {
-    expect(stepAfter('worked', 2, S, true)).toMatchObject({ stepsAfter: 3, delta: 1, waivedGrace: false })
+    expect(stepAfter('worked', 2, LADDER_ON, true)).toMatchObject({ stepsAfter: 3, delta: 1, waivedGrace: false })
   })
 
   it('a loss that loses nothing is not "waived" (step 0 early release)', () => {
-    expect(stepAfter('early_release', 0, S, true).waivedGrace).toBe(false)
-    expect(stepAfter('no_show', 0, S, true).waivedGrace).toBe(false)
+    expect(stepAfter('early_release', 0, LADDER_ON, true).waivedGrace).toBe(false)
+    expect(stepAfter('no_show', 0, LADDER_ON, true).waivedGrace).toBe(false)
   })
 
   it('the delta always equals after − before (crew_events_delta_check)', () => {
     const events = ['worked', 'worked_covered', 'early_release', 'late_cancel_covered', 'late_cancel_uncovered', 'no_show'] as const
     for (const e of events) for (let st = 0; st <= 8; st++) for (const g of [true, false]) {
-      const o = stepAfter(e, st, S, g)
+      const o = stepAfter(e, st, LADDER_ON, g)
       expect(o.stepsAfter - o.stepsBefore).toBe(o.delta)
       expect(o.stepsAfter).toBeGreaterThanOrEqual(0)
       expect(o.stepsAfter).toBeLessThanOrEqual(HARD_MAX_STEPS)
@@ -107,7 +109,21 @@ describe('steps', () => {
   it('the attendance acceptance: step 3 paid $58.50, then 4', () => {
     const before = 3
     expect(partyRateCents('crew', before)).toBe(5850)
-    expect(stepAfter('worked', before).stepsAfter).toBe(4)
+    expect(stepAfter('worked', before, LADDER_ON).stepsAfter).toBe(4)
+  })
+
+  it('LADDER OFF (the launch default): no event moves a step, in grace or out of it', () => {
+    const events = ['worked', 'worked_covered', 'early_release', 'late_cancel_covered', 'late_cancel_uncovered', 'no_show'] as const
+    expect(S.ladderEnabled).toBe(false)
+    let examined = 0
+    for (const e of events) for (let st = 0; st <= 8; st++) for (const g of [true, false]) {
+      const o = stepAfter(e, st, S, g)
+      expect(o).toEqual({ stepsAfter: st, stepsBefore: st, delta: 0, waivedGrace: false, wouldBe: st })
+      // Showing pay does not switch the ladder on: only the ladder switch moves steps.
+      expect(stepAfter(e, st, PAY_SHOWN_LADDER_OFF, g).delta).toBe(0)
+      examined++
+    }
+    expect(examined).toBe(events.length * 9 * 2)
   })
 
   it('reverting a correction undoes exactly the earlier change, a reset included', () => {
@@ -266,5 +282,73 @@ describe('availability and overlap (kept from v1)', () => {
     expect(sh.startedAt.toISOString()).toBe('2026-11-14T17:30:00.000Z')
     expect(sh.endedAt.toISOString()).toBe('2026-11-14T21:30:00.000Z')
     expect(sh.hours).toBe(4)
+  })
+})
+
+describe('launch switches', () => {
+  it('both default OFF; payVisible follows the ladder or CREW_SHOW_PAY', () => {
+    expect(DEFAULT_SETTINGS.ladderEnabled).toBe(false)
+    expect(DEFAULT_SETTINGS.payVisible).toBe(false)
+    const off = settingsFromRows([])
+    expect([off.ladderEnabled, off.payVisible]).toEqual([false, false])
+    const show = settingsFromRows([], { showPay: true })
+    expect([show.ladderEnabled, show.payVisible]).toEqual([false, true])
+    const ladder = settingsFromRows([], { ladderEnabled: true })
+    expect([ladder.ladderEnabled, ladder.payVisible]).toEqual([true, true])
+  })
+
+  it('payLabelFor is null while pay is hidden and a dollar string once it is shown', () => {
+    expect(payLabelFor('crew', 3, null, S)).toBeNull()
+    expect(payLabelFor('lead', 3, 500, S)).toBeNull()
+    expect(payLabelFor('crew', 3, null, LADDER_ON)).toBe('$58.50')
+    expect(payLabelFor('crew', 3, null, PAY_SHOWN_LADDER_OFF)).toBe('$58.50')
+  })
+})
+
+describe('autopilot settings', () => {
+  it('missing rows fall back to the defaults, never to "off" for the alerts', () => {
+    expect(settingsFromRows([]).autopilot).toEqual({
+      autoPublish: false, autoPublishFrom: null, understaffedDaysBefore: 5, nudgeFirstDaysBefore: 10, nudgeSecondDaysBefore: 5,
+    })
+  })
+
+  it('reads the snake_case seed shape and refuses a non-boolean or a malformed date', () => {
+    const ok = settingsFromRows([{ key: 'autopilot', value: {
+      auto_publish: true, auto_publish_from: '2026-11-10', understaffed_days_before: 4, nudge_first_days_before: 9, nudge_second_days_before: 3,
+    } }])
+    expect(ok.autopilot).toEqual({ autoPublish: true, autoPublishFrom: '2026-11-10', understaffedDaysBefore: 4, nudgeFirstDaysBefore: 9, nudgeSecondDaysBefore: 3 })
+    const bad = settingsFromRows([{ key: 'autopilot', value: { auto_publish: 'yes', auto_publish_from: 'tomorrow' } }])
+    expect(bad.autopilot.autoPublish).toBe(false)
+    expect(bad.autopilot.autoPublishFrom).toBeNull()
+  })
+})
+
+describe('staffing shortfall', () => {
+  const slot = (role: 'lead' | 'crew', status: string, member: string | null) => ({ role, status, member_id: member })
+  it('a themed party with no Lead held is lead-short; held and cancelled spots are not crew-short', () => {
+    expect(staffingShortfall({ party_kind: 'themed' }, [slot('lead', 'open', null), slot('crew', 'assigned', 'm1'), slot('crew', 'open', null), slot('crew', 'cancelled', null)]))
+      .toEqual({ crewShort: 1, leadShort: true })
+    expect(staffingShortfall({ party_kind: 'themed' }, [slot('lead', 'assigned', 'm1'), slot('crew', 'assigned', 'm2')]))
+      .toEqual({ crewShort: 0, leadShort: false })
+  })
+
+  it('a studio rental can never be short of a Lead', () => {
+    expect(staffingShortfall({ party_kind: 'studio_rental' }, [slot('crew', 'open', null)])).toEqual({ crewShort: 1, leadShort: false })
+    expect(staffingShortfall({ party_kind: 'studio_rental' }, [])).toEqual({ crewShort: 0, leadShort: false })
+  })
+
+  it('the alert moment: a missing Lead no later than the Lead window, crew at the autopilot setting', () => {
+    const start = new Date('2026-11-14T18:00:00Z')
+    expect(understaffedAlertAt(start, false).toISOString()).toBe('2026-11-09T18:00:00.000Z')   // 5 days
+    expect(understaffedAlertAt(start, true).toISOString()).toBe('2026-11-07T18:00:00.000Z')    // max(7, 5) days
+    const wide = { ...S, autopilot: { ...S.autopilot, understaffedDaysBefore: 9 } }
+    expect(understaffedAlertAt(start, true, wide).toISOString()).toBe('2026-11-05T18:00:00.000Z')
+  })
+
+  it('the nudge marks come from the autopilot settings', () => {
+    const start = new Date('2026-11-14T18:00:00Z')
+    const m = nudgeMarks(start)
+    expect(m.first.toISOString()).toBe('2026-11-04T18:00:00.000Z')
+    expect(m.second.toISOString()).toBe('2026-11-09T18:00:00.000Z')
   })
 })

@@ -60,12 +60,14 @@ export default function CrewRulesPage() {
 }
 
 function toInput(f: SettingField, v: unknown): string {
+  if (f.unit === 'switch') return v === true ? 'yes' : 'no'
   if (f.unit === 'date') return typeof v === 'string' ? v : ''
   if (typeof v !== 'number') return ''
   return f.unit === 'cents' ? (v / 100).toFixed(2) : String(v)
 }
 
-function fromInput(f: SettingField, s: string): number | string | null {
+function fromInput(f: SettingField, s: string): number | string | boolean | null {
+  if (f.unit === 'switch') return s === 'yes'
   if (f.unit === 'date') return s.trim() === '' ? null : s.trim()
   if (s.trim() === '') return NaN
   const n = Number(s)
@@ -104,6 +106,12 @@ function SectionCard({ section, stored, onSaved }: { section: SettingSection; st
           <label key={f.field} className="flex flex-wrap items-center gap-2 text-sm text-hampton-navy">
             <span className="w-56">{f.label}</span>
             {f.unit === 'cents' && <span>$</span>}
+            {f.unit === 'switch' ? (
+              <select value={vals[f.field]} onChange={e => setVals(v => ({ ...v, [f.field]: e.target.value }))} className={`${INPUT} w-28`}>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            ) : (
             <input
               type={f.unit === 'date' ? 'date' : 'number'}
               step={f.unit === 'cents' ? '0.01' : f.integer ? '1' : 'any'}
@@ -113,6 +121,7 @@ function SectionCard({ section, stored, onSaved }: { section: SettingSection; st
               onChange={e => setVals(v => ({ ...v, [f.field]: e.target.value }))}
               className={`${INPUT} ${f.unit === 'date' ? 'w-44' : 'w-28'}`}
             />
+            )}
             {UNIT[f.unit] && <span className="text-hampton-navy/50">{UNIT[f.unit]}</span>}
             {launch && f.unit === 'date' && (
               <>

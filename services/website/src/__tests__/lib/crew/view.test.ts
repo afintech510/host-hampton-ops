@@ -5,8 +5,12 @@
  * would send.
  */
 import { meView, partyView, myPayRecords } from '@/lib/crew/view'
-import { DEFAULT_SETTINGS as S } from '@/lib/crew/rules'
+import { DEFAULT_SETTINGS as LAUNCH } from '@/lib/crew/rules'
 import type { CrewMemberRow, CrewPartyRow, CrewSlotRow } from '@/lib/crew/db'
+import { LADDER_ON, PAY_SHOWN_LADDER_OFF } from '../../helpers/crewLadder'
+
+// The dollar figures below are the ladder-ON view; LAUNCH (every switch off) has its own block.
+const S = LADDER_ON
 
 const SENTINELS = {
   email: 'sentinel-other@example.invalid',
@@ -137,6 +141,36 @@ describe('meView', () => {
   })
   it('no Lead rate for a member who cannot lead', () => {
     expect(meView(member({ steps: 0 }), S).leadRateCents).toBeNull()
+  })
+})
+
+describe('launch mode: pay is hidden', () => {
+  const firstNames = new Map([['me', 'Sam']])
+  const mine = slot({ id: 'mine', status: 'assigned', member_id: 'me' })
+
+  it('partyView carries no pay on an open spot or on my own spot', () => {
+    const v = partyView({ party: party(), slots: [slot({ id: 'c' }), slot({ id: 'lead', role: 'lead' }), mine], viewer, firstNames, standbyMemberIds: new Set() }, LAUNCH)!
+    expect(v.openSpots.map(o => o.payCents)).toEqual([null, null])
+    expect(v.mySlot?.payCents).toBeNull()
+    expect(JSON.stringify(v)).not.toMatch(/5850|7750/)
+  })
+
+  it('meView carries no rate and no rate line, and still hides the private fields', () => {
+    const v = meView(member({ id: 'me', first_name: 'Sam', steps: 3, can_lead: true, admin_notes: SENTINELS.notes }), LAUNCH)
+    expect(v.crewRateCents).toBeNull()
+    expect(v.leadRateCents).toBeNull()
+    expect(v.rateLine).toBeNull()
+    expect(v.atTopRate).toBe(false)
+    expect(JSON.stringify(v)).not.toContain(SENTINELS.notes)
+  })
+
+  it('pay shown with the ladder still off: dollars yes, a "next step" line no', () => {
+    const v = meView(member({ id: 'me', first_name: 'Sam', steps: 3, can_lead: true }), PAY_SHOWN_LADDER_OFF)
+    expect(v.crewRateCents).toBe(5850)
+    expect(v.leadRateCents).toBe(7750)
+    expect(v.rateLine).toBeNull()
+    const p = partyView({ party: party(), slots: [slot({ id: 'c' })], viewer, firstNames, standbyMemberIds: new Set() }, PAY_SHOWN_LADDER_OFF)!
+    expect(p.openSpots[0].payCents).toBe(5850)
   })
 })
 

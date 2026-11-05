@@ -278,6 +278,13 @@ services:
       - ASSISTANT_PRICE_IN_PER_MTOK=${ASSISTANT_PRICE_IN_PER_MTOK:-}
       - ASSISTANT_PRICE_OUT_PER_MTOK=${ASSISTANT_PRICE_OUT_PER_MTOK:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Crew launch MVP (Adam, 2026-11-04: "initial launch just staff scheduling").
+      # CREW_PAY_LADDER is the pay "game" (steps up per party worked, down or reset on a
+      # cancel or no-show). CREW_SHOW_PAY shows dollar figures in the crew app and its
+      # messages. BOTH are OFF unless exactly "true"; with them off no step ever moves
+      # and crew are told nothing about pay (lib/crew/rules.ts, lib/crew/settings.ts).
+      - CREW_PAY_LADDER=${CREW_PAY_LADDER:-false}
+      - CREW_SHOW_PAY=${CREW_SHOW_PAY:-false}
       # EVITE (party invitations; docs/specs/evites/03-architecture-spec.md §14, §16).
       # EVITES_PAGES gates creation, pages and renders; EVITES_SENDS gates every evite
       # email. Each is off | pilot | on, and ANYTHING else (unset, empty, a typo) reads as

@@ -15,7 +15,7 @@
  *   N6  every crew message carries a dedupe key built from an id;
  *   N7  the cron: one credential check first, the reconcile before the flag,
  *       `skipped: 'disabled'` with the flag off, test scope only with CREW_TEST_LOGIN;
- *   N8  the no-Lead alert never fires for a studio rental;
+ *   N8  the understaffed alert asks `staffingShortfall`, which never calls a studio rental short of a Lead;
  *   N9  every cover-request state change is a conditional UPDATE, read back;
  *   N10 nothing on the surface writes `steps` — only the SQL functions do;
  *   N11 no crew page renders a cancel reason.
@@ -241,9 +241,26 @@ describe('N5: the queue', () => {
   })
 })
 
+/**
+ * The autopilot asks are built as `Ask` objects (`{ party, key: new_party:${…} in a template, render }`) and sent by ONE
+ * call that passes `a.key`. A call passing `<x>.key` is acceptable only if EVERY `key:` property written in
+ * the same file is itself a `prefix:${…}` template — so the key's shape is still checked, one hop away,
+ * and a bare literal added to any Ask fails here.
+ */
+const KEY_PROP = /\bkey:\s*([^,\n\r]+)/g
+function askKeySites(src: string): { all: string[]; prefixes: string[] } {
+  // `key: string` is the Ask interface's own field, not a key being written.
+  const all = Array.from(src.matchAll(KEY_PROP), m => m[1].trim()).filter(v => v !== 'string')
+  const prefixes = all.map(v => /^`([a-z_]+):\$\{/.exec(v)?.[1]).filter((x): x is string => !!x)
+  return { all, prefixes }
+}
+/** True when the call hands over a key held on an object (`a.key`) rather than writing it inline. */
+const passesPropertyKey = (c: string) => /,\s*\w+\.key\s*[,)]/.test(c)
+
 describe('N6: every crew message has a dedupe key built from an id', () => {
   it('each notifyMember / notifyAdmin call passes a `prefix:${…}` key', () => {
     let examined = 0
+    let viaAsk = 0
     const offenders: string[] = []
     for (const f of LIBS) {
       const src = read(f)
@@ -251,6 +268,13 @@ describe('N6: every crew message has a dedupe key built from an id', () => {
         for (const c of calls(src, fn)) {
           examined++
           if (/`[a-z_]+:\$\{/.test(c)) continue
+          if (passesPropertyKey(c)) {
+            const sites = askKeySites(src)
+            // Every `key:` property in the file is a prefixed template, and there is at least one.
+            if (sites.all.length > 0 && sites.all.length === sites.prefixes.length) { viaAsk++; continue }
+            offenders.push(`${f}: a.key, but not every key: property is a prefixed template (${sites.all.join(' | ')})`)
+            continue
+          }
           // A key held in a variable counts only if that variable is bound to such a template in this file.
           const named = Array.from(c.matchAll(/\b(\w+Key)\b/g)).map(x => x[1])
           const bound = named.some(n => new RegExp('const ' + n + ' = `[a-z_]+:\\$\\{').test(src))
@@ -259,8 +283,30 @@ describe('N6: every crew message has a dedupe key built from an id', () => {
       }
     }
     expect(offenders).toEqual([])
-    // 24 call sites at Phase 4 (2026-10-27). A drop means the walker stopped seeing them.
-    expect(examined).toBeGreaterThanOrEqual(24)
+    // 24 call sites at Phase 4 (2026-10-27), 28 once autopilot added its own (2026-11-05). A drop means the walker stopped seeing them.
+    expect(examined).toBeGreaterThanOrEqual(28)
+    // The one call that sends an Ask: counted, so the `a.key` branch above cannot quietly pass nothing.
+    expect(viaAsk).toBe(1)
+  })
+
+  it('the Ask keys the autopilot builds are exactly new_party:, nudge: — and a bare literal would fail', () => {
+    const sites = askKeySites(read('lib/crew/jobs.ts'))
+    expect(sites.all).toHaveLength(2)
+    expect(sites.prefixes.sort()).toEqual(['new_party', 'nudge'])
+    // The rule's own negative: an Ask built with a bare literal is not a prefixed template.
+    expect(askKeySites("push(b, m, { party, key: 'abc', render })").prefixes).toEqual([])
+    expect(askKeySites("push(b, m, { party, key: 'abc', render })").all).toHaveLength(1)
+    // …and the property-key call shape is recognised, an inline literal is not.
+    expect(passesPropertyKey("notifyMember(ctx, m, template, a.render(), a.key, { payload })")).toBe(true)
+    expect(passesPropertyKey("notifyMember(ctx, m, template, a.render(), 'abc', { payload })")).toBe(false)
+  })
+
+  it('the digest message is keyed digest:… too (one key per bundle, so a bundle is never sent twice)', () => {
+    const body = bodyOf(read('lib/crew/jobs.ts'), 'sendAsks')
+    expect(body).not.toBe('')
+    const digestCalls = calls(body, 'notifyMember').filter(c => /Digest/.test(c))
+    expect(digestCalls).toHaveLength(1)
+    expect(digestCalls[0]).toMatch(/`digest:\$\{template\}:\$\{m\.id\}:\$\{id\}`/)
   })
 })
 
@@ -278,6 +324,8 @@ describe('N6b: a crew member and Allie never share a dedupe key', () => {
       for (const [fn, set] of [['notifyMember', prefixes.member], ['notifyAdmin', prefixes.admin]] as const) {
         for (const c of calls(src, fn)) {
           for (const m of Array.from(c.matchAll(/`([a-z_]+):\$\{/g))) { set.add(m[1]); examined++ }
+          // A key handed over as `a.key` was written in a `key:` property of an Ask in this file (see N6).
+          if (passesPropertyKey(c)) for (const pre of askKeySites(src).prefixes) { set.add(pre); examined++ }
           for (const n of Array.from(c.matchAll(/\b(\w+Key)\b/g))) {
             const b = new RegExp('const ' + n[1] + ' = `([a-z_]+):\\$\\{').exec(src)
             if (b) { set.add(b[1]); examined++ }
@@ -287,7 +335,10 @@ describe('N6b: a crew member and Allie never share a dedupe key', () => {
     }
     const shared = Array.from(prefixes.member).filter(p => prefixes.admin.has(p))
     expect(shared).toEqual([])
-    expect(examined).toBeGreaterThanOrEqual(24)
+    expect(examined).toBeGreaterThanOrEqual(28)
+    // The autopilot prefixes are on the right side of the line: members' asks, Allie's alerts.
+    for (const p of ['new_party', 'nudge', 'digest']) expect(Array.from(prefixes.member)).toContain(p)
+    for (const p of ['understaffed', 'cover_offered', 'cover_nobody']) expect(Array.from(prefixes.admin)).toContain(p)
   })
 })
 
@@ -317,14 +368,51 @@ describe('N7: the cron route', () => {
   })
 })
 
-describe('N8: a studio rental has no Lead, so no no-Lead alert', () => {
-  it('the alert’s own condition excludes it', () => {
-    const body = bodyOf(read('lib/crew/jobs.ts'), 'runPartyAlerts')
-    expect(body).not.toBe('')
-    const at = body.indexOf("'noLead'")
-    const cond = body.lastIndexOf('if (', at)
-    const condition = body.slice(cond, body.indexOf('{', cond))
-    expect(condition).toMatch(/party\.party_kind !== 'studio_rental'/)
+describe('N8: the understaffed alert asks staffingShortfall, which never calls a studio rental short of a Lead', () => {
+  const alerts = bodyOf(read('lib/crew/jobs.ts'), 'runPartyAlerts')
+  const shortfall = bodyOf(read('lib/crew/rules.ts'), 'staffingShortfall')
+
+  it('both bodies were found (a rule over an empty string passes for the wrong reason)', () => {
+    expect(alerts).not.toBe('')
+    expect(shortfall).not.toBe('')
+    expect(alerts.length).toBeGreaterThan(300)
+  })
+
+  it('the alert’s own condition is the shared shortfall and the shared window — and the old no-Lead alert is gone', () => {
+    const at = alerts.indexOf("'understaffed'")
+    expect(at).toBeGreaterThan(-1)
+    const cond = alerts.lastIndexOf('if (', at)
+    const condition = squash(alerts.slice(cond, alerts.indexOf('{', cond)))
+    expect(condition).toMatch(/\(sf\.crewShort > 0 \|\| sf\.leadShort\)/)
+    expect(condition).toMatch(/now >= understaffedAlertAt\(startsAt, sf\.leadShort, s\)\.getTime\(\)/)
+    // …and sf is what staffingShortfall answered for THIS party and ITS slots, computed before the condition.
+    const def = alerts.indexOf('const sf = staffingShortfall(party, slots)')
+    expect(def).toBeGreaterThan(-1)
+    expect(def).toBeLessThan(cond)
+    // Nothing in the body works out a Lead shortage on its own, or by the retired alert.
+    expect(alerts).not.toMatch(/noLead|no_lead|leadAlertAt|role === 'lead'/)
+  })
+
+  it('it is sent once per party: the key is understaffed:{party}', () => {
+    const call = calls(alerts, 'notifyAdmin').find(c => /'understaffed'/.test(c))
+    expect(call).toBeDefined()
+    expect(call!).toMatch(/`understaffed:\$\{party\.id\}`/)
+  })
+
+  it('staffingShortfall excludes a studio rental from lead-shortage, in the expression that sets it', () => {
+    const lead = /const leadShort = ([^\n\r]+)/.exec(shortfall)
+    expect(lead).not.toBeNull()
+    expect(lead![1]).toMatch(/^party\.party_kind !== 'studio_rental' &&/)
+    // A rental's crew shortfall is counted by role 'crew' only, so it cannot be inflated by a Lead row.
+    expect(shortfall).toMatch(/sl\.role === 'crew'/)
+  })
+
+  it('the page’s derived alert reads the same two functions, so it cannot disagree with the inbox', () => {
+    const page = bodyOf(read('lib/crew/admin.ts'), 'loadAdminOverview')
+    expect(page).not.toBe('')
+    expect(page).toMatch(/staffingShortfall\(p, pws\.slots\)/)
+    expect(page).toMatch(/understaffedAlertAt\(startsAt, sf\.leadShort, s\)/)
+    expect(page).not.toMatch(/'no_lead'/)
   })
 })
 

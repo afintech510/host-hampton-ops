@@ -6,6 +6,11 @@ import { partyDayLabel, partyTimeLabel, type OpenSpotView } from '@/lib/crew/vie
 
 const roleWord = (r: 'lead' | 'crew') => (r === 'lead' ? 'Party Lead' : 'Crew')
 
+/** ": $58.50 for you", or nothing while pay figures are hidden. */
+function forYou(cents: number | null) {
+  return cents == null ? null : <>: <strong>{formatCents(cents)}</strong> for you</>
+}
+
 /** The open spots this member may see: crew spots always, the Lead spot only if they can lead. */
 export function visibleSpots(b: BoardParty, canLead: boolean): OpenSpotView[] {
   return b.view.openSpots.filter(o => o.role === 'crew' || canLead)
@@ -50,15 +55,16 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
 
       {v.mySlot && (
         <p style={{ margin: '0 0 .5rem' }}>
-          You&apos;re {v.mySlot.role === 'lead' ? 'the Party Lead' : 'on the crew'}: <strong>{formatCents(v.mySlot.payCents)}</strong>
+          You&apos;re {v.mySlot.role === 'lead' ? 'the Party Lead' : 'on the crew'}
+          {v.mySlot.payCents != null && <>: <strong>{formatCents(v.mySlot.payCents)}</strong></>}
         </p>
       )}
 
       {!v.mySlot && b.upcoming && spots.length > 0 && (
         <p style={{ margin: '0 0 .5rem' }}>
-          {crewOpen > 0 && <>{crewOpen} crew {crewOpen === 1 ? 'spot' : 'spots'} open: <strong>{formatCents(spots.find(s => s.role === 'crew')!.payCents)}</strong> for you</>}
+          {crewOpen > 0 && <>{crewOpen} crew {crewOpen === 1 ? 'spot' : 'spots'} open{forYou(spots.find(s => s.role === 'crew')!.payCents)}</>}
           {crewOpen > 0 && leadOpen && <br />}
-          {leadOpen && <>Party Lead spot open: <strong>{formatCents(spots.find(s => s.role === 'lead')!.payCents)}</strong> for you</>}
+          {leadOpen && <>Party Lead spot open{forYou(spots.find(s => s.role === 'lead')!.payCents)}</>}
         </p>
       )}
 
@@ -74,12 +80,14 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
         )}
         {!v.mySlot && b.upcoming && !b.claimBlock && claimTargets(spots).map(s => (
           <ActionButton key={s.slotId} endpoint="/api/crew/claim" body={{ slotId: s.slotId }}
-            label={`Take ${s.role === 'lead' ? 'the Lead spot' : 'a crew spot'} (${formatCents(s.payCents)})`} busyLabel="Taking it…" />
+            label={`Take ${s.role === 'lead' ? 'the Lead spot' : 'a crew spot'}${s.payCents != null ? ` (${formatCents(s.payCents)})` : ''}`} busyLabel="Taking it…" />
         ))}
         {!v.mySlot && b.upcoming && (
           <ActionButton
             endpoint="/api/crew/standby" body={{ partyId: v.id, on: !v.iAmStandby }} variant="ghost"
-            label={v.iAmStandby ? "I'm a standby ✓ (tap to stop)" : 'I can cover (standby)'}
+            label={v.iAmStandby
+              ? (spots.length === 0 ? "I'm on the waitlist ✓ (tap to leave)" : "I'm a standby ✓ (tap to stop)")
+              : (spots.length === 0 ? 'Join the waitlist' : 'I can cover (standby)')}
           />
         )}
         {b.canUndo && v.mySlot && (

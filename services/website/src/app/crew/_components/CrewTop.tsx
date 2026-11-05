@@ -1,5 +1,6 @@
 import ActionButton from './ActionButton'
 import CrewNav from './CrewNav'
+import { crewPayLadderEnabled, crewShowPayEnabled } from '@/lib/crew/settings'
 
 /** Header (brand + sign out) and the bottom nav, around a signed-in page. */
 export default function CrewTop({ firstName, isTest }: { firstName: string; isTest: boolean }) {
@@ -13,7 +14,7 @@ export default function CrewTop({ firstName, isTest }: { firstName: string; isTe
           <ActionButton endpoint="/api/crew/auth/logout" label="Sign out" variant="ghost" redirectTo="/crew/login" />
         </span>
       </div>
-      <CrewNav />
+      <CrewNav payLabel={crewShowPayEnabled() || crewPayLadderEnabled() ? 'My pay' : 'How it works'} />
     </>
   )
 }
