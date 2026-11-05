@@ -46,7 +46,9 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
     if (d.kind !== 'ok') return <CrewUnavailable />
     details = d.data
   }
-  const minutes = settings.settings.shift
+  // The lead-in and wrap-up in words, from THIS person's actual shift (a Lead arrives earlier than a helper).
+  const before = Math.round((new Date(v.startsAt).getTime() - new Date(v.shiftStartsAt).getTime()) / 60_000)
+  const after = Math.round((new Date(v.shiftEndsAt).getTime() - new Date(v.endsAt).getTime()) / 60_000)
 
   return (
     <main className="crew-wrap">
@@ -61,7 +63,7 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
           <dt className="crew-muted">Your shift</dt>
           <dd style={{ margin: 0 }}>
             {clockLabel(v.shiftStartsAt)} – {clockLabel(v.shiftEndsAt)}
-            <span className="crew-muted crew-small" style={{ display: 'block' }}>{minutes.setupMinutes} min to set up before the party, {minutes.cleanupMinutes} min to clean up after</span>
+            <span className="crew-muted crew-small" style={{ display: 'block' }}>{before} min to set up before the party, {after} min to clean up after</span>
           </dd>
           <dt className="crew-muted">Where</dt><dd style={{ margin: 0 }}>{v.location}</dd>
           <dt className="crew-muted">Kids</dt><dd style={{ margin: 0 }}>{v.guestCount != null ? v.guestCount : 'Not confirmed yet'}</dd>
