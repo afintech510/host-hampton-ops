@@ -72,7 +72,7 @@ describe('LS1: a dollar figure in the crew app is behind a guard', () => {
         examined++
         if (rel(p) === 'app/crew/pay/page.tsx') {
           // Everything past the launch-mode early return is pay-visible only.
-          const early = src.search(/if\s*\(\s*!s\.payVisible\s*\)\s*\{/)
+          const early = src.search(/if\s*\(\s*!s\.payVisible\s*\)\s*redirect\(\s*'\/crew\/profile'\s*\)/)
           if (early < 0 || early > m.index) offenders.push(`${rel(p)}@${m.index}`)
           continue
         }
@@ -110,8 +110,8 @@ describe('LS1: a dollar figure in the crew app is behind a guard', () => {
       const jsxText = Array.from(src.matchAll(/>([^<>{}\r\n]*[A-Za-z][^<>{}\r\n]*)</g)).map(m => m[1])
       const literals = Array.from(src.matchAll(/'([^'\r\n]{12,})'|"([^"\r\n]{12,})"/g)).map(m => m[1] ?? m[2])
       for (const t of [...jsxText, ...literals]) {
-        // Exactly three strings are allowed, each rendered only behind CREW_PAY_LADDER / CREW_SHOW_PAY (LS1 above holds the guards).
-        const gated = /^\s*(My pay|How it works|How your pay works|crew-rate-big|Once you've worked it, covering a late cancel counts as two parties toward your rate\.)\s*$/
+        // Exactly these strings are allowed, each rendered only behind CREW_PAY_LADDER / CREW_SHOW_PAY (LS1 above holds the guards).
+        const gated = /^\s*(My pay|How your pay works|crew-rate-big|Once you've worked it, covering a late cancel counts as two parties toward your rate\.)\s*$/
         if (/\b(pay|paid|rate|rates|tips?|wages?|earn\w*)\b/i.test(t) && !gated.test(t)) offenders.push(`${name}: ${t.trim().slice(0, 60)}`)
       }
     }
@@ -119,9 +119,21 @@ describe('LS1: a dollar figure in the crew app is behind a guard', () => {
     expect(offenders).toEqual([])
   })
 
-  it('the bottom tab says "How it works" unless pay is shown', () => {
+  it('there is no pay tab unless pay is shown: the tab is only passed the switches, and the nav drops it without them', () => {
     const top = squash(read(path.join(SRC, 'app', 'crew', '_components', 'CrewTop.tsx')))
-    expect(top).toMatch(/crewShowPayEnabled\(\) \|\| crewPayLadderEnabled\(\) \? 'My pay' : 'How it works'/)
+    expect(top).toMatch(/<CrewNav showPay=\{crewShowPayEnabled\(\) \|\| crewPayLadderEnabled\(\)\} \/>/)
+    const nav = squash(read(path.join(SRC, 'app', 'crew', '_components', 'CrewNav.tsx')))
+    expect(nav).toMatch(/showPay = false/)
+    expect(nav).toMatch(/TABS\.filter\(t => showPay \|\| t\.href !== '\/crew\/pay'\)/)
+    expect(nav).not.toMatch(/How it works/)
+  })
+
+  it('a pay page opened with pay hidden sends the visitor to Profile before it reads a single record', () => {
+    const pay = squash(read(path.join(SRC, 'app', 'crew', 'pay', 'page.tsx')))
+    const early = pay.search(/if \(!s\.payVisible\) redirect\('\/crew\/profile'\)/)
+    expect(early).toBeGreaterThan(-1)
+    expect(pay.indexOf('getMemberSlots(')).toBeGreaterThan(early)
+    expect(pay).not.toMatch(/How it works/)
   })
 })
 

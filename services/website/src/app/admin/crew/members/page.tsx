@@ -180,7 +180,7 @@ function MemberRow({ m, open, onToggle, onChanged, onError }: {
 }) {
   const api = useAdminApi()
   const flags = [
-    m.isOwner ? 'owner (unpaid)' : null,
+    m.isOwner ? 'owner' : null,
     m.isTest ? 'test' : null,
     m.status !== 'active' ? m.status : null,
     m.needsReview ? 'needs a talk' : null,

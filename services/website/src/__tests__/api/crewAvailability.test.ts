@@ -106,6 +106,8 @@ describe('adding a period', () => {
     ['a date that does not exist', { start: '2026-02-30T10:00', end: '2026-03-01T10:00' }],
     ['an hour that does not exist', { start: '2026-11-14T25:00', end: '2026-11-15T10:00' }],
     ['a number', { start: 5, end: 6 }],
+    ['a minute that is not :00 or :30', { start: '2026-11-14T15:07', end: '2026-11-14T18:00' }],
+    ['an end on the quarter hour', { start: '2026-11-14T15:00', end: '2026-11-14T18:15' }],
   ])('refuses %s', async (_name, body) => {
     const res = await post(body)
     expect(res.status).toBe(400)

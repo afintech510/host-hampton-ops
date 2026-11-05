@@ -16,9 +16,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const LOCAL = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/
 
 /**
- * A `datetime-local` value ("2026-11-14T15:30") is a wall-clock time with no
- * zone. The crew works in Eastern, so that is the zone it means. Anything that
- * is not a real date and time is null — `new Date('2026T12:00')` would not be.
+ * A wall-clock value ("2026-11-14T15:30") has no zone. The crew works in
+ * Eastern, so that is the zone it means. Times go by the half hour, as the page
+ * offers them. Anything that is not a real date and time on the hour or half
+ * hour is null — `new Date('2026T12:00')` would not be.
  */
 function easternInstant(v: unknown): Date | null {
   if (typeof v !== 'string') return null
@@ -26,7 +27,7 @@ function easternInstant(v: unknown): Date | null {
   if (!m) return null
   const [, date, hh, mm] = m
   const h = Number(hh), min = Number(mm)
-  if (shiftEtDate(date, 0) !== date || h > 23 || min > 59) return null
+  if (shiftEtDate(date, 0) !== date || h > 23 || (min !== 0 && min !== 30)) return null
   const d = etToUtc(date, h, min)
   return Number.isFinite(d.getTime()) ? d : null
 }

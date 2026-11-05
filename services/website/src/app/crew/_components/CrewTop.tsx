@@ -14,7 +14,7 @@ export default function CrewTop({ firstName, isTest }: { firstName: string; isTe
           <ActionButton endpoint="/api/crew/auth/logout" label="Sign out" variant="ghost" redirectTo="/crew/login" />
         </span>
       </div>
-      <CrewNav payLabel={crewShowPayEnabled() || crewPayLadderEnabled() ? 'My pay' : 'How it works'} />
+      <CrewNav showPay={crewShowPayEnabled() || crewPayLadderEnabled()} />
     </>
   )
 }

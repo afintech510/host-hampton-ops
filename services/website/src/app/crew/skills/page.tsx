@@ -1,22 +1,12 @@
+import { redirect } from 'next/navigation'
 import { requireCrewPage } from '@/lib/crew/page'
-import { CREW_SKILLS, MAX_EXTRAS, MAX_EXTRA_LENGTH, splitSkills } from '@/lib/crew/skills'
-import CrewTop, { CrewUnavailable } from '../_components/CrewTop'
-import SkillsForm from '../_components/SkillsForm'
+import { CrewUnavailable } from '../_components/CrewTop'
 
 export const dynamic = 'force-dynamic'
 
-/** `/crew/skills`: self-reported, informational only. */
+/** `/crew/skills` moved onto the Profile tab; an old link or bookmark lands there. */
 export default async function CrewSkillsPage() {
   const member = await requireCrewPage()
   if (member === 'unavailable') return <CrewUnavailable />
-  const { picked, extras } = splitSkills(Array.isArray(member.skills) ? member.skills : [])
-
-  return (
-    <main className="crew-wrap">
-      <CrewTop firstName={member.first_name} isTest={member.is_test} />
-      <h1>My skills</h1>
-      <p className="crew-muted" style={{ marginTop: 0 }}>This helps Allie plan each party.</p>
-      <SkillsForm options={CREW_SKILLS} picked={picked} extras={extras} maxExtras={MAX_EXTRAS} maxLength={MAX_EXTRA_LENGTH} />
-    </main>
-  )
+  redirect('/crew/profile#skills')
 }

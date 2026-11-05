@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { getSupabase } from '@/lib/supabase'
 import { requireCrewPage } from '@/lib/crew/page'
 import { loadCrewSettings } from '@/lib/crew/settings'
@@ -23,6 +24,8 @@ export default async function CrewPayPage() {
   const settings = await loadCrewSettings(sb)
   if (settings.kind !== 'ok') return <CrewUnavailable />
   const s = settings.settings
+  // Launch mode (pay figures hidden): there is no pay page and no tab for it.
+  if (!s.payVisible) redirect('/crew/profile')
   const slots = await getMemberSlots(sb, member.id, { statuses: ['completed'] })
   if (slots.kind !== 'ok') return <CrewUnavailable />
   const parties = await partiesByIds(sb, slots.data.map(x => x.party_id))
@@ -36,30 +39,6 @@ export default async function CrewPayPage() {
   const me = meView(member, s)
   const ladder = payLadder(member.steps, me.canLead, s)
   const total = records.reduce((sum, r) => sum + (r.payCents ?? 0) + (r.extraCents ?? 0) + (r.tipCents ?? 0) + (r.tipTopupCents ?? 0), 0)
-
-  // Launch mode (pay figures hidden): this is "How it works" — cancelling and
-  // cover only. No rate, no ladder, no pay records.
-  if (!s.payVisible) {
-    return (
-      <main className="crew-wrap">
-        <CrewTop firstName={me.firstName} isTest={member.is_test} />
-        <h1>How it works</h1>
-        <p className="crew-muted" style={{ marginTop: 0 }}>Pick parties you can work, confirm them when we ask, and tell us early if something changes.</p>
-        <h2>If you can&apos;t make it</h2>
-        <div className="crew-card">
-          <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
-            {cancellingLines(s, new Date()).map((line, i) => <li key={i} style={{ marginBottom: '.45rem' }}>{line}</li>)}
-          </ul>
-        </div>
-        <h2>Backup</h2>
-        <div className="crew-card">
-          <p style={{ margin: 0 }}>
-            A party is full? Tap <strong>I can cover (standby)</strong> on it. If someone on the crew can&apos;t make it, standbys are asked first.
-          </p>
-        </div>
-      </main>
-    )
-  }
 
   return (
     <main className="crew-wrap">

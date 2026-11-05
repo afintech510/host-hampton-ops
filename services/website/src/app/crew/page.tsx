@@ -88,9 +88,6 @@ export default async function CrewHomePage() {
         </section>
       )}
 
-      <p className="crew-small" style={{ marginTop: '1.5rem' }}>
-        <Link className="crew-link" href="/crew/skills">My skills</Link>
-      </p>
     </main>
   )
 }

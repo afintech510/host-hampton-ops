@@ -47,7 +47,10 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  const [pending, setPending] = useState<{ slotId: string; memberId: string; warnings: string[] } | null>(null)
+  /** Who is chosen for each open spot, applied together by the one Assign button. */
+  const [picks, setPicks] = useState<Record<string, string>>({})
+  /** Picks the server flagged (another party then, marked unavailable…), waiting for one "Assign anyway". */
+  const [pending, setPending] = useState<{ slotId: string; memberId: string; who: string; warnings: string[] }[]>([])
 
   const load = useCallback(async (): Promise<'ok' | 'unauthorized' | 'error'> => {
     const r = await api<Detail & { error?: string }>(`/api/admin/crew/parties/${params.id}`)
@@ -64,21 +67,44 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
     setBusy(true)
     setError('')
     setNotice('')
-    const r = await api<{ error?: string; warnings?: string[]; warning?: string; added?: number }>(`/api/admin/crew/parties/${params.id}`, { method: 'PATCH', body })
+    const r = await api<{ error?: string; warning?: string; added?: number }>(`/api/admin/crew/parties/${params.id}`, { method: 'PATCH', body })
     setBusy(false)
     if (!r.ok) {
-      if (r.status === 409 && r.data.warnings?.length && body.action === 'assign') {
-        setPending({ slotId: body.slotId as string, memberId: body.memberId as string, warnings: r.data.warnings })
-        return
-      }
       setError(r.data.error || 'That did not work.')
       await load()
       return
     }
-    setPending(null)
     if (r.data.warning) setNotice(r.data.warning)
     else if (done) setNotice(done)
     await load()
+  }
+
+  /**
+   * Assign every chosen spot in one click. One at a time, so each is judged
+   * against the party as the one before it left it. A pick the server flags is
+   * not forced: it is listed once, with a single "Assign anyway" for the lot.
+   */
+  async function assignAll(chosen: { slotId: string; memberId: string; who: string; force: boolean }[]) {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    const flagged: typeof pending = []
+    const failed: string[] = []
+    const done = new Set<string>()
+    for (const c of chosen) {
+      const r = await api<{ error?: string; warnings?: string[] }>(`/api/admin/crew/parties/${params.id}`, {
+        method: 'PATCH', body: { action: 'assign', slotId: c.slotId, memberId: c.memberId, force: c.force },
+      })
+      if (r.ok) done.add(c.slotId)
+      else if (r.status === 409 && r.data.warnings?.length) flagged.push({ slotId: c.slotId, memberId: c.memberId, who: c.who, warnings: r.data.warnings })
+      else failed.push(`${c.who}: ${r.data.error || 'that did not work'}`)
+    }
+    setPicks(prev => Object.fromEntries(Object.entries(prev).filter(([slotId]) => !done.has(slotId))))
+    setPending(flagged)
+    if (failed.length) setError(failed.join(' · '))
+    if (done.size) setNotice(`Assigned ${done.size} ${done.size === 1 ? 'spot' : 'spots'}.${flagged.length ? ' See below for the rest.' : ''}`)
+    await load()
+    setBusy(false)
   }
 
   /** A late cancel nobody took: offer it to everyone free that day, or put someone on it. */
@@ -101,6 +127,11 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
   const live = p.status === 'draft' || p.status === 'published'
   const liveSlots = d.slots.filter(s => s.status !== 'cancelled')
   const anyoneOn = liveSlots.some(s => s.memberId && ['assigned', 'completed', 'no_show'].includes(s.status))
+  const nameOf = (id: string) => d.members.find(m => m.id === id)?.name ?? 'Someone'
+  const chosen = liveSlots
+    .filter(s => !s.memberId && picks[s.id])
+    .map(s => ({ slotId: s.id, memberId: picks[s.id], who: nameOf(picks[s.id]), force: false }))
+  const takenElsewhere = (slotId: string) => new Set(Object.entries(picks).filter(([id, m]) => id !== slotId && m).map(([, m]) => m))
 
   return (
     <CrewFrame
@@ -135,6 +166,11 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <h2 className="font-semibold text-hampton-navy">Spots — {d.staffed}/{d.needed} staffed</h2>
               <div className="flex flex-wrap gap-2">
+                {live && liveSlots.some(s => !s.memberId) && (
+                  <button disabled={busy || chosen.length === 0} onClick={() => assignAll(chosen)} className={BTN_PRIMARY}>
+                    {busy ? 'Assigning…' : chosen.length > 1 ? `Assign ${chosen.length}` : 'Assign'}
+                  </button>
+                )}
                 {p.status === 'draft' && <button disabled={busy} onClick={() => act({ action: 'publish' }, 'Published. Crew can see it now (once the crew app is launched).')} className={BTN_PRIMARY}>Publish</button>}
                 {p.status === 'published' && (
                   <button disabled={busy || anyoneOn} title={anyoneOn ? 'Only while nobody is on it' : ''} onClick={() => act({ action: 'unpublish' }, 'Back to draft.')} className={BTN_GHOST}>
@@ -147,7 +183,8 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
             <ul className="divide-y divide-hampton-pink/10">
               {d.slots.filter(s => s.status !== 'cancelled').map(s => (
                 <SlotRow key={s.id} slot={s} members={d.members} busy={busy} live={live}
-                  onAssign={(memberId, force) => act({ action: 'assign', slotId: s.id, memberId, force }, 'Assigned.')}
+                  pick={picks[s.id] ?? ''} taken={takenElsewhere(s.id)}
+                  onPick={memberId => setPicks(prev => ({ ...prev, [s.id]: memberId }))}
                   onUnassign={() => act({ action: 'unassign', slotId: s.id }, 'Unassigned; the spot is open again.')}
                   onRemove={() => act({ action: 'remove_spot', slotId: s.id }, 'Spot removed.')}
                   onOfferAll={swapId => coverAct(swapId, { action: 'offer_all' }, x => `Offered to everyone free that day (${x.asked ?? 0} asked).`)}
@@ -156,12 +193,19 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
               ))}
             </ul>
 
-            {pending && (
+            {pending.length > 0 && (
               <div className="mt-4 bg-amber-50 text-amber-900 rounded-lg p-4 text-sm">
-                {pending.warnings.map((w, i) => <p key={i}>{w}</p>)}
+                {pending.map(c => (
+                  <div key={c.slotId} className="mb-2">
+                    <p className="font-semibold">{c.who}</p>
+                    {c.warnings.map((w, i) => <p key={i}>{w}</p>)}
+                  </div>
+                ))}
                 <div className="flex gap-2 mt-3">
-                  <button disabled={busy} onClick={() => act({ action: 'assign', slotId: pending.slotId, memberId: pending.memberId, force: true }, 'Assigned despite the conflict.')} className={BTN_PRIMARY}>Assign anyway</button>
-                  <button onClick={() => setPending(null)} className={BTN_GHOST}>Cancel</button>
+                  <button disabled={busy} onClick={() => assignAll(pending.map(c => ({ slotId: c.slotId, memberId: c.memberId, who: c.who, force: true })))} className={BTN_PRIMARY}>
+                    {pending.length > 1 ? 'Assign them anyway' : 'Assign anyway'}
+                  </button>
+                  <button onClick={() => setPending([])} className={BTN_GHOST}>Cancel</button>
                 </div>
               </div>
             )}
@@ -213,12 +257,13 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
   )
 }
 
-function SlotRow({ slot, members, busy, live, onAssign, onUnassign, onRemove, onOfferAll, onAssignCover }: {
+function SlotRow({ slot, members, busy, live, pick, taken, onPick, onUnassign, onRemove, onOfferAll, onAssignCover }: {
   slot: Slot; members: Choice[]; busy: boolean; live: boolean
-  onAssign: (memberId: string, force: boolean) => void; onUnassign: () => void; onRemove: () => void
+  /** The person chosen for this open spot, and the people already chosen for the others. The page's one Assign button applies them. */
+  pick: string; taken: ReadonlySet<string>; onPick: (memberId: string) => void
+  onUnassign: () => void; onRemove: () => void
   onOfferAll: (swapId: string) => void; onAssignCover: (swapId: string, memberId: string) => void
 }) {
-  const [pick, setPick] = useState('')
   const [coverPick, setCoverPick] = useState('')
   const lead = slot.role === 'lead'
   const options = members.filter(m => !lead || m.canLead || m.isOwner)
@@ -229,7 +274,7 @@ function SlotRow({ slot, members, busy, live, onAssign, onUnassign, onRemove, on
       </span>
       {slot.memberId ? (
         <>
-          <span className="font-semibold text-hampton-navy">{slot.memberName}{slot.isOwner ? ' (Allie, unpaid)' : ''}</span>
+          <span className="font-semibold text-hampton-navy">{slot.memberName}</span>
           <span className="text-xs text-hampton-navy/50">
             {slot.isOwner ? '' : slot.confirmed ? 'confirmed' : 'not confirmed'}
             {slot.assignedVia ? ` · ${slot.assignedVia === 'admin' ? 'assigned' : slot.assignedVia === 'cover' ? 'covering' : 'claimed'}` : ''}
@@ -252,7 +297,7 @@ function SlotRow({ slot, members, busy, live, onAssign, onUnassign, onRemove, on
                   const notes = fit.conflicts.map(c => CONFLICT_LABEL[c])
                   return (
                     <option key={m.id} value={m.id} disabled={fit.conflicts.includes('on_party')}>
-                      {m.name}{m.isOwner ? ' (Allie)' : ''}{m.isTest ? ' [test]' : ''}{notes.length ? ` — ${notes.join(', ')}` : ''}
+                      {m.name}{m.isTest ? ' [test]' : ''}{notes.length ? ` — ${notes.join(', ')}` : ''}
                     </option>
                   )
                 })}
@@ -269,20 +314,19 @@ function SlotRow({ slot, members, busy, live, onAssign, onUnassign, onRemove, on
           <span className="text-hampton-navy/50">Open</span>
           {live && (
             <div className="flex flex-wrap items-center gap-2 ml-auto">
-              <select value={pick} onChange={e => setPick(e.target.value)} className={INPUT} aria-label="Assign">
-                <option value="">Assign…</option>
+              <select value={pick} onChange={e => onPick(e.target.value)} className={INPUT} aria-label={`Choose for the ${lead ? 'Party Lead' : 'crew'} spot`} disabled={busy}>
+                <option value="">Choose…</option>
                 {options.map(m => {
                   const fit = lead ? m.fitLead : m.fitCrew
                   const notes = fit.conflicts.map(c => CONFLICT_LABEL[c])
                   return (
-                    <option key={m.id} value={m.id} disabled={fit.conflicts.includes('on_party')}>
-                      {m.name}{m.isOwner ? ' (Allie)' : ''}{m.isTest ? ' [test]' : ''}
+                    <option key={m.id} value={m.id} disabled={fit.conflicts.includes('on_party') || taken.has(m.id)}>
+                      {m.name}{m.isTest ? ' [test]' : ''}
                       {notes.length ? ` — ${notes.join(', ')}` : ''}
                     </option>
                   )
                 })}
               </select>
-              <button disabled={busy || !pick} onClick={() => onAssign(pick, false)} className={BTN_PRIMARY}>Assign</button>
               {!lead && <button disabled={busy} onClick={onRemove} className={BTN_GHOST}>Remove spot</button>}
             </div>
           )}
