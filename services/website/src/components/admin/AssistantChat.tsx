@@ -40,6 +40,39 @@ interface Card {
   links?: { label: string; url: string }[]
 }
 
+/**
+ * Makes a link in the assistant's reply clickable — OUR OWN pages only. A URL
+ * is turned into an anchor only when it resolves to this site's origin; anything
+ * else stays plain text, so a customer-supplied address that ends up in a reply is
+ * never a one-click link out of the admin.
+ */
+function LinkedText({ text }: { text: string }) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const parts = text.split(/(https?:\/\/[^\s)]+|\/admin[^\s)]*)/g)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (i % 2 === 0 || !origin) return part
+        const trimmed = part.replace(/[.,;:!?]+$/, '')
+        const tail = part.slice(trimmed.length)
+        let ours = false
+        try {
+          ours = new URL(trimmed, origin).origin === origin
+        } catch {
+          ours = false
+        }
+        if (!ours) return part
+        return (
+          <span key={i}>
+            <a href={trimmed} target="_blank" rel="noopener noreferrer" className="underline font-medium">{trimmed}</a>
+            {tail}
+          </span>
+        )
+      })}
+    </>
+  )
+}
+
 /** What the recipient will read, exactly — with a hand-edit box for each part that can be reworded. */
 function MessageView({
   message,
@@ -380,7 +413,7 @@ export default function AssistantChat({
                     line.role === 'user' ? 'bg-hampton-navy text-white' : 'bg-white text-hampton-navy border border-hampton-mauve/30'
                   }`}
                 >
-                  {line.text}
+                  {line.role === 'assistant' ? <LinkedText text={line.text} /> : line.text}
                 </div>
               )}
               {line.cards?.map(card => (
@@ -468,9 +501,18 @@ export default function AssistantChat({
                     <div className={card.state === 'done' ? 'text-green-700' : 'text-red-700'}>
                       <p>{card.result}</p>
                       {card.links?.map(l => (
-                        <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer" className="underline block mt-1">
-                          {l.label}
-                        </a>
+                        <div key={l.url} className="flex items-center gap-3 mt-1">
+                          <a href={l.url} target="_blank" rel="noopener noreferrer" className="underline">
+                            {l.label}
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard?.writeText(l.url).catch(() => undefined)}
+                            className="text-xs border border-current rounded-full px-2 py-0.5"
+                          >
+                            Copy
+                          </button>
+                        </div>
                       ))}
                     </div>
                   )}

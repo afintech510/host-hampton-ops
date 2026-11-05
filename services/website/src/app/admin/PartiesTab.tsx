@@ -190,9 +190,12 @@ interface PipelineCounts {
 
 export default function PartiesTab({
   headers,
+  deepLink,
 }: {
   headers: HeadersInit
   onLogout: () => void
+  /** Open this party on arrival (`?party=<id>` or `?ref=<booking ref>` in the address). */
+  deepLink?: { id?: string; ref?: string } | null
 }) {
   const [bookings, setBookings] = useState<PartyBookingSummary[]>([])
   const [total, setTotal] = useState(0)
@@ -305,9 +308,28 @@ export default function PartiesTab({
 
   async function fetchDetail(id: string) {
     const res = await fetch(`/api/admin/parties/${id}`, { headers })
+    // A failed read must not become the open party: the error body is not a booking.
+    if (!res.ok) return
     const data = await res.json()
     setSelected(data)
   }
+
+  // A link that names a party opens it, once.
+  useEffect(() => {
+    if (!deepLink) return
+    let cancelled = false
+    ;(async () => {
+      let id = deepLink.id
+      if (!id && deepLink.ref) {
+        const r = await fetch(`/api/admin/parties/resolve?ref=${encodeURIComponent(deepLink.ref)}`, { headers })
+        if (!r.ok) return
+        id = ((await r.json()) as { id?: string }).id
+      }
+      if (id && !cancelled) await fetchDetail(id)
+    })().catch(() => undefined)
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLink?.id, deepLink?.ref])
 
   async function patchBooking(updates: Record<string, unknown>) {
     if (!selected) return

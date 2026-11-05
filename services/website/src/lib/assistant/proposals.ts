@@ -33,6 +33,7 @@ export type ProposalKind =
   | 'mark_lost'
   | 'send_photos'
   | 'enrol_sequence'
+  | 'party_link'
 
 /** A thumbnail shown on a card (photo proposals). Display only — execute.ts never reads it. */
 export interface ProposalPhoto {

@@ -335,6 +335,19 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: 'propose_party_link',
+    description:
+      'PROPOSE making a link for the manager to open or copy: the invoice page of the party, its party planner page, or its booking portal. It is the same link the client gets, so it SIGNS WHOEVER OPENS IT IN as the client for 30 days. It is shown to the manager only and is NOT sent to the client (to send it use propose_send_client_links). Nothing is made until the manager clicks Confirm. For the admin view of a party use get_party_links, not this.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        destination: { type: 'string', enum: ['invoice', 'planner', 'portal'] },
+      },
+      required: ['booking_ref', 'destination'],
+    },
+  },
+  {
     name: 'propose_enrol_sequence',
     description:
       'PROPOSE enrolling a lead in an email nurture sequence (ids from list_sequences). The card shows the steps and the FIRST email exactly as the lead would read it, and whether the person has opted out. Enrolling queues the person; it sends nothing now. Consent, stage and duplicates are checked again when the manager clicks Confirm. Only for leads who have not booked. Nothing happens until the manager clicks Confirm.',
@@ -485,6 +498,8 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await proposeSendPhotos(supabase, input, ctx)
       case 'propose_enrol_sequence':
         return await proposeEnrolSequence(supabase, input, ctx)
+      case 'propose_party_link':
+        return await proposePartyLink(supabase, input, ctx)
       default:
         if (isLeadTool(name)) return await runLeadTool(name, input, supabase, ctx.now)
         return { result: { error: `Unknown tool ${name}` }, isError: true }
@@ -806,6 +821,29 @@ async function proposeSendClientLinks(
     kinds, email, sms, edits, authored: hasEdits(edits) ? 'model' : 'default', now: ctx.now,
   })
   return messageCardOutcome('send_client_links', built, ctx, input)
+}
+
+const PARTY_LINK_LABELS = { invoice: 'invoice', planner: 'party planner', portal: 'booking portal' } as const
+
+async function proposePartyLink(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const d = input.destination
+  if (d !== 'invoice' && d !== 'planner' && d !== 'portal') return fail('destination must be invoice, planner or portal')
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const what = PARTY_LINK_LABELS[d]
+  return cardOutcome(
+    'party_link',
+    { bookingId: b.id, bookingRef: b.booking_ref, destination: d },
+    `Make the ${what} link for ${b.booking_ref}`,
+    [
+      `Party: ${partyLabel(b)}`,
+      `A fresh ${what} link, for you to open or copy. It is NOT sent to the client.`,
+      'It is the link the client gets: whoever opens it is signed in as them for 30 days, so treat it like a password. It is shown on this card only and is not saved in the chat history.',
+    ],
+    ctx,
+    'No link has been made.',
+  )
 }
 
 async function proposeEnrolSequence(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {

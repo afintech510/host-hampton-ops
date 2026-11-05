@@ -47,7 +47,11 @@ export interface ExecuteResult {
   ok: boolean
   /** Shown to the manager and appended to the conversation. */
   message: string
-  /** Links the manager may want to open. Never a sign-in link. */
+  /**
+   * Links the manager may want to open. Never a sign-in link — except the one the
+   * manager explicitly asked a `party_link` card for. The confirm route returns it
+   * to that browser and does not write it into the saved conversation.
+   */
   links?: { label: string; url: string }[]
   /** HTTP-ish status from the replayed route, for logging. */
   status: number
@@ -263,6 +267,24 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       const sentVia = Array.isArray(json.sentVia) ? (json.sentVia as string[]).join(' and ') : 'the chosen channel'
       const failures = Array.isArray(json.failures) && json.failures.length ? ` Problems: ${(json.failures as string[]).join(' ')}` : ''
       return { ok: true, status: res.status, message: `Sent ${String(json.count ?? input.photoIds.length)} photo(s) to ${input.bookingRef} by ${sentVia}.${failures}` }
+    }
+
+    case 'party_link': {
+      const input = proposal.input as { bookingId: string; bookingRef: string; destination: 'invoice' | 'planner' | 'portal' }
+      // The dashboard's own "Copy Invoice Link" / "Copy Portal Link": mint only,
+      // deliver nothing. `portal` is the route's default destination.
+      const { res, json } = await replayPartyAction(original, input.bookingId, {
+        action: 'generate_portal_url',
+        ...(input.destination === 'portal' ? {} : { destination: input.destination }),
+      })
+      if (!res.ok || json.ok !== true || typeof json.portalUrl !== 'string') return refused('No link made', res, json)
+      const label = { invoice: 'Invoice', planner: 'Party planner', portal: 'Booking portal' }[input.destination]
+      return {
+        ok: true,
+        status: res.status,
+        message: `${label} link ready for ${input.bookingRef}. Not sent to the client.`,
+        links: [{ label: `${label} link`, url: json.portalUrl }],
+      }
     }
 
     case 'enrol_sequence': {

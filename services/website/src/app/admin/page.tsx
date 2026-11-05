@@ -283,6 +283,28 @@ function AdminDashboard({
    */
   const [inboxFocus, setInboxFocus] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  /**
+   * `/admin?tab=parties&party=<id>` or `…&ref=HH-PTY-…` opens that tab on that
+   * party. The notification emails, the Manager assistant and the Parties list all
+   * link this way; before this read the address, every one of those links landed
+   * on the dashboard home and the `ref` was ignored. Read once on arrival (not
+   * `useSearchParams`, which would opt the page out of static rendering).
+   */
+  const [deepLink, setDeepLink] = useState<{ id?: string; ref?: string } | null>(null)
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    const tab = q.get('tab')
+    if (tab && TABS.some(t => t.key === tab)) setActiveTab(tab as TabKey)
+    const id = q.get('party') ?? ''
+    const ref = q.get('ref') ?? ''
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      setActiveTab('parties')
+      setDeepLink({ id })
+    } else if (/^[A-Za-z0-9-]{3,40}$/.test(ref)) {
+      setActiveTab('parties')
+      setDeepLink({ ref })
+    }
+  }, [])
 
   // Two doors, one header object. On the shared-password path `token` is the
   // password and goes out as the Bearer header the ~56 admin routes already
@@ -478,6 +500,7 @@ function AdminDashboard({
               key={`parties-${refreshKey}`}
               headers={headers}
               onLogout={onLogout}
+              deepLink={deepLink}
             />
           )}
           {activeTab === 'photos' && (

@@ -69,7 +69,9 @@ export async function POST(req: NextRequest) {
       `assistant: ${actor} confirmed ${proposal.kind} ${proposal.id} → ${result.ok ? 'ok' : 'refused'} (${result.status})`,
     )
     // A released card stays confirmable, so it is not written down as an outcome.
-    if (!released) await note(result.ok ? 'done' : 'failed', result.message, result.links)
+    // A party_link result is a client sign-in link: it goes back to the browser
+    // that asked for it and nowhere else — not into the saved thread.
+    if (!released) await note(result.ok ? 'done' : 'failed', result.message, proposal.kind === 'party_link' ? undefined : result.links)
     return NextResponse.json({ ok: result.ok, message: result.message, links: result.links ?? [], retryable: released })
   } catch (err) {
     console.error(`assistant: confirm ${proposal.kind} ${proposal.id} threw`, err)

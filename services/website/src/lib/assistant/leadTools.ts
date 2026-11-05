@@ -61,6 +61,12 @@ export const LEAD_TOOLS: Anthropic.Beta.BetaTool[] = [
     input_schema: { type: 'object', properties: { booking_ref: { type: 'string' } }, required: ['booking_ref'] },
   },
   {
+    name: 'get_party_links',
+    description:
+      'Where to look at one party in the admin: the link that opens its Parties-tab view (the admin booking page) and its lead thread. Plain links, safe to show. For the CLIENT-facing invoice or party planner page use propose_party_link (those are sign-in links and need a card). Read-only.',
+    input_schema: { type: 'object', properties: { booking_ref: { type: 'string' } }, required: ['booking_ref'] },
+  },
+  {
     name: 'get_invitation',
     description:
       'Does this lead already have a digital invitation, and what is its link? A lead\'s invitation is a live PREVIEW of their theme with their child\'s details, which can be sent as a "mock invitation". Returns the state, the link, and ready-made preview wording (sms_body, email_subject, email_body) to pass VERBATIM to propose_send_client_links with links ["invite"] — the standard invitation wording says "share with your guests", which is wrong for a lead who has not booked. Read-only.',
@@ -163,6 +169,24 @@ export async function runLeadTool(name: string, input: Record<string, unknown>, 
       if (r.kind === 'unavailable') return unavailable('that lead')
       if (r.kind === 'absent') return fail(`No party with ref ${ref}`)
       return { result: { ...r.step, instruction: 'Nothing has been done. To act, call the named propose_* tool; the manager confirms the card.' } }
+    }
+
+    case 'get_party_links': {
+      const ref = str(input.booking_ref, 40)
+      if (!ref) return fail('booking_ref is required')
+      const b = await supabase.from('bookings').select('id, booking_ref, contact_name').eq('booking_ref', ref).maybeSingle()
+      if (b.error) return unavailable('that party')
+      if (!b.data) return fail(`No party with ref ${ref}`)
+      const row = b.data as { id: string; booking_ref: string; contact_name: string | null }
+      return {
+        result: {
+          ref: row.booking_ref,
+          name: row.contact_name,
+          admin_party_page: `${CANONICAL_ORIGIN}/admin?tab=parties&party=${row.id}`,
+          lead_thread: `${CANONICAL_ORIGIN}/admin/lead/${encodeURIComponent(row.booking_ref)}`,
+          note: 'Show admin_party_page as the link to open this party in the admin. For the invoice or the party planner page, call propose_party_link: those are client sign-in links and the manager confirms a card to get one.',
+        },
+      }
     }
 
     case 'get_invitation': {
