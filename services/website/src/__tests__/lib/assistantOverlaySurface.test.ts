@@ -310,7 +310,11 @@ describe('O2: the propose tools write nothing', () => {
     const d = mkdb()
     const found = await runAssistantTool('find_photos', { theme: 'slime-party' }, { actor: ACTOR, supabase: d.client as never })
     expect((found.result as { photos: { id: string }[] }).photos.map(p => p.id)).toEqual([P1])
-    expect(Object.keys((found.result as { photos: object[] }).photos[0]).sort()).toEqual(['activities', 'alt', 'id', 'party_type', 'theme', 'url'])
+    expect(Object.keys((found.result as { photos: object[] }).photos[0]).sort()).toEqual(['activities', 'alt', 'id', 'kind', 'party_type', 'theme', 'url'])
+    // One pasteable "description: link" line per photo, same order.
+    const lines = (found.result as { text_lines: string[] }).text_lines
+    const first = (found.result as { photos: { alt: string; url: string }[] }).photos[0]
+    expect(lines).toEqual([`${first.alt || 'Party photo'}: ${first.url}`])
 
     mockLoadCatalog.mockResolvedValue({ kind: 'ok', data: {} })
     mockQuote.mockReturnValue({

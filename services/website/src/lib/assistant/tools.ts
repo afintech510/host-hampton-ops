@@ -13,6 +13,7 @@ import { CLIENT_LINK_KINDS, screenLinkKinds, clientLinkLabel, type ClientLinkKin
 import { PARTY_TYPES, isPartyType } from '@/lib/pipelineStages'
 import { ADMIN_PAYMENT_METHODS, PAYMENT_TYPES } from '@/lib/adminMoney'
 import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
+import { ACTIVITY_TAGS, THEME_TAGS } from '@/lib/mediaVocab'
 import { loadQuoteCatalog, quoteFromCatalog, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
@@ -210,7 +211,7 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'find_photos',
     description:
-      'Find real party photos from the photo library. Only photos a human approved and that show no identifiable child are ever returned. Filter by party_type (in_studio_theme, mobile_party, public_event), theme (a theme slug such as slime-party) and/or activity (a tag such as slime-making). Returns id, url and alt for each; pass the ids to propose_send_photos.',
+      `Find real party photos from the photo library. Only photos a human approved and that show no identifiable child are ever returned. Filter by party_type (in_studio_theme, mobile_party, public_event), theme (one of: ${THEME_TAGS.join(', ')}) and/or activity (one of: ${Object.keys(ACTIVITY_TAGS).join(', ')}). Returns id, url and alt for each, plus "text_lines": one "description: link" line per photo that the manager can paste into a text to a client. Show those lines as they are, and say plainly when nothing matches (then try fewer filters, e.g. party_type alone). To have the system send them to a booking's contact, pass the ids to propose_send_photos.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -980,7 +981,9 @@ async function findPhotosTool(supabase: Supa, input: Record<string, unknown>): P
   if (r.kind !== 'ok') return { result: { error: 'The photo library could not be read — say so.' }, isError: true }
   return {
     result: {
-      photos: r.data.map(p => ({ id: p.id, url: p.url, alt: p.alt, party_type: p.partyType, theme: p.themeSlug, activities: p.activities })),
+      photos: r.data.map(p => ({ id: p.id, url: p.url, alt: p.alt, party_type: p.partyType, theme: p.themeSlug, activities: p.activities, kind: p.kind })),
+      // A reel's thumbnail is a still of a video: the useful thing to text is the reel itself.
+      text_lines: r.data.map(p => (p.kind === 'reel' && p.igPermalink ? `${p.alt || 'Party reel'} (video): ${p.igPermalink}` : `${p.alt || 'Party photo'}: ${p.url}`)),
       note: r.data.length ? undefined : 'No approved photos match that. Say so; do not describe photos you have not been shown.',
     },
   }
