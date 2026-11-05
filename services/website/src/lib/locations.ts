@@ -73,8 +73,8 @@ export const LOCATIONS: Location[] = [
   // ── Moriches Bay (just west of the studio) ──
   // Added 2026-11-04: inside the free 20-mile radius and had no page at all.
   // An East Moriches mobile inquiry came in 2026-10-03.
-  { slug: 'east-moriches', name: 'East Moriches', county: 'Suffolk', region: 'Moriches Bay', milesFromStudio: 6, travelTier: 'included', nearby: ['Center Moriches', 'Eastport', 'Manorville'], context: 'East Moriches is a few minutes west of our Speonk studio along Montauk Highway — about as close to home as our route gets.' },
-  { slug: 'center-moriches', name: 'Center Moriches', county: 'Suffolk', region: 'Moriches Bay', milesFromStudio: 9, travelTier: 'included', nearby: ['East Moriches', 'Mastic', 'Manorville'], context: 'Center Moriches sits on Moriches Bay, a short drive west of our studio along Montauk Highway.' },
+  { slug: 'east-moriches', name: 'East Moriches', county: 'Suffolk', region: 'Moriches Bay', milesFromStudio: 6, travelTier: 'included', nearby: ['Center Moriches', 'Eastport', 'Manorville'], context: 'East Moriches is a few minutes west of our Speonk studio — about as close to home as our route gets.' },
+  { slug: 'center-moriches', name: 'Center Moriches', county: 'Suffolk', region: 'Moriches Bay', milesFromStudio: 9, travelTier: 'included', nearby: ['East Moriches', 'Mastic', 'Manorville'], context: 'Center Moriches sits on Moriches Bay, a short drive west of our Speonk studio.' },
 
   // ── East End · North Fork ──
   { slug: 'riverhead', name: 'Riverhead', county: 'Suffolk', region: 'East End · North Fork', milesFromStudio: 14, travelTier: 'included', nearby: ['Aquebogue', 'Wading River', 'Calverton'], context: 'Riverhead sits right at the fork of the Island — an easy, close-in drive for our team.' },
