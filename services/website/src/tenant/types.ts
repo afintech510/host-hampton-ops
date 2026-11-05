@@ -91,6 +91,12 @@ export interface TenantConfig {
      * always Allie, never the owner.
      */
     customerSignoff: string
+    /**
+     * First names a customer message must never be written as or signed by
+     * (the owner's). Checked on any customer text an admin or the assistant
+     * edits — `lib/assistant/outboundText.ts`.
+     */
+    neverSignAs: string[]
   }
 
   email: {

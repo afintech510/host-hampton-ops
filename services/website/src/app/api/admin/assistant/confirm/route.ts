@@ -25,7 +25,7 @@ const REASONS: Record<string, string> = {
   bad_signature: 'That card is not valid — ask the assistant again.',
   expired: 'That card has expired (30 minutes) — ask the assistant again.',
   wrong_actor: 'That card was prepared for a different admin login.',
-  already_used: 'That card was already confirmed.',
+  already_used: 'That card was already confirmed, or replaced by a reworded one.',
 }
 
 export async function POST(req: NextRequest) {

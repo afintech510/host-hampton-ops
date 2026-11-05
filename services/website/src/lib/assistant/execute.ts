@@ -6,6 +6,7 @@ import { POST as createPartyRoute } from '@/app/api/admin/parties/create/route'
 import { POST as partyActionRoute, PATCH as partyPatchRoute } from '@/app/api/admin/parties/[id]/route'
 import { POST as planPayLinkRoute } from '@/app/api/plan/[ref]/pay-link/route'
 import type { Proposal } from './proposals'
+import { screenOutboundText } from './outboundText'
 
 /**
  * Carry out a CONFIRMED proposal by replaying the admin API call the dashboard
@@ -85,9 +86,16 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
         links: ClientLinkKind[]
         email: boolean
         sms: boolean
+        emailSubject?: string
+        emailBody?: string
+        smsBody?: string
       }
-      // The standard wording is built from the booking as it is NOW, at confirm
-      // time, not as it was when the card was drawn.
+      // A card drawn with its wording BOUND (every card since the preview
+      // landed) sends exactly that wording, after the screens run again at this
+      // last gate. A card minted before that carries none, and falls through to
+      // the standard wording built from the booking as it is NOW.
+      const bound = boundWording(input, ['sms', 'emailSubject', 'emailBody'], input.links.map(String))
+      if (!bound.ok) return { ok: false, status: 422, message: `Not sent: ${bound.reason}` }
       const { data: b, error } = await getSupabase()
         .from('bookings')
         .select('contact_name, child_name, event_type, party_type, booking_ref')
@@ -103,9 +111,12 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
         email: input.email,
         sms: input.sms,
         ...(input.email
-          ? { emailSubject: defaultEmailSubject(b, input.links), emailBody: defaultEmailBody(b, input.links) }
+          ? {
+              emailSubject: bound.text.emailSubject ?? defaultEmailSubject(b, input.links),
+              emailBody: bound.text.emailBody ?? defaultEmailBody(b, input.links),
+            }
           : {}),
-        ...(input.sms ? { smsBody: defaultSmsBody(b, input.links) } : {}),
+        ...(input.sms ? { smsBody: bound.text.sms ?? defaultSmsBody(b, input.links) } : {}),
       }
       const res = await partyActionRoute(
         replayRequest(original, `/api/admin/parties/${encodeURIComponent(input.bookingId)}`, body),
@@ -234,7 +245,9 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
     }
 
     case 'send_photos': {
-      const input = proposal.input as { bookingId: string; bookingRef: string; photoIds: string[]; email: boolean; sms: boolean }
+      const input = proposal.input as { bookingId: string; bookingRef: string; photoIds: string[]; email: boolean; sms: boolean; smsBody?: string }
+      const bound = boundWording(input, ['sms'], ['photos'])
+      if (!bound.ok) return { ok: false, status: 422, message: `Not sent: ${bound.reason}` }
       // The exact ids the manager saw on the card. The route re-resolves them
       // through findPhotos and refuses if any is no longer approved.
       const { res, json } = await replayPartyAction(original, input.bookingId, {
@@ -243,6 +256,7 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
         photoIds: input.photoIds,
         email: input.email,
         sms: input.sms,
+        ...(input.sms && bound.text.sms ? { smsBody: bound.text.sms } : {}),
       })
       if (!res.ok || json.ok !== true) return refused('Not sent', res, json)
       const sentVia = Array.isArray(json.sentVia) ? (json.sentVia as string[]).join(' and ') : 'the chosen channel'
@@ -253,6 +267,42 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
     default:
       return { ok: false, status: 400, message: 'Unknown action.' }
   }
+}
+
+/**
+ * The bound wording of a message card, screened AGAIN at the last gate.
+ *
+ * Between the moment the card was drawn and the click, nothing may have
+ * changed what is about to go to a customer — but the card's token is the only
+ * thing proving that, so the same screens the card used run on the exact bytes
+ * about to be sent (money redirects, links that are not ours, the owner's name,
+ * a placeholder that is not ours, a text with no STOP line). A refusal here is a
+ * 4xx, so the claim is released and nothing was sent.
+ *
+ * The screen is run as `default`-authored so it does not rewrite anything: if it
+ * would change a byte, the bound text was not the screened text, and that is a
+ * refusal rather than a quiet substitution.
+ */
+function boundWording(
+  input: { smsBody?: string; emailSubject?: string; emailBody?: string },
+  fields: ('sms' | 'emailSubject' | 'emailBody')[],
+  linkKinds: string[],
+): { ok: true; text: { sms?: string; emailSubject?: string; emailBody?: string } } | { ok: false; reason: string } {
+  const allowed = linkKinds.includes('photos') ? ['photos'] : ['invite', 'rsvps', 'planner', 'invoice', 'portal']
+  const out: { sms?: string; emailSubject?: string; emailBody?: string } = {}
+  const spec: Array<['sms' | 'emailSubject' | 'emailBody', string | undefined, 'sms' | 'email' | 'subject']> = [
+    ['sms', input.smsBody, 'sms'],
+    ['emailSubject', input.emailSubject, 'subject'],
+    ['emailBody', input.emailBody, 'email'],
+  ]
+  for (const [field, value, channel] of spec) {
+    if (!fields.includes(field) || value === undefined) continue
+    const r = screenOutboundText(value, { channel, authored: 'default', allowedPlaceholders: allowed })
+    if (!r.ok) return { ok: false, reason: r.reason }
+    if (r.text !== value) return { ok: false, reason: 'The wording on the card changed after it was drawn — ask for a fresh card.' }
+    out[field] = r.text
+  }
+  return { ok: true, text: out }
 }
 
 /** POST an action to the dashboard's party route, on the confirming admin's credentials. */

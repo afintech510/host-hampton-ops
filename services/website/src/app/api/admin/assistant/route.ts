@@ -6,7 +6,8 @@ import { featureEnabled } from '@/tenant'
 import { getSupabase } from '@/lib/supabase'
 import { runAssistantTurn, screenHistory } from '@/lib/assistant/run'
 import { contextKey, screenContext } from '@/lib/assistant/context'
-import { expireStaleCards, readThread, writeThread, type ThreadCard, type ThreadLine } from '@/lib/assistant/threads'
+import { expireStaleCards, readThread, retireReplacedCards, writeThread, type ThreadCard, type ThreadLine } from '@/lib/assistant/threads'
+import { supersedeProposal } from '@/lib/assistant/usedProposals'
 import { providerConfigured, providerName } from '@/lib/ai/select'
 
 export const dynamic = 'force-dynamic'
@@ -58,14 +59,20 @@ export async function POST(req: NextRequest) {
     const turn = await runAssistantTurn({ history: history.messages, userText: text, actor, context })
 
     const cards: ThreadCard[] = turn.proposals.map(p => ({ ...p, state: 'pending' }))
+    // A reworded message replaces the card it was made from: that card is spent
+    // (so a stale tab cannot send the old wording) and drawn as replaced.
+    const replaced = new Set<string>()
+    for (const p of turn.proposals) {
+      if (p.supersedes && (await supersedeProposal(supabase, p.supersedes, actor)) === 'claimed') replaced.add(p.supersedes)
+    }
     const lines: ThreadLine[] = [
-      ...expireStaleCards(read.thread?.lines ?? []),
+      ...retireReplacedCards(expireStaleCards(read.thread?.lines ?? []), replaced),
       { role: 'user', text },
       { role: 'assistant', text: turn.reply, cards },
     ]
     const saved = await writeThread(supabase, actor, key, context.bookingRef, turn.messages, lines)
 
-    return NextResponse.json({ reply: turn.reply, proposals: cards, saved })
+    return NextResponse.json({ reply: turn.reply, proposals: cards, saved, replaced: Array.from(replaced) })
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) {
       return NextResponse.json({ error: 'The AI service is busy — try again in a minute.' }, { status: 503 })

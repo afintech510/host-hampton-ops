@@ -49,6 +49,28 @@ export async function claimProposal(
 }
 
 /**
+ * A card the manager replaced with a revised one (a reworded message) is spent
+ * on the spot: same table, same primary key, so the old wording can never be
+ * confirmed from a stale tab after the new card exists. Best-effort in the one
+ * direction that is safe — if the row cannot be written the old card simply
+ * stays valid until it expires, exactly as it was before the revision.
+ */
+export async function supersedeProposal(sb: Supa, id: string, actor: string, now = Date.now()): Promise<ClaimOutcome> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return 'unavailable'
+  const { error } = await sb.from('assistant_used_proposals').insert({
+    proposal_id: id,
+    actor,
+    kind: 'superseded',
+    expires_at: new Date(now + 30 * 60 * 1000).toISOString(),
+  })
+  if (!error) return 'claimed'
+  // 23505: it was already confirmed or already replaced, so it is spent either way.
+  if ((error as { code?: string }).code === UNIQUE_VIOLATION) return 'already_used'
+  console.error('assistant: could not retire a replaced card:', error.message)
+  return 'unavailable'
+}
+
+/**
  * Release a claim when the replayed route refused BEFORE anything happened (a
  * 4xx: quiet hours, nothing owed, missing email) so the manager can fix the
  * cause and confirm the same card again. Returns false if the release itself

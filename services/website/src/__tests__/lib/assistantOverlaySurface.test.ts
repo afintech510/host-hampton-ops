@@ -120,6 +120,8 @@ describe('O1: every write tool is propose_* and has an executor branch', () => {
     const minted = [
       ...Array.from(tools.matchAll(/kind: '([a-z_]+)'/g)).map(m => m[1]),
       ...Array.from(tools.matchAll(/cardOutcome\(\s*'([a-z_]+)'/g)).map(m => m[1]),
+      // The message cards (send links / send photos) mint through messageCardOutcome.
+      ...Array.from(tools.matchAll(/messageCardOutcome\(\s*'([a-z_]+)'/g)).map(m => m[1]),
     ]
     expect(minted.length).toBeGreaterThanOrEqual(10)
     for (const k of minted) expect(kinds.has(k)).toBe(true)
@@ -724,7 +726,7 @@ describe('O8: a photo-set link', () => {
     expect(body).toMatch(/phoneHasExplicitStop\(/)
     expect(body).toMatch(/logBookingChange\(/)
     // sendSMSVia(provider, number, body) — three arguments, no media option.
-    expect(body).toMatch(/sendSMSVia\('quo', normalizePhone\(phone\), photosSmsText\(/)
+    expect(body).toMatch(/sendSMSVia\(\s*'quo',\s*normalizePhone\(phone\),[^;]*photosSmsText\(/)
     expect(body).not.toMatch(/mediaUrl|MMS|mms/)
     // Quiet hours and STOP are decided before anything is created or sent.
     expect(body.indexOf('checkSmsQuietHours(')).toBeLessThan(body.indexOf('createPhotoSet('))

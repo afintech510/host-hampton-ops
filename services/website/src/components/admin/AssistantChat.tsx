@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Loader2, RotateCcw, Send, Sparkles, X } from 'lucide-react'
+import { Check, Loader2, Pencil, RotateCcw, Send, Sparkles, X } from 'lucide-react'
+import type { MessagePreview, PreviewChannel } from '@/lib/assistant/messageCard'
 
 /**
  * The Manager assistant's chat — ONE component, two homes: the slide-over
@@ -33,8 +34,79 @@ interface Card {
   state: 'pending' | 'working' | 'done' | 'failed' | 'dismissed' | 'expired'
   expiresAt?: number
   photos?: { id: string; url: string; alt: string }[]
+  /** A message card: the exact wording, who it goes to and whether it would be refused now. */
+  message?: MessagePreview
   result?: string
   links?: { label: string; url: string }[]
+}
+
+/** What the recipient will read, exactly — with a hand-edit box for each part that can be reworded. */
+function MessageView({
+  message,
+  editing,
+  drafts,
+  onDraft,
+}: {
+  message: MessagePreview
+  editing: boolean
+  drafts: Record<string, string>
+  onDraft: (key: string, value: string) => void
+}) {
+  const tone = message.level === 'blocked' ? 'text-red-700' : message.level === 'warn' ? 'text-amber-700' : 'text-hampton-navy/70'
+  return (
+    <div className="space-y-2 mb-3">
+      {message.channels.map((c: PreviewChannel) => (
+        <div key={c.channel} className="border border-hampton-mauve/40 rounded-lg overflow-hidden">
+          <div className="bg-hampton-ivory px-3 py-1.5 text-xs text-hampton-navy/70 flex flex-wrap gap-x-3">
+            <span className="font-bold">{c.channel === 'sms' ? 'Text' : 'Email'} to {message.recipient}</span>
+            <span>{c.to}</span>
+            {c.sms && (
+              <span>
+                {c.sms.segments} segment{c.sms.segments === 1 ? '' : 's'} · {c.sms.encoding}
+                {c.sms.cause ? ` (${c.sms.cause})` : ''}
+              </span>
+            )}
+          </div>
+          <div className="px-3 py-2">
+            {c.subject !== undefined &&
+              (editing && c.editable ? (
+                <input
+                  value={drafts.emailSubject ?? c.subject}
+                  onChange={e => onDraft('emailSubject', e.target.value)}
+                  className="w-full border border-hampton-mauve/40 rounded px-2 py-1 mb-2 font-bold"
+                  aria-label="Email subject"
+                />
+              ) : (
+                <p className="font-bold mb-1">{c.subject}</p>
+              ))}
+            {editing && c.editable ? (
+              <textarea
+                value={drafts[c.channel === 'sms' ? 'smsBody' : 'emailBody'] ?? c.template}
+                onChange={e => onDraft(c.channel === 'sms' ? 'smsBody' : 'emailBody', e.target.value)}
+                rows={c.channel === 'sms' ? 6 : 12}
+                className="w-full border border-hampton-mauve/40 rounded px-2 py-1 font-mono text-xs"
+                aria-label={c.channel === 'sms' ? 'Text message' : 'Email body'}
+              />
+            ) : (
+              <p className="whitespace-pre-wrap break-words">{c.display}</p>
+            )}
+            {c.notes.map((n, i) => (
+              <p key={i} className="text-xs text-hampton-navy/60 mt-1">{n}</p>
+            ))}
+          </div>
+        </div>
+      ))}
+      {editing && (
+        <p className="text-xs text-hampton-navy/60">
+          Keep the link markers in curly braces, like {'{invite}'} or {'{photos}'} — each is replaced with the real link when it sends.
+          Texts keep the &ldquo;Reply STOP&rdquo; line.
+        </p>
+      )}
+      {message.status.map((s, i) => (
+        <p key={i} className={`text-xs ${tone}`}>{s}</p>
+      ))}
+    </div>
+  )
 }
 
 interface Line {
@@ -147,7 +219,23 @@ export default function AssistantChat({
         setError(data.error || `Error ${res.status}`)
         return
       }
-      setLines(l => [...l, { role: 'assistant', text: data.reply || '', cards: data.proposals || [] }])
+      // A reworded message replaces the pending card it was made from.
+      const replaced = new Set<string>(Array.isArray(data.replaced) ? data.replaced : [])
+      setLines(l => [
+        ...l.map(line =>
+          replaced.size && line.cards
+            ? {
+                ...line,
+                cards: line.cards.map(c =>
+                  replaced.has(c.id) && c.state === 'pending'
+                    ? { ...c, state: 'dismissed' as const, result: 'Replaced by the reworded message below.' }
+                    : c,
+                ),
+              }
+            : line,
+        ),
+        { role: 'assistant', text: data.reply || '', cards: data.proposals || [] },
+      ])
     } catch {
       setError('Could not reach the assistant.')
     } finally {
@@ -173,6 +261,32 @@ export default function AssistantChat({
       if (ok) onActionDone?.()
     } catch {
       updateCard(card.id, { state: 'failed', result: 'Could not reach the server — check the Parties tab before retrying.' })
+    }
+  }
+
+  const [editing, setEditing] = useState<{ cardId: string; drafts: Record<string, string>; saving: boolean; error: string } | null>(null)
+
+  /** Send the hand edit; the server screens it and answers with a NEW card (new token) that replaces this one. */
+  async function saveEdit(card: Card) {
+    if (!editing || editing.cardId !== card.id) return
+    setEditing({ ...editing, saving: true, error: '' })
+    try {
+      const res = await fetch('/api/admin/assistant/revise', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ token: card.token, ...editing.drafts, context: { page: context.page, booking_ref: context.bookingRef } }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok !== true) {
+        setEditing(e => (e ? { ...e, saving: false, error: data.error || `Error ${res.status}` } : e))
+        return
+      }
+      setLines(ls =>
+        ls.map(line => (line.cards ? { ...line, cards: line.cards.map(c => (c.id === card.id ? (data.card as Card) : c)) } : line)),
+      )
+      setEditing(null)
+    } catch {
+      setEditing(e => (e ? { ...e, saving: false, error: 'Could not reach the server.' } : e))
     }
   }
 
@@ -285,23 +399,60 @@ export default function AssistantChat({
                       <li key={j}>• {d}</li>
                     ))}
                   </ul>
+                  {card.message && (
+                    <MessageView
+                      message={card.message}
+                      editing={card.state === 'pending' && editing?.cardId === card.id}
+                      drafts={editing?.cardId === card.id ? editing.drafts : {}}
+                      onDraft={(k, v) => setEditing(e => (e && e.cardId === card.id ? { ...e, drafts: { ...e.drafts, [k]: v } } : e))}
+                    />
+                  )}
                   {card.state === 'pending' && (
                     <div>
                       {card.result && <p className="text-red-700 mb-2">{card.result}</p>}
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => confirm(card)}
-                          className="flex items-center gap-1 bg-hampton-navy text-white px-4 py-1.5 rounded-full font-bold"
-                        >
-                          <Check size={14} /> Confirm
-                        </button>
-                        <button
-                          onClick={() => dismiss(card)}
-                          className="flex items-center gap-1 border border-hampton-navy/30 px-4 py-1.5 rounded-full"
-                        >
-                          <X size={14} /> Dismiss
-                        </button>
-                      </div>
+                      {editing?.cardId === card.id ? (
+                        <div>
+                          {editing.error && <p className="text-red-700 mb-2">{editing.error}</p>}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => saveEdit(card)}
+                              disabled={editing.saving}
+                              className="flex items-center gap-1 bg-hampton-navy text-white px-4 py-1.5 rounded-full font-bold disabled:opacity-50"
+                            >
+                              {editing.saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Use this wording
+                            </button>
+                            <button
+                              onClick={() => setEditing(null)}
+                              className="flex items-center gap-1 border border-hampton-navy/30 px-4 py-1.5 rounded-full"
+                            >
+                              <X size={14} /> Cancel edit
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => confirm(card)}
+                            className="flex items-center gap-1 bg-hampton-navy text-white px-4 py-1.5 rounded-full font-bold"
+                          >
+                            <Check size={14} /> Confirm
+                          </button>
+                          {card.message && card.message.channels.some(c => c.editable) && (
+                            <button
+                              onClick={() => setEditing({ cardId: card.id, drafts: {}, saving: false, error: '' })}
+                              className="flex items-center gap-1 border border-hampton-navy/30 px-4 py-1.5 rounded-full"
+                            >
+                              <Pencil size={14} /> Edit wording
+                            </button>
+                          )}
+                          <button
+                            onClick={() => dismiss(card)}
+                            className="flex items-center gap-1 border border-hampton-navy/30 px-4 py-1.5 rounded-full"
+                          >
+                            <X size={14} /> Dismiss
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                   {card.state === 'working' && (
@@ -309,7 +460,9 @@ export default function AssistantChat({
                       <Loader2 size={14} className="animate-spin" /> Working…
                     </p>
                   )}
-                  {card.state === 'dismissed' && <p className="text-hampton-navy/50">Dismissed — nothing was done.</p>}
+                  {card.state === 'dismissed' && (
+                    <p className="text-hampton-navy/50">{card.result || 'Dismissed — nothing was done.'}</p>
+                  )}
                   {card.state === 'expired' && <p className="text-hampton-navy/50">This card expired — ask again for a fresh one.</p>}
                   {(card.state === 'done' || card.state === 'failed') && (
                     <div className={card.state === 'done' ? 'text-green-700' : 'text-red-700'}>

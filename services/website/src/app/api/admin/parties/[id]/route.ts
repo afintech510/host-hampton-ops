@@ -9,7 +9,8 @@ import { studioRentalRateWith, hoursBetween, customHourlyRateCents, customHourly
 import { loadPricingCatalog, loadLineItemAddOns } from '@/lib/pricingCatalog'
 import { draftForBookingByHand } from '@/lib/agent/manualDraft'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
-import { sendCheckinLinkSms, hasExplicitSmsOptOut } from '@/lib/checkinLink'
+import { sendCheckinLinkSms } from '@/lib/checkinLink'
+import { phoneHasExplicitStop } from '@/lib/phoneStop'
 import {
   PHOTO_ALBUM_SUBJECT, PHOTO_ALBUM_SENT_SUMMARY_PREFIX,
   screenFotoshareUrl, screenOccasion, photoAlbumText, photoAlbumEmailHtml,
@@ -26,7 +27,7 @@ import {
 } from '@/lib/clientLinks'
 import { defaultPortalLanding } from '@/lib/portalRedirect'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
-import { findContactsByPhone, isPlausibleEmailAddress } from '@/lib/contactLookup'
+import { isPlausibleEmailAddress } from '@/lib/contactLookup'
 import { ownerEmail } from '@/lib/ownerNotify'
 import { writeLedger } from '@/lib/marketing/graph'
 import { enqueueCheckinReminders, cancelCheckinReminders } from '@/lib/checkinReminders'
@@ -78,25 +79,6 @@ function portalDestination(
     // agrees, but the admin should not depend on a second file to be right.
     default: return isStudioRentalBooking(booking) ? '/studio-rental' : undefined
   }
-}
-
-/**
- * Has anyone holding this NUMBER texted STOP? A STOP is a statement about the
- * number, not about one contact row (21 numbers carry several rows), so every
- * row holding it is checked. Three outcomes: a failed read is not "clear".
- */
-async function phoneHasExplicitStop(
-  supabase: ReturnType<typeof getSupabase>,
-  phone: string,
-): Promise<'clear' | 'stopped' | 'unavailable'> {
-  const found = await findContactsByPhone(supabase, phone, 'id, phone')
-  if (found.kind === 'unavailable') return 'unavailable'
-  if (found.kind === 'absent') return 'clear'
-  for (const c of found.contacts) {
-    // Fails CLOSED on its own read error, so an unreadable row reads as stopped.
-    if (await hasExplicitSmsOptOut(c.id)) return 'stopped'
-  }
-  return 'clear'
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -1162,6 +1144,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       )
     }
 
+    // An edited text (the assistant's card lets the manager reword it): the
+    // wording is theirs, the LINK is ours — `{photos}` is the one placeholder,
+    // it must be present, and it is filled with the set's own page below.
+    let smsTemplate: string | null = null
+    if (wantsSms && body.smsBody !== undefined) {
+      const t = screenBody(body.smsBody, 'text')
+      if (!t.ok) return NextResponse.json({ error: t.reason }, { status: 400 })
+      const braces: string[] = t.text.match(/\{[^{}]*\}/g) ?? []
+      if (!braces.includes('{photos}') || braces.some(p => p !== '{photos}')) {
+        return NextResponse.json({ error: 'The text needs {photos} (and no other {link}) so the photo page link is in it.' }, { status: 400 })
+      }
+      smsTemplate = t.text
+    }
+
     // The text is checked BEFORE anything is created or sent, exactly as in
     // send_client_links: a text-only send outside 8am–9pm, or to a STOPped
     // number, changes nothing at all.
@@ -1203,7 +1199,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (sendSms) {
       // A LINK, never an MMS: one short segment that opens the photo set page.
-      const sid = await sendSMSVia('quo', normalizePhone(phone), photosSmsText(booking.contact_name, set.url, photos.length))
+      const sid = await sendSMSVia(
+        'quo',
+        normalizePhone(phone),
+        smsTemplate ? smsTemplate.replace(/\{photos\}/g, set.url) : photosSmsText(booking.contact_name, set.url, photos.length),
+      )
       if (sid) sentVia.push('text')
       else failures.push('Text failed to send — check the number and Quo config')
     }

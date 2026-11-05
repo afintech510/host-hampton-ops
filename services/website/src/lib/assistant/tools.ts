@@ -15,6 +15,7 @@ import { ADMIN_PAYMENT_METHODS, PAYMENT_TYPES } from '@/lib/adminMoney'
 import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
 import { loadQuoteCatalog, quoteFromCatalog, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
+import { buildClientLinksCard, buildPhotosCard, type BuiltCard, type MessageEdits, type MessagePreview } from './messageCard'
 
 /**
  * The Manager assistant's tools.
@@ -49,6 +50,10 @@ export interface ToolOutcome {
   isError?: boolean
   /** Set by propose_* tools: the card the UI shows, with its signed token. */
   proposal?: { proposal: Proposal; token: string }
+  /** For a message card: the exact wording, recipient, segments and send status. Display only. */
+  preview?: MessagePreview
+  /** The pending card this one replaces (a reworded message). The chat route retires it. */
+  supersedes?: string
 }
 
 const MAX_LIST = 25
@@ -154,7 +159,7 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'propose_send_client_links',
     description:
-      'PROPOSE sending a client links for their party by email and/or text, using the standard wording. Kinds: invite (their digital invitation), planner (edit the party), invoice, portal (their booking page). Nothing is sent until the manager clicks Confirm. Texts are refused outside 8am-9pm and to numbers that replied STOP.',
+      'PROPOSE sending a client links for their party by email and/or text. The card shows the manager the exact message. Kinds: invite (their digital invitation), planner (edit the party), invoice, portal (their booking page). Omit the sms_body / email_* fields for the standard wording. To REWORD ("shorter", "mention the glow theme", "no emoji") call this again with the same booking, links and channels, the full revised text in sms_body and/or email_subject + email_body, and replaces_proposal_id set to the proposal_id of the card being replaced; write each link as a placeholder ({invite} {rsvps} {planner} {invoice} {portal}) exactly as in the message_preview you were given, never as a real URL. Keep the text signed by the studio sign-off and keep the "Reply STOP to opt out" line in texts. Never put a price, a discount, a phone number, an email address or any other website in it. Nothing is sent until the manager clicks Confirm. Texts are refused outside 8am-9pm and to numbers that replied STOP.',
     input_schema: {
       type: 'object',
       properties: {
@@ -162,6 +167,10 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
         links: { type: 'array', items: { type: 'string', enum: [...CLIENT_LINK_KINDS] } },
         email: { type: 'boolean' },
         sms: { type: 'boolean' },
+        sms_body: { type: 'string', description: 'Revised text message, with {placeholders} for links. Only when rewording.' },
+        email_subject: { type: 'string', description: 'Revised email subject. Only when rewording.' },
+        email_body: { type: 'string', description: 'Revised email body, with {placeholders} for links. Only when rewording.' },
+        replaces_proposal_id: { type: 'string', description: 'proposal_id of the pending card this one replaces.' },
       },
       required: ['booking_ref', 'links', 'email', 'sms'],
     },
@@ -305,7 +314,7 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'propose_send_photos',
     description:
-      'PROPOSE sending a client real party photos from the library, by email (photos inline) and/or a text that carries a LINK to a photo page (never a picture message). Choose the photos with photo_ids from find_photos, or with a party_type / theme / activity filter (the server finds them and the card shows thumbnails). Texts are refused outside 8am-9pm and to numbers that replied STOP. Nothing is sent until the manager clicks Confirm.',
+      'PROPOSE sending a client real party photos from the library, by email (photos inline) and/or a text that carries a LINK to a photo page (never a picture message). Choose the photos with photo_ids from find_photos, or with a party_type / theme / activity filter (the server finds them and the card shows thumbnails). Texts are refused outside 8am-9pm and to numbers that replied STOP. The card shows the exact text; to reword it call this again with the same photo_ids, the revised sms_body (keep {photos}, the link to the photo page, and the "Reply STOP to opt out" line) and replaces_proposal_id set to the earlier card. Nothing is sent until the manager clicks Confirm.',
     input_schema: {
       type: 'object',
       properties: {
@@ -316,6 +325,8 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
         activity: { type: 'string' },
         email: { type: 'boolean' },
         sms: { type: 'boolean' },
+        sms_body: { type: 'string', description: 'Revised text message containing {photos}. Only when rewording.' },
+        replaces_proposal_id: { type: 'string', description: 'proposal_id of the pending card this one replaces.' },
       },
       required: ['booking_ref', 'email', 'sms'],
     },
@@ -773,29 +784,64 @@ async function proposeSendClientLinks(
   if (email && !b.contact_email) return { result: { error: 'No email on that booking.' }, isError: true }
   if (sms && !b.contact_phone) return { result: { error: 'No phone on that booking.' }, isError: true }
 
-  const labels = kinds.map(k => clientLinkLabel(k, b))
-  const via = [email && `email to ${b.contact_email}`, sms && `text to ${b.contact_phone}`].filter(Boolean).join(' and ')
-  const details = [
-    `Party: ${b.booking_ref} — ${b.contact_name ?? 'client'}${b.party_date ? ` on ${b.party_date}` : ''}`,
-    `Links: ${labels.join(', ')}`,
-    `Send by ${via}, using the standard wording.`,
-    ...(sms ? ['Texts are refused outside 8am–9pm and to numbers that replied STOP.'] : []),
-  ]
-  const minted = mintProposal({
-    kind: 'send_client_links',
-    input: { bookingId: b.id, bookingRef: b.booking_ref, links: kinds, email, sms },
-    title: `Send ${labels.join(' + ')} to ${b.contact_name ?? b.booking_ref}`,
-    details,
-    actor: ctx.actor,
+  const edits = messageEdits(input)
+  const built = await buildClientLinksCard(supabase, b, {
+    kinds, email, sms, edits, authored: hasEdits(edits) ? 'model' : 'default', now: ctx.now,
   })
+  return messageCardOutcome('send_client_links', built, ctx, input)
+}
+
+/** The reworded fields the model passed, trimmed to strings; absent means "standard wording". */
+function messageEdits(input: Record<string, unknown>): MessageEdits {
+  const pick = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.slice(0, max) : undefined)
+  return {
+    smsBody: pick(input.sms_body, 2000),
+    emailSubject: pick(input.email_subject, 400),
+    emailBody: pick(input.email_body, 8000),
+  }
+}
+
+function hasEdits(e: MessageEdits): boolean {
+  return e.smsBody !== undefined || e.emailSubject !== undefined || e.emailBody !== undefined
+}
+
+/**
+ * Mint the card for a message and hand the model the exact wording back, so a
+ * request to reword it starts from the text the manager is looking at.
+ */
+function messageCardOutcome(
+  kind: 'send_client_links' | 'send_photos',
+  built: BuiltCard,
+  ctx: ToolContext,
+  input: Record<string, unknown>,
+  photos?: ProposalPhoto[],
+): ToolOutcome {
+  if (!built.ok) return fail(built.error)
+  const minted = mintProposal({
+    kind, input: built.input, title: built.title, details: built.details, actor: ctx.actor, ...(photos ? { photos } : {}),
+  })
+  const replaces = str(input.replaces_proposal_id, 64) ?? undefined
   return {
     result: {
       status: 'awaiting_manager_confirmation',
       proposal_id: minted.proposal.id,
-      shown_to_manager: details,
-      instruction: 'Nothing has been sent. Tell the manager to review the card and click Confirm.',
+      shown_to_manager: built.details,
+      message_preview: {
+        recipient_first_name: built.preview.recipient,
+        send_status: built.preview.status,
+        channels: built.preview.channels.map(c => ({
+          channel: c.channel,
+          ...(c.subject !== undefined ? { subject: c.subject } : {}),
+          text: c.template,
+          ...(c.sms ? { sms_segments: c.sms.segments, sms_encoding: c.sms.encoding } : {}),
+          editable: c.editable,
+        })),
+      },
+      instruction: 'Nothing has been sent. The card shows the manager the exact message. Tell them to review it and click Confirm, or tell you what to change.',
     },
     proposal: minted,
+    preview: built.preview,
+    ...(replaces ? { supersedes: replaces } : {}),
   }
 }
 
@@ -1299,21 +1345,16 @@ async function proposeSendPhotos(supabase: Supa, input: Record<string, unknown>,
   const photos = found.data
   if (photos.length === 0) return fail('No approved photos match that, so there is nothing to send. Say so.')
 
-  const via = [email && `email to ${b.contact_email}`, sms && `a text with a link to ${b.contact_phone}`].filter(Boolean).join(' and ')
-  const details = [
-    `Party: ${partyLabel(b)}`,
-    `Photos: ${photos.length}${ids.length && photos.length < ids.length ? ` (${ids.length - photos.length} of the ones asked for are not approved to send and are left out)` : ''}`,
-    `Send ${via}.`,
-    ...(email ? ['The email shows the photos inline with a link to see them all.'] : []),
-    ...(sms ? ['The text is a short link only, never a picture message. Texts are refused outside 8am–9pm and to numbers that replied STOP.'] : []),
-  ]
-  return cardOutcome(
-    'send_photos',
-    { bookingId: b.id, bookingRef: b.booking_ref, photoIds: photos.map(p => p.id), email, sms },
-    `Send ${photos.length} photo${photos.length === 1 ? '' : 's'} to ${b.contact_name ?? b.booking_ref}`,
-    details,
-    ctx,
-    'Nothing has been sent.',
-    photos.map(p => ({ id: p.id, url: p.url, alt: p.alt })),
-  )
+  const edits = messageEdits(input)
+  const built = await buildPhotosCard(supabase, b as never, {
+    photos: photos.map(p => ({ id: p.id, url: p.url, alt: p.alt })),
+    email, sms,
+    edits: { smsBody: edits.smsBody },
+    authored: edits.smsBody !== undefined ? 'model' : 'default',
+    now: ctx.now,
+  })
+  if (built.ok && ids.length && photos.length < ids.length) {
+    built.details.push(`${ids.length - photos.length} of the photos asked for are not approved to send and are left out.`)
+  }
+  return messageCardOutcome('send_photos', built, ctx, input, photos.map(p => ({ id: p.id, url: p.url, alt: p.alt })))
 }

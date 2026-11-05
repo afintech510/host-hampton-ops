@@ -49,6 +49,7 @@ export const HOST_HAMPTON: TenantConfig = {
 
   people: {
     customerSignoff: 'Allie',
+    neverSignAs: ['Adam'],
   },
 
   email: {

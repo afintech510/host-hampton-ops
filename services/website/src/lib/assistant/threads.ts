@@ -1,4 +1,5 @@
 import type { getSupabase } from '@/lib/supabase'
+import type { MessagePreview } from './messageCard'
 
 /**
  * Persisted assistant conversations (migration 084, `assistant_threads`).
@@ -34,6 +35,8 @@ export interface ThreadCard {
   /** Epoch ms the signed token stops verifying. */
   expiresAt: number
   photos?: { id: string; url: string; alt: string }[]
+  /** A message card's exact wording, recipient and send status. Display only. */
+  message?: MessagePreview
   result?: string
   links?: { label: string; url: string }[]
 }
@@ -80,6 +83,26 @@ export function expireStaleCards(lines: ThreadLine[], now = Date.now()): ThreadL
   return lines.map(l =>
     l.cards
       ? { ...l, cards: l.cards.map(c => (c.state === 'pending' && c.expiresAt < now ? { ...c, state: 'expired' as const } : c)) }
+      : l,
+  )
+}
+
+/**
+ * Cards that a reworded one replaced stop being confirmable on screen. Only a
+ * card still PENDING is touched — one already sent keeps its result.
+ */
+export function retireReplacedCards(lines: ThreadLine[], ids: ReadonlySet<string>): ThreadLine[] {
+  if (ids.size === 0) return lines
+  return lines.map(l =>
+    l.cards
+      ? {
+          ...l,
+          cards: l.cards.map(c =>
+            ids.has(c.id) && c.state === 'pending'
+              ? { ...c, state: 'dismissed' as const, result: 'Replaced by the reworded message below.' }
+              : c,
+          ),
+        }
       : l,
   )
 }
