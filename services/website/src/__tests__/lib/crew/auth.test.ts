@@ -41,7 +41,7 @@ import { buildCrewCookieValue, memberIdFromCookieValue, requireCrewMember } from
 import { crewAppOpen, crewMemberMayEnter } from '@/lib/crew/settings'
 
 const SECRET = 'test-secret-for-crew'
-const saved = { o: process.env.CREW_ONBOARDING_ENABLED, v: process.env.CREW_AGREEMENT_VERSION, t: process.env.CREW_TEST_LOGIN, e: process.env.CREW_ENABLED, s: process.env.PORTAL_LINK_SIGNING_SECRET }
+const saved = { r: process.env.CREW_AGREEMENT_REQUIRED, o: process.env.CREW_ONBOARDING_ENABLED, v: process.env.CREW_AGREEMENT_VERSION, t: process.env.CREW_TEST_LOGIN, e: process.env.CREW_ENABLED, s: process.env.PORTAL_LINK_SIGNING_SECRET }
 
 function setFlags(enabled: string | undefined, testLogin: string | undefined) {
   if (enabled === undefined) delete process.env.CREW_ENABLED
@@ -72,10 +72,11 @@ beforeEach(() => {
   PROFILES = { [IDS.real]: { onboarding_completed_at: '2026-11-05T00:00:00Z', agreement_signed_at: '2026-11-05T00:00:00Z', agreement_version: 'v1' } }
   delete process.env.CREW_ONBOARDING_ENABLED
   delete process.env.CREW_AGREEMENT_VERSION
+  delete process.env.CREW_AGREEMENT_REQUIRED
 })
 
 afterAll(() => {
-  for (const [k, v] of [['CREW_ONBOARDING_ENABLED', saved.o], ['CREW_AGREEMENT_VERSION', saved.v], ['CREW_TEST_LOGIN', saved.t], ['CREW_ENABLED', saved.e], ['PORTAL_LINK_SIGNING_SECRET', saved.s]] as const) {
+  for (const [k, v] of [['CREW_AGREEMENT_REQUIRED', saved.r], ['CREW_ONBOARDING_ENABLED', saved.o], ['CREW_AGREEMENT_VERSION', saved.v], ['CREW_TEST_LOGIN', saved.t], ['CREW_ENABLED', saved.e], ['PORTAL_LINK_SIGNING_SECRET', saved.s]] as const) {
     if (v === undefined) delete process.env[k]
     else process.env[k] = v
   }
@@ -200,16 +201,26 @@ describe('the onboarding gate', () => {
 
   it('a signed agreement for an OLDER version sends the member back through the agreement step', async () => {
     setFlags('true', undefined)
+    process.env.CREW_AGREEMENT_REQUIRED = 'true'
     process.env.CREW_AGREEMENT_VERSION = 'v2'
     const g = await requireCrewMember(req(as(IDS.real)))
     expect(g.ok).toBe(false)
     if (!g.ok) expect(g.response.status).toBe(403)
   })
 
-  it('an unfinished profile (agreement not signed) is refused even with the details done', async () => {
+  it('an unfinished profile (agreement not signed) is refused even with the details done, while the agreement is required', async () => {
     setFlags('true', undefined)
+    process.env.CREW_AGREEMENT_REQUIRED = 'true'
     PROFILES = { [IDS.real]: { onboarding_completed_at: '2026-11-05T00:00:00Z', agreement_signed_at: null, agreement_version: 'v1' } }
     expect((await requireCrewMember(req(as(IDS.real)))).ok).toBe(false)
+  })
+
+  it('with the agreement TABLED (the default), finished details are enough to open the board', async () => {
+    setFlags('true', undefined)
+    PROFILES = { [IDS.real]: { onboarding_completed_at: '2026-11-05T00:00:00Z', agreement_signed_at: null, agreement_version: null } }
+    expect((await requireCrewMember(req(as(IDS.real)))).ok).toBe(true)
+    PROFILES = {}
+    expect((await requireCrewMember(req(as(IDS.real)))).ok).toBe(false) // details still required
   })
 
   it('test members without a phone are exempt', async () => {

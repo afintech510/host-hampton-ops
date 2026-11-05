@@ -89,6 +89,18 @@ export function crewMemberMayEnter(m: { status: string; is_owner: boolean; is_te
   return true
 }
 
+/**
+ * Is signing the subcontractor agreement part of onboarding? OFF unless exactly
+ * `true` (Adam, 2026-11-05: tabled until after the MVP launch). While off,
+ * onboarding is finished when the details, a confirmed email and the text
+ * choice are done; the agreement step is hidden and `/api/crew/me/agreement`
+ * answers 404 without creating a SignWell document. Everything else about the
+ * agreement (text, PDF, webhook writer, version) stays built and tested.
+ */
+export function crewAgreementRequired(): boolean {
+  return process.env.CREW_AGREEMENT_REQUIRED === 'true'
+}
+
 /** The agreement version a member must have signed. Raising it sends everyone back through the agreement step. */
 export function crewAgreementVersion(): string {
   const v = (process.env.CREW_AGREEMENT_VERSION || '').trim()

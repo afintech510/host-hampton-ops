@@ -20,7 +20,7 @@
  */
 
 import type { getSupabase } from '@/lib/supabase'
-import { crewAgreementVersion } from '@/lib/crew/settings'
+import { crewAgreementRequired, crewAgreementVersion } from '@/lib/crew/settings'
 import type { CrewMemberRow, Read } from '@/lib/crew/db'
 import { normalizePhoneKey } from '@/lib/contactLookup'
 import { etDateString } from '@/lib/partyTime'
@@ -79,6 +79,8 @@ export interface OnboardingState {
   agreementSigned: boolean
   /** Agreement signed AND it is the current version. */
   agreementCurrent: boolean
+  /** Whether signing is part of onboarding right now (CREW_AGREEMENT_REQUIRED). */
+  agreementRequired: boolean
   /** Required and not yet fully done. */
   incomplete: boolean
 }
@@ -87,6 +89,7 @@ export function onboardingStateFrom(
   m: Pick<CrewMemberRow, 'is_owner' | 'is_test' | 'phone'>,
   p: Pick<ProfileRow, 'onboarding_completed_at' | 'agreement_signed_at' | 'agreement_version'> | null,
   currentVersion = crewAgreementVersion(),
+  agreementRequired = crewAgreementRequired(),
 ): OnboardingState {
   const required = onboardingRequired(m)
   const profileDone = !!p?.onboarding_completed_at
@@ -98,7 +101,8 @@ export function onboardingStateFrom(
     profileDone,
     agreementSigned,
     agreementCurrent,
-    incomplete: required && !(profileDone && agreementCurrent),
+    agreementRequired,
+    incomplete: required && !(profileDone && (!agreementRequired || agreementCurrent)),
   }
 }
 

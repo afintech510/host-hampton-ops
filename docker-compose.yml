@@ -264,6 +264,7 @@ services:
       # everyone when raised; CREW_AGREEMENT_TEST_MODE=true makes new agreement
       # documents SignWell test-mode documents (for the first end-to-end run).
       - CREW_ONBOARDING_ENABLED=${CREW_ONBOARDING_ENABLED:-false}
+      - CREW_AGREEMENT_REQUIRED=${CREW_AGREEMENT_REQUIRED:-false}
       - CREW_AGREEMENT_VERSION=${CREW_AGREEMENT_VERSION:-v1}
       - CREW_AGREEMENT_TEST_MODE=${CREW_AGREEMENT_TEST_MODE:-false}
       # AI surfaces (lib/ai/*). ASSISTANT_PROVIDER is anthropic (default) or openai, and a

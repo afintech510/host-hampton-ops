@@ -10,6 +10,7 @@ interface ProfileView {
 }
 interface Onboarding {
   firstName: string; phone: string | null; email: string | null; smsOptIn: boolean
+  agreementRequired: boolean
   state: { required: boolean; profileDone: boolean; agreementSigned: boolean; incomplete: boolean }
   profile: ProfileView
 }
@@ -23,7 +24,7 @@ function stepFor(d: Onboarding): Step {
   if (!filled) return 'details'
   if (!d.email) return 'email'
   if (!p.profileDone) return 'texts'
-  if (!d.state.agreementSigned) return 'agreement'
+  if (d.agreementRequired && !d.state.agreementSigned) return 'agreement'
   return 'done'
 }
 

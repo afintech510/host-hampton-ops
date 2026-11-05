@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
   switch (r.kind) {
     case 'ready': return NextResponse.json({ signingUrl: r.signingUrl })
     case 'already_signed': return NextResponse.json({ alreadySigned: true })
+    case 'disabled': return NextResponse.json({ error: 'Not found' }, { status: 404 })
     case 'not_ready': return NextResponse.json({ error: 'Finish your details first.' }, { status: 409 })
     default:
       console.error('crew/me/agreement:', r.error)

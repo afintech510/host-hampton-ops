@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
     email: m.email,
     smsOptIn: m.sms_opt_in,
     agreementVersion: crewAgreementVersion(),
+    agreementRequired: state.agreementRequired,
     state: {
       required: state.required, profileDone: state.profileDone, agreementSigned: state.agreementCurrent, incomplete: state.incomplete,
     },

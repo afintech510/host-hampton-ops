@@ -135,15 +135,21 @@ describe('O3: who onboards, and the stage', () => {
     expect(onboardingRequired(real)).toBe(true)
   })
 
-  it('incomplete until the details AND a current-version agreement are both done', () => {
+  it('incomplete until the details AND a current-version agreement are both done (agreement required)', () => {
     const base = { onboarding_completed_at: null, agreement_signed_at: null, agreement_version: null }
-    expect(onboardingStateFrom(real, null, 'v1').incomplete).toBe(true)
-    expect(onboardingStateFrom(real, { ...base, onboarding_completed_at: 'x' }, 'v1').incomplete).toBe(true)
-    expect(onboardingStateFrom(real, { onboarding_completed_at: 'x', agreement_signed_at: 'y', agreement_version: 'v1' }, 'v1').incomplete).toBe(false)
+    expect(onboardingStateFrom(real, null, 'v1', true).incomplete).toBe(true)
+    expect(onboardingStateFrom(real, { ...base, onboarding_completed_at: 'x' }, 'v1', true).incomplete).toBe(true)
+    expect(onboardingStateFrom(real, { onboarding_completed_at: 'x', agreement_signed_at: 'y', agreement_version: 'v1' }, 'v1', true).incomplete).toBe(false)
     // Raising the version sends everyone back through the agreement step.
-    expect(onboardingStateFrom(real, { onboarding_completed_at: 'x', agreement_signed_at: 'y', agreement_version: 'v1' }, 'v2').incomplete).toBe(true)
+    expect(onboardingStateFrom(real, { onboarding_completed_at: 'x', agreement_signed_at: 'y', agreement_version: 'v1' }, 'v2', true).incomplete).toBe(true)
     // A signature without the details is still incomplete.
-    expect(onboardingStateFrom(real, { ...base, agreement_signed_at: 'y', agreement_version: 'v1' }, 'v1').incomplete).toBe(true)
+    expect(onboardingStateFrom(real, { ...base, agreement_signed_at: 'y', agreement_version: 'v1' }, 'v1', true).incomplete).toBe(true)
+  
+    // Tabled (the default): the agreement does not hold anyone back, but the details still do.
+    const done = { onboarding_completed_at: 'x', agreement_signed_at: null, agreement_version: null }
+    expect(onboardingStateFrom(real, done, 'v1', false).incomplete).toBe(false)
+    expect(onboardingStateFrom(real, null, 'v1', false).incomplete).toBe(true)
+    expect(onboardingStateFrom(real, { ...base, onboarding_completed_at: null }, 'v1', false).incomplete).toBe(true)
   })
 
   it('the admin stage runs added → link sent → signed in → profile done → agreement signed', () => {
@@ -390,5 +396,23 @@ describe('O9: viewing a profile is audited, and the audit is the gate', () => {
     const r = await viewProfile(sb, 'm', 'admin:a@b.c')
     expect(r.ok).toBe(false)
     expect(reads).not.toContain('crew_member_profiles')
+  })
+})
+
+describe('O10: the agreement is tabled until CREW_AGREEMENT_REQUIRED=true', () => {
+  it('startAgreement creates nothing (no read, no SignWell document) while it is off', async () => {
+    const { startAgreement } = await import('@/lib/crew/agreement')
+    const touched: string[] = []
+    const sb = { from: (t: string) => { touched.push(t); throw new Error('must not read') } } as never
+    const prev = process.env.CREW_AGREEMENT_REQUIRED
+    delete process.env.CREW_AGREEMENT_REQUIRED
+    expect(await startAgreement(sb, { id: 'm', email: 'a@b.co' })).toEqual({ kind: 'disabled' })
+    expect(touched).toEqual([])
+    if (prev !== undefined) process.env.CREW_AGREEMENT_REQUIRED = prev
+  })
+
+  it('the route answers 404 for it, and the onboarding flow only shows the step when the server says it is required', () => {
+    expect(read('app/api/crew/me/agreement/route.ts')).toMatch(/case 'disabled':\s*return NextResponse\.json\(\{ error: 'Not found' \}, \{ status: 404 \}\)/)
+    expect(read('app/crew/_components/OnboardingFlow.tsx')).toMatch(/d\.agreementRequired && !d\.state\.agreementSigned/)
   })
 })

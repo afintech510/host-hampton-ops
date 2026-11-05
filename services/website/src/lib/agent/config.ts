@@ -45,6 +45,13 @@ export const MODEL_PRICING: Record<string, { in: number; out: number }> = {
   'claude-fable-5-1': { in: 10, out: 50 },
   'claude-haiku-4-5-20251001': { in: 1, out: 5 },
   'claude-haiku-4-5': { in: 1, out: 5 },
+  // OpenAI, from developers.openai.com/api/docs/models (2026-11-05). Selected with ASSISTANT_PROVIDER=openai.
+  // Cached input is billed at a fraction (about $0.10/MTok for Sol per one third-party source, not OpenAI's page);
+  // lib/ai/openaiProvider.ts weights cached tokens at 0.1x of input, which is conservative for Sol.
+  'gpt-6.1-sol': { in: 2, out: 10 },
+  'gpt-6.1-terra': { in: 1, out: 5 },
+  'gpt-6-astra': { in: 10, out: 50 },
+  'gpt-6-luna': { in: 0.1, out: 0.5 },
 }
 
 /**

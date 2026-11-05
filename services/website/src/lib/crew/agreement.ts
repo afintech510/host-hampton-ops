@@ -17,7 +17,7 @@
 import type { getSupabase } from '@/lib/supabase'
 import { createDocumentFromFile, fetchEmbeddedSigningUrl } from '@/lib/signwell'
 import { CREW_AGREEMENT_DOC_TYPE } from '@/lib/crew/agreementText'
-import { crewAgreementVersion } from '@/lib/crew/settings'
+import { crewAgreementRequired, crewAgreementVersion } from '@/lib/crew/settings'
 import { agreementIsCurrent, readOwnProfile, profileIsFilled } from '@/lib/crew/profile'
 import { renderAgreementPdf } from '@/lib/crew/agreementPdf'
 import type { CrewMemberRow } from '@/lib/crew/db'
@@ -27,6 +27,8 @@ type Supa = ReturnType<typeof getSupabase>
 export type StartAgreementResult =
   | { kind: 'ready'; signingUrl: string; reused: boolean }
   | { kind: 'already_signed' }
+  /** CREW_AGREEMENT_REQUIRED is off: no document is created. */
+  | { kind: 'disabled' }
   | { kind: 'not_ready'; missing: 'profile' | 'email' }
   | { kind: 'unavailable'; error: string }
 
@@ -36,6 +38,7 @@ export function crewAgreementTestMode(): boolean | undefined {
 }
 
 export async function startAgreement(sb: Supa, member: Pick<CrewMemberRow, 'id' | 'email'>): Promise<StartAgreementResult> {
+  if (!crewAgreementRequired()) return { kind: 'disabled' }
   const read = await readOwnProfile(sb, member.id)
   if (read.kind !== 'ok') return { kind: 'unavailable', error: read.error }
   const p = read.data
