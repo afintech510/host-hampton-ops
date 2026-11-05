@@ -1,8 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { TENANT } from '@/tenant'
 import { getSupabase } from '@/lib/supabase'
 import { etToday } from '@/lib/bookingStatus'
-import { costUsd } from '@/lib/agent/config'
+import { callUsd, UnpricedModelError, assertModelPriced } from '@/lib/ai/pricing'
+import { runToolLoop, type LlmMessage, type LlmProvider } from '@/lib/ai/provider'
+import { assistantModel as selectedModel, selectProvider } from '@/lib/ai/select'
 import { assertLlmBudget, recordLlmSpend, BudgetExceededError } from '@/lib/marketing/budget'
 import { ASSISTANT_TOOLS, runAssistantTool } from './tools'
 
@@ -17,17 +18,15 @@ import { ASSISTANT_TOOLS, runAssistantTool } from './tools'
  * do anything the assistant can do directly anyway.
  */
 
-type MessageParam = Anthropic.Beta.BetaMessageParam
+type MessageParam = LlmMessage
 
 export const ASSISTANT_ENTITY = 'manager_assistant'
 const MAX_ITERATIONS = 8
 const MAX_HISTORY_MESSAGES = 120
 const MAX_HISTORY_BYTES = 900_000
-const MAX_TOOL_RESULT_CHARS = 30_000
 
-export function assistantModel(): string {
-  return process.env.ASSISTANT_MODEL?.trim() || 'claude-opus-5-5'
-}
+/** Sonnet by default (Adam, 2026-11-04); switchable by env — see lib/ai/select.ts. */
+export const assistantModel = selectedModel
 
 export function systemPrompt(today: string): string {
   return [
@@ -82,31 +81,37 @@ export function screenHistory(raw: unknown): HistoryCheck {
   return { ok: true, messages: raw as MessageParam[] }
 }
 
-function clip(s: string): string {
-  return s.length > MAX_TOOL_RESULT_CHARS ? `${s.slice(0, MAX_TOOL_RESULT_CHARS)}… [truncated]` : s
-}
-
 export async function runAssistantTurn(opts: {
   history: MessageParam[]
   userText: string
   actor: string
-  client?: Pick<Anthropic, 'beta'>
+  provider?: LlmProvider
   now?: Date
 }): Promise<TurnResult> {
   const supabase = getSupabase()
   const model = assistantModel()
   const today = etToday(opts.now)
-  const messages: MessageParam[] = [...opts.history, { role: 'user', content: opts.userText }]
   const proposals: ProposalCard[] = []
   let usd = 0
+
+  // An unpriced model (an OpenAI id nobody has priced) is refused before a
+  // token is spent — the daily budget would otherwise be measured in a guess.
+  try {
+    assertModelPriced(model)
+  } catch (err) {
+    if (err instanceof UnpricedModelError) {
+      return { messages: [...opts.history, { role: 'user', content: opts.userText }], reply: `I can't run on the model "${model}" yet because it has no price configured. Set ASSISTANT_PRICE_IN_PER_MTOK and ASSISTANT_PRICE_OUT_PER_MTOK, or switch back to a priced model.`, proposals, usd }
+    }
+    throw err
+  }
 
   try {
     await assertLlmBudget(supabase, { estimatedUsd: 0.1, actor: opts.actor, entityType: ASSISTANT_ENTITY })
   } catch (err) {
     if (err instanceof BudgetExceededError) {
       return {
-        messages,
-        reply: 'The monthly AI budget is used up, so I can\'t answer right now. Raise it in Marketing settings, or use the Parties tab directly.',
+        messages: [...opts.history, { role: 'user', content: opts.userText }],
+        reply: 'The monthly AI budget is used up, so I cannot answer right now. Raise it in Marketing settings, or use the Parties tab directly.',
         proposals,
         usd,
       }
@@ -114,94 +119,41 @@ export async function runAssistantTurn(opts: {
     throw err
   }
 
-  const client = opts.client ?? new Anthropic()
-  let reply = ''
-
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const response = await client.beta.messages.create({
-      model,
-      max_tokens: 16000,
-      // Refusals: a decline is routed to a fallback model rather than ending
-      // the turn silently.
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      thinking: { type: 'adaptive' },
-      output_config: { effort: 'medium' },
-      cache_control: { type: 'ephemeral' },
-      system: systemPrompt(today),
-      tools: ASSISTANT_TOOLS,
-      messages,
-    })
-
-    const u = response.usage
-    const callUsd = costUsd(
-      model,
-      (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) * 1.25 + (u.cache_read_input_tokens ?? 0) * 0.1,
-      u.output_tokens ?? 0,
-    )
-    usd += callUsd
+  const loop = await runToolLoop({
+    provider: opts.provider ?? selectProvider(),
+    model,
+    system: systemPrompt(today),
+    history: opts.history,
+    userText: opts.userText,
+    tools: ASSISTANT_TOOLS as unknown as import('@/lib/ai/provider').LlmTool[],
+    maxIterations: MAX_ITERATIONS,
     // Spend is recorded on every call, not per turn: a turn that dies on
     // iteration 5 still spent iterations 1-4.
-    await recordLlmSpend(supabase, {
-      usd: callUsd,
-      tokens: (u.input_tokens ?? 0) + (u.output_tokens ?? 0),
-      actor: opts.actor,
-      entityType: ASSISTANT_ENTITY,
-      meta: { model: response.model, input_tokens: u.input_tokens, output_tokens: u.output_tokens },
-    }).catch(err => console.error('assistant: recordLlmSpend failed', err))
+    async onCall(call) {
+      const callCost = callUsd(model, call.usage.inputTokens, call.usage.outputTokens)
+      usd += callCost
+      await recordLlmSpend(supabase, {
+        usd: callCost,
+        tokens: Math.round(call.usage.inputTokens + call.usage.outputTokens),
+        actor: opts.actor,
+        entityType: ASSISTANT_ENTITY,
+        meta: { model: call.model, input_tokens: call.usage.inputTokens, output_tokens: call.usage.outputTokens },
+      }).catch(err => console.error('assistant: recordLlmSpend failed', err))
+    },
+    async runTool(name, input) {
+      const out = await runAssistantTool(name, input, { actor: opts.actor, supabase, now: opts.now })
+      if (out.proposal) {
+        proposals.push({
+          id: out.proposal.proposal.id,
+          title: out.proposal.proposal.title,
+          details: out.proposal.proposal.details,
+          token: out.proposal.token,
+          kind: out.proposal.proposal.kind,
+        })
+      }
+      return { result: out.result, isError: out.isError }
+    },
+  })
 
-    messages.push({ role: 'assistant', content: response.content as Anthropic.Beta.BetaContentBlockParam[] })
-
-    const text = response.content
-      .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
-      .map(b => b.text)
-      .join('\n')
-      .trim()
-    if (text) reply = text
-
-    if (response.stop_reason === 'refusal') {
-      reply = reply || 'I can\'t help with that one.'
-      break
-    }
-    if (response.stop_reason === 'pause_turn') continue
-    if (response.stop_reason === 'max_tokens') {
-      reply = `${reply}\n\n(My reply was cut off — ask me to continue.)`.trim()
-      break
-    }
-    if (response.stop_reason !== 'tool_use') break
-
-    const toolUses = response.content.filter(
-      (b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use',
-    )
-    if (toolUses.length === 0) break
-
-    // Every tool_result for this turn goes back in ONE user message.
-    const results = await Promise.all(
-      toolUses.map(async tu => {
-        const out = await runAssistantTool(tu.name, tu.input, { actor: opts.actor, supabase, now: opts.now })
-        if (out.proposal) {
-          proposals.push({
-            id: out.proposal.proposal.id,
-            title: out.proposal.proposal.title,
-            details: out.proposal.proposal.details,
-            token: out.proposal.token,
-            kind: out.proposal.proposal.kind,
-          })
-        }
-        const block: Anthropic.Beta.BetaToolResultBlockParam = {
-          type: 'tool_result',
-          tool_use_id: tu.id,
-          content: clip(JSON.stringify(out.result)),
-          ...(out.isError ? { is_error: true } : {}),
-        }
-        return block
-      }),
-    )
-    messages.push({ role: 'user', content: results })
-    if (i === MAX_ITERATIONS - 1) {
-      reply = `${reply}\n\n(I stopped after several lookups — ask me to keep going.)`.trim()
-    }
-  }
-
-  return { messages, reply: reply || 'Done.', proposals, usd }
+  return { messages: loop.messages, reply: loop.reply, proposals, usd }
 }

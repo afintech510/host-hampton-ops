@@ -266,6 +266,17 @@ services:
       - CREW_ONBOARDING_ENABLED=${CREW_ONBOARDING_ENABLED:-false}
       - CREW_AGREEMENT_VERSION=${CREW_AGREEMENT_VERSION:-v1}
       - CREW_AGREEMENT_TEST_MODE=${CREW_AGREEMENT_TEST_MODE:-false}
+      # AI surfaces (lib/ai/*). ASSISTANT_PROVIDER is anthropic (default) or openai, and a
+      # typo reads as anthropic. ASSISTANT_MODEL / PUBLIC_CHAT_MODEL default to
+      # claude-sonnet-5-5. A model with no price in MODEL_PRICING is REFUSED unless both
+      # ASSISTANT_PRICE_*_PER_MTOK (USD per million tokens) are set. OPENAI_API_KEY is
+      # only read when the provider is openai.
+      - ASSISTANT_PROVIDER=${ASSISTANT_PROVIDER:-anthropic}
+      - ASSISTANT_MODEL=${ASSISTANT_MODEL:-}
+      - PUBLIC_CHAT_MODEL=${PUBLIC_CHAT_MODEL:-}
+      - ASSISTANT_PRICE_IN_PER_MTOK=${ASSISTANT_PRICE_IN_PER_MTOK:-}
+      - ASSISTANT_PRICE_OUT_PER_MTOK=${ASSISTANT_PRICE_OUT_PER_MTOK:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # EVITE (party invitations; docs/specs/evites/03-architecture-spec.md §14, §16).
       # EVITES_PAGES gates creation, pages and renders; EVITES_SENDS gates every evite
       # email. Each is off | pilot | on, and ANYTHING else (unset, empty, a typo) reads as

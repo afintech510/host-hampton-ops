@@ -4,6 +4,7 @@ import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adm
 import { guardRate, HOUR_MS } from '@/lib/rateLimit'
 import { featureEnabled } from '@/tenant'
 import { runAssistantTurn, screenHistory } from '@/lib/assistant/run'
+import { providerConfigured, providerName } from '@/lib/ai/select'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -24,8 +25,8 @@ export async function POST(req: NextRequest) {
   }
   const limited = guardRate(req, assistantRule)
   if (limited) return limited
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured.' }, { status: 503 })
+  if (!providerConfigured()) {
+    return NextResponse.json({ error: providerName() === 'openai' ? 'OPENAI_API_KEY is not configured.' : 'ANTHROPIC_API_KEY is not configured.' }, { status: 503 })
   }
 
   const body = (await req.json().catch(() => null)) as { messages?: unknown; text?: unknown } | null
