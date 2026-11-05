@@ -4,6 +4,7 @@ import Nav from '@/components/Nav'
 import Footer from '@/components/Footer'
 import BenchworksAttribution from '@/components/BenchworksAttribution'
 import CrispChat from '@/components/CrispChat'
+import ChatWidget from '@/components/ChatWidget'
 import GoogleAnalytics from '@/components/GoogleAnalytics'
 import MetaPixel from '@/components/MetaPixel'
 import AttributionCapture from '@/components/AttributionCapture'
@@ -199,6 +200,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <MetaPixel />
         <AttributionCapture />
         <CrispChat />
+        {/* Host Assistant: renders nothing until GET /api/chat/config says the chat is on
+            (PUBLIC_CHAT_ENABLED === 'true'), and never on the paths in lib/chat/chrome.ts. */}
+        <ChatWidget />
       </body>
     </html>
   )

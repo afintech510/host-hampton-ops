@@ -144,6 +144,36 @@ export function webhookRule(route: string): RateLimitRule {
 }
 
 /**
+ * The website Host Assistant (`POST /api/chat`) — every message spends model
+ * tokens, so this is the one public route where a request has a price.
+ *
+ * Two rules because there are two different things to bound:
+ *
+ *   * `chatRule` counts MESSAGES. 30 per caller per 10 minutes is a long,
+ *     chatty conversation (a parent comparing themes types a message every
+ *     20 seconds at the very fastest); 200 per route per 10 minutes is the
+ *     ceiling that holds when every per-caller key is forged. There is no
+ *     measured traffic to size it against (the route is new), so it is sized
+ *     the other way round: against the SPEND it permits. 200 messages at an
+ *     estimated ~$0.03 a turn is $6 per ten minutes before the daily USD cap
+ *     (`PUBLIC_CHAT_DAILY_USD_CAP`, default $5) stops the model entirely.
+ *     The cap is the real bound; this keeps a flood from reaching it in a
+ *     minute and from hammering Turnstile and the database meanwhile.
+ *   * `chatStartRule` counts SESSIONS being opened. A real visitor opens one,
+ *     occasionally two; 4 per caller per hour lets a retry and a second device
+ *     through. 60 per route per hour bounds a script that solves Turnstile.
+ *     Opening a session is the step that costs a Turnstile verification and a
+ *     database row, so it gets its own, tighter, allowance.
+ */
+export function chatRule(route = 'chat'): RateLimitRule {
+  return { route, perCaller: 30, perRoute: 200, windowMs: 10 * MINUTE_MS }
+}
+
+export function chatStartRule(route = 'chat-start'): RateLimitRule {
+  return { route, perCaller: 4, perRoute: 60, windowMs: HOUR_MS }
+}
+
+/**
  * The invitation page `/i/[slug]` AND its view beacon `/api/i/[slug]/event`
  * (spec §7.1, §13). ONE rule, so the page and the beacon share one allowance.
  *

@@ -191,6 +191,16 @@ const DELIBERATELY_PUBLIC = new Set([
   'GET availability',
   'GET booking-types',
   'POST canvas-bag-inquiry',
+  // The website Host Assistant (lib/chat/*; chatSurface.test.ts owns its rules). Public
+  // because the caller is a visitor to the marketing site. Off unless PUBLIC_CHAT_ENABLED is
+  // exactly `true`; rate-limited before the first await; Origin-checked; a NEW session costs a
+  // stricter bucket AND a server-verified Turnstile that fails closed; every cap and the daily
+  // USD ceiling run before the model. `config` reads no table and writes nothing. `confirm`
+  // creates nothing itself: it verifies a server-signed, session-bound, single-use card and
+  // REPLAYS `POST party-builder/save`, so its screens and guards apply unchanged.
+  'GET chat/config',
+  'POST chat',
+  'POST chat/confirm',
   'POST cart-checkout',
   // A job application from /join-the-team (migration 071). Public because an
   // applicant is a stranger filling in a form. Rate-limited first, honeypot,

@@ -285,6 +285,14 @@ services:
       # and crew are told nothing about pay (lib/crew/rules.ts, lib/crew/settings.ts).
       - CREW_PAY_LADDER=${CREW_PAY_LADDER:-false}
       - CREW_SHOW_PAY=${CREW_SHOW_PAY:-false}
+
+      # Website Host Assistant (lib/chat/*, /api/chat). OFF unless PUBLIC_CHAT_ENABLED is
+      # exactly "true"; in production it ALSO stays off without both Turnstile keys and the
+      # provider key. The daily ceiling is USD per UTC day (default 3).
+      - PUBLIC_CHAT_ENABLED=${PUBLIC_CHAT_ENABLED:-false}
+      - PUBLIC_CHAT_DAILY_USD_CAP=${PUBLIC_CHAT_DAILY_USD_CAP:-}
+      - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY:-}
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY:-}
       # EVITE (party invitations; docs/specs/evites/03-architecture-spec.md §14, §16).
       # EVITES_PAGES gates creation, pages and renders; EVITES_SENDS gates every evite
       # email. Each is off | pilot | on, and ANYTHING else (unset, empty, a typo) reads as
