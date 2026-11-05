@@ -76,6 +76,15 @@ describe('docTitleFor', () => {
     expect(docTitleFor('unknown', 'lead')).toBe('Party Quotation')
     expect(docTitleFor('something_new', null)).toBe('Party Quotation')
   })
+
+  it('says In-Studio, and Mini when it is one (Adam, 2026-11-04)', () => {
+    expect(docTitleFor('in_studio_theme', 'lead')).toBe('In-Studio Party Quotation')
+    expect(docTitleFor('in_studio_theme', 'approved')).toBe('In-Studio Party Invoice')
+    expect(docTitleFor('in_studio_theme', 'lead', { mini: true })).toBe('In-Studio Mini Party Quotation')
+    expect(docTitleFor('in_studio_theme', 'deposit_paid', { mini: true })).toBe('In-Studio Mini Party Invoice')
+    // "Mini" belongs to the in-studio product only.
+    expect(docTitleFor('mobile_party', 'lead', { mini: true })).toBe('Mobile Party Quotation')
+  })
 })
 
 describe('isHeldAtStudio — whose address the document prints', () => {
@@ -315,6 +324,65 @@ describe('loadPlanInvoice', () => {
     if (!res.ok) throw new Error('expected ok')
     expect(res.invoice.totalCents).toBe(0)
     expect(res.invoice.lineItems).toEqual([])
+  })
+
+  describe('in-studio Event Details: mini party, food, cupcakes', () => {
+    const IN_STUDIO = { ...STUDIO, party_type: 'in_studio_theme', status: 'approved' }
+
+    it('reads the mini flag and both food choices off the snapshot fields', async () => {
+      const res = await loadPlanInvoice(
+        'HH-PTY-AAA',
+        makeSupabase({
+          ...IN_STUDIO,
+          sel_is_mini_party: 'true',
+          sel_pizza_or_bagels: 'bagels',
+          sel_cupcake_flavor: 'chocolate',
+        }),
+      )
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.docTitle).toBe('In-Studio Mini Party Invoice')
+      expect(res.invoice.studioDetails).toMatchObject({
+        isMini: true,
+        miniMaxGuests: 6,
+        miniDurationMinutes: 90,
+        food: { label: 'Bagels', isDefault: false },
+        cupcake: { label: 'Chocolate', isDefault: false },
+      })
+      // The aliased fields are folded in, never left on the booking every
+      // invoice consumer receives.
+      expect(res.invoice.booking).not.toHaveProperty('sel_is_mini_party')
+      expect(res.invoice.booking).not.toHaveProperty('sel_cupcake_flavor')
+    })
+
+    it('a regular party is not mini, and keeps the planner-default flag', async () => {
+      const res = await loadPlanInvoice(
+        'HH-PTY-AAA',
+        makeSupabase({ ...IN_STUDIO, sel_is_mini_party: 'false', sel_pizza_or_bagels: 'pizza', sel_cupcake_flavor: 'vanilla' }),
+      )
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.docTitle).toBe('In-Studio Party Invoice')
+      expect(res.invoice.studioDetails).toMatchObject({
+        isMini: false,
+        food: { label: 'Pizza', isDefault: true },
+        cupcake: { label: 'Vanilla', isDefault: true },
+      })
+    })
+
+    it('a booking with no planner snapshot prints no food at all', async () => {
+      const res = await loadPlanInvoice('HH-PTY-AAA', makeSupabase(IN_STUDIO))
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.studioDetails).toMatchObject({ isMini: false, food: null, cupcake: null })
+    })
+
+    it('every other product has no studio details', async () => {
+      const res = await loadPlanInvoice(
+        'HH-PTY-AAA',
+        makeSupabase({ ...STUDIO, party_type: 'mobile_party', sel_is_mini_party: 'true', sel_pizza_or_bagels: 'pizza' }),
+      )
+      if (!res.ok) throw new Error('expected ok')
+      expect(res.invoice.studioDetails).toBeNull()
+      expect(res.invoice.docTitle).toBe('Mobile Party Quotation')
+    })
   })
 
   it('says "not found" rather than throwing on a bad ref', async () => {

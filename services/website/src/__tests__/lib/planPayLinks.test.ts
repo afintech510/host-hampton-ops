@@ -92,6 +92,7 @@ function invoice(over: Partial<PlanInvoice> & { payments?: PaymentRow[] } = {}):
     eventDateTime: 'Saturday, October 3, 2026 · 11:00',
     venueAddress: null,
     guestCount: 10,
+    studioDetails: null,
     ...over,
   }
 }

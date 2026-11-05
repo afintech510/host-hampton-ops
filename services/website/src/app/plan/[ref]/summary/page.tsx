@@ -125,6 +125,17 @@ function RichText({ text }: { text: string }) {
   )
 }
 
+/**
+ * Admin-only and `no-print`: the planner saves its initial food values even
+ * when the host never touched them (lib/partyFood.ts), so an admin is told a
+ * value may be untouched. The customer and any saved PDF see the plain choice,
+ * which is also their prompt to correct it.
+ */
+function DefaultHint({ show }: { show: boolean }) {
+  if (!show) return null
+  return <span className="no-print" style={{ opacity: 0.6 }}> (planner default &mdash; not confirmed)</span>
+}
+
 function InvoiceBody({
   invoice,
   ref_,
@@ -145,6 +156,7 @@ function InvoiceBody({
   waiver: 'offer' | 'signed' | null
 }) {
   const { booking, content, partyType } = invoice
+  const studio = invoice.studioDetails
   // What we should actually ask this customer for right now: the deposit while
   // one is owed, otherwise whatever is left. It used to be the full deposit
   // unconditionally, so a plan that had paid its deposit — or paid everything —
@@ -286,6 +298,32 @@ function InvoiceBody({
                 <>
                   <br />
                   {invoice.guestCount} guests
+                </>
+              )}
+              {/*
+                In-studio theme parties: what a mini party IS, and the food the
+                host picked. A mini party prints its limits because they are the
+                product — fewer guests and a shorter party for the lower price.
+              */}
+              {studio?.isMini && (
+                <>
+                  <br />
+                  <span className="detail-label">Mini party:</span> up to {studio.miniMaxGuests} guests + the
+                  birthday child &middot; {studio.miniDurationMinutes} minutes
+                </>
+              )}
+              {studio?.food && (
+                <>
+                  <br />
+                  <span className="detail-label">Food:</span> {studio.food.label}
+                  <DefaultHint show={isAdminView && studio.food.isDefault} />
+                </>
+              )}
+              {studio?.cupcake && (
+                <>
+                  <br />
+                  <span className="detail-label">Cupcakes:</span> {studio.cupcake.label}
+                  <DefaultHint show={isAdminView && studio.cupcake.isDefault} />
                 </>
               )}
               {invoice.venueAddress && (

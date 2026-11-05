@@ -42,6 +42,8 @@ import {
   type PaymentRow,
 } from '@/lib/planBalance'
 import type { BookingLineItem } from '@/types/booking-flow'
+import { readFoodSelections, type CupcakeFlavor, type FoodChoice, type PizzaOrBagels } from '@/lib/partyFood'
+import { DURATION_MINI_MIN } from '@/lib/evites/partyWindow'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -50,6 +52,36 @@ export const INVOICE_BOOKING_COLUMNS =
   'contact_name, contact_email, contact_phone, party_date, party_time, guest_count_approx, ' +
   'child_name, child_age, party_tags, notes, total_cents, deposit_amount, balance_due_cents, ' +
   'security_deposit_status, created_at'
+
+/**
+ * The three planner choices an in-studio invoice prints, read as flattened
+ * `->>` strings rather than the whole `quote_snapshot` — the snapshot carries
+ * the full line-item array, and INVOICE_BOOKING_COLUMNS is what every invoice
+ * consumer receives. Selected by `loadPlanInvoice` only and folded into
+ * `studioDetails`; never left on `booking`.
+ */
+const STUDIO_DETAIL_COLUMNS =
+  'sel_is_mini_party:quote_snapshot->>isMiniParty, ' +
+  'sel_pizza_or_bagels:quote_snapshot->>pizzaOrBagels, ' +
+  'sel_cupcake_flavor:quote_snapshot->>cupcakeFlavor'
+
+/**
+ * What an in-studio theme party's Event Details block says beyond the date:
+ * whether it is a mini party (and what that means), and the food and cupcake
+ * choices the host made in the planner.
+ */
+export interface StudioPartyDetails {
+  isMini: boolean
+  /** Guests on top of the birthday child — the catalog's `mini_party_max_guests`. */
+  miniMaxGuests: number
+  miniDurationMinutes: number
+  /**
+   * null = no planner snapshot, so nothing to print. `isDefault` is carried
+   * because the planner saves its initial value untouched — see lib/partyFood.ts.
+   */
+  food: FoodChoice<PizzaOrBagels> | null
+  cupcake: FoodChoice<CupcakeFlavor> | null
+}
 
 export interface InvoiceBooking {
   id: string
@@ -139,6 +171,8 @@ export interface PlanInvoice {
   eventDateTime: string | null
   venueAddress: string | null
   guestCount: number | null
+  /** In-studio theme parties only; null for every other product. */
+  studioDetails: StudioPartyDetails | null
 }
 
 /**
@@ -202,7 +236,9 @@ export function money(cents: number): string {
 const DOC_TITLES: Record<string, string> = {
   studio_rental: 'Studio Rental Quotation',
   mobile_party: 'Mobile Party Quotation',
-  in_studio_theme: 'Party Quotation',
+  // "In-Studio" so the document says where the party is — the unclassified
+  // fallback below stays plain "Party", because it does not know.
+  in_studio_theme: 'In-Studio Party Quotation',
   unknown: 'Party Quotation',
 }
 
@@ -216,8 +252,9 @@ export function isBookedStatus(status: string | null | undefined): boolean {
   return !!status && BOOKED_STATUSES.has(status)
 }
 
-export function docTitleFor(partyType: string, status: string | null): string {
-  const base = DOC_TITLES[partyType] ?? DOC_TITLES.unknown
+export function docTitleFor(partyType: string, status: string | null, opts: { mini?: boolean } = {}): string {
+  let base = DOC_TITLES[partyType] ?? DOC_TITLES.unknown
+  if (opts.mini && partyType === 'in_studio_theme') base = base.replace('Party', 'Mini Party')
   return isBookedStatus(status) ? base.replace('Quotation', 'Invoice') : base
 }
 
@@ -362,13 +399,19 @@ export async function loadPlanInvoice(
 
   const { data: bookingRow, error } = await db
     .from('bookings')
-    .select(INVOICE_BOOKING_COLUMNS)
+    .select(`${INVOICE_BOOKING_COLUMNS}, ${STUDIO_DETAIL_COLUMNS}`)
     .eq('booking_ref', bookingRef)
     .maybeSingle()
   if (error) return { ok: false, notFound: false, error: error.message }
   if (!bookingRow) return { ok: false, notFound: true, error: 'not found' }
 
-  const booking = bookingRow as unknown as InvoiceBooking
+  const {
+    sel_is_mini_party: selMini,
+    sel_pizza_or_bagels: selFood,
+    sel_cupcake_flavor: selCupcake,
+    ...bookingFields
+  } = bookingRow as unknown as Record<string, unknown>
+  const booking = bookingFields as unknown as InvoiceBooking
   const partyType = booking.party_type || 'unknown'
 
   const [{ data: itemRows, error: itemErr }, { data: payRows, error: payErr }, catalog, content] = await Promise.all([
@@ -439,12 +482,26 @@ export async function loadPlanInvoice(
     ? { ...content, goodToKnow: [], policies: [] }
     : content
 
+  // `->>` hands back text, so the mini flag is the string 'true'.
+  const isMini = partyType === 'in_studio_theme' && selMini === 'true'
+  const food = readFoodSelections({ pizzaOrBagels: selFood, cupcakeFlavor: selCupcake })
+  const studioDetails: StudioPartyDetails | null =
+    partyType === 'in_studio_theme'
+      ? {
+          isMini,
+          miniMaxGuests: catalog.guestRules.miniPartyMaxGuests,
+          miniDurationMinutes: DURATION_MINI_MIN,
+          food: food.main,
+          cupcake: food.cupcake,
+        }
+      : null
+
   return {
     ok: true,
     invoice: {
       booking,
       partyType,
-      docTitle: docTitleFor(partyType, booking.status),
+      docTitle: docTitleFor(partyType, booking.status, { mini: isMini }),
       invoiceNumber: booking.invoice_number,
       dateIssued: new Intl.DateTimeFormat('en-US', {
         timeZone: 'America/New_York', month: 'long', day: 'numeric', year: 'numeric',
@@ -466,6 +523,7 @@ export async function loadPlanInvoice(
       eventDateTime: formatEventDateTime(booking.party_date, booking.party_time),
       venueAddress,
       guestCount: booking.guest_count_approx ?? null,
+      studioDetails,
     },
   }
 }
