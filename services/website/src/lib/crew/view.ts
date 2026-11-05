@@ -16,7 +16,7 @@
  */
 
 import {
-  clampSteps, formatCents, isInGracePeriod, nextStepLabel, partyPayCents, partyRateCents, ratesFor, TIME_ZONE,
+  clampSteps, defaultShift, formatCents, isInGracePeriod, nextStepLabel, partyPayCents, partyRateCents, ratesFor, TIME_ZONE,
   type CrewSettings, type SlotRole,
 } from '@/lib/crew/rules'
 import { shiftEtDate } from '@/lib/partyTime'
@@ -93,6 +93,9 @@ export interface CrewPartyView {
   theme: string | null
   startsAt: string
   endsAt: string
+  /** The expected shift: setup before the party to clean-up after (the `shift` settings, 30 + 30 minutes). */
+  shiftStartsAt: string
+  shiftEndsAt: string
   /** The full address only for a member who is ON the party; others see where in general terms. */
   location: string
   guestCount: number | null
@@ -133,6 +136,7 @@ export function partyView(
 
   const extra = party.extra_flat_cents
   const onIt = !!mine
+  const shift = defaultShift({ startsAt: new Date(party.starts_at), endsAt: new Date(party.ends_at) }, s)
   const openSpots: OpenSpotView[] = party.status === 'published'
     ? live.filter(sl => sl.status === 'open').map(sl => ({
         slotId: sl.id,
@@ -157,6 +161,8 @@ export function partyView(
     theme: party.theme ?? null,
     startsAt: party.starts_at,
     endsAt: party.ends_at,
+    shiftStartsAt: shift.startedAt.toISOString(),
+    shiftEndsAt: shift.endedAt.toISOString(),
     location: onIt || party.party_kind !== 'mobile_party' ? party.location : 'Mobile party (address once you are on it)',
     guestCount: party.guest_count ?? null,
     notesForCrew: onIt ? party.notes_for_crew ?? null : null,

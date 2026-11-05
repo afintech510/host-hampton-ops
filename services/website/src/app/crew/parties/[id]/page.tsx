@@ -6,7 +6,8 @@ import { isUuid } from '@/lib/crew/auth'
 import { loadCrewSettings } from '@/lib/crew/settings'
 import { getPartyWithSlots } from '@/lib/crew/db'
 import { boardParty, loadViewerContext, teamNames } from '@/lib/crew/board'
-import { formatCents, setupStartsAt } from '@/lib/crew/rules'
+import { formatCents } from '@/lib/crew/rules'
+import { loadCrewPartyDetails, type CrewPartyDetails } from '@/lib/crew/partyDetails'
 import { clockLabel, partyDayLabel, partyTimeLabel } from '@/lib/crew/view'
 import CrewTop, { CrewUnavailable } from '../../_components/CrewTop'
 import PartyCard from '../../_components/PartyCard'
@@ -37,7 +38,15 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
   const b = boardParty(pws.data, names.data, ctx.data)
   if (!b || (!b.view.mySlot && !b.upcoming)) notFound()
   const v = b.view
-  const setup = setupStartsAt(new Date(v.startsAt), settings.settings)
+  // The child's and family's details go ONLY to a member who is on the party (like the address).
+  let details: CrewPartyDetails | null = null
+  const bookingId = pws.data.party.booking_id
+  if (v.mySlot && bookingId) {
+    const d = await loadCrewPartyDetails(sb, bookingId)
+    if (d.kind !== 'ok') return <CrewUnavailable />
+    details = d.data
+  }
+  const minutes = settings.settings.shift
 
   return (
     <main className="crew-wrap">
@@ -49,7 +58,11 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
       <div className="crew-card">
         <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '.35rem .9rem' }}>
           <dt className="crew-muted">When</dt><dd style={{ margin: 0 }}>{partyDayLabel(v.startsAt)}, {partyTimeLabel(v.startsAt, v.endsAt)}</dd>
-          <dt className="crew-muted">Arrive by</dt><dd style={{ margin: 0 }}>{clockLabel(setup)} to set up</dd>
+          <dt className="crew-muted">Your shift</dt>
+          <dd style={{ margin: 0 }}>
+            {clockLabel(v.shiftStartsAt)} – {clockLabel(v.shiftEndsAt)}
+            <span className="crew-muted crew-small" style={{ display: 'block' }}>{minutes.setupMinutes} min to set up before the party, {minutes.cleanupMinutes} min to clean up after</span>
+          </dd>
           <dt className="crew-muted">Where</dt><dd style={{ margin: 0 }}>{v.location}</dd>
           <dt className="crew-muted">Kids</dt><dd style={{ margin: 0 }}>{v.guestCount != null ? v.guestCount : 'Not confirmed yet'}</dd>
           <dt className="crew-muted">Crew</dt><dd style={{ margin: 0 }}>{v.staffed} of {v.needed} spots taken</dd>
@@ -59,6 +72,19 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
           </>)}
         </dl>
       </div>
+
+      {details && (details.child || details.parent || details.theme || details.food.length > 0 || details.activities.length > 0) && (
+        <div className="crew-card">
+          <h3>About this party</h3>
+          <dl style={{ margin: '.5rem 0 0', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '.35rem .9rem' }}>
+            {details.child && (<><dt className="crew-muted">Celebrating</dt><dd style={{ margin: 0 }}>{details.child}</dd></>)}
+            {details.parent && (<><dt className="crew-muted">Parent</dt><dd style={{ margin: 0 }}>{details.parent}</dd></>)}
+            {details.theme && (<><dt className="crew-muted">Theme</dt><dd style={{ margin: 0 }}>{details.theme}</dd></>)}
+            {details.food.length > 0 && (<><dt className="crew-muted">Food</dt><dd style={{ margin: 0 }}>{details.food.join(' · ')}</dd></>)}
+            {details.activities.length > 0 && (<><dt className="crew-muted">Activities</dt><dd style={{ margin: 0 }}>{details.activities.join(' · ')}</dd></>)}
+          </dl>
+        </div>
+      )}
 
       {v.notesForCrew && (
         <div className="crew-card">
