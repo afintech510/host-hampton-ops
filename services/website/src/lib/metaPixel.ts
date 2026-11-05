@@ -16,8 +16,13 @@ declare global {
  * `MetaPixel.tsx` inits without user data. See the note there — the code half of
  * that decision is not sufficient on its own.
  */
-export function metaTrack(name: string, params?: Record<string, unknown>) {
+export function metaTrack(name: string, params?: Record<string, unknown>, eventId?: string) {
   if (!META_PIXEL_ID) return
   if (typeof window === 'undefined' || !window.fbq) return
-  window.fbq('track', name, params)
+  // `eventID` is what lets Meta recognise this browser event and the SAME event
+  // sent from our server (Conversions API) as one conversion, not two. It is
+  // only added when there is one, so every event without a server twin keeps
+  // exactly the call it always had.
+  if (eventId) window.fbq('track', name, params, { eventID: eventId })
+  else window.fbq('track', name, params)
 }

@@ -1,3 +1,4 @@
+import { reportPurchaseToMeta } from '@/lib/metaCapi'
 import { ownerEmail } from '@/lib/ownerNotify'
 import { depositApprovalFields } from '@/lib/depositApproval'
 import { NextRequest, NextResponse } from 'next/server'
@@ -311,6 +312,9 @@ async function handleVerifiedEvent(
         return NextResponse.json({ error: 'financial row not written' }, { status: 500 })
       }
       const stuFirstTime = stuFin === 'written'
+      // Tell Meta a deposit landed - once, on the first processing only. A reporter:
+      // it never throws and never delays the answer to Stripe.
+      if (stuFirstTime) void reportPurchaseToMeta(supabase, { bookingId, eventId: pi.id, valueCents: depositCents })
 
       // Audit log
       if (stuFirstTime) {
@@ -580,6 +584,7 @@ async function handleVerifiedEvent(
       return NextResponse.json({ error: 'financial row not written' }, { status: 500 })
     }
     const pbFirstTime = pbFin === 'written'
+    if (pbFirstTime && paymentType === 'deposit') void reportPurchaseToMeta(supabase, { bookingId, eventId: pi.id, valueCents: amountCents })
 
     // Audit log
     if (pbFirstTime) {
@@ -2146,6 +2151,8 @@ async function handleVerifiedEvent(
           console.log('Party builder deposit: already handled for session', session.id, '— no second email')
           return NextResponse.json({ received: true, duplicate: true })
         }
+        // First processing of this deposit only (a redelivery returned above).
+        void reportPurchaseToMeta(supabase, { bookingId, eventId: session.id, valueCents: depositCents })
 
         // Insert audit log
         const { error: pbcModErr } = await supabase.from('booking_modifications').insert({

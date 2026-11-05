@@ -95,13 +95,13 @@ export interface MetaRequestLike {
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/
 const IPV6ISH = /^[0-9a-f:]{3,45}$/i
 
-function ipOf(raw: string | null): string | null {
+export function ipOf(raw: string | null): string | null {
   const s = (raw ?? '').trim()
   return s !== '' && s.length <= 45 && (IPV4.test(s) || IPV6ISH.test(s)) ? s : null
 }
 
 /** One cookie out of a `Cookie:` header. Meta's own `_fbp` / `_fbc` are `fb.1.<ms>.<digits-or-token>`. */
-function cookieValue(header: string | null, name: string): string | null {
+export function cookieValue(header: string | null, name: string): string | null {
   if (!header) return null
   for (const part of header.split(';')) {
     const eq = part.indexOf('=')

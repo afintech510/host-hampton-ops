@@ -28,6 +28,9 @@ export const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_conten
 
 export type UtmKey = (typeof UTM_KEYS)[number]
 
+/** Meta's click and browser ids (see `Attribution`). */
+export const META_KEYS = ['fbclid', 'fbc', 'fbp'] as const
+
 export interface Attribution {
   utm_source?: string
   utm_medium?: string
@@ -40,6 +43,17 @@ export interface Attribution {
   landing_path?: string
   /** ISO-8601, set by the browser at first touch. */
   captured_at?: string
+  /**
+   * Meta click and browser ids, kept so a server-side conversion (Conversions
+   * API, `lib/metaCapi.ts`) can be matched to the ad click that caused it.
+   * `fbclid` is the click id from the ad URL; `fbc` is that id in Meta's cookie
+   * form; `fbp` is Meta's first-party browser id. None is personal data on its
+   * own, none is shown in reports, and they leave the building only inside a
+   * Conversions API call.
+   */
+  fbclid?: string
+  fbc?: string
+  fbp?: string
   /** Set only by migration 053's backfill, so a report can tell it apart. */
   backfilled?: boolean
   /**
@@ -214,6 +228,13 @@ export function screenAttribution(raw: unknown): Attribution {
       const note = boundedString(input.self_reported_note)
       if (note) out.self_reported_note = note.slice(0, MAX_NOTE_LEN)
     }
+  }
+
+  // Meta ids: a closed alphabet and a length bound, because these are echoed
+  // into an outbound API call and must not be able to carry anything else.
+  for (const key of META_KEYS) {
+    const v = typeof input[key] === 'string' ? (input[key] as string).trim() : ''
+    if (/^[A-Za-z0-9._-]{1,200}$/.test(v)) out[key] = v
   }
 
   const capturedAt = boundedString(input.captured_at)

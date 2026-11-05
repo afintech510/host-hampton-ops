@@ -324,7 +324,7 @@ export default function PartyPackagesContent({
       if (!res.ok) throw new Error(data.error || 'Checkout failed')
 
       // Fire checkout tracking before redirect
-      trackCheckoutStart(formData.partyTheme || selectedTheme || 'Kids Birthday Party', selectedThemePrice || 99)
+      trackCheckoutStart(formData.partyTheme || selectedTheme || 'Kids Birthday Party', selectedThemePrice || undefined)
 
       // Redirect to Stripe
       window.location.href = data.url

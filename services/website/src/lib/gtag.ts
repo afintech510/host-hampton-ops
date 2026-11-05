@@ -1,4 +1,5 @@
 import { metaTrack } from '@/lib/metaPixel'
+import { takeMetaEventId } from '@/lib/utm'
 
 export const GA_ID = process.env.NEXT_PUBLIC_GA_ID || ''
 export const GADS_ID = process.env.NEXT_PUBLIC_GADS_ID || ''
@@ -31,7 +32,7 @@ export function trackLead(source: string, email?: string) {
     event_label: source,
     value: 1,
   })
-  metaTrack('Lead', { content_name: source })
+  metaTrack('Lead', { content_name: source }, takeMetaEventId())
   if (GADS_ID && GADS_LEAD_LABEL) {
     gtag('event', 'conversion', {
       send_to: `${GADS_ID}/${GADS_LEAD_LABEL}`,
@@ -42,7 +43,7 @@ export function trackLead(source: string, email?: string) {
 /** Contact form or inquiry submitted */
 export function trackContact(method: string) {
   event('contact', { method })
-  metaTrack('Contact', { method })
+  metaTrack('Contact', { method }, takeMetaEventId())
 }
 
 /** Checkout initiated (redirecting to Stripe) */
@@ -90,7 +91,7 @@ export function trackPurchase(transactionId: string, value?: number, itemName?: 
     // omitting them, or the event is rejected as malformed.
     value: value ?? 0,
     currency: 'USD',
-  })
+  }, transactionId)
   if (GADS_ID && GADS_PURCHASE_LABEL) {
     gtag('event', 'conversion', {
       send_to: `${GADS_ID}/${GADS_PURCHASE_LABEL}`,

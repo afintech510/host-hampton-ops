@@ -71,6 +71,11 @@ export function captureAttribution() {
       }
     }
 
+    // Meta's click id from the ad URL. Stored with the first touch so a lead
+    // that books weeks later can still be matched to the ad that brought it.
+    const fbclid = url.get('fbclid')
+    if (fbclid && /^[A-Za-z0-9._-]{1,200}$/.test(fbclid)) attribution.fbclid = fbclid
+
     attribution.landing_path = window.location.pathname
     attribution.captured_at = new Date().toISOString()
 
@@ -81,13 +86,77 @@ export function captureAttribution() {
   }
 }
 
-/** The first touch of this visit, for posting with a form. `{}` if unknown. */
-export function getAttribution(): Attribution {
+function cookie(name: string): string | undefined {
+  try {
+    for (const part of document.cookie.split(';')) {
+      const eq = part.indexOf('=')
+      if (eq > 0 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim() || undefined
+    }
+  } catch {
+    /* no cookie access: no signal */
+  }
+  return undefined
+}
+
+const EVENT_ID_KEY = 'hh_last_meta_eid'
+
+/**
+ * A new id for ONE conversion, remembered so the Meta Pixel call that follows
+ * the form submit can carry the same id the server will send with its own copy
+ * (lib/metaCapi.ts) — that shared id is how Meta counts it once.
+ */
+function mintMetaEventId(): string | undefined {
+  try {
+    const id =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+    sessionStorage.setItem(EVENT_ID_KEY, id)
+    return id
+  } catch {
+    return undefined
+  }
+}
+
+/** The id minted by the last `getAttribution()` call, once. Undefined when there is none. */
+export function takeMetaEventId(): string | undefined {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const id = sessionStorage.getItem(EVENT_ID_KEY) || undefined
+    sessionStorage.removeItem(EVENT_ID_KEY)
+    return id
+  } catch {
+    return undefined
+  }
+}
+
+/** What a form posts: the first touch, plus the Meta ids and a fresh event id. */
+export type AttributionPayload = Attribution & { meta_event_id?: string }
+
+/**
+ * The first touch of this visit, for posting with a form. `{}` if unknown.
+ *
+ * Every call also carries a NEW `meta_event_id`: a form calls this once, at the
+ * moment it submits, so the id belongs to that submission.
+ */
+export function getAttribution(): AttributionPayload {
   if (typeof window === 'undefined') return {}
+  let stored: Attribution = {}
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : {}
+    stored = raw ? JSON.parse(raw) : {}
   } catch {
-    return {}
+    stored = {}
   }
+  const out: AttributionPayload = { ...stored }
+  const fbp = cookie('_fbp')
+  if (fbp) out.fbp = fbp
+  // `_fbc` is set by the Pixel from the click id; if it has not run yet, build the
+  // documented form from the click id we stored (fb.1.<ms>.<fbclid>).
+  const fbc = cookie('_fbc')
+  if (fbc) out.fbc = fbc
+  else if (stored.fbclid) out.fbc = `fb.1.${Date.parse(stored.captured_at ?? '') || Date.now()}.${stored.fbclid}`
+  const id = mintMetaEventId()
+  if (id) out.meta_event_id = id
+  return out
 }

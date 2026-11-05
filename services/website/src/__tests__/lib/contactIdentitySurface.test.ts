@@ -547,6 +547,10 @@ describe('R0 — the staleness walker', () => {
       // enrolled. Neither filters an identity column itself, and the only write
       // is a contact_sequence_enrollments row keyed by that contact's id.
       'lib/assistant/nurture.ts',
+      // Reads ONE contact by the id a booking already carries (`email_opt_in`,
+      // `status`) to decide whether a hashed email/phone may go to Meta. It
+      // resolves nobody by email or phone and writes nothing.
+      'lib/metaCapi.ts',
       'app/api/admin/sequences/enroll/route.ts',
     ])
 
