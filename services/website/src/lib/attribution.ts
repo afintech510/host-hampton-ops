@@ -54,6 +54,12 @@ export interface Attribution {
   fbclid?: string
   fbc?: string
   fbp?: string
+  /**
+   * 'granted' when the visitor had accepted the cookie banner at the moment they
+   * submitted. It is what lets a later server-side conversion (a deposit paid
+   * days after the form) be reported to Meta; absent means do not.
+   */
+  ad_consent?: 'granted'
   /** Set only by migration 053's backfill, so a report can tell it apart. */
   backfilled?: boolean
   /**
@@ -236,6 +242,8 @@ export function screenAttribution(raw: unknown): Attribution {
     const v = typeof input[key] === 'string' ? (input[key] as string).trim() : ''
     if (/^[A-Za-z0-9._-]{1,200}$/.test(v)) out[key] = v
   }
+
+  if (input.ad_consent === 'granted') out.ad_consent = 'granted'
 
   const capturedAt = boundedString(input.captured_at)
   // Bound it to a plausible instant. A browser clock is not authoritative and a

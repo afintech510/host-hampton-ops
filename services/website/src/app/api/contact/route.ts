@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
   // Tell Meta (server side, same event id as the browser Pixel). A reporter: it
   // never throws, never delays this answer, and sends no email or phone unless
   // the form's own marketing box was ticked.
-  void reportLeadToMeta(req, { body, name: 'Contact', email, phone, consented: marketingConsent === true })
+  void reportLeadToMeta(req, { body, name: 'Lead', email, phone, consented: marketingConsent === true })
 
   return NextResponse.json({ success: true, recorded })
 }

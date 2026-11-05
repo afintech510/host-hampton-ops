@@ -1,3 +1,4 @@
+import { reportLeadToMeta } from '@/lib/metaCapi'
 import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
 import { upsertContact } from '@/lib/contacts'
@@ -197,6 +198,10 @@ export async function POST(req: NextRequest) {
 
   if (missing.length) console.warn(`trucker-inquiry: lead from ${email} recorded with gaps — missing ${missing.join(', ')}`)
 
+
+  // Tell Meta (server side, same event id as the browser Pixel; only for a visitor
+  // who accepted the cookie banner). A reporter: never throws, never delays this answer.
+  void reportLeadToMeta(req, { body, name: 'Lead', email, phone, consented: marketingConsent === true })
 
   return NextResponse.json({ success: true, recorded })
 }

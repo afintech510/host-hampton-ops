@@ -1,5 +1,6 @@
 'use client'
 
+import CookieSettingsLink from '@/components/CookieSettingsLink'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
@@ -100,6 +101,7 @@ export default function Footer() {
                 <Link href={l.href} className="hover:text-hampton-navy transition-colors">{l.label}</Link>
               </li>
             ))}
+            <li><CookieSettingsLink /></li>
           </ul>
         </div>
 

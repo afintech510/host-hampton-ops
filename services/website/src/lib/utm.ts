@@ -1,5 +1,6 @@
 import type { Attribution } from './attribution'
 import { UTM_KEYS } from './attribution'
+import { browserHasConsent } from './consent'
 
 export type { Attribution }
 
@@ -149,6 +150,14 @@ export function getAttribution(): AttributionPayload {
     stored = {}
   }
   const out: AttributionPayload = { ...stored }
+  // Meta's ids and the event id leave the browser ONLY for a visitor who accepted
+  // the cookie banner (lib/consent.ts). The stored click id is dropped otherwise:
+  // it is not used for anything else.
+  if (!browserHasConsent()) {
+    delete out.fbclid
+    return out
+  }
+  out.ad_consent = 'granted'
   const fbp = cookie('_fbp')
   if (fbp) out.fbp = fbp
   // `_fbc` is set by the Pixel from the click id; if it has not run yet, build the

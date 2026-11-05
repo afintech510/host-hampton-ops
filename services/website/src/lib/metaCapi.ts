@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import type { getSupabase } from '@/lib/supabase'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { optedOutReason } from '@/lib/sequences/processor'
+import { requestHasConsent } from '@/lib/consent'
 import { cookieValue, ipOf, metaGraphVersion, META_CAPI_TIMEOUT_MS, type MetaRequestLike } from '@/lib/evites/analytics'
 
 /**
@@ -17,6 +18,10 @@ import { cookieValue, ipOf, metaGraphVersion, META_CAPI_TIMEOUT_MS, type MetaReq
  * WHAT IT WILL NOT DO
  *   * Send anything unless `META_CAPI_ENABLED` is exactly `true` AND there is an
  *     access token AND a pixel id. Off is the default and is silent.
+ *   * Report anyone who has not accepted the cookie banner (`hh_consent=granted`, no
+ *     Global Privacy Control): the same choice that keeps the browser Pixel quiet
+ *     keeps the server copy quiet. A deposit is reported only if the booking's
+ *     first touch recorded `ad_consent: 'granted'`.
  *   * Send an email or phone number for anyone who has not opted in to marketing
  *     (`optedOutReason` AND `email_opt_in === true`). Those events still go —
  *     with the click/browser ids, IP and user agent the Pixel already sees — but
@@ -203,6 +208,8 @@ export async function reportLeadToMeta(
 ): Promise<MetaSendOutcome> {
   try {
     if (!metaCapiConfig()) return 'skipped'
+    // The visitor's own cookie choice, read from this very request.
+    if (!requestHasConsent(req.headers)) return 'skipped'
     const att = args.body && typeof args.body === 'object' ? ((args.body as { attribution?: unknown }).attribution as Record<string, unknown> | undefined) : undefined
     const eventId = screenMetaEventId(att?.meta_event_id) ?? `srv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
     const fbp = typeof att?.fbp === 'string' && /^[A-Za-z0-9._-]{1,200}$/.test(att.fbp) ? att.fbp : undefined
@@ -257,6 +264,8 @@ export async function reportPurchaseToMeta(
       if (!c.error) consented = marketingConsent(c.data as { email_opt_in: boolean | null; status: string | null } | null)
     }
     const att = booking.attribution ?? {}
+    // The cookie choice the visitor had when they submitted their form.
+    if (att.ad_consent !== 'granted') return 'skipped'
     const pick = (k: string) => (typeof att[k] === 'string' && /^[A-Za-z0-9._-]{1,200}$/.test(att[k] as string) ? (att[k] as string) : null)
     return await sendMetaEvent({
       name: 'Purchase',

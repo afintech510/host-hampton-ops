@@ -1,7 +1,8 @@
 # Meta ads tracking: audit, event map, and what is switched on
 
-Written 2026-11-05. The code described here is built and deployed **OFF**: nothing is
-sent to Meta from the server until the owner completes the setup steps in section 6.
+Written 2026-11-05, updated the same day. The **server-side** events are built and deployed
+**OFF**: nothing is sent to Meta from the server until the owner completes section 6.
+The **cookie banner** is live: the browser Pixel and Google tags now wait for a visitor's "Accept".
 
 ## 1. What fires today (audit)
 
@@ -26,8 +27,8 @@ Gaps found:
 
 | Funnel step | Meta event | Browser | Server (Conversions API) | Shared `event_id` |
 |---|---|---|---|---|
-| Looks at a theme / pricing page | `ViewContent` | not built yet (section 7) | no | n/a |
-| Submits an inquiry form | `Lead` (or `Contact` on the contact and mobile forms) | yes | **yes, built** | id minted when the form reads its attribution |
+| Looks at a theme / pricing page | `ViewContent` | **yes** (`lib/metaViewContent.ts` lists the pages) | no | n/a |
+| Submits **any** inquiry form (party, contact, mobile, room rental, fundraiser, canvas bags, trucker hats) | `Lead` | yes | **yes, built** | id minted when the form reads its attribution |
 | Starts the planner checkout | `InitiateCheckout` | yes | no | n/a |
 | **Pays the deposit** | `Purchase`, value = the deposit | success pages only | **yes, built**, all three deposit paths | PaymentIntent id or Checkout Session id (the browser `order_id`) |
 | Pays a balance later | none | none | none | deliberately not a second `Purchase` |
@@ -37,14 +38,22 @@ value. Balance payments are not reported, so one party is never counted as two s
 
 `Schedule` is deliberately not used. It would count the same booking twice.
 
-`Contact` on the contact and mobile forms is kept as it is today so that the browser and server copies
-match. If you want every inquiry optimised as a `Lead`, that is a one-line change per form and worth doing
-before running conversion ads. It is your call.
+**Lead vs Contact.** Every inquiry is a `Lead`. Meta's `Contact` means "someone reached out" and is not an
+event ads can be optimised toward in the same way; `Lead` is the event to optimise on, and all of these forms are
+people asking us about a party. The contact, mobile, canvas-bag and trucker-hat forms used to send `Contact`;
+they now send `Lead` (Google Analytics keeps its own `contact` event).
 
 ## 3. What identifies a person, and what does not
 
-Sent with every server event: the visitor's IP address and browser string, and Meta's own `_fbp` / `_fbc`
-cookies (or the stored click id from the ad URL).
+**Nothing is sent unless the visitor accepted the cookie banner.** The choice is the `hh_consent` cookie
+(`granted` / `denied`); not having chosen counts as no, and a browser sending Global Privacy Control counts as no
+and is never asked. The same choice governs the browser Pixel, Google Analytics / Ads (Consent Mode v2) and the
+server events: a server `Lead` needs the cookie on the very request that submitted the form, and a deposit
+`Purchase` needs the booking's first touch to have recorded `ad_consent: granted`. A booking made before the banner
+existed therefore reports nothing, by design.
+
+Sent with every server event (for a visitor who accepted): the visitor's IP address and browser string, and
+Meta's own `_fbp` / `_fbc` cookies (or the stored click id from the ad URL).
 
 Sent **only for someone who has opted in to marketing**: a SHA-256 hash of their normalised email and phone.
 "Opted in" means `contacts.email_opt_in` is explicitly true **and** `optedOutReason()` finds nothing: a person who
@@ -67,10 +76,12 @@ Excluding booked customers matters: without it, ads keep paying to reach people 
 
 ## 5. What was built (all inactive until section 6)
 
+- **Cookie banner** (`components/ConsentBanner.tsx`, `lib/consent.ts`): Accept and Decline at equal weight, remembered for a year, reopened from "Cookie settings" in the footer. Not shown on invitation pages, the crew app, the troop board or the admin. Declining changes nothing about how the site works.
+- **Pixel and Google:** the Meta Pixel starts in Meta's "revoked" mode and sends no `PageView` until Accept; Google starts with all four Consent Mode v2 signals `denied`. Our own first-touch record (where a visitor came from, kept in their tab and only sent with a form they submit) is not gated.
 - `lib/metaCapi.ts`: the server sender. Off unless `META_CAPI_ENABLED=true` **and** a token **and** a pixel id exist. Hashes per Meta's rules. Never throws, 2 second timeout, logs a status code and never a body.
 - `lib/utm.ts` / `lib/attribution.ts`: the first-touch record now also keeps `fbclid`, `fbc`, `fbp`. Every form's `getAttribution()` call mints a fresh `meta_event_id`; the Pixel call that follows uses the same id.
 - `lib/metaPixel.ts` / `lib/gtag.ts`: `Lead`, `Contact` and `Purchase` carry `eventID`.
-- Server hooks: `/api/lead`, `/api/contact`, `/api/mobile-party-inquiry` (after the lead is confirmed recorded), and the Stripe webhook's three deposit paths (only on the **first** processing of a payment, never on a redelivery).
+- Server hooks: `/api/lead`, `/api/contact`, `/api/mobile-party-inquiry`, `/api/fundraiser-inquiry`, `/api/canvas-bag-inquiry`, `/api/trucker-inquiry` (after the lead is confirmed recorded), and the Stripe webhook's three deposit paths (only on the **first** processing of a payment, never on a redelivery).
 - Tests: `metaCapi.test.ts` pins the off-by-default switch, the hashing, the no-consent rule, and the webhook's first-time-only rule.
 
 ## 6. What the owner must do (about 15 minutes)
@@ -80,7 +91,7 @@ Excluding booked customers matters: without it, ads keep paying to reach people 
 3. On the server, put it in `/opt/hosthampton/.env` as `META_CAPI_ACCESS_TOKEN=<token>`. Do not paste it into chat, a ticket or the repository.
 4. In the same Settings page, open **Test events** and copy the **test event code** (looks like `TEST12345`). Add `META_CAPI_TEST_EVENT_CODE=<code>` to `.env`.
 5. Add `META_CAPI_ENABLED=true` to `.env`, then rebuild: `docker compose up -d --build website` (a plain restart does not pick up `.env`).
-6. Submit a test inquiry from the live site. In **Test events** you should see the browser event **and** the server event as one, marked "Deduplicated".
+6. Submit a test inquiry from the live site **after clicking Accept on the cookie banner**. In **Test events** you should see the browser event **and** the server event as one, marked "Deduplicated". (Without Accept, neither is sent.)
 7. Remove `META_CAPI_TEST_EVENT_CODE` from `.env` and rebuild, so real events stop going to the test tab.
 8. In **Aggregated Event Measurement** (Events Manager > Settings), set `Purchase` as the top-priority event. This matters for iPhone traffic.
 9. In Ads Manager, create the audiences in section 4, and add "Booked customers" as an **exclusion** on acquisition campaigns.
@@ -88,7 +99,6 @@ Excluding booked customers matters: without it, ads keep paying to reach people 
 
 ## 7. Not built yet, and why
 
-- **`ViewContent` on theme and pricing pages** needs a decision on which routes count; it is a small client component once chosen.
-- **A consent banner.** None exists today. The server events honour the opt-in rule above, but the browser Pixel still loads for everyone, as it always has. If you want a banner (some states and the EU/UK require one), say so.
-- **Reporting `Lead` for every inquiry form** (section 2 note).
-- **Fundraiser, canvas-bag and trucker-hat forms** do not send a server `Lead` yet; their browser events are unchanged.
+- **Crisp chat** (the chat bubble) sets its own cookies and is not behind the banner. Say if you want it gated.
+- **Balance payments** are deliberately not reported (section 2).
+- **Page lists.** `ViewContent` fires on the pages named in `lib/metaViewContent.ts`; a new theme page needs one line there, and a test fails if a listed page is renamed away.

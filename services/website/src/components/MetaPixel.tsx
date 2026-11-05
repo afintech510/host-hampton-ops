@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { META_PIXEL_ID } from '@/lib/metaPixel'
 import { isMetaPixelBlockedPath } from '@/lib/evites/chrome'
+import { browserHasConsent, CONSENT_INLINE_EXPR } from '@/lib/consent'
 
 /**
  * Meta Pixel, mounted once in the root layout.
@@ -12,6 +13,10 @@ import { isMetaPixelBlockedPath } from '@/lib/evites/chrome'
  * Gated on NEXT_PUBLIC_META_PIXEL_ID so it stays completely dark until the value
  * is set — the same pattern GoogleAnalytics uses for GADS_ID. Unset means not a
  * single byte goes to Meta.
+ *
+ * CONSENT (lib/consent.ts): the Pixel starts in Meta's "revoked" mode unless the
+ * visitor has already accepted, and no PageView is sent until they do. The banner
+ * (components/ConsentBanner.tsx) grants it.
  *
  * ADVANCED MATCHING IS OFF, by decision (2026-09-22). `fbq('init', id)` is called
  * with NO user-data object, so no hashed email or phone leaves the browser. Note
@@ -44,6 +49,9 @@ export default function MetaPixel() {
       bootstrapped.current = true
       return
     }
+    // A visitor who has not said yes is counted nowhere; the banner fires the
+    // page they are on when they accept.
+    if (!browserHasConsent()) return
     window.fbq?.('track', 'PageView')
   }, [pathname])
 
@@ -65,8 +73,10 @@ export default function MetaPixel() {
         t.src=v;s=b.getElementsByTagName(e)[0];
         s.parentNode.insertBefore(t,s)}(window,document,'script',
         'https://connect.facebook.net/en_US/fbevents.js');
+        var hhConsent = ${CONSENT_INLINE_EXPR};
+        fbq('consent', hhConsent ? 'grant' : 'revoke');
         fbq('init', '${META_PIXEL_ID}');
-        fbq('track', 'PageView');
+        if (hhConsent) fbq('track', 'PageView');
       `}
     </Script>
   )

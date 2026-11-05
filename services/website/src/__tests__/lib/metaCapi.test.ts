@@ -33,9 +33,9 @@ import {
   reportLeadToMeta, reportPurchaseToMeta, screenMetaEventId, sendMetaEvent,
 } from '@/lib/metaCapi'
 
-const req = (cookie = '_fbp=fb.1.111.222') => ({
+const req = (cookie = '_fbp=fb.1.111.222; hh_consent=granted', extra: Record<string, string> = {}) => ({
   headers: {
-    get: (n: string) => ({ cookie, 'user-agent': 'UA/1.0', 'cf-connecting-ip': '203.0.113.9' } as Record<string, string>)[n.toLowerCase()] ?? null,
+    get: (n: string) => ({ cookie, 'user-agent': 'UA/1.0', 'cf-connecting-ip': '203.0.113.9', ...extra } as Record<string, string>)[n.toLowerCase()] ?? null,
   },
 })
 
@@ -89,7 +89,7 @@ describe('hashing', () => {
 describe('what goes to Meta', () => {
   it('a lead uses the browser\'s event id (so Meta counts it once) and hashes only when the box was ticked', async () => {
     const body = { attribution: { meta_event_id: 'evt-1234abcd', fbp: 'fb.1.9.9', fbc: 'fb.1.9.ABC' } }
-    expect(await reportLeadToMeta(req(''), { body, name: 'Lead', email: 'Pat@Example.com', phone: '6315550123', consented: true })).toBe('sent')
+    expect(await reportLeadToMeta(req('hh_consent=granted'), { body, name: 'Lead', email: 'Pat@Example.com', phone: '6315550123', consented: true })).toBe('sent')
     const sent = JSON.parse(fetchMock.mock.calls[0][1].body)
     const ev = sent.data[0]
     expect(ev.event_name).toBe('Lead')
@@ -130,6 +130,26 @@ describe('what goes to Meta', () => {
   })
 })
 
+describe('the cookie banner decides', () => {
+  const body = { attribution: { meta_event_id: 'evt-1234abcd' } }
+  const lead = (r: ReturnType<typeof req>) => reportLeadToMeta(r, { body, name: 'Lead', email: 'a@b.co', consented: true })
+
+  it('sends nothing for a visitor who has not chosen, or declined', async () => {
+    expect(await lead(req('_fbp=fb.1.1.2'))).toBe('skipped')
+    expect(await lead(req('hh_consent=denied'))).toBe('skipped')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('treats Global Privacy Control as a no, even after Accept', async () => {
+    expect(await lead(req('hh_consent=granted', { 'sec-gpc': '1' }))).toBe('skipped')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('sends for a visitor who accepted', async () => {
+    expect(await lead(req('hh_consent=granted'))).toBe('sent')
+  })
+})
+
 describe('reportPurchaseToMeta', () => {
   function db(contact: Record<string, unknown> | null) {
     return {
@@ -138,7 +158,7 @@ describe('reportPurchaseToMeta', () => {
           eq: () => ({
             maybeSingle: async () =>
               t === 'bookings'
-                ? { data: { contact_id: 'c1', contact_email: 'pat@example.com', contact_phone: '6315550123', attribution: { fbp: 'fb.1.5.6', fbc: 'fb.1.5.CLK', utm_source: 'facebook' } }, error: null }
+                ? { data: { contact_id: 'c1', contact_email: 'pat@example.com', contact_phone: '6315550123', attribution: { fbp: 'fb.1.5.6', fbc: 'fb.1.5.CLK', utm_source: 'facebook', ad_consent: 'granted' } }, error: null }
                 : { data: contact, error: null },
           }),
         }),
@@ -164,9 +184,40 @@ describe('reportPurchaseToMeta', () => {
     expect(u.fbc).toBe('fb.1.5.CLK')
   })
 
+  it('does not report a deposit whose booking never recorded cookie consent', async () => {
+    const noConsent = {
+      from: (t: string) => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => (t === 'bookings'
+              ? { data: { contact_id: 'c1', contact_email: 'a@b.co', contact_phone: null, attribution: { fbp: 'fb.1.5.6' } }, error: null }
+              : { data: { email_opt_in: true, status: null }, error: null }),
+          }),
+        }),
+      }),
+    } as never
+    expect(await reportPurchaseToMeta(noConsent, { bookingId: 'b1', eventId: 'pi_3Abcdefghijkl', valueCents: 25000 })).toBe('skipped')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('skips a zero or missing amount rather than reporting a fake sale', async () => {
     expect(await reportPurchaseToMeta(db(null), { bookingId: 'b1', eventId: 'pi_3Abcdefghijkl', valueCents: 0 })).toBe('skipped')
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('every inquiry form reports', () => {
+  const read = (rel: string) => decomment(fs.readFileSync(path.join(process.cwd(), 'src', rel), 'utf8'))
+  it.each([
+    'app/api/lead/route.ts', 'app/api/contact/route.ts', 'app/api/mobile-party-inquiry/route.ts',
+    'app/api/fundraiser-inquiry/route.ts', 'app/api/canvas-bag-inquiry/route.ts', 'app/api/trucker-inquiry/route.ts',
+  ])('%s sends a Lead after it has decided the lead landed, and never awaits it', rel => {
+    const s = read(rel)
+    const landed = s.indexOf('landedSomewhere(recorded)')
+    const report = s.indexOf("void reportLeadToMeta(req, { body, name: 'Lead'")
+    expect(landed).toBeGreaterThan(0)
+    expect(report).toBeGreaterThan(landed)
+    expect(s).not.toMatch(/await reportLeadToMeta/)
   })
 })
 

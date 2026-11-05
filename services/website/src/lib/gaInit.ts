@@ -1,4 +1,5 @@
 import { isInvitePath } from '@/lib/evites/chrome'
+import { CONSENT_INLINE_EXPR } from '@/lib/consent'
 
 /**
  * The inline GA4 / Google Ads bootstrap, as a pure function so a test can read
@@ -14,8 +15,9 @@ import { isInvitePath } from '@/lib/evites/chrome'
  *   - the Google Ads (`GADS_ID`) config is SKIPPED entirely: that tag exists to
  *     build remarketing audiences and has no business on a guest's page.
  *
- * Everywhere else the output is byte-for-byte what `GoogleAnalytics` always
- * emitted, so no other page's tracking moves.
+ * Everywhere else the output is what `GoogleAnalytics` always emitted, plus
+ * Google Consent Mode v2: every page starts with all four signals `denied` unless
+ * the visitor has already accepted (lib/consent.ts), and the banner updates them.
  */
 export function gaInitScript(opts: { gaId: string; gadsId: string; pathname: string | null | undefined }): string {
   const { gaId, gadsId, pathname } = opts
@@ -28,6 +30,8 @@ export function gaInitScript(opts: { gaId: string; gadsId: string; pathname: str
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}
           gtag('js', new Date());
+          var hhConsent = ${CONSENT_INLINE_EXPR} ? 'granted' : 'denied';
+          gtag('consent', 'default', { ad_storage: hhConsent, analytics_storage: hhConsent, ad_user_data: hhConsent, ad_personalization: hhConsent });
           ${cleaned}
           gtag('config', '${gaId}', { send_page_view: true });
           ${ads}

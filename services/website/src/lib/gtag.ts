@@ -43,7 +43,9 @@ export function trackLead(source: string, email?: string) {
 /** Contact form or inquiry submitted */
 export function trackContact(method: string) {
   event('contact', { method })
-  metaTrack('Contact', { method }, takeMetaEventId())
+  // Meta sees every inquiry as a Lead (the event ads are optimised on); GA keeps
+  // its own `contact` event above.
+  metaTrack('Lead', { content_name: method }, takeMetaEventId())
 }
 
 /** Checkout initiated (redirecting to Stripe) */

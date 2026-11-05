@@ -7,6 +7,8 @@ import CrispChat from '@/components/CrispChat'
 import ChatWidget from '@/components/ChatWidget'
 import GoogleAnalytics from '@/components/GoogleAnalytics'
 import MetaPixel from '@/components/MetaPixel'
+import MetaViewContent from '@/components/MetaViewContent'
+import ConsentBanner from '@/components/ConsentBanner'
 import AttributionCapture from '@/components/AttributionCapture'
 import { CartProvider } from '@/context/CartContext'
 import CartDrawer from '@/components/CartDrawer'
@@ -198,6 +200,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </CartProvider>
         <GoogleAnalytics />
         <MetaPixel />
+        <MetaViewContent />
+        <ConsentBanner />
         <AttributionCapture />
         <CrispChat />
         {/* Host Assistant: renders nothing until GET /api/chat/config says the chat is on
