@@ -269,6 +269,32 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       return { ok: true, status: res.status, message: `Sent ${String(json.count ?? input.photoIds.length)} photo(s) to ${input.bookingRef} by ${sentVia}.${failures}` }
     }
 
+    case 'approve_party': {
+      const input = proposal.input as { bookingId: string; bookingRef: string; sendEmail?: boolean }
+      // The dashboard's own Approve action. It refuses a cancelled or lost party
+      // itself, writes the status before it emails, and logs a deliberate no-email
+      // approval. `send_email: false` is sent ONLY when the card said so.
+      const { res, json } = await replayPartyAction(original, input.bookingId, {
+        action: 'approve',
+        ...(input.sendEmail === false ? { send_email: false } : {}),
+      })
+      if (!res.ok || json.ok !== true) return refused('Not approved', res, json)
+      const how =
+        json.emailSkippedByAdmin === true
+          ? 'The client was not emailed (as you asked).'
+          : json.emailed === false
+            ? 'But the confirmation email did NOT go out - check the email address and tell the client yourself.'
+            : 'The client was emailed the confirmation.'
+      return { ok: true, status: res.status, message: `Approved ${input.bookingRef}. ${how}` }
+    }
+
+    case 'reopen_party': {
+      const input = proposal.input as { bookingId: string; bookingRef: string }
+      const { res, json } = await replayPartyAction(original, input.bookingId, { action: 'reopen' })
+      if (!res.ok || json.ok !== true) return refused('Not reopened', res, json)
+      return { ok: true, status: res.status, message: `Reopened ${input.bookingRef} as ${String(json.status ?? 'open')}. Nothing was sent to the client.` }
+    }
+
     case 'party_link': {
       const input = proposal.input as { bookingId: string; bookingRef: string; destination: 'invoice' | 'planner' | 'portal' }
       // The dashboard's own "Copy Invoice Link" / "Copy Portal Link": mint only,

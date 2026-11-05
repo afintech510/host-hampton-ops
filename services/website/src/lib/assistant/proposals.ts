@@ -34,6 +34,8 @@ export type ProposalKind =
   | 'send_photos'
   | 'enrol_sequence'
   | 'party_link'
+  | 'approve_party'
+  | 'reopen_party'
 
 /** A thumbnail shown on a card (photo proposals). Display only — execute.ts never reads it. */
 export interface ProposalPhoto {

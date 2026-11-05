@@ -4,7 +4,7 @@ import { PARTY_TYPES, isPartyType } from '@/lib/pipelineStages'
 import type { BookingStage } from '@/lib/bookingStatus'
 import { TENANT } from '@/tenant'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
-import { getFirstInquiry, getNextStep, getSmsThread, listLeads, MAX_LEADS } from './leadView'
+import { getFirstInquiry, getNextStep, getSmsThread, listLeads, listPledges, MAX_LEADS } from './leadView'
 import { listSequences, SEQUENCE_SENDER_SCHEDULED } from './nurture'
 import { firstNameOf } from './outboundText'
 import type { ToolOutcome } from './tools'
@@ -59,6 +59,12 @@ export const LEAD_TOOLS: Anthropic.Beta.BetaTool[] = [
     description:
       'The suggested next step for one lead: where they stand, who is waiting on whom, and a short list of actions, each naming the propose_* tool that prepares it (photos, planner link, invoice and deposit link …). Nothing is sent: use the named tool to put a card in front of the manager. Read-only.',
     input_schema: { type: 'object', properties: { booking_ref: { type: 'string' } }, required: ['booking_ref'] },
+  },
+  {
+    name: 'list_payment_pledges',
+    description:
+      'Payments customers SAID they would send (Venmo, Zelle, cash …) through their portal, newest first, from the last 45 days: party, amount, method, how long ago, whether a payment has been written down on that party since. A pledge is a claim, not money - it changes no balance. When the manager confirms the money actually arrived, record it with propose_record_payment (the amount and method they state). Read-only.',
+    input_schema: { type: 'object', properties: {} },
   },
   {
     name: 'get_party_links',
@@ -169,6 +175,23 @@ export async function runLeadTool(name: string, input: Record<string, unknown>, 
       if (r.kind === 'unavailable') return unavailable('that lead')
       if (r.kind === 'absent') return fail(`No party with ref ${ref}`)
       return { result: { ...r.step, instruction: 'Nothing has been done. To act, call the named propose_* tool; the manager confirms the card.' } }
+    }
+
+    case 'list_payment_pledges': {
+      const r = await listPledges(supabase, now)
+      if (r.kind !== 'ok') return unavailable('the payment pledges')
+      const money = (c: number) => `$${(c / 100).toFixed(2)}`
+      return {
+        result: {
+          count: r.pledges.length,
+          pledges: r.pledges.map(p => ({
+            ref: p.ref, name: p.name, pledged: `${money(p.amount_cents)} by ${p.method}, ${p.pledged_ago} ago`,
+            payment_recorded_since: p.payment_recorded_since,
+            priced: p.total_cents ? money(p.total_cents) : 'not priced', paid_so_far: money(p.paid_cents),
+          })),
+          note: 'A pledge is the word of the customer, not money. Record a payment only when the manager says it arrived.',
+        },
+      }
     }
 
     case 'get_party_links': {

@@ -468,3 +468,74 @@ export async function getNextStep(
         : 'No conversation on record yet.'
   return { kind: 'ok', step: { ref: b.booking_ref, name: b.contact_name ?? 'unknown', stage, summary, facts, actions } }
 }
+
+/* ── payments customers said they would send ──────────────────────────── */
+
+export interface Pledge {
+  ref: string
+  name: string
+  party_status: string | null
+  amount_cents: number
+  method: string
+  pledged_ago: string
+  /** A payment was written down on this booking AFTER the pledge - it has probably been reconciled. */
+  payment_recorded_since: boolean
+  total_cents: number | null
+  paid_cents: number
+}
+
+/**
+ * Pledges from the customer portal ("I will Venmo $250"), newest first. A pledge
+ * is a CLAIM, not money: nothing is owed or paid because of it, and it never
+ * changes a balance. It is reconciled by a person writing down the payment when
+ * it actually arrives (propose_record_payment). Pledges on cancelled or lost
+ * parties are left out.
+ */
+export async function listPledges(
+  sb: Supa,
+  now: Date = new Date(),
+  days = 45,
+): Promise<{ kind: 'ok'; pledges: Pledge[] } | { kind: 'unavailable' }> {
+  const since = new Date(now.getTime() - days * 86_400_000).toISOString()
+  const mods = await sb
+    .from('booking_modifications')
+    .select('booking_id, change_summary, new_data, created_at')
+    .ilike('change_summary', 'Customer pledged%')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(60)
+  if (mods.error) return { kind: 'unavailable' }
+  const rows = (mods.data ?? []) as Array<{ booking_id: string; new_data: { amount_cents?: number; method?: string } | null; created_at: string }>
+  if (rows.length === 0) return { kind: 'ok', pledges: [] }
+
+  const ids = Array.from(new Set(rows.map(r => r.booking_id)))
+  const [bks, pays] = await Promise.all([
+    sb.from('bookings').select('id, booking_ref, contact_name, status, total_cents').in('id', ids),
+    sb.from('booking_payments').select('booking_id, amount_cents, payment_type, paid_at').in('booking_id', ids),
+  ])
+  if (bks.error || pays.error) return { kind: 'unavailable' }
+  const bookingBy = new Map(((bks.data ?? []) as Array<{ id: string; booking_ref: string; contact_name: string | null; status: string | null; total_cents: number | null }>).map(b => [b.id, b]))
+  const paysBy = new Map<string, Array<{ amount_cents: number; payment_type: string; paid_at: string | null }>>()
+  for (const p of (pays.data ?? []) as Array<{ booking_id: string; amount_cents: number; payment_type: string; paid_at: string | null }>) {
+    paysBy.set(p.booking_id, [...(paysBy.get(p.booking_id) ?? []), p])
+  }
+
+  const out: Pledge[] = []
+  for (const r of rows) {
+    const b = bookingBy.get(r.booking_id)
+    if (!b || b.status === 'cancelled' || b.status === 'lost') continue
+    const payments = paysBy.get(b.id) ?? []
+    out.push({
+      ref: b.booking_ref,
+      name: b.contact_name ?? 'unknown',
+      party_status: b.status,
+      amount_cents: Number(r.new_data?.amount_cents) || 0,
+      method: String(r.new_data?.method ?? 'unknown'),
+      pledged_ago: describeElapsed(Math.max(0, now.getTime() - ms(r.created_at))),
+      payment_recorded_since: payments.some(p => p.payment_type !== 'refund' && !!p.paid_at && ms(p.paid_at) >= ms(r.created_at)),
+      total_cents: b.total_cents,
+      paid_cents: sumPayments(payments as never),
+    })
+  }
+  return { kind: 'ok', pledges: out }
+}

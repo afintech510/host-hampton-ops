@@ -18,6 +18,7 @@ import { loadQuoteCatalog, quoteFromCatalog, MAX_QUOTE_GUESTS } from '@/lib/quot
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
 import { buildEnrolCard } from './nurture'
+import { maskEmail } from './outboundText'
 import { buildClientLinksCard, buildPhotosCard, type BuiltCard, type MessageEdits, type MessagePreview } from './messageCard'
 
 /**
@@ -335,6 +336,22 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: 'propose_approve_party',
+    description:
+      'PROPOSE approving a party: sets its status to Approved, the same as the Approve button in the Parties tab. By default it also EMAILS THE CLIENT the standard "Your Party is Confirmed!" message (the studio-rental version for rentals) with a link to their booking; set send_confirmation_email false to approve without telling them (only if the manager says the client already knows). Refused for a cancelled or lost party (use propose_reopen_party first), one already approved, and a party with no price yet. The card shows exactly what will happen. Nothing changes until the manager clicks Confirm.',
+    input_schema: {
+      type: 'object',
+      properties: { booking_ref: { type: 'string' }, send_confirmation_email: { type: 'boolean', description: 'Default true.' } },
+      required: ['booking_ref'],
+    },
+  },
+  {
+    name: 'propose_reopen_party',
+    description:
+      'PROPOSE reopening a party that was marked lost or cancelled, putting it back to Quoted (if it has a price) or Lead. Sends the client nothing. Money already paid still counts, so a reopened party that had a deposit reads as Booked. Nothing changes until the manager clicks Confirm.',
+    input_schema: { type: 'object', properties: { booking_ref: { type: 'string' } }, required: ['booking_ref'] },
+  },
+  {
     name: 'propose_party_link',
     description:
       'PROPOSE making a link for the manager to open or copy: the invoice page of the party, its party planner page, or its booking portal. It is the same link the client gets, so it SIGNS WHOEVER OPENS IT IN as the client for 30 days. It is shown to the manager only and is NOT sent to the client (to send it use propose_send_client_links). Nothing is made until the manager clicks Confirm. For the admin view of a party use get_party_links, not this.',
@@ -500,6 +517,10 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await proposeEnrolSequence(supabase, input, ctx)
       case 'propose_party_link':
         return await proposePartyLink(supabase, input, ctx)
+      case 'propose_approve_party':
+        return await proposeApproveParty(supabase, input, ctx)
+      case 'propose_reopen_party':
+        return await proposeReopenParty(supabase, input, ctx)
       default:
         if (isLeadTool(name)) return await runLeadTool(name, input, supabase, ctx.now)
         return { result: { error: `Unknown tool ${name}` }, isError: true }
@@ -821,6 +842,82 @@ async function proposeSendClientLinks(
     kinds, email, sms, edits, authored: hasEdits(edits) ? 'model' : 'default', now: ctx.now,
   })
   return messageCardOutcome('send_client_links', built, ctx, input)
+}
+
+/** A party by ref, INCLUDING cancelled and lost (loadBooking refuses those; reopen needs them). */
+async function loadAnyBooking(supabase: Supa, input: Record<string, unknown>): Promise<LoadedBooking> {
+  const ref = str(input.booking_ref, 40)
+  if (!ref) return { ok: false, out: fail('booking_ref is required') }
+  const { data, error } = await supabase.from('bookings').select(BOOKING_EDIT_COLUMNS).eq('booking_ref', ref).maybeSingle()
+  if (error) return { ok: false, out: fail('Could not read that party — say so.') }
+  if (!data) return { ok: false, out: fail(`No party with ref ${ref}`) }
+  return { ok: true, b: data as unknown as BookingRow }
+}
+
+/** Statuses that already say "approved or further": approving again would only re-email the client. */
+const APPROVED_OR_BEYOND = ['approved', 'modifications_locked', 'paid_in_full', 'completed']
+
+async function proposeApproveParty(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadAnyBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  if (b.status === 'cancelled' || b.status === 'lost') {
+    return fail(`${b.booking_ref} is ${b.status}. Approving it would revive it and tell the client it is confirmed: use propose_reopen_party first, then approve. Nothing was proposed.`)
+  }
+  if (b.status && APPROVED_OR_BEYOND.includes(b.status)) {
+    return fail(`${b.booking_ref} is already ${b.status}, so there is nothing to approve. Nothing was proposed.`)
+  }
+  const sendEmail = input.send_confirmation_email !== false
+  const pic = await moneyPicture(supabase, b.booking_ref)
+  if (!pic) return fail('Could not read the price and payments, so I cannot say what approving would tell the client. Nothing was proposed.')
+  if (sendEmail) {
+    if (!(b.contact_email && looksLikeEmail(b.contact_email))) {
+      return fail('There is no valid email on this party, so the confirmation email cannot go. Fix the email, or propose again with send_confirmation_email false. Nothing was proposed.')
+    }
+    if (pic.total <= 0) {
+      return fail('This party has no price yet; the confirmation email would show a $0.00 balance. Price it first, or propose again with send_confirmation_email false. Nothing was proposed.')
+    }
+  }
+  const rental = b.event_type === 'studio-rental'
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    `Status: ${b.status ?? 'unknown'} → approved`,
+    `Money: priced ${money(pic.total)}, paid ${money(pic.paid)}, still owed ${money(pic.outstanding)}`,
+    sendEmail
+      ? `Emails the client (${maskEmail(b.contact_email)}) the standard "${rental ? 'Your Studio Rental is Confirmed!' : 'Your Party is Confirmed!'}" message with a link to their booking and the balance of ${money(pic.outstanding)}.`
+      : 'The client is NOT emailed (you said they already know). The change is logged as a deliberate no-email approval.',
+    'It goes on the calendar only once a deposit has landed.',
+  ]
+  return cardOutcome(
+    'approve_party',
+    { bookingId: b.id, bookingRef: b.booking_ref, sendEmail },
+    `Approve ${b.booking_ref}${sendEmail ? ' and email the client' : ' (no email)'}`,
+    details,
+    ctx,
+    'Nothing has changed and nothing has been sent.',
+  )
+}
+
+async function proposeReopenParty(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadAnyBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  if (b.status !== 'lost' && b.status !== 'cancelled') {
+    return fail(`${b.booking_ref} is ${b.status ?? 'open'}; only a lost or cancelled party can be reopened. Nothing was proposed.`)
+  }
+  const next = (b.total_cents ?? 0) > 0 ? 'Quoted' : 'Lead'
+  return cardOutcome(
+    'reopen_party',
+    { bookingId: b.id, bookingRef: b.booking_ref },
+    `Reopen ${b.booking_ref} as ${next}`,
+    [
+      `Party: ${partyLabel(b)}`,
+      `Status: ${b.status} → ${next.toLowerCase()}`,
+      'The client is sent nothing. Any money already paid still counts, so the party reads as Booked if a deposit was paid.',
+    ],
+    ctx,
+    'Nothing has changed.',
+  )
 }
 
 const PARTY_LINK_LABELS = { invoice: 'invoice', planner: 'party planner', portal: 'booking portal' } as const

@@ -295,6 +295,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (action === 'approve') {
+    // A cancelled or lost party is not approved by this button: it would revive the
+    // booking AND tell the family it is confirmed. Reopen it first (action `reopen`),
+    // which puts it back at quoted/lead, and approve from there.
+    if (booking.status === 'cancelled' || booking.status === 'lost') {
+      return NextResponse.json(
+        { error: `This booking is ${booking.status} — reopen it first. Nothing was changed and nothing was sent.` },
+        { status: 409 },
+      )
+    }
+    // `send_email: false` approves WITHOUT the confirmation email — for a customer
+    // the owner has already told. An explicit opt-out, never a default (the mail is
+    // how a family learns the party is booked), and the choice is written into the
+    // booking's change log so "we chose not to email" never looks like "it failed".
+    const notifyCustomer = body.send_email !== false
     // Approving emails the customer "Your Party is Confirmed!". Doing that over
     // a status write that was refused tells a real family their party is booked
     // when the database still says it is pending (rule 10).
@@ -332,6 +346,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // The calendar follows the money, not the Approve button: an approved
       // rental with no deposit does not hold the room (lib/calendarSync.ts).
       await syncCalendar(supabase, id)
+
+      if (!notifyCustomer) {
+        await logBookingChange(supabase, {
+          bookingId: id, actor: adminActorId(req),
+          summary: 'Studio rental approved - confirmation email deliberately NOT sent (admin chose not to email)',
+        })
+        return NextResponse.json({ ok: true, action: 'approved', emailed: false, emailSkippedByAdmin: true })
+      }
 
       const links = await mintPortalLinks(supabase, id, booking.booking_ref, {
         planner: portalDestination('planner', booking) as string,
@@ -375,6 +397,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // On the calendar only once a deposit has landed — approving an unpaid quote
     // used to block the slot for a party nobody had paid for (HH-2026-9024).
     await syncCalendar(supabase, id)
+
+    if (!notifyCustomer) {
+      await logBookingChange(supabase, {
+        bookingId: id, actor: adminActorId(req),
+        summary: 'Booking approved - confirmation email deliberately NOT sent (admin chose not to email)',
+      })
+      return NextResponse.json({ ok: true, action: 'approved', emailed: false, emailSkippedByAdmin: true })
+    }
 
     // Generate portal link & send approval email
     const minted = await mintPortalLink(supabase, id, booking.booking_ref)
