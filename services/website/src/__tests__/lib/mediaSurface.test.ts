@@ -9,7 +9,7 @@
  */
 import fs from 'fs'
 import path from 'path'
-import { findPhotos, importMuseRows, parseCsv, patchPhoto, screenMuseRow, screenPatch, shortcodeOf, absoluteMediaUrl, type ImageProcessor } from '@/lib/media'
+import { findPhotos, importMuseRows, importReelTags, screenLocalRow, screenReelRow, REEL_PLACEHOLDER_URL, parseCsv, patchPhoto, screenMuseRow, screenPatch, shortcodeOf, absoluteMediaUrl, type ImageProcessor } from '@/lib/media'
 
 const SRC = path.join(process.cwd(), 'src')
 const decomment = (s: string) => s.replace(/\/\*[\s\S]*?\*\/|(^|[^:'"`\\])\/\/[^\n\r]*/g, (m, p) => (p ?? '') + m.slice((p ?? '').length).replace(/[^\n\r]/g, ' '))
@@ -194,6 +194,133 @@ describe('M4: importing', () => {
     proc.urls = []
     await importMuseRows(sb, [row(), row()], 'a', proc)
     expect(proc.urls).toHaveLength(1)
+  })
+})
+
+describe('M7: reel tags (one row per reel; the reel is watched on Instagram)', () => {
+  const reel = (over: Record<string, string> = {}): Record<string, string> => ({
+    ig_permalink: 'https://www.instagram.com/reel/DbQkynuOyvb/', slide_index: '1', media_url: '', posted_at: '2026-03-02', media_type: 'video_thumbnail',
+    party_type: 'in_studio_theme', venue: 'studio', theme_slug: 'glow-party', activities: 'dance-party', decor_tags: 'glow-lights',
+    description: 'Glow party with blue lights', identifiable_child_face: 'no', people_count: '3', quality: '4', confidence: 'high', notes: 'reel of 5 sampled frames', ...over,
+  })
+  function spySb(existing: string[] = []) {
+    const writes: { op: string; payload: Record<string, unknown> }[] = []
+    const uploads: string[] = []
+    const from = () => {
+      const chain: any = new Proxy({}, {
+        get(_t, prop: string) {
+          if (prop === 'then') return (res: (v: unknown) => void) => res({ data: existing.map(k => ({ source_key: k })), error: null })
+          return (...args: unknown[]) => {
+            if (['insert', 'update'].includes(prop)) writes.push({ op: prop, payload: args[0] as Record<string, unknown> })
+            return chain
+          }
+        },
+      })
+      return chain
+    }
+    const storage = { from: () => ({ upload: async (p: string) => { uploads.push(p); return { error: null } }, getPublicUrl: (p: string) => ({ data: { publicUrl: `https://cdn.example/media/${p}` } }) }) }
+    return { sb: { from, storage } as never, writes, uploads }
+  }
+  const conv = async () => ({ bytes: new Uint8Array([1]), w: 640, h: 360 })
+  const POSTER = { DbQkynuOyvb: new Uint8Array([7, 7]) }
+
+  it('turns a blank, odd or non-"no" verdict into a state, never into "no"', () => {
+    for (const v of ['', 'maybe', 'unsure']) { const s = screenReelRow(reel({ identifiable_child_face: v })); expect(s.ok && s.reel.childVerdict).toBe('unsure') }
+    const y = screenReelRow(reel({ identifiable_child_face: 'YES' })); expect(y.ok && y.reel.childVerdict).toBe('yes')
+    const n = screenReelRow(reel()); expect(n.ok && n.reel.childVerdict).toBe('no'); expect(n.ok && n.reel.sourceKey).toBe('ig:DbQkynuOyvb:1')
+  })
+
+  it('still refuses what a photo is refused for: no permalink, a flyer, low quality, nothing to see', () => {
+    expect(screenReelRow(reel({ ig_permalink: 'https://example.com/x' })).ok).toBe(false)
+    expect(screenReelRow(reel({ description: 'Colourful flyer announcing a holiday market' })).ok).toBe(false)
+    expect(screenReelRow(reel({ quality: '2' })).ok).toBe(false)
+    expect(screenReelRow(reel({ party_type: 'not_a_party', theme_slug: 'none', activities: '', decor_tags: '' })).ok).toBe(false)
+  })
+
+  it('an existing reel flagged for a child loses its face flag AND its approval in the SAME write', async () => {
+    const { sb, writes } = spySb(['ig:DbQkynuOyvb:1'])
+    const r = await importReelTags(sb, [reel({ identifiable_child_face: 'yes' })], {}, 'a', conv)
+    const w = writes.find(x => x.op === 'update')!.payload
+    expect(w.no_identifiable_faces).toBe(false)
+    expect(w.approved).toBe(false)
+    expect(w.approved_by).toBeNull()
+    expect(w.media_kind).toBe('reel')
+    expect(String(w.review_flag)).toMatch(/child/)
+    if (r.kind === 'ok') { expect(r.data.updated).toBe(1); expect(r.data.withdrawn).toEqual(['ig:DbQkynuOyvb:1']) }
+  })
+
+  it('an existing all-"no" reel is only RE-TAGGED: approval, face flag and url are never touched', async () => {
+    const { sb, writes } = spySb(['ig:DbQkynuOyvb:1'])
+    await importReelTags(sb, [reel()], POSTER, 'a', conv)
+    const w = writes.find(x => x.op === 'update')!.payload
+    for (const k of ['approved', 'approved_by', 'approved_at', 'no_identifiable_faces', 'url', 'source']) expect(k in w).toBe(false)
+    expect(writes.some(x => x.op === 'insert')).toBe(false)
+  })
+
+  it('a NEW all-"no" reel takes its poster, as an unapproved candidate that Muse called face-free', async () => {
+    const { sb, writes, uploads } = spySb([])
+    const r = await importReelTags(sb, [reel()], POSTER, 'a', conv)
+    const ins = writes.find(x => x.op === 'insert')!.payload
+    expect(uploads).toEqual(['ig/DbQkynuOyvb-1.webp'])
+    expect(ins.approved).toBe(false)
+    expect(ins.no_identifiable_faces).toBe(true)
+    expect(ins.source).toBe('instagram')
+    expect(ins.media_kind).toBe('reel')
+    expect(String(ins.url)).toBe('https://cdn.example/media/ig/DbQkynuOyvb-1.webp')
+    if (r.kind === 'ok') expect(r.data.placeholders).toBe(0)
+  })
+
+  it('a NEW reel flagged for a child is added WITHOUT any picture: no child face is ever stored', async () => {
+    for (const verdict of ['yes', 'unsure']) {
+      const { sb, writes, uploads } = spySb([])
+      const r = await importReelTags(sb, [reel({ identifiable_child_face: verdict })], POSTER, 'a', conv)
+      const ins = writes.find(x => x.op === 'insert')!.payload
+      expect(uploads).toEqual([])
+      expect(ins.url).toBe(REEL_PLACEHOLDER_URL)
+      expect(ins.no_identifiable_faces).toBe(false)
+      expect(ins.approved).toBe(false)
+      if (r.kind === 'ok') expect(r.data.placeholders).toBe(1)
+    }
+  })
+
+  it('a NEW all-"no" reel with no poster gets the placeholder, and a bad poster is reported, not inserted', async () => {
+    const a = spySb([])
+    await importReelTags(a.sb, [reel()], {}, 'a', conv)
+    expect(a.writes.find(x => x.op === 'insert')!.payload.url).toBe(REEL_PLACEHOLDER_URL)
+    const b = spySb([])
+    const r = await importReelTags(b.sb, [reel()], POSTER, 'a', async () => null)
+    expect(b.writes.some(x => x.op === 'insert')).toBe(false)
+    if (r.kind === 'ok') expect(r.data.failed[0]).toMatch(/poster could not be read/)
+  })
+
+  it('a row exported by photo-pipeline/pipeline.py is accepted by the phone-album screen (one importer for both)', () => {
+    const row = {
+      ig_permalink: 'studio-library-pilot', slide_index: '1', media_url: 'items/local-5b0958254bbe.webp', posted_at: '2024-12-07', media_type: 'image',
+      party_type: 'in_studio_theme', venue: 'studio', theme_slug: 'toddler-party', activities: 'soft-play', decor_tags: '',
+      description: 'White and grey soft-play pen with a ball pit', identifiable_child_face: 'no', people_count: '0', quality: '4', confidence: 'high', notes: '',
+    }
+    const s = screenLocalRow(row)
+    expect(s.ok).toBe(true)
+    if (s.ok) { expect(s.candidate.mediaKind).toBe('photo'); expect(s.candidate.storagePath).toMatch(/^icloud\/[0-9a-f]{8}-local-5b0958254bbe\.webp$/) }
+    expect(screenLocalRow({ ...row, identifiable_child_face: 'unsure' }).ok).toBe(false)
+  })
+
+  it('a dry run reports the plan and writes and uploads NOTHING', async () => {
+    const { sb, writes, uploads } = spySb(['ig:DbQkynuOyvb:1'])
+    const r = await importReelTags(sb, [reel({ identifiable_child_face: 'yes' }), reel({ ig_permalink: 'https://www.instagram.com/reel/NewReel12345/' })], { NewReel12345: new Uint8Array([1]) }, 'a', conv, { dryRun: true })
+    expect(writes).toEqual([])
+    expect(uploads).toEqual([])
+    if (r.kind === 'ok') expect(r.data).toMatchObject({ updated: 1, imported: 1, placeholders: 0, withdrawn: ['ig:DbQkynuOyvb:1'] })
+  })
+
+  it('the reel importer can never approve: no approved: true in its source, and the placeholder file exists', () => {
+    const src = decomment(fs.readFileSync(path.join(SRC, 'lib', 'media.ts'), 'utf8'))
+    const fn = src.slice(src.indexOf('export async function importReelTags'), src.indexOf('export type LocalImportOutcome'))
+    expect(fn.length).toBeGreaterThan(800)
+    expect(fn.length).toBeLessThan(6000)
+    expect(fn).toMatch(/approved:\s*false/)
+    expect(fn).not.toMatch(/approved:\s*true/)
+    expect(fs.existsSync(path.join(process.cwd(), 'public', 'images', 'reel-placeholder.svg'))).toBe(true)
   })
 })
 

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200" role="img" aria-label="Video reel">
+  <rect width="900" height="1200" fill="#1c2b4a"/>
+  <circle cx="450" cy="560" r="130" fill="#ffffff" fill-opacity="0.14"/>
+  <polygon points="410,490 410,630 530,560" fill="#ffffff"/>
+  <text x="450" y="800" text-anchor="middle" font-family="Georgia, serif" font-size="46" fill="#ffffff" fill-opacity="0.85">Watch the reel</text>
+</svg>

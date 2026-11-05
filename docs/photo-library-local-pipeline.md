@@ -102,7 +102,7 @@ HostHampton-Content (local originals, never modified)
   4. tag           vision model or a human, Muse's vocabulary and prompt; strict `no` for faces
   5. human look    contact sheets; the owner rejects anything with a person, a name, a number
   6. export        WebP <=1200 px, metadata dropped, verified; CSV in Muse's columns + source_key
-  7. import        NEW endpoint path (see gaps); rows land approved=false
+  7. import        the phone-album importer (upload-album.mjs); rows land approved=false
   8. approve       at /admin/photo-library, by a person, as today
 ```
 
@@ -123,14 +123,11 @@ link for faces turned away or very small, which is exactly why a human look (ste
 
 ## 6. Gaps (reuse vs. rebuild)
 
-1. **The import endpoint cannot take a local file.** `screenMuseRow` rejects any `media_url` that is not
-   an Instagram CDN link, and `importMuseRows` downloads that URL. Needed: an `importLocalRows` beside it
-   that accepts the CSV plus the WebP bytes (base64, up to about 12 per request, well under nginx's 15 MB),
-   **re-encodes server-side with sharp** (never trust the uploader's stripping), stores under
-   `media/local/<hash>.webp`, inserts with `source = 'admin'` (the CHECK allows only `instagram`, `gallery`,
-   `admin`, so no migration), `source_key = local:<hash>`, `approved = false`. `parseCsv`, the tag
-   handling and the re-tag-never-re-approve behaviour can be reused as is. Not built, because the brief
-   was to propose.
+1. **RESOLVED (2026-11-05): the Instagram importer could not take a local file.** Another session shipped a phone-album importer
+   (`importLocalPhoto`, `POST /api/admin/photo-library/album`, `lib/mediaImage.ts`) while this was written, so this branch uses it rather
+   than carrying a second one. `pipeline.py export` now writes its CSV (`<name>-album.csv`: `ig_permalink` = a private album reference,
+   `media_url` = `items/<file>`), and `photo-pipeline/upload-album.mjs <name> [--yes]` plans, then uploads one photo per request
+   (dry run by default; needs `HH_ADMIN_PASSWORD`). A test pins that an exported row passes the album screen.
 2. **Tags are not validated on import.** `screenMuseRow` passes `party_type` and `theme_slug` through as
    free text. Muse's vocabulary has 13 themes and `party_themes` has 9 (`custom` and `trucker-hat-party`
    are not in it). Decide whether `theme_slug` means "a planner theme" or "any theme Muse saw".
@@ -151,8 +148,7 @@ link for faces turned away or very small, which is exactly why a human look (ste
 
 ## 7. Open decisions for the owner
 
-1. Build `importLocalRows` (gap 1)? Without it local photos cannot reach the library through the
-   documented endpoint.
+1. ~~Import path~~ done (the album importer, adapted). Decide when to upload the 11 pilot candidates (unapproved).
 2. Run the vision tagging on the ~280 clean photos, or tag by hand? And the model and budget.
 3. Should weakly flagged photos (detector score under 0.5, about 31% of the sample) get a human rescue
    pass? They are probably shelving, but a person must say so.
@@ -160,3 +156,26 @@ link for faces turned away or very small, which is exactly why a human look (ste
    crop-out criterion?
 5. Mobile-party photos: triage the off-site pools, or request approved photos from clients?
 6. Fix the studio coordinates in `src/tenant/hosthampton.ts` (separate change)?
+
+## 8. Reels (Instagram): tags attach to the reel, nobody needs the slices
+
+Muse tagged 5 sampled frames ("slices") from each of 48 reels, plus a 3-reel pilot (255 rows). The decision (owner, 2026-11-05): the slice
+pictures are not imported and not needed; a visitor **watches the reel on Instagram** (click-to-load embed; the library already holds each
+reel's permalink); Muse's slice tags are folded into **one row per reel** and attached to it.
+
+- **Aggregation** (`photo-pipeline/reel_aggregate.py`): tags are the union across slices; party type, venue and theme the commonest; quality the
+  median; the child verdict the **worst** of the five (any `yes` makes the reel `yes`, else any `unsure`, and only all-`no` is `no`).
+  Result: 28 reels `no`, 11 `unsure`, 12 `yes` (of 51).
+- **Import** (`POST /api/admin/photo-library/import` with `source: "reels"`, `lib/media.ts importReelTags`, driven by `upload-reels.mjs`):
+  an existing reel is re-tagged; a reel with a child flagged loses its face flag **and** any approval in the same write; a new reel is added
+  unapproved, with a face-free still where one exists and otherwise the placeholder (`/images/reel-placeholder.svg`). A child-flagged reel
+  never gets a picture stored. `dryRun: true` reports the plan and writes nothing. Nothing here can approve.
+- **The Instagram data export** (reels.json + media files) holds only Nov 2025 onward: 37 reels as mp4, none of the 22 older Muse reels.
+  It has no shortcode, so a reel is matched to Muse's by posting date (+-1 day); 26 of the 29 in-range reels matched one video.
+  `ig_export_reels.py --posters` cuts a still for each all-`no` reel with exactly one matching video, from a frame where a face detector at a
+  deliberately low threshold finds none (17 made; the other 11 all-`no` reels have no export video and get the placeholder).
+  The export also holds DMs, comments and ~1,400 story files: it must stay out of the repository (`.gitignore` now covers `instagram-*/`).
+- **A caution the numbers support:** Muse's five frames are a sample of a 20-30 s video. A 1-frame-per-second face scan found a face somewhere
+  in 12 of the 14 matched reels Muse called all-`no`; the detector has false positives (blur, patches, jars), but a spot check also found children
+  in two reels Muse had called `no`. The owner chose to take the all-`no` reels as Muse tagged them; approval is still a person
+  watching. `ig_export_reels.py --scan` writes the per-reel scan if a review queue ordered by risk is wanted later.

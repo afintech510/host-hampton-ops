@@ -90,3 +90,7 @@ revenue/
 
 # Nimbalyst editor state (session transcripts, screenshots) - local only
 .nimbalyst/
+
+# Instagram data exports contain DMs and personal data; never commit
+instagram-*/
+instagram-*.zip

@@ -441,6 +441,121 @@ export async function importMuseRows(
   }
 }
 
+/* ── Attaching Muse's per-reel tags (the reel is what a visitor watches) ──── */
+
+/** Shown in place of a still when a reel has none, or must not have one (a child may be in it). */
+export const REEL_PLACEHOLDER_URL = '/images/reel-placeholder.svg'
+export const MAX_REEL_ROWS = 60
+export const MAX_REEL_POSTERS = 12
+
+export type ChildVerdict = 'no' | 'unsure' | 'yes'
+
+export interface ReelCandidate extends Omit<MuseCandidate, 'slide' | 'mediaUrl' | 'mediaKind' | 'reviewFlag'> {
+  /** Muse's verdict across the reel's sampled frames, the WORST of them (scripts/image-tools/photo-pipeline/reel_aggregate.py). */
+  childVerdict: ChildVerdict
+}
+
+export type ReelScreen = { ok: true; reel: ReelCandidate } | { ok: false; reason: string }
+
+/**
+ * One row per REEL (Muse's per-slice rows folded together). There is no picture to fetch: a visitor watches the
+ * reel on Instagram, and the reel's still, if it has one, is already ours. The content checks are the same as
+ * for a photo (a flyer, a screenshot, low quality, nothing to see); the child verdict is NOT a filter here
+ * but a state: `no` keeps the face flag, anything else withdraws it, so such a reel can never be approved.
+ */
+export function screenReelRow(r: Record<string, string>): ReelScreen {
+  const shortcode = shortcodeOf(r.ig_permalink || '')
+  if (!shortcode) return { ok: false, reason: 'no usable permalink' }
+  const v = (r.identifiable_child_face || '').trim().toLowerCase()
+  const childVerdict: ChildVerdict = v === 'no' ? 'no' : v === 'yes' ? 'yes' : 'unsure' // blank or odd = unsure, never "no"
+  const c = screenCommon({ ...r, identifiable_child_face: 'no' })
+  if (!c.ok) return c
+  return { ok: true, reel: { sourceKey: `ig:${shortcode}:1`, shortcode, permalink: r.ig_permalink, childVerdict, ...c.tags } }
+}
+
+export interface ReelImportReport extends ImportReport {
+  /** Reels in the library whose approval/face flag was withdrawn because a child may be in them. */
+  withdrawn: string[]
+  /** Reels added without a picture of their own (placeholder shown). */
+  placeholders: number
+}
+
+/**
+ * Attach reel tags. An existing reel row is re-tagged; if Muse saw (or may have seen) a child in any frame of it,
+ * the face flag AND any approval are withdrawn in the SAME write (the database CHECK allows nothing else). A
+ * reel not yet in the library is added as an UNAPPROVED candidate: with the poster supplied only when no child
+ * is flagged (a child's face is never stored), otherwise with the placeholder. A poster for a reel already in the
+ * library is ignored: its still is already there. Nothing here can approve anything.
+ */
+export async function importReelTags(
+  sb: Supa, rows: Record<string, string>[], posters: Record<string, Uint8Array>, actor: string,
+  convert: (b: Buffer) => Promise<{ bytes: Uint8Array; w: number; h: number } | null> = convertImageBuffer,
+  opts: { dryRun?: boolean } = {},
+): Promise<Read<ReelImportReport>> {
+  const skipped = new Map<string, number>()
+  const reels: ReelCandidate[] = []
+  const seen = new Set<string>()
+  for (const r of rows) {
+    const s = screenReelRow(r)
+    if (!s.ok) { skipped.set(s.reason, (skipped.get(s.reason) ?? 0) + 1); continue }
+    if (seen.has(s.reel.sourceKey)) { skipped.set('duplicate row', (skipped.get('duplicate row') ?? 0) + 1); continue }
+    seen.add(s.reel.sourceKey)
+    reels.push(s.reel)
+  }
+  const have = await existingSourceKeys(sb, reels.map(c => c.sourceKey))
+  if (have.kind !== 'ok') return { kind: 'unavailable', error: have.error }
+
+  let imported = 0
+  let updated = 0
+  let placeholders = 0
+  const withdrawn: string[] = []
+  const failed: string[] = []
+  const flag = (c: ReelCandidate) => (c.childVerdict === 'no' ? null : 'Muse saw, or may have seen, a child in a frame of this reel')
+  for (const c of reels) {
+    const cols = tagColumns({ ...c, mediaKind: 'reel', reviewFlag: flag(c) })
+    if (opts.dryRun) {
+      // The plan: the same counts, no write, no upload.
+      if (have.data.has(c.sourceKey)) { updated++; if (c.childVerdict !== 'no') withdrawn.push(c.sourceKey) }
+      else { imported++; if (!(c.childVerdict === 'no' && posters[c.shortcode])) placeholders++ }
+      continue
+    }
+    if (have.data.has(c.sourceKey)) {
+      const write: Record<string, unknown> = { ...cols }
+      if (c.childVerdict !== 'no') Object.assign(write, { no_identifiable_faces: false, approved: false, approved_by: null, approved_at: null })
+      const { error: upErr } = await sb.from('media_assets').update(write).eq('source_key', c.sourceKey).select('id')
+      if (upErr) failed.push(`${c.sourceKey}: ${upErr.message}`)
+      else { updated++; if (c.childVerdict !== 'no') withdrawn.push(c.sourceKey) }
+      continue
+    }
+    let url = REEL_PLACEHOLDER_URL
+    let w: number | null = null
+    let h: number | null = null
+    const poster = c.childVerdict === 'no' ? posters[c.shortcode] : undefined
+    if (poster) {
+      const img = await convert(Buffer.from(poster))
+      if (!img) { failed.push(`${c.sourceKey}: the poster could not be read or converted`); continue }
+      const path = `ig/${c.shortcode}-1.webp`
+      const { error: upload } = await sb.storage.from(MEDIA_BUCKET).upload(path, img.bytes, { contentType: 'image/webp', upsert: true })
+      if (upload) { failed.push(`${c.sourceKey}: upload failed (${upload.message})`); continue }
+      url = sb.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl
+      w = img.w
+      h = img.h
+    } else placeholders++
+    const { error: insErr } = await sb.from('media_assets').insert({
+      source: 'instagram', source_key: c.sourceKey, url, w, h, ...cols,
+      // Face-free only on Muse's word that no sampled frame shows a child; a human still approves.
+      no_identifiable_faces: c.childVerdict === 'no', approved: false,
+    })
+    if (insErr) failed.push(`${c.sourceKey}: ${insErr.message}`)
+    else imported++
+  }
+  console.log(`media: reel tags${opts.dryRun ? ' (DRY RUN)' : ''} by ${actor}: ${imported} new, ${updated} re-tagged, ${withdrawn.length} withdrawn, ${failed.length} failed`)
+  return {
+    kind: 'ok',
+    data: { rows: rows.length, skipped: Array.from(skipped, ([reason, count]) => ({ reason, count })), imported, updated, failed, unknownTags: collectUnknown(reels), withdrawn, placeholders },
+  }
+}
+
 /* ── Importing a phone album from local files ─────────────────────────────── */
 
 export type LocalImportOutcome =

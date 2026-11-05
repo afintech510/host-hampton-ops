@@ -61,7 +61,9 @@ YUNET = os.path.join(OUT, "models", "yunet.onnx")
 MUSE_COLS = ["ig_permalink", "slide_index", "media_url", "posted_at", "media_type", "party_type", "venue",
              "theme_slug", "activities", "decor_tags", "description", "identifiable_child_face",
              "people_count", "quality", "confidence", "notes"]
-LOCAL_COLS = ["source_key", "local_file"] + [c for c in MUSE_COLS if c not in ("ig_permalink", "media_url")]
+# The phone-album importer on the site reads Muse's columns: ig_permalink = a private album reference (hashed on the server,
+# never stored), media_url = items/<file>. We mirror that so one importer serves both.
+LOCAL_COLS = MUSE_COLS
 
 # Vocabulary Muse used (242 rows, 5 batches). A tag outside it is a mistake, not a new tag.
 PARTY_TYPES = {"in_studio_theme", "mobile_party", "public_event", "not_a_party"}
@@ -257,10 +259,10 @@ def cmd_export(a):
         if chk.getexif() or chk.info.get("exif") or chk.info.get("icc_profile"):
             sys.exit(f"metadata survived the re-encode on {fn}; refusing")
         row = {c: t.get(c, "") for c in MUSE_COLS}
-        row.update({"source_key": f"local:{h}", "local_file": os.path.basename(dest), "slide_index": "1",
+        row.update({"ig_permalink": f"studio-library-{a.name}", "media_url": f"items/{os.path.basename(dest)}", "slide_index": "1",
                     "media_type": "image", "posted_at": (t.get("posted_at") or captured.get(fn, ""))[:10]})
         out.append(row)
-    write_csv(os.path.join(OUT, "photo-pilot", a.name + "-muse-format.csv"), LOCAL_COLS, out)
+    write_csv(os.path.join(OUT, "photo-pilot", a.name + "-album.csv"), LOCAL_COLS, out)
     print(f"exported {len(out)} of {len(tags)}; refused {len(refused)}")
     for fn, why in refused:
         print("  refused", fn, "-", why)
