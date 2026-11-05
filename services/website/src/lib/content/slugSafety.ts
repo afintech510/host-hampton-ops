@@ -52,6 +52,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/admin/events',
   '/admin/lead/[ref]',
   '/admin/market-vendors',
+  '/admin/photo-library',
   // Every appointment event lives under here (lib/appointmentEvents.ts). One
   // pattern covers the whole registry, so adding Halloween Hair does not also
   // mean remembering to reserve its slug.
