@@ -11,6 +11,7 @@
  *            add_spot | remove_spot { slotId }
  *            set_count { value: 1..10 | null }
  *            fields { extra_flat_cents?, notes_for_crew? }
+ *            shift { crew_start?, end?, lead_start? }  "HH:MM" Eastern, or null for the default
  *            clear_flag { flag }
  *
  * Every write records `adminActorId(req)`. Attendance is Phase 5.
@@ -20,10 +21,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { loadCrewSettings } from '@/lib/crew/settings'
-import { loadAdminParty } from '@/lib/crew/admin'
+import { loadAdminParty, shiftForAdmin } from '@/lib/crew/admin'
 import {
   addSpot, assignMember, clearPartyFlag, publishParty, removeSpot, setPartyFields, setSlotsOverride, unassignMember,
-  unpublishParty, type ActionResult,
+  setPartyShift, unpublishParty, type ActionResult,
 } from '@/lib/crew/adminActions'
 
 export const dynamic = 'force-dynamic'
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const r = await loadAdminParty(sb, params.id, settings.settings)
   if (r.kind !== 'ok') return NextResponse.json({ error: `Could not read the party: ${r.error}` }, { status: 503 })
   if (!r.data) return NextResponse.json({ error: 'Unknown party' }, { status: 404 })
-  return NextResponse.json({ ...r.data, settings: { extraMaxCents: 100_000 } })
+  return NextResponse.json({ ...r.data, shift: shiftForAdmin(r.data.party, settings.settings), settings: { extraMaxCents: 100_000 } })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -68,6 +69,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     case 'remove_spot': r = await removeSpot(sb, params.id, body.slotId, actor); break
     case 'set_count': r = await setSlotsOverride(sb, params.id, body.value, actor, s); break
     case 'fields': r = await setPartyFields(sb, params.id, { extra_flat_cents: body.extra_flat_cents, notes_for_crew: body.notes_for_crew }, actor); break
+    case 'shift': r = await setPartyShift(sb, params.id, { crew_start: body.crew_start, end: body.end, lead_start: body.lead_start }, actor); break
     case 'clear_flag': r = await clearPartyFlag(sb, params.id, body.flag, actor); break
     default: return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   }

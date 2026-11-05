@@ -138,7 +138,7 @@ export async function runConfirmations(
       if (!m || m.is_owner || !memberInScope(ctx, m)) continue
       const assignedAt = slot.assigned_at ? new Date(slot.assigned_at).getTime() : 0
       const key = tenure(slot)
-      const ref = partyRefFor(party, s)
+      const ref = partyRefFor(party, s, undefined, slot.role)
       const payload = { party_id: party.id, slot_id: slot.id }
 
       if (!slot.confirmed_at && now >= sched.requestAt.getTime()) {

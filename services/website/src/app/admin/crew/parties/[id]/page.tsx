@@ -19,13 +19,15 @@ interface Slot {
   confirmed: boolean; assignedVia: string | null; assignedBy: string | null
   activeCover: { id: string; status: string; reason: string; note: string | null; offeredToAllAt?: string | null } | null
 }
-interface Choice { id: string; name: string; canLead: boolean; isOwner: boolean; isTest: boolean; crewRateCents: number; leadRateCents: number; fitCrew: Fit; fitLead: Fit }
+interface Choice { id: string; name: string; canLead: boolean; isOwner: boolean; isTest: boolean; fitCrew: Fit; fitLead: Fit }
+interface Shift { crewStart: string; end: string; leadStart: string; defaults: { crewStart: string; end: string; leadStart: string } }
 interface Detail {
   party: {
     id: string; title: string; theme: string | null; party_kind: string; starts_at: string; ends_at: string; guest_count: number | null
     location: string; notes_for_crew: string | null; slots_override: number | null; extra_flat_cents: number; status: string
     published_at: string | null; sync_flags: string[]; booking_id: string | null; updated_by?: string | null
   }
+  shift: Shift
   booking: { id: string; ref: string; status: string | null } | null
   slots: Slot[]
   standbys: { memberId: string; name: string; since: string }[]
@@ -175,6 +177,8 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
           {live && (
             <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4">
               <h2 className="font-semibold text-hampton-navy">For the crew</h2>
+              <ShiftEditor shift={d.shift} rental={p.party_kind === 'studio_rental'} busy={busy}
+                onSave={v => act({ action: 'shift', ...v }, 'Shift saved.')} />
               <ExtraPay cents={p.extra_flat_cents} busy={busy} onSave={c => act({ action: 'fields', extra_flat_cents: c }, 'Extra pay saved.')} />
               <Notes initial={p.notes_for_crew ?? ''} busy={busy} onSave={v => act({ action: 'fields', notes_for_crew: v }, 'Notes saved.')} />
             </div>
@@ -273,7 +277,6 @@ function SlotRow({ slot, members, busy, live, onAssign, onUnassign, onRemove, on
                   return (
                     <option key={m.id} value={m.id} disabled={fit.conflicts.includes('on_party')}>
                       {m.name}{m.isOwner ? ' (Allie)' : ''}{m.isTest ? ' [test]' : ''}
-                      {m.isOwner ? '' : ` · ${money(lead ? m.leadRateCents : m.crewRateCents)}`}
                       {notes.length ? ` — ${notes.join(', ')}` : ''}
                     </option>
                   )
@@ -298,6 +301,52 @@ function CountOverride({ value, busy, onSave }: { value: number | null; busy: bo
       <input type="number" min={1} max={10} value={v} onChange={e => setV(e.target.value)} placeholder="auto" className={`${INPUT} w-20`} />
       <button disabled={busy} onClick={() => onSave(v === '' ? null : Number(v))} className={BTN_GHOST}>Set</button>
     </span>
+  )
+}
+
+/**
+ * The shift for this party: when the crew arrive, when everyone is done, and when
+ * the Party Lead arrives. Defaults are 30 minutes before and after the party, and an
+ * hour before for the Lead (the shift settings). A time left at its default is sent
+ * as null, so a later change to the default still applies to this party.
+ */
+function ShiftEditor({ shift, rental, busy, onSave }: {
+  shift: Shift; rental: boolean; busy: boolean
+  onSave: (v: { crew_start: string | null; end: string | null; lead_start: string | null }) => void
+}) {
+  const [crew, setCrew] = useState(shift.crewStart)
+  const [end, setEnd] = useState(shift.end)
+  const [lead, setLead] = useState(shift.leadStart)
+  useEffect(() => { setCrew(shift.crewStart); setEnd(shift.end); setLead(shift.leadStart) }, [shift.crewStart, shift.end, shift.leadStart])
+  const dirty = crew !== shift.crewStart || end !== shift.end || lead !== shift.leadStart
+  const orNull = (v: string, def: string) => (v === def ? null : v)
+  return (
+    <div className="text-sm text-hampton-navy">
+      <p className="font-medium mb-1">Shift</p>
+      <div className="flex flex-wrap items-end gap-3">
+        {!rental && (
+          <label>Party Lead arrives
+            <input type="time" value={lead} onChange={e => setLead(e.target.value)} className={`${INPUT} block mt-1`} />
+          </label>
+        )}
+        <label>{rental ? 'Crew arrives' : 'Helpers arrive'}
+          <input type="time" value={crew} onChange={e => setCrew(e.target.value)} className={`${INPUT} block mt-1`} />
+        </label>
+        <label>Everyone done
+          <input type="time" value={end} onChange={e => setEnd(e.target.value)} className={`${INPUT} block mt-1`} />
+        </label>
+        <button disabled={busy || !dirty} className={BTN_GHOST}
+          onClick={() => onSave({ crew_start: orNull(crew, shift.defaults.crewStart), end: orNull(end, shift.defaults.end), lead_start: orNull(lead, shift.defaults.leadStart) })}>
+          Save shift
+        </button>
+        {(crew !== shift.defaults.crewStart || end !== shift.defaults.end || lead !== shift.defaults.leadStart) && (
+          <button type="button" className="underline text-xs text-hampton-navy/60" onClick={() => { setCrew(shift.defaults.crewStart); setEnd(shift.defaults.end); setLead(shift.defaults.leadStart) }}>
+            back to the default
+          </button>
+        )}
+      </div>
+      <p className="text-hampton-navy/50 text-xs mt-1">Eastern time. Default: helpers 30 minutes before the party to 30 after; the Party Lead 1 hour before. Crew see their own time.</p>
+    </div>
   )
 }
 

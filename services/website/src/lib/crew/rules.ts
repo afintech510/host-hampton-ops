@@ -46,7 +46,7 @@ export interface CrewSettings {
   pay: { crewStartCents: number; leadStartCents: number; stepCents: number; maxSteps: number; tipFloorCents: number }
   steps: { worked: number; covered: number; earlyRelease: number }
   slotsByGuests: { minSlots: number; kidsPerCrew: number; maxSlots: number }
-  shift: { setupMinutes: number; cleanupMinutes: number }
+  shift: { setupMinutes: number; cleanupMinutes: number; leadSetupMinutes: number }
   drops: { lateDropDays: number; standbyWindowHours: number; unclaimedWarningHours: number }
   confirmations: { requestHoursBefore: number; reminderHoursBefore: number; dueHoursBefore: number; dayBeforeHours: number }
   launch: { launchDate: string | null; graceDays: number }
@@ -81,7 +81,7 @@ export const DEFAULT_SETTINGS: CrewSettings = {
   pay: { crewStartCents: 5100, leadStartCents: 7000, stepCents: 250, maxSteps: 8, tipFloorCents: 2000 },
   steps: { worked: 1, covered: 2, earlyRelease: -1 },
   slotsByGuests: { minSlots: 3, kidsPerCrew: 4, maxSlots: 10 },
-  shift: { setupMinutes: 30, cleanupMinutes: 30 },
+  shift: { setupMinutes: 30, cleanupMinutes: 30, leadSetupMinutes: 60 },
   drops: { lateDropDays: 7, standbyWindowHours: 2, unclaimedWarningHours: 48 },
   confirmations: { requestHoursBefore: 120, reminderHoursBefore: 96, dueHoursBefore: 72, dayBeforeHours: 24 },
   launch: { launchDate: null, graceDays: 60 },
@@ -144,6 +144,7 @@ export function settingsFromRows(rows: ReadonlyArray<{ key: string; value: unkno
     shift: {
       setupMinutes: num(shift, 'setup_minutes', d.shift.setupMinutes, 0, 240),
       cleanupMinutes: num(shift, 'cleanup_minutes', d.shift.cleanupMinutes, 0, 240),
+      leadSetupMinutes: num(shift, 'lead_setup_minutes', d.shift.leadSetupMinutes, 0, 240),
     },
     drops: {
       lateDropDays: num(drops, 'late_drop_days', d.drops.lateDropDays, 0),
@@ -546,6 +547,43 @@ export function defaultShift(party: PartyWindow, s: CrewSettings = DEFAULT_SETTI
   const startedAt = setupStartsAt(party.startsAt, s)
   const endedAt = new Date(party.endsAt.getTime() + s.shift.cleanupMinutes * 60_000)
   return { startedAt, endedAt, hours: hoursBetween(startedAt, endedAt) }
+}
+
+/** The per-party overrides Allie can set (null = the default from the `shift` settings). */
+export interface ShiftOverrides {
+  starts_at: string
+  ends_at: string
+  shift_starts_at?: string | null
+  shift_ends_at?: string | null
+  lead_starts_at?: string | null
+}
+
+/**
+ * The shift a member is expected to work on a party: from when they arrive to when
+ * they are done. THE ONE definition, used by the crew's party page, the day-before
+ * text and the admin editor.
+ *
+ * Defaults (Adam, 2026-11-05): crew 30 minutes before the party to 30 after; the
+ * Party Lead arrives an hour before (`shift.lead_setup_minutes`). Allie can set any
+ * of the three per party; an unreadable override falls back to the default rather
+ * than to nothing.
+ */
+export function shiftWindow(
+  party: ShiftOverrides, role: SlotRole, s: CrewSettings = DEFAULT_SETTINGS,
+): { startsAt: Date; endsAt: Date; customStart: boolean; customEnd: boolean } {
+  const partyStart = new Date(party.starts_at)
+  const partyEnd = new Date(party.ends_at)
+  const valid = (v: string | null | undefined): Date | null => {
+    if (!v) return null
+    const d = new Date(v)
+    return Number.isFinite(d.getTime()) ? d : null
+  }
+  const startOverride = valid(role === 'lead' ? party.lead_starts_at : party.shift_starts_at)
+  const endOverride = valid(party.shift_ends_at)
+  const lead = role === 'lead'
+  const startsAt = startOverride ?? new Date(partyStart.getTime() - (lead ? s.shift.leadSetupMinutes : s.shift.setupMinutes) * 60_000)
+  const endsAt = endOverride ?? new Date(partyEnd.getTime() + s.shift.cleanupMinutes * 60_000)
+  return { startsAt, endsAt, customStart: startOverride !== null, customEnd: endOverride !== null }
 }
 
 export function hoursBetween(a: Date, b: Date): number {

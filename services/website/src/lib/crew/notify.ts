@@ -48,7 +48,7 @@ import { crewAdminEmail, crewEnabled, crewOnboardingEnabled, crewPayLadderEnable
 import { etDateString } from '@/lib/partyTime'
 import { getMember, insertNotification, type CrewMemberRow, type CrewPartyRow } from '@/lib/crew/db'
 import { SMS_DISCLOSURE, templates, type PartyRef, type Rendered } from '@/lib/crew/templates'
-import { setupStartsAt, TIME_ZONE, type CrewSettings } from '@/lib/crew/rules'
+import { shiftWindow, TIME_ZONE, type CrewSettings, type SlotRole } from '@/lib/crew/rules'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -492,13 +492,17 @@ export function crewLink(path: string): string {
   return `${CANONICAL_ORIGIN}${path}`
 }
 
-export function partyRefFor(party: Pick<CrewPartyRow, 'id' | 'title' | 'theme' | 'starts_at' | 'ends_at' | 'guest_count'>, s: CrewSettings, path?: string): PartyRef {
+export function partyRefFor(
+  party: Pick<CrewPartyRow, 'id' | 'title' | 'theme' | 'starts_at' | 'ends_at' | 'guest_count'> & Partial<Pick<CrewPartyRow, 'shift_starts_at' | 'shift_ends_at' | 'lead_starts_at'>>,
+  s: CrewSettings, path?: string, role: SlotRole = 'crew',
+): PartyRef {
   const startsAt = new Date(party.starts_at)
   return {
     theme: party.theme || party.title,
     dayLabel: messageDayLabel(startsAt),
     timeLabel: messageTimeLabel(startsAt, new Date(party.ends_at)),
-    setupLabel: messageClock(setupStartsAt(startsAt, s)),
+    // When THIS person arrives: a Lead earlier than the crew, and any shift Allie set for the party.
+    setupLabel: messageClock(shiftWindow(party, role, s).startsAt),
     kids: party.guest_count ?? null,
     url: crewLink(path ?? `/crew/parties/${party.id}`),
   }

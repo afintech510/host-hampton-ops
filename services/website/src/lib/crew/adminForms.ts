@@ -75,10 +75,11 @@ export const SETTING_SECTIONS: SettingSection[] = [
   },
   {
     key: 'shift', title: 'Setup and clean-up',
-    help: 'Used for overlap checks and the hours on record. Never changes pay.',
+    help: 'The default shift on every party: crew arrive this long before and finish this long after; the Party Lead arrives earlier. Also used for overlap checks.',
     fields: [
       int('setup_minutes', 'Setup before the party', 'minutes', 0, 240),
       int('cleanup_minutes', 'Clean-up after the party', 'minutes', 0, 240),
+      int('lead_setup_minutes', 'Party Lead arrives before the party', 'minutes', 0, 240, 'Allie can change the shift for any one party on its page.'),
     ],
   },
   {
@@ -235,7 +236,7 @@ const OWNER_EDITABLE = new Set(['first_name', 'last_name', 'admin_notes', 'skill
 
 const MEMBER_FIELDS = new Set([
   'first_name', 'last_name', 'email', 'phone', 'can_lead', 'skills', 'email_opt_in', 'sms_opt_in',
-  'admin_notes', 'status', 'needs_review', 'steps', 'job_application_id',
+  'admin_notes', 'status', 'needs_review', 'steps', 'job_application_id', 'hourly_rate_cents',
 ])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -333,6 +334,12 @@ export function screenMemberInput(
   if ('job_application_id' in body && body.job_application_id != null) {
     if (typeof body.job_application_id !== 'string' || !UUID_RE.test(body.job_application_id)) return { ok: false, error: 'Unknown application.' }
     row.job_application_id = body.job_application_id
+  }
+
+  if ('hourly_rate_cents' in body) {
+    const n = body.hourly_rate_cents
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > 20_000) return { ok: false, error: 'Pay per hour: dollars from 0 to 200.' }
+    row.hourly_rate_cents = n
   }
 
   let startingSteps: number | null = null

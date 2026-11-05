@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   if (settings.kind !== 'ok') return NextResponse.json({ error: `Could not read the crew rules: ${settings.error}` }, { status: 503 })
   const r = await loadRoster(sb, settings.settings, new Date())
   if (r.kind !== 'ok') return NextResponse.json({ error: `Could not read the roster: ${r.error}` }, { status: 503 })
-  return NextResponse.json({ ...r.data, maxSteps: settings.settings.pay.maxSteps })
+  return NextResponse.json(r.data)
 }
 
 export async function POST(req: NextRequest) {

@@ -111,6 +111,66 @@ export async function setPartyFields(sb: Supa, partyId: string, input: PartyFiel
   return { ok: true }
 }
 
+// ── The shift ───────────────────────────────────────────────────────────────
+
+/** "HH:MM" (24-hour, Eastern) or null for "back to the default". */
+export interface ShiftInput { crew_start?: unknown; end?: unknown; lead_start?: unknown }
+
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+/**
+ * Set (or clear) the shift for a party: when the crew arrive, when the shift ends,
+ * and when the Party Lead arrives. Times are Eastern wall-clock on the party's own
+ * date; a start later than the party's start is refused (nobody arrives after it
+ * begins), and an end earlier than the party's end is refused (the shift covers the
+ * party). An end past midnight is the NEXT day. `null` puts the default back.
+ */
+export async function setPartyShift(sb: Supa, partyId: string, input: ShiftInput, actor: string): Promise<ActionResult> {
+  const read = await readParty(sb, partyId)
+  if ('error' in read) return read.error
+  const { party } = read.pws
+  if (party.status !== 'draft' && party.status !== 'published') return refuse(409, 'This party can no longer be changed.')
+  const startsAt = new Date(party.starts_at)
+  const endsAt = new Date(party.ends_at)
+  const day = localParts(startsAt).dateKey
+  const toInstant = (v: unknown, label: string, isEnd: boolean): { at: Date | null } | ActionResult<never> => {
+    if (v === null) return { at: null }
+    if (typeof v !== 'string' || !HHMM.test(v)) return refuse(400, `${label}: a time like 12:30, or blank for the default.`)
+    const [h, m] = v.split(':').map(Number)
+    let at = etToUtc(day, h, m)
+    if (!Number.isFinite(at.getTime())) return refuse(400, `${label}: not a real time.`)
+    // A shift that runs past midnight ends the NEXT day.
+    if (isEnd && at.getTime() < endsAt.getTime() && at.getTime() + 24 * 3_600_000 <= endsAt.getTime() + 12 * 3_600_000) at = new Date(at.getTime() + 24 * 3_600_000)
+    return { at }
+  }
+
+  const patch: Record<string, unknown> = {}
+  const parse = (field: 'shift_starts_at' | 'shift_ends_at' | 'lead_starts_at', v: unknown, label: string, isEnd: boolean): ActionResult<never> | null => {
+    if (v === undefined) return null
+    const r = toInstant(v, label, isEnd)
+    if ('ok' in r) return r
+    if (r.at) {
+      if (!isEnd && r.at.getTime() > startsAt.getTime()) return refuse(400, `${label}: that is after the party starts.`)
+      if (isEnd && r.at.getTime() < endsAt.getTime()) return refuse(400, `${label}: that is before the party ends.`)
+      if (r.at.getTime() < startsAt.getTime() - 12 * 3_600_000 || r.at.getTime() > endsAt.getTime() + 12 * 3_600_000) return refuse(400, `${label}: more than 12 hours from the party.`)
+    }
+    patch[field] = r.at ? r.at.toISOString() : null
+    return null
+  }
+  for (const bad of [
+    parse('shift_starts_at', input.crew_start, 'Crew start', false),
+    parse('shift_ends_at', input.end, 'Shift end', true),
+    parse('lead_starts_at', input.lead_start, 'Party Lead start', false),
+  ]) if (bad) return bad
+  if (Object.keys(patch).length === 0) return refuse(400, 'Nothing to change.')
+
+  const { data, error } = await sb.from('crew_parties').update({ ...patch, updated_by: actor })
+    .eq('id', partyId).eq('updated_at', party.updated_at).select('id')
+  if (error) return refuse(500, error.message)
+  if ((data ?? []).length === 0) return refuse(409, 'Somebody changed this party. Reload.')
+  return { ok: true }
+}
+
 /** Clear a flag only Allie can clear (the reconcile re-derives the others). */
 export async function clearPartyFlag(sb: Supa, partyId: string, flag: unknown, actor: string): Promise<ActionResult> {
   if (typeof flag !== 'string' || !(STICKY_FLAGS as readonly string[]).includes(flag)) return refuse(400, 'That flag clears itself when the booking is fixed.')

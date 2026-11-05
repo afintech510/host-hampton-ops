@@ -31,7 +31,7 @@ async function setConfirmed(sb: Supa, slot: CrewSlotRow, memberId: string, now: 
 }
 
 async function tell(ctx: NotifyCtx, s: CrewSettings, member: CrewMemberRow, slot: CrewSlotRow, party: CrewPartyRow): Promise<void> {
-  await notifyMember(ctx, member, 'confirmed', templates.confirmed(partyRefFor(party, s)), `confirmed:${tenure(slot)}`,
+  await notifyMember(ctx, member, 'confirmed', templates.confirmed(partyRefFor(party, s, undefined, slot.role)), `confirmed:${tenure(slot)}`,
     { payload: { party_id: party.id, slot_id: slot.id } })
 }
 

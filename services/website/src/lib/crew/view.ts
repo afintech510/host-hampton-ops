@@ -16,7 +16,7 @@
  */
 
 import {
-  clampSteps, defaultShift, formatCents, isInGracePeriod, nextStepLabel, partyPayCents, partyRateCents, ratesFor, TIME_ZONE,
+  clampSteps, formatCents, isInGracePeriod, nextStepLabel, partyPayCents, partyRateCents, ratesFor, shiftWindow, TIME_ZONE,
   type CrewSettings, type SlotRole,
 } from '@/lib/crew/rules'
 import { shiftEtDate } from '@/lib/partyTime'
@@ -136,7 +136,8 @@ export function partyView(
 
   const extra = party.extra_flat_cents
   const onIt = !!mine
-  const shift = defaultShift({ startsAt: new Date(party.starts_at), endsAt: new Date(party.ends_at) }, s)
+  // The shift THIS viewer is on: a Lead arrives earlier than the crew (rules.shiftWindow).
+  const shift = shiftWindow(party, mine?.role ?? 'crew', s)
   const openSpots: OpenSpotView[] = party.status === 'published'
     ? live.filter(sl => sl.status === 'open').map(sl => ({
         slotId: sl.id,
@@ -161,8 +162,8 @@ export function partyView(
     theme: party.theme ?? null,
     startsAt: party.starts_at,
     endsAt: party.ends_at,
-    shiftStartsAt: shift.startedAt.toISOString(),
-    shiftEndsAt: shift.endedAt.toISOString(),
+    shiftStartsAt: shift.startsAt.toISOString(),
+    shiftEndsAt: shift.endsAt.toISOString(),
     location: onIt || party.party_kind !== 'mobile_party' ? party.location : 'Mobile party (address once you are on it)',
     guestCount: party.guest_count ?? null,
     notesForCrew: onIt ? party.notes_for_crew ?? null : null,

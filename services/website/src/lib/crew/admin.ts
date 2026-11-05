@@ -16,7 +16,7 @@
 
 import type { getSupabase } from '@/lib/supabase'
 import {
-  attendanceAlertAt, confirmationSchedule, isBlockedByAvailability, localParts, ratesFor, staffingShortfall, understaffedAlertAt,
+  attendanceAlertAt, confirmationSchedule, isBlockedByAvailability, localParts, shiftWindow, staffingShortfall, understaffedAlertAt,
   shiftsOverlap, unclaimedWarningAt, type CrewSettings, type DateBlock, type PartyWindow, type RecurringBlock, type SlotRole,
 } from '@/lib/crew/rules'
 import {
@@ -132,6 +132,9 @@ export interface AdminPartyRow {
   theme: string | null
   kind: CrewPartyRow['party_kind']
   bookingRef: string | null
+  /** From the booking, for the schedule list (the admin sees full names). Null for a party built by hand. */
+  childName: string | null
+  parentName: string | null
   startsAt: string
   endsAt: string
   guestCount: number | null
@@ -157,13 +160,17 @@ export interface AdminOverview {
   counts: { members: number; canLead: number; needsReview: number }
 }
 
-async function bookingRefs(sb: Supa, ids: string[]): Promise<Read<Map<string, string>>> {
-  const map = new Map<string, string>()
+interface BookingBits { ref: string; child: string | null; parent: string | null }
+
+async function bookingRefs(sb: Supa, ids: string[]): Promise<Read<Map<string, BookingBits>>> {
+  const map = new Map<string, BookingBits>()
   const unique = Array.from(new Set(ids))
   for (let i = 0; i < unique.length; i += 150) {
-    const { data, error } = await sb.from('bookings').select('id, booking_ref').in('id', unique.slice(i, i + 150))
+    const { data, error } = await sb.from('bookings').select('id, booking_ref, child_name, contact_name').in('id', unique.slice(i, i + 150))
     if (error) return { kind: 'unavailable', error: error.message }
-    for (const r of (data ?? []) as { id: string; booking_ref: string }[]) map.set(r.id, r.booking_ref)
+    for (const r of (data ?? []) as { id: string; booking_ref: string; child_name: string | null; contact_name: string | null }[]) {
+      map.set(r.id, { ref: r.booking_ref, child: r.child_name?.trim() || null, parent: r.contact_name?.trim() || null })
+    }
   }
   return { kind: 'ok', data: map }
 }
@@ -273,7 +280,9 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
       title: p.title,
       theme: p.theme,
       kind: p.party_kind,
-      bookingRef: p.booking_id ? refs.data.get(p.booking_id) ?? null : null,
+      bookingRef: p.booking_id ? refs.data.get(p.booking_id)?.ref ?? null : null,
+      childName: p.booking_id ? refs.data.get(p.booking_id)?.child ?? null : null,
+      parentName: p.booking_id ? refs.data.get(p.booking_id)?.parent ?? null : null,
       startsAt: p.starts_at,
       endsAt: p.ends_at,
       guestCount: p.guest_count,
@@ -397,9 +406,6 @@ export interface AdminMemberChoice {
   canLead: boolean
   isOwner: boolean
   isTest: boolean
-  steps: number
-  crewRateCents: number
-  leadRateCents: number
   fitCrew: MemberFit
   fitLead: MemberFit
 }
@@ -486,16 +492,13 @@ export async function loadAdminParty(sb: Supa, partyId: string, s: CrewSettings)
     .filter(m => m.status === 'active')
     .map(m => {
       const others = windows.get(m.id) ?? []
-      const r = ratesFor(m.steps, s)
+      // No step and no rate here: pay is private, set per person per hour, and never in a dropdown.
       return {
         id: m.id,
         name: fullName(m),
         canLead: m.can_lead,
         isOwner: m.is_owner,
         isTest: m.is_test,
-        steps: m.steps,
-        crewRateCents: r.crewCents,
-        leadRateCents: r.leadCents,
         fitCrew: memberFit(m, { id: partyId, startsAt, endsAt }, live, others, avail.data, s, 'crew'),
         fitLead: memberFit(m, { id: partyId, startsAt, endsAt }, live, others, avail.data, s, 'lead'),
       }
@@ -517,5 +520,34 @@ export async function loadAdminParty(sb: Supa, partyId: string, s: CrewSettings)
       needed: live.length,
       staffed: live.filter(sl => sl.member_id && LIVE_HELD.includes(sl.status)).length,
     },
+  }
+}
+
+// ── The shift, as the party page edits it ───────────────────────────────────
+
+export interface AdminShift {
+  /** "HH:MM" Eastern wall-clock, as the time inputs hold them. */
+  crewStart: string
+  end: string
+  leadStart: string
+  /** What each would be with no override, so the page can tell "default" from "set by hand". */
+  defaults: { crewStart: string; end: string; leadStart: string }
+}
+
+const hhmm = (d: Date) => {
+  const { minutes } = localParts(d)
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+}
+
+/** The shift for a party in Eastern clock times: what applies now, and what the defaults would be. */
+export function shiftForAdmin(party: Pick<CrewPartyRow, 'starts_at' | 'ends_at' | 'shift_starts_at' | 'shift_ends_at' | 'lead_starts_at'>, s: CrewSettings): AdminShift {
+  const base = { starts_at: party.starts_at, ends_at: party.ends_at }
+  const crew = shiftWindow(party, 'crew', s)
+  const lead = shiftWindow(party, 'lead', s)
+  const plainCrew = shiftWindow(base, 'crew', s)
+  const plainLead = shiftWindow(base, 'lead', s)
+  return {
+    crewStart: hhmm(crew.startsAt), end: hhmm(crew.endsAt), leadStart: hhmm(lead.startsAt),
+    defaults: { crewStart: hhmm(plainCrew.startsAt), end: hhmm(plainCrew.endsAt), leadStart: hhmm(plainLead.startsAt) },
   }
 }

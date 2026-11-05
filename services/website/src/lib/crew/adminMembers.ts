@@ -17,7 +17,7 @@
 
 import type { getSupabase } from '@/lib/supabase'
 import { adminSetSteps, getMember, insertNotification, listMembers, type CrewMemberRow, type Read } from '@/lib/crew/db'
-import { ratesFor, type CrewSettings } from '@/lib/crew/rules'
+import type { CrewSettings } from '@/lib/crew/rules'
 import { screenMemberInput } from '@/lib/crew/adminForms'
 import { templates } from '@/lib/crew/templates'
 import { sendCrewEmail } from '@/lib/crew/mail'
@@ -52,9 +52,8 @@ export interface RosterRow {
   lastName: string | null
   email: string | null
   phone: string | null
-  steps: number
-  crewRateCents: number
-  leadRateCents: number
+  /** Only whether a rate is set. The figure is never sent to the browser. */
+  hasHourlyRate: boolean
   canLead: boolean
   isOwner: boolean
   isTest: boolean
@@ -80,13 +79,17 @@ export interface Roster { members: RosterRow[]; hired: HiredApplication[] }
 export async function loadRoster(sb: Supa, s: CrewSettings, now: Date): Promise<Read<Roster>> {
   const members = await listMembers(sb, { includeRemoved: true })
   if (members.kind !== 'ok') return members
-  const [slots, events, apps, profiles, invites] = await Promise.all([
+  const [slots, events, apps, profiles, invites, rates] = await Promise.all([
     sb.from('crew_slots').select('member_id, status, party_id').not('member_id', 'is', null).in('status', ['assigned', 'completed', 'no_show']),
     sb.from('crew_events').select('member_id').eq('type', 'late_cancel_uncovered').eq('waived_grace', false),
     sb.from('job_applications').select('id, application_ref, name, email, phone, role_interest').eq('status', 'hired'),
     sb.from('crew_member_profiles').select('member_id, onboarding_completed_at, agreement_signed_at, agreement_version'),
     sb.from('crew_notifications').select('member_id').eq('template', 'onboardingInvite').eq('status', 'sent'),
+    // Pay is private: read only to learn WHETHER one is set.
+    sb.from('crew_members').select('id, hourly_rate_cents').not('hourly_rate_cents', 'is', null),
   ])
+  if (rates.error) return { kind: 'unavailable', error: rates.error.message }
+  const hasRate = new Set(((rates.data ?? []) as { id: string }[]).map(r => r.id))
   if (slots.error) return { kind: 'unavailable', error: slots.error.message }
   if (events.error) return { kind: 'unavailable', error: events.error.message }
   if (apps.error) return { kind: 'unavailable', error: apps.error.message }
@@ -121,10 +124,8 @@ export async function loadRoster(sb: Supa, s: CrewSettings, now: Date): Promise<
     kind: 'ok',
     data: {
       members: members.data.map(m => {
-        const r = ratesFor(m.steps, s)
         return {
-          id: m.id, firstName: m.first_name, lastName: m.last_name, email: m.email, phone: m.phone, steps: m.steps,
-          crewRateCents: m.is_owner ? 0 : r.crewCents, leadRateCents: m.is_owner ? 0 : r.leadCents,
+          id: m.id, firstName: m.first_name, lastName: m.last_name, email: m.email, phone: m.phone, hasHourlyRate: hasRate.has(m.id),
           canLead: m.can_lead, isOwner: m.is_owner, isTest: m.is_test, skills: m.skills ?? [], status: m.status,
           needsReview: m.needs_review, emailOptIn: m.email_opt_in, smsOptIn: m.sms_opt_in, adminNotes: m.admin_notes,
           jobApplicationId: m.job_application_id, joinedOn: m.joined_on,

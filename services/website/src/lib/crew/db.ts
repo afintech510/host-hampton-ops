@@ -77,6 +77,10 @@ export interface CrewPartyRow {
   attendance_marked_at: string | null
   cancelled_at: string | null
   sync_flags: string[]
+  /** Shift overrides (migration 086); NULL = the default from the `shift` settings. See rules.shiftWindow. */
+  shift_starts_at: string | null
+  shift_ends_at: string | null
+  lead_starts_at: string | null
   created_at: string
   updated_at: string
 }

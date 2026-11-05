@@ -518,8 +518,8 @@ describe('the roster', () => {
     db.tables.job_applications = [{ id: 'app1', application_ref: 'HHJ-0001', name: 'New Person', email: 'n@example.test', phone: '6315550199', role_interest: 'helper', status: 'hired' }]
     const r = await loadRoster(db.sb, S, NOW)
     if (r.kind !== 'ok') throw new Error(r.error)
-    expect(r.data.members.find(m => m.id === 'ava')).toMatchObject({ partiesWorked: 1, noShows: 1, lateCancelsUncovered: 1, crewRateCents: 5850, leadRateCents: 7750 })
-    expect(r.data.members[0]).toMatchObject({ id: 'owner', crewRateCents: 0 })
+    expect(r.data.members.find(m => m.id === 'ava')).toMatchObject({ partiesWorked: 1, noShows: 1, lateCancelsUncovered: 1, hasHourlyRate: false })
+    expect(r.data.members[0]).toMatchObject({ id: 'owner', hasHourlyRate: false })
     expect(r.data.hired.map(h => h.id)).toEqual(['app1'])
   })
 })
