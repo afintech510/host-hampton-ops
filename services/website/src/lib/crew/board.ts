@@ -13,7 +13,7 @@
 
 import type { getSupabase } from '@/lib/supabase'
 import {
-  canUndoClaim, claimRefusal, confirmationSchedule, type ClaimRefusal, type CrewSettings, type DateBlock,
+  canUndoClaim, claimRefusal, confirmationSchedule, type AvailabilityBlock, type ClaimRefusal, type CrewSettings,
   type PartyWindow, type RecurringBlock,
 } from '@/lib/crew/rules'
 import {
@@ -46,7 +46,7 @@ export interface ViewerContext {
   now: Date
   /** The windows of every live party I am on, for overlap. */
   myWindows: { partyId: string; window: PartyWindow }[]
-  blocks: DateBlock[]
+  blocks: AvailabilityBlock[]
   recurring: RecurringBlock[]
   standbyPartyIds: Set<string>
 }

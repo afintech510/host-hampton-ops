@@ -17,13 +17,13 @@
 import type { getSupabase } from '@/lib/supabase'
 import {
   attendanceAlertAt, confirmationSchedule, isBlockedByAvailability, localParts, shiftWindow, staffingShortfall, understaffedAlertAt,
-  shiftsOverlap, unclaimedWarningAt, type CrewSettings, type DateBlock, type PartyWindow, type RecurringBlock, type SlotRole,
+  shiftsOverlap, unclaimedWarningAt, type AvailabilityBlock, type CrewSettings, type DateBlock, type PartyWindow, type RecurringBlock, type SlotRole,
 } from '@/lib/crew/rules'
 import {
   listMembers, slotsForParties, type CrewMemberRow, type CrewPartyRow, type CrewSlotRow, type CrewSwapRow, type PartyWithSlots, type Read,
 } from '@/lib/crew/db'
 import { reconcileCrewParties, type ReconcileSummary } from '@/lib/crew/sync'
-import { etDateString, shiftEtDate } from '@/lib/partyTime'
+import { etDateString, etToUtc, shiftEtDate } from '@/lib/partyTime'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -37,21 +37,29 @@ const LIVE_HELD = ['assigned', 'completed', 'no_show']
 // ── Availability ────────────────────────────────────────────────────────────
 
 export interface AvailabilityData {
-  blocks: Map<string, DateBlock[]>
+  blocks: Map<string, AvailabilityBlock[]>
   recurring: Map<string, RecurringBlock[]>
 }
 
 export async function loadAvailability(sb: Supa, fromDay: string, toDay: string): Promise<Read<AvailabilityData>> {
-  const [b, r] = await Promise.all([
+  const [b, p, r] = await Promise.all([
     sb.from('crew_unavailability').select('member_id, day, part').gte('day', fromDay).lte('day', toDay),
+    sb.from('crew_unavailable_periods').select('member_id, starts_at, ends_at')
+      .lt('starts_at', etToUtc(shiftEtDate(toDay, 1), 0).toISOString()).gt('ends_at', etToUtc(fromDay, 0).toISOString()),
     sb.from('crew_recurring_blocks').select('member_id, dow, part, active').eq('active', true),
   ])
   if (b.error) return { kind: 'unavailable', error: b.error.message }
+  if (p.error) return { kind: 'unavailable', error: p.error.message }
   if (r.error) return { kind: 'unavailable', error: r.error.message }
-  const blocks = new Map<string, DateBlock[]>()
+  const blocks = new Map<string, AvailabilityBlock[]>()
   for (const row of (b.data ?? []) as (DateBlock & { member_id: string })[]) {
     const l = blocks.get(row.member_id) ?? []
     l.push({ day: row.day, part: row.part })
+    blocks.set(row.member_id, l)
+  }
+  for (const row of (p.data ?? []) as { member_id: string; starts_at: string; ends_at: string }[]) {
+    const l = blocks.get(row.member_id) ?? []
+    l.push({ startsAt: new Date(row.starts_at), endsAt: new Date(row.ends_at) })
     blocks.set(row.member_id, l)
   }
   const recurring = new Map<string, RecurringBlock[]>()

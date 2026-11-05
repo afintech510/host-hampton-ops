@@ -89,6 +89,29 @@ describe('partiesBlockedBy (§3.8: no blocking a day you are working)', () => {
     expect(partiesBlockedBy({ dow: 6, part: 'after_noon' }, [P])).toHaveLength(1)
     expect(partiesBlockedBy({ dow: 0, part: 'all_day' }, [P])).toHaveLength(0)
   })
+  it('a period collides when it overlaps the party, and not when it only touches it', () => {
+    const at = (s: string, e: string) => ({ startsAt: new Date(s), endsAt: new Date(e) })
+    expect(partiesBlockedBy(at('2026-11-14T20:00:00Z', '2026-11-14T23:00:00Z'), [P])).toHaveLength(1) // starts mid-party
+    expect(partiesBlockedBy(at('2026-11-14T10:00:00Z', '2026-11-14T19:00:00Z'), [P])).toHaveLength(1) // ends mid-party
+    expect(partiesBlockedBy(at('2026-11-13T10:00:00Z', '2026-11-15T10:00:00Z'), [P])).toHaveLength(1) // spans it
+    expect(partiesBlockedBy(at('2026-11-14T10:00:00Z', '2026-11-14T18:00:00Z'), [P])).toHaveLength(0) // ends as it starts
+    expect(partiesBlockedBy(at('2026-11-14T21:00:00Z', '2026-11-15T01:00:00Z'), [P])).toHaveLength(0) // starts as it ends
+  })
+})
+
+describe('a period blocks a claim (migration 088)', () => {
+  const period = (s: string, e: string) => ({ startsAt: new Date(s), endsAt: new Date(e) })
+  it('is "blocked" when it overlaps the party, whatever day or part of day it is', () => {
+    expect(claimRefusal({ ...ok, blocks: [period('2026-11-14T20:00:00Z', '2026-11-15T01:00:00Z')] }, S)).toBe('blocked')
+  })
+  it('does not block a party that is entirely outside it', () => {
+    expect(claimRefusal({ ...ok, blocks: [period('2026-11-14T10:00:00Z', '2026-11-14T17:00:00Z')] }, S)).toBeNull()
+  })
+  it('sits alongside a day block without either hiding the other', () => {
+    const blocks = [{ day: '2026-11-13', part: 'all_day' as const }, period('2026-11-14T10:00:00Z', '2026-11-14T17:00:00Z')]
+    expect(claimRefusal({ ...ok, blocks }, S)).toBeNull()
+    expect(claimRefusal({ ...ok, blocks: [...blocks, { day: '2026-11-14', part: 'all_day' as const }] }, S)).toBe('blocked')
+  })
 })
 
 describe('screenSkills', () => {

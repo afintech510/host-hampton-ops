@@ -450,6 +450,11 @@ export function localParts(d: Date): { dateKey: string; dow: number; minutes: nu
 export interface PartyWindow { startsAt: Date; endsAt: Date }
 export interface DateBlock { day: string; part: DayPart }
 export interface RecurringBlock { dow: number; part: DayPart; active: boolean }
+/** A "can't work" window, start to end (migration 088). Blocks any party whose own window it overlaps. */
+export interface PeriodBlock { startsAt: Date; endsAt: Date }
+export type AvailabilityBlock = DateBlock | PeriodBlock
+
+const isPeriod = (b: AvailabilityBlock): b is PeriodBlock => 'startsAt' in b
 
 const NOON = 12 * 60
 
@@ -459,14 +464,22 @@ function partBlocks(part: DayPart, startMin: number, endMin: number, endsNextDay
   return endsNextDay || endMin > NOON
 }
 
-/** Does this member's availability block the party? Judged on the party's Eastern start date. */
+/**
+ * Does this member's availability block the party? A period blocks it when the
+ * two windows overlap; a day / part-of-day or weekly block is judged on the
+ * party's Eastern start date.
+ */
 export function isBlockedByAvailability(
-  party: PartyWindow, blocks: ReadonlyArray<DateBlock>, recurring: ReadonlyArray<RecurringBlock>,
+  party: PartyWindow, blocks: ReadonlyArray<AvailabilityBlock>, recurring: ReadonlyArray<RecurringBlock>,
 ): boolean {
   const start = localParts(party.startsAt)
   const end = localParts(party.endsAt)
   const endsNextDay = end.dateKey !== start.dateKey
-  for (const b of blocks) if (b.day === start.dateKey && partBlocks(b.part, start.minutes, end.minutes, endsNextDay)) return true
+  for (const b of blocks) {
+    if (isPeriod(b)) {
+      if (b.startsAt.getTime() < party.endsAt.getTime() && b.endsAt.getTime() > party.startsAt.getTime()) return true
+    } else if (b.day === start.dateKey && partBlocks(b.part, start.minutes, end.minutes, endsNextDay)) return true
+  }
   for (const r of recurring) if (r.active && r.dow === start.dow && partBlocks(r.part, start.minutes, end.minutes, endsNextDay)) return true
   return false
 }
@@ -505,7 +518,7 @@ export function claimRefusal(
     alreadyOnParty: boolean
     /** The member's OTHER live parties. */
     otherParties: ReadonlyArray<PartyWindow>
-    blocks: ReadonlyArray<DateBlock>
+    blocks: ReadonlyArray<AvailabilityBlock>
     recurring: ReadonlyArray<RecurringBlock>
     now: Date
   },
@@ -530,12 +543,12 @@ export function claimRefusal(
  * upcoming party the member is on.
  */
 export function partiesBlockedBy(
-  block: { day: string; part: DayPart } | { dow: number; part: DayPart },
+  block: { day: string; part: DayPart } | { dow: number; part: DayPart } | PeriodBlock,
   myParties: ReadonlyArray<PartyWindow>,
 ): PartyWindow[] {
-  return myParties.filter(p => 'day' in block
-    ? isBlockedByAvailability(p, [block], [])
-    : isBlockedByAvailability(p, [], [{ dow: block.dow, part: block.part, active: true }]))
+  return myParties.filter(p => 'dow' in block
+    ? isBlockedByAvailability(p, [], [{ dow: block.dow, part: block.part, active: true }])
+    : isBlockedByAvailability(p, [block], []))
 }
 
 export function setupStartsAt(startsAt: Date, s: CrewSettings = DEFAULT_SETTINGS): Date {

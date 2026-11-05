@@ -19,8 +19,9 @@
 import type { getSupabase } from '@/lib/supabase'
 import { normalizePhoneKey } from '@/lib/contactLookup'
 import {
-  classifyDrop, isInGracePeriod, stepAfter, type CrewSettings, type DayPart, type SlotRole,
+  classifyDrop, isInGracePeriod, stepAfter, type AvailabilityBlock, type CrewSettings, type DayPart, type SlotRole,
 } from '@/lib/crew/rules'
+import { etToUtc, shiftEtDate } from '@/lib/partyTime'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -228,19 +229,48 @@ export async function getMemberEvents(sb: Supa, memberId: string, sinceIso?: str
   return { kind: 'ok', data: (data ?? []) as CrewEventRow[] }
 }
 
+/** One of the member's "I can't work" windows (migration 088). */
+export interface UnavailablePeriod { id: string; startsAt: Date; endsAt: Date }
+
+/** The member's periods that have not ended yet, soonest first. This is what the availability page lists. */
+export async function getMyPeriods(sb: Supa, memberId: string, now: Date): Promise<Read<UnavailablePeriod[]>> {
+  const { data, error } = await sb.from('crew_unavailable_periods').select('id, starts_at, ends_at')
+    .eq('member_id', memberId).gt('ends_at', now.toISOString()).order('starts_at', { ascending: true })
+  if (error) return { kind: 'unavailable', error: error.message }
+  return {
+    kind: 'ok',
+    data: ((data ?? []) as { id: string; starts_at: string; ends_at: string }[])
+      .map(r => ({ id: r.id, startsAt: new Date(r.starts_at), endsAt: new Date(r.ends_at) })),
+  }
+}
+
+/**
+ * Day / part-of-day blocks in the range, periods that overlap the range
+ * (as `{ startsAt, endsAt }` entries in `blocks`, which is how every caller
+ * already feeds `isBlockedByAvailability`), and the weekly blocks.
+ */
 export async function getAvailability(
   sb: Supa, memberId: string, fromDay: string, toDay: string,
-): Promise<Read<{ blocks: { day: string; part: DayPart }[]; recurring: { dow: number; part: DayPart; active: boolean }[] }>> {
-  const [b, r] = await Promise.all([
+): Promise<Read<{ blocks: AvailabilityBlock[]; recurring: { dow: number; part: DayPart; active: boolean }[] }>> {
+  const lo = etToUtc(fromDay, 0)
+  const hi = etToUtc(shiftEtDate(toDay, 1), 0)
+  const [b, p, r] = await Promise.all([
     sb.from('crew_unavailability').select('day, part').eq('member_id', memberId).gte('day', fromDay).lte('day', toDay),
+    sb.from('crew_unavailable_periods').select('starts_at, ends_at').eq('member_id', memberId)
+      .lt('starts_at', hi.toISOString()).gt('ends_at', lo.toISOString()),
     sb.from('crew_recurring_blocks').select('dow, part, active').eq('member_id', memberId),
   ])
   if (b.error) return { kind: 'unavailable', error: b.error.message }
+  if (p.error) return { kind: 'unavailable', error: p.error.message }
   if (r.error) return { kind: 'unavailable', error: r.error.message }
   return {
     kind: 'ok',
     data: {
-      blocks: (b.data ?? []) as { day: string; part: DayPart }[],
+      blocks: [
+        ...((b.data ?? []) as { day: string; part: DayPart }[]),
+        ...((p.data ?? []) as { starts_at: string; ends_at: string }[])
+          .map(row => ({ startsAt: new Date(row.starts_at), endsAt: new Date(row.ends_at) })),
+      ],
       recurring: (r.data ?? []) as { dow: number; part: DayPart; active: boolean }[],
     },
   }

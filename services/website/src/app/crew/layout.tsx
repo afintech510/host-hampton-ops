@@ -79,13 +79,6 @@ body{background:#F5F3FA !important}
 .crew-table{width:100%;border-collapse:collapse;font-size:.92rem}
 .crew-table th,.crew-table td{text-align:left;padding:.45rem .3rem;border-bottom:1px solid #E6E3EF}
 .crew-table tr.crew-mine td{background:#FFF1DB;font-weight:700}
-.crew-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:.3rem}
-.crew-cal .crew-dow{text-align:center;font-size:.75rem;font-weight:700;color:#5B5873}
-.crew-day{min-height:44px;border-radius:10px;border:1px solid #E6E3EF;background:#fff;font:inherit;font-size:.85rem;color:#1E1B3A;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:.15rem}
-.crew-day[disabled]{cursor:default;opacity:.45}
-.crew-day.crew-day-blocked{background:#FCE4EE;border-color:#C2185B}
-.crew-day.crew-day-working{background:#E3F4EA;border-color:#145236;opacity:1}
-.crew-day.crew-day-sel{outline:3px solid #F4B740}
 `
 
 export default function CrewLayout({ children }: { children: React.ReactNode }) {

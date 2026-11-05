@@ -3,17 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-export type Part = 'all_day' | 'before_noon' | 'after_noon'
+export interface PeriodItem { id: string; label: string }
 
-export interface CalDay { date: string; day: number; past: boolean; working: boolean; part: Part | null }
-export interface CalMonth { key: string; label: string; leadingBlanks: number; days: CalDay[] }
-
-const PART_LABEL: Record<Part, string> = { all_day: 'All day', before_noon: 'Morning', after_noon: 'Afternoon' }
-const PART_SHORT: Record<Part, string> = { all_day: 'Off', before_noon: 'AM off', after_noon: 'PM off' }
-const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const DOW_LONG = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays']
-
-async function save(body: Record<string, unknown>): Promise<string | null> {
+async function send(body: Record<string, unknown>): Promise<string | null> {
   try {
     const res = await fetch('/api/crew/availability', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
     if (res.status === 401) {
@@ -27,100 +19,83 @@ async function save(body: Record<string, unknown>): Promise<string | null> {
   }
 }
 
+/** `2026-11-14T15:00` plus an hour, as a datetime-local value. Wall-clock arithmetic only: no zone is involved. */
+function plusOneHour(local: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local)
+  if (!m) return ''
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]) + 1, Number(m[5])))
+  return d.toISOString().slice(0, 16)
+}
+
 /**
- * Month calendar plus weekly blocks (spec §3.8). Tap a day, then choose what
- * you can't do. A day you are working is shown and cannot be blocked: that is
- * "Can't make it" on the party, and the server refuses it either way.
+ * The whole availability page (spec §3.8): pick when you can't work, from a
+ * start date and time to an end date and time, and add it. Periods you've added
+ * are listed under the form with a Remove. A time you are working a party is
+ * refused by the server; that is "Can't make it" on the party.
  */
-export default function AvailabilityEditor({ months, weekly }: { months: CalMonth[]; weekly: (Part | null)[] }) {
+export default function AvailabilityEditor({ periods, minLocal }: { periods: PeriodItem[]; minLocal: string }) {
   const router = useRouter()
-  const [selected, setSelected] = useState<CalDay | null>(null)
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function run(body: Record<string, unknown>) {
+  async function run(body: Record<string, unknown>, onDone?: () => void) {
     setBusy(true)
     setError(null)
-    const err = await save(body)
+    const err = await send(body)
     setBusy(false)
     if (err) setError(err)
     else {
-      setSelected(null)
+      onDone?.()
       router.refresh()
     }
   }
 
+  function add(e: React.FormEvent) {
+    e.preventDefault()
+    if (!start || !end) { setError('Pick a start and an end, date and time.'); return }
+    if (end <= start) { setError('The end has to be after the start.'); return }
+    void run({ start, end }, () => { setStart(''); setEnd('') })
+  }
+
   return (
     <div>
-      {months.map(m => (
-        <section key={m.key} className="crew-card" aria-label={m.label}>
-          <h3 style={{ marginBottom: '.6rem' }}>{m.label}</h3>
-          <div className="crew-cal">
-            {DOW.map(d => <div key={d} className="crew-dow">{d}</div>)}
-            {Array.from({ length: m.leadingBlanks }, (_, i) => <div key={`b${i}`} />)}
-            {m.days.map(d => {
-              const cls = ['crew-day',
-                d.working ? 'crew-day-working' : '',
-                d.part ? 'crew-day-blocked' : '',
-                selected?.date === d.date ? 'crew-day-sel' : ''].join(' ')
-              const state = d.working ? 'working' : d.part ? PART_LABEL[d.part] + ' unavailable' : 'available'
-              return (
-                <button
-                  key={d.date} type="button" className={cls} disabled={d.past || d.working}
-                  aria-label={`${d.date}: ${state}`} aria-pressed={selected?.date === d.date}
-                  onClick={() => { setSelected(d); setError(null) }}
-                >
-                  <span>{d.day}</span>
-                  {d.working && <span style={{ fontSize: '.65rem' }}>Working</span>}
-                  {!d.working && d.part && <span style={{ fontSize: '.65rem' }}>{PART_SHORT[d.part]}</span>}
-                </button>
-              )
-            })}
-          </div>
-        </section>
-      ))}
-
-      {selected && (
-        <div className="crew-card" role="dialog" aria-label={`Availability for ${selected.date}`}>
-          <p style={{ marginTop: 0 }}><strong>{selected.date}</strong>: when can&apos;t you work?</p>
-          <div className="crew-row">
-            {(['all_day', 'before_noon', 'after_noon'] as Part[]).map(p => (
-              <button key={p} type="button" className={selected.part === p ? 'crew-btn' : 'crew-btn crew-btn-ghost'} disabled={busy}
-                onClick={() => run({ day: selected.date, part: p })}>
-                {PART_LABEL[p]}
-              </button>
-            ))}
-            {selected.part && (
-              <button type="button" className="crew-btn crew-btn-ghost" disabled={busy} onClick={() => run({ day: selected.date, part: null })}>
-                I&apos;m free
-              </button>
-            )}
-            <button type="button" className="crew-btn crew-btn-ghost" disabled={busy} onClick={() => setSelected(null)}>Close</button>
-          </div>
-          <p className="crew-small crew-muted" style={{ marginBottom: 0 }}>
-            Morning blocks parties that start before noon. Afternoon blocks parties that run past noon.
-          </p>
+      <form onSubmit={add} className="crew-card">
+        <p style={{ marginTop: 0, fontWeight: 600 }}>When can&apos;t you work?</p>
+        <label htmlFor="crew-unavail-start" className="crew-small crew-muted" style={{ display: 'block', marginBottom: '.3rem' }}>From</label>
+        <input
+          id="crew-unavail-start" type="datetime-local" className="crew-input" required min={minLocal} value={start} disabled={busy}
+          onChange={e => {
+            const v = e.target.value
+            setStart(v)
+            if (v && (!end || end <= v)) setEnd(plusOneHour(v))
+          }}
+        />
+        <label htmlFor="crew-unavail-end" className="crew-small crew-muted" style={{ display: 'block', margin: '.8rem 0 .3rem' }}>Until</label>
+        <input
+          id="crew-unavail-end" type="datetime-local" className="crew-input" required min={start || minLocal} value={end} disabled={busy}
+          onChange={e => setEnd(e.target.value)}
+        />
+        <div style={{ marginTop: '.9rem' }}>
+          <button type="submit" className="crew-btn" disabled={busy}>{busy ? 'One moment…' : 'Add'}</button>
         </div>
-      )}
+        {error && <p role="alert" className="crew-small" style={{ color: '#8E1043', marginBottom: 0 }}>{error}</p>}
+      </form>
 
-      <h2>Every week</h2>
-      <div className="crew-card">
-        {weekly.map((part, dow) => (
-          <div key={dow} className="crew-row" style={{ justifyContent: 'space-between', padding: '.3rem 0' }}>
-            <label htmlFor={`crew-weekly-${dow}`} style={{ fontWeight: 600 }}>{DOW_LONG[dow]}</label>
-            <select
-              id={`crew-weekly-${dow}`} className="crew-input" style={{ width: 'auto', minWidth: '11rem' }} disabled={busy}
-              value={part ?? ''} onChange={e => run({ dow, part: e.target.value || null })}
-            >
-              <option value="">I can work</option>
-              <option value="all_day">Not all day</option>
-              <option value="before_noon">Not mornings</option>
-              <option value="after_noon">Not afternoons</option>
-            </select>
-          </div>
-        ))}
-      </div>
-      {error && <p role="alert" className="crew-note crew-alert">{error}</p>}
+      <h2>Times you can&apos;t work</h2>
+      {periods.length === 0 ? (
+        <p className="crew-muted">Nothing yet. You&apos;re free for every party.</p>
+      ) : (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          {periods.map(p => (
+            <li key={p.id} className="crew-card crew-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '.8rem' }}>
+              <span>{p.label}</span>
+              <button type="button" className="crew-btn crew-btn-ghost" disabled={busy} onClick={() => run({ remove: p.id })}>Remove</button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
