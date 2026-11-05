@@ -131,6 +131,18 @@ function screenCommon(r: Record<string, string>): { ok: false; reason: string } 
   }
 }
 
+/**
+ * The embeddable address of a reel row, for a later CLICK-TO-LOAD player: show
+ * the thumbnail, and only when somebody clicks put this URL in an iframe. Null
+ * for anything that is not an Instagram reel permalink (a post, a phone-album
+ * video still, a made-up string). Nothing in the app loads Instagram's own
+ * embed script; this only builds the address.
+ */
+export function reelEmbedUrl(permalink: string | null | undefined): string | null {
+  const m = /^https:\/\/www\.instagram\.com\/reel\/([A-Za-z0-9_-]{5,20})\/?(?:\?.*)?$/.exec(permalink ?? '')
+  return m ? `https://www.instagram.com/reel/${m[1]}/embed` : null
+}
+
 /** Is this the shortcode of an instagram.com/p/… or /reel/… permalink? */
 export function shortcodeOf(permalink: string): string | null {
   const m = /^https:\/\/www\.instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]{5,20})\/?/.exec(permalink)

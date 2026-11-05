@@ -14,7 +14,7 @@ import fs from 'fs'
 import path from 'path'
 import {
   bulkSetApproval, existingSourceKeys, facetsForAdmin, importLocalPhoto, importMuseRows, listForAdmin, looksLikeFlyer, planLocalImport,
-  screenLocalRow, screenMuseRow, screenPatch,
+  reelEmbedUrl, screenLocalRow, screenMuseRow, screenPatch,
 } from '@/lib/media'
 import { convertImageBuffer, METADATA_CHUNKS, webpChunks } from '@/lib/mediaImage'
 import { canonicalActivities, canonicalDecor, canonicalTheme, slugifyTag, unknownTags, ACTIVITY_TAGS, THEME_TAGS } from '@/lib/mediaVocab'
@@ -94,6 +94,16 @@ describe('A2: screening', () => {
     expect(kind({ media_type: 'video_thumbnail' })).toBe('reel')
     const s = screenMuseRow(ig({ ig_permalink: 'https://www.instagram.com/reel/ReelFake001/' }))
     if (s.ok) expect(s.candidate.permalink).toBe('https://www.instagram.com/reel/ReelFake001/') // what a later click-to-load embed needs
+  })
+
+  it('reelEmbedUrl builds an embed address for a reel permalink only, and loads no script', () => {
+    expect(reelEmbedUrl('https://www.instagram.com/reel/ReelFake001/')).toBe('https://www.instagram.com/reel/ReelFake001/embed')
+    expect(reelEmbedUrl('https://www.instagram.com/reel/ReelFake001/?igsh=abc')).toBe('https://www.instagram.com/reel/ReelFake001/embed')
+    for (const bad of ['https://www.instagram.com/p/PostFake001/', 'https://evil.example/reel/ReelFake001/', 'https://www.instagram.com/reel/x/', '', null, undefined, 'javascript:alert(1)']) {
+      expect(reelEmbedUrl(bad as never)).toBeNull()
+    }
+    const src = fs.readFileSync(path.join(process.cwd(), 'src', 'lib', 'media.ts'), 'utf8')
+    expect(src).not.toMatch(/embed\.js|instagram\.com\/embed/)
   })
 
   it('a letterboard or banner is flagged for a second look, not silently approved or dropped', () => {
