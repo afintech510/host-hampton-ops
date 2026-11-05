@@ -13,7 +13,7 @@ const item = (id: string, name: string, category: string, price_cents: number, p
 const groups = {
   themes: [item('t-glow', 'Glow Party', 'party-theme', 85000), item('t-spa', 'Spa Party', 'party-theme', 95000), item('t-spa2', 'Spa Party', 'party-theme', 99000)],
   premiumActivities: [item('a-slime', 'Slime Making', 'activity-premium', 0), item('a-perfume', 'Perfume Bar', 'activity-premium', 0)],
-  standardActivities: [item('a-tattoo', 'Glitter Tattoos', 'activity-standard', 0)],
+  standardActivities: [item('a-tattoo', 'Glitter Tattoos', 'activity-standard', 0), item('a-hair1', 'Hair Makeover', 'activity-standard', 0), item('a-hair2', 'Hair Tinsel - Beaded Braids', 'activity-standard', 0), item('a-brace', 'Make Your Own Bracelets', 'activity-standard', 0)],
   food: [item('f-pizza', 'Pizza', 'food-add-on', 1200, 'per_person')], desserts: [item('d-cup', 'Cupcakes', 'dessert-add-on', 3000)],
   beverages: [], decor: [item('x-garland', 'Balloon Garland', 'decor-add-on', 7500)], entertainment: [], partyAddOns: [item('h-helper', 'Party Helper', 'party-add-on', 3000, 'per_person')],
 }
@@ -25,6 +25,19 @@ describe('matchByName', () => {
     expect(matchByName(groups.themes, 'Glow')).toMatchObject({ kind: 'one', item: { id: 't-glow' } })
     expect(matchByName(groups.premiumActivities, 'slime')).toMatchObject({ kind: 'one', item: { id: 'a-slime' } })
   })
+  it('whole-word containment: one hit matches, several is ambiguous and is never picked', () => {
+    const all = [...groups.premiumActivities, ...groups.standardActivities]
+    expect(matchByName(all, 'tattoos')).toMatchObject({ kind: 'one', item: { id: 'a-tattoo' } })
+    expect(matchByName(all, 'bracelets')).toMatchObject({ kind: 'one', item: { id: 'a-brace' } })
+    expect(matchByName(all, 'make your own bracelets')).toMatchObject({ kind: 'one', item: { id: 'a-brace' } })
+    expect(matchByName(all, 'hair')).toEqual({ kind: 'ambiguous', names: ['Hair Makeover', 'Hair Tinsel - Beaded Braids'] })
+    expect(matchByName(all, 'braids')).toMatchObject({ kind: 'one', item: { id: 'a-hair2' } })
+    // Substrings are not words: "tat" must not find Glitter Tattoos, "brace" must not find Bracelets.
+    expect(matchByName(all, 'tat')).toEqual({ kind: 'none' })
+    expect(matchByName(all, 'brace')).toEqual({ kind: 'none' })
+    expect(matchByName(all, 'party')).toEqual({ kind: 'none' }) // filler only
+  })
+
   it('never fuzzy: a near miss matches nothing, and two equal names are ambiguous, not picked', () => {
     expect(matchByName(groups.themes, 'Glo Partee')).toEqual({ kind: 'none' })
     expect(matchByName(groups.themes, '')).toEqual({ kind: 'none' })

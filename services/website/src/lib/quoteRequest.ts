@@ -52,7 +52,17 @@ const norm = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-
 
 export type NameMatch = { kind: 'one'; item: PricingItem } | { kind: 'none' } | { kind: 'ambiguous'; names: string[] }
 
-/** Exact match on the normalised name, then on the name with "party"/"making" noise stripped. Never fuzzy. */
+const FILLER = new Set(['party', 'parties', 'making', 'station', 'package', 'the', 'a', 'an', 'make', 'your', 'own', 'my', 'bar', 'session'])
+const tokens = (s: string) => norm(s).split(' ').filter(Boolean)
+
+/**
+ * Exact match on the normalised name; then on the name with filler words
+ * stripped; then, as a last resort, WHOLE-WORD containment: every meaningful
+ * word asked for appears as a whole word in exactly one item's name ("slime" →
+ * "Make Your Own Slime", "tattoos" → "Glitter Tattoos"). One hit is a match;
+ * several is `ambiguous` ("hair" names two items) and is never picked between.
+ * No edit distance, no substrings, no guessing.
+ */
 export function matchByName(list: PricingItem[], wanted: string): NameMatch {
   const w = norm(wanted)
   if (!w) return { kind: 'none' }
@@ -62,6 +72,11 @@ export function matchByName(list: PricingItem[], wanted: string): NameMatch {
     if (hits.length === 1) return { kind: 'one', item: hits[0] }
     if (hits.length > 1) return { kind: 'ambiguous', names: hits.map(h => h.name) }
   }
+  const want = tokens(wanted).filter(t => !FILLER.has(t))
+  if (want.length === 0) return { kind: 'none' }
+  const hits = list.filter(i => { const have = new Set(tokens(i.name)); return want.every(t => have.has(t)) })
+  if (hits.length === 1) return { kind: 'one', item: hits[0] }
+  if (hits.length > 1) return { kind: 'ambiguous', names: hits.map(h => h.name) }
   return { kind: 'none' }
 }
 
