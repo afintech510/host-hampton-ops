@@ -28,15 +28,12 @@ const disallow = ['/api/', '/admin', '/admin/', '/cm-cheer/order', '/r/']
 // measured lead channel (utm_source=chatgpt.com on /spa-party,
 // /arts-and-crafts-party and /mobile-party, Nassau included).
 //
-// THIS FILE IS NOT THE WHOLE STORY. Cloudflare prepends its own "Managed
-// content" block to the robots.txt it serves (measured 2026-11-04) that
-// Disallows GPTBot, ClaudeBot, Google-Extended, Applebot-Extended, CCBot,
-// meta-externalagent and others, and an edge rule 403s GPTBot, ClaudeBot,
-// CCBot and Amazonbot outright. Those are the TRAINING crawlers; the ones that
-// fetch pages to cite in an answer (OAI-SearchBot, ChatGPT-User, Claude-User,
-// Claude-SearchBot, PerplexityBot, Perplexity-User, Googlebot, Bingbot) were
-// all 200. Changing that is a Cloudflare dashboard setting, not a code change —
-// measure with a UA sweep, never by reading this file.
+// THIS FILE CAN BE OVERRIDDEN AT THE EDGE. Cloudflare's "Managed robots.txt"
+// prepends its own block that Disallows GPTBot, ClaudeBot, Google-Extended and
+// more, and its "Block AI bots" rule 403s them outright. Both were on until
+// 2026-11-04, when Adam chose to let training crawlers in too, and were
+// switched off (zone bot_management: ai_bots_protection, ai_training,
+// is_robots_txt_managed). Measure with a UA sweep, never by reading this file.
 const aiCrawlers = [
   'GPTBot',               // OpenAI training crawler
   'OAI-SearchBot',        // ChatGPT search index — what produces citations
