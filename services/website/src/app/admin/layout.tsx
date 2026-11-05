@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import { NOINDEX } from '@/lib/seo'
+import { featureEnabled } from '@/tenant'
+import AssistantDrawer from '@/components/admin/AssistantDrawer'
 
 /**
  * The whole /admin subtree. robots.txt already disallows `/admin/`, but that
@@ -23,6 +25,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         body { background: #f5f6f8 !important; }
       `}} />
       {children}
+      {/* The chat drawer. It checks the admin session itself and renders nothing signed out. */}
+      {featureEnabled('managerAssistant') && <AssistantDrawer />}
     </>
   )
 }

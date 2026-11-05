@@ -92,6 +92,8 @@ import {
   type PartialConfig,
 } from './PayPanel'
 import { shouldAskForPartyAddress } from '@/lib/partyAddress'
+import { featureEnabled } from '@/tenant'
+import AssistantDrawer from '@/components/admin/AssistantDrawer'
 import './invoice.css'
 
 export const dynamic = 'force-dynamic'
@@ -999,6 +1001,10 @@ export default async function PlanSummaryPage({
         partial={partial}
         waiver={waiver}
       />
+      {/* The admin chat drawer, mounted ONLY inside the verified-admin branch: a
+          customer's render of this page contains no trace of it. `verified` is
+          true because `planAccess` just checked the signed hh_admin cookie. */}
+      {isAdminView && featureEnabled('managerAssistant') && <AssistantDrawer verified page="invoice" bookingRef={ref} />}
     </div>
   )
 }

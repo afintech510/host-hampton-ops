@@ -15,11 +15,30 @@ import { adminSessionSecret } from '@/lib/adminAuth'
  *
  *   * bound to the ACTOR who asked (another admin's session cannot confirm it),
  *   * short-lived (30 minutes — a stale card is re-asked, not replayed), and
- *   * single-use within this container (`markUsed`), so a double-click or a
- *     retried request cannot send a client the same links twice.
+ *   * single-use, DURABLY: `claimProposal` (./usedProposals.ts) inserts the id
+ *     into a table whose primary key is the claim, so a double-click, a retried
+ *     request or a container restart cannot send a client the same links twice.
+ *     This file stays pure on purpose — it never touches a table.
  */
 
-export type ProposalKind = 'create_party' | 'send_client_links' | 'create_pay_link'
+export type ProposalKind =
+  | 'create_party'
+  | 'send_client_links'
+  | 'create_pay_link'
+  | 'update_party'
+  | 'add_line_item'
+  | 'remove_line_item'
+  | 'record_payment'
+  | 'cancel_party'
+  | 'mark_lost'
+  | 'send_photos'
+
+/** A thumbnail shown on a card (photo proposals). Display only — execute.ts never reads it. */
+export interface ProposalPhoto {
+  id: string
+  url: string
+  alt: string
+}
 
 export interface Proposal {
   /** Random id; also the single-use key. */
@@ -31,6 +50,8 @@ export interface Proposal {
   title: string
   /** What will happen, as the manager reads it on the card. */
   details: string[]
+  /** Thumbnails for the card. Display only; the replayed route re-resolves ids through findPhotos. */
+  photos?: ProposalPhoto[]
   /** `admin:<email>` or `ADMIN` — see adminActorId(). */
   actor: string
   /** Epoch ms. */
@@ -67,7 +88,7 @@ export function mintProposal(
 
 export type VerifyResult =
   | { ok: true; proposal: Proposal }
-  | { ok: false; reason: 'malformed' | 'bad_signature' | 'expired' | 'wrong_actor' | 'already_used' }
+  | { ok: false; reason: 'malformed' | 'bad_signature' | 'expired' | 'wrong_actor' }
 
 export function verifyProposal(
   token: unknown,
@@ -95,35 +116,5 @@ export function verifyProposal(
   }
   if ((opts.now ?? Date.now()) > proposal.expiresAt) return { ok: false, reason: 'expired' }
   if (proposal.actor !== actor) return { ok: false, reason: 'wrong_actor' }
-  if (usedIds().has(proposal.id)) return { ok: false, reason: 'already_used' }
   return { ok: true, proposal }
-}
-
-/*
- * Single-use store. In-memory, one container — the same deliberate trade the
- * rate limiter makes (lib/rateLimit.ts): it resets on deploy, and a token
- * outlives a deploy by at most PROPOSAL_TTL_MS. Entries are evicted once their
- * proposal could no longer verify anyway, so it cannot grow without bound.
- */
-type UsedStore = Map<string, number>
-const g = globalThis as unknown as { __hhAssistantUsed?: UsedStore }
-function usedIds(): UsedStore {
-  if (!g.__hhAssistantUsed) g.__hhAssistantUsed = new Map()
-  return g.__hhAssistantUsed
-}
-
-/** Claim a proposal. Returns false if it was already claimed (a double-click). */
-export function markUsed(p: Pick<Proposal, 'id' | 'expiresAt'>, now = Date.now()): boolean {
-  const store = usedIds()
-  store.forEach((exp, id) => {
-    if (exp < now) store.delete(id)
-  })
-  if (store.has(p.id)) return false
-  store.set(p.id, p.expiresAt)
-  return true
-}
-
-/** Release a claim when the action was refused before anything happened, so it can be retried. */
-export function releaseUsed(id: string): void {
-  usedIds().delete(id)
 }

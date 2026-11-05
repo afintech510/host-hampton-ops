@@ -15,6 +15,11 @@ import {
   screenFotoshareUrl, screenOccasion, photoAlbumText, photoAlbumEmailHtml,
 } from '@/lib/photoAlbum'
 import { checkSmsQuietHours } from '@/lib/quietHours'
+import { TENANT } from '@/tenant'
+import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
+import {
+  PHOTOS_EMAIL_SUBJECT, createPhotoSet, photosEmailHtml, photosEmailText, photosSmsText,
+} from '@/lib/photoSets'
 import {
   checkPlaceholders, clientLinkLabel, clientLinksEmailHtml, fillLinks, isStudioRentalBooking, placeholdersIn,
   screenBody, screenLinkKinds, screenSubject, type Placeholder,
@@ -1100,6 +1105,121 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     return NextResponse.json({ ok: true, action: 'photo_album_sent', sentVia, failures, photoGalleryUrl: album.url })
+  }
+
+  // ── "Send photos" — party photos from the photo library, by email and/or a text link ──
+  // Added with the admin chat overlay (`propose_send_photos`), but a normal admin
+  // action: it replays every guard `send_client_links` has. The photos are
+  // resolved ONLY through `findPhotos` (approved AND no identifiable child), the
+  // text carries a short LINK to /p/<token> and never an MMS, the quiet-hours and
+  // STOP checks run before anything is sent, and every outcome lands in the
+  // booking's change log. The assistant sends explicit `photoIds` (the exact set
+  // the manager saw on the card); a `filter` is accepted for any other caller.
+  if (action === 'send_photos') {
+    if (body.confirm !== true) {
+      return NextResponse.json({ error: 'Sending to a client must be confirmed' }, { status: 400 })
+    }
+    const wantsEmail = body.email === true
+    const wantsSms = body.sms === true
+    if (!wantsEmail && !wantsSms) return NextResponse.json({ error: 'Pick email, text, or both' }, { status: 400 })
+    if (booking.status === 'cancelled' || booking.status === 'lost') {
+      return NextResponse.json({ error: `This booking is ${booking.status} — nothing was sent.` }, { status: 409 })
+    }
+    const email = typeof booking.contact_email === 'string' ? booking.contact_email.trim() : ''
+    const phone = typeof booking.contact_phone === 'string' ? booking.contact_phone.trim() : ''
+    if (wantsEmail && !isPlausibleEmailAddress(email)) {
+      return NextResponse.json({ error: 'No valid email address on this booking — untick Email or fix it first.' }, { status: 409 })
+    }
+    if (wantsSms && !phone) {
+      return NextResponse.json({ error: 'No phone number on this booking — untick Text or add one first.' }, { status: 409 })
+    }
+
+    const askedIds = Array.isArray(body.photoIds)
+      ? Array.from(new Set((body.photoIds as unknown[]).filter((v): v is string => typeof v === 'string')))
+      : []
+    const f = (body.filter && typeof body.filter === 'object' ? body.filter : {}) as Record<string, unknown>
+    const tag = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
+    if (askedIds.length === 0 && !tag(f.partyType) && !tag(f.activity) && !tag(f.themeSlug)) {
+      return NextResponse.json({ error: 'Name the photos (photoIds) or a filter (partyType / activity / themeSlug) — nothing was sent.' }, { status: 400 })
+    }
+    const found = await findPhotos(
+      supabase,
+      askedIds.length
+        ? { ids: askedIds, limit: MAX_PHOTOS_PER_REQUEST }
+        : { partyType: tag(f.partyType), activity: tag(f.activity), themeSlug: tag(f.themeSlug), limit: 6 },
+    )
+    if (found.kind !== 'ok') {
+      return NextResponse.json({ error: 'Could not read the photo library — try again. Nothing was sent.' }, { status: 503 })
+    }
+    const photos = found.data
+    if (photos.length === 0) {
+      return NextResponse.json({ error: 'None of those photos are approved to send right now — nothing was sent.' }, { status: 409 })
+    }
+    if (askedIds.length && photos.length !== Math.min(askedIds.length, MAX_PHOTOS_PER_REQUEST)) {
+      return NextResponse.json(
+        { error: 'Some of those photos are no longer approved to send — ask for the photos again. Nothing was sent.' },
+        { status: 409 },
+      )
+    }
+
+    // The text is checked BEFORE anything is created or sent, exactly as in
+    // send_client_links: a text-only send outside 8am–9pm, or to a STOPped
+    // number, changes nothing at all.
+    let smsBlocked: string | null = null
+    if (wantsSms) {
+      const quiet = checkSmsQuietHours(new Date())
+      const stop = quiet.kind === 'open' ? await phoneHasExplicitStop(supabase, phone) : null
+      if (quiet.kind !== 'open') smsBlocked = 'Text NOT sent — it is outside 8am–9pm. Send again with only Text ticked after 8am.'
+      else if (stop === 'stopped') smsBlocked = 'Text NOT sent — this number has a STOP (opt-out) on file.'
+      else if (stop !== 'clear') smsBlocked = 'Text NOT sent — could not check this number for a STOP. Try again.'
+    }
+    const sendEmail = wantsEmail
+    const sendSms = wantsSms && !smsBlocked
+    if (!sendEmail && !sendSms) return NextResponse.json({ error: smsBlocked, failures: [smsBlocked] }, { status: 409 })
+
+    const set = await createPhotoSet(supabase, { bookingId: id, photoIds: photos.map(p => p.id), actor: adminActorId(req) })
+    if (!set.ok) return NextResponse.json({ error: `${set.error} Nothing was sent.` }, { status: 503 })
+
+    const sentVia: string[] = []
+    const failures: string[] = smsBlocked ? [smsBlocked] : []
+
+    if (sendEmail) {
+      if (!process.env.RESEND_API_KEY) {
+        failures.push('Email is not configured')
+      } else {
+        const { Resend } = await import('resend')
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || TENANT.email.noReplyFrom
+        const { error: mailErr } = await resend.emails.send({
+          from, to: email, replyTo: ownerEmail(),
+          subject: PHOTOS_EMAIL_SUBJECT,
+          html: photosEmailHtml(booking.contact_name, photos, set.url),
+          text: photosEmailText(booking.contact_name, photos, set.url),
+        })
+        if (mailErr) failures.push(`Email failed: ${mailErr.message}`)
+        else sentVia.push('email')
+      }
+    }
+
+    if (sendSms) {
+      // A LINK, never an MMS: one short segment that opens the photo set page.
+      const sid = await sendSMSVia('quo', normalizePhone(phone), photosSmsText(booking.contact_name, set.url, photos.length))
+      if (sid) sentVia.push('text')
+      else failures.push('Text failed to send — check the number and Quo config')
+    }
+
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: sentVia.length
+        ? `Photos sent to customer (${photos.length}) via ${sentVia.join(' + ')}${failures.length ? `; ${failures.join('; ')}` : ''}`
+        : `Photos NOT sent (${photos.length}): ${failures.join('; ')}`,
+      newData: { photo_ids: photos.map(p => p.id), sent_via: sentVia },
+    })
+
+    if (sentVia.length === 0) {
+      return NextResponse.json({ error: failures.join(' ') || 'Nothing was sent', failures }, { status: 502 })
+    }
+    return NextResponse.json({ ok: true, action: 'photos_sent', sentVia, failures, count: photos.length })
   }
 
   if (action === 'delete_booking') {

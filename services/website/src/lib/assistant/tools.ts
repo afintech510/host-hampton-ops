@@ -11,7 +11,10 @@ import { sumPayments } from '@/lib/bookingBalance'
 import { billedTotalCents, type BilledItem } from '@/lib/planBalance'
 import { CLIENT_LINK_KINDS, screenLinkKinds, clientLinkLabel, type ClientLinkKind } from '@/lib/clientLinks'
 import { PARTY_TYPES, isPartyType } from '@/lib/pipelineStages'
-import { mintProposal, type Proposal } from './proposals'
+import { ADMIN_PAYMENT_METHODS, PAYMENT_TYPES } from '@/lib/adminMoney'
+import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
+import { loadQuoteCatalog, quoteFromCatalog, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
+import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 
 /**
  * The Manager assistant's tools.
@@ -176,6 +179,147 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
       required: ['booking_ref', 'purpose'],
     },
   },
+  {
+    name: 'get_quote',
+    description:
+      'Price a party from the live catalog. You supply WORDS (a theme name, activity names, add-on names) and a guest count; the server does the arithmetic and returns the total and the line items. Names that match nothing are listed as not_found and are NOT in the total. Never quote a number that did not come from here, get_pricing or get_party.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        party_type: { type: 'string', enum: ['studio', 'mobile'] },
+        guests: { type: 'integer', description: `1-${MAX_QUOTE_GUESTS}` },
+        theme: { type: 'string', description: 'Studio only: the theme name, e.g. "Slime Party".' },
+        activities: { type: 'array', items: { type: 'string' } },
+        add_ons: { type: 'array', items: { type: 'string' } },
+        mini_party: { type: 'boolean', description: 'Studio mini party (small group).' },
+      },
+      required: ['party_type', 'guests'],
+    },
+  },
+  {
+    name: 'find_photos',
+    description:
+      'Find real party photos from the photo library. Only photos a human approved and that show no identifiable child are ever returned. Filter by party_type (in_studio_theme, mobile_party, public_event), theme (a theme slug such as slime-party) and/or activity (a tag such as slime-making). Returns id, url and alt for each; pass the ids to propose_send_photos.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        party_type: { type: 'string' },
+        theme: { type: 'string' },
+        activity: { type: 'string' },
+        limit: { type: 'integer', description: `1-${MAX_PHOTOS_PER_REQUEST}. Default 6.` },
+      },
+    },
+  },
+  {
+    name: 'propose_update_party',
+    description:
+      "PROPOSE changing a party's details: date, time, guest count, child name/age, package, the client's contact details, party type, or the internal admin note. Cannot change status or money (use propose_cancel / propose_mark_lost / propose_record_payment, and line items for price). Nothing changes until the manager clicks Confirm. Check the date with check_date first when moving it.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        party_date: { type: 'string', description: 'YYYY-MM-DD' },
+        party_time: { type: 'string', description: 'HH:mm, 24-hour' },
+        guest_count: { type: 'integer' },
+        child_name: { type: 'string' },
+        child_age: { type: 'integer' },
+        package_type: { type: 'string' },
+        contact_name: { type: 'string' },
+        contact_email: { type: 'string' },
+        contact_phone: { type: 'string' },
+        party_type: { type: 'string', enum: [...PARTY_TYPES] },
+        admin_notes: { type: 'string', description: 'Internal note. Never shown to the client.' },
+      },
+      required: ['booking_ref'],
+    },
+  },
+  {
+    name: 'propose_add_line_item',
+    description:
+      'PROPOSE adding a line item (add-on, decor, extra) to a party\'s invoice. Preferred: set add_on to a catalog add-on name and the server uses the catalog price. Otherwise give name + unit_price_cents ONLY if the manager stated that price. Discounts are not added from chat. Nothing changes until the manager clicks Confirm; the invoice total is recalculated when it does.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        add_on: { type: 'string', description: 'Exact catalog add-on name, e.g. "Balloon Garland". Price comes from the catalog.' },
+        name: { type: 'string', description: 'Custom item name (when it is not in the catalog).' },
+        unit_price_cents: { type: 'integer', description: 'Custom item price in cents, as stated by the manager.' },
+        quantity: { type: 'integer' },
+        per_guest: { type: 'boolean', description: 'Custom item is priced per guest.' },
+        category: { type: 'string' },
+      },
+      required: ['booking_ref'],
+    },
+  },
+  {
+    name: 'propose_remove_line_item',
+    description:
+      "PROPOSE removing a line item from a party's invoice, by its name as shown by get_party. Nothing changes until the manager clicks Confirm; the invoice total is recalculated when it does.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        line_item_name: { type: 'string' },
+        line_item_id: { type: 'string', description: 'Only when two lines share a name and a previous call listed candidates.' },
+      },
+      required: ['booking_ref'],
+    },
+  },
+  {
+    name: 'propose_record_payment',
+    description:
+      'PROPOSE writing down a payment that arrived outside Stripe (cash, Venmo, Zelle, check) against a party. It records money in the books and moves the balance; it takes no money and by default emails the client nothing. Use the amount and method the manager stated; never guess either. Nothing is recorded until the manager clicks Confirm.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        amount_cents: { type: 'integer', description: 'Whole cents, e.g. 25000 for $250.' },
+        payment_method: { type: 'string', enum: [...ADMIN_PAYMENT_METHODS] },
+        payment_type: { type: 'string', enum: [...PAYMENT_TYPES.filter(t => t !== 'refund')], description: 'Default partial.' },
+        notes: { type: 'string' },
+        send_receipt: { type: 'boolean', description: 'Email the client a receipt. Default FALSE; only true if the manager asked.' },
+      },
+      required: ['booking_ref', 'amount_cents', 'payment_method'],
+    },
+  },
+  {
+    name: 'propose_cancel',
+    description:
+      'PROPOSE cancelling a party. It frees the date and stops reminders; it does NOT refund anything and sends the client nothing. Nothing happens until the manager clicks Confirm. For a lead that never booked and paid nothing, prefer propose_mark_lost.',
+    input_schema: {
+      type: 'object',
+      properties: { booking_ref: { type: 'string' } },
+      required: ['booking_ref'],
+    },
+  },
+  {
+    name: 'propose_mark_lost',
+    description:
+      'PROPOSE marking a lead as lost (they said no). Only for a party with nothing paid; it sends the client nothing. Nothing happens until the manager clicks Confirm.',
+    input_schema: {
+      type: 'object',
+      properties: { booking_ref: { type: 'string' } },
+      required: ['booking_ref'],
+    },
+  },
+  {
+    name: 'propose_send_photos',
+    description:
+      'PROPOSE sending a client real party photos from the library, by email (photos inline) and/or a text that carries a LINK to a photo page (never a picture message). Choose the photos with photo_ids from find_photos, or with a party_type / theme / activity filter (the server finds them and the card shows thumbnails). Texts are refused outside 8am-9pm and to numbers that replied STOP. Nothing is sent until the manager clicks Confirm.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        photo_ids: { type: 'array', items: { type: 'string' } },
+        party_type: { type: 'string' },
+        theme: { type: 'string' },
+        activity: { type: 'string' },
+        email: { type: 'boolean' },
+        sms: { type: 'boolean' },
+      },
+      required: ['booking_ref', 'email', 'sms'],
+    },
+  },
 ]
 
 /* ── Small screens ────────────────────────────────────────────────────── */
@@ -296,6 +440,24 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await proposeSendClientLinks(supabase, input, ctx)
       case 'propose_pay_link':
         return await proposePayLink(supabase, input, ctx)
+      case 'get_quote':
+        return await getQuote(supabase, input)
+      case 'find_photos':
+        return await findPhotosTool(supabase, input)
+      case 'propose_update_party':
+        return await proposeUpdateParty(supabase, input, ctx)
+      case 'propose_add_line_item':
+        return await proposeAddLineItem(supabase, input, ctx)
+      case 'propose_remove_line_item':
+        return await proposeRemoveLineItem(supabase, input, ctx)
+      case 'propose_record_payment':
+        return await proposeRecordPayment(supabase, input, ctx)
+      case 'propose_cancel':
+        return await proposeCancel(supabase, input, ctx)
+      case 'propose_mark_lost':
+        return await proposeMarkLost(supabase, input, ctx)
+      case 'propose_send_photos':
+        return await proposeSendPhotos(supabase, input, ctx)
       default:
         return { result: { error: `Unknown tool ${name}` }, isError: true }
     }
@@ -678,4 +840,480 @@ async function proposePayLink(supabase: Supa, input: Record<string, unknown>, ct
     },
     proposal: minted,
   }
+}
+
+/* ── Read tools added with the admin overlay ──────────────────────────── */
+
+async function getQuote(supabase: Supa, input: Record<string, unknown>): Promise<ToolOutcome> {
+  const words = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+  const loaded = await loadQuoteCatalog(supabase)
+  if (loaded.kind !== 'ok') return { result: { error: 'The price list could not be read — say so; do not guess a price.' }, isError: true }
+  // The model supplies WORDS and a count. The arithmetic is lib/quoteEngine.ts.
+  const ans = quoteFromCatalog(loaded.data, {
+    partyType: input.party_type as 'studio' | 'mobile',
+    guests: Number(input.guests),
+    theme: str(input.theme, 80) ?? undefined,
+    activities: words(input.activities),
+    mini: input.mini_party === true,
+    addOns: words(input.add_ons),
+  })
+  if (!ans.ok) return { result: { error: ans.error }, isError: true }
+  return {
+    result: {
+      total: money(ans.quote.totalCents),
+      guests_priced: ans.quote.effectiveGuestCount,
+      line_items: ans.quote.lineItems.map(l => ({
+        item: l.name,
+        quantity: l.quantity,
+        each: money(l.unit_price_cents),
+        per_guest: l.guest_multiplied,
+      })),
+      not_found: ans.unmatched,
+      ambiguous: ans.ambiguous,
+      notes: [
+        ans.travelNotIncluded ? 'Mobile parties: the travel fee is added from the party address, so it is not in this total.' : null,
+        ans.unmatched.length || ans.ambiguous.length ? 'Some names did not match and are NOT in the total — ask, do not approximate.' : null,
+      ].filter(Boolean),
+      open_in_planner: ans.plannerUrl,
+    },
+  }
+}
+
+async function findPhotosTool(supabase: Supa, input: Record<string, unknown>): Promise<ToolOutcome> {
+  const limit = Math.max(1, Math.min(MAX_PHOTOS_PER_REQUEST, Math.floor(Number(input.limit) || 6)))
+  // findPhotos is the ONLY reader of the library: approved AND no identifiable child.
+  const r = await findPhotos(supabase, {
+    partyType: str(input.party_type, 40) ?? undefined,
+    themeSlug: str(input.theme, 60) ?? undefined,
+    activity: str(input.activity, 60) ?? undefined,
+    limit,
+  })
+  if (r.kind !== 'ok') return { result: { error: 'The photo library could not be read — say so.' }, isError: true }
+  return {
+    result: {
+      photos: r.data.map(p => ({ id: p.id, url: p.url, alt: p.alt, party_type: p.partyType, theme: p.themeSlug, activities: p.activities })),
+      note: r.data.length ? undefined : 'No approved photos match that. Say so; do not describe photos you have not been shown.',
+    },
+  }
+}
+
+/* ── Proposals added with the admin overlay ───────────────────────────── */
+
+interface BookingRow {
+  id: string
+  booking_ref: string
+  status: string | null
+  contact_name: string | null
+  contact_email: string | null
+  contact_phone: string | null
+  child_name: string | null
+  child_age: number | null
+  party_type: string | null
+  event_type: string | null
+  party_date: string | null
+  party_time: string | null
+  guest_count_approx: number | null
+  package_type: string | null
+  admin_notes: string | null
+  total_cents: number | null
+}
+
+const BOOKING_EDIT_COLUMNS =
+  'id, booking_ref, status, contact_name, contact_email, contact_phone, child_name, child_age, party_type, event_type, party_date, party_time, guest_count_approx, package_type, admin_notes, total_cents'
+
+type LoadedBooking = { ok: true; b: BookingRow } | { ok: false; out: ToolOutcome }
+
+const fail = (error: string): ToolOutcome => ({ result: { error }, isError: true })
+
+/**
+ * Three outcomes: a failed read is not "no such party". A cancelled or lost
+ * party is refused — the dashboard's reopen action is the way back, not a chat
+ * message.
+ */
+async function loadBooking(supabase: Supa, input: Record<string, unknown>): Promise<LoadedBooking> {
+  const ref = str(input.booking_ref, 40)
+  if (!ref) return { ok: false, out: fail('booking_ref is required') }
+  const { data, error } = await supabase.from('bookings').select(BOOKING_EDIT_COLUMNS).eq('booking_ref', ref).maybeSingle()
+  if (error) return { ok: false, out: fail('Could not read that party — say so.') }
+  if (!data) return { ok: false, out: fail(`No party with ref ${ref}`) }
+  const b = data as unknown as BookingRow
+  if (b.status === 'cancelled' || b.status === 'lost') {
+    return { ok: false, out: fail(`${b.booking_ref} is ${b.status}. Reopen it in the Parties tab first; nothing was proposed.`) }
+  }
+  return { ok: true, b }
+}
+
+function cardOutcome(
+  kind: Proposal['kind'],
+  proposalInput: Record<string, unknown>,
+  title: string,
+  details: string[],
+  ctx: ToolContext,
+  nothing: string,
+  photos?: ProposalPhoto[],
+): ToolOutcome {
+  const minted = mintProposal({ kind, input: proposalInput, title, details, actor: ctx.actor, ...(photos ? { photos } : {}) })
+  return {
+    result: {
+      status: 'awaiting_manager_confirmation',
+      proposal_id: minted.proposal.id,
+      shown_to_manager: details,
+      instruction: `${nothing} Tell the manager to review the card and click Confirm.`,
+    },
+    proposal: minted,
+  }
+}
+
+const partyLabel = (b: BookingRow) => `${b.booking_ref} — ${b.contact_name ?? 'client'}${b.party_date ? ` on ${b.party_date}` : ''}`
+
+/** Best-effort money picture for a card. null when the invoice could not be read. */
+async function moneyPicture(supabase: Supa, ref: string) {
+  const loaded = await loadPlanInvoice(ref, supabase)
+  if (!loaded.ok) return null
+  const inv = loaded.invoice
+  return { total: inv.totalCents, paid: inv.paidCents, outstanding: inv.outstandingCents, guests: inv.guestCount ?? null }
+}
+
+async function proposeUpdateParty(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+
+  // [PATCH column, label, old, new]. Status and money are deliberately absent.
+  const changes: Array<[string, string, unknown, unknown]> = []
+  const updates: Record<string, unknown> = {}
+  const set = (col: string, label: string, old: unknown, next: unknown) => {
+    updates[col] = next
+    changes.push([col, label, old, next])
+  }
+
+  if (input.party_date !== undefined) {
+    const d = isoDate(input.party_date)
+    if (d === 'invalid' || !d) return fail('party_date must be a real date, YYYY-MM-DD')
+    if (d < etToday(ctx.now)) return fail(`party_date ${d} is in the past — confirm the date with the manager.`)
+    set('party_date', 'Date', b.party_date, d)
+  }
+  if (input.party_time !== undefined) {
+    const t = str(input.party_time, 5)
+    if (!t || !HHMM.test(t)) return fail('party_time must be HH:mm (24-hour)')
+    set('party_time', 'Time', b.party_time, t)
+  }
+  if (input.guest_count !== undefined) {
+    const g = Math.floor(Number(input.guest_count))
+    if (!(g >= 1 && g <= 500)) return fail('guest_count must be between 1 and 500')
+    set('guest_count_approx', 'Guests', b.guest_count_approx, g)
+  }
+  if (input.child_name !== undefined) {
+    const v = str(input.child_name, 80)
+    if (!v) return fail('child_name cannot be empty')
+    set('child_name', 'Child', b.child_name, v)
+  }
+  if (input.child_age !== undefined) {
+    const a = Math.floor(Number(input.child_age))
+    if (!(a >= 0 && a <= 120)) return fail('child_age must be between 0 and 120')
+    set('child_age', 'Child age', b.child_age, a)
+  }
+  if (input.package_type !== undefined) {
+    const v = str(input.package_type, 120)
+    if (!v) return fail('package_type cannot be empty')
+    set('package_type', 'Package', b.package_type, v)
+  }
+  if (input.contact_name !== undefined) {
+    const v = str(input.contact_name, 120)
+    if (!v) return fail('contact_name cannot be empty')
+    set('contact_name', 'Client name', b.contact_name, v)
+  }
+  if (input.contact_email !== undefined) {
+    const v = str(input.contact_email, 200)
+    if (!v || !looksLikeEmail(v)) return fail('contact_email must be a valid email address')
+    set('contact_email', 'Client email', b.contact_email, v)
+  }
+  if (input.contact_phone !== undefined) {
+    const v = str(input.contact_phone, 40)
+    if (!v || !looksLikePhone(v)) return fail('contact_phone must be a phone number')
+    set('contact_phone', 'Client phone', b.contact_phone, v)
+  }
+  if (input.party_type !== undefined) {
+    const v = str(input.party_type, 40)
+    if (!v || !isPartyType(v)) return fail(`party_type must be one of ${PARTY_TYPES.join(', ')}`)
+    set('party_type', 'Party type', b.party_type, v)
+  }
+  if (input.admin_notes !== undefined) {
+    const v = str(input.admin_notes, 2000)
+    if (!v) return fail('admin_notes cannot be empty')
+    set('admin_notes', 'Internal note', b.admin_notes ? '(existing note)' : null, v)
+  }
+  if (changes.length === 0) return fail('Nothing to change — give at least one field.')
+
+  const shown = (v: unknown) => (v === null || v === undefined || v === '' ? 'not set' : String(v))
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    ...changes.map(([, label, old, next]) => `${label}: ${shown(old)} → ${shown(next)}`),
+    ...(changes.some(c => c[0] === 'guest_count_approx') ? ['Per-guest items are re-priced and the invoice total is recalculated.'] : []),
+    ...(changes.some(c => c[0] === 'contact_email')
+      ? ['The email is what the client signs in to their booking page with — changing it changes who can open it.']
+      : []),
+    ...(changes.some(c => c[0] === 'party_date' || c[0] === 'party_time')
+      ? ['The calendar event and the check-in reminders move with it. The client is not notified.']
+      : []),
+  ]
+  return cardOutcome(
+    'update_party',
+    { bookingId: b.id, bookingRef: b.booking_ref, updates },
+    `Update ${b.booking_ref}`,
+    details,
+    ctx,
+    'Nothing has been changed.',
+  )
+}
+
+async function proposeAddLineItem(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+
+  let name: string
+  let cents: number
+  let guestMultiplied: boolean
+  let source: string
+  const catalogName = str(input.add_on, 120)
+  if (catalogName) {
+    // The price comes from the catalog, not from the model.
+    const addOns = await loadLineItemAddOns(supabase)
+    const hits = addOns.filter(a => a.name.trim().toLowerCase() === catalogName.toLowerCase())
+    if (hits.length !== 1) {
+      const firstWord = catalogName.toLowerCase().split(/\s+/)[0] || '~'
+      const near = addOns
+        .filter(a => a.name.toLowerCase().includes(firstWord))
+        .slice(0, 8)
+        .map(a => `${a.name} (${money(a.priceCents)})`)
+      return fail(
+        hits.length > 1
+          ? `"${catalogName}" matches more than one add-on.`
+          : `No catalog add-on named "${catalogName}".${near.length ? ` Close: ${near.join('; ')}.` : ''} Use one of those names, or ask the manager for a custom name and price.`,
+      )
+    }
+    name = hits[0].name
+    cents = hits[0].priceCents
+    guestMultiplied = hits[0].guestMultiplied
+    source = 'catalog price'
+  } else {
+    const n = str(input.name, 120)
+    if (!n) return fail('Give add_on (a catalog name) or a custom name and unit_price_cents.')
+    const c = Math.round(Number(input.unit_price_cents))
+    // Not negative: a discount is a deliberate act in the dashboard, not
+    // something a chat transcript should be able to slip onto an invoice.
+    if (!Number.isFinite(c) || c < 0 || c > MAX_ITEM_CENTS) return fail('Custom items need a price between $0 and $10,000.')
+    name = n
+    cents = c
+    guestMultiplied = input.per_guest === true
+    source = 'price as stated by the manager'
+  }
+  const qty = input.quantity === undefined ? 1 : Math.floor(Number(input.quantity))
+  if (!(qty >= 1 && qty <= 100)) return fail('quantity must be 1-100')
+
+  const pic = await moneyPicture(supabase, b.booking_ref)
+  const guests = pic?.guests ?? b.guest_count_approx
+  const adds = billedTotalCents([{ unit_price_cents: cents, quantity: qty, guest_multiplied: guestMultiplied }], guests)
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    `Add: ${name}${qty > 1 ? ` ×${qty}` : ''} — ${money(cents)}${guestMultiplied ? ' per guest' : ''} (${source})`,
+    pic
+      ? `Adds about ${money(adds)}: invoice ${money(pic.total)} → ${money(pic.total + adds)}.`
+      : `Adds about ${money(adds)}. (The current total could not be read to preview.)`,
+    'The invoice total is recalculated when you confirm. The client is not notified.',
+  ]
+  return cardOutcome(
+    'add_line_item',
+    {
+      bookingId: b.id,
+      bookingRef: b.booking_ref,
+      name,
+      category: str(input.category, 40) ?? 'add-on',
+      quantity: qty,
+      unit_price_cents: cents,
+      guest_multiplied: guestMultiplied,
+    },
+    `Add ${name} to ${b.booking_ref}`,
+    details,
+    ctx,
+    'Nothing has been added.',
+  )
+}
+
+async function proposeRemoveLineItem(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const wanted = str(input.line_item_name, 120)
+  const wantedId = str(input.line_item_id, 60)
+  if (!wanted && !wantedId) return fail('line_item_name is required (as shown by get_party).')
+
+  const { data, error } = await supabase
+    .from('booking_line_items')
+    .select('id, name, quantity, unit_price_cents, guest_multiplied')
+    .eq('booking_id', b.id)
+  if (error) return fail('Could not read the invoice lines — say so.')
+  const rows = (data ?? []) as { id: string; name: string; quantity: number; unit_price_cents: number; guest_multiplied: boolean }[]
+  const hits = wantedId
+    ? rows.filter(r => r.id === wantedId)
+    : rows.filter(r => r.name.trim().toLowerCase() === (wanted as string).toLowerCase())
+  if (hits.length === 0) {
+    return fail(`No line item named "${wanted ?? wantedId}" on ${b.booking_ref}. Lines: ${rows.map(r => r.name).join('; ') || 'none'}.`)
+  }
+  if (hits.length > 1) {
+    return {
+      result: {
+        error: `More than one line is named "${wanted}". Call again with line_item_id for the one the manager means.`,
+        candidates: hits.map(r => ({ line_item_id: r.id, name: r.name, quantity: r.quantity, each: money(r.unit_price_cents), per_guest: r.guest_multiplied })),
+      },
+      isError: true,
+    }
+  }
+  const li = hits[0]
+  const pic = await moneyPicture(supabase, b.booking_ref)
+  const removes = billedTotalCents([li], pic?.guests ?? b.guest_count_approx)
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    `Remove: ${li.name}${li.quantity > 1 ? ` ×${li.quantity}` : ''} — ${money(li.unit_price_cents)}${li.guest_multiplied ? ' per guest' : ''}`,
+    pic
+      ? `Takes off about ${money(removes)}: invoice ${money(pic.total)} → ${money(pic.total - removes)}.`
+      : `Takes off about ${money(removes)}. (The current total could not be read to preview.)`,
+    'The invoice total is recalculated when you confirm. The client is not notified.',
+  ]
+  return cardOutcome(
+    'remove_line_item',
+    { bookingId: b.id, bookingRef: b.booking_ref, lineItemId: li.id },
+    `Remove ${li.name} from ${b.booking_ref}`,
+    details,
+    ctx,
+    'Nothing has been removed.',
+  )
+}
+
+async function proposeRecordPayment(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const cents = Number(input.amount_cents)
+  if (!Number.isSafeInteger(cents) || cents <= 0 || cents > 10_000_000) {
+    return fail('amount_cents must be a positive whole number of cents (up to $100,000).')
+  }
+  const method = typeof input.payment_method === 'string' ? input.payment_method : ''
+  if (!(ADMIN_PAYMENT_METHODS as readonly string[]).includes(method)) {
+    return fail(`payment_method must be one of ${ADMIN_PAYMENT_METHODS.join(', ')} — ask the manager which.`)
+  }
+  const type = input.payment_type === undefined ? 'partial' : String(input.payment_type)
+  // A refund is a negative row with Stripe bookkeeping behind it; it is not a chat action.
+  if (!(PAYMENT_TYPES as readonly string[]).includes(type) || type === 'refund') {
+    return fail('payment_type must be deposit, partial or final. Refunds are made in the dashboard.')
+  }
+  const sendReceipt = input.send_receipt === true
+  const notes = str(input.notes, 300)
+
+  const pic = await moneyPicture(supabase, b.booking_ref)
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    `Record: ${money(cents)} by ${method} (${type}).${notes ? ` Note: ${notes}` : ''}`,
+    pic
+      ? `Now: total ${money(pic.total)}, paid ${money(pic.paid)}, outstanding ${money(pic.outstanding)} → outstanding about ${money(Math.max(0, pic.outstanding - cents))} after.`
+      : 'The current balance could not be read to preview.',
+    ...(pic && pic.total > 0 && cents > pic.outstanding
+      ? [`Heads up: this is more than the ${money(pic.outstanding)} outstanding and will show as overpaid.`]
+      : []),
+    'This writes the payment into the books; it takes no money. The books decline it if a card payment already covers it.',
+    sendReceipt ? 'A receipt email WILL be sent to the client.' : 'No receipt is sent to the client.',
+  ]
+  return cardOutcome(
+    'record_payment',
+    {
+      bookingId: b.id,
+      bookingRef: b.booking_ref,
+      amount_cents: cents,
+      payment_method: method,
+      payment_type: type,
+      notes: notes ?? undefined,
+      send_receipt: sendReceipt,
+    },
+    `Record ${money(cents)} ${method} payment on ${b.booking_ref}`,
+    details,
+    ctx,
+    'Nothing has been recorded.',
+  )
+}
+
+async function proposeCancel(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const pic = await moneyPicture(supabase, b.booking_ref)
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    pic ? `Paid so far: ${money(pic.paid)}.` : 'What has been paid could not be read.',
+    'Cancelling frees the date on the calendar and stops the check-in texts.',
+    'It does NOT refund anything and sends the client nothing — refunds and messages are separate.',
+    ...(pic && pic.paid === 0 ? ['Nothing is paid: if this was a lead that said no, "mark lost" fits better.'] : []),
+  ]
+  return cardOutcome('cancel_party', { bookingId: b.id, bookingRef: b.booking_ref }, `Cancel ${b.booking_ref}`, details, ctx, 'Nothing has been cancelled.')
+}
+
+async function proposeMarkLost(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const pic = await moneyPicture(supabase, b.booking_ref)
+  if (!pic) return fail('Could not read what has been paid, so I cannot tell whether this is a lost lead. Nothing was proposed.')
+  if (pic.paid > 0) {
+    return fail(`${b.booking_ref} has ${money(pic.paid)} paid, so it was booked — propose_cancel is the right action, not mark lost.`)
+  }
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    'Marks the lead as lost (they said no). Nothing is paid.',
+    'The client is sent nothing. It can be reopened later in the Parties tab.',
+  ]
+  return cardOutcome('mark_lost', { bookingId: b.id, bookingRef: b.booking_ref }, `Mark ${b.booking_ref} as lost`, details, ctx, 'Nothing has changed.')
+}
+
+async function proposeSendPhotos(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const email = input.email === true
+  const sms = input.sms === true
+  if (!email && !sms) return fail('Choose email, sms, or both')
+  if (email && !(b.contact_email && looksLikeEmail(b.contact_email))) return fail('No valid email on that booking.')
+  if (sms && !b.contact_phone) return fail('No phone on that booking.')
+
+  const ids = Array.isArray(input.photo_ids)
+    ? Array.from(new Set((input.photo_ids as unknown[]).filter((v): v is string => typeof v === 'string'))).slice(0, MAX_PHOTOS_PER_REQUEST)
+    : []
+  const partyType = str(input.party_type, 40) ?? undefined
+  const themeSlug = str(input.theme, 60) ?? undefined
+  const activity = str(input.activity, 60) ?? undefined
+  if (ids.length === 0 && !partyType && !themeSlug && !activity) {
+    return fail('Say which photos: photo_ids from find_photos, or a party_type / theme / activity.')
+  }
+  // The ONLY reader of the photo library — approved AND no identifiable child.
+  const found = await findPhotos(supabase, ids.length ? { ids, limit: MAX_PHOTOS_PER_REQUEST } : { partyType, themeSlug, activity, limit: 6 })
+  if (found.kind !== 'ok') return fail('The photo library could not be read — say so.')
+  const photos = found.data
+  if (photos.length === 0) return fail('No approved photos match that, so there is nothing to send. Say so.')
+
+  const via = [email && `email to ${b.contact_email}`, sms && `a text with a link to ${b.contact_phone}`].filter(Boolean).join(' and ')
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    `Photos: ${photos.length}${ids.length && photos.length < ids.length ? ` (${ids.length - photos.length} of the ones asked for are not approved to send and are left out)` : ''}`,
+    `Send ${via}.`,
+    ...(email ? ['The email shows the photos inline with a link to see them all.'] : []),
+    ...(sms ? ['The text is a short link only, never a picture message. Texts are refused outside 8am–9pm and to numbers that replied STOP.'] : []),
+  ]
+  return cardOutcome(
+    'send_photos',
+    { bookingId: b.id, bookingRef: b.booking_ref, photoIds: photos.map(p => p.id), email, sms },
+    `Send ${photos.length} photo${photos.length === 1 ? '' : 's'} to ${b.contact_name ?? b.booking_ref}`,
+    details,
+    ctx,
+    'Nothing has been sent.',
+    photos.map(p => ({ id: p.id, url: p.url, alt: p.alt })),
+  )
 }

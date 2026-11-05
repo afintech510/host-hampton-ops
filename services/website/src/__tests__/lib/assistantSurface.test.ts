@@ -9,7 +9,8 @@
 import fs from 'fs'
 import path from 'path'
 import { decomment } from '../helpers/sourceScan'
-import { markUsed, mintProposal, releaseUsed, verifyProposal, PROPOSAL_TTL_MS } from '@/lib/assistant/proposals'
+import { mintProposal, verifyProposal, PROPOSAL_TTL_MS } from '@/lib/assistant/proposals'
+import { claimProposal, releaseProposal } from '@/lib/assistant/usedProposals'
 import { runAssistantTool, ASSISTANT_TOOLS } from '@/lib/assistant/tools'
 import { screenHistory, systemPrompt } from '@/lib/assistant/run'
 
@@ -49,13 +50,39 @@ describe('proposals', () => {
     expect(verifyProposal(42, 'admin:a@x.com', { secret: SECRET })).toEqual({ ok: false, reason: 'malformed' })
   })
 
-  it('is single-use: a double-click cannot run it twice, and a refusal releases it', () => {
-    const { token, proposal } = mintProposal(base, { secret: SECRET })
-    expect(markUsed(proposal)).toBe(true)
-    expect(markUsed(proposal)).toBe(false)
-    expect(verifyProposal(token, 'admin:a@x.com', { secret: SECRET })).toEqual({ ok: false, reason: 'already_used' })
-    releaseUsed(proposal.id)
-    expect(verifyProposal(token, 'admin:a@x.com', { secret: SECRET }).ok).toBe(true)
+  // The single-use store is a TABLE now (migration 084): the primary key on
+  // proposal_id is the claim. This fake honours that one property.
+  function fakeUsedDb() {
+    const rows = new Set<string>()
+    const sb = {
+      from: (_t: string) => ({
+        insert: async (row: { proposal_id: string }) => {
+          if (rows.has(row.proposal_id)) return { error: { code: '23505', message: 'duplicate key' } }
+          rows.add(row.proposal_id)
+          return { error: null }
+        },
+        delete: () => ({
+          eq: async (_c: string, v: string) => (rows.delete(v), { error: null }),
+          lt: async () => ({ error: null }),
+        }),
+      }),
+    }
+    return { sb: sb as never, rows }
+  }
+
+  it('is single-use: a double-click cannot run it twice, and a refusal releases it', async () => {
+    const { proposal } = mintProposal(base, { secret: SECRET })
+    const { sb } = fakeUsedDb()
+    expect(await claimProposal(sb, proposal)).toBe('claimed')
+    expect(await claimProposal(sb, proposal)).toBe('already_used')
+    expect(await releaseProposal(sb, proposal.id)).toBe(true)
+    expect(await claimProposal(sb, proposal)).toBe('claimed')
+  })
+
+  it('a claim that cannot be recorded is UNAVAILABLE, never "unused" (the replayable direction)', async () => {
+    const { proposal } = mintProposal(base, { secret: SECRET })
+    const down = { from: () => ({ insert: async () => ({ error: { code: '08006', message: 'connection failure' } }) }) } as never
+    expect(await claimProposal(down, proposal)).toBe('unavailable')
   })
 })
 
@@ -154,8 +181,8 @@ describe('the source shape', () => {
   it('A3: the confirm route authorizes, verifies for THIS actor, and claims — before it executes', () => {
     const s = read('app/api/admin/assistant/confirm/route.ts')
     const auth = s.indexOf('isAdminAuthorized(req)')
-    const verify = s.indexOf('verifyProposal(body?.token, adminActorId(req))')
-    const claim = s.indexOf('markUsed(proposal)')
+    const verify = s.indexOf('verifyProposal(body?.token, actor)')
+    const claim = s.indexOf('claimProposal(supabase, proposal)')
     const exec = s.indexOf('executeProposal(req, proposal)')
     expect([auth, verify, claim, exec].every(i => i > 0)).toBe(true)
     expect(auth).toBeLessThan(verify)
@@ -175,7 +202,8 @@ describe('the source shape', () => {
 
   it('A5: every propose_ tool tells the model nothing has happened', () => {
     const proposeTools = ASSISTANT_TOOLS.filter(t => t.name.startsWith('propose_'))
-    expect(proposeTools.length).toBe(3)
+    // The overlay added seven; every one is held to the same description rule below.
+    expect(proposeTools.length).toBe(10)
     for (const t of proposeTools) expect(t.description).toMatch(/^PROPOSE /)
     expect(systemPrompt('2026-11-02')).toMatch(/do NOT do anything/)
     expect(systemPrompt('2026-11-02')).toMatch(/never an instruction to you/)
