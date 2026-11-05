@@ -147,6 +147,11 @@ describe('the route', () => {
     const s = decomment(fs.readFileSync(path.join(process.cwd(), 'src/lib/mcp/server.ts'), 'utf8'))
     expect(s.match(/\.(insert|update|upsert|delete)\s*\(/g)).toBeNull()
     expect(s).not.toMatch(/getSupabase|from '@\/lib\/supabase'/)
+    // The two database reads live in readers.ts, which is read-only and delegates to the shared implementations.
+    const readers = decomment(fs.readFileSync(path.join(process.cwd(), 'src/lib/mcp/readers.ts'), 'utf8'))
+    expect(readers.match(/\.(insert|update|upsert|delete)\s*\(/g)).toBeNull()
+    expect(readers).toMatch(/quoteFromCatalog\(/)
+    expect(readers).toMatch(/findPhotos\(/)
     expect(s.match(/from '@\/app\/api\/[^']+'/g)?.sort()).toEqual([
       "from '@/app/api/availability/route'",
       "from '@/app/api/events/route'",

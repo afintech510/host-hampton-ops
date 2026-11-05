@@ -10,6 +10,8 @@ import { GET as llmsTxt } from '@/app/llms.txt/route'
 import { GET as availabilityRoute } from '@/app/api/availability/route'
 import { GET as eventsRoute } from '@/app/api/events/route'
 import { POST as leadRoute } from '@/app/api/lead/route'
+import { MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
+import { photosFor, quoteParty } from '@/lib/mcp/readers'
 
 /**
  * The PUBLIC MCP server: what ChatGPT, Claude or Gemini can ask this business
@@ -87,6 +89,48 @@ export function listTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: READ,
     },
+    {
+      name: 'get_quote',
+      title: 'Price a party',
+      description: `Price a party at ${name} from the live price list: the theme (studio parties), guest count, activities and add-ons. Prices come from the same engine as the website's party planner; never estimate one yourself. Names must match the catalog — call list_party_themes first. Returns the total, each line item, and a planner link already filled in. A quote is not a booking.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          party_type: { type: 'string', enum: ['studio', 'mobile'], description: 'studio = at the studio; mobile = we come to the family.' },
+          guests: { type: 'integer', description: `Number of children invited, 1-${MAX_QUOTE_GUESTS}.` },
+          theme: { type: 'string', description: 'Studio parties only: a theme name from list_party_themes.' },
+          activities: { type: 'array', items: { type: 'string' }, description: 'Activity names, in the order the parent prefers them (the first premium one is the included one on higher themes).' },
+          mini_party: { type: 'boolean', description: 'Studio only: the shorter Mini Party.' },
+          add_ons: { type: 'array', items: { type: 'string' }, description: 'Food, dessert, drink, decor, entertainment or party add-on names.' },
+        },
+        required: ['party_type', 'guests'],
+        additionalProperties: false,
+      },
+      annotations: READ,
+    },
+    {
+      name: 'find_photos',
+      title: 'Photos of our parties',
+      description: `Real photos from ${name} parties, filtered by party type, theme or activity. Only photos that have been reviewed and show no identifiable children are ever returned. Share the links with the parent.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          party_type: { type: 'string', enum: ['in_studio_theme', 'mobile_party', 'public_event'], description: 'Optional.' },
+          theme: { type: 'string', description: 'Optional theme slug, e.g. glow-party.' },
+          activity: { type: 'string', description: 'Optional activity tag, e.g. slime-making.' },
+          limit: { type: 'integer', description: 'How many, 1-8. Default 4.' },
+        },
+        additionalProperties: false,
+      },
+      annotations: READ,
+    },
+    {
+      name: 'get_booking_link',
+      title: 'How to book',
+      description: `The links a parent uses to book at ${name}: the planner (pick everything and pay the deposit) and the inquiry form, plus the phone number for a person. Nothing is reserved until the deposit is paid.`,
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: READ,
+    },
   ]
   if (featureEnabled('publicMcpInquiry', env)) {
     tools.push({
@@ -117,7 +161,7 @@ export function listTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
 }
 
 export interface ToolCallResult {
-  content: { type: 'text'; text: string }[]
+  content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]
   structuredContent?: Record<string, unknown>
   isError?: boolean
 }
@@ -225,6 +269,61 @@ export async function callTool(
       })
     }
 
+    case 'get_quote': {
+      const strList = (v: unknown) => (Array.isArray(v) ? (v as unknown[]).filter((x): x is string => typeof x === 'string') : [])
+      const q = await quoteParty({
+        partyType: args.party_type as 'studio' | 'mobile',
+        guests: Number(args.guests),
+        theme: str(args.theme, 80),
+        activities: strList(args.activities),
+        mini: args.mini_party === true,
+        addOns: strList(args.add_ons),
+      })
+      if (q.kind !== 'ok') return fail(`The price list could not be read right now. Please call ${TENANT.contact.phoneDisplay}.`)
+      const ans = q.answer
+      if (!ans.ok) return fail(ans.error)
+      const data = {
+        total: usd(ans.quote.totalCents),
+        total_cents: ans.quote.totalCents,
+        guests_priced: ans.quote.effectiveGuestCount,
+        line_items: ans.quote.lineItems.map(l => ({ item: l.name, quantity: l.quantity, each: usd(l.unit_price_cents), per_guest: l.guest_multiplied })),
+        not_found: ans.unmatched,
+        ambiguous: ans.ambiguous,
+        notes: [
+          ans.travelNotIncluded ? 'Mobile parties: the travel fee is added from the party address when it is booked, so it is not in this total.' : null,
+          'This is a quote, not a booking. The date is held once the deposit is paid.',
+          ans.unmatched.length || ans.ambiguous.length ? 'Some names were not matched and are NOT in the total — ask the parent, or use list_party_themes.' : null,
+        ].filter(Boolean),
+        open_in_planner: ans.plannerUrl,
+        book: `${CANONICAL_ORIGIN}/book`,
+      }
+      return ok(data)
+    }
+
+    case 'find_photos': {
+      const limit = Math.max(1, Math.min(8, Math.floor(Number(args.limit) || 4)))
+      const r = await photosFor({
+        partyType: str(args.party_type, 40), themeSlug: str(args.theme, 60), activity: str(args.activity, 60), limit,
+      })
+      if (r.kind !== 'ok') return fail('Photos could not be loaded right now.')
+      const photos = r.photos.map(p => ({ url: p.url, description: p.alt, party_type: p.partyType, theme: p.themeSlug, activities: p.activities, instagram: p.igPermalink }))
+      return ok(
+        { photos, more_photos: `${CANONICAL_ORIGIN}/gallery` },
+        photos.length
+          ? `${photos.length} photo${photos.length === 1 ? '' : 's'}:\n${photos.map(p => `- ${p.description || 'Party photo'}: ${p.url}`).join('\n')}\n\nMore: ${CANONICAL_ORIGIN}/gallery`
+          : `No reviewed photos match that yet. See the gallery: ${CANONICAL_ORIGIN}/gallery`,
+      )
+    }
+
+    case 'get_booking_link': {
+      return ok({
+        plan_and_book: `${CANONICAL_ORIGIN}/party-builder`,
+        inquiry_form: `${CANONICAL_ORIGIN}/book`,
+        phone: TENANT.contact.phoneDisplay,
+        note: 'The date is held once the deposit is paid; nothing is reserved before that.',
+      })
+    }
+
     case 'start_inquiry': {
       if (!featureEnabled('publicMcpInquiry', env)) return fail('Inquiries are not accepted here — use the website.')
       const fullName = str(args.full_name, 200)
@@ -298,7 +397,7 @@ export function serverInstructions(): string {
   return [
     `${TENANT.business.name}: ${TENANT.business.oneLiner}`,
     `Location: ${STUDIO_ADDRESS_LINE}. Phone ${TENANT.contact.phoneDisplay}. Website ${CANONICAL_ORIGIN}.`,
-    'Use get_business_overview for general questions, list_party_themes for themes and studio prices, check_date_availability for a date, and start_inquiry only when the parent asks you to send their details.',
+    'Use get_business_overview for general questions, list_party_themes for themes and studio prices, get_quote to price a specific party, find_photos for real party photos, check_date_availability for a date, get_booking_link for how to book, and start_inquiry only when the parent asks you to send their details.',
     'Quote only prices these tools return. Never promise a date is reserved.',
   ].join('\n')
 }

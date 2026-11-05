@@ -8,6 +8,11 @@ import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import { loadStripe } from '@stripe/stripe-js'
 import { formatMoney, calculateCardFee, getDepositCents, getCategoryLockState, type LockCategory } from '@/lib/partyPricing'
 import { FALLBACK_CATALOG, mobileBaseCentsFor, type PricingCatalog } from '@/lib/pricingCatalog'
+import {
+  PREMIUM_EXTRA_CENTS, PREMIUM_UPGRADE_FLAT_CENTS, STANDARD_EXTRA_CENTS, MAX_PREMIUM_ACTIVITIES, MAX_STANDARD_ACTIVITIES,
+  activityCostCents, buildLineItems, buildQuoteItems, includedPremiumCount as includedPremiumCountFor, mobileActivityCostCents,
+  totalCents as quoteTotalCents, type QuoteSelection,
+} from '@/lib/quoteEngine'
 import MyPartiesModal from './MyPartiesModal'
 import ClientNav from '@/components/ClientNav'
 import ChangesModal from './ChangesModal'
@@ -905,12 +910,6 @@ export default function PartyBuilderContent({
        price as picking the $950 theme outright).
      Second premium (regardless of theme): +$25/person × (guests+1).
      Standard: 1st & 2nd included, 3rd = $5/person × (guests+1), max 3. */
-  const PREMIUM_EXTRA_CENTS = 2500              // 2nd premium per-person rate
-  const PREMIUM_UPGRADE_FLAT_CENTS = 10000      // $100 flat — first premium on sub-$950 themes
-  const THEME_PREMIUM_INCLUDED_THRESHOLD = 95000 // $950 — themes at/above include 1 premium
-  const STANDARD_EXTRA_CENTS = 500
-  const MAX_PREMIUM_ACTIVITIES = 2
-  const MAX_STANDARD_ACTIVITIES = 3
 
   const premiumIdSet = useMemo(() => new Set(premiumActivities.map(a => a.id)), [premiumActivities])
   const standardIdSet = useMemo(() => new Set(standardActivities.map(a => a.id)), [standardActivities])
@@ -925,22 +924,23 @@ export default function PartyBuilderContent({
 
   // How many premium activities the selected theme includes for free.
   // Computed from the theme item price so admin can adjust thresholds in DB.
-  const themeItemForPremium = selectedTheme ? itemMap.get(selectedTheme) : null
-  const includedPremiumCount = themeItemForPremium && themeItemForPremium.price_cents >= THEME_PREMIUM_INCLUDED_THRESHOLD ? 1 : 0
+  const quoteItems = useMemo(
+    () => buildQuoteItems({ themes, premiumActivities, standardActivities, food, desserts, beverages, decor, entertainment, partyAddOns }),
+    [themes, premiumActivities, standardActivities, food, desserts, beverages, decor, entertainment, partyAddOns],
+  )
+  const includedPremiumCount = includedPremiumCountFor(quoteItems, selectedTheme)
 
-  const activityCost = useMemo(() => {
-    const multiplier = effectiveGuestCount + 1 // includes birthday child
-    let cost = 0
-    // Premium 1 (idx 0): free if theme includes it, else +$100 flat
-    if (selectedPremiumIds.length >= 1 && includedPremiumCount < 1) {
-      cost += PREMIUM_UPGRADE_FLAT_CENTS
-    }
-    // Premium 2 (idx 1): always +$25/person × (guests+1)
-    if (selectedPremiumIds.length >= 2) cost += PREMIUM_EXTRA_CENTS * multiplier
-    // Standard 3+ (idx 2+): +$5/person × (guests+1)
-    if (selectedStandardIds.length >= 3) cost += STANDARD_EXTRA_CENTS * multiplier
-    return cost
-  }, [selectedPremiumIds.length, selectedStandardIds.length, effectiveGuestCount, includedPremiumCount])
+  // The planner's whole selection as plain data: the quote engine (lib/quoteEngine.ts) is the one place it is priced.
+  const quoteSelection: QuoteSelection = useMemo(() => ({
+    locationType: locationType === 'mobile' ? 'mobile' : 'studio',
+    guestCount, isMiniParty, themeId: selectedTheme,
+    activityIds: Array.from(selectedActivities), foodIds: Array.from(selectedFood), dessertIds: Array.from(selectedDesserts),
+    beverageIds: Array.from(selectedBeverages), decorIds: Array.from(selectedDecor), entertainmentIds: Array.from(selectedEntertainment),
+    partyAddOnIds: Array.from(selectedPartyAddOns), foodQty: Object.fromEntries(foodQty), decorQty: Object.fromEntries(decorQty),
+    customItems, travelFeeCents: locationType === 'mobile' ? (mileage?.feeCents ?? 0) : 0,
+  }), [locationType, guestCount, isMiniParty, selectedTheme, selectedActivities, selectedFood, selectedDesserts, selectedBeverages, selectedDecor, selectedEntertainment, selectedPartyAddOns, foodQty, decorQty, customItems, mileage?.feeCents])
+
+  const activityCost = useMemo(() => activityCostCents(cat, quoteItems, quoteSelection), [cat, quoteItems, quoteSelection])
 
   /* ── mobile party derived values ── */
   const isMobile = locationType === 'mobile'
@@ -965,21 +965,10 @@ export default function PartyBuilderContent({
   //   standard activity → $5/person × guests
   //   anything else with a non-zero price → its own price × guests
   // No first-free rule.
-  const mobileActivityCost = useMemo(() => {
-    if (!isMobile) return 0
-    let sum = 0
-    for (const id of Array.from(selectedActivities)) {
-      const item = itemMap.get(id)
-      if (!item) continue
-      let rate = item.price_cents
-      if (rate <= 0) {
-        if (premiumIdSet.has(id)) rate = PREMIUM_EXTRA_CENTS
-        else if (standardIdSet.has(id)) rate = STANDARD_EXTRA_CENTS
-      }
-      sum += rate * effectiveGuestCount
-    }
-    return sum
-  }, [isMobile, selectedActivities, itemMap, effectiveGuestCount, premiumIdSet, standardIdSet])
+  const mobileActivityCost = useMemo(
+    () => (isMobile ? mobileActivityCostCents(cat, quoteItems, quoteSelection) : 0),
+    [isMobile, cat, quoteItems, quoteSelection],
+  )
 
   const getActivityLabel = (item: PricingItem): string => {
     if (isMobile) {
@@ -1009,66 +998,7 @@ export default function PartyBuilderContent({
     return fmt(item.price_cents, item.price_label)
   }
 
-  const total = useMemo(() => {
-    let sum = 0
-
-    if (isMobile) {
-      // Mobile Party: composite package (base tier + travel) + activities
-      // per-person + entertainment + party extras + admin custom items.
-      // Theme/food/drinks/desserts/decor are hidden in mobile mode.
-      sum += mobilePackageCents
-      sum += mobileActivityCost
-      for (const id of Array.from(selectedEntertainment)) {
-        const item = itemMap.get(id)
-        if (!item) continue
-        sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount : item.price_cents
-      }
-      for (const id of Array.from(selectedPartyAddOns)) {
-        const item = itemMap.get(id)
-        if (!item) continue
-        sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount : item.price_cents
-      }
-      for (const ci of customItems) {
-        // Skip the legacy mobile-cupcakes auto-item if it's still hanging around
-        if (ci.id === 'mobile-cupcakes') continue
-        sum += ci.guest_multiplied ? ci.price_cents * ci.quantity * effectiveGuestCount : ci.price_cents * ci.quantity
-      }
-      return Math.max(0, sum)
-    }
-
-    // Studio party (Host Hampton)
-    if (selectedTheme) sum += itemMap.get(selectedTheme)?.price_cents ?? 0
-    if (isMiniParty && selectedTheme) sum -= MINI_PARTY_DISCOUNT_CENTS
-    sum += extraGuests * EXTRA_GUEST_CENTS
-    // Activities: special pricing rules — see activityCost calc above
-    sum += activityCost
-    for (const id of Array.from(selectedFood)) {
-      const item = itemMap.get(id)
-      if (!item) continue
-      const qty = foodQty.get(id) ?? 1
-      sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount * qty : item.price_cents * qty
-    }
-    const flatNoQty = [
-      ...Array.from(selectedDesserts), ...Array.from(selectedBeverages),
-      ...Array.from(selectedEntertainment), ...Array.from(selectedPartyAddOns),
-    ]
-    for (const id of flatNoQty) {
-      const item = itemMap.get(id)
-      if (!item) continue
-      sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount : item.price_cents
-    }
-    for (const id of Array.from(selectedDecor)) {
-      const item = itemMap.get(id)
-      if (!item) continue
-      const qty = decorQty.get(id) ?? 1
-      sum += item.price_type === 'per_person' ? item.price_cents * effectiveGuestCount : item.price_cents * qty
-    }
-    // Admin custom items + discounts
-    for (const ci of customItems) {
-      sum += ci.guest_multiplied ? ci.price_cents * ci.quantity * effectiveGuestCount : ci.price_cents * ci.quantity
-    }
-    return Math.max(0, sum)
-  }, [isMobile, mobilePackageCents, mobileActivityCost, selectedTheme, isMiniParty, extraGuests, effectiveGuestCount, activityCost, selectedFood, foodQty, selectedDesserts, selectedBeverages, selectedDecor, decorQty, selectedEntertainment, selectedPartyAddOns, itemMap, customItems])
+  const total = useMemo(() => quoteTotalCents(cat, quoteItems, quoteSelection), [cat, quoteItems, quoteSelection])
 
   /* ── capture / apply snapshot helpers ── */
   const captureSnapshot = useCallback((): PlanSnapshot => ({
@@ -1165,176 +1095,7 @@ export default function PartyBuilderContent({
 
   /* ── build structured line items ── */
   function getLineItems() {
-    const lineItems: { name: string; category: string; quantity: number; unit_price_cents: number; price_type: string; guest_multiplied: boolean; pricing_item_id?: string }[] = []
-
-    if (isMobile) {
-      // Mobile Party: one composite "Mobile Party Package" line covering the
-      // base fee + travel. Activities billed per-person, every activity. No
-      // theme/food/drinks/desserts/decor lines.
-      // This label is persisted on the line item and therefore ends up on the
-      // customer's invoice, so it has to name the band the price came from.
-      const tierLabel = effectiveGuestCount > MOBILE_TIER3_GUEST_THRESHOLD
-        ? ` (${MOBILE_TIER3_GUEST_THRESHOLD + 1}+ guests)`
-        : effectiveGuestCount > MOBILE_TIER2_GUEST_THRESHOLD
-          ? ` (${MOBILE_TIER2_GUEST_THRESHOLD + 1}–${MOBILE_TIER3_GUEST_THRESHOLD} guests)`
-          : ` (up to ${MOBILE_TIER2_GUEST_THRESHOLD} guests)`
-      lineItems.push({
-        name: `Mobile Party Package${tierLabel}`,
-        category: 'mobile-package',
-        quantity: 1,
-        unit_price_cents: mobilePackageCents, // base tier + travel, bundled
-        price_type: 'flat',
-        guest_multiplied: false,
-      })
-
-      // Per-activity per-person — every selected activity is billed.
-      // Activities in pricing_items have price_cents=0 (they're "included" in
-      // studio mode), so fall back to premium/standard category rates.
-      for (const id of Array.from(selectedActivities)) {
-        const item = itemMap.get(id); if (!item) continue
-        let rate = item.price_cents
-        if (rate <= 0) {
-          if (premiumIdSet.has(id)) rate = PREMIUM_EXTRA_CENTS
-          else if (standardIdSet.has(id)) rate = STANDARD_EXTRA_CENTS
-        }
-        lineItems.push({
-          name: item.name,
-          category: 'activity-add-on',
-          quantity: 1,
-          unit_price_cents: rate,
-          price_type: 'per_person',
-          guest_multiplied: true,
-          pricing_item_id: item.id,
-        })
-      }
-
-      // Entertainment — existing per-item pricing
-      for (const id of Array.from(selectedEntertainment)) {
-        const item = itemMap.get(id); if (!item) continue
-        lineItems.push({
-          name: item.name,
-          category: 'entertainment-add-on',
-          quantity: 1,
-          unit_price_cents: item.price_cents,
-          price_type: item.price_type === 'per_person' ? 'per_person' : 'flat',
-          guest_multiplied: item.price_type === 'per_person',
-          pricing_item_id: item.id,
-        })
-      }
-
-      // Party Extras — same per-item pricing as studio
-      for (const id of Array.from(selectedPartyAddOns)) {
-        const item = itemMap.get(id); if (!item) continue
-        lineItems.push({
-          name: item.name,
-          category: 'extra',
-          quantity: 1,
-          unit_price_cents: item.price_cents,
-          price_type: item.price_type === 'per_person' ? 'per_person' : 'flat',
-          guest_multiplied: item.price_type === 'per_person',
-          pricing_item_id: item.id,
-        })
-      }
-
-      // Admin custom items (skip the legacy mobile-cupcakes auto-item)
-      for (const ci of customItems) {
-        if (ci.id === 'mobile-cupcakes') continue
-        lineItems.push({
-          name: ci.name,
-          category: ci.is_discount ? 'discount' : 'custom',
-          quantity: ci.quantity,
-          unit_price_cents: ci.price_cents,
-          price_type: ci.guest_multiplied ? 'per_person' : 'flat',
-          guest_multiplied: ci.guest_multiplied,
-        })
-      }
-      return lineItems
-    }
-
-    // Studio party (Host Hampton)
-    if (themeItem) {
-      let themePriceCents = themeItem.price_cents
-      if (isMiniParty) themePriceCents = Math.max(0, themePriceCents - MINI_PARTY_DISCOUNT_CENTS)
-      lineItems.push({ name: themeItem.name, category: 'theme', quantity: 1, unit_price_cents: themePriceCents, price_type: 'flat', guest_multiplied: false, pricing_item_id: themeItem.id })
-    }
-    if (extraGuests > 0) {
-      lineItems.push({ name: 'Additional Guests', category: 'theme', quantity: extraGuests, unit_price_cents: EXTRA_GUEST_CENTS, price_type: 'flat', guest_multiplied: false })
-    }
-    const addFromSet = (ids: Set<string>, cat: string, qtyMap?: Map<string, number>) => {
-      for (const id of Array.from(ids)) {
-        const item = itemMap.get(id)
-        if (!item) continue
-        const qty = qtyMap?.get(id) ?? 1
-        lineItems.push({
-          name: item.name, category: cat, quantity: qty,
-          unit_price_cents: item.price_cents,
-          price_type: item.price_type === 'per_person' ? 'per_person' : 'flat',
-          guest_multiplied: item.price_type === 'per_person',
-          pricing_item_id: item.id,
-        })
-      }
-    }
-    // Activities: special pricing rules.
-    // - 1st premium: free if theme includes it ($950+), else +$100 flat
-    // - 2nd premium: +$25/person × (guests+1)
-    // - 3rd standard: +$5/person × (guests+1)
-    const aMult = effectiveGuestCount + 1
-    selectedPremiumIds.forEach((id, idx) => {
-      const item = itemMap.get(id); if (!item) return
-      let unitPriceCents: number
-      let suffix: string
-      if (idx === 0) {
-        if (includedPremiumCount >= 1) {
-          unitPriceCents = 0
-          suffix = ' (1st premium — included)'
-        } else {
-          unitPriceCents = PREMIUM_UPGRADE_FLAT_CENTS
-          suffix = ' (1st premium — +$100 upgrade)'
-        }
-      } else {
-        unitPriceCents = PREMIUM_EXTRA_CENTS * aMult
-        suffix = ' (2nd premium — extra)'
-      }
-      lineItems.push({
-        name: item.name + suffix,
-        category: 'activity-add-on',
-        quantity: 1,
-        unit_price_cents: unitPriceCents,
-        price_type: 'flat',
-        guest_multiplied: false,
-        pricing_item_id: item.id,
-      })
-    })
-    selectedStandardIds.forEach((id, idx) => {
-      const item = itemMap.get(id); if (!item) return
-      lineItems.push({
-        name: item.name + (idx < 2 ? ' (included)' : ' (3rd standard — extra)'),
-        category: 'activity-add-on',
-        quantity: 1,
-        unit_price_cents: idx < 2 ? 0 : STANDARD_EXTRA_CENTS * aMult,
-        price_type: 'flat',
-        guest_multiplied: false,
-        pricing_item_id: item.id,
-      })
-    })
-    addFromSet(selectedFood, 'food-add-on', foodQty)
-    addFromSet(selectedDesserts, 'dessert-add-on')
-    addFromSet(selectedBeverages, 'beverage-add-on')
-    addFromSet(selectedDecor, 'decor-add-on', decorQty)
-    addFromSet(selectedEntertainment, 'entertainment-add-on')
-    addFromSet(selectedPartyAddOns, 'extra')
-    // Admin custom items
-    for (const ci of customItems) {
-      lineItems.push({
-        name: ci.name,
-        category: ci.is_discount ? 'discount' : 'custom',
-        quantity: ci.quantity,
-        unit_price_cents: ci.price_cents,
-        price_type: ci.guest_multiplied ? 'per_person' : 'flat',
-        guest_multiplied: ci.guest_multiplied,
-      })
-    }
-    return lineItems
+    return buildLineItems(cat, quoteItems, quoteSelection)
   }
 
   /* ── post-deposit bottom-bar handlers ── */
