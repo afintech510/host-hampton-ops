@@ -29,6 +29,13 @@ export const dynamic = 'force-dynamic'
  */
 const CONTENT_LAST_MODIFIED = '2026-10-04'
 
+/**
+ * The town pages changed on their own date: 13 towns added and every page
+ * gained a spa-party answer on 2026-11-04. Kept separate so the craft pages,
+ * which did not change, are not re-announced as modified.
+ */
+const TOWN_PAGES_LAST_MODIFIED = '2026-11-04'
+
 interface Entry {
   path: string
   changefreq: string
@@ -42,7 +49,7 @@ const STATIC_ROUTES: Entry[] = [
   // Every theme we have hosted, beyond the packages (lib/hostedThemes.ts).
   { path: '/party-themes', changefreq: 'monthly', priority: 0.8, lastmod: '2026-10-11' },
   { path: '/mobile-party', changefreq: 'weekly', priority: 0.9 },
-  { path: '/mobile-craft-party', changefreq: 'weekly', priority: 0.9 },
+  { path: '/mobile-craft-party', changefreq: 'weekly', priority: 0.9, lastmod: TOWN_PAGES_LAST_MODIFIED },
   { path: '/party-room-rental', changefreq: 'monthly', priority: 0.8 },
   { path: '/studio-rental', changefreq: 'monthly', priority: 0.8 },
   { path: '/fantasy-football-draft-party', changefreq: 'monthly', priority: 0.8, lastmod: '2026-10-16' },
@@ -109,7 +116,7 @@ export async function GET() {
 
   // Mobile craft party location landing pages.
   for (const l of LOCATIONS) {
-    entries.push({ path: `/mobile-craft-party/${l.slug}`, changefreq: 'monthly', priority: 0.7, lastmod: CONTENT_LAST_MODIFIED })
+    entries.push({ path: `/mobile-craft-party/${l.slug}`, changefreq: 'monthly', priority: 0.7, lastmod: TOWN_PAGES_LAST_MODIFIED })
   }
 
   // Craft / theme landing pages (/slime-party, /spa-party, …).

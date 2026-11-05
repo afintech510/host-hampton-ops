@@ -70,6 +70,12 @@ export const LOCATIONS: Location[] = [
   { slug: 'montauk', name: 'Montauk', county: 'Suffolk', region: 'East End · South Fork', milesFromStudio: 44, travelTier: 'eastEnd', nearby: ['Amagansett', 'East Hampton'], context: 'Yes — we go all the way out to The End. Montauk beach houses and summer rentals are within our travel range.' },
   { slug: 'sagaponack', name: 'Sagaponack', county: 'Suffolk', region: 'East End · South Fork', milesFromStudio: 24, travelTier: 'eastEnd', nearby: ['Bridgehampton', 'Wainscott', 'Water Mill'], context: 'Sagaponack’s open farmland backyards give us room to run every station outdoors.' },
 
+  // ── Moriches Bay (just west of the studio) ──
+  // Added 2026-11-04: inside the free 20-mile radius and had no page at all.
+  // An East Moriches mobile inquiry came in 2026-10-03.
+  { slug: 'east-moriches', name: 'East Moriches', county: 'Suffolk', region: 'Moriches Bay', milesFromStudio: 6, travelTier: 'included', nearby: ['Center Moriches', 'Eastport', 'Manorville'], context: 'East Moriches is a few minutes west of our Speonk studio along Montauk Highway — about as close to home as our route gets.' },
+  { slug: 'center-moriches', name: 'Center Moriches', county: 'Suffolk', region: 'Moriches Bay', milesFromStudio: 9, travelTier: 'included', nearby: ['East Moriches', 'Mastic', 'Manorville'], context: 'Center Moriches sits on Moriches Bay, a short drive west of our studio along Montauk Highway.' },
+
   // ── East End · North Fork ──
   { slug: 'riverhead', name: 'Riverhead', county: 'Suffolk', region: 'East End · North Fork', milesFromStudio: 14, travelTier: 'included', nearby: ['Aquebogue', 'Wading River', 'Calverton'], context: 'Riverhead sits right at the fork of the Island — an easy, close-in drive for our team.' },
   { slug: 'mattituck', name: 'Mattituck', county: 'Suffolk', region: 'East End · North Fork', milesFromStudio: 24, travelTier: 'eastEnd', nearby: ['Cutchogue', 'Jamesport', 'Southold'], context: 'North Fork farm stands and vineyards make Mattituck a scenic at-home party spot.' },
@@ -83,6 +89,10 @@ export const LOCATIONS: Location[] = [
   { slug: 'smithtown', name: 'Smithtown', county: 'Suffolk', region: 'Central Suffolk', milesFromStudio: 38, travelTier: 'western', nearby: ['Nesconset', 'St. James', 'Hauppauge'], context: 'Smithtown’s roomy suburban backyards are a great fit for a full craft-station lineup.' },
   { slug: 'babylon', name: 'Babylon', county: 'Suffolk', region: 'Central Suffolk', milesFromStudio: 40, travelTier: 'western', nearby: ['West Islip', 'Lindenhurst', 'Amityville'], context: 'From Babylon Village to the South Shore, we bring the whole party to your door.' },
   { slug: 'huntington', name: 'Huntington', county: 'Suffolk', region: 'Central Suffolk', milesFromStudio: 46, travelTier: 'western', nearby: ['Melville', 'Northport', 'Cold Spring Harbor'], context: 'We travel out to Huntington and the North Shore for at-home and community parties.' },
+  // Added 2026-11-04 — both towns sent mobile inquiries this fall (West Islip
+  // 2026-09-24, Holbrook 2026-10-27) and neither had a page.
+  { slug: 'holbrook', name: 'Holbrook', county: 'Suffolk', region: 'Central Suffolk', milesFromStudio: 28, travelTier: 'western', nearby: ['Ronkonkoma', 'Holtsville', 'Sayville', 'Patchogue'], context: 'Holbrook sits in the middle of Suffolk, next to Ronkonkoma and Long Island MacArthur Airport.' },
+  { slug: 'west-islip', name: 'West Islip', county: 'Suffolk', region: 'Central Suffolk', milesFromStudio: 40, travelTier: 'western', nearby: ['Babylon', 'Bay Shore', 'West Babylon'], context: 'West Islip’s South Shore neighborhoods run down to the Great South Bay, between Babylon and Bay Shore.' },
 
   // ── Nassau County ──
   { slug: 'rockville-centre', name: 'Rockville Centre', county: 'Nassau', region: 'Nassau County', milesFromStudio: 55, travelTier: 'nassau', nearby: ['Lynbrook', 'Baldwin', 'Oceanside'], context: 'Rockville Centre families can book our mobile craft party with a little advance notice.' },
@@ -90,6 +100,19 @@ export const LOCATIONS: Location[] = [
   { slug: 'long-beach', name: 'Long Beach', county: 'Nassau', region: 'Nassau County', milesFromStudio: 58, travelTier: 'nassau', nearby: ['Island Park', 'Oceanside', 'Lido Beach'], context: 'Beach-town birthdays in Long Beach pair naturally with our sand-art and seashell stations.' },
   { slug: 'great-neck', name: 'Great Neck', county: 'Nassau', region: 'Nassau County', milesFromStudio: 68, travelTier: 'nassau', nearby: ['Manhasset', 'Port Washington', 'Roslyn'], context: 'We’ll bring the party to Great Neck and the North Shore Gold Coast for booked-ahead events.' },
   { slug: 'manhasset', name: 'Manhasset', county: 'Nassau', region: 'Nassau County', milesFromStudio: 66, travelTier: 'nassau', nearby: ['Great Neck', 'Port Washington', 'Roslyn'], context: 'Manhasset and the surrounding North Shore villages are within our Nassau service range.' },
+  // Added 2026-11-04. Nassau mobile inquiries arrived from Westbury, Old
+  // Westbury, Sea Cliff and Plainview between 2026-10-02 and 11-02 (via Google
+  // and ChatGPT, landing on the topic pages because no town page matched). The
+  // rest are their immediate neighbours on the same corridors.
+  { slug: 'westbury', name: 'Westbury', county: 'Nassau', region: 'Nassau County', milesFromStudio: 56, travelTier: 'nassau', nearby: ['Old Westbury', 'Carle Place', 'Garden City', 'Jericho'], context: 'Westbury sits in the center of Nassau County, near where the Meadowbrook and Northern State parkways meet.' },
+  { slug: 'old-westbury', name: 'Old Westbury', county: 'Nassau', region: 'Nassau County', milesFromStudio: 58, travelTier: 'nassau', nearby: ['Westbury', 'Jericho', 'Roslyn', 'Brookville'], context: 'Old Westbury, home to Old Westbury Gardens, is a village of large wooded properties — plenty of room for craft stations indoors or out.' },
+  { slug: 'jericho', name: 'Jericho', county: 'Nassau', region: 'Nassau County', milesFromStudio: 53, travelTier: 'nassau', nearby: ['Syosset', 'Westbury', 'Old Westbury', 'Muttontown'], context: 'Jericho sits along Jericho Turnpike between Westbury and Syosset, in the heart of Nassau’s North Shore.' },
+  { slug: 'syosset', name: 'Syosset', county: 'Nassau', region: 'Nassau County', milesFromStudio: 53, travelTier: 'nassau', nearby: ['Plainview', 'Jericho', 'Woodbury', 'Oyster Bay'], context: 'Syosset sits between Jericho and Woodbury on the LIRR’s Port Jefferson Branch.' },
+  { slug: 'plainview', name: 'Plainview', county: 'Nassau', region: 'Nassau County', milesFromStudio: 50, travelTier: 'nassau', nearby: ['Syosset', 'Jericho', 'Old Bethpage', 'Bethpage'], context: 'Plainview’s suburban neighborhoods sit just off the Long Island Expressway, beside Old Bethpage and Syosset.' },
+  { slug: 'sea-cliff', name: 'Sea Cliff', county: 'Nassau', region: 'Nassau County', milesFromStudio: 62, travelTier: 'nassau', nearby: ['Glen Cove', 'Glen Head', 'Roslyn Harbor'], context: 'Sea Cliff is a hillside village of Victorian homes overlooking Hempstead Harbor on the North Shore.' },
+  { slug: 'port-washington', name: 'Port Washington', county: 'Nassau', region: 'Nassau County', milesFromStudio: 66, travelTier: 'nassau', nearby: ['Manhasset', 'Great Neck', 'Sands Point'], context: 'Port Washington wraps around Manhasset Bay on the Cow Neck Peninsula, next door to Manhasset and Sands Point.' },
+  { slug: 'massapequa', name: 'Massapequa', county: 'Nassau', region: 'Nassau County', milesFromStudio: 46, travelTier: 'nassau', nearby: ['Massapequa Park', 'Seaford', 'Amityville'], context: 'Massapequa’s South Shore streets run down to the canals off South Oyster Bay.' },
+  { slug: 'merrick', name: 'Merrick', county: 'Nassau', region: 'Nassau County', milesFromStudio: 52, travelTier: 'nassau', nearby: ['Bellmore', 'Freeport', 'Baldwin'], context: 'Merrick sits on the South Shore between Bellmore and Freeport, its neighborhoods running south toward the bay.' },
 
   // ── New York City ──
   { slug: 'manhattan', name: 'Manhattan', county: 'New York', region: 'New York City', milesFromStudio: 85, travelTier: 'nyc', nearby: ['Brooklyn', 'Queens'], context: 'For the right event, we’ll bring the full Host Hampton craft experience into Manhattan — penthouse, loft, or private room.' },
@@ -104,7 +127,7 @@ export function getLocation(slug: string): Location | undefined {
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * These are here, not inlined in the page, so `seo.test.ts` can assert the
- * length budget against ALL 26 towns at once. Measured live on 2026-09-12 the
+ * length budget against every town at once (26 at launch, 39 since 2026-11-04). Measured live on 2026-09-12 the
  * previous template produced titles of 85–96 characters (the brand suffix was
  * being appended on top of an already-long title) and descriptions of 209–231.
  * Google cuts a title at roughly 60 characters and a description at 160, so

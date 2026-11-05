@@ -1,6 +1,6 @@
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { CRAFT_PARTIES } from '@/lib/craftParties'
-import { LOCATIONS } from '@/lib/locations'
+import { locationsByRegion } from '@/lib/locations'
 import { RATING } from '@/lib/reviews'
 import { STUDIO_ADDRESS_LINE, STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
 import { SITE_URL } from '@/lib/seo'
@@ -178,13 +178,22 @@ export async function GET() {
   for (const c of CRAFT_PARTIES) {
     add(`- [${c.name}](${SITE_URL}/${c.slug}): ${c.metaDescription}`)
   }
+  // Grouped by region, one line each, so "do they come to <town>?" has an
+  // answer next to the region it sits in. Nassau families are a real share of
+  // mobile inquiries (Westbury, Old Westbury, Sea Cliff, Rockville Centre,
+  // Plainview in 2026-10), most of them arriving via an AI assistant.
   add(
     '',
     '## Towns we serve with mobile parties',
     '',
-    LOCATIONS.map(l => `[${l.name}](${SITE_URL}/mobile-craft-party/${l.slug})`).join(', '),
+    'We bring mobile craft and spa parties to homes across all of Long Island — Suffolk and Nassau County — and into Manhattan for larger events. ' +
+      'The towns below each have a local page; a town not listed is usually still in range, so ask.',
     '',
   )
+  for (const { region, items } of locationsByRegion()) {
+    add(`- ${region}: ${items.map(l => `[${l.name}](${SITE_URL}/mobile-craft-party/${l.slug})`).join(', ')}`)
+  }
+  add('')
 
   return new Response(lines.join('\n'), {
     headers: {

@@ -39,7 +39,7 @@ export async function generateMetadata(
   const { title, description } = townMeta(loc)
   return {
     // `absolute`, so the root layout's ' | Host Hampton' template is NOT applied.
-    // These 26 titles used to run 85–96 characters with the brand appended and
+    // The original 26 titles used to run 85–96 characters with the brand appended and
     // Google cut every one of them at ~60 — the town name survived, the offer
     // did not. See townMeta() for the budget.
     title: { absolute: title },
@@ -101,7 +101,10 @@ export default function LocationPage({ params }: { params: { location: string } 
   const faqs = [
     {
       q: `Do you bring mobile craft parties to ${loc.name}?`,
-      a: `Yes. Host Hampton regularly brings mobile craft parties to ${loc.name} and the surrounding ${loc.region} area. We arrive with every supply, set up your chosen craft stations, run the activities with the kids, and pack it all up afterward. ${travelNote}`,
+      // Not "regularly": that is a claim about our own history, and it is not
+      // true of every town on the list (several were added before we had
+      // booked a party there).
+      a: `Yes. Host Hampton brings mobile craft parties to ${loc.name} and the surrounding ${loc.region} area. We arrive with every supply, set up your chosen craft stations, run the activities with the kids, and pack it all up afterward. ${travelNote}`,
     },
     {
       q: `Can we host at your studio instead of in ${loc.name}?`,
@@ -110,6 +113,14 @@ export default function LocationPage({ params }: { params: { location: string } 
     {
       q: `What craft stations can ${loc.name} parties choose from?`,
       a: `Any mix you like — canvas painting, sand art, our signature drip-paint balloon dogs, slime, seashell decorating, bracelet making, and more. Every craft is a take-home keepsake that doubles as the party favor.`,
+    },
+    // Spa is what Nassau parents asked for (Rockville Centre and Sea Cliff,
+    // 2026-10, both via ChatGPT landing on /spa-party). No figure here: this
+    // text is also the FAQPage JSON-LD, and no mobile price may appear in any
+    // schema (seo.test.ts MOBILE_PAGES) — /spa-party carries the price.
+    {
+      q: `Do you do spa parties at home in ${loc.name}?`,
+      a: `Yes. Our kids spa party travels too — mini manicures, face masks, glam stations and robes, with our hosts doing the pampering. We bring every product, towel and robe to your home in ${loc.name} and clean up afterward. Pricing and details are on our spa party page.`,
     },
     {
       q: `How far in advance should we book a ${loc.name} craft party?`,
@@ -120,9 +131,13 @@ export default function LocationPage({ params }: { params: { location: string } 
   const schema = buildSchema(loc, url, faqs)
   const prefill = `Party location: ${loc.name}, NY (${loc.county} County)\nCrafts we're interested in: `
 
-  const nearbyLinks = LOCATIONS.filter(
-    l => l.slug !== loc.slug && (loc.nearby.includes(l.name) || l.region === loc.region),
-  ).slice(0, 6)
+  // True neighbours first, then the rest of the region. Nassau holds 14 towns
+  // now, so list order alone would link Westbury to Long Beach before Jericho.
+  const others = LOCATIONS.filter(l => l.slug !== loc.slug)
+  const nearbyLinks = [
+    ...others.filter(l => loc.nearby.includes(l.name)),
+    ...others.filter(l => !loc.nearby.includes(l.name) && l.region === loc.region),
+  ].slice(0, 6)
 
   return (
     <div>
@@ -210,9 +225,12 @@ export default function LocationPage({ params }: { params: { location: string } 
             </div>
           ))}
         </div>
-        <div className="mt-8 text-center">
+        <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-8">
           <Link href="/mobile-party" className="text-hampton-blue font-semibold underline underline-offset-2 text-sm">
             See the full mobile party menu →
+          </Link>
+          <Link href="/spa-party" className="text-hampton-blue font-semibold underline underline-offset-2 text-sm">
+            Spa party at home in {loc.name} →
           </Link>
         </div>
       </section>

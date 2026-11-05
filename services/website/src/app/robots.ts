@@ -24,22 +24,42 @@ const disallow = ['/api/', '/admin', '/admin/', '/cm-cheer/order', '/r/']
 
 // AI answer-engine crawlers we explicitly welcome — we WANT ChatGPT, Claude,
 // Perplexity, Google's AI Overviews, etc. to read and cite Host Hampton when
-// people ask them about party venues on the East End.
+// people ask them about kids parties anywhere on Long Island. ChatGPT is a
+// measured lead channel (utm_source=chatgpt.com on /spa-party,
+// /arts-and-crafts-party and /mobile-party, Nassau included).
+//
+// THIS FILE IS NOT THE WHOLE STORY. Cloudflare prepends its own "Managed
+// content" block to the robots.txt it serves (measured 2026-11-04) that
+// Disallows GPTBot, ClaudeBot, Google-Extended, Applebot-Extended, CCBot,
+// meta-externalagent and others, and an edge rule 403s GPTBot, ClaudeBot,
+// CCBot and Amazonbot outright. Those are the TRAINING crawlers; the ones that
+// fetch pages to cite in an answer (OAI-SearchBot, ChatGPT-User, Claude-User,
+// Claude-SearchBot, PerplexityBot, Perplexity-User, Googlebot, Bingbot) were
+// all 200. Changing that is a Cloudflare dashboard setting, not a code change —
+// measure with a UA sweep, never by reading this file.
 const aiCrawlers = [
-  'GPTBot',            // OpenAI / ChatGPT
-  'OAI-SearchBot',     // OpenAI search
-  'ChatGPT-User',      // ChatGPT browsing on a user's behalf
-  'ClaudeBot',         // Anthropic / Claude
-  'Claude-Web',        // Anthropic web fetch
-  'anthropic-ai',      // Anthropic crawler
-  'PerplexityBot',     // Perplexity
-  'Perplexity-User',   // Perplexity browsing on a user's behalf
-  'Google-Extended',   // Google Gemini / AI Overviews training + grounding
-  'Applebot-Extended', // Apple Intelligence
-  'CCBot',             // Common Crawl (feeds many models)
-  'Bytespider',        // TikTok / ByteDance
-  'Amazonbot',         // Amazon / Alexa
-  'cohere-ai',         // Cohere
+  'GPTBot',               // OpenAI training crawler
+  'OAI-SearchBot',        // ChatGPT search index — what produces citations
+  'ChatGPT-User',         // ChatGPT browsing on a user's behalf
+  'ClaudeBot',            // Anthropic training crawler
+  'Claude-SearchBot',     // Claude search index
+  'Claude-User',          // Claude fetching on a user's behalf
+  'Claude-Web',           // Anthropic (legacy name)
+  'anthropic-ai',         // Anthropic (legacy name)
+  'PerplexityBot',        // Perplexity index
+  'Perplexity-User',      // Perplexity browsing on a user's behalf
+  'Google-Extended',      // Gemini apps grounding + training (not AI Overviews — that is Googlebot)
+  'Applebot',             // Siri / Spotlight / Apple search
+  'Applebot-Extended',    // Apple Intelligence
+  'Meta-ExternalAgent',   // Meta AI
+  'Meta-ExternalFetcher', // Meta AI fetching on a user's behalf
+  'DuckAssistBot',        // DuckDuckGo AI answers
+  'MistralAI-User',       // Mistral Le Chat fetching on a user's behalf
+  'YouBot',               // You.com
+  'CCBot',                // Common Crawl (feeds many models)
+  'Bytespider',           // TikTok / ByteDance
+  'Amazonbot',            // Amazon / Alexa
+  'cohere-ai',            // Cohere
 ]
 
 export default function robots(): MetadataRoute.Robots {
