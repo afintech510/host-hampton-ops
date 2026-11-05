@@ -88,7 +88,6 @@ export default async function CrewAvailabilityPage() {
       <h1>Availability</h1>
       <div className="crew-note crew-info">
         Please mark the days you can&apos;t work in <strong>{monthName(dueFor)}</strong> by <strong>{dueLabel}</strong>.
-        Blocking a day never changes your pay.
       </div>
       <p className="crew-muted crew-small">Tap a day to block it. Green days are parties you&apos;re working.</p>
       <AvailabilityEditor months={months} weekly={weekly} />

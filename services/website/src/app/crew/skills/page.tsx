@@ -15,7 +15,7 @@ export default async function CrewSkillsPage() {
     <main className="crew-wrap">
       <CrewTop firstName={member.first_name} isTest={member.is_test} />
       <h1>My skills</h1>
-      <p className="crew-muted" style={{ marginTop: 0 }}>This helps Allie plan each party. It doesn&apos;t change your pay.</p>
+      <p className="crew-muted" style={{ marginTop: 0 }}>This helps Allie plan each party.</p>
       <SkillsForm options={CREW_SKILLS} picked={picked} extras={extras} maxExtras={MAX_EXTRAS} maxLength={MAX_EXTRA_LENGTH} />
     </main>
   )

@@ -98,6 +98,27 @@ describe('LS1: a dollar figure in the crew app is behind a guard', () => {
     expect(cover).toMatch(/pay \? `Take it \(\$\{pay\}\)` : 'Take it'/)
   })
 
+  it('no crew page says anything about pay, rates or tips (the pay-visible views live only in pay/page.tsx and the cancel page, behind the switches)', () => {
+    const offenders: string[] = []
+    let examined = 0
+    for (const p of CREW_APP) {
+      const name = rel(p)
+      if (name === 'app/crew/pay/page.tsx' || name === 'app/crew/parties/[id]/cant-make-it/page.tsx' || name === 'app/crew/_components/OnboardingFlow.tsx') continue
+      examined++
+      // JSX text and string literals only (imports and comments stripped).
+      const src = read(p).replace(/^import .*$/gm, '')
+      const jsxText = Array.from(src.matchAll(/>([^<>{}\r\n]*[A-Za-z][^<>{}\r\n]*)</g)).map(m => m[1])
+      const literals = Array.from(src.matchAll(/'([^'\r\n]{12,})'|"([^"\r\n]{12,})"/g)).map(m => m[1] ?? m[2])
+      for (const t of [...jsxText, ...literals]) {
+        // Exactly three strings are allowed, each rendered only behind CREW_PAY_LADDER / CREW_SHOW_PAY (LS1 above holds the guards).
+        const gated = /^\s*(My pay|How it works|How your pay works|crew-rate-big|Once you've worked it, covering a late cancel counts as two parties toward your rate\.)\s*$/
+        if (/\b(pay|paid|rate|rates|tips?|wages?|earn\w*)\b/i.test(t) && !gated.test(t)) offenders.push(`${name}: ${t.trim().slice(0, 60)}`)
+      }
+    }
+    expect(examined).toBeGreaterThanOrEqual(10)
+    expect(offenders).toEqual([])
+  })
+
   it('the bottom tab says "How it works" unless pay is shown', () => {
     const top = squash(read(path.join(SRC, 'app', 'crew', '_components', 'CrewTop.tsx')))
     expect(top).toMatch(/crewShowPayEnabled\(\) \|\| crewPayLadderEnabled\(\) \? 'My pay' : 'How it works'/)
