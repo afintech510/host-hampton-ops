@@ -541,6 +541,13 @@ describe('R0 — the staleness walker', () => {
       // writes nothing — a new party is a proposal replayed through
       // /api/admin/parties/create, which owns the upsert.
       'lib/assistant/tools.ts',
+      // The assistant's enrol card and the route it replays. Both read ONE
+      // contact — by the booking's contact_id, or (no id) by the shared
+      // findContactsByEmail primary — to apply optedOutReason before anything is
+      // enrolled. Neither filters an identity column itself, and the only write
+      // is a contact_sequence_enrollments row keyed by that contact's id.
+      'lib/assistant/nurture.ts',
+      'app/api/admin/sequences/enroll/route.ts',
     ])
 
     const touching = ALL_FILES.filter(f => /from\(['"`]contacts['"`]\)/.test(code(relative(f)))).map(relative)

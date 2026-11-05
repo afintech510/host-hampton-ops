@@ -16,6 +16,7 @@ import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
 import { loadQuoteCatalog, quoteFromCatalog, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
+import { buildEnrolCard } from './nurture'
 import { buildClientLinksCard, buildPhotosCard, type BuiltCard, type MessageEdits, type MessagePreview } from './messageCard'
 
 /**
@@ -332,6 +333,16 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
       required: ['booking_ref', 'email', 'sms'],
     },
   },
+  {
+    name: 'propose_enrol_sequence',
+    description:
+      'PROPOSE enrolling a lead in an email nurture sequence (ids from list_sequences). The card shows the steps and the FIRST email exactly as the lead would read it, and whether the person has opted out. Enrolling queues the person; it sends nothing now. Consent, stage and duplicates are checked again when the manager clicks Confirm. Only for leads who have not booked. Nothing happens until the manager clicks Confirm.',
+    input_schema: {
+      type: 'object',
+      properties: { booking_ref: { type: 'string' }, sequence_id: { type: 'string' } },
+      required: ['booking_ref', 'sequence_id'],
+    },
+  },
   ...LEAD_TOOLS,
 ]
 
@@ -471,6 +482,8 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await proposeMarkLost(supabase, input, ctx)
       case 'propose_send_photos':
         return await proposeSendPhotos(supabase, input, ctx)
+      case 'propose_enrol_sequence':
+        return await proposeEnrolSequence(supabase, input, ctx)
       default:
         if (isLeadTool(name)) return await runLeadTool(name, input, supabase, ctx.now)
         return { result: { error: `Unknown tool ${name}` }, isError: true }
@@ -792,6 +805,33 @@ async function proposeSendClientLinks(
     kinds, email, sms, edits, authored: hasEdits(edits) ? 'model' : 'default', now: ctx.now,
   })
   return messageCardOutcome('send_client_links', built, ctx, input)
+}
+
+async function proposeEnrolSequence(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const ref = str(input.booking_ref, 40)
+  const sequenceId = str(input.sequence_id, 64)
+  if (!ref || !sequenceId) return fail('booking_ref and sequence_id are required (ids come from list_sequences)')
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('id, booking_ref, status, contact_id, contact_name, contact_email, contact_phone, party_date, total_cents')
+    .eq('booking_ref', ref)
+    .maybeSingle()
+  if (error) return fail('Could not read that party — say so.')
+  if (!data) return fail(`No party with ref ${ref}`)
+  const built = await buildEnrolCard(supabase, data as never, sequenceId, ctx.now)
+  if (!built.ok) return fail(built.error)
+  const minted = mintProposal({ kind: 'enrol_sequence', input: built.input, title: built.title, details: built.details, actor: ctx.actor })
+  return {
+    result: {
+      status: 'awaiting_manager_confirmation',
+      proposal_id: minted.proposal.id,
+      shown_to_manager: built.details,
+      checks: built.preview.status,
+      instruction: 'Nobody has been enrolled and nothing has been sent. Tell the manager to review the card (the steps and the first email) and click Confirm.',
+    },
+    proposal: minted,
+    preview: built.preview,
+  }
 }
 
 /** The reworded fields the model passed, trimmed to strings; absent means "standard wording". */

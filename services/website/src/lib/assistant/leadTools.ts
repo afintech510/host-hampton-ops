@@ -2,7 +2,11 @@ import type Anthropic from '@anthropic-ai/sdk'
 import type { getSupabase } from '@/lib/supabase'
 import { PARTY_TYPES, isPartyType } from '@/lib/pipelineStages'
 import type { BookingStage } from '@/lib/bookingStatus'
+import { TENANT } from '@/tenant'
+import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { getFirstInquiry, getNextStep, getSmsThread, listLeads, MAX_LEADS } from './leadView'
+import { listSequences, SEQUENCE_SENDER_SCHEDULED } from './nurture'
+import { firstNameOf } from './outboundText'
 import type { ToolOutcome } from './tools'
 
 /**
@@ -55,6 +59,18 @@ export const LEAD_TOOLS: Anthropic.Beta.BetaTool[] = [
     description:
       'The suggested next step for one lead: where they stand, who is waiting on whom, and a short list of actions, each naming the propose_* tool that prepares it (photos, planner link, invoice and deposit link …). Nothing is sent: use the named tool to put a card in front of the manager. Read-only.',
     input_schema: { type: 'object', properties: { booking_ref: { type: 'string' } }, required: ['booking_ref'] },
+  },
+  {
+    name: 'get_invitation',
+    description:
+      'Does this lead already have a digital invitation, and what is its link? A lead\'s invitation is a live PREVIEW of their theme with their child\'s details, which can be sent as a "mock invitation". Returns the state, the link, and ready-made preview wording (sms_body, email_subject, email_body) to pass VERBATIM to propose_send_client_links with links ["invite"] — the standard invitation wording says "share with your guests", which is wrong for a lead who has not booked. Read-only.',
+    input_schema: { type: 'object', properties: { booking_ref: { type: 'string' } }, required: ['booking_ref'] },
+  },
+  {
+    name: 'list_sequences',
+    description:
+      'The email nurture sequences that are switched on: id, name, what triggers it, any service filter, and each step (subject and when it goes out). Use the id with propose_enrol_sequence. Read-only.',
+    input_schema: { type: 'object', properties: {} },
   },
 ]
 
@@ -147,6 +163,56 @@ export async function runLeadTool(name: string, input: Record<string, unknown>, 
       if (r.kind === 'unavailable') return unavailable('that lead')
       if (r.kind === 'absent') return fail(`No party with ref ${ref}`)
       return { result: { ...r.step, instruction: 'Nothing has been done. To act, call the named propose_* tool; the manager confirms the card.' } }
+    }
+
+    case 'get_invitation': {
+      const ref = str(input.booking_ref, 40)
+      if (!ref) return fail('booking_ref is required')
+      const b = await supabase.from('bookings').select('id, booking_ref, contact_name, child_name, party_date').eq('booking_ref', ref).maybeSingle()
+      if (b.error) return unavailable('that lead')
+      if (!b.data) return fail(`No party with ref ${ref}`)
+      const booking = b.data as { id: string; booking_ref: string; contact_name: string | null; child_name: string | null; party_date: string | null }
+      const ev = await supabase.from('evites').select('slug, archived_at, went_live_at, template_slug, theme_word').eq('booking_id', booking.id).maybeSingle()
+      if (ev.error) return unavailable('the invitation')
+      const e = ev.data as { slug: string; archived_at: string | null; went_live_at: string | null; template_slug: string | null; theme_word: string | null } | null
+      if (!e) {
+        return { result: { exists: false, note: 'This party has no invitation yet (it may not be an eligible party type). It is created from the Invitation card in the Parties tab; there is nothing to send until then.' } }
+      }
+      if (e.archived_at) return { result: { exists: true, archived: true, note: 'The invitation is archived, so its link does not work. Unarchive it in the Invitation card first.' } }
+      const first = firstNameOf(booking.contact_name)
+      const child = (booking.child_name ?? '').replace(/\s+/g, ' ').trim()
+      const owner = !child ? 'your' : /s$/i.test(child) ? `${child}'` : `${child}'s`
+      const signoff = TENANT.people.customerSignoff
+      return {
+        result: {
+          exists: true,
+          state: e.went_live_at ? 'live' : 'preview',
+          design: e.template_slug ?? 'the theme default',
+          theme: e.theme_word,
+          has_party_date: !!booking.party_date,
+          link: `${CANONICAL_ORIGIN}/i/${encodeURIComponent(e.slug)}`,
+          how_to_send: 'propose_send_client_links with links ["invite"] and the wording below, copied verbatim. The {invite} marker becomes the real link when it sends.',
+          sms_body: `Hi ${first}! It's ${signoff} from ${TENANT.business.name} 🎉\nHere's a preview of ${owner} invitation with your party details: {invite}\nReply STOP to opt out`,
+          email_subject: `A preview of ${owner} party invitation 🎉`,
+          email_body: `Hi ${first},\n\nHere's a preview of ${owner} party invitation. It uses your theme and party details, and you can pick a different design anytime:\n{invite}\n\nJust reply to this email if you have any questions!\n\n${signoff}\n${TENANT.business.name}`,
+        },
+      }
+    }
+
+    case 'list_sequences': {
+      const r = await listSequences(supabase)
+      if (r.kind !== 'ok') return unavailable('the sequences')
+      return {
+        result: {
+          sequences: r.sequences.map(s => ({
+            id: s.id, name: s.name, trigger: s.trigger_event, only_for_service: s.service_filter,
+            steps: s.steps.map(t => `${t.step}. "${t.subject}" (${t.delay_reference === 'event_date' ? `${Math.abs(t.delay_days)}d ${t.delay_days < 0 ? 'before' : 'after'} the party` : `${t.delay_days}d after enrolling`})`),
+          })),
+          sender_is_running: SEQUENCE_SENDER_SCHEDULED,
+          ...(SEQUENCE_SENDER_SCHEDULED ? {} : { note: 'The sequence sender is switched off: enrolling someone queues them and sends nothing until the manager turns it on.' }),
+          trigger_note: 'For a lead who has not booked, new_inquiry sequences fit; booking_confirmed sequences are for people who have booked.',
+        },
+      }
     }
 
     default:

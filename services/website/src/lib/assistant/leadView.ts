@@ -423,6 +423,18 @@ export async function getNextStep(
     }
   }
 
+  if (stage === 'inquiry' || stage === 'quoted') {
+    const ev = await sb.from('evites').select('archived_at').eq('booking_id', b.id).maybeSingle()
+    if (!ev.error && ev.data && !(ev.data as { archived_at: string | null }).archived_at) {
+      actions.push({
+        do: 'Send a mock invitation: a preview of their theme with their child\'s details',
+        tool: 'get_invitation',
+        how: `read it for the link and the preview wording, then propose_send_client_links with links ["invite"] and that wording`,
+        why: 'They already have an invitation preview, and seeing their own child\'s name on a design is a strong nudge to book.',
+      })
+    }
+  }
+
   if ((b.total_cents ?? 0) > 0 && paidCents === 0) {
     actions.push({
       do: 'Send the invoice, and make a deposit payment link',
@@ -436,6 +448,15 @@ export async function getNextStep(
       tool: 'propose_pay_link',
       how: `booking_ref ${b.booking_ref}, purpose "balance"`,
       why: `${money((b.total_cents as number) - paidCents)} is still owed.`,
+    })
+  }
+
+  if (stage === 'inquiry' || stage === 'quoted') {
+    actions.push({
+      do: 'Put them on a follow-up email sequence',
+      tool: 'propose_enrol_sequence',
+      how: `list_sequences for the ids, then booking_ref ${b.booking_ref} and the new_inquiry sequence. The card shows the first email and whether they have opted out`,
+      why: 'A lead who goes quiet is better followed up on a schedule than remembered. Enrolling sends nothing today.',
     })
   }
 

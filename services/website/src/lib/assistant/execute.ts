@@ -5,6 +5,7 @@ import { getSupabase } from '@/lib/supabase'
 import { POST as createPartyRoute } from '@/app/api/admin/parties/create/route'
 import { POST as partyActionRoute, PATCH as partyPatchRoute } from '@/app/api/admin/parties/[id]/route'
 import { POST as planPayLinkRoute } from '@/app/api/plan/[ref]/pay-link/route'
+import { POST as enrolSequenceRoute } from '@/app/api/admin/sequences/enroll/route'
 import type { Proposal } from './proposals'
 import { screenOutboundText } from './outboundText'
 
@@ -262,6 +263,22 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       const sentVia = Array.isArray(json.sentVia) ? (json.sentVia as string[]).join(' and ') : 'the chosen channel'
       const failures = Array.isArray(json.failures) && json.failures.length ? ` Problems: ${(json.failures as string[]).join(' ')}` : ''
       return { ok: true, status: res.status, message: `Sent ${String(json.count ?? input.photoIds.length)} photo(s) to ${input.bookingRef} by ${sentVia}.${failures}` }
+    }
+
+    case 'enrol_sequence': {
+      const input = proposal.input as { bookingId: string; bookingRef: string; sequenceId: string; sequenceName?: string }
+      // The route re-checks stage, consent, the sequence and duplicates itself,
+      // and writes ONE enrollment row. It sends nothing.
+      const res = await enrolSequenceRoute(
+        replayRequest(original, '/api/admin/sequences/enroll', { bookingId: input.bookingId, sequenceId: input.sequenceId }),
+      )
+      const json = await readJson(res)
+      if (!res.ok || json.ok !== true) return refused('Not enrolled', res, json)
+      return {
+        ok: true,
+        status: res.status,
+        message: `Enrolled ${input.bookingRef} in "${String(json.sequence ?? input.sequenceName ?? 'the sequence')}". Nothing was sent.`,
+      }
     }
 
     default:

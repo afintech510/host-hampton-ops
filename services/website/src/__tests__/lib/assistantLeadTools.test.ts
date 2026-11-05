@@ -7,6 +7,7 @@ import fs from 'fs'
 import path from 'path'
 import { decomment } from '../helpers/sourceScan'
 
+jest.mock('@/lib/phoneStop', () => ({ phoneHasExplicitStop: async () => 'clear' }))
 const mockThread = jest.fn()
 jest.mock('@/lib/quo', () => ({ fetchQuoThread: (...a: unknown[]) => mockThread(...a) }))
 jest.mock('@/lib/media', () => ({
@@ -162,7 +163,7 @@ describe('get_next_step', () => {
     const out = await runAssistantTool('get_next_step', { booking_ref: 'HH-PTY-AAA01' }, ctx(db))
     const r = out.result as { stage: string; actions: Array<{ tool: string }> }
     expect(r.stage).toBe('inquiry')
-    expect(r.actions.map(a => a.tool)).toEqual(['get_sms_thread', 'propose_send_client_links', 'propose_send_photos'])
+    expect(r.actions.map(a => a.tool)).toEqual(['get_sms_thread', 'propose_send_client_links', 'propose_send_photos', 'propose_enrol_sequence'])
     expect(out.proposal).toBeUndefined()
     expect(db.writes).toEqual([])
   })
@@ -190,5 +191,37 @@ describe('the source shape', () => {
     const s = read('lib/assistant/leadView.ts')
     expect(s).toMatch(/phone: maskPhone\(/)
     expect(s).not.toMatch(/phone: b\.contact_phone/)
+  })
+})
+
+describe('get_invitation: the mock-invitation wording passes the screens it will meet', () => {
+  it('gives the link and preview wording that a send card accepts verbatim', async () => {
+    const t = tables() as Record<string, Row[]>
+    t.evites = [{ booking_id: 'a', slug: 'zed-abc123', archived_at: null, went_live_at: null, template_slug: 'glow', theme_word: 'GLOW' }]
+    const db = fakeDb(t)
+    const out = await runAssistantTool('get_invitation', { booking_ref: 'HH-PTY-AAA01' }, ctx(db))
+    const r = out.result as { exists: boolean; state: string; link: string; sms_body: string; email_subject: string; email_body: string }
+    expect(r.exists).toBe(true)
+    expect(r.state).toBe('preview')
+    expect(r.link).toMatch(/\/i\/zed-abc123$/)
+    // The wording is a lead's, not "share with your guests".
+    expect(r.sms_body).not.toMatch(/share/i)
+
+    const { buildClientLinksCard } = await import('@/lib/assistant/messageCard')
+    const lead = { ...(bookings[0] as never as Record<string, unknown>), contact_email: 'ava@example.com' } as never
+    const built = await buildClientLinksCard(db.client, lead, {
+      kinds: ['invite'], email: true, sms: true, authored: 'model', now: NOW,
+      edits: { smsBody: r.sms_body, emailSubject: r.email_subject, emailBody: r.email_body },
+    })
+    expect(built.ok).toBe(true)
+  })
+
+  it('says plainly when there is no invitation or it is archived', async () => {
+    const none = await runAssistantTool('get_invitation', { booking_ref: 'HH-PTY-AAA01' }, ctx(fakeDb(tables())))
+    expect((none.result as { exists: boolean }).exists).toBe(false)
+    const t = tables() as Record<string, Row[]>
+    t.evites = [{ booking_id: 'a', slug: 'x', archived_at: '2026-01-01T00:00:00Z' }]
+    const arch = await runAssistantTool('get_invitation', { booking_ref: 'HH-PTY-AAA01' }, ctx(fakeDb(t)))
+    expect((arch.result as { archived?: boolean }).archived).toBe(true)
   })
 })
