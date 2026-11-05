@@ -3,7 +3,8 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'RSE Merch — Remsenburg-Speonk Elementary Order Form',
   description:
-    'Official Remsenburg-Speonk Elementary merch. Royal blue and yellow crewneck sweatshirts, canvas totes, weekenders, pickleball bags, makeup bags and trucker hats with the RSE rooster, varsity, Reggie and heart patches — plus name letter patches and custom keychains.',
+    // Says only what /rse-merch sells today — see ON_SALE in page.tsx.
+    'Official Remsenburg-Speonk Elementary merch. A royal blue canvas tote and a yellow canvas makeup bag with the RSE rooster or varsity patch, plus the patches on their own.',
 }
 
 export default function RSEMerchLayout({ children }: { children: React.ReactNode }) {

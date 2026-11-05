@@ -105,7 +105,28 @@ const ACTIVE_CLASSES: Record<string, string> = {
 }
 const IDLE_CLASSES = 'border-gray-200 bg-white text-gray-500'
 
-const DEFAULT_PATCH = PATCHES[0].key
+/**
+ * WHAT IS ON SALE — the range on the in-person sales sheet (Adam, 2026-11-04):
+ * the tote in blue, the makeup bag in yellow, and two of the four patch
+ * designs, which are also sold loose. Every product, colour and patch below
+ * stays defined with its renders and is simply not drawn; list it here again
+ * to sell it. Prices are unchanged and match the sheet.
+ */
+const ON_SALE = {
+  patches: ['rooster', 'varsity'] as readonly string[],
+  /** Product key → the colours offered. A product not listed is hidden. */
+  products: { tote: ['blue'], bag: ['yellow'] } as Partial<Record<string, readonly ColorKey[]>>,
+  sweatshirt: false,
+  /** Letter patches, the two keychains and the tassel charm. */
+  personalize: false,
+}
+
+const SALE_PATCHES = PATCHES.filter((p) => ON_SALE.patches.includes(p.key))
+
+/** "Two", not "2", in the copy above the designs. */
+const PATCH_COUNT_WORD = ['No', 'One', 'Two', 'Three', 'Four'][SALE_PATCHES.length]
+
+const DEFAULT_PATCH = SALE_PATCHES[0].key
 
 /** Every combination is rendered: `/images/rse-<product>-<colour>-<patch>.webp`. */
 function shotsFor(product: string, colors: readonly ColorKey[]): Record<string, string> {
@@ -196,10 +217,18 @@ const SIZES = [
   { key: 'axxl', label: 'Adult 2XL' },
 ] as const
 
-/** Every combination of one product, in the order the rows are drawn. */
-function variantsOf(p: (typeof PRODUCTS)[number]) {
+/** A product as it is sold today: only the colours `ON_SALE` lists for it. */
+type SaleProduct = Omit<(typeof PRODUCTS)[number], 'colors'> & { colors: readonly ColorKey[] }
+
+const SALE_PRODUCTS: SaleProduct[] = PRODUCTS.flatMap((p) => {
+  const colors = ON_SALE.products[p.key]
+  return colors?.length ? [{ ...p, colors }] : []
+})
+
+/** Every combination of one product on sale, in the order the rows are drawn. */
+function variantsOf(p: SaleProduct) {
   return colorsOf(p.colors).flatMap((c) =>
-    PATCHES.map((patch) => ({
+    SALE_PATCHES.map((patch) => ({
       id: `qty-${p.key}-${c.key}-${patch.key}`,
       color: c,
       patch,
@@ -887,14 +916,14 @@ export default function RSEMerchPage() {
                 <div className="p-2 bg-rseBlue/10 rounded-lg text-rseBlue"><i data-lucide="shopping-bag" className="w-6 h-6"></i></div>
                 <h2 className="text-xl sm:text-3xl font-bold text-rseInk font-oswald uppercase tracking-wide">The Merch</h2>
               </div>
-              <p className="text-sm text-gray-600 mb-3 ml-1">Totes, makeup bags, hats and bags are finished with the patch of your choice. Want a name on it? See Personalize It below.</p>
+              <p className="text-sm text-gray-600 mb-3 ml-1">The tote and the makeup bag come finished with the patch of your choice, or take the patches on their own.</p>
 
-              {/* The four designs, shown once up front so the rows below are
+              {/* The designs on sale, shown once up front so the rows below are
                   recognisable at thumbnail size. */}
               <div className="mb-7 ml-1 bg-white border border-slate-200 rounded-xl p-4 max-w-full">
-                <p className="text-xs font-bold uppercase tracking-widest text-rseBlue mb-3">Four patch designs — any one on any item</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  {PATCHES.map((p) => (
+                <p className="text-xs font-bold uppercase tracking-widest text-rseBlue mb-3">{PATCH_COUNT_WORD} patch designs — any one on any item</p>
+                <div className={`grid grid-cols-2 gap-4 ${SALE_PATCHES.length > 2 ? 'sm:grid-cols-4' : ''}`}>
+                  {SALE_PATCHES.map((p) => (
                     <div key={p.key} className="flex items-center gap-3">
                       <div className="w-16 h-16 bg-rseCream rounded-lg p-1.5 flex-none">
                         <img src={p.art} alt={`${p.label} patch`} className="w-full h-full object-contain" />
@@ -908,6 +937,7 @@ export default function RSEMerchPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
                 {/* SWEATSHIRT — full width, photo beside a size-by-colour table. */}
+                {ON_SALE.sweatshirt && (
                 <div id="sweat-card" className="md:col-span-2 bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <div className="flex gap-2 mb-3">
@@ -985,8 +1015,9 @@ export default function RSEMerchPage() {
                     </div>
                   </div>
                 </div>
+                )}
 
-                {PRODUCTS.map((product) => {
+                {SALE_PRODUCTS.map((product) => {
                   const variants = variantsOf(product)
                   return (
                     <div
@@ -1024,8 +1055,8 @@ export default function RSEMerchPage() {
                             {colorsOf(product.colors)[0].label} only
                           </p>
                         )}
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {PATCHES.map((p) => (
+                        <div className={`grid gap-1.5 ${SALE_PATCHES.length > 2 ? 'grid-cols-4' : 'grid-cols-2'}`}>
+                          {SALE_PATCHES.map((p) => (
                             <button
                               key={p.key}
                               type="button"
@@ -1117,7 +1148,7 @@ export default function RSEMerchPage() {
                 */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full">
                   <div className="w-full aspect-square bg-rseCream rounded-lg mb-4 overflow-hidden relative grid grid-cols-2 gap-2 p-4">
-                    {PATCHES.map((p) => (
+                    {SALE_PATCHES.map((p) => (
                       <div key={p.key} className="bg-white rounded-lg border border-slate-200 p-2 flex items-center justify-center">
                         <img src={p.art} alt={`${p.label} patch`} className="w-full h-full object-contain" />
                       </div>
@@ -1131,7 +1162,7 @@ export default function RSEMerchPage() {
                   <div className="mt-auto pt-4 border-t border-gray-100">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">How many of each</p>
                     <div className="space-y-2">
-                      {PATCHES.map((p) => (
+                      {SALE_PATCHES.map((p) => (
                         <div key={p.key} className="flex items-center gap-2 bg-slate-50 rounded-lg p-1.5">
                           <span className="flex items-center gap-2 flex-1 min-w-0">
                             <span className="w-7 h-7 flex-none bg-white rounded border border-slate-200 p-0.5">
@@ -1171,6 +1202,7 @@ export default function RSEMerchPage() {
             {/* PERSONALIZE — letters, keychains and the charm. The first
                 three are one row per name (built in the effect); the charm
                 is an ordinary quantity box per colour. */}
+            {ON_SALE.personalize && (
             <div className="p-4 md:p-8 border-b border-gray-100 bg-rseCream/40">
               <div className="flex items-center gap-3 mb-3">
                 <div className="p-2 bg-rseBlue/10 rounded-lg text-rseBlue"><i data-lucide="sparkles" className="w-6 h-6"></i></div>
@@ -1260,6 +1292,7 @@ export default function RSEMerchPage() {
                 </div>
               </div>
             </div>
+            )}
 
             {/* Customer Details */}
             <div className="p-6 md:p-8">
