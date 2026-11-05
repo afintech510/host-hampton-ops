@@ -89,7 +89,7 @@ beforeAll(() => {
 
 /* ── O1: the tool list and the executor agree ─────────────────────────── */
 
-const READ_TOOLS = ['find_client', 'search_parties', 'get_party', 'check_date', 'get_pricing', 'get_quote', 'find_photos']
+const READ_TOOLS = ['find_client', 'search_parties', 'get_party', 'check_date', 'get_pricing', 'get_quote', 'find_photos', 'list_leads', 'get_first_inquiry', 'get_sms_thread', 'get_next_step']
 
 describe('O1: every write tool is propose_* and has an executor branch', () => {
   const kindsInUnion = (): string[] => {

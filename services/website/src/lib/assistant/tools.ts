@@ -15,6 +15,7 @@ import { ADMIN_PAYMENT_METHODS, PAYMENT_TYPES } from '@/lib/adminMoney'
 import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
 import { loadQuoteCatalog, quoteFromCatalog, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
+import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
 import { buildClientLinksCard, buildPhotosCard, type BuiltCard, type MessageEdits, type MessagePreview } from './messageCard'
 
 /**
@@ -331,6 +332,7 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
       required: ['booking_ref', 'email', 'sms'],
     },
   },
+  ...LEAD_TOOLS,
 ]
 
 /* ── Small screens ────────────────────────────────────────────────────── */
@@ -470,6 +472,7 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
       case 'propose_send_photos':
         return await proposeSendPhotos(supabase, input, ctx)
       default:
+        if (isLeadTool(name)) return await runLeadTool(name, input, supabase, ctx.now)
         return { result: { error: `Unknown tool ${name}` }, isError: true }
     }
   } catch (err) {

@@ -80,6 +80,88 @@ export async function sendSMSViaQuo(to: string, body: string): Promise<string | 
   }
 }
 
+/* ── Reading a text thread ───────────────────────────────────────────────
+ *
+ * Our own database has every INBOUND text (the webhook records it) but not the
+ * ones sent from the Quo app by hand, so the only complete two-way thread is
+ * Quo's. `GET /v1/messages?phoneNumberId=…&participants=<number>` returns
+ * `{ data: [{ id, text, direction: 'incoming'|'outgoing', createdAt, status,
+ * media }], totalItems, nextPageToken }` (shape measured against the live
+ * workspace 2026-11-05). READ ONLY: nothing here sends or marks anything.
+ */
+
+export interface QuoThreadMessage {
+  id: string
+  /** ISO timestamp. */
+  at: string
+  direction: 'in' | 'out'
+  text: string
+  hasMedia: boolean
+  status: string | null
+}
+
+export type QuoThread =
+  | { kind: 'ok'; messages: QuoThreadMessage[] }
+  | { kind: 'unconfigured' }
+  | { kind: 'unavailable'; reason: string }
+
+let cachedPhoneNumberId: string | null = null
+
+/** `QUO_PHONE_NUMBER` is either the `PN…` id or the E.164 number; the messages API wants the id. */
+async function quoPhoneNumberId(signal: AbortSignal): Promise<string | null> {
+  const configured = process.env.QUO_PHONE_NUMBER
+  if (!configured) return null
+  if (/^PN/i.test(configured)) return configured
+  if (cachedPhoneNumberId) return cachedPhoneNumberId
+  const res = await fetch(`${QUO_BASE}/phone-numbers`, { headers: { Authorization: quoAuthHeader() }, signal })
+  if (!res.ok) return null
+  const json = (await res.json().catch(() => null)) as { data?: Array<{ id?: string; number?: string }> } | null
+  const want = normalizePhone(configured)
+  const hit = json?.data?.find(p => p.number && normalizePhone(p.number) === want)
+  cachedPhoneNumberId = hit?.id ?? null
+  return cachedPhoneNumberId
+}
+
+/**
+ * The most recent messages exchanged with one number, oldest first. Three
+ * outcomes: a failed read is `unavailable`, never an empty thread.
+ */
+export async function fetchQuoThread(phone: string, opts: { limit?: number } = {}): Promise<QuoThread> {
+  if (!process.env.QUO_API_KEY || !process.env.QUO_PHONE_NUMBER) return { kind: 'unconfigured' }
+  const limit = Math.min(Math.max(Math.floor(opts.limit ?? 30), 1), 50)
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 8000)
+  try {
+    const phoneNumberId = await quoPhoneNumberId(ctl.signal)
+    if (!phoneNumberId) return { kind: 'unavailable', reason: 'Could not resolve the studio number in Quo.' }
+    const qs = new URLSearchParams({ phoneNumberId, maxResults: String(limit) })
+    qs.append('participants', normalizePhone(phone))
+    const res = await fetch(`${QUO_BASE}/messages?${qs}`, { headers: { Authorization: quoAuthHeader() }, signal: ctl.signal })
+    if (!res.ok) return { kind: 'unavailable', reason: `Quo answered ${res.status}.` }
+    const json = (await res.json().catch(() => null)) as {
+      data?: Array<{ id?: string; text?: string; direction?: string; createdAt?: string; status?: string; media?: unknown[] }>
+    } | null
+    if (!json || !Array.isArray(json.data)) return { kind: 'unavailable', reason: 'Quo returned something unreadable.' }
+    const messages: QuoThreadMessage[] = json.data
+      .filter(m => typeof m.createdAt === 'string')
+      .map(m => ({
+        id: String(m.id ?? ''),
+        at: m.createdAt as string,
+        direction: m.direction === 'outgoing' ? ('out' as const) : ('in' as const),
+        text: typeof m.text === 'string' ? m.text : '',
+        hasMedia: Array.isArray(m.media) && m.media.length > 0,
+        status: typeof m.status === 'string' ? m.status : null,
+      }))
+      .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+    return { kind: 'ok', messages }
+  } catch (err) {
+    console.error('quo:fetchThread exception:', err instanceof Error ? err.message : err)
+    return { kind: 'unavailable', reason: 'Could not reach Quo.' }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export interface QuoContactInput {
   firstName?: string | null
   lastName?: string | null
