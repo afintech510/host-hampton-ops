@@ -36,6 +36,14 @@
  * and land in `failed` having never been tried. `finishReminder` therefore has a
  * `deferred` outcome that moves `scheduled_for` and leaves `attempts` alone.
  *
+ * ONE NAMED EXEMPTION: the crew sign-in code. `sendLoginCodeSms` in
+ * `lib/crew/notify.ts` texts a 6-digit code the person asked for on the login
+ * page a moment ago. That is a reply, not a solicitation, and a code held until
+ * 8am is useless, so it is not deferred. Nothing else may skip this check;
+ * `crewOnboarding.test.ts` fails if a second function sends a crew text without
+ * calling `checkSmsQuietHours`, or if `sendLoginCodeSms` has a caller other than
+ * the login-code route.
+ *
  * EMAIL IS NOT GATED. Quiet hours are a telephone rule; a 6am email is a
  * nuisance, not a violation, and holding mail would delay the balance-chase and
  * thank-you paths for no legal benefit.

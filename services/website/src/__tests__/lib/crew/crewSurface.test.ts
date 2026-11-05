@@ -55,7 +55,7 @@ describe('R1: every signed-in page stands behind requireCrewPage', () => {
     for (const p of gated) {
       const src = read(p)
       const body = src.slice(src.search(/export\s+default\s+async\s+function/))
-      const gate = /const\s+(\w+)\s*=\s*await\s+requireCrewPage\s*\(\s*\)\s*\r?\n\s*if\s*\(\s*\1\s*===\s*'unavailable'\s*\)\s*return\b/.exec(body)
+      const gate = /const\s+(\w+)\s*=\s*await\s+requireCrewPage\s*\(\s*(?:'onboarding'\s*)?\)\s*\r?\n\s*if\s*\(\s*\1\s*===\s*'unavailable'\s*\)\s*return\b/.exec(body)
       const firstAwait = body.search(/\bawait\b/)
       if (!gate || firstAwait !== gate.index + gate[0].indexOf('await')) offenders.push(rel(p))
     }
@@ -108,13 +108,13 @@ describe('R3: every door asks who may enter', () => {
     const auth = read(path.join(SRC, 'lib', 'crew', 'auth.ts'))
     const fn = auth.slice(auth.indexOf('async function sessionFor'), auth.indexOf('export type CrewGate'))
     expect(fn).toMatch(/const\s+read\s*=\s*await\s+getMember\s*\(/)
-    expect(fn).toMatch(/if\s*\(\s*!m\s*\|\|\s*!crewMemberMayEnter\s*\(\s*m\s*\)\s*\)\s*return\s*\{\s*kind:\s*'none'\s*\}/)
+    expect(fn).toMatch(/if\s*\(\s*!m\s*\|\|\s*!crewMemberMayEnter\s*\(\s*m,\s*'onboarding'\s*\)\s*\)\s*return\s*\{\s*kind:\s*'none'\s*\}/)
   })
 
   it('both email-code routes judge the member with it before touching a code', () => {
     for (const r of ['request', 'verify']) {
       const src = read(path.join(API_CREW, 'auth', r, 'route.ts'))
-      const judged = src.search(/!\s*crewMemberMayEnter\s*\(\s*member\s*\)/)
+      const judged = src.search(/!\s*crewMemberMayEnter\s*\(\s*member,\s*'onboarding'\s*\)/)
       const codes = src.search(/from\('crew_login_codes'\)/)
       expect(judged).toBeGreaterThan(-1)
       expect(codes).toBeGreaterThan(judged)

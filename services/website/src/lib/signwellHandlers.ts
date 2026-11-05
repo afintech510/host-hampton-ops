@@ -26,6 +26,7 @@ import { fetchSignedPdfUrl } from '@/lib/signwell'
 import { cancelCheckinReminders } from '@/lib/checkinReminders'
 import { CHECKIN_DOC_TYPE } from '@/lib/checkinLink'
 import { markReleaseSigned } from '@/lib/marketing/consent'
+import { CREW_AGREEMENT_DOC_TYPE } from '@/lib/crew/agreementText'
 import {
   verifySignwellEvent,
   parseSignwellEvent,
@@ -219,10 +220,77 @@ export const writeConsentSigned: SignwellWriter = async (parsed, truth) => {
   return { status: 200, body: { received: true, signed: result.kind === 'signed' } }
 }
 
+/**
+ * Crew subcontractor agreement → crew_member_profiles.agreement_signed_at.
+ *
+ * The member is taken from SIGNWELL'S OWN RESPONSE (`truth.metadata.member_id`),
+ * never from the POST body, and the write is additionally bound to the document
+ * id we stored on that member's row when we created the document
+ * (`agreement_document_id`). So a signed document that is not the one we issued
+ * to that member — a replayed envelope, a document someone else made on the
+ * account — matches zero rows and writes nothing. The signed PDF is NOT stored
+ * as a link: an admin fetches it on demand (`fetchSignedPdfUrl`).
+ */
+export const writeCrewAgreementSigned: SignwellWriter = async (parsed, truth) => {
+  const supabase = getSupabase()
+  const memberId = typeof truth.metadata.member_id === 'string' ? truth.metadata.member_id : ''
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(memberId)) {
+    console.error('signwell[crew]: SIGNED DOCUMENT WITH NO MEMBER ID — document', parsed.documentId)
+    return { status: 200, body: { received: true, matched: 0, warning: 'no member id' } }
+  }
+
+  // The version signed is SignWell's own record of it (metadata set when we
+  // created the document), not something the browser or the POST can say.
+  const version = typeof truth.metadata.version === 'string' ? truth.metadata.version : ''
+  if (!version) {
+    console.error('signwell[crew]: SIGNED DOCUMENT WITH NO VERSION — document', parsed.documentId)
+    return { status: 200, body: { received: true, matched: 0, warning: 'no version' } }
+  }
+
+  const { data: row, error: readErr } = await supabase
+    .from('crew_member_profiles')
+    .select('agreement_signed_at, agreement_version')
+    .eq('member_id', memberId)
+    .eq('agreement_document_id', parsed.documentId)
+    .maybeSingle()
+  if (readErr) {
+    console.error('signwell[crew] lookup error:', readErr.message)
+    return { status: 503, body: { error: 'lookup failed, retry' } }
+  }
+  if (!row) {
+    // Not the document we issued to that member: a replay, or someone else's document.
+    console.warn('signwell[crew]: no member row holds document', parsed.documentId)
+    return { status: 200, body: { received: true, matched: 0 } }
+  }
+  if (row.agreement_signed_at && row.agreement_version === version) {
+    return { status: 200, body: { received: true, matched: 0, duplicate: true } } // a redelivery
+  }
+
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('crew_member_profiles')
+    .update({ agreement_signed_at: now, agreement_version: version, updated_at: now })
+    .eq('member_id', memberId)
+    .eq('agreement_document_id', parsed.documentId)
+    .select('member_id')
+  if (error) {
+    console.error('signwell[crew] update error:', error.message)
+    return { status: 500, body: { error: 'update failed' } }
+  }
+  const matched = data?.length ?? 0
+  if (matched === 0) {
+    console.error('signwell[crew]: SIGNED DOCUMENT NOT RECORDED — document', parsed.documentId)
+    return { status: 500, body: { error: 'update matched nothing' } }
+  }
+  console.log('signwell[crew]: agreement signed for a crew member')
+  return { status: 200, body: { received: true, matched } }
+}
+
 export const SIGNWELL_WRITERS: Record<string, SignwellWriter> = {
   [STUDIO_DOC_TYPE]: writeStudioRentalSigned,
   [CHECKIN_DOC_TYPE]: writeCheckinSigned,
   [CONSENT_DOC_TYPE]: writeConsentSigned,
+  [CREW_AGREEMENT_DOC_TYPE]: writeCrewAgreementSigned,
 }
 
 /* ------------------------------------------------------------- orchestrator */

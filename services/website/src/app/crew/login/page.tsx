@@ -10,7 +10,7 @@ import TestPicker from '../_components/TestPicker'
 export const dynamic = 'force-dynamic'
 
 /**
- * `/crew/login`: email → code. While CREW_TEST_LOGIN is on, also the test
+ * `/crew/login`: phone or email → code. While CREW_TEST_LOGIN is on, also the test
  * picker: the active `is_test` members only, as `testPickView` (first name,
  * last name, rate, can-lead) — never an email or a phone.
  */
@@ -32,7 +32,7 @@ export default async function CrewLoginPage() {
     <main className="crew-wrap">
       <div className="crew-top"><span className="crew-brand">Host Hampton Crew</span></div>
       <h1>Sign in</h1>
-      <p className="crew-muted" style={{ marginTop: 0 }}>We&apos;ll email you a 6-digit code. No password to remember.</p>
+      <p className="crew-muted" style={{ marginTop: 0 }}>We&apos;ll text or email you a 6-digit code. No password to remember.</p>
       <LoginForm />
       {picks && <TestPicker members={picks} />}
       {pickError && <p className="crew-note crew-warn">The test crew list didn&apos;t load. Refresh to try again.</p>}

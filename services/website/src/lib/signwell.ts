@@ -209,6 +209,70 @@ export async function createEmbeddedDocument(
 }
 
 /**
+ * An embedded-signing document made from a FILE we generate (not a dashboard
+ * template): POST /documents with a base64 PDF whose signature fields are
+ * SignWell text tags (`text_tags: true`). Used for the crew agreement.
+ *
+ * `testMode` overrides the account default for this one document, so the first
+ * end-to-end run can be a SignWell test-mode document on a live account.
+ */
+export interface CreateFileDocumentInput {
+  documentName: string
+  pdf: Uint8Array
+  fileName: string
+  signerName: string
+  signerEmail: string
+  metadata?: Record<string, string>
+  testMode?: boolean
+}
+
+export async function createDocumentFromFile(input: CreateFileDocumentInput): Promise<CreateAgreementResult> {
+  if (!process.env.SIGNWELL_API_KEY) throw new Error('SignWell is not configured (missing SIGNWELL_API_KEY)')
+
+  const payload = {
+    test_mode: input.testMode ?? testMode(),
+    files: [{ name: input.fileName, file_base64: Buffer.from(input.pdf).toString('base64') }],
+    name: input.documentName,
+    text_tags: true,
+    embedded_signing: true,
+    embedded_signing_notifications: false,
+    metadata: input.metadata ?? {},
+    recipients: [{ id: '1', name: input.signerName, email: input.signerEmail }],
+  }
+
+  const res = await fetch(`${API_BASE}/documents/`, { method: 'POST', headers: headers(), body: JSON.stringify(payload) })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`SignWell create document failed (${res.status}): ${text.slice(0, 300)}`)
+  }
+  const data = (await res.json()) as { id: string; recipients?: { id: string; embedded_signing_url?: string }[] }
+  const signingUrl = data.recipients?.find(r => r.embedded_signing_url)?.embedded_signing_url
+  if (!data.id || !signingUrl) throw new Error('SignWell response missing document id or embedded signing URL')
+  return { documentId: data.id, embeddedSigningUrl: signingUrl }
+}
+
+/**
+ * The embedded signing URL of an EXISTING document, so a member who closes the
+ * window and comes back reuses their document instead of using up another of
+ * the account's monthly documents. Null when the document is gone, already
+ * completed, or SignWell does not hand a URL back — the caller then makes a new one.
+ */
+export async function fetchEmbeddedSigningUrl(documentId: string): Promise<{ url: string; version: string | null } | null> {
+  if (!process.env.SIGNWELL_API_KEY) return null
+  try {
+    const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(documentId)}/`, { headers: headers() })
+    if (!res.ok) return null
+    const data = (await res.json()) as { status?: unknown; metadata?: { version?: unknown }; recipients?: { embedded_signing_url?: string }[] }
+    if (typeof data.status === 'string' && data.status.toLowerCase() === 'completed') return null
+    const url = data.recipients?.find(r => r.embedded_signing_url)?.embedded_signing_url
+    if (!url) return null
+    return { url, version: typeof data.metadata?.version === 'string' ? data.metadata.version : null }
+  } catch {
+    return null
+  }
+}
+
+/**
  * Fetch the completed-PDF URL for a signed document — the signed legal
  * artifact itself.
  *

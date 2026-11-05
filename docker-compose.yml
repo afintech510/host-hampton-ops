@@ -257,6 +257,15 @@ services:
       # exactly "true". It lists and signs in ONLY is_test crew members (migration
       # 079), and while it is on without CREW_ENABLED, /crew admits test members only.
       - CREW_TEST_LOGIN=${CREW_TEST_LOGIN:-false}
+      # Crew onboarding (migration 082). CREW_ONBOARDING_ENABLED is OFF unless exactly
+      # "true": real members can then sign in (phone or email code) but reach ONLY
+      # /crew/onboarding and /crew/profile; the board stays closed until CREW_ENABLED.
+      # It also gates the "Send onboarding link" text. CREW_AGREEMENT_VERSION re-signs
+      # everyone when raised; CREW_AGREEMENT_TEST_MODE=true makes new agreement
+      # documents SignWell test-mode documents (for the first end-to-end run).
+      - CREW_ONBOARDING_ENABLED=${CREW_ONBOARDING_ENABLED:-false}
+      - CREW_AGREEMENT_VERSION=${CREW_AGREEMENT_VERSION:-v1}
+      - CREW_AGREEMENT_TEST_MODE=${CREW_AGREEMENT_TEST_MODE:-false}
       # EVITE (party invitations; docs/specs/evites/03-architecture-spec.md §14, §16).
       # EVITES_PAGES gates creation, pages and renders; EVITES_SENDS gates every evite
       # email. Each is off | pilot | on, and ANYTHING else (unset, empty, a typo) reads as

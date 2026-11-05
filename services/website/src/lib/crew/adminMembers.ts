@@ -21,7 +21,7 @@ import { ratesFor, type CrewSettings } from '@/lib/crew/rules'
 import { screenMemberInput } from '@/lib/crew/adminForms'
 import { templates } from '@/lib/crew/templates'
 import { sendCrewEmail } from '@/lib/crew/mail'
-import { crewEnabled } from '@/lib/crew/settings'
+import { crewAgreementVersion, crewEnabled } from '@/lib/crew/settings'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { etDateString } from '@/lib/partyTime'
 import type { ActionResult } from '@/lib/crew/adminActions'
@@ -29,6 +29,22 @@ import type { ActionResult } from '@/lib/crew/adminActions'
 type Supa = ReturnType<typeof getSupabase>
 
 const refuse = (status: number, error: string): ActionResult<never> => ({ ok: false, status, error })
+
+/** Where a person is in onboarding, in order: added → link sent → signed in → profile done → agreement signed. */
+export type OnboardingStage = 'added' | 'link_sent' | 'signed_in' | 'profile_done' | 'agreement_signed' | 'not_required'
+
+export function onboardingStage(
+  m: Pick<CrewMemberRow, 'is_owner' | 'is_test' | 'phone'>,
+  profile: { onboarding_completed_at: string | null; agreement_signed_at: string | null; agreement_version: string | null } | null,
+  linkSent: boolean,
+  currentVersion = crewAgreementVersion(),
+): OnboardingStage {
+  if (m.is_owner || (m.is_test && !m.phone)) return 'not_required'
+  if (profile?.agreement_signed_at && profile.agreement_version === currentVersion && profile.onboarding_completed_at) return 'agreement_signed'
+  if (profile?.onboarding_completed_at) return 'profile_done'
+  if (profile) return 'signed_in'
+  return linkSent ? 'link_sent' : 'added'
+}
 
 export interface RosterRow {
   id: string
@@ -54,6 +70,7 @@ export interface RosterRow {
   noShows: number
   lateCancelsUncovered: number
   upcomingSpots: number
+  onboarding: OnboardingStage
 }
 
 export interface HiredApplication { id: string; ref: string; name: string; email: string; phone: string; roleInterest: string }
@@ -63,14 +80,20 @@ export interface Roster { members: RosterRow[]; hired: HiredApplication[] }
 export async function loadRoster(sb: Supa, s: CrewSettings, now: Date): Promise<Read<Roster>> {
   const members = await listMembers(sb, { includeRemoved: true })
   if (members.kind !== 'ok') return members
-  const [slots, events, apps] = await Promise.all([
+  const [slots, events, apps, profiles, invites] = await Promise.all([
     sb.from('crew_slots').select('member_id, status, party_id').not('member_id', 'is', null).in('status', ['assigned', 'completed', 'no_show']),
     sb.from('crew_events').select('member_id').eq('type', 'late_cancel_uncovered').eq('waived_grace', false),
     sb.from('job_applications').select('id, application_ref, name, email, phone, role_interest').eq('status', 'hired'),
+    sb.from('crew_member_profiles').select('member_id, onboarding_completed_at, agreement_signed_at, agreement_version'),
+    sb.from('crew_notifications').select('member_id').eq('template', 'onboardingInvite').eq('status', 'sent'),
   ])
   if (slots.error) return { kind: 'unavailable', error: slots.error.message }
   if (events.error) return { kind: 'unavailable', error: events.error.message }
   if (apps.error) return { kind: 'unavailable', error: apps.error.message }
+  if (profiles.error) return { kind: 'unavailable', error: profiles.error.message }
+  if (invites.error) return { kind: 'unavailable', error: invites.error.message }
+  const profileBy = new Map(((profiles.data ?? []) as { member_id: string; onboarding_completed_at: string | null; agreement_signed_at: string | null; agreement_version: string | null }[]).map(p => [p.member_id, p]))
+  const invited = new Set(((invites.data ?? []) as { member_id: string }[]).map(r => r.member_id))
 
   const slotRows = (slots.data ?? []) as { member_id: string; status: string; party_id: string }[]
   const assignedPartyIds = Array.from(new Set(slotRows.filter(r => r.status === 'assigned').map(r => r.party_id)))
@@ -107,6 +130,7 @@ export async function loadRoster(sb: Supa, s: CrewSettings, now: Date): Promise<
           jobApplicationId: m.job_application_id, joinedOn: m.joined_on,
           partiesWorked: worked.get(m.id) ?? 0, noShows: noShows.get(m.id) ?? 0,
           lateCancelsUncovered: uncovered.get(m.id) ?? 0, upcomingSpots: upcoming.get(m.id) ?? 0,
+          onboarding: onboardingStage(m, profileBy.get(m.id) ?? null, invited.has(m.id)),
         }
       }).sort((a, b) => (a.isOwner === b.isOwner ? (a.status === b.status ? a.firstName.localeCompare(b.firstName) : a.status === 'active' ? -1 : 1) : a.isOwner ? -1 : 1)),
       hired: ((apps.data ?? []) as { id: string; application_ref: string; name: string; email: string; phone: string; role_interest: string }[])

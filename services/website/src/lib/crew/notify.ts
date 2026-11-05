@@ -44,7 +44,8 @@ import { checkSmsQuietHours } from '@/lib/quietHours'
 import { gsm7Sanitize, smsSegmentInfo } from '@/lib/smsSegments'
 import { checkFreshness, reminderMaxLatenessMs } from '@/lib/scheduleFreshness'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
-import { crewAdminEmail, crewEnabled, crewSmsEnabled } from '@/lib/crew/settings'
+import { crewAdminEmail, crewEnabled, crewOnboardingEnabled, crewSmsEnabled } from '@/lib/crew/settings'
+import { etDateString } from '@/lib/partyTime'
 import { getMember, insertNotification, type CrewMemberRow, type CrewPartyRow } from '@/lib/crew/db'
 import { SMS_DISCLOSURE, templates, type PartyRef, type Rendered } from '@/lib/crew/templates'
 import { setupStartsAt, TIME_ZONE, type CrewSettings } from '@/lib/crew/rules'
@@ -488,4 +489,90 @@ export function partyRefFor(party: Pick<CrewPartyRow, 'id' | 'title' | 'theme' |
 /** A party is a TEST party when it has no booking and Allie titled it so (scripts/crew/seed-test-parties.sql). */
 export function isTestParty(party: Pick<CrewPartyRow, 'booking_id' | 'title'>): boolean {
   return !party.booking_id && /^TEST\b/.test(party.title)
+}
+
+/* ── Sign-in code by text, and the onboarding invite ───────────────────────── */
+
+/**
+ * The sign-in code, by text. THE one named exemption from quiet hours
+ * (`lib/quietHours.ts`): a code is a reply to something the person just asked
+ * for on the login page, not a solicitation, and a code deferred to 8am is
+ * useless. It needs no opt-in either, for the same reason; it is bounded by the
+ * recipient and route limits in `/api/crew/auth/request`. Returns whether Quo
+ * accepted it.
+ */
+export async function sendLoginCodeSms(to: string, code: string, senders: CrewSenders = liveSenders): Promise<boolean> {
+  const body = gsm7Sanitize(templates.loginCode(code).sms)
+  try {
+    return !!(await senders.sms(to, body))
+  } catch (e) {
+    console.error(`crew/notify: login code text threw: ${errText(e)}`)
+    return false
+  }
+}
+
+export type InviteOutcome =
+  | { kind: 'sent' }
+  | { kind: 'duplicate' }
+  | { kind: 'disabled' }
+  | { kind: 'ineligible'; reason: 'owner' | 'inactive' | 'no_phone' }
+  /** Outside 8am–9pm Eastern. Nothing was claimed, so pressing the button again after `until` sends it. */
+  | { kind: 'quiet'; until: Date }
+  | { kind: 'failed'; error: string }
+
+/**
+ * "Send onboarding link": ONE text telling a new crew member where to set up
+ * their account. Gated by CREW_ONBOARDING_ENABLED (not CREW_SMS_ENABLED, which
+ * is about party alerts and stays off), honours quiet hours by REFUSING rather
+ * than queueing (the queue drain re-checks an opt-in this person has not given
+ * yet), and claims `onboarding_invite:<member>:<ET date>` first so a double
+ * click sends once. The recipient has no opt-in at this point — the owner added
+ * them and told them to expect it — so the text carries the opt-out line.
+ */
+export async function sendOnboardingInvite(ctx: NotifyCtx, member: NotifyMember, actor = 'admin'): Promise<InviteOutcome> {
+  if (!crewOnboardingEnabled()) return { kind: 'disabled' }
+  if (member.is_owner) return { kind: 'ineligible', reason: 'owner' }
+  if (member.status !== 'active') return { kind: 'ineligible', reason: 'inactive' }
+  if (!member.phone) return { kind: 'ineligible', reason: 'no_phone' }
+
+  const verdict = checkSmsQuietHours(ctx.now)
+  if (verdict.kind === 'quiet') return { kind: 'quiet', until: verdict.until }
+  if (verdict.kind === 'unreadable') return { kind: 'quiet', until: new Date(ctx.now.getTime() + 60 * 60 * 1000) }
+
+  const claim = await insertNotification(ctx.sb, {
+    member_id: member.id, channel: 'sms', template: 'onboardingInvite', status: 'sending',
+    dedupe_key: `onboarding_invite:${member.id}:${etDateString(ctx.now)}`, payload: { sent_by: actor },
+  })
+  if (claim.kind === 'duplicate') return { kind: 'duplicate' }
+  if (claim.kind === 'failed') return { kind: 'failed', error: claim.error }
+
+  const text = gsm7Sanitize(templates.onboardingInvite(member.first_name).sms)
+  const senders = ctx.senders ?? liveSenders
+  let providerId: string | null = null
+  try {
+    providerId = await senders.sms(member.phone, text)
+  } catch (e) {
+    console.error(`crew/notify: onboarding invite threw for row ${claim.id}: ${errText(e)}`)
+  }
+  if (providerId) {
+    await finish(ctx.sb, claim.id, { status: 'sent', provider_id: providerId, sent_at: ctx.now.toISOString(), error: null })
+    return { kind: 'sent' }
+  }
+  await finish(ctx.sb, claim.id, { status: 'failed', error: 'quo returned no message id (see the quo:sendSMS log line)' })
+  return { kind: 'failed', error: 'the text did not send' }
+}
+
+/**
+ * The code that confirms a typed email address during onboarding (an answer to
+ * the member's own request, like the sign-in code). Returns whether Resend took it.
+ */
+export async function sendEmailConfirmCode(to: string, code: string, senders: CrewSenders = liveSenders): Promise<boolean> {
+  try {
+    const out = await senders.email(to, templates.emailConfirm(code))
+    if (out.kind !== 'sent') console.error('crew/notify: email confirm code NOT sent:', out.kind === 'failed' ? out.error : 'RESEND_API_KEY is not set')
+    return out.kind === 'sent'
+  } catch (e) {
+    console.error(`crew/notify: email confirm code threw: ${errText(e)}`)
+    return false
+  }
 }

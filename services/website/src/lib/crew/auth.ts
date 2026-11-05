@@ -20,7 +20,8 @@ import { cookies } from 'next/headers'
 import { getSupabase } from '@/lib/supabase'
 import { portalSigningSecret } from '@/lib/portalAuth'
 import { getMember, type CrewMemberRow } from '@/lib/crew/db'
-import { crewAppOpen, crewMemberMayEnter } from '@/lib/crew/settings'
+import { crewAppOpen, crewMemberMayEnter, type CrewScope } from '@/lib/crew/settings'
+import { getOnboardingState, type OnboardingState } from '@/lib/crew/profile'
 
 export const CREW_COOKIE = 'hh_crew'
 const MAX_AGE_S = 30 * 24 * 60 * 60
@@ -76,7 +77,7 @@ function cookieFromHeader(header: string | null): string | null {
 }
 
 export type CrewSession =
-  | { kind: 'ok'; member: CrewMemberRow }
+  | { kind: 'ok'; member: CrewMemberRow; onboarding: OnboardingState; scope: CrewScope }
   /** No cookie, a bad cookie, or a member who may not enter (paused, removed, owner, real member in test mode). */
   | { kind: 'none' }
   /** The member could not be READ. Not "signed out": that would bounce a real person to the login page on a blip. */
@@ -86,26 +87,51 @@ async function sessionFor(value: string | null): Promise<CrewSession> {
   if (!crewAppOpen()) return { kind: 'none' }
   const memberId = memberIdFromCookieValue(value, portalSigningSecret())
   if (!memberId) return { kind: 'none' }
-  const read = await getMember(getSupabase(), memberId)
+  const sb = getSupabase()
+  const read = await getMember(sb, memberId)
   if (read.kind !== 'ok') return { kind: 'unavailable', error: read.error }
   const m = read.data
-  if (!m || !crewMemberMayEnter(m)) return { kind: 'none' }
-  return { kind: 'ok', member: m }
+  // The wider door: onboarding scope admits a real member while only
+  // CREW_ONBOARDING_ENABLED is on. `scope` records which room they may use.
+  if (!m || !crewMemberMayEnter(m, 'onboarding')) return { kind: 'none' }
+  const ob = await getOnboardingState(sb, m)
+  if (ob.kind !== 'ok') return { kind: 'unavailable', error: ob.error }
+  return { kind: 'ok', member: m, onboarding: ob.data, scope: crewMemberMayEnter(m, 'app') ? 'app' : 'onboarding' }
 }
 
 export type CrewGate = { ok: true; member: CrewMemberRow } | { ok: false; response: NextResponse }
 
 /**
+ * What a signed-in member may do on a request for `want`:
+ *   'onboarding' — the onboarding + profile surface: any session that is OK;
+ *   'app'        — the board and everything on it: the app must be open to them
+ *                  (CREW_ENABLED, or a test member) AND their onboarding finished.
+ * Returns null when allowed, else why not.
+ */
+export function crewAccessDenied(s: Extract<CrewSession, { kind: 'ok' }>, want: CrewScope): 'onboarding_closed' | 'onboarding_incomplete' | null {
+  if (want === 'onboarding') return null
+  if (s.scope !== 'app') return 'onboarding_closed'
+  if (s.onboarding.incomplete) return 'onboarding_incomplete'
+  return null
+}
+
+/**
  * The gate every `/api/crew/*` route except the logins stands behind.
  *
- *   app closed (neither switch on) → 404, so the surface does not exist;
- *   no session / not allowed       → 401;
- *   member unreadable              → 503.
+ *   app closed (no switch on)          → 404, so the surface does not exist;
+ *   no session / not allowed           → 401;
+ *   onboarding unfinished / app closed → 403 with `redirect: '/crew/onboarding'`;
+ *   member unreadable                  → 503.
  */
-export async function requireCrewMember(req: NextRequest): Promise<CrewGate> {
+export async function requireCrewMember(req: NextRequest, want: CrewScope = 'app'): Promise<CrewGate> {
   if (!crewAppOpen()) return { ok: false, response: NextResponse.json({ error: 'Not found' }, { status: 404 }) }
   const s = await sessionFor(cookieFromHeader(req.headers.get('cookie')))
-  if (s.kind === 'ok') return { ok: true, member: s.member }
+  if (s.kind === 'ok') {
+    if (crewAccessDenied(s, want)) {
+      return { ok: false, response: NextResponse.json({ error: 'Finish setting up your account first.', redirect: '/crew/onboarding' }, { status: 403 }) }
+    }
+    return { ok: true, member: s.member }
+  }
   if (s.kind === 'unavailable') {
     console.error('crew: member read failed:', s.error)
     return { ok: false, response: NextResponse.json({ error: 'Try again in a moment.' }, { status: 503 }) }

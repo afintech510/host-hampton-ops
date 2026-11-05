@@ -67,6 +67,28 @@ export const templates = {
     )
   },
 
+  /** The first crew text a person ever gets: one link, the opt-out line, signed like every crew message. */
+  onboardingInvite(firstName: string): Rendered {
+    const site = TENANT.business.siteUrl
+    return r(
+      `Hi ${firstName}, set up your ${TENANT.business.name} crew account here: ${site.replace(/^https?:\/\//, '').replace(/^www\./, '')}/crew/login Reply STOP to opt out.`,
+      `Set up your ${TENANT.business.name} crew account`,
+      `Hi ${firstName},
+
+Set up your ${TENANT.business.name} crew account here: ${site}/crew/login`,
+    )
+  },
+
+  emailConfirm(code: string): Rendered {
+    return r(
+      `Your ${TENANT.business.name} crew email code is ${code}. It expires in 10 minutes.`,
+      `Confirm your email: ${code}`,
+      `Your code to confirm this email address is ${code}. It expires in 10 minutes.
+
+If you didn't ask for it, you can ignore this email.`,
+    )
+  },
+
   loginCode(code: string): Rendered {
     return r(
       `Your Host Hampton crew code is ${code}. It expires in 10 minutes.`,

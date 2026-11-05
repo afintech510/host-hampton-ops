@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getEmailCodeMaxAttempts, portalSigningSecret, verifyEmailLoginCode } from '@/lib/portalAuth'
-import { findCrewMembersByEmail, isPlausibleEmailAddress } from '@/lib/contactLookup'
 import { isLocalRequest } from '@/lib/publicOrigin'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { crewAppOpen, crewMemberMayEnter } from '@/lib/crew/settings'
 import { setCrewCookieHeader } from '@/lib/crew/auth'
+import { findLoginMember, parseLoginIdentity } from '@/lib/crew/loginIdentity'
+import { ensureProfileRow } from '@/lib/crew/profile'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,27 +25,28 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}))
-    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
     const code = typeof body?.code === 'string' ? body.code.trim() : ''
-    if (!isPlausibleEmailAddress(email)) return NextResponse.json({ error: 'Enter your email address.' }, { status: 400 })
+    const parsed = parseLoginIdentity(body)
+    if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
     if (!/^\d{6}$/.test(code)) return NextResponse.json({ error: 'Enter the 6-digit code.' }, { status: 400 })
 
     const supabase = getSupabase()
     const notFound = NextResponse.json({ error: 'That code has expired. Ask for a new one.' }, { status: 400 })
 
-    const lookup = await findCrewMembersByEmail(supabase, email, 'id, email, status, is_owner, is_test')
+    const lookup = await findLoginMember(supabase, parsed.identity)
     if (lookup.kind === 'unavailable') {
       console.error('crew/auth/verify: member read failed:', lookup.error)
       return NextResponse.json({ error: 'We could not check that code just now. Try again.' }, { status: 503 })
     }
-    const member = lookup.kind === 'found' ? (lookup.primary as unknown as { id: string; status: string; is_owner: boolean; is_test: boolean }) : null
-    if (!member || !crewMemberMayEnter(member)) return notFound
+    const member = lookup.kind === 'found' ? lookup.member : null
+    if (!member || !crewMemberMayEnter(member, 'onboarding')) return notFound
 
     const maxAttempts = getEmailCodeMaxAttempts()
     const { data: row, error: readErr } = await supabase
       .from('crew_login_codes')
       .select('id, code_hash, attempts')
       .eq('member_id', member.id)
+      .eq('purpose', 'login')
       .is('consumed_at', null)
       .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
@@ -101,6 +103,11 @@ export async function POST(req: NextRequest) {
       if (consumeErr) console.error('crew/auth/verify: could not consume code:', consumeErr.message)
       return NextResponse.json({ error: 'We could not finish signing you in. Ask for a new code.' }, { status: 503 })
     }
+
+    // First sign-in leaves a profile row, so the admin view can say "signed in".
+    // Not fatal: the onboarding page creates it too.
+    const started = await ensureProfileRow(supabase, member.id)
+    if (started.kind !== 'ok') console.error('crew/auth/verify: could not start the profile row:', started.error)
 
     const res = NextResponse.json({ ok: true })
     res.headers.set('Set-Cookie', setCrewCookieHeader(member.id, secret, isLocalRequest(req)))

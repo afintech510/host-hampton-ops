@@ -23,6 +23,11 @@ interface Member {
   status: 'active' | 'paused' | 'removed'; needsReview: boolean; emailOptIn: boolean; smsOptIn: boolean
   adminNotes: string | null; jobApplicationId: string | null; joinedOn: string
   partiesWorked: number; noShows: number; lateCancelsUncovered: number; upcomingSpots: number
+  onboarding: 'added' | 'link_sent' | 'signed_in' | 'profile_done' | 'agreement_signed' | 'not_required'
+}
+
+const STAGE_LABEL: Record<Member['onboarding'], string> = {
+  added: 'Added', link_sent: 'Link sent', signed_in: 'Signed in', profile_done: 'Profile done', agreement_signed: 'Agreement signed', not_required: '—',
 }
 interface Hired { id: string; ref: string; name: string; email: string; phone: string; roleInterest: string }
 interface Roster { members: Member[]; hired: Hired[]; maxSteps: number }
@@ -151,6 +156,7 @@ export default function CrewMembersPage() {
               <th className="px-4 py-3">Worked</th>
               <th className="px-4 py-3">Late, uncovered</th>
               <th className="px-4 py-3">No-shows</th>
+              <th className="px-4 py-3">Onboarding</th>
               <th className="px-4 py-3">Flags</th>
             </tr>
           </thead>
@@ -196,11 +202,12 @@ function MemberRow({ m, open, maxSteps, onToggle, onChanged, onError }: {
         <td className="px-4 py-3">{m.partiesWorked}</td>
         <td className="px-4 py-3">{m.lateCancelsUncovered}</td>
         <td className="px-4 py-3">{m.noShows}</td>
+        <td className="px-4 py-3 text-xs">{STAGE_LABEL[m.onboarding]}</td>
         <td className="px-4 py-3 text-xs text-hampton-navy/70">{flags.join(' · ') || '—'}</td>
       </tr>
       {open && (
         <tr className="bg-[#F6F1EB]/40">
-          <td colSpan={7} className="px-4 py-4">
+          <td colSpan={8} className="px-4 py-4">
             <div className="grid lg:grid-cols-3 gap-5">
               <div className="lg:col-span-2">
                 <MemberForm key={JSON.stringify(m)} initial={formFrom(m)} mode={m.isOwner ? 'owner' : 'edit'} maxSteps={maxSteps} onSave={save} />
@@ -212,6 +219,7 @@ function MemberRow({ m, open, maxSteps, onToggle, onChanged, onError }: {
                   <>
                     <StepOverride m={m} maxSteps={maxSteps} onChanged={onChanged} onError={onError} />
                     <Invite m={m} onChanged={onChanged} onError={onError} />
+                    <Onboarding m={m} onChanged={onChanged} onError={onError} />
                     {m.needsReview && (
                       <button className={BTN_GHOST} onClick={async () => {
                         const r = await api<{ error?: string }>(`/api/admin/crew/members/${m.id}`, { method: 'PATCH', body: { needs_review: false } })
@@ -333,5 +341,77 @@ function Invite({ m, onChanged, onError }: { m: Member; onChanged: (msg: string)
     >
       Email an invite
     </button>
+  )
+}
+
+interface AdminProfile {
+  legalFirstName: string | null; legalLastName: string | null; preferredName: string | null; dateOfBirth: string | null
+  addressLine1: string | null; addressLine2: string | null; city: string | null; state: string | null; zip: string | null
+  emergencyName: string | null; emergencyRelationship: string | null; emergencyPhone: string | null
+  agreementVersion: string | null; agreementSignedAt: string | null; hasSignedAgreement: boolean
+}
+
+/** Send the onboarding text; view the private profile (audited); open the signed agreement (audited). */
+function Onboarding({ m, onChanged, onError }: { m: Member; onChanged: (msg: string) => Promise<void>; onError: (e: string) => void }) {
+  const api = useAdminApi()
+  const [busy, setBusy] = useState(false)
+  const [profile, setProfile] = useState<AdminProfile | null | undefined>(undefined)
+  if (m.onboarding === 'not_required') return null
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-hampton-navy/60">Onboarding: <strong>{STAGE_LABEL[m.onboarding]}</strong></p>
+      <button
+        disabled={busy || !m.phone || m.status !== 'active'}
+        className={BTN_GHOST}
+        title={!m.phone ? 'No phone number' : ''}
+        onClick={async () => {
+          setBusy(true)
+          const r = await api<{ error?: string }>(`/api/admin/crew/members/${m.id}/onboarding-link`, { method: 'POST' })
+          setBusy(false)
+          if (!r.ok) onError(r.data.error || 'Could not send it.')
+          else await onChanged(`Onboarding link texted to ${m.firstName}.`)
+        }}
+      >
+        Send onboarding link
+      </button>
+      <button
+        disabled={busy}
+        className={BTN_GHOST}
+        onClick={async () => {
+          setBusy(true)
+          const r = await api<{ error?: string; profile?: AdminProfile | null }>(`/api/admin/crew/members/${m.id}/profile`, { method: 'GET' })
+          setBusy(false)
+          if (!r.ok) onError(r.data.error || 'Could not open the profile.')
+          else setProfile(r.data.profile ?? null)
+        }}
+      >
+        View profile (logged)
+      </button>
+      {m.onboarding === 'agreement_signed' && (
+        <button
+          disabled={busy}
+          className={BTN_GHOST}
+          onClick={async () => {
+            setBusy(true)
+            const r = await api<{ error?: string; url?: string }>(`/api/admin/crew/members/${m.id}/agreement`, { method: 'GET' })
+            setBusy(false)
+            if (!r.ok || !r.data.url) onError(r.data.error || 'Could not get the agreement.')
+            else window.open(r.data.url, '_blank', 'noopener')
+          }}
+        >
+          Download signed agreement
+        </button>
+      )}
+      {profile === null && <p className="text-xs text-hampton-navy/60">They have not started the form yet.</p>}
+      {profile && (
+        <dl className="text-xs text-hampton-navy/80 space-y-1 bg-white rounded-lg p-3">
+          <div><dt className="inline font-semibold">Name: </dt><dd className="inline">{profile.legalFirstName} {profile.legalLastName}{profile.preferredName ? ` (${profile.preferredName})` : ''}</dd></div>
+          <div><dt className="inline font-semibold">Birthday: </dt><dd className="inline">{profile.dateOfBirth}</dd></div>
+          <div><dt className="inline font-semibold">Address: </dt><dd className="inline">{[profile.addressLine1, profile.addressLine2, profile.city, `${profile.state ?? ''} ${profile.zip ?? ''}`].filter(Boolean).join(', ')}</dd></div>
+          <div><dt className="inline font-semibold">Emergency: </dt><dd className="inline">{profile.emergencyName} ({profile.emergencyRelationship}) {profile.emergencyPhone}</dd></div>
+          <div><dt className="inline font-semibold">Agreement: </dt><dd className="inline">{profile.agreementSignedAt ? `signed (${profile.agreementVersion})` : 'not signed'}</dd></div>
+        </dl>
+      )}
+    </div>
   )
 }

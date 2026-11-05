@@ -49,12 +49,27 @@ export function crewTestLoginEnabled(): boolean {
 }
 
 /**
+ * Onboarding-only door. OFF unless exactly `true`. With it on, REAL members can
+ * sign in (phone or email code) but land ONLY on `/crew/onboarding` and
+ * `/crew/profile`: the board, parties and pay stay closed until CREW_ENABLED.
+ * That keeps the unpublished draft parties and test mode safe while the roster
+ * is set up and the agreements are signed.
+ */
+export function crewOnboardingEnabled(): boolean {
+  return process.env.CREW_ONBOARDING_ENABLED === 'true'
+}
+
+/**
  * Is `/crew` reachable at all? With CREW_ENABLED it is open to the crew; with
- * only CREW_TEST_LOGIN it is open to the invented test members and nobody else.
+ * only CREW_TEST_LOGIN it is open to the invented test members; with only
+ * CREW_ONBOARDING_ENABLED it is open to real members for onboarding pages only.
  */
 export function crewAppOpen(): boolean {
-  return crewEnabled() || crewTestLoginEnabled()
+  return crewEnabled() || crewTestLoginEnabled() || crewOnboardingEnabled()
 }
+
+/** Which part of the crew app: the board and everything on it, or only the onboarding + profile pages. */
+export type CrewScope = 'app' | 'onboarding'
 
 /**
  * May this member use the crew app right now? The ONE answer, used by the
@@ -62,14 +77,22 @@ export function crewAppOpen(): boolean {
  *
  *   - active only: paused and removed members are out;
  *   - never the owner: Allie is a crew row so she can lead, not a login;
- *   - test-only mode (CREW_TEST_LOGIN without CREW_ENABLED): `is_test` only, so
- *     real crew stay out until Adam launches.
+ *   - scope 'app' in test-only mode (CREW_TEST_LOGIN without CREW_ENABLED):
+ *     `is_test` only, so real crew stay out until Adam launches;
+ *   - scope 'onboarding' also admits real members while CREW_ONBOARDING_ENABLED.
  */
-export function crewMemberMayEnter(m: { status: string; is_owner: boolean; is_test: boolean }): boolean {
+export function crewMemberMayEnter(m: { status: string; is_owner: boolean; is_test: boolean }, scope: CrewScope = 'app'): boolean {
   if (!crewAppOpen()) return false
   if (m.status !== 'active' || m.is_owner) return false
+  if (scope === 'onboarding' && crewOnboardingEnabled()) return true
   if (!crewEnabled() && !m.is_test) return false
   return true
+}
+
+/** The agreement version a member must have signed. Raising it sends everyone back through the agreement step. */
+export function crewAgreementVersion(): string {
+  const v = (process.env.CREW_AGREEMENT_VERSION || '').trim()
+  return v || 'v1'
 }
 
 /** Crew texts on the Quo line. Off unless exactly `true`; also needs the member's `sms_opt_in`. */
