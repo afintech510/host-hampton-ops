@@ -80,6 +80,58 @@ export function buildCrewPartyDetails(row: Record<string, unknown>, lines: Reado
   }
 }
 
+export interface FoodLines {
+  /** The pizza-or-bagels choice, or null when there is none to make (a mobile party, a rental, no planner). */
+  food: string | null
+  /** The cupcake flavour, or null when none is being served. */
+  cupcake: string | null
+}
+
+/**
+ * The two food choices as separate lines, for the manager. `(default)` is added
+ * when the value is the planner's starting one, because a customer who never
+ * touched the control saves exactly that (`lib/partyFood.ts` has the trap). An
+ * in-studio party always has both choices; a mobile party is served cupcakes only
+ * if the host added them; a studio rental is served neither.
+ */
+export function foodLines(
+  partyType: string | null, main: string | null | undefined, cupcake: string | null | undefined, mobileCupcakes?: string | boolean | null,
+): FoodLines {
+  if (partyType === 'studio_rental') return { food: null, cupcake: null }
+  const sel = foodSelectionsFromColumns(main, cupcake, mobileCupcakes)
+  const tag = (c: { label: string; isDefault: boolean } | null) => (c ? `${c.label}${c.isDefault ? ' (default)' : ''}` : null)
+  if (partyType === 'mobile_party') return { food: null, cupcake: sel.mobileCupcakes ? tag(sel.cupcake) ?? 'Cupcakes added' : null }
+  return { food: tag(sel.main), cupcake: tag(sel.cupcake) }
+}
+
+/** What the manager reads about the family behind a party: first names only, and the age. */
+export interface AdminPartyAbout {
+  child: string | null
+  childAge: number | null
+  parent: string | null
+  food: string | null
+  cupcake: string | null
+}
+
+export const ADMIN_ABOUT_COLUMNS =
+  'id, booking_ref, status, party_type, child_name, child_age, contact_name, ' +
+  'sel_pizza_or_bagels:quote_snapshot->>pizzaOrBagels, sel_cupcake_flavor:quote_snapshot->>cupcakeFlavor, ' +
+  'sel_add_mobile_cupcakes:quote_snapshot->>addMobileCupcakes'
+
+/** Pure: a booking row (the columns above) → the manager's view. A surname never survives it. */
+export function adminAboutFromRow(row: Record<string, unknown>): AdminPartyAbout {
+  const partyType = typeof row.party_type === 'string' ? row.party_type : null
+  const age = typeof row.child_age === 'number' && row.child_age > 0 ? row.child_age : null
+  const { food, cupcake } = foodLines(partyType, str(row.sel_pizza_or_bagels), str(row.sel_cupcake_flavor), str(row.sel_add_mobile_cupcakes))
+  return {
+    child: partyType === 'studio_rental' ? null : firstName(row.child_name),
+    childAge: partyType === 'studio_rental' ? null : age,
+    parent: firstName(row.contact_name),
+    food,
+    cupcake,
+  }
+}
+
 /** The booking behind a crew party, read for a member who is on it. `null` data = no such booking. */
 export async function loadCrewPartyDetails(sb: Supa, bookingId: string): Promise<Read<CrewPartyDetails | null>> {
   const { data, error } = await sb.from('bookings').select(CREW_DETAIL_COLUMNS).eq('id', bookingId).maybeSingle()

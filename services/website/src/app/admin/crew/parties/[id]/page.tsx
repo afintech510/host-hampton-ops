@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { kindHasLead, workTypeOf } from '@/lib/crew/workTypes'
 import {
   BTN_DANGER, BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, LoginGate, STATUS_STYLE, money, useAdminApi, whenLabel,
 } from '../../_components/adminCrew'
@@ -29,6 +30,7 @@ interface Detail {
   }
   shift: Shift
   booking: { id: string; ref: string; status: string | null } | null
+  about: { child: string | null; childAge: number | null; parent: string | null; food: string | null; cupcake: string | null } | null
   slots: Slot[]
   standbys: { memberId: string; name: string; since: string }[]
   members: Choice[]
@@ -221,7 +223,7 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
           {live && (
             <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4">
               <h2 className="font-semibold text-hampton-navy">For the crew</h2>
-              <ShiftEditor shift={d.shift} rental={p.party_kind === 'studio_rental'} busy={busy}
+              <ShiftEditor shift={d.shift} rental={!kindHasLead(p.party_kind)} busy={busy}
                 onSave={v => act({ action: 'shift', ...v }, 'Shift saved.')} />
               <ExtraPay cents={p.extra_flat_cents} busy={busy} onSave={c => act({ action: 'fields', extra_flat_cents: c }, 'Extra pay saved.')} />
               <Notes initial={p.notes_for_crew ?? ''} busy={busy} onSave={v => act({ action: 'fields', notes_for_crew: v }, 'Notes saved.')} />
@@ -232,15 +234,26 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
         <aside className="space-y-5">
           <div className="bg-white rounded-2xl shadow-sm p-5 text-sm space-y-1.5 text-hampton-navy/80">
             <h2 className="font-semibold text-hampton-navy mb-2">Facts</h2>
-            <p>Kind: {p.party_kind.replace(/_/g, ' ')}</p>
+            <p>Kind: {workTypeOf(p.party_kind) ? `${workTypeOf(p.party_kind)!.emoji} ${workTypeOf(p.party_kind)!.label}` : p.party_kind.replace(/_/g, ' ')}</p>
             {p.party_kind === 'studio_rental' && (
               <p className="text-hampton-navy/60 text-xs">A room rental with a Party Helper: the time is the helper&apos;s, and a Lead or a helper can take each spot. There is no Lead spot.</p>
             )}
-            <p>Theme: {p.theme ?? '—'}</p>
+            {workTypeOf(p.party_kind) && (
+              <p className="text-hampton-navy/60 text-xs">Crew work, not a party: everyone is crew, there is no Party Lead spot, and the shift is the whole time.</p>
+            )}
+            {!workTypeOf(p.party_kind) && <p>Theme: {p.theme ?? '—'}</p>}
+            {d.about && (
+              <>
+                {d.about.child && <p>Child: <strong>{d.about.child}{d.about.childAge ? `, ${d.about.childAge}` : ''}</strong></p>}
+                {d.about.parent && <p>Parent: <strong>{d.about.parent}</strong></p>}
+                {d.about.food && <p>Food: <strong>{d.about.food}</strong></p>}
+                {d.about.cupcake && <p>Cupcakes: <strong>{d.about.cupcake}</strong></p>}
+              </>
+            )}
             <p>Extra pay per person: {money(p.extra_flat_cents)}</p>
             <p>Spot count: {p.slots_override ? `${p.slots_override} (set by hand)` : 'from the guest count'}</p>
             {d.booking ? (
-              <p>Booking: <a className="underline" href={`/admin/lead/${encodeURIComponent(d.booking.ref)}`}>{d.booking.ref}</a> ({d.booking.status ?? '—'})</p>
+              <p><a className="underline" href={`/admin/lead/${encodeURIComponent(d.booking.ref)}`}>Open the booking</a> ({d.booking.status ?? '—'})</p>
             ) : <p>Made by hand, no booking.</p>}
             {p.updated_by && <p className="text-hampton-navy/40 text-xs">Last changed by {p.updated_by}</p>}
           </div>

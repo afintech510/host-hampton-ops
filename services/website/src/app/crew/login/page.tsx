@@ -4,6 +4,7 @@ import { currentCrewMember } from '@/lib/crew/auth'
 import { crewAppOpen, crewTestLoginEnabled, loadCrewSettings } from '@/lib/crew/settings'
 import { listTestMembers } from '@/lib/crew/db'
 import { testPickView, type TestPickView } from '@/lib/crew/view'
+import CrewBrand from '../_components/CrewBrand'
 import LoginForm from '../_components/LoginForm'
 import TestPicker from '../_components/TestPicker'
 
@@ -30,7 +31,7 @@ export default async function CrewLoginPage() {
 
   return (
     <main className="crew-wrap">
-      <div className="crew-top"><span className="crew-brand">Host Hampton Crew</span></div>
+      <div className="crew-top"><CrewBrand href="/crew/login" /></div>
       <h1>Sign in</h1>
       <p className="crew-muted" style={{ marginTop: 0 }}>We&apos;ll text or email you a 6-digit code. No password to remember.</p>
       <LoginForm />

@@ -260,7 +260,7 @@ export default function MobileCraftPartyHub() {
 
       {/* ── Pricing ── */}
       <MobilePriceBlock
-        heading="Mobile Craft Party Pricing"
+        heading="Mobile Craft Party Packages"
         subheading="We bring everything to your door. What we quote is what you pay — no mandatory gratuity, ever."
       />
 

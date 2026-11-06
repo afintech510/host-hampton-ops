@@ -5,6 +5,7 @@ import { currentCrewMember } from '@/lib/crew/auth'
 import { CREW_SKILLS, MAX_EXTRAS, MAX_EXTRA_LENGTH, splitSkills } from '@/lib/crew/skills'
 import CrewTop, { CrewUnavailable } from '../_components/CrewTop'
 import ActionButton from '../_components/ActionButton'
+import CrewBrand from '../_components/CrewBrand'
 import ProfileForm from '../_components/ProfileForm'
 import EmailChange from '../_components/EmailChange'
 import SkillsForm from '../_components/SkillsForm'
@@ -40,7 +41,7 @@ export default async function CrewProfilePage() {
     <main className="crew-wrap">
       {onboarding ? (
         <div className="crew-top">
-          <span className="crew-brand">{TENANT.business.name} Crew</span>
+          <CrewBrand />
           <span className="crew-row crew-small">
             <a className="crew-link" href="/crew/onboarding">Back</a>
             <ActionButton endpoint="/api/crew/auth/logout" label="Sign out" variant="ghost" redirectTo="/crew/login" />

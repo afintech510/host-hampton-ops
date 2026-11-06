@@ -34,7 +34,6 @@ export default async function CrewAvailabilityPage() {
       <CrewTop firstName={member.first_name} isTest={member.is_test} />
       <h1>Availability</h1>
       <AvailabilityEditor periods={items} minDate={etDateString(now)} />
-      <p className="crew-muted crew-small">Already on a party then? Use Can&apos;t make it on that party instead.</p>
     </main>
   )
 }

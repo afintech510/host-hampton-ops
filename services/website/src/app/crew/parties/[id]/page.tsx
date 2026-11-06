@@ -53,7 +53,7 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
   return (
     <main className="crew-wrap">
       <CrewTop firstName={member.first_name} isTest={member.is_test} />
-      <p className="crew-small" style={{ margin: '0 0 .5rem' }}><Link className="crew-link" href="/crew">← Parties</Link></p>
+      <p className="crew-small" style={{ margin: '0 0 .5rem' }}><Link className="crew-link" href="/crew">← Work</Link></p>
       <h1>{v.theme || v.title}</h1>
       {v.theme && v.theme !== v.title && <p className="crew-muted" style={{ marginTop: 0 }}>{v.title}</p>}
 
@@ -63,10 +63,10 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
           <dt className="crew-muted">Your shift</dt>
           <dd style={{ margin: 0 }}>
             {clockLabel(v.shiftStartsAt)} – {clockLabel(v.shiftEndsAt)}
-            <span className="crew-muted crew-small" style={{ display: 'block' }}>{before} min to set up before the party, {after} min to clean up after</span>
+            <span className="crew-muted crew-small" style={{ display: 'block' }}>{v.work ? 'The shift is the whole time.' : `${before} min to set up before the party, ${after} min to clean up after`}</span>
           </dd>
           <dt className="crew-muted">Where</dt><dd style={{ margin: 0 }}>{v.location}</dd>
-          <dt className="crew-muted">Kids</dt><dd style={{ margin: 0 }}>{v.guestCount != null ? v.guestCount : 'Not confirmed yet'}</dd>
+          {!v.work && (<><dt className="crew-muted">Kids</dt><dd style={{ margin: 0 }}>{v.guestCount != null ? v.guestCount : 'Not confirmed yet'}</dd></>)}
           <dt className="crew-muted">Crew</dt><dd style={{ margin: 0 }}>{v.staffed} of {v.needed} spots taken</dd>
           {v.mySlot && (<>
             <dt className="crew-muted">Your spot</dt>

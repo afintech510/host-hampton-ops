@@ -37,10 +37,11 @@ import { sumPayments } from '@/lib/bookingBalance'
 import { partyWindow, validPartyDate, PARTY_START_EARLIEST_MIN, PARTY_START_LATEST_MIN } from '@/lib/evites/partyWindow'
 import { eviteLocationType, mobileAddressOf } from '@/lib/evites/location'
 import { STUDIO_ADDRESS_LINE } from '@/lib/studioLocation'
+import { kindHasLead } from '@/lib/crew/workTypes'
 import { etDateString, etToUtc } from '@/lib/partyTime'
 import { slotsForParty, slotRolesFor, type CrewSettings, type SlotRole } from '@/lib/crew/rules'
 import {
-  insertNotification, type CrewPartyRow, type CrewSlotRow, type PartyKind, type PartyWithSlots, type Read,
+  insertNotification, type BookingKind, type CrewPartyRow, type CrewSlotRow, type PartyKind, type PartyWithSlots, type Read,
 } from '@/lib/crew/db'
 import { partyDayLabel, partyTimeLabel } from '@/lib/crew/view'
 
@@ -124,7 +125,7 @@ const STUDIO_RENTAL_EVENT_TYPES = ['studio-rental', 'room-rental']
  * `eviteLocationType`, which reads the planner's own location toggle before
  * `party_type` — the planner writes `in_studio_theme` even for a mobile plan.
  */
-export function crewKindOf(b: Pick<ReconcileBooking, 'party_type' | 'event_type' | 'party_tags'>): Exclude<PartyKind, 'manual'> | null {
+export function crewKindOf(b: Pick<ReconcileBooking, 'party_type' | 'event_type' | 'party_tags'>): BookingKind | null {
   const ev = (b.event_type ?? '').trim().toLowerCase()
   if (b.party_type === 'studio_rental' || STUDIO_RENTAL_EVENT_TYPES.includes(ev)) return 'studio_rental'
   if (b.party_type !== 'in_studio_theme' && b.party_type !== 'mobile_party') return null
@@ -238,7 +239,7 @@ export function helperWindow(
 
 /** The crew window. A rental's needs its helper lines; every other kind is `partyWindow()`. */
 export function crewWindowFor(
-  b: ReconcileBooking, kind: Exclude<PartyKind, 'manual'>,
+  b: ReconcileBooking, kind: BookingKind,
   helper: { lines: ReadonlyArray<HelperLine>; items: ReadonlyArray<HelperItem> } = { lines: [], items: [] },
 ): { startsAt: Date; endsAt: Date } | null {
   if (kind === 'studio_rental') return helperWindow(b, helper.lines, helper.items)
@@ -260,7 +261,7 @@ export function crewThemeOf(b: ReconcileBooking): string | null {
 }
 
 /** Never "Suite 7": the studio line, or the customer's real address. */
-export function crewLocationOf(b: ReconcileBooking, kind: Exclude<PartyKind, 'manual'>): { location: string; needsAddress: boolean } {
+export function crewLocationOf(b: ReconcileBooking, kind: BookingKind): { location: string; needsAddress: boolean } {
   if (kind !== 'mobile_party') return { location: STUDIO_ADDRESS_LINE, needsAddress: false }
   const addr = mobileAddressOf(b)
   return addr ? { location: addr, needsAddress: false } : { location: 'Mobile party: address to be confirmed', needsAddress: true }
@@ -271,7 +272,7 @@ export function crewLocationOf(b: ReconcileBooking, kind: Exclude<PartyKind, 'ma
  * family's: the title is shown to every crew member on the open board, and the
  * family's details belong to the people working it.
  */
-export function crewTitleOf(kind: Exclude<PartyKind, 'manual'>, theme: string | null): string {
+export function crewTitleOf(kind: BookingKind, theme: string | null): string {
   if (kind === 'studio_rental') return 'Studio rental: Party Helper'
   if (kind === 'mobile_party') return theme && !/^mobile party$/i.test(theme) ? `Mobile: ${theme}` : 'Mobile party'
   return theme ?? 'Party'
@@ -291,10 +292,11 @@ export function neededSpots(
 /**
  * The spots a party of this kind starts with. A studio rental has NO Lead
  * spot: what was bought is a helper, and a Lead or a helper may take it
- * (Adam, 2026-10-27). Every other party has exactly one Lead.
+ * (Adam, 2026-10-27); nor does any other kind of crew work (`kindHasLead`).
+ * Every party has exactly one Lead.
  */
 export function rolesFor(kind: PartyKind, count: number): SlotRole[] {
-  if (kind === 'studio_rental') return Array.from({ length: Math.max(1, Math.floor(count)) }, () => 'crew' as const)
+  if (!kindHasLead(kind)) return Array.from({ length: Math.max(1, Math.floor(count)) }, () => 'crew' as const)
   return slotRolesFor(count)
 }
 
@@ -304,7 +306,7 @@ export function rolesToAdd(liveSlots: ReadonlyArray<Pick<CrewSlotRow, 'role' | '
   const missing = Math.max(0, Math.min(MAX_PARTY_SLOTS, needed) - live.length)
   if (missing === 0) return []
   const hasLead = live.some(sl => sl.role === 'lead')
-  return hasLead || kind === 'studio_rental' ? Array.from({ length: missing }, () => 'crew' as const) : slotRolesFor(missing)
+  return hasLead || !kindHasLead(kind) ? Array.from({ length: missing }, () => 'crew' as const) : slotRolesFor(missing)
 }
 
 // ── The plan ────────────────────────────────────────────────────────────────

@@ -50,10 +50,12 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
             : <span className="crew-chip crew-warn">Not confirmed yet</span>
         )}
       </div>
+      {v.work && <p className="crew-kind"><span aria-hidden="true">{v.work.emoji}</span> {v.work.label}</p>}
       <div className="crew-meta">
         <span>{partyDayLabel(v.startsAt)}</span>
         <span>{partyTimeLabel(v.startsAt, v.endsAt)}</span>
-        <span>{v.guestCount != null ? `${v.guestCount} kids` : 'Kids TBC'}</span>
+        {v.city && <span>📍 {v.city}</span>}
+        {!v.work && <span>{v.guestCount != null ? `${v.guestCount} kids` : 'Kids TBC'}</span>}
         <span>Crew {v.staffed}/{v.needed}</span>
       </div>
 

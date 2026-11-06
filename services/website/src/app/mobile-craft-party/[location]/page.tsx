@@ -237,7 +237,7 @@ export default function LocationPage({ params }: { params: { location: string } 
 
       {/* ── Pricing ── */}
       <MobilePriceBlock
-        heading={`Craft Party Pricing in ${loc.name}`}
+        heading={`Craft Party Packages in ${loc.name}`}
         subheading="We bring everything to your door. What we quote is what you pay — no mandatory gratuity, ever."
       />
 

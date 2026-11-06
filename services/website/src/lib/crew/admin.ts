@@ -23,6 +23,7 @@ import {
   listMembers, slotsForParties, type CrewMemberRow, type CrewPartyRow, type CrewSlotRow, type CrewSwapRow, type PartyWithSlots, type Read,
 } from '@/lib/crew/db'
 import { reconcileCrewParties, type ReconcileSummary } from '@/lib/crew/sync'
+import { ADMIN_ABOUT_COLUMNS, adminAboutFromRow, type AdminPartyAbout } from '@/lib/crew/partyDetails'
 import { etDateString, etToUtc, shiftEtDate } from '@/lib/partyTime'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -139,10 +140,15 @@ export interface AdminPartyRow {
   title: string
   theme: string | null
   kind: CrewPartyRow['party_kind']
-  bookingRef: string | null
-  /** From the booking, for the schedule list (the admin sees full names). Null for a party built by hand. */
+  /** True when a booking is behind it; false for a party or work made by hand. The reference itself is not shown on the schedule. */
+  booked: boolean
+  /** From the booking, for the schedule list: FIRST names and the age (Adam, 2026-11-05: no surname, no booking id). Null for work made by hand. */
   childName: string | null
+  childAge: number | null
   parentName: string | null
+  /** The pizza-or-bagels and cupcake choices, with `(default)` where the planner's starting value was never changed. */
+  food: string | null
+  cupcake: string | null
   startsAt: string
   endsAt: string
   guestCount: number | null
@@ -168,17 +174,14 @@ export interface AdminOverview {
   counts: { members: number; canLead: number; needsReview: number }
 }
 
-interface BookingBits { ref: string; child: string | null; parent: string | null }
-
-async function bookingRefs(sb: Supa, ids: string[]): Promise<Read<Map<string, BookingBits>>> {
-  const map = new Map<string, BookingBits>()
+/** What the schedule shows about the family behind each booked party: first names, the age, the food. Never a surname or a booking reference. */
+async function bookingAbout(sb: Supa, ids: string[]): Promise<Read<Map<string, AdminPartyAbout>>> {
+  const map = new Map<string, AdminPartyAbout>()
   const unique = Array.from(new Set(ids))
   for (let i = 0; i < unique.length; i += 150) {
-    const { data, error } = await sb.from('bookings').select('id, booking_ref, child_name, contact_name').in('id', unique.slice(i, i + 150))
+    const { data, error } = await sb.from('bookings').select(ADMIN_ABOUT_COLUMNS).in('id', unique.slice(i, i + 150))
     if (error) return { kind: 'unavailable', error: error.message }
-    for (const r of (data ?? []) as { id: string; booking_ref: string; child_name: string | null; contact_name: string | null }[]) {
-      map.set(r.id, { ref: r.booking_ref, child: r.child_name?.trim() || null, parent: r.contact_name?.trim() || null })
-    }
+    for (const r of (data ?? []) as unknown as Record<string, unknown>[]) map.set(String(r.id), adminAboutFromRow(r))
   }
   return { kind: 'ok', data: map }
 }
@@ -223,7 +226,7 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
     .eq('type', 'early_release').gte('occurred_at', new Date(now.getTime() - 14 * DAY_MS).toISOString())
   if (relErr) return { kind: 'unavailable', error: relErr.message }
 
-  const refs = await bookingRefs(sb, parties.data.map(p => p.party.booking_id).filter((x): x is string => !!x))
+  const refs = await bookingAbout(sb, parties.data.map(p => p.party.booking_id).filter((x): x is string => !!x))
   if (refs.kind !== 'ok') return refs
 
   const memberById = new Map(members.data.map(m => [m.id, m]))
@@ -288,9 +291,12 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
       title: p.title,
       theme: p.theme,
       kind: p.party_kind,
-      bookingRef: p.booking_id ? refs.data.get(p.booking_id)?.ref ?? null : null,
+      booked: !!p.booking_id,
       childName: p.booking_id ? refs.data.get(p.booking_id)?.child ?? null : null,
+      childAge: p.booking_id ? refs.data.get(p.booking_id)?.childAge ?? null : null,
       parentName: p.booking_id ? refs.data.get(p.booking_id)?.parent ?? null : null,
+      food: p.booking_id ? refs.data.get(p.booking_id)?.food ?? null : null,
+      cupcake: p.booking_id ? refs.data.get(p.booking_id)?.cupcake ?? null : null,
       startsAt: p.starts_at,
       endsAt: p.ends_at,
       guestCount: p.guest_count,
@@ -420,7 +426,10 @@ export interface AdminMemberChoice {
 
 export interface AdminPartyDetail {
   party: CrewPartyRow & { updated_by?: string | null }
+  /** The booking behind it, for the link only: the reference is not shown. */
   booking: { id: string; ref: string; status: string | null } | null
+  /** First names, the child's age and the food choices, from the booking. Null for work made by hand. */
+  about: AdminPartyAbout | null
   slots: AdminSlotView[]
   standbys: { memberId: string; name: string; since: string }[]
   members: AdminMemberChoice[]
@@ -462,10 +471,15 @@ export async function loadAdminParty(sb: Supa, partyId: string, s: CrewSettings)
   if (swapsRes.error) return { kind: 'unavailable', error: (swapsRes.error as { message: string }).message }
 
   let booking: AdminPartyDetail['booking'] = null
+  let about: AdminPartyAbout | null = null
   if (party.booking_id) {
-    const { data: b, error: bErr } = await sb.from('bookings').select('id, booking_ref, status').eq('id', party.booking_id).maybeSingle()
+    const { data: b, error: bErr } = await sb.from('bookings').select(ADMIN_ABOUT_COLUMNS).eq('id', party.booking_id).maybeSingle()
     if (bErr) return { kind: 'unavailable', error: bErr.message }
-    if (b) booking = { id: (b as { id: string }).id, ref: (b as { booking_ref: string }).booking_ref, status: (b as { status: string | null }).status }
+    if (b) {
+      const row = b as unknown as Record<string, unknown>
+      booking = { id: String(row.id), ref: String(row.booking_ref), status: typeof row.status === 'string' ? row.status : null }
+      about = adminAboutFromRow(row)
+    }
   }
 
   const memberById = new Map(members.data.map(m => [m.id, m]))
@@ -518,6 +532,7 @@ export async function loadAdminParty(sb: Supa, partyId: string, s: CrewSettings)
     data: {
       party,
       booking,
+      about,
       slots: slotViews,
       standbys: ((standbysRes.data ?? []) as { member_id: string; created_at: string }[]).map(r => ({
         memberId: r.member_id,
@@ -548,8 +563,8 @@ const hhmm = (d: Date) => {
 }
 
 /** The shift for a party in Eastern clock times: what applies now, and what the defaults would be. */
-export function shiftForAdmin(party: Pick<CrewPartyRow, 'starts_at' | 'ends_at' | 'shift_starts_at' | 'shift_ends_at' | 'lead_starts_at'>, s: CrewSettings): AdminShift {
-  const base = { starts_at: party.starts_at, ends_at: party.ends_at }
+export function shiftForAdmin(party: Pick<CrewPartyRow, 'party_kind' | 'starts_at' | 'ends_at' | 'shift_starts_at' | 'shift_ends_at' | 'lead_starts_at'>, s: CrewSettings): AdminShift {
+  const base = { party_kind: party.party_kind, starts_at: party.starts_at, ends_at: party.ends_at }
   const crew = shiftWindow(party, 'crew', s)
   const lead = shiftWindow(party, 'lead', s)
   const plainCrew = shiftWindow(base, 'crew', s)

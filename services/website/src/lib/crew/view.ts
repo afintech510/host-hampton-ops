@@ -20,7 +20,9 @@ import {
   type CrewSettings, type SlotRole,
 } from '@/lib/crew/rules'
 import { shiftEtDate } from '@/lib/partyTime'
-import type { CrewMemberRow, CrewPartyRow, CrewSlotRow, SlotStatus } from '@/lib/crew/db'
+import { FALLBACK_TOWN, mobileTown } from '@/lib/evites/location'
+import { workTypeOf } from '@/lib/crew/workTypes'
+import type { CrewMemberRow, CrewPartyRow, CrewSlotRow, PartyKind, SlotStatus } from '@/lib/crew/db'
 
 export interface CrewMeView {
   id: string
@@ -98,6 +100,11 @@ export interface CrewPartyView {
   shiftEndsAt: string
   /** The full address only for a member who is ON the party; others see where in general terms. */
   location: string
+  kind: PartyKind
+  /** Non-party work (Clean Floor, Retail Shift…): its name and emoji. Null for a party. */
+  work: { label: string; emoji: string } | null
+  /** A mobile party's town, for everyone who may see the party before they commit. Never the street. Null when it is not known. */
+  city: string | null
   guestCount: number | null
   /** Notes from Allie are for the people working it. */
   notesForCrew: string | null
@@ -117,6 +124,13 @@ const LIVE: SlotStatus[] = ['assigned', 'completed', 'no_show']
  * must not see at all: a draft, or a cancelled/completed party they were not
  * on. `firstNames` maps member id → first name for teammates (and nothing else).
  */
+/** A mobile party's town from its address line, or null while the address is still to be confirmed or the town cannot be read. */
+export function mobileCityOf(party: Pick<CrewPartyRow, 'party_kind' | 'location'>): string | null {
+  if (party.party_kind !== 'mobile_party' || /to be confirmed/i.test(party.location)) return null
+  const town = mobileTown(party.location)
+  return town === FALLBACK_TOWN ? null : town
+}
+
 export function partyView(
   input: {
     party: CrewPartyRow
@@ -164,7 +178,12 @@ export function partyView(
     endsAt: party.ends_at,
     shiftStartsAt: shift.startsAt.toISOString(),
     shiftEndsAt: shift.endsAt.toISOString(),
-    location: onIt || party.party_kind !== 'mobile_party' ? party.location : 'Mobile party (address once you are on it)',
+    location: onIt || party.party_kind !== 'mobile_party'
+      ? party.location
+      : mobileCityOf(party) ? `Mobile party in ${mobileCityOf(party)} (full address once you are on it)` : 'Mobile party (address once you are on it)',
+    kind: party.party_kind,
+    work: (() => { const w = workTypeOf(party.party_kind); return w ? { label: w.label, emoji: w.emoji } : null })(),
+    city: mobileCityOf(party),
     guestCount: party.guest_count ?? null,
     notesForCrew: onIt ? party.notes_for_crew ?? null : null,
     status: party.status,

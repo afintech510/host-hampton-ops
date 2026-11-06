@@ -1,18 +1,20 @@
 import { Check, Gift, MapPin, ShieldCheck, CalendarCheck } from 'lucide-react'
 import { unstable_noStore as noStore } from 'next/cache'
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
-import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 
 /**
- * The published mobile-party price anchor (plan item B-1).
+ * The mobile-party packages (plan item B-1), WITHOUT their prices.
  *
- * Every competitor publishes a starting price and we published none, which meant
- * losing price-shoppers before we could explain the value. The two-tier layout is
- * deliberate: the Entry tier is the "from" number that wins the comparison, and
- * the Signature tier is where most people land.
+ * Adam, 2026-11-05: "remove the pricing listed for now" — the $500 / $750 tier
+ * prices and every other dollar figure (the extra-child price, the deposit) are
+ * off the public pages while the mobile numbers are reworked. The two packages
+ * stay: what each covers, how long, how many kids. A visitor asks for a quote.
+ * Nothing here is the price anyone is CHARGED: the planner and the quote engine
+ * read `mobileBands`, never `mobileTiers`, so this changes what is shown only.
+ * To publish prices again, put `tier.price` back into the tier card.
  *
  * The fine print carries the two things rivals can't say — no mandatory gratuity
- * (The Slime Machine adds 20%) and a genuinely free local radius.
+ * (The Slime Machine adds 20%) and a genuinely free local radius. No dollar figure.
  *
  * Every number here comes from `pricing_items` via `loadPricingCatalog()`
  * (migration 036). This is a server component, and all four of its callers
@@ -28,22 +30,20 @@ import { BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
  * a page that forgets the export goes stale silently.
  */
 export default async function MobilePriceBlock({
-  heading = 'Mobile Party Pricing',
-  subheading = 'Straightforward pricing, brought to your door. What we quote is what you pay.',
+  heading = 'Mobile Party Packages',
+  subheading = "Brought to your door. Tell us your date and guest count and we'll send your exact quote — what we quote is what you pay.",
 }: {
   heading?: string
   subheading?: string
 }) {
   noStore()
   const { mobileTiers, mobilePolicy } = await loadPricingCatalog()
-  const extraChildPrice = Math.round(mobilePolicy.extraChildCents / 100)
-  const depositDollars = Math.round(BOOKING_DEPOSIT_CENTS / 100)
 
   return (
     <section className="py-16 px-4">
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-10">
-          <p className="section-subheading">Pricing</p>
+          <p className="section-subheading">Packages</p>
           <h2 className="section-heading">{heading}</h2>
           <p className="text-hampton-navy/70 max-w-xl mx-auto">{subheading}</p>
         </div>
@@ -66,8 +66,8 @@ export default async function MobilePriceBlock({
               <p className="text-hampton-navy/60 text-sm mb-4">{tier.tagline}</p>
 
               <div className="flex items-baseline gap-2 mb-1">
-                <span className="font-serif text-4xl text-hampton-navy">${tier.price}</span>
-                <span className="text-hampton-navy/60 text-sm">/ {tier.minutes} min</span>
+                <span className="font-serif text-4xl text-hampton-navy">{tier.minutes}</span>
+                <span className="text-hampton-navy/60 text-sm">minutes</span>
               </div>
               <p className="text-hampton-navy/70 text-sm mb-5">
                 Up to <strong>{tier.kids} kids</strong> — plus the birthday child, free
@@ -90,7 +90,7 @@ export default async function MobilePriceBlock({
           <div className="flex items-start gap-2.5 bg-hampton-pink/10 rounded-xl p-4">
             <Gift size={17} className="shrink-0 mt-0.5 text-hampton-navy/60" />
             <p className="text-hampton-navy/75 text-sm leading-relaxed">
-              <strong>Birthday child is always free</strong> — additional kids ${extraChildPrice} each.
+              <strong>Birthday child is always free.</strong> Extra guests are added to your quote.
             </p>
           </div>
           <div className="flex items-start gap-2.5 bg-hampton-pink/10 rounded-xl p-4">
@@ -109,14 +109,14 @@ export default async function MobilePriceBlock({
           <div className="flex items-start gap-2.5 bg-hampton-pink/10 rounded-xl p-4">
             <CalendarCheck size={17} className="shrink-0 mt-0.5 text-hampton-navy/60" />
             <p className="text-hampton-navy/75 text-sm leading-relaxed">
-              <strong>A ${depositDollars} deposit holds your date.</strong> {mobilePolicy.minGuests} guest minimum.
+              <strong>A deposit holds your date.</strong> {mobilePolicy.minGuests} guest minimum.
             </p>
           </div>
         </div>
 
         <p className="text-center text-hampton-navy/50 text-xs mt-6">
           Bigger group, longer party, or a specific theme in mind? Tell us what you want — we tailor every
-          party, and no two are the same.
+          party and send your quote, usually within 24 hours.
         </p>
       </div>
     </section>

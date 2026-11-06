@@ -22,6 +22,7 @@ import {
   classifyDrop, isInGracePeriod, stepAfter, type AvailabilityBlock, type CrewSettings, type DayPart, type SlotRole,
 } from '@/lib/crew/rules'
 import { etToUtc, shiftEtDate } from '@/lib/partyTime'
+import type { WorkKind } from '@/lib/crew/workTypes'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -33,7 +34,10 @@ export type MemberStatus = 'active' | 'paused' | 'removed'
 export type SlotStatus = 'open' | 'assigned' | 'completed' | 'no_show' | 'cancelled'
 export type PartyStatus = 'draft' | 'published' | 'completed' | 'cancelled'
 export type SwapStatus = 'open' | 'claimed' | 'cancelled' | 'dropped_uncovered' | 'escalated' | 'expired'
-export type PartyKind = 'in_studio_theme' | 'mobile_party' | 'studio_rental' | 'manual'
+/** The kinds a BOOKING becomes. */
+export type BookingKind = 'in_studio_theme' | 'mobile_party' | 'studio_rental'
+/** Every kind of crew work: a booked party, one made by hand, or non-party work (`lib/crew/workTypes.ts`). */
+export type PartyKind = BookingKind | 'manual' | WorkKind
 export type PaidMethod = 'venmo' | 'zelle' | 'cash' | 'check' | 'other'
 
 export interface CrewMemberRow {

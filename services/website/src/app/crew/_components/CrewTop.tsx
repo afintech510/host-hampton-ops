@@ -1,4 +1,5 @@
 import ActionButton from './ActionButton'
+import CrewBrand from './CrewBrand'
 import CrewNav from './CrewNav'
 import { crewPayLadderEnabled, crewShowPayEnabled } from '@/lib/crew/settings'
 
@@ -7,7 +8,7 @@ export default function CrewTop({ firstName, isTest }: { firstName: string; isTe
   return (
     <>
       <div className="crew-top">
-        <span className="crew-brand">Host Hampton Crew</span>
+        <CrewBrand />
         <span className="crew-row crew-small">
           {isTest && <span className="crew-chip crew-gold">Test</span>}
           <span className="crew-muted">{firstName}</span>

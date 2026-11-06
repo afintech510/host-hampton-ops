@@ -3,6 +3,7 @@ import { requireCrewPage } from '@/lib/crew/page'
 import { crewEnabled } from '@/lib/crew/settings'
 import { CrewUnavailable } from '../_components/CrewTop'
 import ActionButton from '../_components/ActionButton'
+import CrewBrand from '../_components/CrewBrand'
 import OnboardingFlow from '../_components/OnboardingFlow'
 
 export const dynamic = 'force-dynamic'
@@ -19,7 +20,7 @@ export default async function CrewOnboardingPage() {
   return (
     <main className="crew-wrap">
       <div className="crew-top">
-        <span className="crew-brand">{TENANT.business.name} Crew</span>
+        <CrewBrand />
         <span className="crew-row crew-small">
           {member.is_test && <span className="crew-chip crew-gold">Test</span>}
           <span className="crew-muted">{member.first_name}</span>

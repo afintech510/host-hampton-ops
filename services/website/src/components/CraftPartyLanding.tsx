@@ -242,12 +242,13 @@ export default async function CraftPartyLanding({ data: page }: { data: CraftPar
         />
       )}
       {mobile && !data.themePricing && (
-        // "At-Home" in the heading because these are the MOBILE tiers: under a
+        // "At-Home" in the heading because these are the MOBILE packages: under a
         // bare "Spa Party Pricing" an answer engine read $500/$750 as the price
-        // of a studio spa party (ChatGPT, 2026-10-04). Studio prices are per
-        // theme and live on /party-packages.
+        // of a studio spa party (ChatGPT, 2026-10-04). The mobile prices are off
+        // the page for now (2026-11-05); studio prices are per theme and live on
+        // /party-packages.
         <MobilePriceBlock
-          heading={`At-Home ${data.name} Pricing`}
+          heading={`At-Home ${data.name} Packages`}
           subheading={data.venue === 'both'
             ? 'Brought to your door. What we quote is what you pay — no mandatory gratuity, ever. Hosting at our Speonk studio instead? Studio prices are on Party Packages.'
             : 'Brought to your door. What we quote is what you pay — no mandatory gratuity, ever.'}

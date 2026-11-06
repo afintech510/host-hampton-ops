@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { WORK_TYPES, kindHasLead, workTypeOf, type WorkKind } from '@/lib/crew/workTypes'
 import {
   BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, LoginGate, STATUS_STYLE, useAdminApi, whenLabel,
 } from './_components/adminCrew'
@@ -14,9 +15,12 @@ interface PartyRow {
   id: string
   title: string
   kind: string
-  bookingRef: string | null
+  booked: boolean
   childName: string | null
+  childAge: number | null
   parentName: string | null
+  food: string | null
+  cupcake: string | null
   startsAt: string
   endsAt: string
   guestCount: number | null
@@ -119,7 +123,7 @@ export default function CrewSchedulePage() {
 
       <div className="flex flex-wrap items-center gap-2 mb-6">
         <button onClick={syncNow} disabled={syncing} className={BTN_PRIMARY}>{syncing ? 'Syncing…' : 'Sync now'}</button>
-        <button onClick={() => setShowNew(v => !v)} className={BTN_GHOST}>{showNew ? 'Close' : 'New party by hand'}</button>
+        <button onClick={() => setShowNew(v => !v)} className={BTN_GHOST}>{showNew ? 'Close' : 'Add work'}</button>
         {data?.switches.testLogin && <a href="/crew/login" className={BTN_GHOST}>Preview the crew app</a>}
         <span className="text-hampton-navy/50 text-xs">Sync reads booked parties and makes draft crew parties. It never publishes and never removes a spot.</span>
       </div>
@@ -186,12 +190,21 @@ export default function CrewSchedulePage() {
                     <a href={`/admin/crew/parties/${p.id}`} className="font-semibold text-hampton-navy underline">{p.title}</a>
                     {(p.childName || p.parentName) && (
                       <div className="text-hampton-navy/80 text-xs mt-0.5">
-                        {p.childName && <span>Child: <strong>{p.childName}</strong></span>}
+                        {p.childName && <span>Child: <strong>{p.childName}{p.childAge ? `, ${p.childAge}` : ''}</strong></span>}
                         {p.childName && p.parentName && ' · '}
                         {p.parentName && <span>Parent: <strong>{p.parentName}</strong></span>}
                       </div>
                     )}
-                    <div className="text-hampton-navy/40 text-xs">{p.bookingRef ?? 'By hand'}</div>
+                    {p.booked && (p.food || p.cupcake) && (
+                      <div className="text-hampton-navy/80 text-xs mt-0.5">
+                        {p.food && <span>Food: <strong>{p.food}</strong></span>}
+                        {p.food && p.cupcake && ' · '}
+                        {p.cupcake && <span>Cupcakes: <strong>{p.cupcake}</strong></span>}
+                      </div>
+                    )}
+                    {!p.booked && (
+                      <div className="text-hampton-navy/40 text-xs">{workTypeOf(p.kind) ? `${workTypeOf(p.kind)!.emoji} ${workTypeOf(p.kind)!.label}` : 'By hand'}</div>
+                    )}
                     {p.flags.length > 0 && (
                       <div className="text-amber-700 text-xs mt-1">{p.flags.map(f => FLAG_TEXT[f] ?? f).join(' · ')}</div>
                     )}
@@ -199,7 +212,7 @@ export default function CrewSchedulePage() {
                   <td className="px-4 py-3">{p.guestCount ?? '—'}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={p.staffed >= p.needed ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>{p.staffed}/{p.needed}</span>
-                    {!p.leadFilled && p.kind !== 'studio_rental' && <div className="text-red-700 text-xs">no Lead</div>}
+                    {!p.leadFilled && kindHasLead(p.kind) && <div className="text-red-700 text-xs">no Lead</div>}
                     {p.unconfirmed > 0 && <div className="text-amber-700 text-xs">{p.unconfirmed} unconfirmed</div>}
                   </td>
                   <td className="px-4 py-3">{p.status === 'draft' || p.status === 'published' ? p.available : '—'}</td>
@@ -295,9 +308,24 @@ function WeekendSummaryCard() {
   )
 }
 
+/**
+ * "Add work": a party by hand, or one of the other kinds of crew work (Clean
+ * Floor, Drop-off Event, Balloon Decor, Party Setup, Retail Shift). Picking a
+ * kind fills in a title, times, how many people and the studio as the place, and
+ * every one of them can be changed before it is created as a draft.
+ */
 function NewPartyForm({ onCreated }: { onCreated: (id: string) => void }) {
   const api = useAdminApi()
-  const [f, setF] = useState({ title: '', date: '', start: '', end: '', guest_count: '', location: '', notes_for_crew: '' })
+  const [kind, setKind] = useState<'manual' | WorkKind>('manual')
+  const [f, setF] = useState({ title: '', date: '', start: '', end: '', guest_count: '', spots: '', location: '', notes_for_crew: '' })
+  const work = kind === 'manual' ? null : workTypeOf(kind)
+  function pickKind(v: string) {
+    const next = v === 'manual' ? null : workTypeOf(v)
+    setKind(next ? next.kind : 'manual')
+    setF(p => next
+      ? { ...p, title: next.label, start: next.defaultStart, end: next.defaultEnd, spots: String(next.defaultSpots), guest_count: '', location: p.location }
+      : { ...p, title: p.title === (work?.label ?? '') ? '' : p.title, spots: '' })
+  }
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF(p => ({ ...p, [k]: e.target.value }))
@@ -307,7 +335,7 @@ function NewPartyForm({ onCreated }: { onCreated: (id: string) => void }) {
     setErr('')
     const r = await api<{ id?: string; error?: string }>('/api/admin/crew/parties', {
       method: 'POST',
-      body: { ...f, guest_count: f.guest_count === '' ? null : Number(f.guest_count) },
+      body: { ...f, kind, guest_count: f.guest_count === '' ? null : Number(f.guest_count), spots: f.spots === '' ? null : Number(f.spots) },
     })
     setBusy(false)
     if (!r.ok || !r.data.id) { setErr(r.data.error || 'Could not create it.'); return }
@@ -315,13 +343,22 @@ function NewPartyForm({ onCreated }: { onCreated: (id: string) => void }) {
   }
   return (
     <form onSubmit={submit} className="bg-white rounded-2xl shadow-sm p-5 mb-6 grid sm:grid-cols-2 gap-3">
-      <p className="sm:col-span-2 text-hampton-navy/60 text-sm">A crew party with no booking behind it. It starts as a draft.</p>
+      <p className="sm:col-span-2 text-hampton-navy/60 text-sm">Crew work with no booking behind it. It starts as a draft; you publish it from its page.</p>
+      <label className="text-sm text-hampton-navy sm:col-span-2">What kind of work
+        <select className={`${INPUT} w-full mt-1`} value={kind} onChange={e => pickKind(e.target.value)}>
+          <option value="manual">A party, by hand</option>
+          {WORK_TYPES.map(t => <option key={t.kind} value={t.kind}>{t.emoji} {t.label}</option>)}
+        </select>
+        {work && <span className="block text-hampton-navy/50 text-xs mt-1">{work.blurb} No Party Lead spot: everyone is crew.</span>}
+      </label>
       <label className="text-sm text-hampton-navy">Title<input className={`${INPUT} w-full mt-1`} value={f.title} onChange={set('title')} maxLength={80} required /></label>
       <label className="text-sm text-hampton-navy">Date<input type="date" className={`${INPUT} w-full mt-1`} value={f.date} onChange={set('date')} required /></label>
       <label className="text-sm text-hampton-navy">Starts (Eastern)<input type="time" className={`${INPUT} w-full mt-1`} value={f.start} onChange={set('start')} required /></label>
       <label className="text-sm text-hampton-navy">Ends<input type="time" className={`${INPUT} w-full mt-1`} value={f.end} onChange={set('end')} required /></label>
-      <label className="text-sm text-hampton-navy">Kids (optional)<input type="number" min={0} className={`${INPUT} w-full mt-1`} value={f.guest_count} onChange={set('guest_count')} /></label>
-      <label className="text-sm text-hampton-navy">Location<input className={`${INPUT} w-full mt-1`} value={f.location} onChange={set('location')} maxLength={200} required /></label>
+      {work
+        ? <label className="text-sm text-hampton-navy">How many people<input type="number" min={1} max={10} className={`${INPUT} w-full mt-1`} value={f.spots} onChange={set('spots')} required /></label>
+        : <label className="text-sm text-hampton-navy">Kids (optional)<input type="number" min={0} className={`${INPUT} w-full mt-1`} value={f.guest_count} onChange={set('guest_count')} /></label>}
+      <label className="text-sm text-hampton-navy">Location{work ? ' (blank = the studio)' : ''}<input className={`${INPUT} w-full mt-1`} value={f.location} onChange={set('location')} maxLength={200} required={!work} /></label>
       <label className="text-sm text-hampton-navy sm:col-span-2">Notes for crew<textarea className={`${INPUT} w-full mt-1`} rows={2} value={f.notes_for_crew} onChange={set('notes_for_crew')} /></label>
       {err && <p className="sm:col-span-2 text-red-600 text-sm">{err}</p>}
       <div className="sm:col-span-2"><button disabled={busy} className={BTN_PRIMARY}>{busy ? 'Creating…' : 'Create draft'}</button></div>

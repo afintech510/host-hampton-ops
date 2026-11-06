@@ -45,7 +45,7 @@ function world(over: Record<string, unknown> = {}) {
     ],
     crew_unavailability: [], crew_recurring_blocks: [], crew_standbys: [], crew_swap_requests: [], crew_events: [], crew_notifications: [],
     crew_member_profiles: [], job_applications: [],
-    bookings: [{ id: 'b1', booking_ref: 'HH-PTY-AAAAA', child_name: 'Ava Rossi', contact_name: 'Maria Rossi' }],
+    bookings: [{ id: 'b1', booking_ref: 'HH-PTY-AAAAA', status: 'approved', party_type: 'in_studio_theme', child_name: 'Ava Rossi', child_age: 7, contact_name: 'Maria Rossi', sel_pizza_or_bagels: 'bagels', sel_cupcake_flavor: 'vanilla', sel_add_mobile_cupcakes: null }],
     booking_payments: [], pricing_items: [],
   }, { rpc: fakeAdminAssign })
 }
@@ -200,13 +200,16 @@ describe('pay is private: per person, per hour, never shown', () => {
 })
 
 describe('the schedule list names the child and the parent', () => {
-  it('from the booking, and nothing for a party made by hand', async () => {
+  it('first names only, the age and the food — never a surname or the booking reference — and nothing for a party made by hand', async () => {
     const db = world()
     db.tables.crew_parties.push({ ...db.tables.crew_parties[0], id: 'p2', booking_id: null, party_kind: 'manual', title: 'By hand', starts_at: '2026-11-08T18:00:00.000Z', ends_at: '2026-11-08T21:00:00.000Z' })
     const o = await loadAdminOverview(db.sb, NOW, S)
     if (o.kind !== 'ok') throw new Error(o.error)
-    expect(o.data.parties.find(p => p.id === P)).toMatchObject({ childName: 'Ava Rossi', parentName: 'Maria Rossi', bookingRef: 'HH-PTY-AAAAA' })
-    expect(o.data.parties.find(p => p.id === 'p2')).toMatchObject({ childName: null, parentName: null })
+    const booked = o.data.parties.find(p => p.id === P)!
+    expect(booked).toMatchObject({ booked: true, childName: 'Ava', childAge: 7, parentName: 'Maria', food: 'Bagels', cupcake: 'Vanilla (default)' })
+    // Nothing on the row can print the booking id or a surname.
+    expect(JSON.stringify(booked)).not.toMatch(/HH-PTY|Rossi/)
+    expect(o.data.parties.find(p => p.id === 'p2')).toMatchObject({ booked: false, childName: null, childAge: null, parentName: null, food: null, cupcake: null })
   })
 })
 

@@ -16,10 +16,12 @@
 import type { getSupabase } from '@/lib/supabase'
 import { adminAssign, getPartyWithSlots, hasActiveSwap, listMembers, type CrewPartyRow, type PartyWithSlots } from '@/lib/crew/db'
 import { localParts, slotRolesFor, slotsForParty, type CrewSettings, type SlotRole } from '@/lib/crew/rules'
-import { MAX_PARTY_SLOTS, rolesToAdd, STICKY_FLAGS } from '@/lib/crew/sync'
+import { MAX_PARTY_SLOTS, rolesFor, rolesToAdd, STICKY_FLAGS } from '@/lib/crew/sync'
 import { loadAvailability, memberFit, type Conflict } from '@/lib/crew/admin'
 import { etToUtc } from '@/lib/partyTime'
 import { isCalendarDate } from '@/lib/crew/adminForms'
+import { isWorkKind, workTypeOf, kindHasLead } from '@/lib/crew/workTypes'
+import { STUDIO_ADDRESS_LINE } from '@/lib/studioLocation'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -194,8 +196,8 @@ export async function addSpot(sb: Supa, partyId: string, actor: string): Promise
   if (party.status !== 'draft' && party.status !== 'published') return refuse(409, 'This party can no longer be changed.')
   const live = slots.filter(sl => sl.status !== 'cancelled')
   if (live.length >= MAX_PARTY_SLOTS) return refuse(409, `A party has ${MAX_PARTY_SLOTS} spots at most.`)
-  // A studio rental has no Lead spot (Adam, 2026-10-27); everything else gets its Lead back first.
-  const role: SlotRole = party.party_kind === 'studio_rental' || live.some(sl => sl.role === 'lead') ? 'crew' : 'lead'
+  // A studio rental or other crew work has no Lead spot (Adam, 2026-10-27); every party gets its Lead back first.
+  const role: SlotRole = !kindHasLead(party.party_kind) || live.some(sl => sl.role === 'lead') ? 'crew' : 'lead'
   const { data, error } = await sb.from('crew_slots').insert({ party_id: partyId, role }).select('id').maybeSingle()
   if (error) return refuse((error as { code?: string }).code === '23505' ? 409 : 500, error.message)
   if (!data) return refuse(500, 'The spot was not created.')
@@ -366,9 +368,19 @@ export async function unassignMember(sb: Supa, partyId: string, slotId: unknown,
  * A crew party with no booking behind it (spec §9: "Allie can also create crew
  * parties by hand"): an event, a pop-up, anything the bookings table does not
  * hold. Created as a DRAFT like every other.
+ *
+ * `kind` is 'manual' (a party by hand: the kids formula sets the spots, one is a
+ * Lead) or one of the work kinds in `lib/crew/workTypes.ts` (Clean Floor, Drop-off
+ * Event, Balloon Decor, Party Setup, Retail Shift): those take a number of spots,
+ * have no Lead and no kids, and a blank title and location default to the work
+ * type's own name and the studio.
  */
 export async function createManualParty(sb: Supa, body: Record<string, unknown>, actor: string, s: CrewSettings, now: Date): Promise<ActionResult<{ id: string }>> {
-  const title = typeof body.title === 'string' ? body.title.trim() : ''
+  const rawKind = body.kind
+  const kind = rawKind === undefined || rawKind === null || rawKind === '' || rawKind === 'manual' ? 'manual' : isWorkKind(rawKind) ? rawKind : null
+  if (!kind) return refuse(400, 'Pick a kind of work.')
+  const work = workTypeOf(kind)
+  const title = (typeof body.title === 'string' ? body.title.trim() : '') || work?.label || ''
   if (!title || title.length > 80) return refuse(400, 'A title, up to 80 characters.')
   if (!isCalendarDate(body.date)) return refuse(400, 'A date like 2026-12-05.')
   const t = (v: unknown) => (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v.split(':').map(Number) : null)
@@ -386,19 +398,26 @@ export async function createManualParty(sb: Supa, body: Record<string, unknown>,
     }
     guestCount = body.guest_count
   }
-  const location = typeof body.location === 'string' ? body.location.trim() : ''
+  const location = (typeof body.location === 'string' ? body.location.trim() : '') || (work ? STUDIO_ADDRESS_LINE : '')
   if (!location || location.length > 200) return refuse(400, 'A location, up to 200 characters.')
+  let spots: number | null = null
+  if (work) {
+    const n = body.spots === undefined || body.spots === null || body.spots === '' ? work.defaultSpots : body.spots
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > MAX_PARTY_SLOTS) return refuse(400, `Spots: a whole number from 1 to ${MAX_PARTY_SLOTS}.`)
+    spots = n
+  }
   const notes = typeof body.notes_for_crew === 'string' ? body.notes_for_crew.trim().slice(0, 2000) || null : null
 
   const { data, error } = await sb.from('crew_parties').insert({
-    party_kind: 'manual', booking_id: null, title, theme: null,
-    starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), guest_count: guestCount,
+    party_kind: kind, booking_id: null, title, theme: null,
+    starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), guest_count: work ? null : guestCount,
+    slots_override: spots,
     location, notes_for_crew: notes, status: 'draft', updated_by: actor,
   }).select('id').maybeSingle()
   if (error) return refuse(500, error.message)
   const id = (data as { id: string } | null)?.id
   if (!id) return refuse(500, 'The party was not created.')
-  const roles = slotRolesFor(slotsForParty({ guestCount }, s))
+  const roles = work ? rolesFor(kind, spots ?? work.defaultSpots) : slotRolesFor(slotsForParty({ guestCount }, s))
   const { error: sErr } = await sb.from('crew_slots').insert(roles.map(role => ({ party_id: id, role }))).select('id')
   if (sErr) return refuse(500, `Party created as a draft, but its spots were not: ${sErr.message}`)
   return { ok: true, id }

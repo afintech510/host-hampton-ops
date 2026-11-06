@@ -101,10 +101,11 @@ const perfectFor = [
 const faqs = [
   // The question an assistant is actually asked first. No figure in the answer:
   // this array becomes FAQPage schema, and no mobile price may appear in schema
-  // (plan §15) — the answer points at the tiers rendered above it instead.
+  // (plan §15). The prices are off the page for now (2026-11-05), so it says how
+  // a price is given rather than pointing at tiers that no longer show one.
   {
     q: 'How much does a mobile party cost?',
-    a: 'Our Entry and Signature packages above are the starting points — each covers a host, every supply, a keepsake for every child, and full setup and cleanup, and the birthday child is always free. Bigger guest lists, extra stations and longer parties get a custom quote, usually within 24 hours. Travel is free within 20 miles of Speonk, and there is never a mandatory gratuity.',
+    a: 'We quote every mobile party from your date, guest count and location, usually within 24 hours — tell us what you have in mind using the form below. Each party covers a host, every supply, a keepsake for every child, and full setup and cleanup, and the birthday child is always free. Travel is free within 20 miles of Speonk, and there is never a mandatory gratuity.',
   },
   {
     q: 'How far will you travel?',

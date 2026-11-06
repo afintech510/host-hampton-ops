@@ -18,6 +18,7 @@
  */
 
 import { etToUtc, shiftEtDate } from '@/lib/partyTime'
+import { isWorkKind, kindHasLead } from '@/lib/crew/workTypes'
 
 export type SlotRole = 'lead' | 'crew'
 export type DayPart = 'all_day' | 'before_noon' | 'after_noon'
@@ -392,7 +393,7 @@ export function staffingShortfall(
 ): Shortfall {
   const live = slots.filter(sl => sl.status !== 'cancelled')
   const held = live.filter(sl => sl.member_id && HELD_STATUSES.includes(sl.status))
-  const leadShort = party.party_kind !== 'studio_rental' && !held.some(sl => sl.role === 'lead')
+  const leadShort = kindHasLead(party.party_kind) && !held.some(sl => sl.role === 'lead')
   const crewShort = live.filter(sl => sl.role === 'crew' && !(sl.member_id && HELD_STATUSES.includes(sl.status))).length
   return { crewShort, leadShort }
 }
@@ -561,6 +562,8 @@ export function defaultShift(party: PartyWindow, s: CrewSettings = DEFAULT_SETTI
 export interface ShiftOverrides {
   starts_at: string
   ends_at: string
+  /** Non-party work (`isWorkKind`) is the shift: no set-up or clean-up is added around it. */
+  party_kind?: string
   shift_starts_at?: string | null
   shift_ends_at?: string | null
   lead_starts_at?: string | null
@@ -589,8 +592,9 @@ export function shiftWindow(
   const startOverride = valid(role === 'lead' ? party.lead_starts_at : party.shift_starts_at)
   const endOverride = valid(party.shift_ends_at)
   const lead = role === 'lead'
-  const startsAt = startOverride ?? new Date(partyStart.getTime() - (lead ? s.shift.leadSetupMinutes : s.shift.setupMinutes) * 60_000)
-  const endsAt = endOverride ?? new Date(partyEnd.getTime() + s.shift.cleanupMinutes * 60_000)
+  const work = isWorkKind(party.party_kind)
+  const startsAt = startOverride ?? new Date(partyStart.getTime() - (work ? 0 : (lead ? s.shift.leadSetupMinutes : s.shift.setupMinutes)) * 60_000)
+  const endsAt = endOverride ?? new Date(partyEnd.getTime() + (work ? 0 : s.shift.cleanupMinutes) * 60_000)
   return { startsAt, endsAt, customStart: startOverride !== null, customEnd: endOverride !== null }
 }
 

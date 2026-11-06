@@ -400,10 +400,10 @@ describe('N8: the understaffed alert asks staffingShortfall, which never calls a
     expect(call!).toMatch(/`understaffed:\$\{party\.id\}`/)
   })
 
-  it('staffingShortfall excludes a studio rental from lead-shortage, in the expression that sets it', () => {
+  it('staffingShortfall excludes a studio rental and every kind of crew work from lead-shortage, in the expression that sets it', () => {
     const lead = /const leadShort = ([^\n\r]+)/.exec(shortfall)
     expect(lead).not.toBeNull()
-    expect(lead![1]).toMatch(/^party\.party_kind !== 'studio_rental' &&/)
+    expect(lead![1]).toMatch(/^kindHasLead\(party\.party_kind\) &&/)
     // A rental's crew shortfall is counted by role 'crew' only, so it cannot be inflated by a Lead row.
     expect(shortfall).toMatch(/sl\.role === 'crew'/)
   })
