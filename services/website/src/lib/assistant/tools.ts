@@ -338,7 +338,7 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'propose_approve_party',
     description:
-      'PROPOSE approving a party: sets its status to Approved, the same as the Approve button in the Parties tab. By default it also EMAILS THE CLIENT the standard "Your Party is Confirmed!" message (the studio-rental version for rentals) with a link to their booking; set send_confirmation_email false to approve without telling them (only if the manager says the client already knows). Refused for a cancelled or lost party (use propose_reopen_party first), one already approved, and a party with no price yet. The card shows exactly what will happen. Nothing changes until the manager clicks Confirm.',
+      'PROPOSE approving a party: sets its status to Approved, the same as the Approve button in the Parties tab. NOTE: sending the client a planner, invoice or portal link (propose_send_client_links) ALREADY approves a waiting party by itself, so use this only to approve without sending a link. By default it also EMAILS THE CLIENT the standard "Your Party is Confirmed!" message (the studio-rental version for rentals) with a link to their booking; set send_confirmation_email false to approve without telling them (only if the manager says the client already knows). Refused for a cancelled or lost party (use propose_reopen_party first), one already approved, and a party with no price yet. The card shows exactly what will happen. Nothing changes until the manager clicks Confirm.',
     input_schema: {
       type: 'object',
       properties: { booking_ref: { type: 'string' }, send_confirmation_email: { type: 'boolean', description: 'Default true.' } },

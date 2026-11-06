@@ -34,6 +34,7 @@ import { enqueueCheckinReminders, cancelCheckinReminders } from '@/lib/checkinRe
 import { readBalanceInputs, computeBalance, sumPayments } from '@/lib/bookingBalance'
 import { billedTotalCents } from '@/lib/planBalance'
 import { logBookingChange } from '@/lib/bookingAudit'
+import { approveOnLinkSend, linkSendApproves } from '@/lib/linkApproval'
 import {
   recordAdminPayment,
   describeLedgerOutcome,
@@ -783,7 +784,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           : 'Portal link generated (no email/SMS delivery — check contact info & config)',
     })
 
-      return NextResponse.json({ ok: true, action: 'portal_link_sent', portalUrl, sentVia })
+      // Only if it actually reached the client by some channel.
+      const portalApproval = sentVia.length > 0 && linkSendApproves(booking.status)
+        ? await approveOnLinkSend(supabase, { bookingId: id, status: String(booking.status), actor: adminActorId(req), via: sentVia.join(' + ') })
+        : 'skipped'
+      return NextResponse.json({ ok: true, action: 'portal_link_sent', portalUrl, sentVia, approved: portalApproval === 'approved', approvalFailed: portalApproval === 'failed' })
     }
 
     return NextResponse.json({ ok: true, action: 'portal_url_generated', portalUrl })
@@ -812,7 +817,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       summary: `Portal link texted to ${booking.contact_phone}`,
     })
 
-    return NextResponse.json({ ok: true, action: 'portal_sms_sent', to: booking.contact_phone })
+    const smsApproval = linkSendApproves(booking.status)
+      ? await approveOnLinkSend(supabase, { bookingId: id, status: String(booking.status), actor: adminActorId(req), via: 'text' })
+      : 'skipped'
+    return NextResponse.json({ ok: true, action: 'portal_sms_sent', to: booking.contact_phone, approved: smsApproval === 'approved', approvalFailed: smsApproval === 'failed' })
   }
 
   // ── "Send links to client" — invitation / planner / invoice / portal ──
@@ -946,7 +954,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (sentVia.length === 0) {
       return NextResponse.json({ error: failures.join(' ') || 'Nothing was sent', failures }, { status: 502 })
     }
-    return NextResponse.json({ ok: true, action: 'client_links_sent', sentVia, failures })
+    // The send went out: a booking link in it approves the party (lib/linkApproval.ts).
+    const approval = linkSendApproves(booking.status, kinds)
+      ? await approveOnLinkSend(supabase, { bookingId: id, status: String(booking.status), actor: adminActorId(req), via: sentVia.join(' + ') })
+      : 'skipped'
+    return NextResponse.json({ ok: true, action: 'client_links_sent', sentVia, failures, approved: approval === 'approved', approvalFailed: approval === 'failed' })
   }
 
   // Text the customer their pre-arrival check-in link. Any staff may do this.

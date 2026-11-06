@@ -6,6 +6,7 @@ import {
 import { PHOTOS_EMAIL_SUBJECT, photosEmailText, photosSmsText } from '@/lib/photoSets'
 import { checkSmsQuietHours } from '@/lib/quietHours'
 import { phoneHasExplicitStop } from '@/lib/phoneStop'
+import { linkSendApproves } from '@/lib/linkApproval'
 import {
   displayWithLinks, firstNameOf, maskEmail, maskPhone, screenOutboundText, smsFacts,
   type Authored, type SmsFacts,
@@ -193,6 +194,11 @@ export async function buildClientLinksCard(
       level = worst(level, 'blocked')
       status.push('The invitation is archived, so its link would not work and the send would be refused.')
     }
+  }
+
+  // Sending a booking link is the check-and-go-ahead: it approves a waiting party.
+  if (linkSendApproves(b.status, kinds)) {
+    status.push('Sending this approves the party (it is waiting for a date check). The client gets no separate confirmation email.')
   }
 
   const sms0 = channels.find(c => c.channel === 'sms')?.sms

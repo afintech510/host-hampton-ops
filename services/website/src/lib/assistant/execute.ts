@@ -133,7 +133,9 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       }
       const sentVia = Array.isArray(json.sentVia) ? (json.sentVia as string[]).join(' and ') : 'the chosen channel'
       const failures = Array.isArray(json.failures) && json.failures.length ? ` Problems: ${(json.failures as string[]).join(' ')}` : ''
-      return { ok: true, status: res.status, message: `Sent to ${input.bookingRef} by ${sentVia}.${failures}` }
+      const approved = json.approved === true ? ' The party is now Approved.' : ''
+      const approvalFailed = json.approvalFailed === true ? ' The send went out but the party could NOT be marked Approved - approve it in the Parties tab.' : ''
+      return { ok: true, status: res.status, message: `Sent to ${input.bookingRef} by ${sentVia}.${approved}${approvalFailed}${failures}` }
     }
 
     case 'create_pay_link': {
