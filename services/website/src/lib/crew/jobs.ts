@@ -36,7 +36,7 @@ import { createHash } from 'crypto'
 import type { getSupabase } from '@/lib/supabase'
 import {
   attendanceAlertAt, confirmationSchedule, formatCents, localParts, nudgeMarks, partyRateCents, payLabelFor,
-  standbyEscalateAt, staffingShortfall, understaffedAlertAt, unclaimedWarningAt, type CrewSettings,
+  coverTurnEndsAt, staffingShortfall, understaffedAlertAt, unclaimedWarningAt, type CrewSettings,
 } from '@/lib/crew/rules'
 import {
   listMembers, listPartiesInRange, slotsForParties, type CrewMemberRow, type CrewPartyRow, type CrewSlotRow, type CrewSwapRow, type PartyWithSlots, type Read,
@@ -47,13 +47,13 @@ import {
   type DrainSummary, type NotifyCtx,
 } from '@/lib/crew/notify'
 import {
-  askedCount, AUTOPILOT_ACTOR, autoOfferToEveryone, eligibleFor, escalateSwap, LIVE_SWAP_STATUSES, startCoverRequest, tenure,
+  askNextStandby, AUTOPILOT_ACTOR, lastAskedAt, autoOfferToEveryone, eligibleFor, escalateSwap, LIVE_SWAP_STATUSES, startCoverRequest, tenure,
 } from '@/lib/crew/cover'
 import { ALERT_DAYS_BACK } from '@/lib/crew/admin'
 import { publishParty } from '@/lib/crew/adminActions'
 import { withCalendar } from '@/lib/crew/calendar'
 import { approvePicks, listPickParties, loadPickPanel, notifyPickRound, partyResponses, PICK_RESPONSE_HOURS, type ApproveResult } from '@/lib/crew/pick'
-import { etToUtc } from '@/lib/partyTime'
+import { etDateString, etToUtc } from '@/lib/partyTime'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -80,13 +80,15 @@ export interface JobsReport {
   /** Autopilot: "new party" and "still need crew" asks sent this tick (digests count once). */
   asks: { newParty: number; nudges: number }
   confirmations: { requests: number; reminders: number; overdue: number; dayBefore: number }
-  covers: { reasked: number; escalated: number; autoOffered: number; warned: number; expired: number }
+  covers: { reasked: number; advanced: number; escalated: number; autoOffered: number; warned: number; expired: number }
   attendance: number
   /** The manager told a published party is still short of crew (the one routine manager touch). */
   understaffed: number
   availability: number
   /** Equitable scheduling: parties approved by themselves this tick (everyone who asked fit). */
   picksAutoApproved: number
+  /** Equitable scheduling: people sent their one daily "you haven't answered" message this tick. */
+  pickDigests: number
   queue: Omit<DrainSummary, 'unavailable'>
   /** Which jobs could not read what they needed. Names only, never a row. */
   unavailable: string[]
@@ -184,7 +186,7 @@ export async function runConfirmations(
 // ── 3. Cover requests ───────────────────────────────────────────────────────
 
 export async function runCovers(ctx: JobsCtx, members: Map<string, CrewMemberRow>): Promise<JobsReport['covers'] & { unavailable: boolean }> {
-  const out = { reasked: 0, escalated: 0, autoOffered: 0, warned: 0, expired: 0, unavailable: false }
+  const out = { reasked: 0, advanced: 0, escalated: 0, autoOffered: 0, warned: 0, expired: 0, unavailable: false }
   const s = ctx.settings
   const { data, error } = await ctx.sb.from('crew_swap_requests').select('*').in('status', [...LIVE_SWAP_STATUSES])
   if (error) return { ...out, unavailable: true }
@@ -231,13 +233,26 @@ export async function runCovers(ctx: JobsCtx, members: Map<string, CrewMemberRow
 
     let escalated = swap.status === 'escalated'
     if (swap.status === 'open') {
-      const asked = await askedCount(ctx.sb, swap.id)
-      if (asked.kind !== 'ok') { out.unavailable = true; continue }
-      if (ctx.now.getTime() >= standbyEscalateAt(new Date(swap.created_at), asked.data, s).getTime()) {
-        const e = await escalateSwap(ctx, s, swap, party)
-        if (e === 'unavailable') out.unavailable = true
-        else if (e === 'escalated') { out.escalated++; escalated = true }
-        else if (e === 'not_open') escalated = true
+      // RANKED COVER: the standbys are asked one at a time. When the person asked last has had
+      // their turn without taking it, ask the next best-ranked; when nobody is left, escalate.
+      const last = await lastAskedAt(ctx.sb, swap.id)
+      if (last.kind !== 'ok') { out.unavailable = true; continue }
+      const turnEnds = coverTurnEndsAt(last.data ?? new Date(swap.standbys_notified_at ?? swap.created_at), s)
+      if (ctx.now.getTime() >= turnEnds.getTime()) {
+        let next: Awaited<ReturnType<typeof askNextStandby>> = { kind: 'ok', data: { kind: 'none_left' } }
+        if (requester) {
+          const { data: full, error: fErr } = await ctx.sb.from('crew_slots').select('*').eq('party_id', party.id)
+          if (fErr || !full) { out.unavailable = true; continue }
+          next = await askNextStandby(ctx, s, swap, { party, slots: full as CrewSlotRow[] }, requester)
+        }
+        if (next.kind !== 'ok') { out.unavailable = true; continue }
+        if (next.data.kind === 'asked') out.advanced++
+        else {
+          const e = await escalateSwap(ctx, s, swap, party)
+          if (e === 'unavailable') out.unavailable = true
+          else if (e === 'escalated') { out.escalated++; escalated = true }
+          else if (e === 'not_open') escalated = true
+        }
       }
     }
 
@@ -567,6 +582,62 @@ export async function runAvailabilityReminder(ctx: JobsCtx, members: CrewMemberR
   return sent
 }
 
+// ── 9. Equitable scheduling: the daily "you haven't answered" digest ────────
+
+/** The digest goes after this Eastern hour, once a day, and not in the evening. */
+export const PICK_DIGEST_FROM_HOUR = 9
+export const PICK_DIGEST_UNTIL_HOUR = 19
+/** A party is left to the "new party" ask for this long after it goes up; the digest is for the ones still undecided. */
+export const PICK_DIGEST_MIN_AGE_HOURS = 20
+const PICK_DIGEST_LISTED = 5
+
+/**
+ * A party the manager picks needs an answer from everyone free to work it. Rather than text the
+ * same person once per party, each person gets ONE message a day (`pick_digest:{member}:{ET date}`)
+ * listing the picked parties they have not answered, the soonest first. Nothing is assigned by
+ * silence: an unanswered party stays unanswered, and the manager sees who has not replied. It goes
+ * only for a party that still has a spot open, that the person could actually work (free that day,
+ * no clash, may lead if only the Lead spot is open), and that has been up for at least a day.
+ */
+export async function runPickDigest(ctx: JobsCtx): Promise<{ sent: number; unavailable: boolean }> {
+  const out = { sent: 0, unavailable: false }
+  const local = localParts(ctx.now)
+  if (local.minutes < PICK_DIGEST_FROM_HOUR * 60 || local.minutes >= PICK_DIGEST_UNTIL_HOUR * 60) return out
+  const parties = await listPickParties(ctx.sb, ctx.now)
+  if (parties.kind !== 'ok') return { ...out, unavailable: true }
+
+  const undecided = new Map<string, { m: CrewMemberRow; items: { theme: string; dayLabel: string; startsAt: number }[] }>()
+  for (const pws of parties.data) {
+    const { party, slots } = pws
+    if (!inScope(ctx, party) || !party.published_at) continue
+    if (ctx.now.getTime() - new Date(party.published_at).getTime() < PICK_DIGEST_MIN_AGE_HOURS * HOUR_MS) continue
+    const live = slots.filter(sl => sl.status !== 'cancelled')
+    if (!live.some(sl => sl.status === 'open')) continue
+    const crewOpen = live.filter(sl => sl.status === 'open' && sl.role === 'crew').length
+    const eligible = await eligibleFor(ctx.sb, ctx.settings, pws, crewOpen > 0 ? 'crew' : 'lead', 'all', [])
+    if (eligible.kind !== 'ok') { out.unavailable = true; continue }
+    const rs = await partyResponses(ctx.sb, party.id)
+    if (rs.kind !== 'ok') { out.unavailable = true; continue }
+    const answered = new Set(rs.data.map(r => r.member_id))
+    for (const m of eligible.data) {
+      if (!memberInScope(ctx, m) || answered.has(m.id) || openFor(slots, !!m.can_lead).count === 0) continue
+      const e = undecided.get(m.id) ?? { m, items: [] }
+      e.items.push({ theme: party.theme || party.title, dayLabel: messageDayLabel(new Date(party.starts_at)), startsAt: new Date(party.starts_at).getTime() })
+      undecided.set(m.id, e)
+    }
+  }
+
+  const today = etDateString(ctx.now)
+  for (const { m, items } of Array.from(undecided.values())) {
+    items.sort((a, b) => a.startsAt - b.startsAt)
+    const shown = items.slice(0, PICK_DIGEST_LISTED)
+    const r = await notifyMember(ctx, m, 'pickDigest', templates.pickDigest(m.first_name, shown, items.length - shown.length, crewLink('/crew')),
+      `pick_digest:${m.id}:${today}`, { payload: { parties: items.length } })
+    if (r.kind === 'done' && r.channels.in_app === 'sent') out.sent++
+  }
+  return out
+}
+
 // ── The tick ────────────────────────────────────────────────────────────────
 
 /** Everything after the reconcile. The route decides whether this runs at all. */
@@ -577,8 +648,8 @@ export async function runCrewJobs(ctx: JobsCtx): Promise<JobsReport> {
     autoPublished: 0,
     asks: { newParty: 0, nudges: 0 },
     confirmations: { requests: 0, reminders: 0, overdue: 0, dayBefore: 0 },
-    covers: { reasked: 0, escalated: 0, autoOffered: 0, warned: 0, expired: 0 },
-    attendance: 0, understaffed: 0, availability: 0, picksAutoApproved: 0,
+    covers: { reasked: 0, advanced: 0, escalated: 0, autoOffered: 0, warned: 0, expired: 0 },
+    attendance: 0, understaffed: 0, availability: 0, picksAutoApproved: 0, pickDigests: 0,
     queue: { scanned: 0, sent: 0, deferred: 0, skipped: 0, failed: 0, raced: 0 },
     unavailable: [],
   }
@@ -610,7 +681,7 @@ export async function runCrewJobs(ctx: JobsCtx): Promise<JobsReport> {
     if (c.unavailable) down('confirmations')
 
     const cv = await runCovers(ctx, byId)
-    report.covers = { reasked: cv.reasked, escalated: cv.escalated, autoOffered: cv.autoOffered, warned: cv.warned, expired: cv.expired }
+    report.covers = { reasked: cv.reasked, advanced: cv.advanced, escalated: cv.escalated, autoOffered: cv.autoOffered, warned: cv.warned, expired: cv.expired }
     if (cv.unavailable) down('covers')
 
     const pa = await runPartyAlerts(ctx, parties.data)
@@ -630,6 +701,10 @@ export async function runCrewJobs(ctx: JobsCtx): Promise<JobsReport> {
     const pk = await runPickAutoApprove(ctx)
     report.picksAutoApproved = pk.approved
     if (pk.unavailable) down('picks')
+
+    const dg = await runPickDigest(ctx)
+    report.pickDigests = dg.sent
+    if (dg.unavailable) down('pickDigest')
   }
 
   const q = await drainCrewQueue(ctx, ctx.scope === 'test' ? { memberFilter: m => m.is_test } : {})

@@ -184,6 +184,25 @@ ${url}`,
     )
   },
 
+  /** Pick mode, once a day: the parties this person has not answered yet. Answering locks nothing. */
+  pickDigest(firstName: string, items: { theme: string; dayLabel: string }[], more: number, url: string): Rendered {
+    const n = items.length + more
+    const NL = String.fromCharCode(10)
+    const head = `${n} ${n === 1 ? 'party' : 'parties'}`
+    const list = items.map(i => `${i.theme}, ${i.dayLabel}`).join('; ') + (more > 0 ? ` and ${more} more` : '')
+    return r(
+      `Hi ${firstName}! You haven't told us about ${head} yet: ${list}. Work it, can't, or standby? ${url}`,
+      `${head} waiting for your answer`,
+      `Hi ${firstName},
+
+We haven't heard from you on ${head} yet:
+${items.map(i => `- ${i.theme}, ${i.dayLabel}`).join(NL)}${more > 0 ? `${NL}- and ${more} more` : ''}
+
+Tell us if you want to work it, can't, or can stand by. Answering doesn't lock you in; the crew is picked fairly, and nobody is put on a party without being asked first.
+${url}`,
+    )
+  },
+
   /** The ones who asked to work and were not picked this round: one message for the whole round. */
   pickStandby(firstName: string, count: number, url: string): Rendered {
     const n = `${count} ${count === 1 ? 'party' : 'parties'}`
@@ -274,9 +293,9 @@ See where you stand: ${url}`,
   coverOffer(requesterFirst: string, p: PartyRef, role: 'lead' | 'crew', payLabel: string | null, ladder: boolean): Rendered {
     const two = ladder ? ', and covering a late cancel counts as two parties toward your rate' : ''
     return r(
-      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. You're a standby, claim ${spotWord(role)}${paren(payLabel)}: ${p.url}`,
+      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. You're up on the waitlist, claim ${spotWord(role)}${paren(payLabel)}: ${p.url}`,
       `Cover needed: ${p.theme}, ${p.dayLabel}`,
-      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. You're a standby, so you get first pick: ${spotWord(role)}${comma(payLabel)}. First to claim gets it${two}.\n${p.url}`,
+      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. You're up on the waitlist, so you get first pick: ${spotWord(role)}${comma(payLabel)}. If you can't take it, we'll ask the next person${two}.\n${p.url}`,
     )
   },
 

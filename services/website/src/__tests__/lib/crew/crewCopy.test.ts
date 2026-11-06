@@ -29,6 +29,7 @@ const SAMPLES: Record<string, unknown> = {
   url: 'https://www.hosthampton.com/crew', adminUrl: 'https://www.hosthampton.com/admin/crew', monthLabel: 'December',
   tipLabel: '$20.00', reason: 'sick', standbys: 2, noticeDays: 9,
   spots: 2, count: 3, open: true, crewShort: 2, leadShort: true, daysOut: 4, asked: 3, ladder: true,
+  items: [{ theme: 'Glow Party', dayLabel: 'Sat Oct 31' }, { theme: 'Unicorn Party', dayLabel: 'Sun Nov 1' }], more: 1,
 }
 
 /** What the launch build passes: no pay figure, no ladder wording. */

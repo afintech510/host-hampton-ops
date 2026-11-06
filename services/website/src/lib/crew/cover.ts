@@ -26,10 +26,11 @@ import {
 } from '@/lib/crew/db'
 import { loadAvailability, memberFit, type Conflict } from '@/lib/crew/admin'
 import {
-  formatCents, localParts, partyRateCents, payLabelFor, standbyEscalateAt, type CrewSettings, type PartyWindow, type SlotRole,
+  formatCents, localParts, partyRateCents, payLabelFor, type CrewSettings, type PartyWindow, type SlotRole,
 } from '@/lib/crew/rules'
 import { adminTemplates, templates } from '@/lib/crew/templates'
 import { crewLink, isTestParty, notifyAdmin, notifyMember, partyRefFor, type NotifyCtx } from '@/lib/crew/notify'
+import { loadHistories, rankVolunteers } from '@/lib/crew/ranking'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -143,28 +144,84 @@ export async function escalateSwap(
 }
 
 /**
- * Text every eligible live standby, tell Allie, and escalate at once when
- * nobody could be asked. Re-running it asks nobody twice (`cover:{swap}:{member}`).
+ * The standbys who could work this spot, in the order they are asked: whoever
+ * worked least recently first (`lib/crew/ranking.ts`, the order the manager's picks
+ * use), so cover is as fair as the original assignment. Read only.
+ */
+export async function rankedStandbys(
+  sb: Supa, s: CrewSettings, pws: PartyWithSlots, role: SlotRole, requesterId: string,
+): Promise<Read<CrewMemberRow[]>> {
+  const standbys = await listLiveStandbys(sb, pws.party.id)
+  if (standbys.kind !== 'ok') return standbys
+  const eligible = await eligibleFor(sb, s, pws, role, new Set(standbys.data.map(r => r.member_id)), [requesterId])
+  if (eligible.kind !== 'ok') return eligible
+  if (eligible.data.length <= 1) return eligible
+  const hist = await loadHistories(sb, eligible.data.map(m => m.id), pws.party.id)
+  if (hist.kind !== 'ok') return hist
+  const byId = new Map(eligible.data.map(m => [m.id, m]))
+  const ranked = rankVolunteers(new Date(pws.party.starts_at), eligible.data.map(m => ({
+    memberId: m.id, firstName: m.first_name, lastName: m.last_name ?? null, canLead: !!m.can_lead, joinedOn: m.joined_on,
+    history: hist.data.get(m.id) ?? [],
+  })))
+  return { kind: 'ok', data: ranked.map(v => byId.get(v.memberId)!).filter(Boolean) }
+}
+
+/**
+ * When the standby asked most recently was asked (their in-app row, stamped with the tick's own `now`),
+ * or null if nobody has been. The clock that decides when the next person is asked.
+ */
+export async function lastAskedAt(sb: Supa, swapId: string): Promise<Read<Date | null>> {
+  const { data, error } = await sb.from('crew_notifications').select('scheduled_for')
+    .like('dedupe_key', `cover:${swapId}:%`).eq('channel', 'in_app')
+  if (error) return { kind: 'unavailable', error: error.message }
+  // At most one row per standby, so the latest is taken here rather than trusting a sort and a limit.
+  const times = ((data ?? []) as { scheduled_for: string }[]).map(r => new Date(r.scheduled_for).getTime()).filter(Number.isFinite)
+  return { kind: 'ok', data: times.length ? new Date(Math.max(...times)) : null }
+}
+
+/**
+ * Ask the NEXT standby: the best-ranked one not yet asked. Each person gets their own
+ * turn (`standby_window_hours`, counted from when they could first be texted) before the
+ * next is asked, so the person who has worked least recently gets first call on the spot
+ * and nobody is asked at the same time as them. Returns 'none_left' when everyone who
+ * could work it has already been asked. Re-running asks nobody twice (`cover:{swap}:{member}`).
+ */
+export async function askNextStandby(
+  ctx: NotifyCtx, s: CrewSettings, swap: CrewSwapRow, pws: PartyWithSlots, requester: CrewMemberRow,
+): Promise<Read<{ kind: 'asked'; memberId: string } | { kind: 'none_left' }>> {
+  const ranked = await rankedStandbys(ctx.sb, s, pws, swap.slot_role, requester.id)
+  if (ranked.kind !== 'ok') return ranked
+  const already = await askedMemberIds(ctx.sb, swap.id)
+  if (already.kind !== 'ok') return already
+  const done = new Set(already.data)
+  const ref = partyRefFor(pws.party, s, coverPath(swap.id), swap.slot_role)
+  for (const m of ranked.data) {
+    if (done.has(m.id)) continue
+    const pay = payLabelFor(swap.slot_role, m.steps, pws.party.extra_flat_cents, s)
+    const r = await notifyMember(ctx, m, 'coverOffer', templates.coverOffer(requester.first_name, ref, swap.slot_role, pay, s.ladderEnabled),
+      `cover:${swap.id}:${m.id}`, { payload: { swap_id: swap.id, party_id: pws.party.id } })
+    if (r.kind !== 'done') continue
+    // "The standbys have been asked", stamped once, by whoever gets there first. The turn clock is the ask's own
+    // notification row (`lastAskedAt`), so each person gets a full window of their own.
+    const { error } = await ctx.sb.from('crew_swap_requests').update({ standbys_notified_at: ctx.now.toISOString() })
+      .eq('id', swap.id).is('standbys_notified_at', null).select('id')
+    if (error) console.error(`crew/cover: standbys_notified_at not written for ${swap.id}: ${error.message}`)
+    return { kind: 'ok', data: { kind: 'asked', memberId: m.id } }
+  }
+  return { kind: 'ok', data: { kind: 'none_left' } }
+}
+
+/**
+ * Ask the first standby (the one who has worked least recently), tell the manager,
+ * and escalate at once when nobody could be asked. The rest are asked one at a time
+ * by the cron (`runCovers`) as each turn passes without a claim.
  */
 export async function startCoverRequest(
   ctx: NotifyCtx, s: CrewSettings, swap: CrewSwapRow, pws: PartyWithSlots, requester: CrewMemberRow,
 ): Promise<Read<{ asked: number; escalated: boolean }>> {
-  const standbys = await listLiveStandbys(ctx.sb, pws.party.id)
-  if (standbys.kind !== 'ok') return standbys
-  const eligible = await eligibleFor(ctx.sb, s, pws, swap.slot_role, new Set(standbys.data.map(r => r.member_id)), [requester.id])
-  if (eligible.kind !== 'ok') return eligible
-
-  const ref = partyRefFor(pws.party, s, coverPath(swap.id))
-  let asked = 0
-  for (const m of eligible.data) {
-    const pay = payLabelFor(swap.slot_role, m.steps, pws.party.extra_flat_cents, s)
-    const r = await notifyMember(ctx, m, 'coverOffer', templates.coverOffer(requester.first_name, ref, swap.slot_role, pay, s.ladderEnabled),
-      `cover:${swap.id}:${m.id}`, { payload: { swap_id: swap.id, party_id: pws.party.id } })
-    if (r.kind === 'done') asked++
-  }
-  const { error } = await ctx.sb.from('crew_swap_requests').update({ standbys_notified_at: ctx.now.toISOString() })
-    .eq('id', swap.id).is('standbys_notified_at', null).select('id')
-  if (error) console.error(`crew/cover: standbys_notified_at not written for ${swap.id}: ${error.message}`)
+  const first = await askNextStandby(ctx, s, swap, pws, requester)
+  if (first.kind !== 'ok') return first
+  const asked = first.data.kind === 'asked' ? 1 : 0
 
   const reason = swap.reason_note ? `${swap.reason}: ${swap.reason_note}` : swap.reason
   await notifyAdmin(ctx, 'coverRequested',
@@ -176,9 +233,7 @@ export async function startCoverRequest(
   // the two left a zero-standby request open until the next tick (found in the
   // production probe, 2026-10-27).
   let escalated = false
-  if (asked === 0 || ctx.now.getTime() >= standbyEscalateAt(new Date(swap.created_at), asked, s).getTime()) {
-    escalated = (await escalateSwap(ctx, s, swap, pws.party)) === 'escalated'
-  }
+  if (asked === 0) escalated = (await escalateSwap(ctx, s, swap, pws.party)) === 'escalated'
   return { kind: 'ok', data: { asked, escalated } }
 }
 
@@ -263,7 +318,7 @@ export interface CoverOptions {
   role: SlotRole
   /** A request already open for this spot, and how many people it went to. */
   live: { swapId: string; asked: number } | null
-  /** On the waitlist AND free to work it: the people "Find Cover" texts. */
+  /** On the waitlist AND free to work it, in the order "Find Cover" texts them: one at a time, the person who worked least recently first. */
   standbys: string[]
   /** Free to work it but not on the waitlist: the people to ask yourself. */
   others: string[]
@@ -302,13 +357,16 @@ export async function coverOptions(
   const waitlist = new Set(standbys.data.map(r => r.member_id))
   const free = await eligibleFor(sb, s, pws.data, slot.data.role, 'all', [member.id])
   if (free.kind !== 'ok') return free
+  // The waitlist is shown in the order they will be asked (worked least recently first).
+  const ranked = await rankedStandbys(sb, s, pws.data, slot.data.role, member.id)
+  if (ranked.kind !== 'ok') return ranked
   const byName = (a: string, b: string) => a.localeCompare(b)
   return {
     kind: 'ok',
     data: {
       role: slot.data.role,
       live,
-      standbys: free.data.filter(m => waitlist.has(m.id)).map(shortName).sort(byName),
+      standbys: ranked.data.map(shortName),
       others: free.data.filter(m => !waitlist.has(m.id)).map(shortName).sort(byName),
     },
   }
@@ -393,6 +451,7 @@ const CONFLICT_TEXT: Record<Conflict, string> = {
 }
 
 const TAKEN = 'Someone just took it.'
+const NOT_YOUR_TURN = "This spot is being offered to other people on the waitlist first. If it isn't taken, you'll be asked next."
 
 /** A crew member takes a cover. Eligibility is re-checked here; the race is settled by `crew_claim_swap`. */
 export async function claimCover(ctx: NotifyCtx, s: CrewSettings, member: CrewMemberRow, swapId: string): Promise<SwapActionOutcome> {
@@ -402,6 +461,14 @@ export async function claimCover(ctx: NotifyCtx, s: CrewSettings, member: CrewMe
   const { swap, pws } = cover.data
   if (swap.requester_id === member.id) return { kind: 'refused', status: 409, error: "That's your own request." }
   if (!(LIVE_SWAP_STATUSES as readonly string[]).includes(swap.status)) return { kind: 'refused', status: 409, error: TAKEN }
+
+  // Ranked cover: the standbys are asked one at a time, so only someone who HAS been asked may take it,
+  // until it is offered to everyone. (The manager's own assign goes through `assignCover`, not here.)
+  if (!swap.offered_to_all_at) {
+    const asked = await askedMemberIds(ctx.sb, swap.id)
+    if (asked.kind !== 'ok') return { kind: 'unavailable' }
+    if (!asked.data.includes(member.id)) return { kind: 'refused', status: 409, error: NOT_YOUR_TURN }
+  }
 
   const fit = await eligibleFor(ctx.sb, s, pws, swap.slot_role, new Set([member.id]), [swap.requester_id])
   if (fit.kind !== 'ok') return { kind: 'unavailable' }

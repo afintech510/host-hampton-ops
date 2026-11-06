@@ -42,14 +42,15 @@ import { crewLink, isTestParty, notifyMember, type NotifyCtx } from '@/lib/crew/
 import { notifyAssigned } from '@/lib/crew/assigned'
 import { templates } from '@/lib/crew/templates'
 import { shiftEtDate } from '@/lib/partyTime'
+import { loadHistories, PICK_WINDOW_DAYS, rankVolunteers, type PickCandidate, type RankedVolunteer } from '@/lib/crew/ranking'
+
+export { PICK_WINDOW_DAYS, rankVolunteers, type PickCandidate, type RankedVolunteer }
 
 type Supa = ReturnType<typeof getSupabase>
 
 const DAY_MS = 86_400_000
 const HELD = ['assigned', 'completed']
 
-/** "Recent" for the tie-break: parties within this many days either side of the one being filled. */
-export const PICK_WINDOW_DAYS = 30
 /** How long people have to answer before a party where everyone who asked fits is approved without the manager. */
 export const PICK_RESPONSE_HOURS = 48
 
@@ -58,58 +59,6 @@ export type PickResponse = (typeof RESPONSES)[number]
 export const isPickResponse = (v: unknown): v is PickResponse => typeof v === 'string' && (RESPONSES as readonly string[]).includes(v)
 
 // ── The ranking (pure) ──────────────────────────────────────────────────────
-
-export interface PickCandidate {
-  memberId: string
-  firstName: string
-  lastName: string | null
-  /** May take the Lead spot (already judged for this party). */
-  canLead: boolean
-  joinedOn: string
-  /** Start times of every party they are approved for or have worked, other than this one. */
-  history: ReadonlyArray<{ startsAt: string }>
-}
-
-export interface RankedVolunteer {
-  memberId: string
-  firstName: string
-  lastName: string | null
-  canLead: boolean
-  /** The latest party at or before this one that they hold, or null: they have never worked. */
-  lastWorkedAt: string | null
-  /** Parties they hold within PICK_WINDOW_DAYS either side of this one. */
-  recent: number
-  rank: number
-}
-
-export function rankVolunteers(targetStartsAt: Date, candidates: ReadonlyArray<PickCandidate>): RankedVolunteer[] {
-  const t = targetStartsAt.getTime()
-  const rows = candidates.map(c => {
-    let last: number | null = null
-    let recent = 0
-    for (const h of c.history) {
-      const at = new Date(h.startsAt).getTime()
-      if (!Number.isFinite(at)) continue
-      if (at <= t && (last === null || at > last)) last = at
-      if (Math.abs(at - t) <= PICK_WINDOW_DAYS * DAY_MS) recent++
-    }
-    return { c, last, recent }
-  })
-  rows.sort((a, b) => {
-    // Never worked first.
-    if (a.last === null && b.last !== null) return -1
-    if (b.last === null && a.last !== null) return 1
-    if (a.last !== null && b.last !== null && a.last !== b.last) return a.last - b.last
-    if (a.recent !== b.recent) return a.recent - b.recent
-    if (a.c.joinedOn !== b.c.joinedOn) return a.c.joinedOn < b.c.joinedOn ? -1 : 1
-    const n = a.c.firstName.localeCompare(b.c.firstName)
-    return n !== 0 ? n : a.c.memberId.localeCompare(b.c.memberId)
-  })
-  return rows.map((r, i) => ({
-    memberId: r.c.memberId, firstName: r.c.firstName, lastName: r.c.lastName, canLead: r.c.canLead,
-    lastWorkedAt: r.last === null ? null : new Date(r.last).toISOString(), recent: r.recent, rank: i + 1,
-  }))
-}
 
 export interface OpenSpot { slotId: string; role: SlotRole }
 export interface Recommended { slotId: string; role: SlotRole; memberId: string }
@@ -137,26 +86,6 @@ export async function partyResponses(sb: Supa, partyId: string): Promise<Read<Re
   const { data, error } = await sb.from('crew_party_responses').select('*').eq('party_id', partyId)
   if (error) return { kind: 'unavailable', error: error.message }
   return { kind: 'ok', data: (data ?? []) as ResponseRow[] }
-}
-
-/** The parties each member is approved for or has worked (not cancelled), other than `exceptPartyId`. */
-async function loadHistories(sb: Supa, memberIds: string[], exceptPartyId: string): Promise<Read<Map<string, { startsAt: string }[]>>> {
-  const out = new Map<string, { startsAt: string }[]>()
-  if (memberIds.length === 0) return { kind: 'ok', data: out }
-  const { data, error } = await sb.from('crew_slots').select('member_id, party_id, status').in('member_id', memberIds).in('status', HELD)
-  if (error) return { kind: 'unavailable', error: error.message }
-  const slots = ((data ?? []) as { member_id: string; party_id: string; status: string }[]).filter(r => r.party_id !== exceptPartyId)
-  const parties = await partiesByIds(sb, slots.map(r => r.party_id))
-  if (parties.kind !== 'ok') return parties
-  const startOf = new Map(parties.data.filter(p => p.status !== 'cancelled').map(p => [p.id, p.starts_at]))
-  for (const r of slots) {
-    const at = startOf.get(r.party_id)
-    if (!at) continue
-    const l = out.get(r.member_id) ?? []
-    l.push({ startsAt: at })
-    out.set(r.member_id, l)
-  }
-  return { kind: 'ok', data: out }
 }
 
 const fullName = (m: Pick<CrewMemberRow, 'first_name' | 'last_name'>) => [m.first_name, m.last_name].filter(Boolean).join(' ')

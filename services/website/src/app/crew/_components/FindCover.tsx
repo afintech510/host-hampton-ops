@@ -96,8 +96,8 @@ export default function FindCover(props: { slotId: string; partyId: string; owne
           <>
             <p className="crew-note crew-ok" role="status">
               {view.asked > 0
-                ? `Done. We let ${view.asked} ${view.asked === 1 ? 'person' : 'people'} on the waitlist know your spot is open.`
-                : 'Done. The waitlist has been asked.'}
+                ? "Done. We texted the first person on the waitlist that your spot is open. If they can't take it, we ask the next."
+                : 'Done. The waitlist is being asked.'}
             </p>
             <p>You&apos;re still on the party until someone accepts. We&apos;ll tell you the moment they do.</p>
           </>
@@ -106,7 +106,7 @@ export default function FindCover(props: { slotId: string; partyId: string; owne
         {view.kind === 'ready' && view.options.live && (
           <>
             <p className="crew-note crew-info">
-              We&apos;ve already asked {view.options.live.asked} {view.options.live.asked === 1 ? 'person' : 'people'} to take your spot. You&apos;re still on the party until one of them accepts.
+              We&apos;ve asked {view.options.live.asked} {view.options.live.asked === 1 ? 'person' : 'people'} on the waitlist so far, one at a time. You&apos;re still on the party until someone accepts.
             </p>
             <p className="crew-small"><Link className="crew-link" href={`/crew/parties/${props.partyId}/cant-make-it`}>See where it stands</Link></p>
           </>
@@ -115,12 +115,12 @@ export default function FindCover(props: { slotId: string; partyId: string; owne
         {view.kind === 'ready' && !view.options.live && view.options.standbys.length > 0 && (
           <>
             <p style={{ marginTop: 0 }}>
-              These people are on the waitlist and free then. We&apos;ll text each of them that a spot opened up and ask them to take it.
-              The first to accept gets it, and you&apos;re released.
+              These people are on the waitlist and free then. We&apos;ll text the first one that a spot opened up. If they don&apos;t take it within
+              a couple of hours, we ask the next, in this order (whoever worked least recently goes first). Whoever accepts gets it, and you&apos;re released.
             </p>
-            <ul className="crew-team" aria-label="On the waitlist">
+            <ol className="crew-team" aria-label="On the waitlist, in the order they are asked">
               {view.options.standbys.map(n => <li key={n}>{n}</li>)}
-            </ul>
+            </ol>
             <p className="crew-label">Why can&apos;t you make it? Only {props.ownerName} sees this.</p>
             <div className="crew-row">
               {REASONS.map(r => (
@@ -135,7 +135,7 @@ export default function FindCover(props: { slotId: string; partyId: string; owne
             {error && <p role="alert" className="crew-note crew-alert">{error}</p>}
             <div className="crew-row" style={{ marginTop: '.8rem' }}>
               <button type="button" className="crew-btn" onClick={send} disabled={busy}>
-                {busy ? 'Texting…' : `Text ${view.options.standbys.length === 1 ? 'them' : `all ${view.options.standbys.length}`}`}
+                {busy ? 'Texting…' : view.options.standbys.length === 1 ? 'Text them' : 'Start asking'}
               </button>
               <button type="button" className="crew-btn crew-btn-ghost" onClick={close} disabled={busy}>Cancel</button>
             </div>

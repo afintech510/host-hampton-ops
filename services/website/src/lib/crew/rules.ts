@@ -19,6 +19,7 @@
 
 import { etToUtc, shiftEtDate } from '@/lib/partyTime'
 import { isWorkKind, kindHasLead } from '@/lib/crew/workTypes'
+import { checkSmsQuietHours } from '@/lib/quietHours'
 
 export type SlotRole = 'lead' | 'crew'
 export type DayPart = 'all_day' | 'before_noon' | 'after_noon'
@@ -367,6 +368,18 @@ export function classifyDrop(
 export function standbyEscalateAt(requestedAt: Date, standbyCount: number, s: CrewSettings = DEFAULT_SETTINGS): Date {
   if (standbyCount <= 0) return new Date(requestedAt.getTime())
   return new Date(requestedAt.getTime() + s.drops.standbyWindowHours * HOUR_MS)
+}
+
+/**
+ * When the standby asked at `notifiedAt` has had their turn and the next is asked (or, with
+ * nobody left, the request escalates). A text sent in quiet hours goes at 8am, so the turn
+ * starts then and not when the row was written: a 11pm request must not use up the first
+ * person's window while they sleep.
+ */
+export function coverTurnEndsAt(notifiedAt: Date, s: CrewSettings = DEFAULT_SETTINGS): Date {
+  const q = checkSmsQuietHours(notifiedAt)
+  const start = q.kind === 'quiet' ? q.until : notifiedAt
+  return new Date(start.getTime() + s.drops.standbyWindowHours * HOUR_MS)
 }
 
 export function unclaimedWarningAt(startsAt: Date, s: CrewSettings = DEFAULT_SETTINGS): Date {

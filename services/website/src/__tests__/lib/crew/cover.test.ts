@@ -115,7 +115,7 @@ describe('coverOptions: what Find Cover shows before it texts anyone', () => {
     await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
     const swap = db.tables.crew_swap_requests[0]
     const r = await coverOptions(db.sb, S, member('a'), 's-a', NOW)
-    expect(r).toMatchObject({ kind: 'ok', data: { live: { swapId: swap.id, asked: 2 } } })
+    expect(r).toMatchObject({ kind: 'ok', data: { live: { swapId: swap.id, asked: 1 } } })
   })
 
   it('is null for a spot that is not yours, or a party that has started', async () => {
@@ -175,7 +175,7 @@ describe('a late cancel', () => {
     db.tables.crew_parties[0].ends_at = '2026-12-20T21:00:00.000Z'
     db.tables.crew_unavailability = []
     const r = await releaseMySpot(ctx(), S, member('a'), 's-a', 'school', null)
-    expect(r).toMatchObject({ kind: 'requested', asked: 2, escalated: false })
+    expect(r).toMatchObject({ kind: 'requested', asked: 1, escalated: false })
     expect(db.rpcCalls.find(c => c.fn === 'crew_release_slot')!.args).toMatchObject({ p_kind: 'late_cancel' })
     expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'assigned', member_id: 'a' })
     expect(member('a').steps).toBe(3)
@@ -221,7 +221,7 @@ describe('a late cancel', () => {
   it('a member who is not a standby is refused until Allie offers it to everyone', async () => {
     await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
     const swap = db.tables.crew_swap_requests[0]
-    expect(await claimCover(ctx(), S, member('e'), swap.id)).toEqual({ kind: 'refused', status: 409, error: 'Someone just took it.' })
+    expect(await claimCover(ctx(), S, member('e'), swap.id)).toEqual({ kind: 'refused', status: 409, error: expect.stringContaining('offered to other people') })
     const offered = await offerToEveryone(ctx(), S, swap.id, 'admin:allie@example.test')
     // D and E are free. B was already asked in the standby round (not asked twice), C blocked the
     // day, A is the canceller, and the owner is never asked.
@@ -722,5 +722,94 @@ describe('a text from a crew phone (Quo inbound)', () => {
   it('isConfirmReply is exact', () => {
     expect(['Y', 'y', ' yes ', 'YES.'].every(isConfirmReply)).toBe(true)
     expect(['yes but late', 'Yeah', 'N', ''].some(isConfirmReply)).toBe(false)
+  })
+})
+
+// ── Ranked cover: one standby at a time, whoever worked least recently first ─
+
+describe('ranked cover', () => {
+  const byId = () => new Map(db.tables.crew_members.map(m => [m.id, m as any]))
+  const askedKeys = () => keys(r => r.template === 'coverOffer' && r.channel === 'in_app')
+
+  beforeEach(() => {
+    db.tables.crew_unavailability = []
+    db.tables.crew_standbys = ['b', 'c', 'd'].map(m => ({ id: `sb-${m}`, party_id: 'p1', member_id: m, withdrawn_at: null }))
+    // b worked two days ago, d worked a month ago, c has never worked.
+    db.tables.crew_parties.push(
+      party({ id: 'past-b', booking_id: 'bb', status: 'completed', starts_at: '2026-10-31T18:00:00.000Z', ends_at: '2026-10-31T21:00:00.000Z' }),
+      party({ id: 'past-d', booking_id: 'bd', status: 'completed', starts_at: '2026-10-01T18:00:00.000Z', ends_at: '2026-10-01T21:00:00.000Z' }),
+    )
+    db.tables.crew_slots.push(
+      slot('h-b', 'b', { party_id: 'past-b', status: 'completed' }),
+      slot('h-d', 'd', { party_id: 'past-d', status: 'completed' }),
+    )
+  })
+
+  it('asks ONLY the person who worked least recently, and says who is next in Find Cover', async () => {
+    const options = await coverOptions(db.sb, S, member('a'), 's-a', NOW)
+    expect(options).toMatchObject({ kind: 'ok', data: { standbys: ['C', 'D', 'B'] } })
+    const r = await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    expect(r).toMatchObject({ kind: 'requested', asked: 1, escalated: false })
+    const swap = db.tables.crew_swap_requests[0]
+    expect(askedKeys()).toEqual([`cover:${swap.id}:c`])
+  })
+
+  it('a standby who has not been asked yet cannot take the spot early; the one asked can', async () => {
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+    expect(await claimCover(ctx(), S, member('b'), swap.id)).toMatchObject({ kind: 'refused', status: 409 })
+    expect(db.tables.crew_slots.find(s => s.id === 's-a').member_id).toBe('a')
+    expect(await claimCover(ctx(), S, member('c'), swap.id)).toEqual({ kind: 'ok' })
+    expect(db.tables.crew_slots.find(s => s.id === 's-a').member_id).toBe('c')
+  })
+
+  it('asks the next person only after a full turn, then the next, then escalates when nobody is left', async () => {
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+
+    NOW = new Date(NOW.getTime() + 1 * H)
+    expect(await runCovers(jobs(), byId())).toMatchObject({ advanced: 0, escalated: 0 })
+    expect(askedKeys()).toHaveLength(1)
+
+    NOW = new Date(NOW.getTime() + 1.5 * H)                       // 2.5 h: c's turn is over
+    expect(await runCovers(jobs(), byId())).toMatchObject({ advanced: 1, escalated: 0 })
+    expect(askedKeys()).toEqual([`cover:${swap.id}:c`, `cover:${swap.id}:d`])
+    expect((await runCovers(jobs(), byId())).advanced).toBe(0)    // d's turn has only just begun
+
+    NOW = new Date(NOW.getTime() + 2.5 * H)                       // d's turn is over: b
+    expect(await runCovers(jobs(), byId())).toMatchObject({ advanced: 1, escalated: 0 })
+    expect(askedKeys()).toEqual([`cover:${swap.id}:b`, `cover:${swap.id}:c`, `cover:${swap.id}:d`])
+
+    NOW = new Date(NOW.getTime() + 2.5 * H)                       // b's turn is over and nobody is left
+    expect(await runCovers(jobs(), byId())).toMatchObject({ advanced: 0, escalated: 1 })
+    expect(swap.status).toBe('escalated')
+  })
+
+  it('the person asked second can take it once their turn has come', async () => {
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+    NOW = new Date(NOW.getTime() + 2.5 * H)
+    await runCovers(jobs(), byId())
+    expect(await claimCover(ctx(), S, member('d'), swap.id)).toEqual({ kind: 'ok' })
+  })
+
+  it('a text held for quiet hours does not use up the first person\'s turn', async () => {
+    NOW = new Date('2026-11-03T04:00:00Z')                        // 11 PM EST: texts wait until 8 AM
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+    NOW = new Date('2026-11-03T12:30:00Z')                        // 7:30 AM: five hours on, still before their text goes
+    expect((await runCovers(jobs(), byId())).advanced).toBe(0)
+    NOW = new Date('2026-11-03T14:00:00Z')                        // 9 AM: an hour after it could go
+    expect((await runCovers(jobs(), byId())).advanced).toBe(0)
+    NOW = new Date('2026-11-03T15:30:00Z')                        // 10:30 AM: a full window after 8 AM
+    expect((await runCovers(jobs(), byId())).advanced).toBe(1)
+    expect(askedKeys()).toEqual([`cover:${swap.id}:c`, `cover:${swap.id}:d`])
+  })
+
+  it('once it is offered to everyone, anyone free may take it', async () => {
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+    await offerToEveryone(ctx(), S, swap.id, 'admin:allie@example.test')
+    expect(await claimCover(ctx(), S, member('b'), swap.id)).toEqual({ kind: 'ok' })
   })
 })

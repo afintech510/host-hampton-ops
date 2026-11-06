@@ -479,8 +479,8 @@ describe('the waitlist: backup crew get first pick when a spot is handed back, h
     expect(keys(k => k.channel === 'in_app' && k.dedupe_key.startsWith('cover:'))[0]).toMatch(/:b$/)
     expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'assigned', member_id: 'a' })
     const mail = tx.email.mock.calls.find(c => c[0] === 'b@example.test')![1]
-    expect(mail.email.text).toMatch(/standby, so you get first pick/)
-    expect(mail.email.text).toMatch(/First to claim gets it/)
+    expect(mail.email.text).toMatch(/up on the waitlist, so you get first pick/)
+    expect(mail.email.text).toMatch(/we'll ask the next person/)
     expect(mail.email.text).not.toMatch(/\$|rate/i)
   })
 })

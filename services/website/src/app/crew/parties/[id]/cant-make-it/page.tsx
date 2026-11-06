@@ -5,8 +5,8 @@ import { requireCrewPage } from '@/lib/crew/page'
 import { isUuid } from '@/lib/crew/auth'
 import { loadCrewSettings } from '@/lib/crew/settings'
 import { getPartyWithSlots } from '@/lib/crew/db'
-import { classifyDrop, formatCents, isInGracePeriod, partyRateCents, standbyEscalateAt } from '@/lib/crew/rules'
-import { askedCount, myCoverOnParty } from '@/lib/crew/cover'
+import { classifyDrop, coverTurnEndsAt, formatCents, isInGracePeriod, partyRateCents } from '@/lib/crew/rules'
+import { askedCount, lastAskedAt, myCoverOnParty } from '@/lib/crew/cover'
 import { clockLabel, partyDayLabel, partyTimeLabel } from '@/lib/crew/view'
 import { STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
 import CrewTop, { CrewUnavailable } from '../../../_components/CrewTop'
@@ -58,7 +58,9 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
   if (live) {
     const asked = await askedCount(sb, live.id)
     if (asked.kind !== 'ok') return <CrewUnavailable />
-    const escalateAt = standbyEscalateAt(new Date(live.created_at), asked.data, s)
+    const lastAsked = await lastAskedAt(sb, live.id)
+    if (lastAsked.kind !== 'ok') return <CrewUnavailable />
+    const escalateAt = coverTurnEndsAt(lastAsked.data ?? new Date(live.standbys_notified_at ?? live.created_at), s)
     const dropConfirm = !s.ladderEnabled
       ? 'If you drop it now, nobody is covering it and the manager will have to find someone. Only drop it if you truly can\'t be there. Drop the party?'
       : grace
@@ -72,10 +74,10 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
           <p>
             {asked.data === 0
               ? 'Nobody had said they could cover this one, so we are asking everyone who is free that day.'
-              : `We asked ${asked.data} crew ${asked.data === 1 ? 'member' : 'members'} who said they can cover.`}
+              : `We're asking the crew who said they can cover, one at a time. ${asked.data} ${asked.data === 1 ? 'has' : 'have'} been asked so far.`}
           </p>
           {live.status === 'open' && asked.data > 0 && now < escalateAt && (
-            <p>If nobody takes it by {clockLabel(escalateAt)}, we ask everyone who is free that day.</p>
+            <p>If the person we asked doesn&apos;t take it by {clockLabel(escalateAt)}, we ask the next one. Once everyone on the waitlist has had a turn, we ask everyone who is free that day.</p>
           )}
           {(live.status === 'escalated' || now >= escalateAt) && <p>We are finding someone.</p>}
           {live.offered_to_all_at && <p>It has been offered to everyone free that day.</p>}

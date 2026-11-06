@@ -12,7 +12,7 @@ import {
   type PickCandidate, type RankedVolunteer,
 } from '@/lib/crew/pick'
 import { publishParty } from '@/lib/crew/adminActions'
-import { runCrewAsks, runPickAutoApprove, type JobsCtx } from '@/lib/crew/jobs'
+import { runCrewAsks, runPickAutoApprove, runPickDigest, type JobsCtx } from '@/lib/crew/jobs'
 import type { CrewSenders } from '@/lib/crew/notify'
 import { fakeAdminAssign, fakeCrewDb, type FakeCrewDb } from '../../helpers/fakeCrewDb'
 
@@ -533,5 +533,85 @@ describe('the switch', () => {
     expect(src.indexOf("selection_mode === 'pick'")).toBeLessThan(src.indexOf('claimSlot(sb, slotId'))
     const standby = fs.readFileSync(path.join(process.cwd(), 'src', 'app', 'api', 'crew', 'standby', 'route.ts'), 'utf8')
     expect(standby).toMatch(/selection_mode === 'pick'/)
+  })
+})
+
+// ── The daily "you haven't answered" digest ─────────────────────────────────
+
+describe('runPickDigest: one message a day for the parties someone has not answered', () => {
+  const ENV = { ...process.env }
+  beforeEach(() => { process.env = { ...ENV, CREW_ENABLED: 'true', CREW_SMS_ENABLED: 'false', CREW_ADMIN_EMAIL: 'alerts@example.test' } })
+  afterAll(() => { process.env = ENV })
+  const jobs = (db: FakeCrewDb, now = NOW): JobsCtx => ({ sb: db.sb, now, senders: tx(), settings: S, scope: 'all' })
+  const OLD = iso(NOW.getTime() - 2 * DAY)
+  const digests = (db: FakeCrewDb) => rows(db, 'crew_notifications').filter(n => n.template === 'pickDigest' && n.channel === 'in_app')
+  const aged = (id: string, days: number, over: Record<string, unknown> = {}) => party(id, days, { published_at: OLD, ...over })
+
+  it('texts each undecided person ONE message covering every party, soonest first, and never the owner', async () => {
+    const db = world({ parties: [aged('q1', 12), aged('q2', 11)], slots: [slot('q1-c', 'q1', null), slot('q2-c', 'q2', null)] })
+    db.tables.crew_parties[0].published_at = OLD            // p1
+    const out = await runPickDigest(jobs(db))
+    expect(out.unavailable).toBe(false)
+    // a, b, c, d, e are all free and unanswered: five people, one message each, however many parties.
+    expect(out.sent).toBe(5)
+    expect(digests(db)).toHaveLength(5)
+    expect(digests(db).some(n => n.member_id === 'owner')).toBe(false)
+    const text = JSON.stringify(digests(db)[0])
+    expect(text).toMatch(/3 parties/)
+    expect(text.indexOf('Theme q2')).toBeLessThan(text.indexOf('Theme q1'))
+  })
+
+  it('sends once per day: a second tick the same day sends nothing, the next day sends again', async () => {
+    const db = world({ parties: [aged('q1', 12)], slots: [slot('q1-c', 'q1', null)] })
+    db.tables.crew_parties[0].published_at = OLD
+    await runPickDigest(jobs(db))
+    const n = digests(db).length
+    expect(n).toBeGreaterThan(0)
+    expect((await runPickDigest(jobs(db, new Date(NOW.getTime() + 2 * H)))).sent).toBe(0)
+    expect(digests(db)).toHaveLength(n)
+    expect((await runPickDigest(jobs(db, new Date(NOW.getTime() + DAY)))).sent).toBe(n)
+  })
+
+  it('leaves out anyone who has answered, anyone who holds a spot, and a party with nothing open', async () => {
+    const db = world({
+      parties: [aged('q1', 12), aged('q2', 11)], slots: [slot('q1-c', 'q1', null), slot('q2-c', 'q2', 'e')],
+      responses: [answer('q1', 'b', 'work'), answer('q1', 'c', 'unavailable'), answer('q1', 'd', 'standby')],
+    })
+    db.tables.crew_parties.find(p => p.id === 'p1')!.published_at = OLD
+    await runPickDigest(jobs(db))
+    const who = digests(db).map(n => n.member_id).sort()
+    // p1 still has open spots, q1 too: b, c, d answered q1 but not p1, so they hear about p1 only. e holds q2 (not eligible for it) and is asked about the rest.
+    expect(who).toEqual(['a', 'b', 'c', 'd', 'e'])
+    const forB = JSON.stringify(digests(db).find(n => n.member_id === 'b'))
+    expect(forB).toMatch(/1 party/)
+    expect(forB).not.toMatch(/Theme q1/)
+  })
+
+  it('waits for a new party to have been up a while, and for the morning', async () => {
+    const fresh = world({ parties: [], slots: [] })                    // p1 went up an hour ago
+    expect((await runPickDigest(jobs(fresh))).sent).toBe(0)
+    const db = world({ parties: [aged('q1', 12)], slots: [slot('q1-c', 'q1', null)] })
+    db.tables.crew_parties[0].published_at = OLD
+    expect((await runPickDigest(jobs(db, new Date('2026-11-02T11:00:00Z')))).sent).toBe(0)   // 6 AM
+    expect((await runPickDigest(jobs(db, new Date('2026-11-03T02:00:00Z')))).sent).toBe(0)   // 9 PM
+  })
+
+  it('does nothing for a first-come party, and sends nothing while the crew app is off', async () => {
+    const db = world({ parties: [aged('q1', 12, { selection_mode: 'first_come' })], slots: [slot('q1-c', 'q1', null)] })
+    db.tables.crew_parties[0].selection_mode = 'first_come'
+    expect((await runPickDigest(jobs(db))).sent).toBe(0)
+    process.env.CREW_ENABLED = 'false'
+    const off = world({ parties: [aged('q1', 12)], slots: [slot('q1-c', 'q1', null)] })
+    off.tables.crew_parties[0].published_at = OLD
+    await runPickDigest(jobs(off))
+    expect(rows(off, 'crew_notifications')).toHaveLength(0)
+  })
+
+  it('assigns nobody and changes no answer', async () => {
+    const db = world({ parties: [aged('q1', 12)], slots: [slot('q1-c', 'q1', null)] })
+    db.tables.crew_parties[0].published_at = OLD
+    const before = JSON.stringify([rows(db, 'crew_slots'), rows(db, 'crew_party_responses')])
+    await runPickDigest(jobs(db))
+    expect(JSON.stringify([rows(db, 'crew_slots'), rows(db, 'crew_party_responses')])).toBe(before)
   })
 })
