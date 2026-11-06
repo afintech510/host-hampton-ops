@@ -80,9 +80,34 @@ describe('Find Cover', () => {
     expect(none).not.toMatch(/onClick=\{send\}/)
   })
 
-  it('is offered on a committed, upcoming spot of mine', () => {
+  it('is offered on a committed, upcoming spot of mine, on the party details page only', () => {
     const card = squash(read('app', 'crew', '_components', 'PartyCard.tsx'))
-    expect(card).toMatch(/v\.mySlot && v\.mySlot\.status === 'assigned' && b\.upcoming && \( <FindCover /)
+    expect(card).toMatch(/!linkToDetail && v\.mySlot && v\.mySlot\.status === 'assigned' && b\.upcoming && \( <FindCover /)
+    // The details page renders the card without the link; the Work page renders it with.
+    expect(squash(read('app', 'crew', 'parties', '[id]', 'page.tsx'))).toMatch(/<PartyCard b=\{b\} canLead=\{member\.can_lead\} linkToDetail=\{false\} \/>/)
+    expect(squash(read('app', 'crew', 'page.tsx'))).not.toMatch(/linkToDetail=\{false\}/)
+    expect(card.match(/<FindCover /g)).toHaveLength(1)
+  })
+})
+
+describe('the whole party tile is the link to its details', () => {
+  const card = squash(read('app', 'crew', '_components', 'PartyCard.tsx'))
+  const layout = squash(read('app', 'crew', 'layout.tsx'))
+
+  it('the card is marked clickable only when it links, and the title link is the one anchor', () => {
+    expect(card).toMatch(/className=\{`crew-card crew-party\$\{linkToDetail \? ' crew-party-click' : ''\}`\}/)
+    expect(card).toMatch(/<Link className="crew-link crew-party-link" href=\{`\/crew\/parties\/\$\{v\.id\}`\}>/)
+    expect(card.match(/<Link /g)).toHaveLength(1)
+  })
+
+  it('the link stretches over the whole tile, and the buttons on it stay above and clickable', () => {
+    expect(layout).toMatch(/\.crew-party\{position:relative;/)
+    expect(layout).toMatch(/\.crew-party-link::after\{content:'';position:absolute;inset:0;z-index:0;/)
+    expect(layout).toMatch(/\.crew-party-click \.crew-btn,\.crew-party-click button\{position:relative;z-index:1\}/)
+  })
+
+  it('keyboard focus on the link outlines the tile, not just the words', () => {
+    expect(layout).toMatch(/\.crew-party-click:has\(\.crew-party-link:focus-visible\)\{outline:3px solid var\(--c-accent\)/)
   })
 })
 

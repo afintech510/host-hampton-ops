@@ -40,7 +40,7 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
   const date = partyDateParts(v.startsAt)
 
   return (
-    <article className="crew-card crew-party">
+    <article className={`crew-card crew-party${linkToDetail ? ' crew-party-click' : ''}`}>
       <div className="crew-date" aria-hidden="true">
         <span className="crew-date-mon">{date.mon}</span>
         <span className="crew-date-day">{date.day}</span>
@@ -49,7 +49,7 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
       <div className="crew-party-main">
       <div className="crew-row" style={{ justifyContent: 'space-between' }}>
         <h3>
-          {linkToDetail ? <Link className="crew-link" href={`/crew/parties/${v.id}`}>{title}</Link> : title}
+          {linkToDetail ? <Link className="crew-link crew-party-link" href={`/crew/parties/${v.id}`}>{title}</Link> : title}
         </h3>
         {v.status === 'cancelled' && <span className="crew-chip crew-alert">Cancelled</span>}
         {v.mySlot && v.status !== 'cancelled' && (
@@ -105,7 +105,7 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
               : (spots.length === 0 ? 'Join the waitlist' : 'I can cover (standby)')}
           />
         )}
-        {v.mySlot && v.mySlot.status === 'assigned' && b.upcoming && (
+        {!linkToDetail && v.mySlot && v.mySlot.status === 'assigned' && b.upcoming && (
           <FindCover slotId={v.mySlot.slotId} partyId={v.id} ownerName={TENANT.people.customerSignoff} ownerPhone={STUDIO_PHONE_DISPLAY} />
         )}
       </div>
