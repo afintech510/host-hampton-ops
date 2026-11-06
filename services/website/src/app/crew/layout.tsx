@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import {
-  Bricolage_Grotesque, DM_Sans, Fraunces, Graduate, Inter, Manrope, Nunito, Plus_Jakarta_Sans, Sora, Space_Grotesk,
+  Archivo, Archivo_Black, Fraunces, Graduate, Inter, Manrope, Outfit, Space_Grotesk, Space_Mono, Unbounded,
 } from 'next/font/google'
 import { NOINDEX } from '@/lib/seo'
 import { TENANT } from '@/tenant'
@@ -26,28 +26,28 @@ import { THEME_COOKIE, themeCss, themeFromCookie } from '@/lib/crew/themes'
  *     Profile → Appearance), read from a cookie here so the first paint is
  *     already the right one.
  *
- * Fonts: a theme names a face, so every face is declared, but only the default
- * theme's pair is preloaded; the others are fetched the moment a theme that uses
+ * Fonts: a look names a face, so every face is declared, but only the default
+ * look's pair is preloaded; the others are fetched the moment a look that uses
  * them is on screen (the browser loads a declared face only when text uses it).
  */
 
 export const dynamic = 'force-dynamic'
 
-// The default theme (Clean): preloaded.
-const manrope = Manrope({ subsets: ['latin'], variable: '--crew-f-manrope', display: 'swap' })
-const inter = Inter({ subsets: ['latin'], variable: '--crew-f-inter', display: 'swap' })
-// The other themes: declared, fetched on use.
-const sora = Sora({ subsets: ['latin'], variable: '--crew-f-sora', display: 'swap', preload: false })
-const dmSans = DM_Sans({ subsets: ['latin'], variable: '--crew-f-dmsans', display: 'swap', preload: false })
+// The default look (Bold): preloaded.
+const archivoBlack = Archivo_Black({ subsets: ['latin'], weight: '400', variable: '--crew-f-archivoblack', display: 'swap' })
+const archivo = Archivo({ subsets: ['latin'], variable: '--crew-f-archivo', display: 'swap' })
+// The other looks: declared, fetched on use.
+const manrope = Manrope({ subsets: ['latin'], variable: '--crew-f-manrope', display: 'swap', preload: false })
+const inter = Inter({ subsets: ['latin'], variable: '--crew-f-inter', display: 'swap', preload: false })
+const unbounded = Unbounded({ subsets: ['latin'], variable: '--crew-f-unbounded', display: 'swap', preload: false })
+const outfit = Outfit({ subsets: ['latin'], variable: '--crew-f-outfit', display: 'swap', preload: false })
 const space = Space_Grotesk({ subsets: ['latin'], variable: '--crew-f-space', display: 'swap', preload: false })
+const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], variable: '--crew-f-spacemono', display: 'swap', preload: false })
 const fraunces = Fraunces({ subsets: ['latin'], variable: '--crew-f-fraunces', display: 'swap', preload: false })
-const nunito = Nunito({ subsets: ['latin'], variable: '--crew-f-nunito', display: 'swap', preload: false })
-const display = Bricolage_Grotesque({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--crew-font-display', display: 'swap', preload: false })
-const body = Plus_Jakarta_Sans({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--crew-font-body', display: 'swap', preload: false })
 // The CREW wordmark: a collegiate slab, on every theme.
 const varsity = Graduate({ subsets: ['latin'], weight: '400', variable: '--crew-font-varsity', display: 'swap' })
 
-const FONT_VARS = [manrope, inter, sora, dmSans, space, fraunces, nunito, display, body, varsity].map(f => f.variable).join(' ')
+const FONT_VARS = [archivoBlack, archivo, manrope, inter, unbounded, outfit, space, spaceMono, fraunces, varsity].map(f => f.variable).join(' ')
 
 export const metadata: Metadata = {
   title: { absolute: 'Host Hampton Crew' },
@@ -91,6 +91,17 @@ ${themeCss()}
 .crew-rate a{color:var(--c-rate-link)}
 .crew-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
 .crew-meta{display:flex;flex-wrap:wrap;gap:.35rem .9rem;color:var(--c-muted);font-size:.9rem;margin:.35rem 0 .7rem}
+.crew-party{display:flex;gap:.9rem;align-items:flex-start}
+.crew-party-main{flex:1;min-width:0}
+.crew-date{flex:0 0 auto;display:var(--date-tile);flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1;gap:.2rem;min-width:3.4rem}
+.crew-date-mon{font-size:.7rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.crew-date-day{font-family:var(--f-display);font-size:1.8rem;font-weight:800;line-height:1}
+.crew-date-dow{font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--c-muted)}
+.crew-m{display:inline-flex;align-items:center;gap:.3rem}
+.crew-m-day{display:none}
+.crew-mi{flex:none;opacity:.85}
+.crew-nav-emoji{display:var(--nav-emoji)}
+.crew-nav-line{display:var(--nav-line)}
 .crew-kind{display:inline-flex;align-items:center;gap:.35rem;font-size:.8rem;font-weight:700;color:var(--c-accent-ink);background:var(--c-accent-soft);border-radius:var(--r-chip);padding:.15rem .6rem;margin:0 0 .45rem}
 .crew-btn{display:inline-flex;align-items:center;justify-content:center;min-height:var(--btn-h);padding:var(--btn-pad);border-radius:var(--r-btn);border:1px solid transparent;background:var(--c-accent);color:var(--c-on-accent);font-weight:700;font-size:.95rem;cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s}
 .crew-btn:hover{background:var(--c-accent-hover)}

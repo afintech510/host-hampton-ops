@@ -118,3 +118,71 @@ describe('no crew screen paints a colour of its own', () => {
     expect(stray).toEqual([])
   })
 })
+
+describe('a look is a layout, not just a palette', () => {
+  const layout = fs.readFileSync(path.join(SRC, 'app', 'crew', 'layout.tsx'), 'utf8')
+
+  it('every look has its own structural CSS, and every rule in it is scoped to that look', () => {
+    const css = themeCss()
+    for (const t of THEMES) {
+      expect(t.css.trim().length).toBeGreaterThan(200)
+      expect(t.css).not.toMatch(/\{\s*\}/)
+      const root = `.crew-root[data-theme="${t.id}"]`
+      const block = css.split('\n').filter(l => l.startsWith(root) && !l.includes('--c-bg:'))
+      expect(block.length).toBe(t.css.trim().split('\n').length)
+    }
+    expect(css).not.toContain('&')
+  })
+
+  it('looks differ in typeface, button shape and module size, not only colour', () => {
+    const t = THEMES.map(x => x.tokens)
+    expect(new Set(t.map(x => x.fontDisplay)).size).toBe(THEMES.length)
+    expect(new Set(t.map(x => x.radiusBtn)).size).toBeGreaterThanOrEqual(3)
+    expect(new Set(t.map(x => x.radiusCard)).size).toBeGreaterThanOrEqual(4)
+    expect(new Set(t.map(x => x.btnHeight)).size).toBeGreaterThanOrEqual(2)
+    expect(new Set(t.map(x => x.h2Transform)).size).toBeGreaterThanOrEqual(2)
+  })
+
+  it('looks differ in layout: the tab bar sits in different places and a party is drawn in different shapes', () => {
+    const nav = (id: string) => THEMES.find(x => x.id === id)!.css
+    // Editorial puts the tabs across the TOP; nothing else does.
+    expect(nav('editorial')).toMatch(/\.crew-nav\{position:sticky;top:0;bottom:auto/)
+    for (const id of ['bold', 'clean', 'pop', 'midnight']) expect(nav(id)).not.toMatch(/position:sticky/)
+    // A floating pill bar vs an edge-to-edge bar.
+    expect(nav('clean')).toMatch(/\.crew-nav\{left:14px;right:14px;[^}]*border-radius:999px/)
+    expect(nav('pop')).toMatch(/\.crew-nav\{left:14px;right:14px;[^}]*border-radius:999px/)
+    expect(nav('bold')).not.toMatch(/left:14px/)
+    // A party: a ticket stub, a flat row, a boxed poster tile, a bubble.
+    expect(nav('midnight')).toMatch(/border-right:2px dashed/)
+    expect(nav('clean')).toMatch(/\.crew-party\{background:transparent;border:0;border-bottom/)
+    expect(nav('editorial')).toMatch(/\.crew-party\{background:transparent;border:0;border-top:2px solid/)
+    expect(nav('bold')).toMatch(/\.crew-date\{[^}]*box-shadow:3px 3px 0/)
+    expect(nav('pop')).toMatch(/\.crew-date\{[^}]*border-radius:50%/)
+  })
+
+  it('looks differ in icons: outline icons, emoji, or none', () => {
+    const icons = THEMES.map(x => `${x.tokens.navEmoji}/${x.tokens.navLine}`)
+    expect(new Set(icons)).toEqual(new Set(['none/inline-block', 'inline-block/none', 'none/none']))
+  })
+
+  it('every typeface a look names is loaded by the layout', () => {
+    const wanted = new Set<string>()
+    for (const t of THEMES) for (const f of [t.tokens.fontDisplay, t.tokens.fontBody]) for (const m of f.matchAll(/--crew-f-[a-z]+/g)) wanted.add(m[0])
+    // Space Mono is used by the Midnight stub's own CSS.
+    for (const m of themeCss().matchAll(/--crew-f-[a-z]+/g)) wanted.add(m[0])
+    expect(wanted.size).toBeGreaterThanOrEqual(8)
+    for (const v of wanted) expect(layout).toContain(`variable: '${v}'`)
+  })
+
+  it('only the default look\'s typefaces are preloaded', () => {
+    const decls = Array.from(layout.matchAll(/const (\w+) = (\w+)\(\{[^}]*variable: '(--crew-f-[a-z]+)'[^}]*\}\)/g))
+    expect(decls.length).toBeGreaterThanOrEqual(9)
+    const preloaded = decls.filter(d => !/preload: false/.test(d[0])).map(d => d[3]).sort()
+    expect(preloaded).toEqual(['--crew-f-archivo', '--crew-f-archivoblack'])
+    expect(DEFAULT_THEME).toBe('bold')
+  })
+
+  it('an old cookie from before the redesign falls back to the default', () => {
+    for (const old of ['classic', 'ocean', 'warm']) expect(themeFromCookie(old)).toBe(DEFAULT_THEME)
+  })
+})

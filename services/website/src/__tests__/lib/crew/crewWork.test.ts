@@ -180,9 +180,9 @@ describe('the crew chrome', () => {
 
   it('the bottom tabs carry the emoji Adam chose: 🥳 Work · 🗓️ Availability · 🪪 Profile', () => {
     const nav = read('app', 'crew', '_components', 'CrewNav.tsx')
-    expect(nav).toMatch(/emoji: '🥳', label: 'Work'/)
-    expect(nav).toMatch(/emoji: '🗓️', label: 'Availability'/)
-    expect(nav).toMatch(/emoji: '🪪', label: 'Profile'/)
+    expect(nav).toMatch(/emoji: '🥳', Icon: \w+, label: 'Work'/)
+    expect(nav).toMatch(/emoji: '🗓️', Icon: \w+, label: 'Availability'/)
+    expect(nav).toMatch(/emoji: '🪪', Icon: \w+, label: 'Profile'/)
     expect(nav).not.toMatch(/label: 'Parties'/)
   })
 

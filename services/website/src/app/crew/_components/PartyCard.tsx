@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { CalendarDays, Clock, MapPin, Users } from 'lucide-react'
 import ActionButton from './ActionButton'
 import CommitButton from './CommitButton'
 import FindCover from './FindCover'
@@ -6,7 +7,7 @@ import { TENANT } from '@/tenant'
 import { STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
 import type { BoardParty } from '@/lib/crew/board'
 import { formatCents } from '@/lib/crew/rules'
-import { partyDayLabel, partyTimeLabel, type OpenSpotView } from '@/lib/crew/view'
+import { partyDateParts, partyDayLabel, partyTimeLabel, type OpenSpotView } from '@/lib/crew/view'
 
 const roleWord = (r: 'lead' | 'crew') => (r === 'lead' ? 'Party Lead' : 'Crew')
 
@@ -36,9 +37,16 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
   const crewOpen = spots.filter(s => s.role === 'crew').length
   const leadOpen = spots.some(s => s.role === 'lead')
   const title = v.theme || v.title
+  const date = partyDateParts(v.startsAt)
 
   return (
-    <article className="crew-card">
+    <article className="crew-card crew-party">
+      <div className="crew-date" aria-hidden="true">
+        <span className="crew-date-mon">{date.mon}</span>
+        <span className="crew-date-day">{date.day}</span>
+        <span className="crew-date-dow">{date.dow}</span>
+      </div>
+      <div className="crew-party-main">
       <div className="crew-row" style={{ justifyContent: 'space-between' }}>
         <h3>
           {linkToDetail ? <Link className="crew-link" href={`/crew/parties/${v.id}`}>{title}</Link> : title}
@@ -52,11 +60,11 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
       </div>
       {v.work && <p className="crew-kind"><span aria-hidden="true">{v.work.emoji}</span> {v.work.label}</p>}
       <div className="crew-meta">
-        <span>{partyDayLabel(v.startsAt)}</span>
-        <span>{partyTimeLabel(v.startsAt, v.endsAt)}</span>
-        {v.city && <span>📍 {v.city}</span>}
-        {!v.work && <span>{v.guestCount != null ? `${v.guestCount} kids` : 'Kids TBC'}</span>}
-        <span>Crew {v.staffed}/{v.needed}</span>
+        <span className="crew-m crew-m-day"><CalendarDays className="crew-mi" size={15} aria-hidden="true" />{partyDayLabel(v.startsAt)}</span>
+        <span className="crew-m"><Clock className="crew-mi" size={15} aria-hidden="true" />{partyTimeLabel(v.startsAt, v.endsAt)}</span>
+        {v.city && <span className="crew-m"><MapPin className="crew-mi" size={15} aria-hidden="true" />{v.city}</span>}
+        {!v.work && <span className="crew-m">{v.guestCount != null ? `${v.guestCount} kids` : 'Kids TBC'}</span>}
+        <span className="crew-m"><Users className="crew-mi" size={15} aria-hidden="true" />Crew {v.staffed}/{v.needed}</span>
       </div>
 
       {v.mySlot && (
@@ -100,6 +108,7 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
         {v.mySlot && v.mySlot.status === 'assigned' && b.upcoming && (
           <FindCover slotId={v.mySlot.slotId} partyId={v.id} ownerName={TENANT.people.customerSignoff} ownerPhone={STUDIO_PHONE_DISPLAY} />
         )}
+      </div>
       </div>
     </article>
   )

@@ -338,6 +338,15 @@ export function partyDayLabel(iso: string): string {
   return dayFmt.format(new Date(iso))
 }
 
+const dateBlockFmt = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, month: 'short', day: 'numeric', weekday: 'short' })
+
+/** The pieces of a party's date for the big date block: "NOV", "7", "SAT", in Eastern time. */
+export function partyDateParts(iso: string): { mon: string; day: string; dow: string } {
+  const p: Record<string, string> = {}
+  for (const part of dateBlockFmt.formatToParts(new Date(iso))) p[part.type] = part.value
+  return { mon: (p.month ?? '').toUpperCase(), day: p.day ?? '', dow: (p.weekday ?? '').toUpperCase() }
+}
+
 /** "1:30 PM" in Eastern time. */
 export function clockLabel(iso: string | Date): string {
   return timeFmt.format(typeof iso === 'string' ? new Date(iso) : iso)
