@@ -3,10 +3,10 @@ import { getSupabase } from '@/lib/supabase'
 import { requireCrewPage } from '@/lib/crew/page'
 import { loadCrewSettings } from '@/lib/crew/settings'
 import { loadBoard, loadViewerContext } from '@/lib/crew/board'
-import { meView, partyDayLabel } from '@/lib/crew/view'
+import { meView } from '@/lib/crew/view'
+import { TENANT } from '@/tenant'
 import CrewTop, { CrewUnavailable } from './_components/CrewTop'
 import PartyCard, { visibleSpots } from './_components/PartyCard'
-import ActionButton from './_components/ActionButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,8 +30,9 @@ export default async function CrewHomePage() {
 
   const me = meView(member, settings.settings)
   const upcoming = board.data.filter(b => b.upcoming)
-  const mine = upcoming.filter(b => b.view.mySlot)
-  const confirm = mine.filter(b => b.needsConfirm)
+  const allMine = upcoming.filter(b => b.view.mySlot)
+  const confirm = allMine.filter(b => b.needsConfirm)
+  const mine = allMine.filter(b => !b.needsConfirm)
   const open = upcoming.filter(b => !b.view.mySlot && visibleSpots(b, me.canLead).length > 0)
   const full = upcoming.filter(b => !b.view.mySlot && visibleSpots(b, me.canLead).length === 0)
 
@@ -54,20 +55,18 @@ export default async function CrewHomePage() {
 
       {confirm.length > 0 && (
         <section aria-labelledby="crew-confirm">
-          <h2 id="crew-confirm">Please confirm</h2>
-          {confirm.map(b => (
-            <div key={b.view.id} className="crew-card crew-row" style={{ justifyContent: 'space-between' }}>
-              <span><strong>{b.view.theme || b.view.title}</strong> <span className="crew-muted">{partyDayLabel(b.view.startsAt)}</span></span>
-              <ActionButton endpoint="/api/crew/confirm" body={{ slotId: b.view.mySlot!.slotId }} label="I'll be there" />
-            </div>
-          ))}
+          <h2 id="crew-confirm">Accept your assignments</h2>
+          <p className="crew-muted crew-small" style={{ marginTop: 0 }}>
+            {TENANT.people.customerSignoff} put you on {confirm.length === 1 ? 'this' : 'these'}. Check the shift, then tap Accept Assignment.
+          </p>
+          {confirm.map(b => <PartyCard key={b.view.id} b={b} canLead={me.canLead} />)}
         </section>
       )}
 
       <section aria-labelledby="crew-mine">
         <h2 id="crew-mine">My work</h2>
         {mine.length === 0
-          ? <p className="crew-muted">You&apos;re not on anything yet. Commit to a spot below.</p>
+          ? <p className="crew-muted">{confirm.length > 0 ? 'Nothing accepted yet.' : "You're not on anything yet. Commit to a spot below."}</p>
           : mine.map(b => <PartyCard key={b.view.id} b={b} canLead={me.canLead} />)}
       </section>
 

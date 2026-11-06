@@ -503,6 +503,7 @@ export function partyRefFor(
     timeLabel: messageTimeLabel(startsAt, new Date(party.ends_at)),
     // When THIS person arrives: a Lead earlier than the crew, and any shift Allie set for the party.
     setupLabel: messageClock(shiftWindow(party, role, s).startsAt),
+    shiftLabel: (() => { const w = shiftWindow(party, role, s); return messageTimeLabel(w.startsAt, w.endsAt) })(),
     kids: party.guest_count ?? null,
     url: crewLink(path ?? `/crew/parties/${party.id}`),
   }

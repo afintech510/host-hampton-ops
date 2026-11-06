@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { CalendarDays, Clock, MapPin, Users } from 'lucide-react'
+import AcceptAssignment from './AcceptAssignment'
 import ActionButton from './ActionButton'
 import CommitButton from './CommitButton'
 import FindCover from './FindCover'
@@ -56,13 +57,13 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
         {v.mySlot && v.status !== 'cancelled' && (
           v.mySlot.confirmed
             ? <span className="crew-chip crew-ok">Confirmed</span>
-            : <span className="crew-chip crew-warn">Not confirmed yet</span>
+            : <span className="crew-chip crew-warn">Needs your acceptance</span>
         )}
       </div>
       {v.work && <p className="crew-kind"><span aria-hidden="true">{v.work.emoji}</span> {v.work.label}</p>}
       <div className="crew-meta">
         <span className="crew-m crew-m-day"><CalendarDays className="crew-mi" size={15} aria-hidden="true" />{partyDayLabel(v.startsAt)}</span>
-        <span className="crew-m"><Clock className="crew-mi" size={15} aria-hidden="true" />{partyTimeLabel(v.startsAt, v.endsAt)}</span>
+        <span className="crew-m"><Clock className="crew-mi" size={15} aria-hidden="true" />{partyTimeLabel(v.shiftStartsAt, v.shiftEndsAt)}</span>
         {v.city && <span className="crew-m"><MapPin className="crew-mi" size={15} aria-hidden="true" />{v.city}</span>}
         {!v.work && <span className="crew-m">{v.guestCount != null ? `${v.guestCount} kids` : 'Kids TBC'}</span>}
         <span className="crew-m"><Users className="crew-mi" size={15} aria-hidden="true" />Crew {v.staffed}/{v.needed}</span>
@@ -91,7 +92,8 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
 
       <div className="crew-row">
         {b.needsConfirm && v.mySlot && (
-          <ActionButton endpoint="/api/crew/confirm" body={{ slotId: v.mySlot.slotId }} label="I'll be there" />
+          <AcceptAssignment slotId={v.mySlot.slotId} partyTitle={title} dayLabel={partyDayLabel(v.startsAt)}
+            shiftLabel={partyTimeLabel(v.shiftStartsAt, v.shiftEndsAt)} roleWord={roleWord(v.mySlot.role)} calUrl={b.calUrl} />
         )}
         {!v.mySlot && b.upcoming && v.selection.mode === 'pick' && (
           <ResponseButtons partyId={v.id} current={v.selection.myResponse} canWork={!b.claimBlock && claimTargets(spots).length > 0}
@@ -99,7 +101,7 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
         )}
         {!v.mySlot && b.upcoming && v.selection.mode !== 'pick' && !b.claimBlock && claimTargets(spots).map(s => (
           <CommitButton key={s.slotId} slotId={s.slotId} partyTitle={title}
-            when={`${partyDayLabel(v.startsAt)}, ${partyTimeLabel(v.startsAt, v.endsAt)}`} roleWord={roleWord(s.role)}
+            when={`${partyDayLabel(v.startsAt)}, ${partyTimeLabel(s.shiftStartsAt, s.shiftEndsAt)}`} roleWord={roleWord(s.role)}
             label={`Commit to Work${s.role === 'lead' ? ' as Party Lead' : ''}${s.payCents != null ? ` (${formatCents(s.payCents)})` : ''}`} />
         ))}
         {!v.mySlot && b.upcoming && v.selection.mode !== 'pick' && (

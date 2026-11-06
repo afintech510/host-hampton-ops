@@ -59,7 +59,7 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
 
       <div className="crew-card">
         <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '.35rem .9rem' }}>
-          <dt className="crew-muted">When</dt><dd style={{ margin: 0 }}>{partyDayLabel(v.startsAt)}, {partyTimeLabel(v.startsAt, v.endsAt)}</dd>
+          <dt className="crew-muted">Party time</dt><dd style={{ margin: 0 }}>{partyDayLabel(v.startsAt)}, {partyTimeLabel(v.startsAt, v.endsAt)}</dd>
           <dt className="crew-muted">Your shift</dt>
           <dd style={{ margin: 0 }}>
             {clockLabel(v.shiftStartsAt)} – {clockLabel(v.shiftEndsAt)}
@@ -74,6 +74,19 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
           </>)}
         </dl>
       </div>
+
+      {b.calUrl && v.mySlot && b.upcoming && (
+        <div className="crew-card">
+          <h3>Add to your calendar</h3>
+          <p className="crew-muted crew-small" style={{ marginTop: 0 }}>
+            Puts your whole shift, {clockLabel(v.shiftStartsAt)} – {clockLabel(v.shiftEndsAt)}, and the address on your phone, with reminders.
+          </p>
+          <div className="crew-row">
+            <a className="crew-btn crew-btn-ghost" href={`${b.calUrl}?format=google`} target="_blank" rel="noopener noreferrer">Google Calendar</a>
+            <a className="crew-btn crew-btn-ghost" href={`${b.calUrl}?format=ics`}>Apple Calendar</a>
+          </div>
+        </div>
+      )}
 
       {details && (details.child || details.parent || details.theme || details.food.length > 0 || details.activities.length > 0) && (
         <div className="crew-card">

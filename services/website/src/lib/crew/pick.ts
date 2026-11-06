@@ -33,12 +33,13 @@ import {
   getAvailability, getPartyWithSlots, listLiveStandbys, listMembers, partiesByIds, responseCounts,
   type CrewMemberRow, type CrewPartyRow, type CrewSlotRow, type PartyWithSlots, type Read,
 } from '@/lib/crew/db'
-import { claimRefusal, localParts, payLabelFor, shiftsOverlap, type CrewSettings, type SlotRole } from '@/lib/crew/rules'
+import { claimRefusal, localParts, shiftsOverlap, type CrewSettings, type SlotRole } from '@/lib/crew/rules'
 import { myLiveWindows } from '@/lib/crew/board'
 import { claimRefusalText } from '@/lib/crew/view'
 import { eligibleFor } from '@/lib/crew/cover'
 import { assignMember } from '@/lib/crew/adminActions'
-import { crewLink, isTestParty, notifyMember, partyRefFor, type NotifyCtx } from '@/lib/crew/notify'
+import { crewLink, isTestParty, notifyMember, type NotifyCtx } from '@/lib/crew/notify'
+import { notifyAssigned } from '@/lib/crew/assigned'
 import { templates } from '@/lib/crew/templates'
 import { shiftEtDate } from '@/lib/partyTime'
 
@@ -461,12 +462,8 @@ export async function notifyPickRound(ctx: NotifyCtx, s: CrewSettings, results: 
     for (const a of res.assigned) {
       const m = memberOf.get(a.memberId)
       if (!m) continue
-      const role = (await ctx.sb.from('crew_slots').select('role').eq('id', a.slotId).maybeSingle()).data as { role: SlotRole } | null
-      const ref = partyRefFor(party, s, undefined, role?.role ?? 'crew')
-      const pay = payLabelFor(role?.role ?? 'crew', m.steps, party.extra_flat_cents, s)
-      const r = await notifyMember(ctx, m, 'pickApproved', templates.claimConfirmed(ref, pay),
-        `pick_approved:${a.slotId}:${a.memberId}:${a.assignedAt ?? 'x'}`, { payload: { party_id: party.id } })
-      if (r.kind === 'done' && r.channels.in_app === 'sent') out.approved++
+      // Approved is "assigned": the same message as when the manager puts someone on a spot by hand.
+      if (await notifyAssigned(ctx, s, a.slotId) === 'sent') out.approved++
     }
     for (const id of res.standbyMemberIds) byMember.set(id, [...(byMember.get(id) ?? []), res.partyId])
   }

@@ -21,6 +21,7 @@ import {
   type CrewMemberRow, type PartyWithSlots, type Read,
 } from '@/lib/crew/db'
 import { partyView, type CrewPartyView } from '@/lib/crew/view'
+import { crewCalendarUrl, signCrewCalendar } from '@/lib/crew/calendar'
 import type { PickResponse } from '@/lib/crew/pick'
 import { etDateString, shiftEtDate } from '@/lib/partyTime'
 
@@ -31,8 +32,13 @@ export const BOARD_DAYS_AHEAD = 120
 
 export interface BoardParty {
   view: CrewPartyView
-  /** The confirmation request has gone out and I have not confirmed. */
+  /**
+   * I am assigned and have not accepted: either the manager put me on it (accept it now, whatever the date),
+   * or I took it myself and the confirmation request has gone out.
+   */
   needsConfirm: boolean
+  /** Add MY shift to a phone calendar (a signed link that needs no login), when I hold a spot. */
+  calUrl: string | null
   /** Why I could not claim an open spot here, if I could not. */
   claimBlock: Extract<ClaimRefusal, 'overlap' | 'blocked'> | null
   /** Upcoming and published: claimable / standby-able in principle. */
@@ -120,10 +126,13 @@ export function boardParty(pws: PartyWithSlots, names: ReadonlyMap<string, strin
   }
 
   const mine = view.mySlot
+  const putOnByManager = !!mine && pws.slots.find(sl => sl.id === mine.slotId)?.assigned_via === 'admin'
   return {
     view,
     needsConfirm: !!mine && mine.status === 'assigned' && !mine.confirmed && upcoming
-      && now.getTime() >= confirmationSchedule(startsAt, s).requestAt.getTime(),
+      && (putOnByManager || now.getTime() >= confirmationSchedule(startsAt, s).requestAt.getTime()),
+    calUrl: mine && (mine.status === 'assigned' || mine.status === 'completed')
+      ? crewCalendarUrl(signCrewCalendar(mine.slotId, member.id, new Date(view.shiftEndsAt))) : null,
     claimBlock,
     upcoming,
   }

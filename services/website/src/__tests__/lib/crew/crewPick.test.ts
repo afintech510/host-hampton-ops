@@ -396,7 +396,7 @@ describe('notifyPickRound', () => {
     const told = await notifyPickRound({ sb: db.sb, now: NOW, senders: t }, S, out.results)
     expect(told.approved).toBe(2)
     const notes = rows(db, 'crew_notifications').filter(n => n.channel === 'in_app')
-    expect(notes.filter(n => n.template === 'pickApproved')).toHaveLength(2)
+    expect(notes.filter(n => n.template === 'assigned')).toHaveLength(2)
     // c asked for both and was approved for neither... or one: whichever, a standby gets exactly one digest per round.
     const digests = notes.filter(n => n.template === 'pickStandby')
     const perMember = new Map<string, number>()
@@ -445,7 +445,7 @@ describe('runPickAutoApprove: nothing to choose between', () => {
     expect(rows(db, 'crew_pick_log')).toHaveLength(2)
     // The manager hears in-app only (never an email), and the approved people are told.
     expect(rows(db, 'crew_notifications').filter(n => n.member_id === null).every(n => n.channel === 'in_app')).toBe(true)
-    expect(rows(db, 'crew_notifications').some(n => n.template === 'pickApproved')).toBe(true)
+    expect(rows(db, 'crew_notifications').some(n => n.template === 'assigned')).toBe(true)
   })
 
   it('does NOT approve at the first answer: somebody better placed might still ask', async () => {

@@ -51,6 +51,7 @@ import {
 } from '@/lib/crew/cover'
 import { ALERT_DAYS_BACK } from '@/lib/crew/admin'
 import { publishParty } from '@/lib/crew/adminActions'
+import { withCalendar } from '@/lib/crew/calendar'
 import { approvePicks, listPickParties, loadPickPanel, notifyPickRound, partyResponses, PICK_RESPONSE_HOURS, type ApproveResult } from '@/lib/crew/pick'
 import { etToUtc } from '@/lib/partyTime'
 
@@ -143,7 +144,7 @@ export async function runConfirmations(
       if (!m || m.is_owner || !memberInScope(ctx, m)) continue
       const assignedAt = slot.assigned_at ? new Date(slot.assigned_at).getTime() : 0
       const key = tenure(slot)
-      const ref = partyRefFor(party, s, undefined, slot.role)
+      const ref = withCalendar(partyRefFor(party, s, undefined, slot.role), party, slot, s)
       const payload = { party_id: party.id, slot_id: slot.id }
 
       if (!slot.confirmed_at && now >= sched.requestAt.getTime()) {

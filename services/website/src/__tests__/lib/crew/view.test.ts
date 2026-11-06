@@ -106,8 +106,9 @@ describe('partyView', () => {
       viewer, firstNames, standbyMemberIds: new Set(),
     }, S)!
     expect(v.openSpots).toEqual([
-      { slotId: 'lead', role: 'lead', payCents: 7750, canClaim: false },
-      { slotId: 'c', role: 'crew', payCents: 5850, canClaim: true },
+      // Each spot carries ITS shift: the Lead arrives an hour before, the crew half an hour.
+      { slotId: 'lead', role: 'lead', payCents: 7750, canClaim: false, shiftStartsAt: '2026-11-14T17:00:00.000Z', shiftEndsAt: '2026-11-14T21:30:00.000Z' },
+      { slotId: 'c', role: 'crew', payCents: 5850, canClaim: true, shiftStartsAt: '2026-11-14T17:30:00.000Z', shiftEndsAt: '2026-11-14T21:30:00.000Z' },
     ])
   })
 

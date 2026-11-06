@@ -80,6 +80,9 @@ export interface OpenSpotView {
   payCents: number | null
   /** A Lead spot is offered only to a member who may hold it. */
   canClaim: boolean
+  /** The full shift that spot works (a Lead arrives earlier than the crew), as ISO instants. */
+  shiftStartsAt: string
+  shiftEndsAt: string
 }
 
 export interface MySlotView {
@@ -165,6 +168,8 @@ export function partyView(
         role: sl.role,
         payCents: shownCents(partyPayCents(sl.role, viewer.steps, extra, s), s),
         canClaim: !onIt && (sl.role !== 'lead' || !!viewer.can_lead),
+        shiftStartsAt: shiftWindow(party, sl.role, s).startsAt.toISOString(),
+        shiftEndsAt: shiftWindow(party, sl.role, s).endsAt.toISOString(),
       }))
     : []
 

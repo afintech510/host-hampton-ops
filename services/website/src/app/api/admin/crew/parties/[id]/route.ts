@@ -24,6 +24,7 @@ import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adm
 import { loadCrewSettings } from '@/lib/crew/settings'
 import { loadAdminParty, shiftForAdmin } from '@/lib/crew/admin'
 import { approvePicks, loadPickPanel, notifyPickRound } from '@/lib/crew/pick'
+import { notifyAssigned } from '@/lib/crew/assigned'
 import {
   addSpot, assignMember, clearPartyFlag, publishParty, removeSpot, setPartyFields, setSlotsOverride, unassignMember,
   setPartyShift, unpublishParty, type ActionResult,
@@ -97,5 +98,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     default: return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   }
   if (!r.ok) return NextResponse.json({ error: r.error, warnings: r.warnings ?? [] }, { status: r.status })
+  // Put on a spot by hand: tell them, with the whole shift, how to accept it and where to add it to a calendar.
+  if (body?.action === 'assign' && typeof body.slotId === 'string') {
+    try { await notifyAssigned({ sb, now }, s, body.slotId) } catch (e) { console.error('crew/assign: notice not sent:', e instanceof Error ? e.message : e) }
+  }
   return NextResponse.json(r)
 }

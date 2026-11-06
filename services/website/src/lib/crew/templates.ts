@@ -33,9 +33,16 @@ export interface PartyRef {
   dayLabel: string     // "Sat Oct 31"
   timeLabel: string    // "1:30–4:30 PM"
   setupLabel?: string  // "1:00 PM"
+  /** The whole shift this person is committing to, arrival to done: "1–5 PM". Not the party's own hours. */
+  shiftLabel?: string
   kids?: number | null
   url: string          // deep link into /crew
+  /** Where to add this shift to a phone calendar (a signed link that needs no login), when the message carries one. */
+  calUrl?: string
 }
+
+/** " Add to your calendar: <link>", or nothing when the message has no link. */
+const calLine = (p: PartyRef) => (p.calUrl ? ` Add to your calendar: ${p.calUrl}` : '')
 
 function r(sms: string, subject: string, text: string, inApp?: string): Rendered {
   return {
@@ -109,9 +116,9 @@ If you didn't ask for it, you can ignore this email.`,
   newParty(p: PartyRef, payLabel: string | null): Rendered {
     const kids = p.kids ? `, ${p.kids} kids` : ''
     return r(
-      `New party: ${p.theme} ${p.dayLabel} ${p.timeLabel}${kids}${comma(payLabel)}. Claim a spot: ${p.url}`,
+      `New party: ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}${kids}${comma(payLabel)}. Claim a spot: ${p.url}`,
       `New party: ${p.theme}, ${p.dayLabel}`,
-      `${p.theme} on ${p.dayLabel}, ${p.timeLabel}${kids}.${payLabel ? ` ${payLabel} for you.` : ''}\nClaim a spot: ${p.url}`,
+      `${p.theme} on ${p.dayLabel}, ${p.shiftLabel ?? p.timeLabel}${kids}.${payLabel ? ` ${payLabel} for you.` : ''}\nClaim a spot: ${p.url}`,
     )
   },
 
@@ -119,18 +126,18 @@ If you didn't ask for it, you can ignore this email.`,
   openSpots(p: PartyRef, spots: number, payLabel: string | null): Rendered {
     const n = `${spots} ${spots === 1 ? 'spot' : 'spots'}`
     return r(
-      `Still need crew: ${p.theme} ${p.dayLabel} ${p.timeLabel}, ${n} open${comma(payLabel)}. Can you take one? ${p.url}`,
+      `Still need crew: ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}, ${n} open${comma(payLabel)}. Can you take one? ${p.url}`,
       `Still need crew: ${p.theme}, ${p.dayLabel}`,
-      `${p.theme} on ${p.dayLabel}, ${p.timeLabel} still has ${n} open.${payLabel ? ` ${payLabel} for you.` : ''} If you're free, claim one here (or say you can cover and we'll ask you first if someone drops):\n${p.url}`,
+      `${p.theme} on ${p.dayLabel}, ${p.shiftLabel ?? p.timeLabel} still has ${n} open.${payLabel ? ` ${payLabel} for you.` : ''} If you're free, claim one here (or say you can cover and we'll ask you first if someone drops):\n${p.url}`,
     )
   },
 
   /** A spot opened on a party the person is waitlisted for (someone gave notice early): first pick. */
   spotOpened(p: PartyRef, role: 'lead' | 'crew', payLabel: string | null): Rendered {
     return r(
-      `A spot opened on ${p.theme} ${p.dayLabel} ${p.timeLabel}. You're on the waitlist, so you get first pick: ${spotWord(role)}${paren(payLabel)}. ${p.url}`,
+      `A spot opened on ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. You're on the waitlist, so you get first pick: ${spotWord(role)}${paren(payLabel)}. ${p.url}`,
       `A spot opened: ${p.theme}, ${p.dayLabel}`,
-      `Someone gave notice on ${p.theme}, ${p.dayLabel} ${p.timeLabel}, and ${spotWord(role)} is open${comma(payLabel)}. You're on the waitlist, so you get first pick. First to claim gets it:\n${p.url}`,
+      `Someone gave notice on ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}, and ${spotWord(role)} is open${comma(payLabel)}. You're on the waitlist, so you get first pick. First to claim gets it:\n${p.url}`,
     )
   },
 
@@ -150,9 +157,9 @@ If you didn't ask for it, you can ignore this email.`,
   newPartyPick(p: PartyRef): Rendered {
     const kids = p.kids ? `, ${p.kids} kids` : ''
     return r(
-      `New party: ${p.theme} ${p.dayLabel} ${p.timeLabel}${kids}. Tell us if you want to work it, can't, or can stand by: ${p.url}`,
+      `New party: ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}${kids}. Tell us if you want to work it, can't, or can stand by: ${p.url}`,
       `New party: ${p.theme}, ${p.dayLabel}`,
-      `${p.theme} on ${p.dayLabel}, ${p.timeLabel}${kids}.
+      `${p.theme} on ${p.dayLabel}, ${p.shiftLabel ?? p.timeLabel}${kids}.
 Tell us if you want to work it, can't, or can stand by. Answering doesn't lock you in; the crew is picked fairly:
 ${p.url}`,
     )
@@ -161,9 +168,9 @@ ${p.url}`,
   /** Pick mode: the ones who have not answered yet. */
   pickReminder(p: PartyRef): Rendered {
     return r(
-      `Still need to hear from you on ${p.theme} ${p.dayLabel} ${p.timeLabel}: want to work it, can't, or can stand by? ${p.url}`,
+      `Still need to hear from you on ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}: want to work it, can't, or can stand by? ${p.url}`,
       `Your answer: ${p.theme}, ${p.dayLabel}`,
-      `We still need to hear from you on ${p.theme}, ${p.dayLabel} ${p.timeLabel}. Tell us if you want to work it, can't, or can stand by. Answering doesn't lock you in:\n${p.url}`,
+      `We still need to hear from you on ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. Tell us if you want to work it, can't, or can stand by. Answering doesn't lock you in:\n${p.url}`,
     )
   },
 
@@ -190,19 +197,29 @@ See where you stand: ${url}`,
     )
   },
 
+  /** The manager put this person on a spot (by hand, or from the ranked list): the whole shift, how to accept, and the calendar link. */
+  assignedByManager(p: PartyRef): Rendered {
+    const when = `${p.dayLabel}, ${p.shiftLabel ?? p.timeLabel}`
+    return r(
+      `You've been put on ${p.theme}, ${when}. Please open the app and tap Accept Assignment: ${p.url}${calLine(p)}`,
+      `You've been assigned: ${p.theme}, ${p.dayLabel}`,
+      `You've been put on ${p.theme}.\nYour shift: ${when}.\nPlease open the app and tap Accept Assignment so we know you have it:\n${p.url}${p.calUrl ? `\nAdd it to your calendar: ${p.calUrl}` : ''}`,
+    )
+  },
+
   claimConfirmed(p: PartyRef, payLabel: string | null): Rendered {
     return r(
-      `You're on ${p.theme} ${p.dayLabel} ${p.timeLabel}${paren(payLabel)}. Details: ${p.url}`,
+      `You're on ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}${paren(payLabel)}. Details: ${p.url}`,
       `You're on: ${p.theme}, ${p.dayLabel}`,
-      `You're on ${p.theme}, ${p.dayLabel} ${p.timeLabel}.${payLabel ? ` ${payLabel} for the party.` : ''}\nDetails: ${p.url}`,
+      `You're on ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}.${payLabel ? ` ${payLabel} for the party.` : ''}\nDetails: ${p.url}`,
     )
   },
 
   confirmRequest(p: PartyRef, dueLabel: string): Rendered {
     return r(
-      `Still on for ${p.theme} ${p.dayLabel} ${p.timeLabel}? Reply Y or tap ${p.url} by ${dueLabel}.`,
+      `Still on for ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}? Reply Y or tap ${p.url} by ${dueLabel}.${calLine(p)}`,
       `Confirm: ${p.theme}, ${p.dayLabel}`,
-      `Please confirm you're still on for ${p.theme}, ${p.dayLabel} ${p.timeLabel} by ${dueLabel}.\nConfirm, or tell us you can't make it: ${p.url}`,
+      `Please confirm you're still on for ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel} by ${dueLabel}.\nConfirm, or tell us you can't make it: ${p.url}${p.calUrl ? `\nAdd it to your calendar: ${p.calUrl}` : ''}`,
     )
   },
 
@@ -217,9 +234,9 @@ See where you stand: ${url}`,
   confirmed(p: PartyRef): Rendered {
     const setup = p.setupLabel ? ` Setup starts ${p.setupLabel}.` : ''
     return r(
-      `Confirmed for ${p.theme} ${p.dayLabel}.${setup} Thank you!`,
+      `Confirmed for ${p.theme} ${p.dayLabel}.${setup} Thank you!${calLine(p)}`,
       `Confirmed: ${p.theme}, ${p.dayLabel}`,
-      `You're confirmed for ${p.theme}, ${p.dayLabel}.${setup}`,
+      `You're confirmed for ${p.theme}, ${p.dayLabel}.${setup}${p.calUrl ? `\nAdd it to your calendar: ${p.calUrl}` : ''}`,
     )
   },
 
@@ -230,9 +247,9 @@ See where you stand: ${url}`,
   dayBefore(p: PartyRef, address: string): Rendered {
     const setup = p.setupLabel ? ` Setup starts ${p.setupLabel}.` : ''
     return r(
-      `Tomorrow: ${p.theme} ${p.timeLabel}.${setup} ${address}`,
-      `Tomorrow: ${p.theme} at ${p.timeLabel}`,
-      `See you tomorrow for ${p.theme}, ${p.timeLabel}.${setup}\n${address}\n${p.url}`,
+      `Tomorrow: ${p.theme} ${p.shiftLabel ?? p.timeLabel}.${setup} ${address}`,
+      `Tomorrow: ${p.theme} at ${p.shiftLabel ?? p.timeLabel}`,
+      `See you tomorrow for ${p.theme}, ${p.shiftLabel ?? p.timeLabel}.${setup}\n${address}\n${p.url}`,
     )
   },
 
@@ -257,9 +274,9 @@ See where you stand: ${url}`,
   coverOffer(requesterFirst: string, p: PartyRef, role: 'lead' | 'crew', payLabel: string | null, ladder: boolean): Rendered {
     const two = ladder ? ', and covering a late cancel counts as two parties toward your rate' : ''
     return r(
-      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.timeLabel}. You're a standby, claim ${spotWord(role)}${paren(payLabel)}: ${p.url}`,
+      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. You're a standby, claim ${spotWord(role)}${paren(payLabel)}: ${p.url}`,
       `Cover needed: ${p.theme}, ${p.dayLabel}`,
-      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.timeLabel}. You're a standby, so you get first pick: ${spotWord(role)}${comma(payLabel)}. First to claim gets it${two}.\n${p.url}`,
+      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. You're a standby, so you get first pick: ${spotWord(role)}${comma(payLabel)}. First to claim gets it${two}.\n${p.url}`,
     )
   },
 
@@ -267,9 +284,9 @@ See where you stand: ${url}`,
   coverOpen(requesterFirst: string, p: PartyRef, role: 'lead' | 'crew', payLabel: string | null, ladder: boolean): Rendered {
     const two = ladder ? ', and covering a late cancel counts as two parties toward your rate' : ''
     return r(
-      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.timeLabel}. You're free that day, want ${spotWord(role)}${paren(payLabel)}? ${p.url}`,
+      `${requesterFirst} can't make ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. You're free that day, want ${spotWord(role)}${paren(payLabel)}? ${p.url}`,
       `Spot open: ${p.theme}, ${p.dayLabel}`,
-      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.timeLabel}, and you're free that day: ${spotWord(role)}${comma(payLabel)}. First to claim gets it${two}.\n${p.url}`,
+      `${requesterFirst} can't make ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}, and you're free that day: ${spotWord(role)}${comma(payLabel)}. First to claim gets it${two}.\n${p.url}`,
     )
   },
 
@@ -285,9 +302,9 @@ See where you stand: ${url}`,
   coverClaimed(p: PartyRef, payLabel: string | null, ladder: boolean): Rendered {
     const two = ladder ? ' It counts as two parties toward your rate.' : ''
     return r(
-      `Thanks for covering! You're on ${p.theme} ${p.dayLabel} ${p.timeLabel}${paren(payLabel)}.${two} ${p.url}`,
+      `Thanks for covering! You're on ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}${paren(payLabel)}.${two} ${p.url}`,
       `You're covering ${p.theme}, ${p.dayLabel}`,
-      `Thanks for covering. You're on ${p.theme}, ${p.dayLabel} ${p.timeLabel}${comma(payLabel)}.${ladder ? " Once you've worked it, it counts as two parties toward your rate." : ''}\n${p.url}`,
+      `Thanks for covering. You're on ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}${comma(payLabel)}.${ladder ? " Once you've worked it, it counts as two parties toward your rate." : ''}\n${p.url}`,
     )
   },
 
