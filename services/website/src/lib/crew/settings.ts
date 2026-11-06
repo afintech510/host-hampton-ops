@@ -102,13 +102,15 @@ export type CrewScope = 'app' | 'onboarding'
  *
  *   - active only: paused and removed members are out;
  *   - never the owner: Allie is a crew row so she can lead, not a login;
+ *   - during the pilot (`CREW_PILOT_MEMBER_IDS`), only the members named there;
  *   - scope 'app' in test-only mode (CREW_TEST_LOGIN without CREW_ENABLED):
  *     `is_test` only, so real crew stay out until Adam launches;
  *   - scope 'onboarding' also admits real members while CREW_ONBOARDING_ENABLED.
  */
-export function crewMemberMayEnter(m: { status: string; is_owner: boolean; is_test: boolean }, scope: CrewScope = 'app'): boolean {
+export function crewMemberMayEnter(m: { id?: string; status: string; is_owner: boolean; is_test: boolean }, scope: CrewScope = 'app'): boolean {
   if (!crewAppOpen()) return false
   if (m.status !== 'active' || m.is_owner) return false
+  if (!inCrewPilot(m)) return false
   if (scope === 'onboarding' && crewOnboardingEnabled()) return true
   if (!crewEnabled() && !m.is_test) return false
   return true
@@ -135,6 +137,32 @@ export function crewAgreementVersion(): string {
 /** Crew texts on the Quo line. Off unless exactly `true`; also needs the member's `sms_opt_in`. */
 export function crewSmsEnabled(): boolean {
   return process.env.CREW_SMS_ENABLED === 'true'
+}
+
+/**
+ * THE PILOT. While `CREW_PILOT_MEMBER_IDS` (comma-separated crew_members ids) is set, only those REAL
+ * members may sign in or be messaged; every other real member is shut out exactly as if the crew
+ * app were still off for them. Test members are unaffected. Unset = no restriction (the full launch).
+ * A value that is set but names nobody admits nobody: a typo must not open the app to the whole crew.
+ */
+export function crewPilotIds(): Set<string> | null {
+  const raw = (process.env.CREW_PILOT_MEMBER_IDS || '').trim()
+  if (!raw) return null
+  return new Set(raw.split(',').map(x => x.trim().toLowerCase()).filter(Boolean))
+}
+
+/** May this member take part in the pilot? Always true for a test member, and for everyone once the pilot is lifted. */
+export function inCrewPilot(m: { id?: string; is_test: boolean }): boolean {
+  if (m.is_test) return true
+  const ids = crewPilotIds()
+  if (!ids) return true
+  return !!m.id && ids.has(m.id.toLowerCase())
+}
+
+/** The manager's mobile, for a text when an alert needs a person (the email and the page still carry it). Unset = no text. */
+export function crewAdminPhone(): string | null {
+  const v = (process.env.CREW_ADMIN_PHONE || '').trim()
+  return v || null
 }
 
 /** Where Allie's crew alerts go. */

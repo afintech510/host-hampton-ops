@@ -44,7 +44,7 @@ import { checkSmsQuietHours } from '@/lib/quietHours'
 import { gsm7Sanitize, smsSegmentInfo } from '@/lib/smsSegments'
 import { checkFreshness, reminderMaxLatenessMs } from '@/lib/scheduleFreshness'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
-import { crewAdminEmail, crewEnabled, crewOnboardingEnabled, crewPayLadderEnabled, crewSmsEnabled } from '@/lib/crew/settings'
+import { crewAdminEmail, crewAdminPhone, crewEnabled, crewOnboardingEnabled, crewPayLadderEnabled, crewSmsEnabled, inCrewPilot } from '@/lib/crew/settings'
 import { etDateString } from '@/lib/partyTime'
 import { getMember, insertNotification, type CrewMemberRow, type CrewPartyRow } from '@/lib/crew/db'
 import { SMS_DISCLOSURE, templates, type PartyRef, type Rendered } from '@/lib/crew/templates'
@@ -78,14 +78,15 @@ export type ChannelOutcome = 'sent' | 'duplicate' | 'skipped' | 'deferred' | 'fa
 export type NotifyResult =
   | { kind: 'owner' }
   /** Nothing written: a real member while CREW_ENABLED is off, or a member who is not active. */
-  | { kind: 'held'; reason: 'crew_disabled' | 'inactive' }
+  | { kind: 'held'; reason: 'crew_disabled' | 'inactive' | 'not_pilot' }
   | { kind: 'done'; channels: Partial<Record<Channel, ChannelOutcome>> }
 
 /** May this member be messaged at all right now? Rule 2 above, in one place. */
-export function crewMessagingAllowed(m: Pick<CrewMemberRow, 'is_owner' | 'is_test' | 'status'>): 'ok' | 'owner' | 'crew_disabled' | 'inactive' {
+export function crewMessagingAllowed(m: Pick<CrewMemberRow, 'id' | 'is_owner' | 'is_test' | 'status'>): 'ok' | 'owner' | 'crew_disabled' | 'inactive' | 'not_pilot' {
   if (m.is_owner) return 'owner'
   if (m.status !== 'active') return 'inactive'
   if (!crewEnabled() && !m.is_test) return 'crew_disabled'
+  if (!inCrewPilot(m)) return 'not_pilot'
   return 'ok'
 }
 
@@ -269,6 +270,35 @@ export async function markCoveredByDigest(
 export interface AdminMessage { subject: string; text: string }
 
 /**
+ * A text to the manager's own mobile for an alert that needs a person (`CREW_ADMIN_PHONE`, and only while
+ * crew texts are on). One row per alert, claimed by the dedupe key before it is sent. Quiet hours write
+ * the row `skipped` rather than hold it: the email and the page already carry the alert, and a
+ * 2 a.m. text about something that can wait is the opposite of help.
+ */
+async function sendAdminSms(ctx: NotifyCtx, template: string, dedupeKey: string, msg: AdminMessage, test: boolean): Promise<ChannelOutcome | undefined> {
+  const phone = crewAdminPhone()
+  if (!phone || !crewSmsEnabled()) return undefined
+  const window = checkSmsQuietHours(ctx.now)
+  const url = /https?:\/\/\S+$/.exec(msg.text)?.[0]
+  const raw = `${test ? '[TEST] ' : ''}${msg.text}`
+  const body = gsm7Sanitize(raw.length <= 320 ? raw : `${test ? '[TEST] ' : ''}${msg.subject}${url ? ` ${url}` : ''}`)
+  const open = window.kind === 'open'
+  const r = await insertNotification(ctx.sb, {
+    member_id: null, channel: 'sms', template, dedupe_key: dedupeKey, status: open ? 'sending' : 'skipped',
+    error: open ? undefined : window.reason, payload: { subject: msg.subject },
+  })
+  if (r.kind === 'duplicate') return 'duplicate'
+  if (r.kind === 'failed') { console.error(`crew/notify: admin sms ${template} not claimed: ${r.error}`); return 'failed' }
+  if (!open) return 'skipped'
+  const senders = ctx.senders ?? liveSenders
+  let providerId: string | null = null
+  try { providerId = await senders.sms(phone, body) } catch (e) { console.error(`crew/notify: admin sms threw for row ${r.id}: ${errText(e)}`) }
+  if (providerId) { await finish(ctx.sb, r.id, { status: 'sent', provider_id: providerId, sent_at: ctx.now.toISOString(), error: null }); return 'sent' }
+  await finish(ctx.sb, r.id, { status: 'failed', error: 'quo returned no message id (see the quo:sendSMS log line)' })
+  return 'failed'
+}
+
+/**
  * An alert for Allie: an in-app row (`member_id` null) and an email to
  * `CREW_ADMIN_EMAIL || ownerEmail()`. Not behind CREW_ENABLED — the admin side
  * never is. `test` marks an alert about a TEST party so nobody acts on it.
@@ -276,10 +306,10 @@ export interface AdminMessage { subject: string; text: string }
 export async function notifyAdmin(
   ctx: NotifyCtx, template: string, msg: AdminMessage, dedupeKey: string,
   opts: { test?: boolean; payload?: Record<string, unknown>; info?: boolean } = {},
-): Promise<Partial<Record<'in_app' | 'email', ChannelOutcome>>> {
+): Promise<Partial<Record<Channel, ChannelOutcome>>> {
   const subject = opts.test ? `[TEST] ${msg.subject}` : msg.subject
   const base = opts.payload ?? {}
-  const out: Partial<Record<'in_app' | 'email', ChannelOutcome>> = {}
+  const out: Partial<Record<Channel, ChannelOutcome>> = {}
   const inApp = await insertNotification(ctx.sb, {
     member_id: null, channel: 'in_app', template, dedupe_key: dedupeKey, status: 'sent', scheduled_for: ctx.now.toISOString(),
     payload: { ...base, subject, text: msg.text },
@@ -294,6 +324,8 @@ export async function notifyAdmin(
   if (r.kind === 'duplicate') out.email = 'duplicate'
   else if (r.kind === 'failed') { out.email = 'failed'; console.error(`crew/notify: admin ${template} not claimed: ${r.error}`) }
   else out.email = await deliverEmail(ctx, crewAdminEmail(), r.id, { sms: '', inApp: msg.text, email: { subject, text: msg.text } })
+  const sms = await sendAdminSms(ctx, template, dedupeKey, msg, !!opts.test)
+  if (sms) out.sms = sms
   return out
 }
 

@@ -285,6 +285,11 @@ services:
       # and crew are told nothing about pay (lib/crew/rules.ts, lib/crew/settings.ts).
       # Equitable scheduling (migration 090): OFF unless exactly "true". Parties published while it is on
       # are picked by the manager from what the crew ask for, not first come first served.
+      # THE PILOT: while CREW_PILOT_MEMBER_IDS (comma-separated crew_members ids) is set, only those real
+      # members can sign in or be messaged. Unset = everyone. CREW_ADMIN_PHONE is the manager's mobile for
+      # alerts that need a person (only while CREW_SMS_ENABLED is true). Both optional.
+      - CREW_PILOT_MEMBER_IDS=${CREW_PILOT_MEMBER_IDS:-}
+      - CREW_ADMIN_PHONE=${CREW_ADMIN_PHONE:-}
       - CREW_PICK_FLOW=${CREW_PICK_FLOW:-false}
       - CREW_PAY_LADDER=${CREW_PAY_LADDER:-false}
       - CREW_SHOW_PAY=${CREW_SHOW_PAY:-false}
