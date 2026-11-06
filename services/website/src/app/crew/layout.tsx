@@ -77,7 +77,11 @@ ${themeCss()}
 .crew-brandmark{display:inline-flex;align-items:center;gap:.6rem;text-decoration:none;min-width:0}
 .crew-logo{display:block;height:34px;width:auto;filter:var(--c-logo-filter)}
 .crew-wordmark{font-family:var(--crew-font-varsity),Impact,'Arial Black',sans-serif;font-size:1.7rem;line-height:1;letter-spacing:.07em;text-transform:uppercase;color:var(--c-brand-navy);text-shadow:${RING};padding:.1rem .2rem .05rem}
-.crew-who{display:flex;align-items:center;gap:.5rem;min-width:0}
+.crew-top{flex-wrap:nowrap}
+.crew-who{display:flex;align-items:center;flex-wrap:nowrap;gap:.5rem;min-width:0;flex-shrink:0}
+.crew-top .crew-btn{min-height:36px;padding:.3rem .8rem;font-size:.85rem}
+.crew-who-name{white-space:nowrap}
+@media (max-width:480px){.crew-who-name{display:none}}
 .crew-muted{color:var(--c-muted)}
 .crew-small{font-size:.875rem}
 .crew-card{background:var(--c-surface);border:var(--card-border);border-radius:var(--r-card);padding:var(--pad-card);margin-bottom:var(--gap-card);box-shadow:var(--c-shadow)}

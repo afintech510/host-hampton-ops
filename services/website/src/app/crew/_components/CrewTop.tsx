@@ -9,9 +9,9 @@ export default function CrewTop({ firstName, isTest }: { firstName: string; isTe
     <>
       <div className="crew-top">
         <CrewBrand />
-        <span className="crew-row crew-small">
+        <span className="crew-who crew-small">
           {isTest && <span className="crew-chip crew-gold">Test</span>}
-          <span className="crew-muted">{firstName}</span>
+          <span className="crew-muted crew-who-name">{firstName}</span>
           <ActionButton endpoint="/api/crew/auth/logout" label="Sign out" variant="ghost" redirectTo="/crew/login" />
         </span>
       </div>

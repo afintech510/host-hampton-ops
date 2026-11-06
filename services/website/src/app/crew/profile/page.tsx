@@ -42,7 +42,7 @@ export default async function CrewProfilePage() {
       {onboarding ? (
         <div className="crew-top">
           <CrewBrand />
-          <span className="crew-row crew-small">
+          <span className="crew-who crew-small">
             <a className="crew-link" href="/crew/onboarding">Back</a>
             <ActionButton endpoint="/api/crew/auth/logout" label="Sign out" variant="ghost" redirectTo="/crew/login" />
           </span>

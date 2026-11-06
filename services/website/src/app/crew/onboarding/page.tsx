@@ -21,9 +21,9 @@ export default async function CrewOnboardingPage() {
     <main className="crew-wrap">
       <div className="crew-top">
         <CrewBrand />
-        <span className="crew-row crew-small">
+        <span className="crew-who crew-small">
           {member.is_test && <span className="crew-chip crew-gold">Test</span>}
-          <span className="crew-muted">{member.first_name}</span>
+          <span className="crew-muted crew-who-name">{member.first_name}</span>
           <ActionButton endpoint="/api/crew/auth/logout" label="Sign out" variant="ghost" redirectTo="/crew/login" />
         </span>
       </div>
