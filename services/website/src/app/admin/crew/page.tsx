@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { WORK_TYPES, kindHasLead, workTypeOf, type WorkKind } from '@/lib/crew/workTypes'
 import {
-  BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, LoginGate, STATUS_STYLE, useAdminApi, whenLabel,
+  BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, LoginGate, STATUS_STYLE, useAdminApi, whenLabel, whenParts,
 } from './_components/adminCrew'
 
 interface PartyRow {
@@ -53,6 +53,85 @@ const SEVERITY: Record<Alert['severity'], string> = {
   urgent: 'border-l-4 border-red-500 bg-red-50 text-red-900',
   warn: 'border-l-4 border-amber-400 bg-amber-50 text-amber-900',
   info: 'border-l-4 border-sky-300 bg-white text-hampton-navy',
+}
+
+/** What sits under a party's title, on the table and on the phone card: who it is for, the picks, the menu, flags. */
+function PartyBits({ p }: { p: PartyRow }) {
+  return (
+    <>
+      {(p.childName || p.parentName) && (
+        <div className="text-hampton-navy/80 text-xs mt-0.5">
+          {p.childName && <span>Child: <strong>{p.childName}{p.childAge ? `, ${p.childAge}` : ''}</strong></span>}
+          {p.childName && p.parentName && ' · '}
+          {p.parentName && <span>Parent: <strong>{p.parentName}</strong></span>}
+        </div>
+      )}
+      {p.pick && (
+        <div className="text-xs mt-0.5">
+          <span className={p.pick.work > 0 ? 'text-emerald-700 font-semibold' : 'text-hampton-navy/50'}>{p.pick.work} want to work</span>
+          <span className="text-hampton-navy/50"> · {p.pick.standby} standby · {p.pick.unavailable} unavailable</span>
+        </div>
+      )}
+      {p.booked && (p.food || p.cupcake) && (
+        <div className="text-hampton-navy/80 text-xs mt-0.5">
+          {p.food && <span>Food: <strong>{p.food}</strong></span>}
+          {p.food && p.cupcake && ' · '}
+          {p.cupcake && <span>Cupcakes: <strong>{p.cupcake}</strong></span>}
+        </div>
+      )}
+      {!p.booked && (
+        <div className="text-hampton-navy/40 text-xs">{workTypeOf(p.kind) ? `${workTypeOf(p.kind)!.emoji} ${workTypeOf(p.kind)!.label}` : 'By hand'}</div>
+      )}
+      {p.flags.length > 0 && (
+        <div className="text-amber-700 text-xs mt-1">{p.flags.map(f => FLAG_TEXT[f] ?? f).join(' · ')}</div>
+      )}
+    </>
+  )
+}
+
+const crewNames = (p: PartyRow) =>
+  p.crew.map(c => `${c.firstName}${c.role === 'lead' ? ' (Lead)' : ''}${c.confirmed || c.isOwner ? '' : '?'}`).join(', ')
+
+/** One party on a phone: the whole card opens it. The table is for screens wide enough to hold it. */
+function PartyCardMobile({ p }: { p: PartyRow }) {
+  const full = p.staffed >= p.needed
+  const when = whenParts(p.startsAt, p.endsAt)
+  const noLead = !p.leadFilled && kindHasLead(p.kind)
+  return (
+    <a href={`/admin/crew/parties/${p.id}`} className="block bg-white rounded-2xl shadow-sm p-4 active:bg-[#F6F1EB]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-bold uppercase tracking-wide text-hampton-navy/60">{when.day}</div>
+          <div className="text-hampton-navy font-semibold">{when.time}</div>
+        </div>
+        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${STATUS_STYLE[p.status] ?? 'bg-gray-100'}`}>{p.status}</span>
+      </div>
+      <div className="mt-2 text-lg font-semibold text-hampton-navy leading-tight">{p.title}</div>
+      <PartyBits p={p} />
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div className={`rounded-xl py-2 ${full ? 'bg-emerald-50' : 'bg-red-50'}`}>
+          <div className={`text-lg font-bold leading-none ${full ? 'text-emerald-700' : 'text-red-700'}`}>{p.staffed}/{p.needed}</div>
+          <div className="text-[11px] uppercase tracking-wide text-hampton-navy/50 mt-1">Staffed</div>
+        </div>
+        <div className="rounded-xl py-2 bg-[#F6F1EB]">
+          <div className="text-lg font-bold leading-none text-hampton-navy">{p.guestCount ?? '—'}</div>
+          <div className="text-[11px] uppercase tracking-wide text-hampton-navy/50 mt-1">Kids</div>
+        </div>
+        <div className="rounded-xl py-2 bg-[#F6F1EB]">
+          <div className="text-lg font-bold leading-none text-hampton-navy">{p.status === 'draft' || p.status === 'published' ? p.available : '—'}</div>
+          <div className="text-[11px] uppercase tracking-wide text-hampton-navy/50 mt-1">Available</div>
+        </div>
+      </div>
+      {(noLead || p.unconfirmed > 0) && (
+        <div className="mt-2 text-xs">
+          {noLead && <span className="text-red-700 font-semibold">No Lead</span>}
+          {noLead && p.unconfirmed > 0 && ' · '}
+          {p.unconfirmed > 0 && <span className="text-amber-700 font-semibold">{p.unconfirmed} unconfirmed</span>}
+        </div>
+      )}
+      <div className="mt-2 text-sm text-hampton-navy/80"><span className="text-hampton-navy/50">Crew: </span>{p.crew.length === 0 ? '—' : crewNames(p)}</div>
+    </a>
+  )
 }
 
 export default function CrewSchedulePage() {
@@ -173,72 +252,50 @@ export default function CrewSchedulePage() {
       {parties.length === 0 ? (
         <div className="bg-white rounded-2xl p-10 text-center text-hampton-navy/50">No parties match.</div>
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-hampton-navy/50 text-[11px] uppercase tracking-wider">
-                <th className="px-4 py-3">When</th>
-                <th className="px-4 py-3">Party</th>
-                <th className="px-4 py-3">Kids</th>
-                <th className="px-4 py-3">Staffed</th>
-                <th className="px-4 py-3">Available</th>
-                <th className="px-4 py-3">Crew</th>
-                <th className="px-4 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parties.map(p => (
-                <tr key={p.id} className="border-t border-hampton-pink/10 align-top hover:bg-[#F6F1EB]/50">
-                  <td className="px-4 py-3 whitespace-nowrap text-hampton-navy">{whenLabel(p.startsAt, p.endsAt)}</td>
-                  <td className="px-4 py-3">
-                    <a href={`/admin/crew/parties/${p.id}`} className="font-semibold text-hampton-navy underline">{p.title}</a>
-                    {(p.childName || p.parentName) && (
-                      <div className="text-hampton-navy/80 text-xs mt-0.5">
-                        {p.childName && <span>Child: <strong>{p.childName}{p.childAge ? `, ${p.childAge}` : ''}</strong></span>}
-                        {p.childName && p.parentName && ' · '}
-                        {p.parentName && <span>Parent: <strong>{p.parentName}</strong></span>}
-                      </div>
-                    )}
-                    {p.pick && (
-                      <div className="text-xs mt-0.5">
-                        <span className={p.pick.work > 0 ? 'text-emerald-700 font-semibold' : 'text-hampton-navy/50'}>{p.pick.work} want to work</span>
-                        <span className="text-hampton-navy/50"> · {p.pick.standby} standby · {p.pick.unavailable} unavailable</span>
-                      </div>
-                    )}
-                    {p.booked && (p.food || p.cupcake) && (
-                      <div className="text-hampton-navy/80 text-xs mt-0.5">
-                        {p.food && <span>Food: <strong>{p.food}</strong></span>}
-                        {p.food && p.cupcake && ' · '}
-                        {p.cupcake && <span>Cupcakes: <strong>{p.cupcake}</strong></span>}
-                      </div>
-                    )}
-                    {!p.booked && (
-                      <div className="text-hampton-navy/40 text-xs">{workTypeOf(p.kind) ? `${workTypeOf(p.kind)!.emoji} ${workTypeOf(p.kind)!.label}` : 'By hand'}</div>
-                    )}
-                    {p.flags.length > 0 && (
-                      <div className="text-amber-700 text-xs mt-1">{p.flags.map(f => FLAG_TEXT[f] ?? f).join(' · ')}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">{p.guestCount ?? '—'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={p.staffed >= p.needed ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>{p.staffed}/{p.needed}</span>
-                    {!p.leadFilled && kindHasLead(p.kind) && <div className="text-red-700 text-xs">no Lead</div>}
-                    {p.unconfirmed > 0 && <div className="text-amber-700 text-xs">{p.unconfirmed} unconfirmed</div>}
-                  </td>
-                  <td className="px-4 py-3">{p.status === 'draft' || p.status === 'published' ? p.available : '—'}</td>
-                  <td className="px-4 py-3 text-hampton-navy/80">
-                    {p.crew.length === 0 ? '—' : p.crew.map(c => `${c.firstName}${c.role === 'lead' ? ' (Lead)' : ''}${c.confirmed || c.isOwner ? '' : '?'}`).join(', ')}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${STATUS_STYLE[p.status] ?? 'bg-gray-100'}`}>{p.status}</span>
-                  </td>
+        <>
+          <ul className="md:hidden space-y-3" aria-label="Parties">
+            {parties.map(p => <li key={p.id}><PartyCardMobile p={p} /></li>)}
+          </ul>
+          <div className="hidden md:block bg-white rounded-2xl shadow-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-hampton-navy/50 text-[11px] uppercase tracking-wider">
+                  <th className="px-4 py-3">When</th>
+                  <th className="px-4 py-3">Party</th>
+                  <th className="px-4 py-3">Kids</th>
+                  <th className="px-4 py-3">Staffed</th>
+                  <th className="px-4 py-3">Available</th>
+                  <th className="px-4 py-3">Crew</th>
+                  <th className="px-4 py-3">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="text-hampton-navy/40 text-xs px-4 py-3">A name with “?” has not confirmed. Allie counts toward staffed when she is on a party.</p>
-        </div>
+              </thead>
+              <tbody>
+                {parties.map(p => (
+                  <tr key={p.id} className="border-t border-hampton-pink/10 align-top hover:bg-[#F6F1EB]/50">
+                    <td className="px-4 py-3 whitespace-nowrap text-hampton-navy">{whenLabel(p.startsAt, p.endsAt)}</td>
+                    <td className="px-4 py-3">
+                      <a href={`/admin/crew/parties/${p.id}`} className="font-semibold text-hampton-navy underline">{p.title}</a>
+                      <PartyBits p={p} />
+                    </td>
+                    <td className="px-4 py-3">{p.guestCount ?? '—'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={p.staffed >= p.needed ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>{p.staffed}/{p.needed}</span>
+                      {!p.leadFilled && kindHasLead(p.kind) && <div className="text-red-700 text-xs">no Lead</div>}
+                      {p.unconfirmed > 0 && <div className="text-amber-700 text-xs">{p.unconfirmed} unconfirmed</div>}
+                    </td>
+                    <td className="px-4 py-3">{p.status === 'draft' || p.status === 'published' ? p.available : '—'}</td>
+                    <td className="px-4 py-3 text-hampton-navy/80">{p.crew.length === 0 ? '—' : crewNames(p)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${STATUS_STYLE[p.status] ?? 'bg-gray-100'}`}>{p.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
+      {parties.length > 0 && <p className="text-hampton-navy/40 text-xs px-1 py-3">A name with “?” has not confirmed. Allie counts toward staffed when she is on a party.</p>}
     </CrewFrame>
   )
 }

@@ -129,6 +129,11 @@ export function whenLabel(startsAt: string, endsAt: string): string {
   return `${dayFmt.format(new Date(startsAt))} · ${timeFmt.format(new Date(startsAt))}–${timeFmt.format(new Date(endsAt))}`
 }
 
+/** The same moment as `whenLabel`, in two pieces for a card: "Sat, Nov 7" and "12:00 PM–2:00 PM". */
+export function whenParts(startsAt: string, endsAt: string): { day: string; time: string } {
+  return { day: dayFmt.format(new Date(startsAt)), time: `${timeFmt.format(new Date(startsAt))}–${timeFmt.format(new Date(endsAt))}` }
+}
+
 export const STATUS_STYLE: Record<string, string> = {
   draft: 'bg-slate-100 text-slate-700',
   published: 'bg-emerald-100 text-emerald-800',

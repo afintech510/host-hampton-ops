@@ -148,7 +148,15 @@ export default function CrewMembersPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm overflow-x-auto">
+      <div className="md:hidden space-y-3">
+        {members.map(m => (
+          <MemberCard key={m.id} m={m} open={open === m.id}
+            onToggle={() => setOpen(open === m.id ? null : m.id)}
+            onChanged={async (msg) => { setNotice(msg); setError(''); await load() }}
+            onError={setError} />
+        ))}
+      </div>
+      <div className="hidden md:block bg-white rounded-2xl shadow-sm overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-hampton-navy/50 text-[11px] uppercase tracking-wider">
@@ -175,18 +183,19 @@ export default function CrewMembersPage() {
   )
 }
 
-function MemberRow({ m, open, onToggle, onChanged, onError }: {
-  m: Member; open: boolean; onToggle: () => void; onChanged: (msg: string) => Promise<void>; onError: (e: string) => void
-}) {
-  const api = useAdminApi()
-  const flags = [
-    m.isOwner ? 'owner' : null,
-    m.isTest ? 'test' : null,
-    m.status !== 'active' ? m.status : null,
-    m.needsReview ? 'needs a talk' : null,
-    m.upcomingSpots ? `${m.upcomingSpots} upcoming` : null,
-  ].filter(Boolean)
+const memberFlags = (m: Member) => [
+  m.isOwner ? 'owner' : null,
+  m.isTest ? 'test' : null,
+  m.status !== 'active' ? m.status : null,
+  m.needsReview ? 'needs a talk' : null,
+  m.upcomingSpots ? `${m.upcomingSpots} upcoming` : null,
+].filter(Boolean)
 
+type MemberHandlers = { onChanged: (msg: string) => Promise<void>; onError: (e: string) => void }
+
+/** The editor under an open member: the same on the table and on the phone. */
+function MemberPanel({ m, onChanged, onError }: { m: Member } & MemberHandlers) {
+  const api = useAdminApi()
   async function save(f: FormState) {
     const r = await api<{ error?: string }>(`/api/admin/crew/members/${m.id}`, { method: 'PATCH', body: payload(f, m.isOwner ? 'owner' : 'edit') })
     if (!r.ok) { onError(r.data.error || 'Could not save.'); return false }
@@ -194,6 +203,36 @@ function MemberRow({ m, open, onToggle, onChanged, onError }: {
     return true
   }
 
+  return (
+    <div className="grid lg:grid-cols-3 gap-5">
+      <div className="lg:col-span-2">
+        <MemberForm key={JSON.stringify(m)} initial={formFrom(m)} mode={m.isOwner ? 'owner' : 'edit'} hasHourlyRate={m.hasHourlyRate} onSave={save} />
+      </div>
+      <div className="space-y-4">
+        {m.isOwner ? (
+          <p className="text-sm text-hampton-navy/70">Allie is the owner row: she can be assigned as Party Lead and counts toward staffed, and is never paid, notified or removed.</p>
+        ) : (
+          <>
+            <Invite m={m} onChanged={onChanged} onError={onError} />
+            <Onboarding m={m} onChanged={onChanged} onError={onError} />
+            {m.needsReview && (
+              <button className={BTN_GHOST} onClick={async () => {
+                const r = await api<{ error?: string }>(`/api/admin/crew/members/${m.id}`, { method: 'PATCH', body: { needs_review: false } })
+                if (!r.ok) onError(r.data.error || 'Could not clear it.')
+                else await onChanged('Flag cleared.')
+              }}>Talked to them: clear the flag</button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MemberRow({ m, open, onToggle, onChanged, onError }: {
+  m: Member; open: boolean; onToggle: () => void
+} & MemberHandlers) {
+  const flags = memberFlags(m)
   return (
     <>
       <tr className={`border-t border-hampton-pink/10 cursor-pointer hover:bg-[#F6F1EB]/50 ${m.status === 'removed' ? 'opacity-50' : ''}`} onClick={onToggle}>
@@ -208,32 +247,51 @@ function MemberRow({ m, open, onToggle, onChanged, onError }: {
       {open && (
         <tr className="bg-[#F6F1EB]/40">
           <td colSpan={7} className="px-4 py-4">
-            <div className="grid lg:grid-cols-3 gap-5">
-              <div className="lg:col-span-2">
-                <MemberForm key={JSON.stringify(m)} initial={formFrom(m)} mode={m.isOwner ? 'owner' : 'edit'} hasHourlyRate={m.hasHourlyRate} onSave={save} />
-              </div>
-              <div className="space-y-4">
-                {m.isOwner ? (
-                  <p className="text-sm text-hampton-navy/70">Allie is the owner row: she can be assigned as Party Lead and counts toward staffed, and is never paid, notified or removed.</p>
-                ) : (
-                  <>
-                    <Invite m={m} onChanged={onChanged} onError={onError} />
-                    <Onboarding m={m} onChanged={onChanged} onError={onError} />
-                    {m.needsReview && (
-                      <button className={BTN_GHOST} onClick={async () => {
-                        const r = await api<{ error?: string }>(`/api/admin/crew/members/${m.id}`, { method: 'PATCH', body: { needs_review: false } })
-                        if (!r.ok) onError(r.data.error || 'Could not clear it.')
-                        else await onChanged('Flag cleared.')
-                      }}>Talked to them: clear the flag</button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
+            <MemberPanel m={m} onChanged={onChanged} onError={onError} />
           </td>
         </tr>
       )}
     </>
+  )
+}
+
+/** One crew member on a phone: tap to open the editor in place. */
+function MemberCard({ m, open, onToggle, onChanged, onError }: {
+  m: Member; open: boolean; onToggle: () => void
+} & MemberHandlers) {
+  const flags = memberFlags(m)
+  return (
+    <div className={`bg-white rounded-2xl shadow-sm ${m.status === 'removed' ? 'opacity-50' : ''}`}>
+      <button type="button" onClick={onToggle} aria-expanded={open} className="w-full text-left p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="text-lg font-semibold text-hampton-navy leading-tight">{m.firstName} {m.lastName ?? ''}</div>
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {m.canLead && <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-violet-100 text-violet-800">Lead</span>}
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#F6F1EB] text-hampton-navy">{STAGE_LABEL[m.onboarding]}</span>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl py-2 bg-[#F6F1EB]">
+            <div className="text-lg font-bold leading-none text-hampton-navy">{m.partiesWorked}</div>
+            <div className="text-[11px] uppercase tracking-wide text-hampton-navy/50 mt-1">Worked</div>
+          </div>
+          <div className="rounded-xl py-2 bg-[#F6F1EB]">
+            <div className="text-lg font-bold leading-none text-hampton-navy">{m.lateCancelsUncovered}</div>
+            <div className="text-[11px] uppercase tracking-wide text-hampton-navy/50 mt-1">Late, uncovered</div>
+          </div>
+          <div className="rounded-xl py-2 bg-[#F6F1EB]">
+            <div className="text-lg font-bold leading-none text-hampton-navy">{m.noShows}</div>
+            <div className="text-[11px] uppercase tracking-wide text-hampton-navy/50 mt-1">No-shows</div>
+          </div>
+        </div>
+        {flags.length > 0 && <div className="mt-2 text-xs text-hampton-navy/70">{flags.join(' · ')}</div>}
+      </button>
+      {open && (
+        <div className="border-t border-hampton-pink/10 bg-[#F6F1EB]/40 rounded-b-2xl p-4">
+          <MemberPanel m={m} onChanged={onChanged} onError={onError} />
+        </div>
+      )}
+    </div>
   )
 }
 
