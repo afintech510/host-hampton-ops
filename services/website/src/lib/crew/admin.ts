@@ -20,7 +20,7 @@ import {
   shiftsOverlap, unclaimedWarningAt, type AvailabilityBlock, type CrewSettings, type DateBlock, type PartyWindow, type RecurringBlock, type SlotRole,
 } from '@/lib/crew/rules'
 import {
-  listMembers, slotsForParties, type CrewMemberRow, type CrewPartyRow, type CrewSlotRow, type CrewSwapRow, type PartyWithSlots, type Read,
+  listMembers, responseCounts, slotsForParties, type CrewMemberRow, type CrewPartyRow, type CrewSlotRow, type CrewSwapRow, type PartyWithSlots, type Read,
 } from '@/lib/crew/db'
 import { reconcileCrewParties, type ReconcileSummary } from '@/lib/crew/sync'
 import { ADMIN_ABOUT_COLUMNS, adminAboutFromRow, type AdminPartyAbout } from '@/lib/crew/partyDetails'
@@ -128,6 +128,7 @@ export interface AdminAlert {
   kind:
     | 'unconfirmed' | 'released' | 'cover_open' | 'cover_escalated' | 'cover_unclaimed_48h' | 'dropped'
     | 'attendance' | 'understaffed' | 'needs_review' | 'needs_time' | 'sync_flag' | 'unclassified' | 'reactivated'
+    | 'picks_waiting'
   severity: 'urgent' | 'warn' | 'info'
   text: string
   partyId?: string
@@ -149,6 +150,8 @@ export interface AdminPartyRow {
   /** The pizza-or-bagels and cupcake choices, with `(default)` where the planner's starting value was never changed. */
   food: string | null
   cupcake: string | null
+  /** Equitable scheduling: how many answered each way. Null on a party that is first come, first served. */
+  pick: { work: number; standby: number; unavailable: number } | null
   startsAt: string
   endsAt: string
   guestCount: number | null
@@ -228,6 +231,8 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
 
   const refs = await bookingAbout(sb, parties.data.map(p => p.party.booking_id).filter((x): x is string => !!x))
   if (refs.kind !== 'ok') return refs
+  const counts = await responseCounts(sb, parties.data.filter(p => p.party.selection_mode === 'pick').map(p => p.party.id))
+  if (counts.kind !== 'ok') return counts
 
   const memberById = new Map(members.data.map(m => [m.id, m]))
   const nameOf = (id: string | null) => (id ? memberById.get(id)?.first_name ?? 'Someone' : 'Someone')
@@ -251,6 +256,13 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
 
     // Alerts that belong to this party.
     if (p.status === 'published' && upcoming) {
+      // Equitable scheduling: people have asked and a spot is open, so it is waiting on the manager.
+      const asked = p.selection_mode === 'pick' ? counts.data.get(p.id)?.work ?? 0 : 0
+      const openSpots = live.filter(sl => sl.status === 'open').length
+      if (asked > 0 && openSpots > 0) {
+        const days = (startsAt.getTime() - nowMs) / DAY_MS
+        alerts.push({ kind: 'picks_waiting', severity: days <= 7 ? 'urgent' : 'warn', text: `${label(p)}: ${asked} ${asked === 1 ? 'person wants' : 'people want'} to work it, ${openSpots} ${openSpots === 1 ? 'spot' : 'spots'} open. Pick who is on.`, partyId: p.id })
+      }
       const due = confirmationSchedule(startsAt, s).dueAt.getTime()
       for (const sl of held) {
         const m = sl.member_id ? memberById.get(sl.member_id) : undefined
@@ -297,6 +309,7 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
       parentName: p.booking_id ? refs.data.get(p.booking_id)?.parent ?? null : null,
       food: p.booking_id ? refs.data.get(p.booking_id)?.food ?? null : null,
       cupcake: p.booking_id ? refs.data.get(p.booking_id)?.cupcake ?? null : null,
+      pick: p.selection_mode === 'pick' ? counts.data.get(p.id) ?? { work: 0, standby: 0, unavailable: 0 } : null,
       startsAt: p.starts_at,
       endsAt: p.ends_at,
       guestCount: p.guest_count,

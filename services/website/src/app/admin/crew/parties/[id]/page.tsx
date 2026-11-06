@@ -22,7 +22,25 @@ interface Slot {
 }
 interface Choice { id: string; name: string; canLead: boolean; isOwner: boolean; isTest: boolean; fitCrew: Fit; fitLead: Fit }
 interface Shift { crewStart: string; end: string; leadStart: string; defaults: { crewStart: string; end: string; leadStart: string } }
+interface PickVolunteer { memberId: string; name: string; rank: number; canLead: boolean; lastWorkedAt: string | null; recent: number }
+interface PickPanelView {
+  mode: 'pick' | 'first_come'
+  openSpots: { slotId: string; role: 'lead' | 'crew' }[]
+  volunteers: PickVolunteer[]
+  conflicted: { memberId: string; name: string }[]
+  standbys: { memberId: string; name: string }[]
+  unavailable: { memberId: string; name: string }[]
+  noResponse: { memberId: string; name: string }[]
+  recommendation: { slotId: string; role: 'lead' | 'crew'; memberId: string; name: string }[]
+}
+interface PickResult {
+  error?: string; assigned?: number; standby?: number; failed?: string[]
+  flagged?: { slotId: string; memberId: string; name: string; warnings: string[] }[]
+  dropped?: { memberName: string; partyTitle: string }[]
+}
 interface Detail {
+  /** Equitable scheduling: who asked, ranked, and what the system recommends. Null when the party is first come, first served. */
+  pick: PickPanelView | null
   party: {
     id: string; title: string; theme: string | null; party_kind: string; starts_at: string; ends_at: string; guest_count: number | null
     location: string; notes_for_crew: string | null; slots_override: number | null; extra_flat_cents: number; status: string
@@ -90,6 +108,26 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
     setBusy(true)
     setError('')
     setNotice('')
+    // A party the manager picks: one call approves everyone chosen, logs it, moves the rest who asked to
+    // standby once it is full, drops overlapping requests and sends one round of messages.
+    if (d?.pick) {
+      const r = await api<PickResult>(`/api/admin/crew/parties/${params.id}`, {
+        method: 'PATCH',
+        body: { action: 'approve_picks', picks: chosen.map(c => ({ slotId: c.slotId, memberId: c.memberId })), force: chosen.every(c => c.force) },
+      })
+      if (!r.ok) { setError(r.data.error || 'That did not work.'); await load(); setBusy(false); return }
+      setPicks({})
+      setPending((r.data.flagged ?? []).map(f => ({ slotId: f.slotId, memberId: f.memberId, who: f.name, warnings: f.warnings })))
+      const bits: string[] = []
+      if (r.data.assigned) bits.push(`Approved ${r.data.assigned}.`)
+      if (r.data.standby) bits.push(`${r.data.standby} moved to standby.`)
+      if (r.data.dropped?.length) bits.push(`Dropped overlapping requests: ${r.data.dropped.map(x => `${x.memberName} (${x.partyTitle})`).join(', ')}.`)
+      if (bits.length) setNotice(bits.join(' '))
+      if (r.data.failed?.length) setError(r.data.failed.join(' · '))
+      await load()
+      setBusy(false)
+      return
+    }
     const flagged: typeof pending = []
     const failed: string[] = []
     const done = new Set<string>()
@@ -164,6 +202,10 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
 
       <div className="grid lg:grid-cols-3 gap-5">
         <section className="lg:col-span-2 space-y-5">
+          {d.pick && (
+            <PickCard pick={d.pick} busy={busy} live={live}
+              onApprove={() => assignAll(d.pick!.recommendation.map(r => ({ slotId: r.slotId, memberId: r.memberId, who: r.name, force: false })))} />
+          )}
           <div className="bg-white rounded-2xl shadow-sm p-5">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <h2 className="font-semibold text-hampton-navy">Spots — {d.staffed}/{d.needed} staffed</h2>
@@ -267,6 +309,72 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
         </aside>
       </div>
     </CrewFrame>
+  )
+}
+
+const shortDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })
+
+/** "never worked", "Oct 12 (24 days ago)" or "Nov 20 (approved, ahead)". */
+function lastWorkedLabel(iso: string | null): string {
+  if (!iso) return 'never worked'
+  const days = Math.round((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  return `${shortDay(iso)} (${days > 0 ? `${days} day${days === 1 ? '' : 's'} ago` : days === 0 ? 'today' : 'approved, ahead'})`
+}
+
+/**
+ * Equitable scheduling: everyone who asked to work this party, best placed first
+ * (worked least recently, then fewest in the last 30 days), with the system's
+ * recommendation for the open spots. Approving it is one tap; anyone else can be
+ * chosen with the spot menus below, and either way the rest who asked become
+ * standby once the party is full.
+ */
+function PickCard({ pick, busy, live, onApprove }: { pick: PickPanelView; busy: boolean; live: boolean; onApprove: () => void }) {
+  const rec = new Map(pick.recommendation.map(r => [r.memberId, r.role]))
+  const names = (l: { name: string }[]) => l.map(x => x.name).join(', ')
+  return (
+    <div className="bg-white rounded-2xl shadow-sm p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+        <h2 className="font-semibold text-hampton-navy">Who asked to work this ({pick.volunteers.length + pick.conflicted.length})</h2>
+        {live && pick.openSpots.length > 0 && pick.recommendation.length > 0 && (
+          <button disabled={busy} onClick={onApprove} className={BTN_PRIMARY}>
+            Approve recommended ({pick.recommendation.length})
+          </button>
+        )}
+      </div>
+      <p className="text-hampton-navy/50 text-xs mb-3">
+        Ranked by who worked least recently, then who has fewer parties in the 30 days around this one. Answering faster counts for nothing.
+        Anyone approved for another party that is ahead counts as recent.
+      </p>
+      {pick.volunteers.length === 0 ? (
+        <p className="text-hampton-navy/50 text-sm">Nobody has asked to work this one yet.</p>
+      ) : (
+        <ol className="divide-y divide-hampton-pink/10 text-sm">
+          {pick.volunteers.map(v => (
+            <li key={v.memberId} className="py-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="w-6 text-hampton-navy/40 font-semibold">{v.rank}</span>
+              <span className="font-semibold text-hampton-navy">{v.name}</span>
+              {v.canLead && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-hampton-navy text-[#F6F1EB]">Lead</span>}
+              <span className="text-hampton-navy/60">{lastWorkedLabel(v.lastWorkedAt)} · {v.recent} in 30 days</span>
+              {rec.has(v.memberId) && (
+                <span className="ml-auto text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
+                  ★ recommended: {rec.get(v.memberId) === 'lead' ? 'Lead spot' : 'crew spot'}
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      {pick.conflicted.length > 0 && (
+        <p className="text-amber-800 bg-amber-50 rounded-lg p-3 text-xs mt-3">
+          Asked, but now busy or marked unavailable then, so not recommended: {names(pick.conflicted)}.
+        </p>
+      )}
+      <div className="mt-3 pt-3 border-t border-hampton-pink/10 text-xs text-hampton-navy/70 space-y-1">
+        {pick.standbys.length > 0 && <p><strong>Standby:</strong> {names(pick.standbys)}</p>}
+        {pick.unavailable.length > 0 && <p><strong>Unavailable:</strong> {names(pick.unavailable)}</p>}
+        {pick.noResponse.length > 0 && <p><strong>Not answered yet:</strong> {names(pick.noResponse)}</p>}
+      </div>
+    </div>
   )
 }
 

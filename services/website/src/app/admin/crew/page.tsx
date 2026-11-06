@@ -16,6 +16,8 @@ interface PartyRow {
   title: string
   kind: string
   booked: boolean
+  /** Equitable scheduling: how many answered each way, or null on a party that is first come, first served. */
+  pick: { work: number; standby: number; unavailable: number } | null
   childName: string | null
   childAge: number | null
   parentName: string | null
@@ -130,6 +132,8 @@ export default function CrewSchedulePage() {
 
       {showNew && <NewPartyForm onCreated={id => { window.location.href = `/admin/crew/parties/${id}` }} />}
 
+      <PicksWaitingCard onDone={load} />
+
       <WeekendSummaryCard />
 
       {data && (
@@ -193,6 +197,12 @@ export default function CrewSchedulePage() {
                         {p.childName && <span>Child: <strong>{p.childName}{p.childAge ? `, ${p.childAge}` : ''}</strong></span>}
                         {p.childName && p.parentName && ' · '}
                         {p.parentName && <span>Parent: <strong>{p.parentName}</strong></span>}
+                      </div>
+                    )}
+                    {p.pick && (
+                      <div className="text-xs mt-0.5">
+                        <span className={p.pick.work > 0 ? 'text-emerald-700 font-semibold' : 'text-hampton-navy/50'}>{p.pick.work} want to work</span>
+                        <span className="text-hampton-navy/50"> · {p.pick.standby} standby · {p.pick.unavailable} unavailable</span>
                       </div>
                     )}
                     {p.booked && (p.food || p.cupcake) && (
@@ -314,6 +324,70 @@ function WeekendSummaryCard() {
  * kind fills in a title, times, how many people and the studio as the place, and
  * every one of them can be changed before it is created as a draft.
  */
+interface WaitingParty {
+  id: string; title: string; when: string; open: number; asked: number
+  recommendation: { role: 'lead' | 'crew'; name: string }[]
+  conflicted: string[]
+}
+
+/**
+ * Equitable scheduling: the parties waiting on a decision, each with the system's
+ * recommendation (worked least recently first). One tap approves every
+ * recommendation, earliest party first, and sends ONE round of messages.
+ */
+function PicksWaitingCard({ onDone }: { onDone: () => void }) {
+  const api = useAdminApi()
+  const [d, setD] = useState<{ parties: WaitingParty[]; total: number } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+  const load = useCallback(async () => {
+    const r = await api<{ parties: WaitingParty[]; total: number }>('/api/admin/crew/picks')
+    if (r.ok) setD(r.data)
+  }, [api])
+  useEffect(() => { load() }, [load])
+
+  async function approveAll() {
+    if (!window.confirm('Approve the recommended people for every party listed? Everyone else who asked becomes standby and is told.')) return
+    setBusy(true); setErr(''); setMsg('')
+    const r = await api<{ error?: string; approved?: number; standby?: number; held?: string[]; dropped?: { memberName: string; partyTitle: string }[] }>(
+      '/api/admin/crew/picks', { method: 'POST', body: { action: 'approve_all' } })
+    setBusy(false)
+    if (!r.ok) { setErr(r.data.error || 'That did not work.'); return }
+    const bits = [`Approved ${r.data.approved ?? 0}.`]
+    if (r.data.standby) bits.push(`${r.data.standby} moved to standby.`)
+    if (r.data.held?.length) bits.push(`Held for you to confirm: ${r.data.held.join(' · ')}`)
+    if (r.data.dropped?.length) bits.push(`Dropped overlapping requests: ${r.data.dropped.map(x => `${x.memberName} (${x.partyTitle})`).join(', ')}.`)
+    setMsg(bits.join(' '))
+    await load()
+    onDone()
+  }
+
+  if (!d || (d.parties.length === 0 && !msg)) return null
+  return (
+    <div className="bg-white rounded-2xl shadow-sm p-5 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 className="font-semibold text-hampton-navy">Picks waiting ({d.total})</h2>
+        {d.parties.length > 0 && <button disabled={busy} onClick={approveAll} className={BTN_PRIMARY}>{busy ? 'Approving…' : 'Approve all recommended'}</button>}
+      </div>
+      {err && <Banner tone="error">{err}</Banner>}
+      {msg && <Banner tone="ok">{msg}</Banner>}
+      <ul className="divide-y divide-hampton-pink/10 text-sm">
+        {d.parties.map(p => (
+          <li key={p.id} className="py-2">
+            <a href={`/admin/crew/parties/${p.id}`} className="font-semibold text-hampton-navy underline">{p.title}</a>
+            <span className="text-hampton-navy/60"> · {p.when} · {p.asked} asked, {p.open} {p.open === 1 ? 'spot' : 'spots'}</span>
+            <div className="text-xs text-hampton-navy/70 mt-0.5">
+              Recommended: {p.recommendation.length === 0 ? 'nobody free' : p.recommendation.map(r => `${r.name}${r.role === 'lead' ? ' (Lead)' : ''}`).join(', ')}
+              {p.conflicted.length > 0 && <span className="text-amber-800"> · busy: {p.conflicted.join(', ')}</span>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function NewPartyForm({ onCreated }: { onCreated: (id: string) => void }) {
   const api = useAdminApi()
   const [kind, setKind] = useState<'manual' | WorkKind>('manual')

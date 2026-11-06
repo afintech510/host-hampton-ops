@@ -7,6 +7,7 @@
  *   PATCH  { action, … }:
  *            publish | unpublish
  *            assign { slotId, memberId, force? }   via crew_admin_assign; Allie as Lead included
+ *            approve_picks { picks: [{ slotId, memberId }], force? }   equitable scheduling: approve from the ranked list
  *            unassign { slotId }
  *            add_spot | remove_spot { slotId }
  *            set_count { value: 1..10 | null }
@@ -22,6 +23,7 @@ import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { loadCrewSettings } from '@/lib/crew/settings'
 import { loadAdminParty, shiftForAdmin } from '@/lib/crew/admin'
+import { approvePicks, loadPickPanel, notifyPickRound } from '@/lib/crew/pick'
 import {
   addSpot, assignMember, clearPartyFlag, publishParty, removeSpot, setPartyFields, setSlotsOverride, unassignMember,
   setPartyShift, unpublishParty, type ActionResult,
@@ -40,7 +42,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const r = await loadAdminParty(sb, params.id, settings.settings)
   if (r.kind !== 'ok') return NextResponse.json({ error: `Could not read the party: ${r.error}` }, { status: 503 })
   if (!r.data) return NextResponse.json({ error: 'Unknown party' }, { status: 404 })
-  return NextResponse.json({ ...r.data, shift: shiftForAdmin(r.data.party, settings.settings), settings: { extraMaxCents: 100_000 } })
+  // A party the manager picks also carries who asked, ranked, and what the system recommends.
+  let pick = null
+  if (r.data.party.selection_mode === 'pick') {
+    const panel = await loadPickPanel(sb, params.id, settings.settings)
+    if (panel.kind !== 'ok') return NextResponse.json({ error: `Could not read who asked: ${panel.error}` }, { status: 503 })
+    pick = panel.data
+  }
+  return NextResponse.json({ ...r.data, pick, shift: shiftForAdmin(r.data.party, settings.settings), settings: { extraMaxCents: 100_000 } })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -58,6 +67,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const settings = await loadCrewSettings(sb)
   if (settings.kind !== 'ok') return NextResponse.json({ error: `Could not read the crew rules: ${settings.error}` }, { status: 503 })
   const s = settings.settings
+
+  // Approve people from the ranked list: the same assignments as `assign`, plus the log, the standby
+  // list for everyone else who asked, and one round of messages.
+  if (body?.action === 'approve_picks') {
+    const picks = Array.isArray(body.picks) ? (body.picks as { slotId?: unknown; memberId?: unknown }[]) : []
+    if (picks.length === 0) return NextResponse.json({ error: 'Pick at least one person.' }, { status: 400 })
+    const out = await approvePicks(sb, params.id, picks, { actor, s, now, force: body.force === true })
+    if (!out.ok) return NextResponse.json({ error: out.error }, { status: out.status })
+    const told = await notifyPickRound({ sb, now }, s, [out.result])
+    return NextResponse.json({
+      ok: true, assigned: out.result.assigned.length, flagged: out.result.flagged, failed: out.result.failed,
+      standby: out.result.standbyMemberIds.length, dropped: out.result.dropped, told,
+    })
+  }
 
   let r: ActionResult
   switch (body?.action) {

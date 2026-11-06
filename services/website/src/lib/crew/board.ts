@@ -17,10 +17,11 @@ import {
   type PartyWindow, type RecurringBlock,
 } from '@/lib/crew/rules'
 import {
-  firstNamesFor, getAvailability, getMemberSlots, listPartiesInRange, memberStandbyPartyIds, partiesByIds,
+  firstNamesFor, getAvailability, getMemberSlots, listPartiesInRange, memberResponses, memberStandbyPartyIds, partiesByIds,
   type CrewMemberRow, type PartyWithSlots, type Read,
 } from '@/lib/crew/db'
 import { partyView, type CrewPartyView } from '@/lib/crew/view'
+import type { PickResponse } from '@/lib/crew/pick'
 import { etDateString, shiftEtDate } from '@/lib/partyTime'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -47,6 +48,8 @@ export interface ViewerContext {
   blocks: AvailabilityBlock[]
   recurring: RecurringBlock[]
   standbyPartyIds: Set<string>
+  /** My answers on parties the manager picks (party id → answer). */
+  responses: Map<string, PickResponse>
 }
 
 /** My live spots' party windows, from the slots themselves, so a party outside the board's range still counts. */
@@ -68,14 +71,16 @@ export async function loadViewerContext(
   sb: Supa, member: CrewMemberRow, settings: CrewSettings, now: Date,
 ): Promise<Read<ViewerContext>> {
   const today = etDateString(now)
-  const [windows, avail, standbys] = await Promise.all([
+  const [windows, avail, standbys, responses] = await Promise.all([
     myLiveWindows(sb, member.id),
     getAvailability(sb, member.id, shiftEtDate(today, -1), shiftEtDate(today, BOARD_DAYS_AHEAD + 1)),
     memberStandbyPartyIds(sb, member.id),
+    memberResponses(sb, member.id),
   ])
   if (windows.kind !== 'ok') return windows
   if (avail.kind !== 'ok') return avail
   if (standbys.kind !== 'ok') return standbys
+  if (responses.kind !== 'ok') return responses
   return {
     kind: 'ok',
     data: {
@@ -84,6 +89,7 @@ export async function loadViewerContext(
       blocks: avail.data.blocks,
       recurring: avail.data.recurring,
       standbyPartyIds: standbys.data,
+      responses: responses.data,
     },
   }
 }
@@ -92,7 +98,7 @@ export async function loadViewerContext(
 export function boardParty(pws: PartyWithSlots, names: ReadonlyMap<string, string>, ctx: ViewerContext): BoardParty | null {
   const { member, settings: s, now } = ctx
   const standbySet = new Set(ctx.standbyPartyIds.has(pws.party.id) ? [member.id] : [])
-  const view = partyView({ party: pws.party, slots: pws.slots, viewer: member, firstNames: names, standbyMemberIds: standbySet }, s)
+  const view = partyView({ party: pws.party, slots: pws.slots, viewer: member, firstNames: names, standbyMemberIds: standbySet, myResponse: ctx.responses.get(pws.party.id) ?? null }, s)
   if (!view) return null
   const startsAt = new Date(view.startsAt)
   const endsAt = new Date(view.endsAt)

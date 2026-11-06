@@ -11,6 +11,8 @@
  *      spots are helper spots and it has no Lead (Adam, 2026-10-27)
  *   6. the availability reminder (from the 10th, until the 15th)
  *   7. the queue: deferred texts and the reconcile's `partyCancelled` notices
+ *   8. equitable scheduling: a party the manager picks, where everyone who asked fits the open
+ *      spots, is approved without waiting once the crew have answered or 48 hours have passed
  *
  * IDEMPOTENT BY CONSTRUCTION. Every message has a dedupe key and goes through
  * `notifyMember` / `notifyAdmin`, whose INSERT is the claim; every state change
@@ -49,6 +51,7 @@ import {
 } from '@/lib/crew/cover'
 import { ALERT_DAYS_BACK } from '@/lib/crew/admin'
 import { publishParty } from '@/lib/crew/adminActions'
+import { approvePicks, listPickParties, loadPickPanel, notifyPickRound, partyResponses, PICK_RESPONSE_HOURS, type ApproveResult } from '@/lib/crew/pick'
 import { etToUtc } from '@/lib/partyTime'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -81,6 +84,8 @@ export interface JobsReport {
   /** The manager told a published party is still short of crew (the one routine manager touch). */
   understaffed: number
   availability: number
+  /** Equitable scheduling: parties approved by themselves this tick (everyone who asked fit). */
+  picksAutoApproved: number
   queue: Omit<DrainSummary, 'unavailable'>
   /** Which jobs could not read what they needed. Names only, never a row. */
   unavailable: string[]
@@ -350,6 +355,8 @@ interface Ask {
   /** `new_party:{party}:{member}` / `nudge:{party}:{round}:{member}` */
   key: string
   render: () => Rendered
+  /** A party the manager picks: the wording asks for an answer, not a claim. */
+  pick?: boolean
 }
 
 /**
@@ -359,7 +366,7 @@ interface Ask {
  * asked twice. Returns how many messages went.
  */
 async function sendAsks(
-  ctx: JobsCtx, m: CrewMemberRow, template: 'newParty' | 'openSpots', asks: Ask[], digest: (n: number) => Rendered, budget: { left: number },
+  ctx: JobsCtx, m: CrewMemberRow, template: 'newParty' | 'openSpots', asks: Ask[], digest: (n: number, pick: boolean) => Rendered, budget: { left: number },
 ): Promise<number> {
   if (asks.length === 0 || budget.left <= 0) return 0
   const { data, error } = await ctx.sb.from('crew_notifications').select('dedupe_key')
@@ -379,7 +386,7 @@ async function sendAsks(
     return sent
   }
   const id = createHash('sha1').update(pending.map(a => a.key).sort().join('|')).digest('hex').slice(0, 12)
-  const r = await notifyMember(ctx, m, `${template}Digest`, digest(pending.length), `digest:${template}:${m.id}:${id}`, { payload: { parties: pending.length } })
+  const r = await notifyMember(ctx, m, `${template}Digest`, digest(pending.length, pending.some(a => a.pick)), `digest:${template}:${m.id}:${id}`, { payload: { parties: pending.length } })
   if (r.kind === 'done' && r.channels.in_app === 'sent') {
     for (const a of pending) await markCoveredByDigest(ctx, m, template, a.key, a.party.id)
     budget.left--
@@ -455,12 +462,24 @@ export async function runCrewAsks(
     const eligible = await eligibleFor(ctx.sb, s, pws, crewOpen > 0 ? 'crew' : 'lead', 'all', [])
     if (eligible.kind !== 'ok') { out.unavailable = true; continue }
     const ref = partyRefFor(party, s)
+    let answered = new Set<string>()
+    if (party.selection_mode === 'pick') {
+      const rs = await partyResponses(ctx.sb, party.id)
+      if (rs.kind !== 'ok') { out.unavailable = true; continue }
+      answered = new Set(rs.data.map(r => r.member_id))
+    }
     for (const m of eligible.data) {
       if (!memberInScope(ctx, m)) continue
       const spots = openFor(slots, !!m.can_lead)
       if (spots.count === 0) continue
       const payRole = spots.crewOpen > 0 ? 'crew' : 'lead'
       const pay = payLabelFor(payRole, m.steps, party.extra_flat_cents, s)
+      if (party.selection_mode === 'pick') {
+        // Nothing to claim: ask for an answer, and remind only the people who have not given one.
+        if (isNew) push(newAsks, m, { party, key: `new_party:${party.id}:${m.id}`, render: () => templates.newPartyPick(ref), pick: true })
+        if (round !== null && !answered.has(m.id)) push(nudgeAsks, m, { party, key: `nudge:${party.id}:${round}:${m.id}`, render: () => templates.pickReminder(ref), pick: true })
+        continue
+      }
       if (isNew) push(newAsks, m, { party, key: `new_party:${party.id}:${m.id}`, render: () => templates.newParty(ref, pay) })
       if (round !== null) push(nudgeAsks, m, { party, key: `nudge:${party.id}:${round}:${m.id}`, render: () => templates.openSpots(ref, spots.count, pay) })
     }
@@ -468,11 +487,55 @@ export async function runCrewAsks(
 
   const digestUrl = crewLink('/crew')
   for (const { m, asks } of Array.from(newAsks.values())) {
-    out.newParty += await sendAsks(ctx, m, 'newParty', asks, n => templates.partiesDigest(n, false, digestUrl), budget)
+    out.newParty += await sendAsks(ctx, m, 'newParty', asks, (n, pick) => pick ? templates.partiesDigestPick(n, digestUrl) : templates.partiesDigest(n, false, digestUrl), budget)
   }
   for (const { m, asks } of Array.from(nudgeAsks.values())) {
-    out.nudges += await sendAsks(ctx, m, 'openSpots', asks, n => templates.partiesDigest(n, true, digestUrl), budget)
+    out.nudges += await sendAsks(ctx, m, 'openSpots', asks, (n, pick) => pick ? templates.partiesDigestPick(n, digestUrl) : templates.partiesDigest(n, true, digestUrl), budget)
   }
+  return out
+}
+
+// ── 8. Equitable scheduling: nothing to choose between ──────────────────────
+
+/**
+ * A party the manager picks where EVERYONE who asked to work fits the open spots
+ * has nothing to be fair about, so it is approved without waiting for her. Not
+ * at the first answer, though: the first person to answer would take a spot that
+ * somebody better placed might still ask for. So it waits until every active
+ * crew member has answered, or PICK_RESPONSE_HOURS after the party went up.
+ * Where more people asked than there are spots, or the recommendation cannot
+ * cover everyone who asked (a Lead-only spot, someone who cannot lead), it is
+ * left for the manager. The decision is the ordinary `approvePicks`, logged, and
+ * she is told in-app (never emailed) what was done.
+ */
+export async function runPickAutoApprove(ctx: JobsCtx): Promise<{ approved: number; unavailable: boolean }> {
+  const out = { approved: 0, unavailable: false }
+  const parties = await listPickParties(ctx.sb, ctx.now)
+  if (parties.kind !== 'ok') return { ...out, unavailable: true }
+  const members = await listMembers(ctx.sb)
+  if (members.kind !== 'ok') return { ...out, unavailable: true }
+  const firstOf = new Map(members.data.map(m => [m.id, m.first_name]))
+  const results: ApproveResult[] = []
+  for (const { party, slots } of parties.data) {
+    if (!inScope(ctx, party) || !slots.some(sl => sl.status === 'open')) continue
+    const panel = await loadPickPanel(ctx.sb, party.id, ctx.settings)
+    if (panel.kind !== 'ok') { out.unavailable = true; continue }
+    const p = panel.data
+    if (!p || p.volunteers.length === 0) continue
+    if (p.volunteers.length > p.openSpots.length) continue
+    if (p.recommendation.length < p.volunteers.length) continue
+    const waitedMs = party.published_at ? ctx.now.getTime() - new Date(party.published_at).getTime() : 0
+    if (waitedMs < PICK_RESPONSE_HOURS * HOUR_MS && p.noResponse.length > 0) continue
+    const r = await approvePicks(ctx.sb, party.id, p.recommendation, { actor: AUTOPILOT_ACTOR, s: ctx.settings, now: ctx.now })
+    if (!r.ok) { if (r.status >= 500) out.unavailable = true; continue }
+    if (r.result.assigned.length === 0) continue
+    results.push(r.result)
+    out.approved += r.result.assigned.length
+    const names = r.result.assigned.map(a => firstOf.get(a.memberId) ?? 'Someone').join(' and ')
+    await notifyAdmin(ctx, 'pickAutoApproved', adminTemplates.pickAutoApproved(names, partyRefFor(party, ctx.settings), adminUrl(party.id)),
+      `pick_auto:${party.id}:${r.result.assigned.map(a => a.slotId).sort().join(',')}`, { test: isTestParty(party), info: true, payload: { party_id: party.id } })
+  }
+  if (results.length > 0) await notifyPickRound(ctx, ctx.settings, results)
   return out
 }
 
@@ -514,7 +577,7 @@ export async function runCrewJobs(ctx: JobsCtx): Promise<JobsReport> {
     asks: { newParty: 0, nudges: 0 },
     confirmations: { requests: 0, reminders: 0, overdue: 0, dayBefore: 0 },
     covers: { reasked: 0, escalated: 0, autoOffered: 0, warned: 0, expired: 0 },
-    attendance: 0, understaffed: 0, availability: 0,
+    attendance: 0, understaffed: 0, availability: 0, picksAutoApproved: 0,
     queue: { scanned: 0, sent: 0, deferred: 0, skipped: 0, failed: 0, raced: 0 },
     unavailable: [],
   }
@@ -562,6 +625,10 @@ export async function runCrewJobs(ctx: JobsCtx): Promise<JobsReport> {
     if (asks.unavailable) down('asks')
 
     report.availability = await runAvailabilityReminder(ctx, members.data)
+
+    const pk = await runPickAutoApprove(ctx)
+    report.picksAutoApproved = pk.approved
+    if (pk.unavailable) down('picks')
   }
 
   const q = await drainCrewQueue(ctx, ctx.scope === 'test' ? { memberFilter: m => m.is_test } : {})

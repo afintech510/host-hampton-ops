@@ -11,6 +11,9 @@
  * member claiming the same spot at the same moment.
  *
  * Nothing here sends anything. A message to crew is Phase 4.
+ *
+ * `publishParty` also fixes the party's SELECTION MODE for good: 'pick' while CREW_PICK_FLOW
+ * is on (crew say what they want and the manager approves), else 'first_come'.
  */
 
 import type { getSupabase } from '@/lib/supabase'
@@ -22,6 +25,7 @@ import { etToUtc } from '@/lib/partyTime'
 import { isCalendarDate } from '@/lib/crew/adminForms'
 import { isWorkKind, workTypeOf, kindHasLead } from '@/lib/crew/workTypes'
 import { STUDIO_ADDRESS_LINE } from '@/lib/studioLocation'
+import { crewPickFlowEnabled } from '@/lib/crew/settings'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -52,7 +56,7 @@ export async function publishParty(sb: Supa, partyId: string, actor: string, now
   if (new Date(party.starts_at).getTime() <= now.getTime()) return refuse(409, 'This party has already started.')
   if (!slots.some(sl => sl.status !== 'cancelled')) return refuse(409, 'Add at least one spot first.')
   const { data, error } = await sb.from('crew_parties')
-    .update({ status: 'published', published_at: now.toISOString(), updated_by: actor })
+    .update({ status: 'published', published_at: now.toISOString(), updated_by: actor, selection_mode: crewPickFlowEnabled() ? 'pick' : 'first_come' })
     .eq('id', partyId).eq('status', 'draft').select('id')
   if (error) return refuse(500, error.message)
   if ((data ?? []).length === 0) return refuse(409, 'Somebody changed this party. Reload.')

@@ -86,6 +86,8 @@ export interface CrewPartyRow {
   shift_starts_at: string | null
   shift_ends_at: string | null
   lead_starts_at: string | null
+  /** `first_come`: Commit to Work takes the spot. `pick`: crew say what they want and the manager approves (migration 090). Absent on rows read before it. */
+  selection_mode?: 'first_come' | 'pick'
   created_at: string
   updated_at: string
 }
@@ -313,6 +315,29 @@ export async function firstNamesFor(sb: Supa, memberIds: string[]): Promise<Read
     for (const r of (data ?? []) as { id: string; first_name: string }[]) map.set(r.id, r.first_name)
   }
   return { kind: 'ok', data: map }
+}
+
+/** This member's answers on parties the manager picks (equitable scheduling, migration 090), keyed by party. */
+export async function memberResponses(sb: Supa, memberId: string): Promise<Read<Map<string, 'work' | 'unavailable' | 'standby'>>> {
+  const { data, error } = await sb.from('crew_party_responses').select('party_id, response').eq('member_id', memberId)
+  if (error) return { kind: 'unavailable', error: error.message }
+  return { kind: 'ok', data: new Map(((data ?? []) as { party_id: string; response: 'work' | 'unavailable' | 'standby' }[]).map(r => [r.party_id, r.response])) }
+}
+
+/** How many people gave each answer, per party, for the schedule list (equitable scheduling, migration 090). */
+export async function responseCounts(sb: Supa, partyIds: string[]): Promise<Read<Map<string, { work: number; standby: number; unavailable: number }>>> {
+  const out = new Map<string, { work: number; standby: number; unavailable: number }>()
+  if (partyIds.length === 0) return { kind: 'ok', data: out }
+  for (let i = 0; i < partyIds.length; i += 150) {
+    const { data, error } = await sb.from('crew_party_responses').select('party_id, response').in('party_id', partyIds.slice(i, i + 150))
+    if (error) return { kind: 'unavailable', error: error.message }
+    for (const r of (data ?? []) as { party_id: string; response: 'work' | 'unavailable' | 'standby' }[]) {
+      const c = out.get(r.party_id) ?? { work: 0, standby: 0, unavailable: 0 }
+      c[r.response]++
+      out.set(r.party_id, c)
+    }
+  }
+  return { kind: 'ok', data: out }
 }
 
 /** The party ids this member is a live standby on. */

@@ -146,6 +146,50 @@ If you didn't ask for it, you can ignore this email.`,
     )
   },
 
+  /** Equitable scheduling: a new party in pick mode. Nothing is taken by answering; the manager picks. */
+  newPartyPick(p: PartyRef): Rendered {
+    const kids = p.kids ? `, ${p.kids} kids` : ''
+    return r(
+      `New party: ${p.theme} ${p.dayLabel} ${p.timeLabel}${kids}. Tell us if you want to work it, can't, or can stand by: ${p.url}`,
+      `New party: ${p.theme}, ${p.dayLabel}`,
+      `${p.theme} on ${p.dayLabel}, ${p.timeLabel}${kids}.
+Tell us if you want to work it, can't, or can stand by. Answering doesn't lock you in; the crew is picked fairly:
+${p.url}`,
+    )
+  },
+
+  /** Pick mode: the ones who have not answered yet. */
+  pickReminder(p: PartyRef): Rendered {
+    return r(
+      `Still need to hear from you on ${p.theme} ${p.dayLabel} ${p.timeLabel}: want to work it, can't, or can stand by? ${p.url}`,
+      `Your answer: ${p.theme}, ${p.dayLabel}`,
+      `We still need to hear from you on ${p.theme}, ${p.dayLabel} ${p.timeLabel}. Tell us if you want to work it, can't, or can stand by. Answering doesn't lock you in:\n${p.url}`,
+    )
+  },
+
+  partiesDigestPick(count: number, url: string): Rendered {
+    const n = `${count} ${count === 1 ? 'party' : 'parties'}`
+    return r(
+      `${n} just went up. Tell us which you want to work: ${url}`,
+      `${n} just went up`,
+      `${n} just went up on the schedule. Tell us which you want to work, which you can't, and which you can stand by for:
+${url}`,
+    )
+  },
+
+  /** The ones who asked to work and were not picked this round: one message for the whole round. */
+  pickStandby(firstName: string, count: number, url: string): Rendered {
+    const n = `${count} ${count === 1 ? 'party' : 'parties'}`
+    return r(
+      `Hi ${firstName}! Thanks for asking. For ${n} someone else was picked this round, so you're on standby. You'll be first asked if a spot opens: ${url}`,
+      `You're on standby for ${n}`,
+      `Hi ${firstName},
+
+Thanks for asking to work. For ${n} someone else was picked this round, so you're on standby. If a spot opens you'll be asked, in turn.
+See where you stand: ${url}`,
+    )
+  },
+
   claimConfirmed(p: PartyRef, payLabel: string | null): Rendered {
     return r(
       `You're on ${p.theme} ${p.dayLabel} ${p.timeLabel}${paren(payLabel)}. Details: ${p.url}`,
@@ -318,6 +362,14 @@ If you didn't ask for it, you can ignore this email.`,
 
 /** Allie's alerts: email + an in-app row. These may name a reason; crew copy never does. */
 export const adminTemplates = {
+  /** Equitable scheduling: everyone who asked fit, so the system approved them without waiting. Information. */
+  pickAutoApproved(memberFirst: string, p: PartyRef, adminUrl: string) {
+    return {
+      subject: `Approved automatically: ${p.theme}, ${p.dayLabel}`,
+      text: `${memberFirst} asked to work ${p.theme}, ${p.dayLabel} ${p.timeLabel}, and everyone who asked fit the open spots, so they were approved without waiting for you. Nothing to do.
+${adminUrl}`,
+    }
+  },
   unconfirmed(memberFirst: string, p: PartyRef, adminUrl: string) {
     return {
       subject: `Not confirmed: ${memberFirst}, ${p.theme} ${p.dayLabel}`,

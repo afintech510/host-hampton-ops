@@ -43,6 +43,13 @@ export function fakeCrewDb(seed: Record<string, Row[]> = {}, opts: { rpc?: (fn: 
     if (table === 'crew_notifications') {
       return t(table).some(r => r.id !== ignoreId && r.dedupe_key === row.dedupe_key && r.channel === row.channel)
     }
+    // migration 090: one answer per person per party; one LIVE standby row per person per party (migration 077).
+    if (table === 'crew_party_responses') {
+      return t(table).some(r => r.id !== ignoreId && r.party_id === row.party_id && r.member_id === row.member_id)
+    }
+    if (table === 'crew_standbys' && !row.withdrawn_at) {
+      return t(table).some(r => r.id !== ignoreId && r.party_id === row.party_id && r.member_id === row.member_id && !r.withdrawn_at)
+    }
     return false
   }
 

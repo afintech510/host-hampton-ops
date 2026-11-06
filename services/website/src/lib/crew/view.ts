@@ -23,6 +23,7 @@ import { shiftEtDate } from '@/lib/partyTime'
 import { FALLBACK_TOWN, mobileTown } from '@/lib/evites/location'
 import { workTypeOf } from '@/lib/crew/workTypes'
 import type { CrewMemberRow, CrewPartyRow, CrewSlotRow, PartyKind, SlotStatus } from '@/lib/crew/db'
+import type { PickResponse } from '@/lib/crew/pick'
 
 export interface CrewMeView {
   id: string
@@ -115,6 +116,11 @@ export interface CrewPartyView {
   openSpots: OpenSpotView[]
   team: TeammateView[]
   iAmStandby: boolean
+  /**
+   * How this party is staffed: 'first_come' (Commit to Work takes a spot) or 'pick' (I say what I want and
+   * the manager picks fairly). `myResponse` is MY answer only, never anybody else's.
+   */
+  selection: { mode: 'first_come' | 'pick'; myResponse: PickResponse | null }
 }
 
 const LIVE: SlotStatus[] = ['assigned', 'completed', 'no_show']
@@ -138,10 +144,11 @@ export function partyView(
     viewer: Pick<CrewMemberRow, 'id' | 'steps' | 'can_lead'>
     firstNames: ReadonlyMap<string, string>
     standbyMemberIds: ReadonlySet<string>
+    myResponse?: PickResponse | null
   },
   s: CrewSettings,
 ): CrewPartyView | null {
-  const { party, slots, viewer, firstNames, standbyMemberIds } = input
+  const { party, slots, viewer, firstNames, standbyMemberIds, myResponse } = input
   const live = slots.filter(sl => sl.status !== 'cancelled')
   const mine = live.find(sl => sl.member_id === viewer.id && LIVE.includes(sl.status)) ?? null
 
@@ -201,6 +208,7 @@ export function partyView(
     openSpots,
     team,
     iAmStandby: standbyMemberIds.has(viewer.id),
+    selection: { mode: party.selection_mode === 'pick' ? 'pick' : 'first_come', myResponse: myResponse ?? null },
   }
 }
 

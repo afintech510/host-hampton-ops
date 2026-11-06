@@ -93,6 +93,9 @@ ${themeCss()}
 .crew-meta{display:flex;flex-wrap:wrap;gap:.35rem .9rem;color:var(--c-muted);font-size:.9rem;margin:.35rem 0 .7rem}
 .crew-party{position:relative;display:flex;gap:.9rem;align-items:flex-start}
 .crew-party-click{cursor:pointer}
+.crew-resp{display:flex;flex-direction:column;gap:.5rem;width:100%;margin-top:.25rem}
+.crew-resp .crew-btn{justify-content:flex-start;text-align:left}
+.crew-resp-note{margin:.1rem 0 0;font-size:.85rem;color:var(--c-muted)}
 .crew-party-link{text-decoration:none}
 .crew-party-link::after{content:'';position:absolute;inset:0;z-index:0;border-radius:inherit}
 .crew-party-click:hover .crew-party-link{text-decoration:underline}

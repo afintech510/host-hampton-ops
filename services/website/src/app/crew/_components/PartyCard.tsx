@@ -3,6 +3,7 @@ import { CalendarDays, Clock, MapPin, Users } from 'lucide-react'
 import ActionButton from './ActionButton'
 import CommitButton from './CommitButton'
 import FindCover from './FindCover'
+import ResponseButtons from './ResponseButtons'
 import { TENANT } from '@/tenant'
 import { STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
 import type { BoardParty } from '@/lib/crew/board'
@@ -92,12 +93,16 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
         {b.needsConfirm && v.mySlot && (
           <ActionButton endpoint="/api/crew/confirm" body={{ slotId: v.mySlot.slotId }} label="I'll be there" />
         )}
-        {!v.mySlot && b.upcoming && !b.claimBlock && claimTargets(spots).map(s => (
+        {!v.mySlot && b.upcoming && v.selection.mode === 'pick' && (
+          <ResponseButtons partyId={v.id} current={v.selection.myResponse} canWork={!b.claimBlock && claimTargets(spots).length > 0}
+            noun={v.work ? 'shift' : 'party'} managerName={TENANT.people.customerSignoff} />
+        )}
+        {!v.mySlot && b.upcoming && v.selection.mode !== 'pick' && !b.claimBlock && claimTargets(spots).map(s => (
           <CommitButton key={s.slotId} slotId={s.slotId} partyTitle={title}
             when={`${partyDayLabel(v.startsAt)}, ${partyTimeLabel(v.startsAt, v.endsAt)}`} roleWord={roleWord(s.role)}
             label={`Commit to Work${s.role === 'lead' ? ' as Party Lead' : ''}${s.payCents != null ? ` (${formatCents(s.payCents)})` : ''}`} />
         ))}
-        {!v.mySlot && b.upcoming && (
+        {!v.mySlot && b.upcoming && v.selection.mode !== 'pick' && (
           <ActionButton
             endpoint="/api/crew/standby" body={{ partyId: v.id, on: !v.iAmStandby }} variant="ghost"
             label={v.iAmStandby

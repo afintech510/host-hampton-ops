@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { TENANT } from '@/tenant'
 import { getSupabase } from '@/lib/supabase'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { isUuid, requireCrewMember } from '@/lib/crew/auth'
@@ -47,6 +48,9 @@ export async function POST(req: NextRequest) {
   const party = pws.data?.party
   if (!party || party.status !== 'published' || new Date(party.starts_at).getTime() <= Date.now()) {
     return NextResponse.json({ error: 'This party is no longer open.' }, { status: 409 })
+  }
+  if (party.selection_mode === 'pick') {
+    return NextResponse.json({ error: `Use the buttons on the party to tell ${TENANT.people.customerSignoff}.` }, { status: 409 })
   }
   if (pws.data!.slots.some(s => s.member_id === member.id && ['assigned', 'completed', 'no_show'].includes(s.status))) {
     return NextResponse.json({ error: "You're already working this party." }, { status: 409 })

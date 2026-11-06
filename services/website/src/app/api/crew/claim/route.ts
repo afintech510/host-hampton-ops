@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { TENANT } from '@/tenant'
 import { getSupabase } from '@/lib/supabase'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { isUuid, requireCrewMember } from '@/lib/crew/auth'
@@ -40,6 +41,10 @@ export async function POST(req: NextRequest) {
   if (!pws.data) return NextResponse.json({ error: claimRefusalText('unavailable') }, { status: 404 })
 
   const party = pws.data.party
+  // A party the manager picks is not claimed first come: the crew say what they want instead.
+  if (party.selection_mode === 'pick') {
+    return NextResponse.json({ error: `${TENANT.people.customerSignoff} picks the crew for this one. Tell her you want it on the party page.`, reason: 'pick_mode' }, { status: 409 })
+  }
   const startsAt = new Date(party.starts_at)
   const endsAt = new Date(party.ends_at)
   const day = localParts(startsAt).dateKey

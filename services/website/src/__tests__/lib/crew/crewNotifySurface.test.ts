@@ -292,8 +292,9 @@ describe('N6: every crew message has a dedupe key built from an id', () => {
 
   it('the Ask keys the autopilot builds are exactly new_party:, nudge: — and a bare literal would fail', () => {
     const sites = askKeySites(read('lib/crew/jobs.ts'))
-    expect(sites.all).toHaveLength(2)
-    expect(sites.prefixes.sort()).toEqual(['new_party', 'nudge'])
+    // Two for a first-come party and two for a party the manager picks (equitable scheduling): same prefixes, different wording.
+    expect(sites.all).toHaveLength(4)
+    expect(Array.from(new Set(sites.prefixes)).sort()).toEqual(['new_party', 'nudge'])
     // The rule's own negative: an Ask built with a bare literal is not a prefixed template.
     expect(askKeySites("push(b, m, { party, key: 'abc', render })").prefixes).toEqual([])
     expect(askKeySites("push(b, m, { party, key: 'abc', render })").all).toHaveLength(1)

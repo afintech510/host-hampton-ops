@@ -283,6 +283,9 @@ services:
       # cancel or no-show). CREW_SHOW_PAY shows dollar figures in the crew app and its
       # messages. BOTH are OFF unless exactly "true"; with them off no step ever moves
       # and crew are told nothing about pay (lib/crew/rules.ts, lib/crew/settings.ts).
+      # Equitable scheduling (migration 090): OFF unless exactly "true". Parties published while it is on
+      # are picked by the manager from what the crew ask for, not first come first served.
+      - CREW_PICK_FLOW=${CREW_PICK_FLOW:-false}
       - CREW_PAY_LADDER=${CREW_PAY_LADDER:-false}
       - CREW_SHOW_PAY=${CREW_SHOW_PAY:-false}
 
