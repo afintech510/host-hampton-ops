@@ -20,7 +20,7 @@ export const THEME_COOKIE = 'hh_crew_theme'
 
 export type ThemeId = 'bold' | 'clean' | 'pop' | 'midnight' | 'editorial'
 
-export const DEFAULT_THEME: ThemeId = 'bold'
+export const DEFAULT_THEME: ThemeId = 'pop'
 
 /** The faces the layout loads (`app/crew/layout.tsx`), as the CSS variables next/font defines. */
 const FACE = {
@@ -167,10 +167,11 @@ export const THEMES: CrewTheme[] = [
       dateTile: 'flex', navEmoji: 'inline-block', navLine: 'none',
     },
     css: `
-& .crew-date{background:linear-gradient(145deg,#7C3AED,#EC4899);color:#fff;border-radius:50%;width:4.3rem;height:4.3rem;min-width:4.3rem;gap:.1rem;box-shadow:0 6px 16px rgba(124,58,237,.3)}
-& .crew-date-mon,& .crew-date-day{color:#fff}
-& .crew-date-day{font-size:1.5rem}
-& .crew-date-dow{display:none}
+& .crew-date{background:linear-gradient(160deg,#6D28D9,#DB2777);color:#fff;border-radius:22px;width:4.5rem;min-width:4.5rem;padding:.65rem .3rem .6rem;gap:.12rem;box-shadow:0 6px 16px rgba(109,40,217,.3)}
+& .crew-date-mon,& .crew-date-day,& .crew-date-dow{color:#fff}
+& .crew-date-mon{font-size:.72rem;opacity:.92}
+& .crew-date-day{font-size:1.8rem;line-height:1.05}
+& .crew-date-dow{font-size:.8rem;font-weight:800;letter-spacing:.1em;margin-top:.2rem;padding-top:.3rem;border-top:1.5px solid rgba(255,255,255,.55);width:78%}
 & .crew-meta{gap:.4rem}
 & .crew-m{background:var(--c-surface2);color:var(--c-text);border-radius:999px;padding:.2rem .7rem;font-size:.82rem;font-weight:600}
 & .crew-btn{background:linear-gradient(135deg,#7C3AED,#EC4899);border:0;box-shadow:0 6px 16px rgba(124,58,237,.35);font-size:1rem}

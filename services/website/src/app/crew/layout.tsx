@@ -33,14 +33,14 @@ import { THEME_COOKIE, themeCss, themeFromCookie } from '@/lib/crew/themes'
 
 export const dynamic = 'force-dynamic'
 
-// The default look (Bold): preloaded.
-const archivoBlack = Archivo_Black({ subsets: ['latin'], weight: '400', variable: '--crew-f-archivoblack', display: 'swap' })
-const archivo = Archivo({ subsets: ['latin'], variable: '--crew-f-archivo', display: 'swap' })
+// The default look (Pop): preloaded.
+const unbounded = Unbounded({ subsets: ['latin'], variable: '--crew-f-unbounded', display: 'swap' })
+const outfit = Outfit({ subsets: ['latin'], variable: '--crew-f-outfit', display: 'swap' })
 // The other looks: declared, fetched on use.
+const archivoBlack = Archivo_Black({ subsets: ['latin'], weight: '400', variable: '--crew-f-archivoblack', display: 'swap', preload: false })
+const archivo = Archivo({ subsets: ['latin'], variable: '--crew-f-archivo', display: 'swap', preload: false })
 const manrope = Manrope({ subsets: ['latin'], variable: '--crew-f-manrope', display: 'swap', preload: false })
 const inter = Inter({ subsets: ['latin'], variable: '--crew-f-inter', display: 'swap', preload: false })
-const unbounded = Unbounded({ subsets: ['latin'], variable: '--crew-f-unbounded', display: 'swap', preload: false })
-const outfit = Outfit({ subsets: ['latin'], variable: '--crew-f-outfit', display: 'swap', preload: false })
 const space = Space_Grotesk({ subsets: ['latin'], variable: '--crew-f-space', display: 'swap', preload: false })
 const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], variable: '--crew-f-spacemono', display: 'swap', preload: false })
 const fraunces = Fraunces({ subsets: ['latin'], variable: '--crew-f-fraunces', display: 'swap', preload: false })
@@ -104,7 +104,7 @@ ${themeCss()}
 .crew-date{flex:0 0 auto;display:var(--date-tile);flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1;gap:.2rem;min-width:3.4rem}
 .crew-date-mon{font-size:.7rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 .crew-date-day{font-family:var(--f-display);font-size:1.8rem;font-weight:800;line-height:1}
-.crew-date-dow{font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--c-muted)}
+.crew-date-dow{font-size:.74rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--c-muted)}
 .crew-m{display:inline-flex;align-items:center;gap:.3rem}
 .crew-m-day{display:none}
 .crew-mi{flex:none;opacity:.85}

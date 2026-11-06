@@ -13,7 +13,7 @@ function Sketch({ t }: { t: CrewTheme }) {
   const topTabs = t.id === 'editorial'
   const pillBar = t.id === 'clean' || t.id === 'pop'
   const dateStyle: React.CSSProperties =
-    t.id === 'pop' ? { borderRadius: '50%', background: k.accent, width: 26, height: 26 }
+    t.id === 'pop' ? { borderRadius: 9, background: k.accent, width: 24, height: 32 }
     : t.id === 'bold' ? { background: k.accentSoft, border: `2px solid ${k.text}`, borderRadius: 4, width: 26, height: 26 }
     : t.id === 'midnight' ? { background: k.surface2, borderRight: `2px dashed ${k.line}`, width: 26, height: 30, borderRadius: 0 }
     : { width: 20, height: 26 }

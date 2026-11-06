@@ -157,7 +157,23 @@ describe('a look is a layout, not just a palette', () => {
     expect(nav('clean')).toMatch(/\.crew-party\{background:transparent;border:0;border-bottom/)
     expect(nav('editorial')).toMatch(/\.crew-party\{background:transparent;border:0;border-top:2px solid/)
     expect(nav('bold')).toMatch(/\.crew-date\{[^}]*box-shadow:3px 3px 0/)
-    expect(nav('pop')).toMatch(/\.crew-date\{[^}]*border-radius:50%/)
+    expect(nav('pop')).toMatch(/\.crew-date\{[^}]*border-radius:22px/)
+  })
+
+  it('every look shows the day of the week under the date, and none hides it or makes it small print', () => {
+    for (const t of THEMES) {
+      expect(t.css).not.toMatch(/\.crew-date-dow[^{]*\{[^}]*display:none/)
+      expect(t.tokens.dateTile).toBe('flex')
+      // Any size a look gives the weekday is at least 0.72rem.
+      for (const m of t.css.matchAll(/\.crew-date-dow\{[^}]*font-size:([\d.]+)rem/g)) expect(Number(m[1])).toBeGreaterThanOrEqual(0.72)
+    }
+    // The base is a column in reading order: month, day, then weekday.
+    const card = fs.readFileSync(path.join(SRC, 'app', 'crew', '_components', 'PartyCard.tsx'), 'utf8')
+    expect(card.indexOf('crew-date-mon')).toBeGreaterThan(-1)
+    expect(card.indexOf('crew-date-mon')).toBeLessThan(card.indexOf('crew-date-day'))
+    expect(card.indexOf('crew-date-day')).toBeLessThan(card.indexOf('crew-date-dow'))
+    expect(layout).toMatch(/\.crew-date\{[^}]*flex-direction:column/)
+    expect(layout).toMatch(/\.crew-date-dow\{font-size:\.74rem;font-weight:800/)
   })
 
   it('looks differ in icons: outline icons, emoji, or none', () => {
@@ -178,8 +194,10 @@ describe('a look is a layout, not just a palette', () => {
     const decls = Array.from(layout.matchAll(/const (\w+) = (\w+)\(\{[^}]*variable: '(--crew-f-[a-z]+)'[^}]*\}\)/g))
     expect(decls.length).toBeGreaterThanOrEqual(9)
     const preloaded = decls.filter(d => !/preload: false/.test(d[0])).map(d => d[3]).sort()
-    expect(preloaded).toEqual(['--crew-f-archivo', '--crew-f-archivoblack'])
-    expect(DEFAULT_THEME).toBe('bold')
+    const def = THEMES.find(x => x.id === DEFAULT_THEME)!.tokens
+    const defaultFaces = Array.from(new Set([def.fontDisplay, def.fontBody].flatMap(f => Array.from(f.matchAll(/--crew-f-[a-z]+/g)).map(m => m[0])))).sort()
+    expect(preloaded).toEqual(defaultFaces)
+    expect(DEFAULT_THEME).toBe('pop')
   })
 
   it('an old cookie from before the redesign falls back to the default', () => {
