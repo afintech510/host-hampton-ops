@@ -7,7 +7,7 @@ import {
   DEFAULT_SETTINGS, HARD_MAX_STEPS, settingsFromRows, partyRateCents, partyPayCents, tipTopupCents,
   stepAfter, revertedSteps, isInGracePeriod, nextStepLabel, ratesFor, formatCents, requiredSlots,
   slotsForParty, slotRolesFor, classifyDrop, standbyEscalateAt, unclaimedWarningAt, leadAlertAt,
-  confirmationSchedule, canUndoClaim, isBlockedByAvailability, shiftsOverlap, defaultShift, localParts,
+  confirmationSchedule, isBlockedByAvailability, shiftsOverlap, defaultShift, localParts,
   payLabelFor, staffingShortfall, understaffedAlertAt, nudgeMarks,
   type CrewSettings,
 } from '@/lib/crew/rules'
@@ -250,11 +250,8 @@ describe('cancelling and cover', () => {
     expect(unclaimedWarningAt(start).toISOString()).toBe('2026-11-12T18:00:00.000Z')
     expect(leadAlertAt(start).toISOString()).toBe('2026-11-07T18:00:00.000Z')
   })
-  it('a claim can be undone until the confirmation request', () => {
-    const { requestAt } = confirmationSchedule(start)
-    expect(requestAt.toISOString()).toBe('2026-11-09T18:00:00.000Z')
-    expect(canUndoClaim(start, new Date(requestAt.getTime() - 1))).toBe(true)
-    expect(canUndoClaim(start, requestAt)).toBe(false)
+  it('a claim has no undo: nothing hands a committed spot back except a cover request', () => {
+    expect(require('@/lib/crew/rules').canUndoClaim).toBeUndefined()
   })
 })
 

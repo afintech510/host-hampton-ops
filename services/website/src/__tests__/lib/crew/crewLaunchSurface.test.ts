@@ -155,7 +155,8 @@ describe('LS2: a crew message never hard-codes the ladder or a pay figure', () =
         if (!/\bs\.ladderEnabled\b|crewPayLadderEnabled\(\)/.test(args)) offenders.push(`${rel(p)}: templates.${m[1]}`)
       }
     }
-    expect(examined).toBeGreaterThanOrEqual(8)
+    // 8 before the early-release notice went (a release is now always a cover request); the walker still sees every other call.
+    expect(examined).toBeGreaterThanOrEqual(7)
     expect(offenders).toEqual([])
   })
 

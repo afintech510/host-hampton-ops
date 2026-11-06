@@ -36,7 +36,7 @@ export default function TestPicker({ members }: { members: TestPickView[] }) {
   }
 
   return (
-    <section aria-labelledby="crew-test-pick" className="crew-card" style={{ borderStyle: 'dashed', borderColor: '#F4B740' }}>
+    <section aria-labelledby="crew-test-pick" className="crew-card" style={{ borderStyle: 'dashed', borderColor: 'var(--c-gold)' }}>
       <h2 id="crew-test-pick" style={{ marginTop: 0 }}>Testing: pick a crew member</h2>
       <p className="crew-muted crew-small" style={{ marginTop: 0 }}>
         These are made-up test people. Tap one to see the app as her. No password.

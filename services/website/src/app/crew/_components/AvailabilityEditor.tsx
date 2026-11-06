@@ -113,7 +113,7 @@ export default function AvailabilityEditor({ periods, minDate }: { periods: Peri
         <div>
           <button type="submit" className="crew-btn" disabled={busy}>{busy ? 'One moment…' : 'Add'}</button>
         </div>
-        {error && <p role="alert" className="crew-small" style={{ color: '#8E1043', marginBottom: 0 }}>{error}</p>}
+        {error && <p role="alert" className="crew-small" style={{ color: 'var(--c-alert-ink)', marginBottom: 0 }}>{error}</p>}
       </form>
 
       <h2>Times you can&apos;t work</h2>

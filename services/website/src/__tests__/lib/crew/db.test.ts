@@ -56,34 +56,21 @@ const ladderOff = (date: string | null): CrewSettings => ({ ...DEFAULT_SETTINGS,
 describe('releaseSlot', () => {
   const base = { slotId: 's', memberId: 'm', partyStartsAt: start, reason: 'sick' as const }
 
-  it('7+ days out, after grace: an early release that costs one step', async () => {
-    const { sb, calls } = fakeDb({ steps: [4], rpc: () => ({ data: 'released' }) })
-    const r = await releaseSlot(sb, { ...base, now: new Date('2026-11-01T12:00:00Z'), settings: launched('2026-01-01') })
-    expect(r).toEqual({ kind: 'ok', result: 'released' })
-    expect(calls[0].fn).toBe('crew_release_slot')
-    expect(calls[0].args).toMatchObject({ p_kind: 'early_release', p_expected_steps: 4, p_steps_after: 3, p_waived_grace: false })
-  })
-
-  it('in grace: recorded with the would-be value, not applied', async () => {
-    const { sb, calls } = fakeDb({ steps: [4], rpc: () => ({ data: 'released' }) })
-    await releaseSlot(sb, { ...base, now: new Date('2026-11-01T12:00:00Z'), settings: launched(null) })
-    expect(calls[0].args).toMatchObject({ p_expected_steps: 4, p_steps_after: 4, p_waived_grace: true, p_meta: { would_be_steps: 3 } })
-  })
-
-  it('LADDER OFF: an early release still opens the spot, but sends expected == after, in or out of grace', async () => {
-    for (const date of ['2026-01-01', null]) {
-      const { sb, calls } = fakeDb({ steps: [4], rpc: () => ({ data: 'released' }) })
-      const r = await releaseSlot(sb, { ...base, now: new Date('2026-11-01T12:00:00Z'), settings: ladderOff(date) })
-      expect(r).toEqual({ kind: 'ok', result: 'released' })
-      expect(calls[0].args).toMatchObject({ p_kind: 'early_release', p_expected_steps: 4, p_steps_after: 4, p_waived_grace: false })
+  it('any distance, grace or not, ladder on or off: a cover request, no step change, never an early release', async () => {
+    const cases: [string, CrewSettings][] = [
+      ['2026-11-01T12:00:00Z', launched('2026-01-01')],   // 13 days out, after grace
+      ['2026-11-01T12:00:00Z', launched(null)],           // in grace
+      ['2026-11-01T12:00:00Z', ladderOff('2026-01-01')],  // ladder off
+      ['2026-11-10T12:00:00Z', launched('2026-01-01')],   // 4 days out
+      ['2026-06-01T12:00:00Z', launched('2026-01-01')],   // five months out
+    ]
+    for (const [now, settings] of cases) {
+      const { sb, calls } = fakeDb({ steps: [4], rpc: () => ({ data: 'requested' }) })
+      const r = await releaseSlot(sb, { ...base, now: new Date(now), settings })
+      expect(r).toEqual({ kind: 'ok', result: 'requested' })
+      expect(calls[0].fn).toBe('crew_release_slot')
+      expect(calls[0].args).toMatchObject({ p_kind: 'late_cancel', p_expected_steps: 4, p_steps_after: 4, p_waived_grace: false })
     }
-  })
-
-  it('under 7 days: a cover request, no step change', async () => {
-    const { sb, calls } = fakeDb({ steps: [4], rpc: () => ({ data: 'requested' }) })
-    const r = await releaseSlot(sb, { ...base, now: new Date('2026-11-10T12:00:00Z'), settings: launched('2026-01-01') })
-    expect(r).toEqual({ kind: 'ok', result: 'requested' })
-    expect(calls[0].args).toMatchObject({ p_kind: 'late_cancel', p_expected_steps: 4, p_steps_after: 4 })
   })
 
   it('after the start: refused before any write', async () => {
@@ -93,10 +80,10 @@ describe('releaseSlot', () => {
   })
 
   it('stale: re-reads the steps and retries ONCE with the new value', async () => {
-    const { sb, calls } = fakeDb({ steps: [4, 5], rpc: (_c, n) => ({ data: n === 1 ? 'stale' : 'released' }) })
+    const { sb, calls } = fakeDb({ steps: [4, 5], rpc: (_c, n) => ({ data: n === 1 ? 'stale' : 'requested' }) })
     const r = await releaseSlot(sb, { ...base, now: new Date('2026-11-01T12:00:00Z'), settings: launched('2026-01-01') })
-    expect(r).toEqual({ kind: 'ok', result: 'released' })
-    expect(calls.map(c => [c.args.p_expected_steps, c.args.p_steps_after])).toEqual([[4, 3], [5, 4]])
+    expect(r).toEqual({ kind: 'ok', result: 'requested' })
+    expect(calls.map(c => [c.args.p_expected_steps, c.args.p_steps_after])).toEqual([[4, 4], [5, 5]])
   })
 
   it('stale twice: reports stale rather than looping', async () => {

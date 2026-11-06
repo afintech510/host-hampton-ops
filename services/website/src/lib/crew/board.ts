@@ -13,7 +13,7 @@
 
 import type { getSupabase } from '@/lib/supabase'
 import {
-  canUndoClaim, claimRefusal, confirmationSchedule, type AvailabilityBlock, type ClaimRefusal, type CrewSettings,
+  claimRefusal, confirmationSchedule, type AvailabilityBlock, type ClaimRefusal, type CrewSettings,
   type PartyWindow, type RecurringBlock,
 } from '@/lib/crew/rules'
 import {
@@ -30,8 +30,6 @@ export const BOARD_DAYS_AHEAD = 120
 
 export interface BoardParty {
   view: CrewPartyView
-  /** Undo is open until the confirmation request goes out (§3.6). */
-  canUndo: boolean
   /** The confirmation request has gone out and I have not confirmed. */
   needsConfirm: boolean
   /** Why I could not claim an open spot here, if I could not. */
@@ -116,10 +114,8 @@ export function boardParty(pws: PartyWithSlots, names: ReadonlyMap<string, strin
   }
 
   const mine = view.mySlot
-  const mineRow = mine ? pws.slots.find(sl => sl.id === mine.slotId) : null
   return {
     view,
-    canUndo: !!mine && mine.status === 'assigned' && mineRow?.assigned_via === 'claim' && upcoming && canUndoClaim(startsAt, now, s),
     needsConfirm: !!mine && mine.status === 'assigned' && !mine.confirmed && upcoming
       && now.getTime() >= confirmationSchedule(startsAt, s).requestAt.getTime(),
     claimBlock,

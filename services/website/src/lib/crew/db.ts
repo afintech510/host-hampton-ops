@@ -464,25 +464,24 @@ export interface ReleaseInput {
 }
 
 /**
- * "Can't make it". 7+ days out: an early release, the spot reopens and the
- * step change applies (waived in grace). Under 7: a cover request opens and
- * the member stays on. `classifyDrop` decides which; SQL re-checks the start.
+ * Handing back a committed spot ("Find Cover"). Adam, 2026-11-05: backing out
+ * is discouraged, so it is ALWAYS a cover request, however far off the party
+ * is. The member stays on the party and nobody is released until someone else
+ * takes the spot (`crew_claim_swap`). The SQL `early_release` branch (spot
+ * reopens at once, step change applied) is no longer reachable from here.
+ * `classifyDrop` is read only for "has it started" and the notice recorded on
+ * the request; SQL re-checks the start under its row lock.
  */
 export async function releaseSlot(sb: Supa, input: ReleaseInput): Promise<RpcResult<ReleaseResult>> {
   const { kind, noticeHours } = classifyDrop(input.partyStartsAt, input.now, input.settings)
   if (kind === 'started') return { kind: 'ok', result: 'started' }
-  const inGrace = isInGracePeriod(input.now, input.settings)
-  return withStepCas<ReleaseResult>(sb, input.memberId, steps => {
-    const o = kind === 'early_release'
-      ? stepAfter('early_release', steps, input.settings, inGrace)
-      : { stepsBefore: steps, stepsAfter: steps, waivedGrace: false, wouldBe: steps, delta: 0 }
-    return rpcText<ReleaseResult>(sb, 'crew_release_slot', {
-      p_slot_id: input.slotId, p_member_id: input.memberId, p_kind: kind, p_reason: input.reason,
+  return withStepCas<ReleaseResult>(sb, input.memberId, steps =>
+    rpcText<ReleaseResult>(sb, 'crew_release_slot', {
+      p_slot_id: input.slotId, p_member_id: input.memberId, p_kind: 'late_cancel', p_reason: input.reason,
       p_note: input.note ?? null, p_notice_hours: Math.round(noticeHours * 100) / 100,
-      p_expected_steps: o.stepsBefore, p_steps_after: o.stepsAfter, p_waived_grace: o.waivedGrace,
-      p_meta: { would_be_steps: o.wouldBe },
-    })
-  })
+      p_expected_steps: steps, p_steps_after: steps, p_waived_grace: false,
+      p_meta: { would_be_steps: steps },
+    }))
 }
 
 export type DropResult = 'dropped' | 'unavailable' | 'stale'

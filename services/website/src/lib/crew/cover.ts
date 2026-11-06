@@ -185,7 +185,6 @@ export async function startCoverRequest(
 // ── The crew member's side ──────────────────────────────────────────────────
 
 export type ReleaseOutcome =
-  | { kind: 'released'; rateCents: number; waived: boolean }
   | { kind: 'requested'; swapId: string; asked: number; escalated: boolean }
   | { kind: 'already_requested'; swapId: string | null }
   | { kind: 'refused'; status: number; error: string }
@@ -198,7 +197,15 @@ async function liveSwapFor(sb: Supa, slotId: string, requesterId: string): Promi
   return { kind: 'ok', data: ((data ?? []) as CrewSwapRow[])[0] ?? null }
 }
 
-/** "Can't make it": an early release, or a cover request to the standbys. */
+const NO_STANDBYS = "Nobody on the waitlist can cover this yet. Ask someone to join the waitlist on this party, then try again."
+
+/**
+ * "Find Cover" (spec §3.7, changed 2026-11-05): handing back a committed spot is
+ * always a cover request to the standbys, however far off the party is, and the
+ * member stays on until one of them takes it. With nobody on the waitlist who
+ * could work it, nothing is written and nobody is told: the member is sent to
+ * find someone first (`coverOptions` says who is free).
+ */
 export async function releaseMySpot(
   ctx: NotifyCtx, s: CrewSettings, member: CrewMemberRow, slotId: string, reason: CancelReason, note: string | null,
 ): Promise<ReleaseOutcome> {
@@ -211,9 +218,17 @@ export async function releaseMySpot(
   if (pws.kind !== 'ok') return { kind: 'unavailable' }
   if (!pws.data || pws.data.party.status !== 'published') return { kind: 'refused', status: 409, error: 'This party is no longer open.' }
   const party = pws.data.party
-  const before = slot.data
-  // Read before the write: whether the change was waived is "after vs. before".
-  const stepsBefore = member.steps
+
+  // A request already open is answered as such, whoever is on the waitlist now.
+  const open = await liveSwapFor(ctx.sb, slotId, member.id)
+  if (open.kind !== 'ok') return { kind: 'unavailable' }
+  if (open.data) return { kind: 'already_requested', swapId: open.data.id }
+
+  const standbys = await listLiveStandbys(ctx.sb, party.id)
+  if (standbys.kind !== 'ok') return { kind: 'unavailable' }
+  const eligible = await eligibleFor(ctx.sb, s, pws.data, slot.data.role, new Set(standbys.data.map(r => r.member_id)), [member.id])
+  if (eligible.kind !== 'ok') return { kind: 'unavailable' }
+  if (eligible.data.length === 0) return { kind: 'refused', status: 409, error: NO_STANDBYS }
 
   const res = await releaseSlot(ctx.sb, {
     slotId, memberId: member.id, partyStartsAt: new Date(party.starts_at), reason, note, now: ctx.now, settings: s,
@@ -221,20 +236,6 @@ export async function releaseMySpot(
   if (res.kind !== 'ok') { console.error(`crew/cover: release failed for ${slotId}: ${res.error}`); return { kind: 'unavailable' } }
 
   switch (res.result) {
-    case 'released': {
-      const after = await getMember(ctx.sb, member.id)
-      const steps = after.kind === 'ok' && after.data ? after.data.steps : stepsBefore
-      const waived = steps >= stepsBefore
-      const ref = partyRefFor(party, s)
-      await notifyMember(ctx, member, 'earlyReleased',
-        templates.earlyReleased(ref, rateLabel(steps, s), waived, formatCents(s.pay.stepCents), s.ladderEnabled),
-        `early_release:${tenure(before)}`, { payload: { party_id: party.id } })
-      const noticeDays = Math.floor((new Date(party.starts_at).getTime() - ctx.now.getTime()) / DAY_MS)
-      await notifyAdmin(ctx, 'spotReleased', adminTemplates.spotReleased(member.first_name, ref, noticeDays, adminUrl(party.id)),
-        `spot_released:${tenure(before)}`, { test: isTestParty(party), info: true, payload: { party_id: party.id, reason } })
-      await offerOpenedSpot(ctx, s, party.id, before, member.id)
-      return { kind: 'released', rateCents: partyRateCents('crew', steps, s), waived }
-    }
     case 'requested': {
       const swap = await liveSwapFor(ctx.sb, slotId, member.id)
       if (swap.kind !== 'ok' || !swap.data) return { kind: 'unavailable' }
@@ -255,6 +256,61 @@ export async function releaseMySpot(
     case 'invalid': return { kind: 'refused', status: 400, error: 'Pick a reason.' }
     case 'stale': return { kind: 'unavailable' }
     default: return { kind: 'unavailable' }
+  }
+}
+
+export interface CoverOptions {
+  role: SlotRole
+  /** A request already open for this spot, and how many people it went to. */
+  live: { swapId: string; asked: number } | null
+  /** On the waitlist AND free to work it: the people "Find Cover" texts. */
+  standbys: string[]
+  /** Free to work it but not on the waitlist: the people to ask yourself. */
+  others: string[]
+}
+
+/** "Sam R." — enough to know who, never a phone number or an email. */
+const shortName = (m: Pick<CrewMemberRow, 'first_name' | 'last_name'>) =>
+  `${m.first_name}${m.last_name?.trim() ? ` ${m.last_name.trim().charAt(0).toUpperCase()}.` : ''}`
+
+/**
+ * What "Find Cover" shows before it does anything: who is on the waitlist and
+ * could work this spot, and, when that is nobody, who else is free. Read only.
+ * Null when it is not the member's own spot on an open party.
+ */
+export async function coverOptions(
+  sb: Supa, s: CrewSettings, member: CrewMemberRow, slotId: string, now: Date = new Date(),
+): Promise<Read<CoverOptions | null>> {
+  const slot = await getSlot(sb, slotId)
+  if (slot.kind !== 'ok') return slot
+  if (!slot.data || slot.data.member_id !== member.id || slot.data.status !== 'assigned') return { kind: 'ok', data: null }
+  const pws = await getPartyWithSlots(sb, slot.data.party_id)
+  if (pws.kind !== 'ok') return pws
+  if (!pws.data || pws.data.party.status !== 'published' || new Date(pws.data.party.starts_at).getTime() <= now.getTime()) return { kind: 'ok', data: null }
+
+  const open = await liveSwapFor(sb, slotId, member.id)
+  if (open.kind !== 'ok') return open
+  let live: CoverOptions['live'] = null
+  if (open.data) {
+    const asked = await askedCount(sb, open.data.id)
+    if (asked.kind !== 'ok') return asked
+    live = { swapId: open.data.id, asked: asked.data }
+  }
+
+  const standbys = await listLiveStandbys(sb, pws.data.party.id)
+  if (standbys.kind !== 'ok') return standbys
+  const waitlist = new Set(standbys.data.map(r => r.member_id))
+  const free = await eligibleFor(sb, s, pws.data, slot.data.role, 'all', [member.id])
+  if (free.kind !== 'ok') return free
+  const byName = (a: string, b: string) => a.localeCompare(b)
+  return {
+    kind: 'ok',
+    data: {
+      role: slot.data.role,
+      live,
+      standbys: free.data.filter(m => waitlist.has(m.id)).map(shortName).sort(byName),
+      others: free.data.filter(m => !waitlist.has(m.id)).map(shortName).sort(byName),
+    },
   }
 }
 
@@ -379,31 +435,6 @@ function whyNot(cover: CoverContext, member: CrewMemberRow, s: CrewSettings): st
 }
 
 // ── Allie's side ────────────────────────────────────────────────────────────
-
-/**
- * AUTOPILOT, early release: a spot just reopened, so the WAITLIST (the live
- * standbys who could actually work it) gets first pick. Everyone else hears about
- * it from the open-spot nudges. Best effort: the release already happened, and a
- * failed read here only means the waitlist waits for the next nudge. One message
- * per person per assignment (`opened:{tenure}:{member}`).
- */
-async function offerOpenedSpot(ctx: NotifyCtx, s: CrewSettings, partyId: string, released: CrewSlotRow, releaserId: string): Promise<number> {
-  const [standbys, fresh] = await Promise.all([listLiveStandbys(ctx.sb, partyId), getPartyWithSlots(ctx.sb, partyId)])
-  if (standbys.kind !== 'ok' || fresh.kind !== 'ok' || !fresh.data) return 0
-  const pws = fresh.data
-  if (pws.party.status !== 'published' || new Date(pws.party.starts_at).getTime() <= ctx.now.getTime()) return 0
-  const eligible = await eligibleFor(ctx.sb, s, pws, released.role, new Set(standbys.data.map(r => r.member_id)), [releaserId])
-  if (eligible.kind !== 'ok') return 0
-  const ref = partyRefFor(pws.party, s)
-  let asked = 0
-  for (const m of eligible.data) {
-    const pay = payLabelFor(released.role, m.steps, pws.party.extra_flat_cents, s)
-    const r = await notifyMember(ctx, m, 'spotOpened', templates.spotOpened(ref, released.role, pay), `opened:${tenure(released)}:${m.id}`,
-      { payload: { party_id: partyId } })
-    if (r.kind === 'done' && r.channels.in_app === 'sent') asked++
-  }
-  return asked
-}
 
 /** The members a cover request's standby round already went to (their in-app rows, so it is what was actually sent). */
 async function askedMemberIds(sb: Supa, swapId: string): Promise<Read<string[]>> {

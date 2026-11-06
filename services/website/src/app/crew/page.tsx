@@ -43,7 +43,7 @@ export default async function CrewHomePage() {
         <div className="crew-rate">
           <p className="crew-rate-big">{me.rateLine}</p>
           <p className="crew-small" style={{ opacity: 0.8, marginTop: '.35rem' }}>
-            <Link href="/crew/pay" style={{ color: '#F4B740', fontWeight: 700 }}>How your pay works</Link>
+            <Link href="/crew/pay" style={{ fontWeight: 700 }}>How your pay works</Link>
           </p>
         </div>
       ) : (

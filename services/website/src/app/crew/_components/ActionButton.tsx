@@ -64,7 +64,7 @@ export default function ActionButton(props: {
       >
         {busy ? props.busyLabel ?? 'One moment…' : props.label}
       </button>
-      {error && <span role="alert" className="crew-small" style={{ color: '#8E1043' }}>{error}</span>}
+      {error && <span role="alert" className="crew-small" style={{ color: 'var(--c-alert-ink)' }}>{error}</span>}
     </span>
   )
 }

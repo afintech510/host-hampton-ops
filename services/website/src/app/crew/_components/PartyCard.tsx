@@ -1,5 +1,9 @@
 import Link from 'next/link'
 import ActionButton from './ActionButton'
+import CommitButton from './CommitButton'
+import FindCover from './FindCover'
+import { TENANT } from '@/tenant'
+import { STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
 import type { BoardParty } from '@/lib/crew/board'
 import { formatCents } from '@/lib/crew/rules'
 import { partyDayLabel, partyTimeLabel, type OpenSpotView } from '@/lib/crew/view'
@@ -79,8 +83,9 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
           <ActionButton endpoint="/api/crew/confirm" body={{ slotId: v.mySlot.slotId }} label="I'll be there" />
         )}
         {!v.mySlot && b.upcoming && !b.claimBlock && claimTargets(spots).map(s => (
-          <ActionButton key={s.slotId} endpoint="/api/crew/claim" body={{ slotId: s.slotId }}
-            label={`Take ${s.role === 'lead' ? 'the Lead spot' : 'a crew spot'}${s.payCents != null ? ` (${formatCents(s.payCents)})` : ''}`} busyLabel="Taking it…" />
+          <CommitButton key={s.slotId} slotId={s.slotId} partyTitle={title}
+            when={`${partyDayLabel(v.startsAt)}, ${partyTimeLabel(v.startsAt, v.endsAt)}`} roleWord={roleWord(s.role)}
+            label={`Commit to Work${s.role === 'lead' ? ' as Party Lead' : ''}${s.payCents != null ? ` (${formatCents(s.payCents)})` : ''}`} />
         ))}
         {!v.mySlot && b.upcoming && (
           <ActionButton
@@ -90,9 +95,8 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
               : (spots.length === 0 ? 'Join the waitlist' : 'I can cover (standby)')}
           />
         )}
-        {b.canUndo && v.mySlot && (
-          <ActionButton endpoint="/api/crew/unclaim" body={{ slotId: v.mySlot.slotId }} variant="ghost" label="Undo"
-            confirmText={`Give back your ${roleWord(v.mySlot.role).toLowerCase()} spot on ${title}?`} />
+        {v.mySlot && v.mySlot.status === 'assigned' && b.upcoming && (
+          <FindCover slotId={v.mySlot.slotId} partyId={v.id} ownerName={TENANT.people.customerSignoff} ownerPhone={STUDIO_PHONE_DISPLAY} />
         )}
       </div>
     </article>

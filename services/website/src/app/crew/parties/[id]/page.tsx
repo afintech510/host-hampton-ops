@@ -111,9 +111,9 @@ export default async function CrewPartyPage({ params }: { params: { id: string }
       <h2>{v.mySlot ? 'Your spot' : 'Spots'}</h2>
       <PartyCard b={b} canLead={member.can_lead} linkToDetail={false} />
 
-      {v.mySlot && b.upcoming && !b.canUndo && (
+      {v.mySlot && b.upcoming && (
         <p className="crew-note crew-info">
-          Can&apos;t make it? <Link className="crew-link" href={`/crew/parties/${v.id}/cant-make-it`}>Tell us here</Link>. The sooner, the better.
+          Can&apos;t make it? Tap <strong>Find Cover</strong> above. You stay on the party until someone takes your spot.
         </p>
       )}
     </main>

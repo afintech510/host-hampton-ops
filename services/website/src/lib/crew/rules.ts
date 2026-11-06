@@ -423,11 +423,6 @@ export function confirmationSchedule(startsAt: Date, s: CrewSettings = DEFAULT_S
   }
 }
 
-/** A claim can be undone, as if it never happened, until the confirmation request goes out. */
-export function canUndoClaim(startsAt: Date, now: Date, s: CrewSettings = DEFAULT_SETTINGS): boolean {
-  return now.getTime() < confirmationSchedule(startsAt, s).requestAt.getTime()
-}
-
 // ---------------------------------------------------------------------------
 // Local time, availability, overlap, hours on record
 // ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers'
 import { TENANT } from '@/tenant'
 import { requireCrewPage } from '@/lib/crew/page'
 import { currentCrewMember } from '@/lib/crew/auth'
@@ -7,6 +8,8 @@ import ActionButton from '../_components/ActionButton'
 import ProfileForm from '../_components/ProfileForm'
 import EmailChange from '../_components/EmailChange'
 import SkillsForm from '../_components/SkillsForm'
+import ThemePicker from '../_components/ThemePicker'
+import { THEME_COOKIE, themeFromCookie } from '@/lib/crew/themes'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +34,7 @@ export default async function CrewProfilePage() {
   const onboarding = session.kind === 'ok' && session.onboarding.incomplete
   const { picked, extras } = splitSkills(Array.isArray(member.skills) ? member.skills : [])
   const owner = TENANT.people.customerSignoff
+  const theme = themeFromCookie(cookies().get(THEME_COOKIE)?.value)
 
   return (
     <main className="crew-wrap">
@@ -56,6 +60,10 @@ export default async function CrewProfilePage() {
       <h2 id="skills">My skills</h2>
       <p className="crew-muted" style={{ marginTop: 0 }}>This helps {owner} plan each party.</p>
       <SkillsForm options={CREW_SKILLS} picked={picked} extras={extras} maxExtras={MAX_EXTRAS} maxLength={MAX_EXTRA_LENGTH} />
+
+      <h2>Appearance</h2>
+      <p className="crew-muted" style={{ marginTop: 0 }}>Pick the look you like. It's saved on this device.</p>
+      <ThemePicker current={theme} />
     </main>
   )
 }

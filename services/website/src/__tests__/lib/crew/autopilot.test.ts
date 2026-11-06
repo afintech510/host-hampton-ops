@@ -16,6 +16,7 @@ import {
 } from '@/lib/crew/jobs'
 import type { CrewSenders } from '@/lib/crew/notify'
 import { fakeCoverRpc, fakeCrewDb, type FakeCrewDb } from '../../helpers/fakeCrewDb'
+import { openCoverNobodyToAsk } from '../../helpers/openCover'
 
 const H = 3_600_000
 const DAY = 24 * H
@@ -448,7 +449,7 @@ describe('a late cancel on autopilot', () => {
       crew_parties: [party('p1', 0, { starts_at: START, ends_at: endOf(START) })],
       crew_slots: [slot('s-lead', 'p1', 'allie', 'lead'), slot('s-a', 'p1', 'a'), slot('s-open', 'p1', null)],
     })
-    await releaseMySpot(ctx(), AUTO, db.tables.crew_members.find(m => m.id === 'a') as any, 's-a', 'sick', null)
+    await openCoverNobodyToAsk(ctx(), AUTO, db, db.tables.crew_members.find(m => m.id === 'a') as any, 's-a', 'sick')
     refreshMembers()
     // No standby → escalated at once by the request itself; the next tick offers.
     const out = await runCovers(jobs(), members)
@@ -459,8 +460,8 @@ describe('a late cancel on autopilot', () => {
   })
 })
 
-describe('the waitlist: backup crew get first pick when a spot opens early', () => {
-  it('an early release asks the waitlisted who are free — and only them', async () => {
+describe('the waitlist: backup crew get first pick when a spot is handed back, however early', () => {
+  it('a release 9 days out asks the waitlisted who are free — and only them', async () => {
     seed({
       crew_members: [person('a'), person('b'), person('c'), person('d'), person('allie', { is_owner: true, can_lead: true, email: null })],
       crew_parties: [party('p1', 9)],
@@ -473,11 +474,13 @@ describe('the waitlist: backup crew get first pick when a spot opens early', () 
       crew_unavailability: [{ member_id: 'd', day: startIn(9).slice(0, 10), part: 'all_day' }], // blocked that day
     })
     const r = await releaseMySpot({ sb: db.sb, now: NOW, senders: tx }, AUTO, db.tables.crew_members.find(m => m.id === 'a') as any, 's-a', 'family', null)
-    expect(r.kind).toBe('released')
-    expect(keys(k => k.channel === 'in_app' && k.dedupe_key.startsWith('opened:'))).toHaveLength(1)
-    expect(keys(k => k.channel === 'in_app' && k.dedupe_key.startsWith('opened:'))[0]).toMatch(/:b$/)
+    expect(r).toMatchObject({ kind: 'requested', asked: 1 })
+    expect(keys(k => k.channel === 'in_app' && k.dedupe_key.startsWith('cover:'))).toHaveLength(1)
+    expect(keys(k => k.channel === 'in_app' && k.dedupe_key.startsWith('cover:'))[0]).toMatch(/:b$/)
+    expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'assigned', member_id: 'a' })
     const mail = tx.email.mock.calls.find(c => c[0] === 'b@example.test')![1]
-    expect(mail.email.text).toMatch(/waitlist/)
+    expect(mail.email.text).toMatch(/standby, so you get first pick/)
+    expect(mail.email.text).toMatch(/First to claim gets it/)
     expect(mail.email.text).not.toMatch(/\$|rate/i)
   })
 })

@@ -6,11 +6,12 @@
  */
 import { DEFAULT_SETTINGS, type CrewSettings } from '@/lib/crew/rules'
 import { LADDER_ON } from '../../helpers/crewLadder'
-import { assignCover, autoOfferToEveryone, claimCover, dropAnyway, eligibleFor, offerToEveryone, releaseMySpot, withdrawCover } from '@/lib/crew/cover'
+import { assignCover, autoOfferToEveryone, claimCover, coverOptions, dropAnyway, eligibleFor, offerToEveryone, releaseMySpot, withdrawCover } from '@/lib/crew/cover'
 import { runConfirmations, runCovers, runCrewJobs, runPartyAlerts, type JobsCtx } from '@/lib/crew/jobs'
 import { handleCrewInboundSms, isConfirmReply } from '@/lib/crew/inbound'
 import type { CrewSenders } from '@/lib/crew/notify'
 import { fakeCoverRpc, fakeCrewDb, type FakeCrewDb } from '../../helpers/fakeCrewDb'
+import { openCoverNobodyToAsk } from '../../helpers/openCover'
 
 const H = 3_600_000
 let NOW = new Date('2026-11-02T15:00:00Z')            // Mon 10:00 EST
@@ -86,6 +87,50 @@ beforeEach(() => {
 })
 afterAll(() => { process.env = ENV })
 
+describe('coverOptions: what Find Cover shows before it texts anyone', () => {
+  beforeEach(() => {
+    member('d').last_name = 'Rivera'
+    db.tables.crew_unavailability = []
+  })
+
+  it('lists the waitlisted who are free as the ones it would text, and the free others to ask yourself', async () => {
+    const r = await coverOptions(db.sb, S, member('a'), 's-a', NOW)
+    expect(r).toEqual({ kind: 'ok', data: { role: 'crew', live: null, standbys: ['B', 'C'], others: ['D R.', 'E'] } })
+  })
+
+  it('leaves out the owner, the person asking, anyone blocked that day, and anyone already on the party', async () => {
+    db.tables.crew_unavailability = [{ member_id: 'c', day: '2026-11-05', part: 'all_day' }]
+    db.tables.crew_slots.push(slot('s-e', 'e'))
+    const r = await coverOptions(db.sb, S, member('a'), 's-a', NOW)
+    expect(r).toMatchObject({ kind: 'ok', data: { standbys: ['B'], others: ['D R.'] } })
+  })
+
+  it('never carries a phone number or an email — only a name', async () => {
+    member('b').phone = '+16315550101'
+    const r = await coverOptions(db.sb, S, member('a'), 's-a', NOW)
+    expect(JSON.stringify(r)).not.toMatch(/\+1631|@example|\d{7}/)
+  })
+
+  it('says so when a request is already open, with how many it went to', async () => {
+    await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    const swap = db.tables.crew_swap_requests[0]
+    const r = await coverOptions(db.sb, S, member('a'), 's-a', NOW)
+    expect(r).toMatchObject({ kind: 'ok', data: { live: { swapId: swap.id, asked: 2 } } })
+  })
+
+  it('is null for a spot that is not yours, or a party that has started', async () => {
+    expect(await coverOptions(db.sb, S, member('b'), 's-a', NOW)).toEqual({ kind: 'ok', data: null })
+    expect(await coverOptions(db.sb, S, member('a'), 's-a', new Date(Date.parse(START) + 60_000))).toEqual({ kind: 'ok', data: null })
+  })
+
+  it('changes nothing: no request, no message, no event', async () => {
+    await coverOptions(db.sb, S, member('a'), 's-a', NOW)
+    expect(db.tables.crew_swap_requests).toHaveLength(0)
+    expect(db.tables.crew_notifications).toHaveLength(0)
+    expect(db.tables.crew_events).toHaveLength(0)
+  })
+})
+
 describe('a late cancel', () => {
   it('asks ONLY the standbys who could work it, tells Allie with the reason, and leaves the canceller on', async () => {
     const r = await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', 'flu')
@@ -105,11 +150,36 @@ describe('a late cancel', () => {
     expect(swap.standbys_notified_at).toBe(NOW.toISOString())
   })
 
-  it('an invented test member is never asked about a REAL party', async () => {
+  it('an invented test member is never asked about a REAL party — so with only one on the waitlist, nothing opens', async () => {
     member('b').is_test = true
     const r = await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
-    expect(r).toMatchObject({ kind: 'requested', asked: 0, escalated: true })
+    expect(r).toMatchObject({ kind: 'refused', status: 409 })
+    expect(db.tables.crew_swap_requests).toHaveLength(0)
     expect(notes(n => n.member_id === 'b')).toHaveLength(0)
+    expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'assigned', member_id: 'a' })
+  })
+
+  it('with nobody on the waitlist who could work it, nothing is written and nobody is told', async () => {
+    db.tables.crew_standbys = []
+    const before = notes().length
+    const r = await releaseMySpot(ctx(), S, member('a'), 's-a', 'sick', null)
+    expect(r.kind).toBe('refused')
+    expect((r as { error: string }).error).toMatch(/waitlist/)
+    expect(db.tables.crew_swap_requests).toHaveLength(0)
+    expect(notes()).toHaveLength(before)
+    expect(db.rpcCalls.some(c => c.fn === 'crew_release_slot')).toBe(false)
+  })
+
+  it('with someone on the waitlist it is a request however far off the party is — and the canceller stays on', async () => {
+    db.tables.crew_parties[0].starts_at = '2026-12-20T18:00:00.000Z'
+    db.tables.crew_parties[0].ends_at = '2026-12-20T21:00:00.000Z'
+    db.tables.crew_unavailability = []
+    const r = await releaseMySpot(ctx(), S, member('a'), 's-a', 'school', null)
+    expect(r).toMatchObject({ kind: 'requested', asked: 2, escalated: false })
+    expect(db.rpcCalls.find(c => c.fn === 'crew_release_slot')!.args).toMatchObject({ p_kind: 'late_cancel' })
+    expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'assigned', member_id: 'a' })
+    expect(member('a').steps).toBe(3)
+    expect(db.tables.crew_events).toHaveLength(0)
   })
 
   it('only the person who asked can withdraw it', async () => {
@@ -131,8 +201,8 @@ describe('a late cancel', () => {
     // The real created_at is the database's now(), after this request's `now`.
     const rpc = fakeCoverRpc(() => new Date(NOW.getTime() + 50))
     db.sb.rpc = async (fn: string, args: any) => { db.rpcCalls.push({ fn, args }); return rpc(fn, args, db) }
-    const r = await releaseMySpot(ctx(), S, member('a'), 's-a', 'family', null)
-    expect(r).toMatchObject({ kind: 'requested', asked: 0, escalated: true })
+    const r = await openCoverNobodyToAsk(ctx(), S, db, member('a'), 's-a', 'family')
+    expect(r).toMatchObject({ kind: 'ok', data: { asked: 0, escalated: true } })
     expect(db.tables.crew_swap_requests[0].status).toBe('escalated')
     expect(keys()).toContain(`cover_escalated:${db.tables.crew_swap_requests[0].id}`)
   })
@@ -203,29 +273,6 @@ describe('a late cancel', () => {
     const sw3 = db.tables.crew_swap_requests[0]
     await dropAnyway(ctx(), LIVE, member('a'), sw3.id)
     expect(member('a').steps).toBe(0)
-  })
-})
-
-describe('an early release', () => {
-  beforeEach(() => {
-    db.tables.crew_parties[0].starts_at = '2026-11-20T18:00:00.000Z'
-    db.tables.crew_parties[0].ends_at = '2026-11-20T21:00:00.000Z'
-  })
-
-  it('opens the spot, costs a step outside grace, and tells the member and Allie', async () => {
-    const r = await releaseMySpot(ctx(), LIVE, member('a'), 's-a', 'school', null)
-    expect(r).toMatchObject({ kind: 'released', waived: false, rateCents: 5100 + 2 * 250 })
-    expect(member('a').steps).toBe(2)
-    expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'open', member_id: null })
-    expect(keys().some(k => k.startsWith('early_release:s-a:'))).toBe(true)
-    expect(keys().some(k => k.startsWith('spot_released:s-a:'))).toBe(true)
-  })
-
-  it('in grace the step is recorded and not applied', async () => {
-    const r = await releaseMySpot(ctx(), S, member('a'), 's-a', 'school', null)
-    expect(r).toMatchObject({ kind: 'released', waived: true })
-    expect(member('a').steps).toBe(3)
-    expect(db.tables.crew_events[0]).toMatchObject({ type: 'early_release', waived_grace: true })
   })
 })
 
@@ -410,29 +457,29 @@ const noMoneyTalk = (text: string) => {
 }
 
 describe('LAUNCH MODE: the pay ladder is off', () => {
-  describe('an early release', () => {
+  describe('a release far from the party', () => {
     beforeEach(() => {
       db.tables.crew_parties[0].starts_at = '2026-11-20T18:00:00.000Z'
       db.tables.crew_parties[0].ends_at = '2026-11-20T21:00:00.000Z'
+      db.tables.crew_unavailability = []
     })
 
-    it('opens the spot and moves no step — even past the launch grace', async () => {
+    it('is a cover request that moves no step — the canceller stays on, even past the launch grace', async () => {
       const r = await releaseMySpot(ctx(), OFF_LIVE, member('a'), 's-a', 'school', null)
-      expect(r.kind).toBe('released')
+      expect(r.kind).toBe('requested')
       expect(member('a').steps).toBe(3)
-      expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'open', member_id: null })
-      expect(db.tables.crew_events[0]).toMatchObject({ type: 'early_release', step_before: 3, step_after: 3, waived_grace: false })
-      expect(db.rpcCalls.find(c => c.fn === 'crew_release_slot')!.args).toMatchObject({ p_expected_steps: 3, p_steps_after: 3 })
+      expect(db.tables.crew_slots.find(s => s.id === 's-a')).toMatchObject({ status: 'assigned', member_id: 'a' })
+      expect(db.tables.crew_events).toHaveLength(0)
+      expect(db.rpcCalls.find(c => c.fn === 'crew_release_slot')!.args).toMatchObject({ p_kind: 'late_cancel', p_expected_steps: 3, p_steps_after: 3 })
     })
 
-    it('tells the member nothing about a rate, and Allie in the app only', async () => {
+    it('tells the waitlist nothing about a rate, and Allie in the app only', async () => {
       await releaseMySpot(ctx(), OFF_LIVE, member('a'), 's-a', 'school', null)
-      const mail = mailTo('a@example.test')
+      const mail = mailTo('b@example.test')
       expect(mail).toHaveLength(1)
       noMoneyTalk(mail[0].text)
       noMoneyTalk(mail[0].subject)
-      const released = notes(r => r.template === 'spotReleased')
-      expect(released.map(r => r.channel)).toEqual(['in_app'])
+      expect(notes(r => r.template === 'coverRequested').map(r => r.channel)).toEqual(['in_app'])
       expect(tx.email.mock.calls.some(c => c[0] === 'alerts@example.test')).toBe(false)
     })
   })
@@ -558,7 +605,7 @@ describe('AUTOPILOT: a late cancel nobody took is offered to everyone free', () 
   it('nobody free at all is the one case that emails Allie', async () => {
     db.tables.crew_standbys = []
     for (const id of ['b', 'd', 'e']) db.tables.crew_unavailability.push({ member_id: id, day: '2026-11-05', part: 'all_day' })
-    await releaseMySpot(ctx(), S, member('a'), 's-a', 'family', null)    // no standbys: escalated at once
+    await openCoverNobodyToAsk(ctx(), S, db, member('a'), 's-a', 'family')    // no standbys: escalated at once
     const swap = db.tables.crew_swap_requests[0]
     expect(swap.status).toBe('escalated')
     const out = await autoOfferToEveryone(ctx(), S, swap, db.tables.crew_parties[0] as any)

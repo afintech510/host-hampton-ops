@@ -1,27 +1,24 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { getSupabase } from '@/lib/supabase'
 import { requireCrewPage } from '@/lib/crew/page'
 import { isUuid } from '@/lib/crew/auth'
 import { loadCrewSettings } from '@/lib/crew/settings'
-import { getPartyWithSlots, listLiveStandbys } from '@/lib/crew/db'
-import {
-  classifyDrop, formatCents, isInGracePeriod, partyRateCents, standbyEscalateAt, stepAfter,
-} from '@/lib/crew/rules'
+import { getPartyWithSlots } from '@/lib/crew/db'
+import { classifyDrop, formatCents, isInGracePeriod, partyRateCents, standbyEscalateAt } from '@/lib/crew/rules'
 import { askedCount, myCoverOnParty } from '@/lib/crew/cover'
 import { clockLabel, partyDayLabel, partyTimeLabel } from '@/lib/crew/view'
 import { STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
 import CrewTop, { CrewUnavailable } from '../../../_components/CrewTop'
 import ActionButton from '../../../_components/ActionButton'
-import CantMakeItForm from '../../../_components/CantMakeItForm'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * `/crew/parties/[id]/cant-make-it` (spec §8). What cancelling costs, in
- * dollars, before anything happens; then the live state of the request: how
- * many crew were asked (a count, never names), when Allie steps in, Withdraw,
- * and Drop anyway behind a confirmation that says the rate it goes back to.
+ * `/crew/parties/[id]/cant-make-it` (spec §8): where a cover request STANDS.
+ * How many crew were asked (a count, never names), when Allie steps in,
+ * Withdraw, and Drop anyway behind a confirmation. A request is started from
+ * Find Cover on the party, not here; with none open this goes back to the party.
  */
 export default async function CantMakeItPage({ params }: { params: { id: string } }) {
   const member = await requireCrewPage()
@@ -51,7 +48,7 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
     <>
       <CrewTop firstName={member.first_name} isTest={member.is_test} />
       <p className="crew-small" style={{ margin: '0 0 .5rem' }}><Link className="crew-link" href={`/crew/parties/${party.id}`}>← {party.theme || party.title}</Link></p>
-      <h1>Can&apos;t make it</h1>
+      <h1>Finding cover</h1>
       <p className="crew-muted" style={{ marginTop: 0 }}>{party.theme || party.title} · {when}</p>
     </>
   )
@@ -120,45 +117,6 @@ export default async function CantMakeItPage({ params }: { params: { id: string 
     )
   }
 
-  if (drop.kind === 'early_release') {
-    const days = Math.floor(drop.noticeHours / 24)
-    // With the ladder off there is no "effect" to state: the spot just reopens.
-    let effect = ''
-    if (s.ladderEnabled) {
-      const after = stepAfter('early_release', member.steps, s, grace)
-      effect = after.stepsAfter < after.stepsBefore
-        ? `Your rate goes down to ${formatCents(partyRateCents('crew', after.stepsAfter, s))} a party.`
-        : grace && after.waivedGrace
-          ? "While we're getting started, your rate stays the same."
-          : 'Your rate stays the same.'
-    }
-    return (
-      <main className="crew-wrap">
-        {header}
-        <div className="crew-card">
-          <p style={effect ? undefined : { marginBottom: 0 }}>You&apos;re giving {days} days&apos; notice. Thank you! Your spot opens up for the rest of the crew right away.</p>
-          {effect && <p style={{ marginBottom: 0 }}>{effect}</p>}
-        </div>
-        <CantMakeItForm slotId={mine.id} submitLabel="Release my spot" confirmText={effect ? `Release your spot? ${effect}` : 'Release your spot? It opens up for the rest of the crew right away.'} />
-      </main>
-    )
-  }
-
-  const standbys = await listLiveStandbys(sb, party.id)
-  if (standbys.kind !== 'ok') return <CrewUnavailable />
-  const n = standbys.data.filter(r => r.member_id !== member.id).length
-  return (
-    <main className="crew-wrap">
-      {header}
-      <div className="crew-card">
-        <p>
-          It&apos;s less than {s.drops.lateDropDays} days away, so we&apos;ll ask the crew who said they can cover
-          {n > 0 ? ` (${n} so far)` : ''}. You stay on the party until one of them takes it.
-        </p>
-        <p>{s.ladderEnabled ? 'If someone covers you, nothing changes for you.' : "If someone covers you, you're off the hook."}</p>
-        {n === 0 && <p style={{ marginBottom: 0 }}>Nobody has said they can cover this one yet, so Allie will be told right away.</p>}
-      </div>
-      <CantMakeItForm slotId={mine.id} submitLabel="Ask for cover" confirmText="Ask the crew to cover your spot? You stay on until someone takes it." />
-    </main>
-  )
+  // Nothing asked yet: Find Cover, on the party, is where a cover request starts.
+  redirect(`/crew/parties/${party.id}`)
 }

@@ -283,8 +283,9 @@ describe('N6: every crew message has a dedupe key built from an id', () => {
       }
     }
     expect(offenders).toEqual([])
-    // 24 call sites at Phase 4 (2026-10-27), 28 once autopilot added its own (2026-11-05). A drop means the walker stopped seeing them.
-    expect(examined).toBeGreaterThanOrEqual(28)
+    // 24 call sites at Phase 4 (2026-10-27), 28 once autopilot added its own (2026-11-05), 26 once a release became always a cover request
+    // and the early-release notices went (2026-11-05). A drop below that means the walker stopped seeing them.
+    expect(examined).toBeGreaterThanOrEqual(26)
     // The one call that sends an Ask: counted, so the `a.key` branch above cannot quietly pass nothing.
     expect(viaAsk).toBe(1)
   })
@@ -335,7 +336,7 @@ describe('N6b: a crew member and Allie never share a dedupe key', () => {
     }
     const shared = Array.from(prefixes.member).filter(p => prefixes.admin.has(p))
     expect(shared).toEqual([])
-    expect(examined).toBeGreaterThanOrEqual(28)
+    expect(examined).toBeGreaterThanOrEqual(27)
     // The autopilot prefixes are on the right side of the line: members' asks, Allie's alerts.
     for (const p of ['new_party', 'nudge', 'digest']) expect(Array.from(prefixes.member)).toContain(p)
     for (const p of ['understaffed', 'cover_offered', 'cover_nobody']) expect(Array.from(prefixes.admin)).toContain(p)
