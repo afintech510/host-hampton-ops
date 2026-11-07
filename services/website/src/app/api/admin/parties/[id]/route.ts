@@ -1284,6 +1284,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (action === 'add_line_item') {
     const { name, category, quantity, unit_price_cents, guest_multiplied } = body
+    // The three columns the invoice page lays itself out from (migration 035).
+    // Omitted means the column default, exactly as before.
+    const description = typeof body.description === 'string' && body.description.trim() ? body.description.trim().slice(0, 400) : null
+    const isFeatured = body.is_featured === true
+    const isOptional = body.is_optional === true
     if (!name || unit_price_cents === undefined) {
       return NextResponse.json({ error: 'name and unit_price_cents required' }, { status: 400 })
     }
@@ -1306,6 +1311,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       price_type: guest_multiplied ? 'per_person' : 'flat',
       guest_multiplied: !!guest_multiplied,
       sort_order: maxSort + 1,
+      description,
+      is_featured: isFeatured,
+      is_optional: isOptional,
     })
     // This changes the invoice. Answering `{ok:true}` over a refused insert is
     // the version of rule 10 that costs money.

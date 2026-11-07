@@ -271,6 +271,21 @@ describe('O2: the propose tools write nothing', () => {
     expect(negative.isError).toBe(true)
   })
 
+  it('propose_add_line_item carries an optional per-guest extra with its description, and it adds nothing to the total', async () => {
+    const d = mkdb()
+    const out = await runAssistantTool(
+      'propose_add_line_item',
+      { booking_ref: 'HH-PTY-OVR01', name: 'Additional Craft Station: Perfume Making', unit_price_cents: 3000, per_guest: true, optional: true, description: '$30 per guest. Optional.' },
+      { actor: ACTOR, supabase: d.client as never },
+    )
+    expect(out.isError).toBeFalsy()
+    expect(out.proposal?.proposal.input).toMatchObject({ unit_price_cents: 3000, guest_multiplied: true, is_optional: true, is_featured: false, description: '$30 per guest. Optional.' })
+    const text = out.proposal!.proposal.details.join(' ')
+    expect(text).toContain('optional - not in total')
+    expect(text).toContain('Adds about $0.00')
+    expect(text).toContain('$900.00 → $900.00')
+  })
+
   it('propose_record_payment defaults to NO receipt, refuses a guessed method and a refund', async () => {
     const d = mkdb()
     const ok = await runAssistantTool('propose_record_payment', { booking_ref: 'HH-PTY-OVR01', amount_cents: 10000, payment_method: 'cash' }, { actor: ACTOR, supabase: d.client as never })

@@ -18,6 +18,10 @@ import { loadQuoteCatalog, quoteFromCatalog, MAX_QUOTE_GUESTS } from '@/lib/quot
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
 import { BUILDER_TOOLS, isBuilderTool, runBuilderTool } from './partyBuilders'
+import {
+  INVOICE_FORMAT_HINT, LINE_CATEGORY_HINT, LINE_DESCRIPTION_HINT, LINE_FEATURED_HINT, LINE_OPTIONAL_HINT,
+  OPTIONAL_CARD_TAG, readLineFlags,
+} from './invoiceFormat'
 import { CREW_TOOLS, isCrewTool, runCrewTool } from './crewTools'
 import { buildEnrolCard } from './nurture'
 import { maskEmail } from './outboundText'
@@ -150,7 +154,7 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
         notes: { type: 'string', description: 'Internal admin notes. Never shown to the client.' },
         line_items: {
           type: 'array',
-          description: 'Optional priced items. Use prices from get_pricing.',
+          description: `Optional priced items. Use prices from get_pricing. ${INVOICE_FORMAT_HINT}`,
           items: {
             type: 'object',
             properties: {
@@ -158,7 +162,10 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
               unit_price_cents: { type: 'integer' },
               quantity: { type: 'integer' },
               price_type: { type: 'string', enum: ['flat', 'per_person'] },
-              category: { type: 'string' },
+              category: { type: 'string', description: LINE_CATEGORY_HINT },
+              description: { type: 'string', description: LINE_DESCRIPTION_HINT },
+              featured: { type: 'boolean', description: LINE_FEATURED_HINT },
+              optional: { type: 'boolean', description: LINE_OPTIONAL_HINT },
             },
             required: ['name', 'unit_price_cents'],
           },
@@ -256,7 +263,7 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'propose_add_line_item',
     description:
-      'PROPOSE adding a line item (add-on, decor, extra) to a party\'s invoice. Preferred: set add_on to a catalog add-on name and the server uses the catalog price. Otherwise give name + unit_price_cents ONLY if the manager stated that price. Discounts are not added from chat. Nothing changes until the manager clicks Confirm; the invoice total is recalculated when it does.',
+      'PROPOSE adding a line item (add-on, decor, extra) to a party\'s invoice. Preferred: set add_on to a catalog add-on name and the server uses the catalog price. Otherwise give name + unit_price_cents ONLY if the manager stated that price. Discounts are not added from chat. ' + INVOICE_FORMAT_HINT + ' Nothing changes until the manager clicks Confirm; the invoice total is recalculated when it does.',
     input_schema: {
       type: 'object',
       properties: {
@@ -266,7 +273,10 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
         unit_price_cents: { type: 'integer', description: 'Custom item price in cents, as stated by the manager.' },
         quantity: { type: 'integer' },
         per_guest: { type: 'boolean', description: 'Custom item is priced per guest.' },
-        category: { type: 'string' },
+        category: { type: 'string', description: LINE_CATEGORY_HINT },
+        description: { type: 'string', description: LINE_DESCRIPTION_HINT },
+        featured: { type: 'boolean', description: LINE_FEATURED_HINT },
+        optional: { type: 'boolean', description: LINE_OPTIONAL_HINT },
       },
       required: ['booking_ref'],
     },
@@ -815,6 +825,7 @@ function proposeCreateParty(input: Record<string, unknown>, ctx: ToolContext): T
       return { result: { error: `Line item "${name}" needs a price between $0 and $10,000` }, isError: true }
     }
     if (!(qty >= 1 && qty <= 100)) return { result: { error: `Line item "${name}" quantity must be 1-100` }, isError: true }
+    const flags = readLineFlags(it)
     lineItems.push({
       name,
       category: str(it.category, 40) ?? 'package',
@@ -822,6 +833,10 @@ function proposeCreateParty(input: Record<string, unknown>, ctx: ToolContext): T
       unit_price_cents: cents,
       price_type: priceType,
       guest_multiplied: priceType === 'per_person',
+      // The invoice page lays itself out from these three (lib/planInvoice.ts).
+      description: flags.description,
+      is_featured: flags.is_featured,
+      is_optional: flags.is_optional,
     })
   }
 
@@ -853,7 +868,7 @@ function proposeCreateParty(input: Record<string, unknown>, ctx: ToolContext): T
     `Guests: ${guestCount ?? 'not set'}${body.childName ? ` · Child: ${body.childName}` : ''}`,
     `Type: ${partyType ?? 'not set'}${body.packageType ? ` · ${body.packageType}` : ''}`,
     lineItems.length
-      ? `Items: ${lineItems.map(li => `${li.name} ${money(li.unit_price_cents as number)}${li.price_type === 'per_person' ? '/guest' : ''}${(li.quantity as number) > 1 ? ` ×${li.quantity}` : ''}`).join('; ')} — about ${money(total)}`
+      ? `Items: ${lineItems.map(li => `${li.name} ${money(li.unit_price_cents as number)}${li.price_type === 'per_person' ? '/guest' : ''}${(li.quantity as number) > 1 ? ` ×${li.quantity}` : ''}${li.is_optional ? OPTIONAL_CARD_TAG : ''}`).join('; ')} — about ${money(total)}`
       : 'Items: none yet (unpriced plan)',
     'No email is sent to the client.',
   ]
@@ -1459,13 +1474,15 @@ async function proposeAddLineItem(supabase: Supa, input: Record<string, unknown>
   }
   const qty = input.quantity === undefined ? 1 : Math.floor(Number(input.quantity))
   if (!(qty >= 1 && qty <= 100)) return fail('quantity must be 1-100')
+  const flags = readLineFlags(input)
 
   const pic = await moneyPicture(supabase, b.booking_ref)
   const guests = pic?.guests ?? b.guest_count_approx
-  const adds = billedTotalCents([{ unit_price_cents: cents, quantity: qty, guest_multiplied: guestMultiplied }], guests)
+  const adds = billedTotalCents([{ unit_price_cents: cents, quantity: qty, guest_multiplied: guestMultiplied, is_optional: flags.is_optional }], guests)
   const details = [
     `Party: ${partyLabel(b)}`,
-    `Add: ${name}${qty > 1 ? ` ×${qty}` : ''} — ${money(cents)}${guestMultiplied ? ' per guest' : ''} (${source})`,
+    `Add: ${name}${qty > 1 ? ` ×${qty}` : ''} — ${money(cents)}${guestMultiplied ? ' per guest' : ''}${flags.is_optional ? OPTIONAL_CARD_TAG : ''}${flags.is_featured ? ' (featured package line)' : ''} (${source})`,
+    ...(flags.description ? [`Shown under it: ${flags.description}`] : []),
     pic
       ? `Adds about ${money(adds)}: invoice ${money(pic.total)} → ${money(pic.total + adds)}.`
       : `Adds about ${money(adds)}. (The current total could not be read to preview.)`,
@@ -1481,6 +1498,9 @@ async function proposeAddLineItem(supabase: Supa, input: Record<string, unknown>
       quantity: qty,
       unit_price_cents: cents,
       guest_multiplied: guestMultiplied,
+      description: flags.description,
+      is_featured: flags.is_featured,
+      is_optional: flags.is_optional,
     },
     `Add ${name} to ${b.booking_ref}`,
     details,

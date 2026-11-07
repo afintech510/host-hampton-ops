@@ -129,6 +129,56 @@ describe('propose_* tools write nothing and screen their input', () => {
     expect(touched).toEqual([])
   })
 
+  it('a custom-priced mobile party keeps the standard invoice layout: featured package, $0 stations, an optional per-guest extra outside the total', async () => {
+    // Judith Slopnick, 2026-11-07: the assistant produced ONE flat row because
+    // the tool could not carry description / featured / optional.
+    const out = await runAssistantTool(
+      'propose_create_party',
+      {
+        contact_name: 'Judith Slopnick',
+        contact_email: 'j@example.com',
+        party_date: '2026-11-21',
+        guest_count: 15,
+        party_type: 'mobile_party',
+        line_items: [
+          { name: 'Mobile Party - up to 15 Kids', unit_price_cents: 135000, category: 'package', featured: true, description: 'On-location party for up to 15 kids.' },
+          { name: 'Canvas Painting', unit_price_cents: 0, category: 'station', description: 'Included. Each guest paints her own canvas.' },
+          { name: 'Additional Craft Station: Perfume Making', unit_price_cents: 3000, price_type: 'per_person', category: 'add-on', optional: true, description: '$30 per guest.' },
+        ],
+      },
+      ctx,
+    )
+    expect(out.isError).toBeFalsy()
+    const items = out.proposal!.proposal.input.lineItems as Array<Record<string, unknown>>
+    expect(items[0]).toMatchObject({ is_featured: true, is_optional: false, description: 'On-location party for up to 15 kids.' })
+    expect(items[1]).toMatchObject({ unit_price_cents: 0, category: 'station', is_featured: false })
+    expect(items[2]).toMatchObject({ is_optional: true, guest_multiplied: true, category: 'add-on' })
+    // The optional $450 (30 x 15) is shown but is NOT in the total.
+    const details = out.proposal!.proposal.details.join(' ')
+    expect(details).toContain('about $1350.00')
+    expect(details).toContain('optional - not in total')
+    expect(touched).toEqual([])
+  })
+
+  it('a line with no layout fields stays plain (no description, not featured, not optional)', async () => {
+    const out = await runAssistantTool(
+      'propose_create_party',
+      { contact_name: 'A', contact_email: 'a@b.co', line_items: [{ name: 'Slime Party', unit_price_cents: 59500 }] },
+      ctx,
+    )
+    const items = out.proposal!.proposal.input.lineItems as Array<Record<string, unknown>>
+    expect(items[0]).toMatchObject({ description: null, is_featured: false, is_optional: false })
+  })
+
+  it('the system prompt teaches the invoice format, and the tool schemas expose the fields', () => {
+    expect(systemPrompt('2026-11-07')).toMatch(/Invoice format/)
+    for (const name of ['propose_create_party', 'propose_add_line_item']) {
+      const t = ASSISTANT_TOOLS.find(x => x.name === name)!
+      const schema = JSON.stringify(t.input_schema)
+      for (const field of ['description', 'featured', 'optional']) expect(schema).toContain('"' + field + '"')
+    }
+  })
+
   it.each([
     [{ contact_name: 'A' }, 'contact_email'],
     [{ contact_name: 'A', contact_email: 'not-an-email' }, 'contact_email'],

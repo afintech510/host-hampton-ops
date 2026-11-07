@@ -203,6 +203,9 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
         quantity: number
         unit_price_cents: number
         guest_multiplied: boolean
+        description?: string | null
+        is_featured?: boolean
+        is_optional?: boolean
       }
       const { res, json } = await replayPartyAction(original, input.bookingId, {
         action: 'add_line_item',
@@ -211,6 +214,9 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
         quantity: input.quantity,
         unit_price_cents: input.unit_price_cents,
         guest_multiplied: input.guest_multiplied,
+        description: input.description ?? undefined,
+        is_featured: input.is_featured === true,
+        is_optional: input.is_optional === true,
       })
       if (!res.ok || json.ok !== true) return refused('Not added', res, json)
       return { ok: true, status: res.status, message: `Added ${input.name} to ${input.bookingRef}.${warningNote(json)}${totalsNote(json)}` }
