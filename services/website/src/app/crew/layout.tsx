@@ -50,7 +50,7 @@ const varsity = Graduate({ subsets: ['latin'], weight: '400', variable: '--crew-
 const FONT_VARS = [archivoBlack, archivo, manrope, inter, unbounded, outfit, space, spaceMono, fraunces, varsity].map(f => f.variable).join(' ')
 
 export const metadata: Metadata = {
-  title: { absolute: 'Host Hampton Crew' },
+  title: { absolute: 'Party Crew' },
   robots: NOINDEX,
   alternates: { canonical: null },
   openGraph: null,
@@ -73,9 +73,9 @@ ${themeCss()}
 .crew-root h2{font-size:var(--h2-size);font-weight:700;margin:1.75rem 0 .65rem;text-transform:var(--h2-transform)}
 .crew-root h3{font-size:1.05rem;font-weight:700;margin:0}
 .crew-wrap{max-width:40rem;margin:0 auto;padding:1.25rem 1rem 7rem}
-.crew-top{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:1.1rem}
-.crew-brandmark{display:inline-flex;align-items:center;gap:.6rem;text-decoration:none;min-width:0}
-.crew-logo{display:block;height:34px;width:auto;filter:var(--c-logo-filter)}
+.crew-top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:.75rem;margin-bottom:1.1rem}
+.crew-brandmark{grid-column:2;justify-self:center;display:inline-flex;align-items:center;text-decoration:none;min-width:0;white-space:nowrap}
+.crew-top > .crew-who{grid-column:3;justify-self:end}
 .crew-wordmark{font-family:var(--crew-font-varsity),Impact,'Arial Black',sans-serif;font-size:1.7rem;line-height:1;letter-spacing:.07em;text-transform:uppercase;color:var(--c-brand-navy);text-shadow:${RING};padding:.1rem .2rem .05rem}
 .crew-top{flex-wrap:nowrap}
 .crew-who{display:flex;align-items:center;flex-wrap:nowrap;gap:.5rem;min-width:0;flex-shrink:0}

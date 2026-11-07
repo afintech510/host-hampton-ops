@@ -108,6 +108,7 @@ describe('R0: the walkers see the surface', () => {
       'app/api/admin/crew/settings/route.ts',
     ]))
     expect(PAGE_FILES.map(rel)).toEqual([
+      'app/admin/crew/bookings/page.tsx', 'app/admin/crew/leads/page.tsx',
       'app/admin/crew/members/page.tsx', 'app/admin/crew/page.tsx', 'app/admin/crew/parties/[id]/page.tsx', 'app/admin/crew/rules/page.tsx',
     ])
     expect(HANDLERS.length).toBeGreaterThanOrEqual(12)

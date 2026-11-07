@@ -46,6 +46,8 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/admin/applications',
   '/admin/assistant',
   '/admin/crew',
+  '/admin/crew/bookings',
+  '/admin/crew/leads',
   '/admin/crew/members',
   '/admin/crew/parties/[id]',
   '/admin/crew/rules',

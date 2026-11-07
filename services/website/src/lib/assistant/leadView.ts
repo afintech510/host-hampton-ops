@@ -24,7 +24,7 @@ import { maskPhone } from './outboundText'
 
 type Supa = ReturnType<typeof getSupabase>
 
-const LEAD_COLUMNS =
+export const LEAD_COLUMNS =
   'id, booking_ref, status, contact_id, contact_name, contact_phone, party_type, event_type, party_date, guest_count_approx, child_name, total_cents, created_at'
 const MAX_SCAN = 80
 export const MAX_LEADS = 25
@@ -79,7 +79,7 @@ function newest(a: Touch | null, b: Touch | null): Touch | null {
 }
 
 /** Latest inbound / outbound touch per booking, across every place we record one. */
-async function touchesFor(
+export async function touchesFor(
   sb: Supa,
   bookings: LeadBooking[],
 ): Promise<{ ok: true; inbound: Map<string, Touch>; outbound: Map<string, Touch> } | { ok: false }> {

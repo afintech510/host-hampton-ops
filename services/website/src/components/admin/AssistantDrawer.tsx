@@ -71,6 +71,22 @@ export default function AssistantDrawer({
     return () => window.removeEventListener('hh:assistant-context', onCtx)
   }, [])
 
+  // `hh:assistant-open` opens the drawer from anywhere (the crew-management menu's
+  // sparkle button, a lead card's "Ask the assistant"): optionally about one party
+  // (`bookingRef`; without one it is the general chat) and with text already in the
+  // box (`prompt`, which the manager sends - it is never sent for them).
+  const [seed, setSeed] = useState<{ text: string; nonce: number } | null>(null)
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const d = (e as CustomEvent<{ bookingRef?: string | null; prompt?: string }>).detail ?? {}
+      setAnnouncedRef(typeof d.bookingRef === 'string' && d.bookingRef ? d.bookingRef : null)
+      setSeed(typeof d.prompt === 'string' && d.prompt ? { text: d.prompt, nonce: Date.now() } : null)
+      setOpen(true)
+    }
+    window.addEventListener('hh:assistant-open', onOpen)
+    return () => window.removeEventListener('hh:assistant-open', onOpen)
+  }, [])
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -95,7 +111,8 @@ export default function AssistantDrawer({
 
   return (
     <div className="no-print print:hidden">
-      {!open && (
+      {/* The crew-management pages have their own sparkle button in the top bar. */}
+      {!open && !pathname.startsWith('/admin/crew') && (
         <button
           onClick={() => setOpen(true)}
           aria-label="Open the manager assistant"
@@ -117,7 +134,7 @@ export default function AssistantDrawer({
             className="fixed inset-y-0 right-0 z-[61] w-full sm:w-[440px] shadow-2xl bg-white flex flex-col"
             style={{ height: '100dvh' }}
           >
-            <AssistantChat context={context} variant="drawer" onActionDone={onActionDone} onClose={() => setOpen(false)} />
+            <AssistantChat context={context} variant="drawer" onActionDone={onActionDone} onClose={() => setOpen(false)} seed={seed} />
           </aside>
         </>
       )}

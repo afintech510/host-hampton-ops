@@ -12,6 +12,8 @@
  */
 
 import { useCallback, useState } from 'react'
+import { usePathname } from 'next/navigation'
+import CrewAdminBar, { sectionOf } from './CrewAdminBar'
 
 const TOKEN_KEY = 'hh_admin_token'
 
@@ -71,31 +73,41 @@ export function LoginGate({ title, onSignedIn }: { title: string; onSignedIn: ()
   )
 }
 
-const NAV = [
+/** The two screens under "Staff". Rules moved to Settings (the menu, top right). */
+const STAFF_NAV = [
   { href: '/admin/crew', label: 'Schedule' },
   { href: '/admin/crew/members', label: 'Roster' },
-  { href: '/admin/crew/rules', label: 'Rules' },
 ]
 
+/**
+ * The frame of every /admin/crew page: the sticky top menu (CrewAdminBar), then the
+ * page. No link back to the main admin. Under Staff, a second row switches between
+ * the schedule and the roster.
+ */
 export function CrewFrame({ active, title, sub, children }: { active: string; title: string; sub?: React.ReactNode; children: React.ReactNode }) {
+  const staff = sectionOf(usePathname()) === 'staff'
   return (
-    <div className="min-h-screen bg-[#F6F1EB] px-4 sm:px-5 py-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex flex-wrap items-center gap-2 mb-5 text-sm">
-          <a href="/admin" className="text-hampton-navy/50 hover:text-hampton-navy mr-2">← Admin</a>
-          {NAV.map(n => (
-            <a
-              key={n.href}
-              href={n.href}
-              className={`rounded-full px-4 py-1.5 font-semibold ${active === n.href ? 'bg-hampton-navy text-[#F6F1EB]' : 'bg-white text-hampton-navy'}`}
-            >
-              {n.label}
-            </a>
-          ))}
+    <div className="min-h-screen bg-[#F6F1EB]">
+      <CrewAdminBar />
+      <div className="px-4 sm:px-5 py-6">
+        <div className="max-w-6xl mx-auto">
+          {staff && (
+            <div className="flex flex-wrap items-center gap-2 mb-5 text-sm">
+              {STAFF_NAV.map(n => (
+                <a
+                  key={n.href}
+                  href={n.href}
+                  className={`rounded-full px-4 py-1.5 font-semibold ${active === n.href ? 'bg-hampton-navy text-[#F6F1EB]' : 'bg-white text-hampton-navy'}`}
+                >
+                  {n.label}
+                </a>
+              ))}
+            </div>
+          )}
+          <h1 className="font-serif text-3xl text-hampton-navy">{title}</h1>
+          {sub && <div className="text-hampton-navy/60 text-sm mt-1">{sub}</div>}
+          <div className="mt-6">{children}</div>
         </div>
-        <h1 className="font-serif text-3xl text-hampton-navy">{title}</h1>
-        {sub && <div className="text-hampton-navy/60 text-sm mt-1">{sub}</div>}
-        <div className="mt-6">{children}</div>
       </div>
     </div>
   )

@@ -159,10 +159,16 @@ describe('the manager reads first names, the age and the food, never a surname',
 })
 
 describe('the crew chrome', () => {
-  it('has logo + CREW at the top left of every signed-in and sign-in screen, from one component', () => {
+  it('has "Party Crew" - no logo - at the top centre of every signed-in and sign-in screen, from one component', () => {
     const brand = read('app', 'crew', '_components', 'CrewBrand.tsx')
-    expect(brand).toMatch(/TENANT\.brand\.logo/)
-    expect(brand).toMatch(/className="crew-wordmark"[^>]*>Crew</)
+    expect(brand).not.toMatch(/TENANT\.brand\.logo|next\/image|<Image/)
+    expect(brand).toMatch(/className="crew-wordmark"[^>]*>Party Crew</)
+    expect(brand).toMatch(/aria-label="Party Crew"/)
+    // Centred: the header is a three-column grid and the brand sits in the middle one.
+    const layout = read('app', 'crew', 'layout.tsx')
+    expect(layout).toMatch(/\.crew-top\{display:grid;grid-template-columns:1fr auto 1fr/)
+    expect(layout).toMatch(/\.crew-brandmark\{grid-column:2;justify-self:center/)
+    expect(layout).toMatch(/title: \{ absolute: 'Party Crew' \}/)
     for (const f of [['_components', 'CrewTop.tsx'], ['login', 'page.tsx'], ['onboarding', 'page.tsx'], ['profile', 'page.tsx']]) {
       const src = read('app', 'crew', ...f)
       expect(src).toMatch(/<CrewBrand/)
