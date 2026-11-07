@@ -5,8 +5,12 @@
  * lib/dashboardMetrics.ts; a source that could not be read shows as unavailable here,
  * never as a zero.
  *
- *   YTD gross sales        the books ledger for the year (bookkeeping imports + every
- *                          payment since + event tickets; fundraiser orders are not in it)
+ *   Gross sales            the books ledger (bookkeeping imports + every payment since +
+ *                          event tickets; fundraiser orders are not in it) for the year,
+ *                          quarter or month to date, against the same stretch of the
+ *                          periods before it (year: last year; quarter: last quarter and
+ *                          the same quarter last year; month: last month and the same
+ *                          month last year)
  *   Booking backlog        what the parties booked from today on are worth
  *   Bookings made          count and $ this week / month / 30 / 60 days, against the same
  *                          stretch before
@@ -17,6 +21,8 @@
 
 import { Banner, CrewFrame, money } from '../_components/adminCrew'
 import { useAdminData } from '../_components/adminData'
+import { pill, useRemembered } from '../_components/PartyFilters'
+import type { SalesPeriod, SalesPeriodKey } from '@/lib/dashboardMetrics'
 
 type Money = number
 interface Dash {
@@ -24,6 +30,8 @@ interface Dash {
   today: string
   errors: string[]
   ytd: null | { year: number; grossCents: Money; refundsCents: Money; netCents: Money; byGroup: { group: string; cents: Money }[]; throughDate: string | null }
+  /** Year, quarter and month to date, each with its comparisons. null when the books could not be read. */
+  sales: null | SalesPeriod[]
   backlog: { count: number; totalCents: Money; collectedCents: Money; toCollectCents: Money; byType: { type: string; label: string; count: number; totalCents: Money }[] }
   bookingsMade: { key: string; label: string; count: number; cents: Money; prior: { count: number; cents: Money } }[]
   events: null | { count: number; signups: number; revenueCents: Money; events: { id: string; title: string; date: string; capacity: number | null; signups: number; revenueCents: Money }[] }
@@ -70,6 +78,43 @@ function Delta({ now, prior, money: isMoney }: { now: number; prior: number; mon
     <span className={up ? 'text-emerald-700' : 'text-red-700'}>
       {up ? '▲' : '▼'} {isMoney ? whole(Math.abs(diff)) : Math.abs(diff)} <span className="text-hampton-navy/40">vs {isMoney ? whole(prior) : prior} before</span>
     </span>
+  )
+}
+
+const shortRange = (a: string, b: string) => `${shortDay(a)} – ${shortDay(b)}`
+
+/** One earlier stretch held against this one: its like-for-like figure, how this compares, and the whole period for reference. */
+function Comparison({ c, current }: { c: SalesPeriod['comparisons'][number]; current: number }) {
+  const up = c.grossCents !== null && current >= c.grossCents
+  const same = c.grossCents !== null && current === c.grossCents
+  return (
+    <li className="rounded-xl bg-[#F6F1EB] p-3" data-sales-comparison>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-hampton-navy">{c.label}</div>
+          <div className="text-[11px] text-hampton-navy/50">{c.title} · {shortRange(c.start, c.end)}</div>
+        </div>
+        {c.grossCents === null ? (
+          <div className="text-right text-xs text-hampton-navy/50 shrink-0">books don&apos;t go back that far</div>
+        ) : (
+          <div className="text-right shrink-0">
+            <div className="text-lg font-bold text-hampton-navy leading-tight">{whole(c.grossCents)}</div>
+            <div className="text-[11px] font-semibold">
+              {same ? (
+                <span className="text-hampton-navy/50">same</span>
+              ) : (
+                <span className={up ? 'text-emerald-700' : 'text-red-700'}>
+                  {up ? '▲' : '▼'} {c.changePct === null ? '' : `${Math.abs(c.changePct)}% · `}{whole(Math.abs(current - c.grossCents))}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+      {c.fullGrossCents !== null && c.end !== c.fullEnd && (
+        <div className="mt-1 text-[11px] text-hampton-navy/50">Whole {c.title}: {whole(c.fullGrossCents)}</div>
+      )}
+    </li>
   )
 }
 
@@ -144,6 +189,9 @@ function Stat({ label, value, sub }: { label: string; value: React.ReactNode; su
 export default function CrewDashboardPage() {
   const { data, error, loading, refreshing } = useAdminData<Dash>('/api/admin/crew-app/dashboard', 60_000)
   const d = data
+  // Which period the sales card shows is remembered while you move between tabs.
+  const [period, setPeriod] = useRemembered<SalesPeriodKey>('dashboard.period', 'ytd')
+  const sales = d?.sales?.find(p => p.key === period) ?? d?.sales?.[0] ?? null
   const asOf = d ? new Date(d.asOf).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) : null
 
   return (
@@ -155,15 +203,27 @@ export default function CrewDashboardPage() {
 
         {d && (
           <>
-            <Section title={`${d.ytd?.year ?? new Date().getFullYear()} gross sales, year to date`} hint="The books: bookkeeping imports + every payment since + event tickets. Fundraiser orders are not counted.">
-              {d.ytd ? (
+            <Section title="Gross sales" hint="The books: bookkeeping imports + every payment since + event tickets. Fundraiser orders are not counted.">
+              {d.sales && sales ? (
                 <>
-                  <div className="text-4xl font-bold text-hampton-navy">{whole(d.ytd.grossCents)}</div>
-                  <div className="text-xs text-hampton-navy/50 mt-0.5">
-                    {whole(d.ytd.refundsCents)} refunded · {whole(d.ytd.netCents)} net{d.ytd.throughDate ? ` · books through ${shortDay(d.ytd.throughDate)}` : ''}
+                  <div className="flex gap-1.5" role="group" aria-label="Period" data-sales-periods>
+                    {d.sales.map(p => (
+                      <button key={p.key} type="button" aria-pressed={period === p.key} onClick={() => setPeriod(p.key)} className={`${pill(period === p.key)} flex-1`}>
+                        {p.button}
+                      </button>
+                    ))}
                   </div>
+                  <div className="mt-3 text-sm font-semibold text-hampton-navy">{sales.title}</div>
+                  <div className="text-4xl font-bold text-hampton-navy">{whole(sales.grossCents)}</div>
+                  <div className="text-xs text-hampton-navy/50 mt-0.5">
+                    {shortRange(sales.start, sales.end)} · {whole(sales.refundsCents)} refunded · {whole(sales.netCents)} net{d.ytd?.throughDate ? ` · books through ${shortDay(d.ytd.throughDate)}` : ''}
+                  </div>
+                  <ul className="mt-3 space-y-2">
+                    {sales.comparisons.map(c => <Comparison key={c.label} c={c} current={sales.grossCents} />)}
+                  </ul>
+                  <p className="mt-1.5 text-[11px] text-hampton-navy/40">Each is held against the same stretch of that period (the same number of days in), so a part-finished {sales.button.toLowerCase()} is never set against a whole one.</p>
                   <div className="mt-3">
-                    <Bars rows={d.ytd.byGroup.filter(g => g.cents > 0).map(g => ({ label: g.group, value: g.cents, right: whole(g.cents) }))} />
+                    <Bars rows={sales.byGroup.filter(g => g.cents > 0).map(g => ({ label: g.group, value: g.cents, right: whole(g.cents) }))} />
                   </div>
                 </>
               ) : (

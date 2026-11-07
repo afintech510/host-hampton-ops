@@ -5,7 +5,7 @@ import { etDateString, shiftEtDate } from '@/lib/partyTime'
 import { clock12 } from '@/lib/assistant/timeFormat'
 import { monthKeys, daysInMonth } from '@/lib/bookingWeeks'
 import {
-  backlog, bookingsMade, leadVelocity, openLeads, upcomingEvents, ytdSales, VELOCITY_WEEKS,
+  backlog, bookingsMade, leadVelocity, openLeads, salesPeriods, upcomingEvents, ytdSales, VELOCITY_WEEKS,
   type BookedRow, type EventSummaryRow, type LedgerRow,
 } from '@/lib/dashboardMetrics'
 import { loadLeadCards } from '@/lib/leadCards'
@@ -153,7 +153,8 @@ async function ledgerRows(sb: Supa, today: string): Promise<LedgerRow[] | null> 
     const { data, error } = await sb
       .from('financial_transactions')
       .select('date, amount_cents, category')
-      .gte('date', `${today.slice(0, 4)}-01-01`)
+      // From the start of LAST year: the comparisons (same quarter last year, and so on) read it.
+      .gte('date', `${Number(today.slice(0, 4)) - 1}-01-01`)
       .lte('date', today)
       .order('date', { ascending: true })
       .range(offset, offset + CHUNK - 1)
@@ -235,6 +236,7 @@ export async function loadDashboard(sb: Supa, parties: BookedParty[], now: Date 
     today,
     errors,
     ytd: ledger ? ytdSales(ledger, today) : null,
+    sales: ledger ? salesPeriods(ledger, today) : null,
     backlog: backlog(rows, today),
     bookingsMade: bookingsMade(rows, today),
     events: events ? upcomingEvents(events, today) : null,

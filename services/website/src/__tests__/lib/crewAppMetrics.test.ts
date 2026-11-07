@@ -4,7 +4,7 @@
  */
 import { monthKeys, weeksOfMonth, weekNumberOf, weekCaption, passesDateFilter, monthShort, passesWeekend, weekdayOf, countByDate, dayCaption, dayOfMonth } from '@/lib/bookingWeeks'
 import {
-  ytdSales, backlog, bookingsMade, bookingWindows, leadVelocity, openLeads, upcomingEvents, sundayOf,
+  ytdSales, salesPeriods, backlog, bookingsMade, bookingWindows, leadVelocity, openLeads, upcomingEvents, sundayOf,
   type BookedRow, type LedgerRow,
 } from '@/lib/dashboardMetrics'
 
@@ -117,6 +117,109 @@ describe('YTD gross sales', () => {
   it('is zero, not an error, with no rows', () => {
     expect(ytdSales([], TODAY).grossCents).toBe(0)
     expect(ytdSales([], TODAY).throughDate).toBeNull()
+  })
+})
+
+describe('gross sales by period: year, quarter, month to date', () => {
+  const row = (date: string, cents: number, category: string | null = 'Party Booking'): LedgerRow => ({ date, amount_cents: cents, category })
+  const rows: LedgerRow[] = [
+    row('2025-10-02', 1_000), row('2025-10-20', 2_000), row('2025-11-06', 300), row('2025-11-20', 4_000), row('2025-12-15', 5_000),
+    row('2026-07-10', 700), row('2026-08-06', 800), row('2026-08-20', 9_000),
+    row('2026-10-03', 6_000), row('2026-10-12', 400), row('2026-11-02', 1_500), row('2026-11-05', -500),
+  ]
+  const by = (ps: ReturnType<typeof salesPeriods>, k: string) => ps.find(p => p.key === k)!
+
+  it('offers year, quarter and month, each from the first of the period to today', () => {
+    const ps = salesPeriods(rows, '2026-11-06')
+    expect(ps.map(p => [p.key, p.button, p.title, p.start, p.end])).toEqual([
+      ['ytd', 'Year', '2026 to date', '2026-01-01', '2026-11-06'],
+      ['qtd', 'Quarter', 'Q4 2026 to date', '2026-10-01', '2026-11-06'],
+      ['mtd', 'Month', 'November 2026 to date', '2026-11-01', '2026-11-06'],
+    ])
+  })
+
+  it('totals each period: gross is money in, refunds sit beside it, groups add up to gross', () => {
+    const ps = salesPeriods(rows, '2026-11-06')
+    expect(by(ps, 'qtd')).toMatchObject({ grossCents: 6_000 + 400 + 1_500, refundsCents: 500, netCents: 6_000 + 400 + 1_500 - 500 })
+    expect(by(ps, 'mtd')).toMatchObject({ grossCents: 1_500, refundsCents: 500 })
+    expect(by(ps, 'ytd').grossCents).toBe(700 + 800 + 9_000 + 6_000 + 400 + 1_500)
+    for (const p of ps) expect(p.byGroup.reduce((s, g) => s + g.cents, 0)).toBe(p.grossCents)
+  })
+
+  it('quarter: held against the same number of days of last quarter and of the same quarter last year, with the whole period for reference', () => {
+    const q = by(salesPeriods(rows, '2026-11-06'), 'qtd')
+    // 37 days into Q4, so 37 days into Q3 (Jul 1 - Aug 6) and into Q4 2025 (Oct 1 - Nov 6).
+    expect(q.comparisons.map(c => [c.label, c.title, c.start, c.end, c.fullEnd])).toEqual([
+      ['Last quarter', 'Q3 2026', '2026-07-01', '2026-08-06', '2026-09-30'],
+      ['Same quarter last year', 'Q4 2025', '2025-10-01', '2025-11-06', '2025-12-31'],
+    ])
+    expect(q.comparisons[0]).toMatchObject({ grossCents: 1_500, fullGrossCents: 1_500 + 9_000, changePct: 427 })
+    expect(q.comparisons[1]).toMatchObject({ grossCents: 3_300, fullGrossCents: 3_300 + 4_000 + 5_000, changePct: 139 })
+  })
+
+  it('month: last month and the same month last year, to the same day', () => {
+    const m = by(salesPeriods(rows, '2026-11-06'), 'mtd')
+    expect(m.comparisons.map(c => [c.label, c.title, c.start, c.end, c.fullEnd])).toEqual([
+      ['Last month', 'October 2026', '2026-10-01', '2026-10-06', '2026-10-31'],
+      ['Same month last year', 'November 2025', '2025-11-01', '2025-11-06', '2025-11-30'],
+    ])
+    expect(m.comparisons[0]).toMatchObject({ grossCents: 6_000, fullGrossCents: 6_400, changePct: -75 })
+    expect(m.comparisons[1]).toMatchObject({ grossCents: 300, fullGrossCents: 4_300, changePct: 400 })
+  })
+
+  it('year: held against the same point last year, or nothing when the books start later than that', () => {
+    const y = by(salesPeriods(rows, '2026-11-06'), 'ytd')
+    expect(y.comparisons).toHaveLength(1)
+    // The first row is Oct 2025, so Jan-Nov 2025 is not in the books: null, never a zero that reads as "sold nothing".
+    expect(y.comparisons[0]).toMatchObject({ label: 'Same point last year', start: '2025-01-01', end: '2025-11-06', grossCents: null, fullGrossCents: null, changePct: null })
+    const full = salesPeriods([row('2025-01-02', 1_000), row('2025-06-01', 2_000), row('2025-12-30', 4_000), row('2026-03-01', 3_000)], '2026-11-06')
+    expect(by(full, 'ytd').comparisons[0]).toMatchObject({ grossCents: 3_000, fullGrossCents: 7_000, changePct: 0 })
+  })
+
+  it('in January "last quarter" is last year\'s Q4, and in the first quarter the same-quarter comparison is Q1 last year', () => {
+    const q = by(salesPeriods(rows, '2026-01-15'), 'qtd')
+    expect(q.title).toBe('Q1 2026 to date')
+    expect(q.comparisons[0]).toMatchObject({ title: 'Q4 2025', start: '2025-10-01', end: '2025-10-15', fullEnd: '2025-12-31' })
+    expect(q.comparisons[1]).toMatchObject({ title: 'Q1 2025', start: '2025-01-01', end: '2025-01-15', grossCents: null })
+    expect(by(salesPeriods(rows, '2026-01-15'), 'mtd').comparisons[0]).toMatchObject({ title: 'December 2025', start: '2025-12-01', end: '2025-12-15' })
+  })
+
+  it('a short month or a leap day never reaches past the end of the month it is compared with', () => {
+    const m = by(salesPeriods(rows, '2026-03-31'), 'mtd')
+    expect(m.comparisons[0]).toMatchObject({ title: 'February 2026', end: '2026-02-28', fullEnd: '2026-02-28' })
+    const leap = salesPeriods(rows, '2028-02-29')
+    expect(by(leap, 'mtd').comparisons[1]).toMatchObject({ title: 'February 2027', end: '2027-02-28', fullEnd: '2027-02-28' })
+    expect(by(leap, 'ytd').comparisons[0]).toMatchObject({ end: '2027-02-28' })
+  })
+
+  it('a quarter that is not yet as long as the one before is compared whole days to whole days, and never past that quarter\'s end', () => {
+    // Day 92 of Q3 against a 91-day Q2: the like-for-like end is Q2's last day.
+    const q = by(salesPeriods(rows, '2026-09-30'), 'qtd')
+    expect(q.comparisons[0]).toMatchObject({ title: 'Q2 2026', start: '2026-04-01', end: '2026-06-30', fullEnd: '2026-06-30' })
+  })
+
+  it('has nothing to divide by when the earlier period sold nothing: no percentage, not infinity', () => {
+    const ps = salesPeriods([row('2025-10-02', 1_000), row('2026-11-02', 1_500)], '2026-11-06')
+    expect(by(ps, 'mtd').comparisons[0]).toMatchObject({ grossCents: 0, changePct: null })
+  })
+
+  it('with no rows every comparison is unavailable rather than zero', () => {
+    const ps = salesPeriods([], '2026-11-06')
+    expect(ps.flatMap(p => p.comparisons).every(c => c.grossCents === null && c.fullGrossCents === null)).toBe(true)
+  })
+
+  it('the dashboard reads last year\'s ledger too, and the page has the three period buttons over the comparisons', () => {
+    const fs = require('fs') as typeof import('fs')
+    const path = require('path') as typeof import('path')
+    const read = (...p: string[]) => fs.readFileSync(path.join(process.cwd(), 'src', ...p), 'utf8')
+    const data = read('lib', 'crewAppData.ts')
+    expect(data).toMatch(/\.gte\('date', `\$\{Number\(today\.slice\(0, 4\)\) - 1\}-01-01`\)/)
+    expect(data).toMatch(/sales: ledger \? salesPeriods\(ledger, today\) : null/)
+    const page = read('app', 'admin', 'crew', 'dashboard', 'page.tsx')
+    expect(page).toMatch(/useRemembered<SalesPeriodKey>\('dashboard\.period', 'ytd'\)/)
+    expect(page).toContain('data-sales-periods')
+    expect(page).toMatch(/d\.sales\.map\(p => \(\s*<button key=\{p\.key\}/)
+    expect(page).toMatch(/sales\.comparisons\.map\(c => <Comparison/)
   })
 })
 

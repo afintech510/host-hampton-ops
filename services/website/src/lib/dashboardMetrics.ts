@@ -114,6 +114,139 @@ export function ytdSales(rows: LedgerRow[], today: string) {
   }
 }
 
+/* ── Gross sales by period: year, quarter, month to date ─────────────────── */
+
+export type SalesPeriodKey = 'ytd' | 'qtd' | 'mtd'
+
+export interface SalesComparison {
+  /** "Last quarter", "Same quarter last year". */
+  label: string
+  /** "Q3 2026", "November 2025". */
+  title: string
+  start: string
+  /** The like-for-like end: the same number of days (or the same day of the month) into that period. */
+  end: string
+  /** The last day of that whole period. */
+  fullEnd: string
+  /** Gross over start..end, the figure the current period is held against. null when the books do not reach back that far. */
+  grossCents: number | null
+  /** Gross over the WHOLE of that period, for reference. null when the books do not reach back that far. */
+  fullGrossCents: number | null
+  /** (current - grossCents) / grossCents, whole percent; null when there is nothing to divide by. */
+  changePct: number | null
+}
+
+export interface SalesPeriod {
+  key: SalesPeriodKey
+  /** "Year", "Quarter", "Month": the button. */
+  button: string
+  /** "2026 to date", "Q4 2026 to date", "November 2026 to date". */
+  title: string
+  start: string
+  end: string
+  grossCents: number
+  refundsCents: number
+  netCents: number
+  byGroup: { group: SalesGroup; cents: number }[]
+  comparisons: SalesComparison[]
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+const ymd = (y: number, m: number, d: number) => `${y}-${pad2(m)}-${pad2(d)}`
+const daysIn = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate()
+/** A date in a month, held to that month's last day (Feb 29 asked of a common year is Feb 28). */
+const clampDay = (y: number, m: number, d: number) => ymd(y, m, Math.min(d, daysIn(y, m)))
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+function totalsBetween(rows: LedgerRow[], start: string, end: string) {
+  const byGroup = new Map<SalesGroup, number>(SALES_GROUPS.map(g => [g, 0]))
+  let gross = 0
+  let refunds = 0
+  for (const r of rows) {
+    if (!r.date || r.date < start || r.date > end) continue
+    const c = Number(r.amount_cents) || 0
+    if (c < 0) {
+      refunds += -c
+      continue
+    }
+    gross += c
+    const g = GROUP_OF[r.category ?? ''] ?? 'Other sales'
+    byGroup.set(g, (byGroup.get(g) ?? 0) + c)
+  }
+  return { gross, refunds, byGroup: SALES_GROUPS.map(g => ({ group: g, cents: byGroup.get(g) ?? 0 })) }
+}
+
+/**
+ * Gross sales for the year, quarter and month to date, each held against the same stretch of the
+ * periods before it (the same number of days in, so a half-finished quarter is never compared with
+ * a whole one) with the whole earlier period beside it for reference:
+ *
+ *   year     vs the same point last year
+ *   quarter  vs the previous quarter, and vs the same quarter last year
+ *   month    vs last month, and vs the same month last year
+ *
+ * A comparison that starts before the books do is `null`, never a zero that reads as "we sold nothing".
+ * Refunds are never netted into gross, as in `ytdSales`.
+ */
+export function salesPeriods(rows: LedgerRow[], today: string): SalesPeriod[] {
+  const [y, m, d] = today.split('-').map(Number)
+  const dates = rows.map(r => r.date).filter(Boolean).sort()
+  // The books are usable from the first of the month their first row falls in.
+  const booksFrom = dates.length ? `${dates[0].slice(0, 7)}-01` : null
+
+  const compare = (label: string, title: string, start: string, end: string, fullEnd: string, current: number): SalesComparison => {
+    const covered = booksFrom !== null && start >= booksFrom
+    const gross = covered ? totalsBetween(rows, start, end).gross : null
+    return {
+      label, title, start, end, fullEnd,
+      grossCents: gross,
+      fullGrossCents: covered ? totalsBetween(rows, start, fullEnd).gross : null,
+      changePct: gross !== null && gross > 0 ? Math.round(((current - gross) / gross) * 100) : null,
+    }
+  }
+
+  const make = (
+    key: SalesPeriodKey, button: string, title: string, start: string,
+    prior: (current: number) => SalesComparison[],
+  ): SalesPeriod => {
+    const t = totalsBetween(rows, start, today)
+    return {
+      key, button, title, start, end: today,
+      grossCents: t.gross, refundsCents: t.refunds, netCents: t.gross - t.refunds, byGroup: t.byGroup,
+      comparisons: prior(t.gross),
+    }
+  }
+
+  // Quarter: the 1st of its first month, and how many days of it have gone.
+  const q0 = Math.floor((m - 1) / 3)
+  const qm = 3 * q0 + 1
+  const qStart = ymd(y, qm, 1)
+  const qElapsed = spanDays(qStart, today)
+  const quarterFrom = (qy: number, qmonth: number, label: string, current: number) => {
+    const s = ymd(qy, qmonth, 1)
+    const full = ymd(qy, qmonth + 2, daysIn(qy, qmonth + 2))
+    const like = addDays(s, qElapsed - 1)
+    return compare(label, `Q${Math.floor((qmonth - 1) / 3) + 1} ${qy}`, s, like < full ? like : full, full, current)
+  }
+
+  const monthFrom = (my: number, mm: number, label: string, current: number) =>
+    compare(label, `${MONTHS[mm - 1]} ${my}`, ymd(my, mm, 1), clampDay(my, mm, d), ymd(my, mm, daysIn(my, mm)), current)
+
+  return [
+    make('ytd', 'Year', `${y} to date`, ymd(y, 1, 1), cur => [
+      compare('Same point last year', `${y - 1}`, ymd(y - 1, 1, 1), clampDay(y - 1, m, d), ymd(y - 1, 12, 31), cur),
+    ]),
+    make('qtd', 'Quarter', `Q${q0 + 1} ${y} to date`, qStart, cur => [
+      quarterFrom(q0 === 0 ? y - 1 : y, q0 === 0 ? 10 : qm - 3, 'Last quarter', cur),
+      quarterFrom(y - 1, qm, 'Same quarter last year', cur),
+    ]),
+    make('mtd', 'Month', `${MONTHS[m - 1]} ${y} to date`, ymd(y, m, 1), cur => [
+      monthFrom(m === 1 ? y - 1 : y, m === 1 ? 12 : m - 1, 'Last month', cur),
+      monthFrom(y - 1, m, 'Same month last year', cur),
+    ]),
+  ]
+}
+
 /* ── Backlog and what is booked ahead ────────────────────────────────────── */
 
 const TYPE_ORDER = ['in_studio_theme', 'mobile_party', 'studio_rental'] as const
