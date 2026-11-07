@@ -3,7 +3,9 @@ import {
   checkPlaceholders, clientLinkLabel, defaultEmailBody, defaultEmailSubject, defaultSmsBody,
   type ClientLinkKind,
 } from '@/lib/clientLinks'
-import { PHOTOS_EMAIL_SUBJECT, photosEmailText, photosSmsText } from '@/lib/photoSets'
+import { PHOTOS_EMAIL_SUBJECT, PHOTOS_EMAIL_SUBJECT_INTRODUCED, photosEmailText, photosSmsText } from '@/lib/photoSets'
+import { threadHasIntroduced } from './threadIntro'
+import { TENANT } from '@/tenant'
 import { checkSmsQuietHours } from '@/lib/quietHours'
 import { phoneHasExplicitStop } from '@/lib/phoneStop'
 import { linkSendApproves } from '@/lib/linkApproval'
@@ -123,9 +125,14 @@ export async function buildClientLinksCard(
     /** Who wrote the fields in `edits`. */
     authored?: Authored
     now?: Date
+    /** Skip the lookup: the thread has (true) or has not (false) already introduced us. */
+    introduced?: boolean
   },
 ): Promise<BuiltCard> {
   const { kinds, email, sms } = opts
+  // The intro and the sign-off are for the FIRST message in a thread only.
+  const introduced = opts.introduced ?? (await threadHasIntroduced(supabase, b).catch(() => null)) === true
+  const wording = { introduced }
   const edits = opts.edits ?? {}
   const authored: Authored = opts.authored ?? 'default'
   const allowed: readonly string[] = LINK_PLACEHOLDERS
@@ -135,7 +142,7 @@ export async function buildClientLinksCard(
   let emailSubject = ''
   let emailBody = ''
   if (sms) {
-    const r = screenOutboundText(edits.smsBody ?? defaultSmsBody(b, kinds), {
+    const r = screenOutboundText(edits.smsBody ?? defaultSmsBody(b, kinds, wording), {
       channel: 'sms', authored: edits.smsBody !== undefined ? authored : 'default', allowedPlaceholders: allowed,
     })
     if (!r.ok) return { ok: false, error: `Text not changed: ${r.reason}` }
@@ -149,7 +156,7 @@ export async function buildClientLinksCard(
       channel: 'subject', authored: edits.emailSubject !== undefined ? authored : 'default', allowedPlaceholders: [],
     })
     if (!s.ok) return { ok: false, error: `Email subject not changed: ${s.reason}` }
-    const r = screenOutboundText(edits.emailBody ?? defaultEmailBody(b, kinds), {
+    const r = screenOutboundText(edits.emailBody ?? defaultEmailBody(b, kinds, wording), {
       channel: 'email', authored: edits.emailBody !== undefined ? authored : 'default', allowedPlaceholders: allowed,
     })
     if (!r.ok) return { ok: false, error: `Email not changed: ${r.reason}` }
@@ -196,6 +203,10 @@ export async function buildClientLinksCard(
     }
   }
 
+  if (introduced && (sms || email)) {
+    status.push(`${TENANT.people.customerSignoff} already introduced herself in this thread, so this message has no intro, sign-off or business name.`)
+  }
+
   // Sending a booking link is the check-and-go-ahead: it approves a waiting party.
   if (linkSendApproves(b.status, kinds)) {
     status.push('Sending this approves the party (it is waiting for a date check). The client gets no separate confirmation email.')
@@ -239,16 +250,18 @@ export async function buildPhotosCard(
     edits?: MessageEdits
     authored?: Authored
     now?: Date
+    introduced?: boolean
   },
 ): Promise<BuiltCard> {
   const { photos, email, sms } = opts
+  const introduced = opts.introduced ?? (await threadHasIntroduced(supabase, b).catch(() => null)) === true
   const authored: Authored = opts.authored ?? 'default'
   const notes: string[] = []
   let smsBody = ''
   if (sms) {
     // `{photos}` is the link to the photo page; the default text is the same
     // function the route uses, given the placeholder where the URL goes.
-    const r = screenOutboundText(opts.edits?.smsBody ?? photosSmsText(b.contact_name, '{photos}', photos.length), {
+    const r = screenOutboundText(opts.edits?.smsBody ?? photosSmsText(b.contact_name, '{photos}', photos.length, introduced), {
       channel: 'sms', authored: opts.edits?.smsBody !== undefined ? authored : 'default', allowedPlaceholders: ['photos'],
     })
     if (!r.ok) return { ok: false, error: `Text not changed: ${r.reason}` }
@@ -262,9 +275,9 @@ export async function buildPhotosCard(
   const labels = { photos: 'Photo page' }
   const channels: PreviewChannel[] = []
   if (email) {
-    const text = photosEmailText(b.contact_name, photos as never, '{photos}')
+    const text = photosEmailText(b.contact_name, photos as never, '{photos}', introduced)
     channels.push({
-      channel: 'email', to: maskEmail(b.contact_email), subject: PHOTOS_EMAIL_SUBJECT, template: text,
+      channel: 'email', to: maskEmail(b.contact_email), subject: introduced ? PHOTOS_EMAIL_SUBJECT_INTRODUCED : PHOTOS_EMAIL_SUBJECT, template: text,
       display: `${displayWithLinks(text, labels)}\n(The email shows the photos inline.)`, editable: false,
       notes: ['The email wording is fixed — only the text can be reworded.'],
     })
@@ -289,9 +302,13 @@ export async function buildPhotosCard(
     status.push(`The text is about ${sms0.segments} segments${sms0.cause ? ` (${sms0.cause} makes it longer)` : ''}.`)
   }
 
+  if (introduced) {
+    status.push(`${TENANT.people.customerSignoff} already introduced herself in this thread, so this message has no intro, sign-off or business name.`)
+  }
+
   const via = [email && 'email', sms && 'text'].filter(Boolean).join(' + ')
   const input: Record<string, unknown> = {
-    bookingId: b.id, bookingRef: b.booking_ref, photoIds: photos.map(p => p.id), email, sms,
+    bookingId: b.id, bookingRef: b.booking_ref, photoIds: photos.map(p => p.id), email, sms, introduced,
     ...(sms ? { smsBody } : {}),
   }
   return {

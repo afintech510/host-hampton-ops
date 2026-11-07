@@ -541,6 +541,16 @@ export default function AssistantChat({
                           <CopyButton text={l.url} />
                         </div>
                       ))}
+                      {card.kind === 'party_link' && card.state === 'done' && !card.links?.length && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => send(`${card.title} again`)}
+                          className="mt-1 text-xs underline text-hampton-navy/70 disabled:opacity-50"
+                        >
+                          Link is not saved in the chat - make it again
+                        </button>
+                      )}
                       {card.party && (
                         <div className="mt-3 text-hampton-navy">
                           <PartyCardView party={card.party} />

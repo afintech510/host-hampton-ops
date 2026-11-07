@@ -383,7 +383,7 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'propose_party_link',
     description:
-      'PROPOSE making a link for the manager to open or copy: the invoice page of the party, its party planner page, or its booking portal. It is the same link the client gets, so it SIGNS WHOEVER OPENS IT IN as the client for 30 days. It is shown to the manager only and is NOT sent to the client (to send it use propose_send_client_links). Nothing is made until the manager clicks Confirm. For the admin view of a party use get_party_links, not this.',
+      'PROPOSE making a link for the manager to open or copy: the invoice page of the party, its party planner page, or its booking portal. It is the same link the client gets, so it SIGNS WHOEVER OPENS IT IN as the client for 30 days. It is shown to the manager only and is NOT sent to the client (to send it use propose_send_client_links). The link is made at once and appears on the card with a Copy button (no Confirm click); do not try to write the link yourself and do not say you cannot provide it. For the admin view of a party use get_party_links, not this.',
     input_schema: {
       type: 'object',
       properties: {
@@ -1033,7 +1033,7 @@ async function proposePartyLink(supabase: Supa, input: Record<string, unknown>, 
   if (!l.ok) return l.out
   const b = l.b
   const what = PARTY_LINK_LABELS[d]
-  return cardOutcome(
+  const card = cardOutcome(
     'party_link',
     { bookingId: b.id, bookingRef: b.booking_ref, destination: d },
     `Make the ${what} link for ${b.booking_ref}`,
@@ -1045,6 +1045,17 @@ async function proposePartyLink(supabase: Supa, input: Record<string, unknown>, 
     ctx,
     'No link has been made.',
   )
+  // Unlike the other cards this one makes nothing external: the link goes to this
+  // admin's browser only. So the chat route carries it out at once and the card
+  // arrives with the link and its Copy button already on it.
+  return {
+    ...card,
+    result: {
+      ...(card.result as Record<string, unknown>),
+      status: 'link_shown_on_card',
+      instruction: 'The link is being made and will appear on the card under your reply with a Copy button, for the manager only. Tell them it is on the card. Do NOT write the link yourself, and do not ask them to click Confirm.',
+    },
+  }
 }
 
 async function proposeEnrolSequence(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {

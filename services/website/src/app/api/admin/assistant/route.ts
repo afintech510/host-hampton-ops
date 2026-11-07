@@ -7,7 +7,9 @@ import { getSupabase } from '@/lib/supabase'
 import { runAssistantTurn, screenHistory } from '@/lib/assistant/run'
 import { contextKey, screenContext } from '@/lib/assistant/context'
 import { expireStaleCards, readThread, retireReplacedCards, writeThread, type ThreadCard, type ThreadLine } from '@/lib/assistant/threads'
-import { supersedeProposal } from '@/lib/assistant/usedProposals'
+import { claimProposal, releaseProposal, supersedeProposal } from '@/lib/assistant/usedProposals'
+import { verifyProposal } from '@/lib/assistant/proposals'
+import { executeProposal } from '@/lib/assistant/execute'
 import { providerConfigured, providerName } from '@/lib/ai/select'
 
 export const dynamic = 'force-dynamic'
@@ -59,6 +61,33 @@ export async function POST(req: NextRequest) {
     const turn = await runAssistantTurn({ history: history.messages, userText: text, actor, context })
 
     const cards: ThreadCard[] = turn.proposals.map(p => ({ ...p, state: 'pending' }))
+    // A "link for the manager" card makes nothing external: the link goes to this
+    // admin's browser and nowhere else. So it is carried out at once, and arrives
+    // with the link and its Copy button already on it. The link is returned to the
+    // browser only; the saved thread keeps the card without it.
+    const linksFor = new Map<string, { label: string; url: string }[]>()
+    for (const card of cards) {
+      if (card.kind !== 'party_link') continue
+      const verified = verifyProposal(card.token, actor)
+      if (!verified.ok || (await claimProposal(supabase, verified.proposal)) !== 'claimed') continue
+      try {
+        const result = await executeProposal(req, verified.proposal)
+        if (result.ok) {
+          card.state = 'done'
+          card.result = result.message
+          linksFor.set(card.id, result.links ?? [])
+        } else {
+          // Refused before anything happened: leave the card confirmable, with the reason.
+          card.result = result.message
+          if (result.status >= 400 && result.status < 500) await releaseProposal(supabase, verified.proposal.id)
+          else card.state = 'failed'
+        }
+      } catch (err) {
+        console.error('assistant: link card threw', err)
+        card.state = 'failed'
+        card.result = 'Could not make the link. Try again.'
+      }
+    }
     // A reworded message replaces the card it was made from: that card is spent
     // (so a stale tab cannot send the old wording) and drawn as replaced.
     const replaced = new Set<string>()
@@ -72,7 +101,7 @@ export async function POST(req: NextRequest) {
     ]
     const saved = await writeThread(supabase, actor, key, context.bookingRef, turn.messages, lines)
 
-    return NextResponse.json({ reply: turn.reply, proposals: cards, parties: turn.parties, saved, replaced: Array.from(replaced) })
+    return NextResponse.json({ reply: turn.reply, proposals: cards.map(c => (linksFor.has(c.id) ? { ...c, links: linksFor.get(c.id) } : c)), parties: turn.parties, saved, replaced: Array.from(replaced) })
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) {
       return NextResponse.json({ error: 'The AI service is busy — try again in a minute.' }, { status: 503 })

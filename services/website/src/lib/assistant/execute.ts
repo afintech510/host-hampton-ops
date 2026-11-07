@@ -267,7 +267,7 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
     }
 
     case 'send_photos': {
-      const input = proposal.input as { bookingId: string; bookingRef: string; photoIds: string[]; email: boolean; sms: boolean; smsBody?: string }
+      const input = proposal.input as { bookingId: string; bookingRef: string; photoIds: string[]; email: boolean; sms: boolean; smsBody?: string; introduced?: boolean }
       const bound = boundWording(input, ['sms'], ['photos'])
       if (!bound.ok) return { ok: false, status: 422, message: `Not sent: ${bound.reason}` }
       // The exact ids the manager saw on the card. The route re-resolves them
@@ -278,6 +278,8 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
         photoIds: input.photoIds,
         email: input.email,
         sms: input.sms,
+        // The card showed an email with no sign-off: send that one.
+        ...(input.introduced === true ? { introduced: true } : {}),
         ...(input.sms && bound.text.sms ? { smsBody: bound.text.sms } : {}),
       })
       if (!res.ok || json.ok !== true) return refused('Not sent', res, json)

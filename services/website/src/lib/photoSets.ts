@@ -121,18 +121,26 @@ function firstName(name: string | null | undefined): string {
 }
 
 export const PHOTOS_EMAIL_SUBJECT = `Some party photos from ${TENANT.business.name} 📸`
+/** Once the thread has already said who we are, the subject does not say it again. */
+export const PHOTOS_EMAIL_SUBJECT_INTRODUCED = 'Some party photos 📸'
 
-/** The SMS: one short link, signed by the customer sign-off, with the opt-out line. */
-export function photosSmsText(contactName: string | null | undefined, url: string, count: number): string {
+/**
+ * The SMS: one short link, with the opt-out line. It introduces us ("It's Allie from
+ * Host Hampton") only the FIRST time; `introduced` is true once the thread has already
+ * said so, and then it is just "Hi Pat!".
+ */
+export function photosSmsText(contactName: string | null | undefined, url: string, count: number, introduced = false): string {
   return [
-    `Hi ${firstName(contactName)}! It's ${TENANT.people.customerSignoff} from ${TENANT.business.name} 🎉`,
+    introduced
+      ? `Hi ${firstName(contactName)}!`
+      : `Hi ${firstName(contactName)}! It's ${TENANT.people.customerSignoff} from ${TENANT.business.name} 🎉`,
     `Here ${count === 1 ? 'is a photo' : `are ${count} photos`} from our parties: ${url}`,
     'Reply STOP to opt out',
   ].join('\n')
 }
 
 /** The plain-text half of the email. Never escaped — it is not markup. */
-export function photosEmailText(contactName: string | null | undefined, photos: Photo[], url: string): string {
+export function photosEmailText(contactName: string | null | undefined, photos: Photo[], url: string, introduced = false): string {
   return [
     `Hi ${firstName(contactName)},`,
     '',
@@ -140,9 +148,8 @@ export function photosEmailText(contactName: string | null | undefined, photos: 
     ...photos.map(p => `- ${p.alt || 'Party photo'}: ${p.url}`),
     '',
     `See them all here: ${url}`,
-    '',
-    `${TENANT.people.customerSignoff}`,
-    TENANT.business.name,
+    // The sign-off is for the first message in a thread only.
+    ...(introduced ? [] : ['', `${TENANT.people.customerSignoff}`, TENANT.business.name]),
   ].join('\n')
 }
 
@@ -151,7 +158,7 @@ export function photosEmailText(contactName: string | null | undefined, photos: 
  * goes through `mailHrefExternal` (https only, no `javascript:`/`data:`), so a
  * refused URL renders no image rather than a raw one.
  */
-export function photosEmailHtml(contactName: string | null | undefined, photos: Photo[], url: string): string {
+export function photosEmailHtml(contactName: string | null | undefined, photos: Photo[], url: string, introduced = false): string {
   const name = escapeHtml(firstName(contactName))
   const imgs = photos
     .map(p => {
@@ -171,7 +178,7 @@ export function photosEmailHtml(contactName: string | null | undefined, photos: 
   <p style="margin:0 0 16px;line-height:1.6;">Here ${photos.length === 1 ? 'is a photo' : 'are some photos'} from our parties:</p>
   ${imgs}
   ${link ? `<p style="margin:0 0 16px;line-height:1.6;">See them all here: <a href="${link}" style="color:#1a2744;font-weight:bold;word-break:break-all;">${link}</a></p>` : ''}
-  <p style="margin:0 0 16px;line-height:1.6;">${signoff}<br>${biz}</p>
+  ${introduced ? '' : `<p style="margin:0 0 16px;line-height:1.6;">${signoff}<br>${biz}</p>`}
 </div>
 </body></html>`
 }

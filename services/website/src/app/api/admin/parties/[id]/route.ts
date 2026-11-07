@@ -19,7 +19,7 @@ import { checkSmsQuietHours } from '@/lib/quietHours'
 import { TENANT } from '@/tenant'
 import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
 import {
-  PHOTOS_EMAIL_SUBJECT, createPhotoSet, photosEmailHtml, photosEmailText, photosSmsText,
+  PHOTOS_EMAIL_SUBJECT, PHOTOS_EMAIL_SUBJECT_INTRODUCED, createPhotoSet, photosEmailHtml, photosEmailText, photosSmsText,
 } from '@/lib/photoSets'
 import {
   checkPlaceholders, clientLinkLabel, clientLinksEmailHtml, fillLinks, isStudioRentalBooking, placeholdersIn,
@@ -1186,6 +1186,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       )
     }
 
+    // The caller says the thread has already introduced us: this message then carries no
+    // intro, sign-off or business name. The flag can only REMOVE words, never add them.
+    const introduced = body.introduced === true
+
     // An edited text (the assistant's card lets the manager reword it): the
     // wording is theirs, the LINK is ours — `{photos}` is the one placeholder,
     // it must be present, and it is filled with the set's own page below.
@@ -1230,9 +1234,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const from = process.env.RESEND_FROM_EMAIL || TENANT.email.noReplyFrom
         const { error: mailErr } = await resend.emails.send({
           from, to: email, replyTo: ownerEmail(),
-          subject: PHOTOS_EMAIL_SUBJECT,
-          html: photosEmailHtml(booking.contact_name, photos, set.url),
-          text: photosEmailText(booking.contact_name, photos, set.url),
+          subject: introduced ? PHOTOS_EMAIL_SUBJECT_INTRODUCED : PHOTOS_EMAIL_SUBJECT,
+          html: photosEmailHtml(booking.contact_name, photos, set.url, introduced),
+          text: photosEmailText(booking.contact_name, photos, set.url, introduced),
         })
         if (mailErr) failures.push(`Email failed: ${mailErr.message}`)
         else sentVia.push('email')
@@ -1244,7 +1248,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const sid = await sendSMSVia(
         'quo',
         normalizePhone(phone),
-        smsTemplate ? smsTemplate.replace(/\{photos\}/g, set.url) : photosSmsText(booking.contact_name, set.url, photos.length),
+        smsTemplate ? smsTemplate.replace(/\{photos\}/g, set.url) : photosSmsText(booking.contact_name, set.url, photos.length, introduced),
       )
       if (sid) sentVia.push('text')
       else failures.push('Text failed to send — check the number and Quo config')

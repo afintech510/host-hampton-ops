@@ -138,9 +138,18 @@ function inviteOwner(b: ClientLinkBooking): string {
   return /s$/i.test(child) ? `${child}'` : `${child}'s`
 }
 
-/** The default text message. Short lines, one per link, signed Allie. */
-export function defaultSmsBody(b: ClientLinkBooking, kinds: readonly ClientLinkKind[]): string {
-  const lines = [`Hi ${firstName(b.contact_name)}! It's Allie from Host Hampton 🎉`]
+/**
+ * Wording options. `introduced` is true once the conversation with this person has
+ * already said who we are: the intro line and the sign-off are for the FIRST message
+ * only, so a later message does not say "Allie" or the business name again.
+ */
+export interface WordingOptions {
+  introduced?: boolean
+}
+
+/** The default text message. Short lines, one per link; introduces Allie the first time only. */
+export function defaultSmsBody(b: ClientLinkBooking, kinds: readonly ClientLinkKind[], opts: WordingOptions = {}): string {
+  const lines = [opts.introduced ? `Hi ${firstName(b.contact_name)}!` : `Hi ${firstName(b.contact_name)}! It's Allie from Host Hampton 🎉`]
   if (kinds.includes('invite')) lines.push(`Here's ${inviteOwner(b)} invitation to share with your guests: {invite}`)
   if (kinds.includes('planner')) {
     lines.push(isStudioRentalBooking(b)
@@ -166,7 +175,7 @@ export function defaultEmailSubject(b: ClientLinkBooking, kinds: readonly Client
   return `Your links for ${occasion} — Host Hampton`
 }
 
-export function defaultEmailBody(b: ClientLinkBooking, kinds: readonly ClientLinkKind[]): string {
+export function defaultEmailBody(b: ClientLinkBooking, kinds: readonly ClientLinkKind[], opts: WordingOptions = {}): string {
   const blocks = [`Hi ${firstName(b.contact_name)},`, `Here ${kinds.length === 1 ? 'is your link' : 'are your links'} for ${occasionOf(b)}:`]
   if (kinds.includes('invite')) {
     blocks.push(
@@ -181,7 +190,9 @@ export function defaultEmailBody(b: ClientLinkBooking, kinds: readonly ClientLin
   }
   if (kinds.includes('invoice')) blocks.push(`Your invoice:\n{invoice}`)
   if (kinds.includes('portal')) blocks.push(`Your booking — ${studio ? 'rental' : 'party'} details and payments:\n{portal}`)
-  blocks.push('Just reply to this email if you have any questions!', 'Allie\nHost Hampton')
+  blocks.push('Just reply to this email if you have any questions!')
+  // The sign-off is for the first message in a thread only.
+  if (!opts.introduced) blocks.push('Allie\nHost Hampton')
   return blocks.join('\n\n')
 }
 
