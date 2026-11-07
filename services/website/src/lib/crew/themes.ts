@@ -18,7 +18,7 @@
 
 export const THEME_COOKIE = 'hh_crew_theme'
 
-export type ThemeId = 'bold' | 'clean' | 'pop' | 'midnight' | 'editorial'
+export type ThemeId = 'bold' | 'clean' | 'pop' | 'midnight' | 'editorial' | 'hosthampton'
 
 export const DEFAULT_THEME: ThemeId = 'pop'
 
@@ -32,6 +32,8 @@ const FACE = {
   outfit: "var(--crew-f-outfit), system-ui, sans-serif",
   space: "var(--crew-f-space), system-ui, sans-serif",
   fraunces: "var(--crew-f-fraunces), Georgia, serif",
+  playfair: "var(--crew-f-playfair), 'Playfair Display', Georgia, serif",
+  montserrat: "var(--crew-f-montserrat), Montserrat, system-ui, sans-serif",
 }
 
 interface Tokens {
@@ -257,6 +259,47 @@ export const THEMES: CrewTheme[] = [
 & .crew-btn-ghost{background:transparent;border-color:var(--c-text)}
 & .crew-kind,& .crew-chip{text-transform:uppercase;letter-spacing:.08em;font-size:.66rem}
 & .crew-meta{font-variant-numeric:tabular-nums}
+`,
+  },
+
+  // ── HOST HAMPTON: the house style, as on the website and the crew management app. Playfair Display
+  //    headings over Montserrat, ivory page, white rounded cards, navy uppercase buttons, dusty blue and blush.
+  {
+    id: 'hosthampton',
+    label: 'Host Hampton',
+    blurb: 'Matches the website and the crew management app: Playfair Display and Montserrat, ivory page, white rounded cards, navy buttons.',
+    tokens: {
+      bg: '#F6F1EB', surface: '#FFFFFF', surface2: '#EFE8DF', text: '#1A2744', muted: '#56607A', line: '#E1E5EC',
+      accent: '#1A2744', accentHover: '#0B1226', onAccent: '#F6F1EB', accentSoft: '#E8C7CB', accentInk: '#1A2744',
+      ...LIGHT_STATUS, info: '#DCE6F5', infoInk: '#1A2744',
+      rate: '#1A2744', rateInk: '#F6F1EB', rateLink: '#BCCDEB',
+      shadow: '0 1px 3px rgba(26,39,68,.08)', scrim: 'rgba(26,39,68,.55)',
+      logoFilter: 'none',
+      fontDisplay: FACE.playfair, fontBody: FACE.montserrat,
+      radiusCard: '16px', radiusBtn: '12px', radiusInput: '12px', radiusChip: '999px', radiusNav: '12px', radiusModal: '20px',
+      padCard: '1.1rem 1.2rem', gapCard: '1rem', btnHeight: '48px', btnPad: '.6rem 1.4rem',
+      h1Size: '2rem', h1Weight: '700', h2Size: '1.3rem', h2Transform: 'none', h2Spacing: '0',
+      cardBorder: '2px solid var(--c-line)',
+      dateTile: 'flex', navEmoji: 'none', navLine: 'inline-block',
+    },
+    css: `
+&{background:linear-gradient(to bottom,#BCCDEB 0,#DAE6F0 300px,#F6F1EB 600px) no-repeat,var(--c-bg)}
+& h1{letter-spacing:-.01em}
+& .crew-party{padding:1rem 1.1rem}
+& .crew-date{background:var(--c-accent);color:var(--c-on-accent);border-radius:12px;min-width:3.7rem;padding:.6rem .4rem;gap:.15rem}
+& .crew-date-mon{color:#A1B5C8;letter-spacing:.12em}
+& .crew-date-day{font-size:1.9rem;font-weight:700;color:var(--c-on-accent)}
+& .crew-date-dow{color:var(--c-accent-soft);letter-spacing:.1em}
+& .crew-btn{font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;box-shadow:0 1px 2px rgba(26,39,68,.12)}
+& .crew-btn-ghost{background:transparent;border:2px solid var(--c-accent);color:var(--c-accent);box-shadow:none}
+& .crew-btn-ghost:hover{background:var(--c-accent);color:var(--c-on-accent)}
+& .crew-top .crew-btn{min-height:38px;font-size:.72rem}
+& .crew-kind,& .crew-chip{font-weight:600;letter-spacing:.04em}
+& .crew-input{border:2px solid var(--c-line)}
+& .crew-input:focus{border-color:var(--c-accent)}
+& .crew-nav{background:var(--c-surface);border-top:1px solid var(--c-line);box-shadow:0 -6px 24px rgba(26,39,68,.08)}
+& .crew-nav a{text-transform:uppercase;letter-spacing:.08em;font-size:.66rem;font-weight:600}
+& .crew-nav a[aria-current="page"]{background:var(--c-accent);color:var(--c-on-accent)}
 `,
   },
 ]

@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import {
-  Archivo, Archivo_Black, Fraunces, Graduate, Inter, Manrope, Outfit, Space_Grotesk, Space_Mono, Unbounded,
+  Archivo, Archivo_Black, Fraunces, Graduate, Inter, Manrope, Montserrat, Outfit, Playfair_Display, Space_Grotesk, Space_Mono, Unbounded,
 } from 'next/font/google'
 import { NOINDEX } from '@/lib/seo'
 import { TENANT } from '@/tenant'
@@ -44,10 +44,12 @@ const inter = Inter({ subsets: ['latin'], variable: '--crew-f-inter', display: '
 const space = Space_Grotesk({ subsets: ['latin'], variable: '--crew-f-space', display: 'swap', preload: false })
 const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], variable: '--crew-f-spacemono', display: 'swap', preload: false })
 const fraunces = Fraunces({ subsets: ['latin'], variable: '--crew-f-fraunces', display: 'swap', preload: false })
+const playfair = Playfair_Display({ subsets: ['latin'], variable: '--crew-f-playfair', display: 'swap', preload: false })
+const montserrat = Montserrat({ subsets: ['latin'], variable: '--crew-f-montserrat', display: 'swap', preload: false })
 // The CREW wordmark: a collegiate slab, on every theme.
 const varsity = Graduate({ subsets: ['latin'], weight: '400', variable: '--crew-font-varsity', display: 'swap' })
 
-const FONT_VARS = [archivoBlack, archivo, manrope, inter, unbounded, outfit, space, spaceMono, fraunces, varsity].map(f => f.variable).join(' ')
+const FONT_VARS = [archivoBlack, archivo, manrope, inter, unbounded, outfit, space, spaceMono, fraunces, playfair, montserrat, varsity].map(f => f.variable).join(' ')
 
 export const metadata: Metadata = {
   title: { absolute: 'Party Crew' },

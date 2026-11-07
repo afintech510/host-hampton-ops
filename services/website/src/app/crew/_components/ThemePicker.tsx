@@ -16,13 +16,15 @@ function Sketch({ t }: { t: CrewTheme }) {
     t.id === 'pop' ? { borderRadius: 9, background: k.accent, width: 24, height: 32 }
     : t.id === 'bold' ? { background: k.accentSoft, border: `2px solid ${k.text}`, borderRadius: 4, width: 26, height: 26 }
     : t.id === 'midnight' ? { background: k.surface2, borderRight: `2px dashed ${k.line}`, width: 26, height: 30, borderRadius: 0 }
+    : t.id === 'hosthampton' ? { background: k.accent, borderRadius: 6, width: 24, height: 28 }
     : { width: 20, height: 26 }
-  const dateInk = t.id === 'pop' ? k.onAccent : t.id === 'bold' ? k.text : k.accent
+  const dateInk = t.id === 'pop' || t.id === 'hosthampton' ? k.onAccent : t.id === 'bold' ? k.text : k.accent
   const cardStyle: React.CSSProperties =
     t.id === 'bold' ? { border: `2px solid ${k.text}`, boxShadow: `3px 3px 0 ${k.text}`, background: k.surface, borderRadius: 6 }
     : t.id === 'midnight' ? { borderLeft: `4px solid ${k.accent}`, background: k.surface, borderRadius: 6 }
     : t.id === 'pop' ? { background: k.surface, borderRadius: 14, boxShadow: '0 4px 10px rgba(0,0,0,.08)' }
     : t.id === 'editorial' ? { borderTop: `2px solid ${k.text}`, borderRadius: 0 }
+    : t.id === 'hosthampton' ? { background: k.surface, border: `1.5px solid ${k.line}`, borderRadius: 9 }
     : { borderBottom: `1px solid ${k.line}` }
   return (
     <span aria-hidden="true" style={{ display: 'block', position: 'relative', height: 104, background: k.bg, borderRadius: 10, border: `1px solid ${k.line}`, overflow: 'hidden', marginBottom: '.5rem' }}>
