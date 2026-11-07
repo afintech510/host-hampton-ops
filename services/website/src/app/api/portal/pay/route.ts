@@ -351,11 +351,24 @@ export async function POST(req: NextRequest) {
     const totalChargeCents = subtotalCents + cardFeeCents
     void embedded
 
-    const intent = await stripe.paymentIntents.create({
+    // `receipt_email` is optional to Stripe but must be a real address if it is
+    // sent at all. A booking with no email on file (a lead taken by phone or
+    // text) made the SDK send `receipt_email=""`, which Stripe refuses with
+    // "Invalid email address: " — the route threw, Next answered a bodyless 500,
+    // and the invoice showed only its generic "Could not start the payment".
+    // 3 of 66 bookings have none, one of them HH-PTY-LG7N4 (awaiting_deposit).
+    // Leave it off rather than refuse the payment: we still record and email our
+    // own receipt from the webhook when an address exists.
+    const rawEmail = typeof booking.contact_email === 'string' ? booking.contact_email.trim() : ''
+    const receiptEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawEmail) ? rawEmail : undefined
+
+    let intent: Stripe.PaymentIntent
+    try {
+      intent = await stripe.paymentIntents.create({
       amount: totalChargeCents,
       currency: 'usd',
       automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
-      receipt_email: booking.contact_email,
+      ...(receiptEmail ? { receipt_email: receiptEmail } : {}),
       description: `${booking.booking_ref} — ${resolvedType === 'deposit' ? 'Deposit' : isFinalPayment ? 'Final' : 'Partial'} Payment${safeTipCents > 0 ? ' + Tip' : ''}`,
       statement_descriptor_suffix: 'PARTY PAYMENT',
       metadata: {
@@ -390,9 +403,22 @@ export async function POST(req: NextRequest) {
         tipCents: String(safeTipCents),
         cardFeeCents: String(cardFeeCents),
         contactName: booking.contact_name,
-        contactEmail: booking.contact_email,
+        contactEmail: receiptEmail ?? '',
       },
     })
+    } catch (err) {
+      // Any Stripe failure used to escape as an unhandled 500 with no JSON body,
+      // which the invoice can only show as its generic message. Say what
+      // happened in the log, and give the customer a retry that works as JSON.
+      const e = err as { type?: string; code?: string; message?: string }
+      console.error(
+        `portal pay: Stripe refused the PaymentIntent for ${bookingRef} — ${e.type ?? 'error'}${e.code ? `/${e.code}` : ''}: ${e.message ?? String(err)}`,
+      )
+      return NextResponse.json(
+        { error: 'We couldn’t start the card payment just now — please try again in a moment, or call us.' },
+        { status: 502 },
+      )
+    }
 
     return NextResponse.json({
       clientSecret: intent.client_secret,

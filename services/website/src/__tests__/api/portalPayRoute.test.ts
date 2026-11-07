@@ -22,10 +22,12 @@ jest.mock('next/server', () => ({
 }))
 
 const created: any[] = []
+let stripeFailure: Error | null = null
 jest.mock('stripe', () => {
   return jest.fn().mockImplementation(() => ({
     paymentIntents: {
       create: jest.fn(async (args: any) => {
+        if (stripeFailure) throw stripeFailure
         created.push(args)
         return { id: `pi_test_${created.length}`, client_secret: 'cs_secret', amount: args.amount }
       }),
@@ -78,6 +80,7 @@ function seed(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   jest.clearAllMocks()
   created.length = 0
+  stripeFailure = null
   __resetRateLimitForTests()
   process.env.STRIPE_SECRET_KEY = 'sk_test_not_a_real_key'
 })
@@ -122,6 +125,42 @@ describe('the deposit branch that recorded $0', () => {
     await POST(req({ amountCents: 9_900, paymentMethod: 'card', paymentType: 'deposit' }))
     // 3% card fee — the customer pays the same either way; only the LEDGER was wrong.
     expect(created[0].amount).toBeGreaterThan(9_900)
+  })
+})
+
+describe('a booking with no usable email still takes a card payment', () => {
+  // HH-PTY-LG7N4: contact_email NULL → the SDK sent receipt_email="" → Stripe
+  // answered "Invalid email address: " → unhandled 500 → the invoice's generic
+  // "Could not start the payment — please try again."
+  it.each([[null], [''], ['   '], ['not-an-email']])(
+    'omits receipt_email for %p rather than sending a value Stripe refuses',
+    async (email) => {
+      seed({ contact_email: email })
+      const res: any = await POST(req({ amountCents: 9_900, paymentMethod: 'card', paymentType: 'deposit' }))
+      expect(res.status).toBe(200)
+      expect(created).toHaveLength(1)
+      expect('receipt_email' in created[0]).toBe(false)
+      expect(created[0].metadata.contactEmail).toBe('')
+    },
+  )
+
+  it('still sends a real address, trimmed', async () => {
+    seed({ contact_email: '  adam@easternbuilding.supply ' })
+    await POST(req({ amountCents: 9_900, paymentMethod: 'card', paymentType: 'deposit' }))
+    expect(created[0].receipt_email).toBe('adam@easternbuilding.supply')
+  })
+})
+
+describe('a Stripe failure is answered as JSON, not a bodyless 500', () => {
+  it('returns a readable error the invoice can show, and logs the cause', async () => {
+    seed()
+    stripeFailure = Object.assign(new Error('connection reset'), { type: 'StripeConnectionError' })
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const res: any = await POST(req({ amountCents: 9_900, paymentMethod: 'card', paymentType: 'deposit' }))
+    expect(res.status).toBe(502)
+    expect(typeof res.body.error).toBe('string')
+    expect(errSpy.mock.calls.some(c => String(c[0]).includes('StripeConnectionError'))).toBe(true)
+    errSpy.mockRestore()
   })
 })
 
