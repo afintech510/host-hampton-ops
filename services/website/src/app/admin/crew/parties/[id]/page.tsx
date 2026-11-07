@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAdminData } from '../../_components/adminData'
 import { kindHasLead, workTypeOf } from '@/lib/crew/workTypes'
 import {
-  BTN_DANGER, BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, STATUS_STYLE, money, useAdminApi, whenLabel,
+  BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, STATUS_STYLE, money, useAdminApi, whenLabel,
 } from '../../_components/adminCrew'
 
 type Conflict = 'on_party' | 'overlap' | 'blocked' | 'not_lead' | 'inactive'
@@ -199,24 +199,32 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
               onApprove={() => assignAll(d.pick!.recommendation.map(r => ({ slotId: r.slotId, memberId: r.memberId, who: r.name, force: false })))} />
           )}
           <div className="bg-white rounded-2xl shadow-sm p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <h2 className="font-semibold text-hampton-navy">Spots — {d.staffed}/{d.needed} staffed</h2>
-              <div className="flex flex-wrap gap-2">
+            <div className="mb-4">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="font-semibold text-hampton-navy">Spots</h2>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${d.staffed >= d.needed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                  {d.staffed} of {d.needed} staffed
+                </span>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 mt-3 empty:hidden">
                 {live && liveSlots.some(s => !s.memberId) && (
-                  <button disabled={busy || chosen.length === 0} onClick={() => assignAll(chosen)} className={BTN_PRIMARY}>
+                  <button disabled={busy || chosen.length === 0} onClick={() => assignAll(chosen)} className={`${BTN_PRIMARY} w-full sm:w-auto`}>
                     {busy ? 'Assigning…' : chosen.length > 1 ? `Assign ${chosen.length}` : 'Assign'}
                   </button>
                 )}
-                {p.status === 'draft' && <button disabled={busy} onClick={() => act({ action: 'publish' }, 'Published. Crew can see it now (once the crew app is launched).')} className={BTN_PRIMARY}>Publish</button>}
+                {p.status === 'draft' && <button disabled={busy} onClick={() => act({ action: 'publish' }, 'Published. Crew can see it now (once the crew app is launched).')} className={`${BTN_PRIMARY} w-full sm:w-auto`}>Publish</button>}
                 {p.status === 'published' && (
-                  <button disabled={busy || anyoneOn} title={anyoneOn ? 'Only while nobody is on it' : ''} onClick={() => act({ action: 'unpublish' }, 'Back to draft.')} className={BTN_GHOST}>
+                  <button disabled={busy || anyoneOn} title={anyoneOn ? 'Only while nobody is on it' : ''} onClick={() => act({ action: 'unpublish' }, 'Back to draft.')} className={`${BTN_GHOST} w-full sm:w-auto`}>
                     Back to draft
                   </button>
                 )}
               </div>
+              {p.status === 'published' && anyoneOn && (
+                <p className="text-xs text-hampton-navy/50 mt-2">Back to draft works only while nobody is on the party.</p>
+              )}
             </div>
 
-            <ul className="divide-y divide-hampton-pink/10">
+            <ul className="space-y-3">
               {d.slots.filter(s => s.status !== 'cancelled').map(s => (
                 <SlotRow key={s.id} slot={s} members={d.members} busy={busy} live={live}
                   pick={picks[s.id] ?? ''} taken={takenElsewhere(s.id)}
@@ -247,8 +255,8 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
             )}
 
             {live && (
-              <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-hampton-pink/10">
-                <button disabled={busy || liveSlots.length >= 10} onClick={() => act({ action: 'add_spot' }, 'Spot added.')} className={BTN_GHOST}>Add a spot</button>
+              <div className="mt-4 pt-4 border-t border-hampton-pink/10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+                <button disabled={busy || liveSlots.length >= 10} onClick={() => act({ action: 'add_spot' }, 'Spot added.')} className={`${BTN_GHOST} w-full sm:w-auto`}>+ Add a spot</button>
                 <CountOverride value={p.slots_override} busy={busy} onSave={v => act({ action: 'set_count', value: v }, 'Count saved.')} />
               </div>
             )}
@@ -370,6 +378,10 @@ function PickCard({ pick, busy, live, onApprove }: { pick: PickPanelView; busy: 
   )
 }
 
+/** Small, tappable, and always at the same edge of the card, whatever the name or status wraps to. */
+const BTN_SMALL_DANGER = 'shrink-0 text-sm font-semibold rounded-full px-3.5 min-h-[40px] border-2 border-red-200 text-red-700 bg-white disabled:opacity-50'
+const CHIP = 'text-[11px] font-semibold px-2 py-0.5 rounded-full'
+
 function SlotRow({ slot, members, busy, live, pick, taken, onPick, onUnassign, onRemove, onOfferAll, onAssignCover }: {
   slot: Slot; members: Choice[]; busy: boolean; live: boolean
   /** The person chosen for this open spot, and the people already chosen for the others. The page's one Assign button applies them. */
@@ -380,30 +392,75 @@ function SlotRow({ slot, members, busy, live, pick, taken, onPick, onUnassign, o
   const [coverPick, setCoverPick] = useState('')
   const lead = slot.role === 'lead'
   const options = members.filter(m => !lead || m.canLead || m.isOwner)
+
+  // An open spot: one dashed card, the role named once, the choice full width.
+  if (!slot.memberId) {
+    return (
+      <li className="rounded-xl border-2 border-dashed border-hampton-pink/40 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-semibold text-hampton-navy/70">{lead ? 'Party Lead spot' : 'Crew spot'} <span className="font-normal text-hampton-navy/50">· open</span></span>
+          {live && !lead && <button disabled={busy} onClick={onRemove} className="text-sm text-hampton-navy/60 underline min-h-[40px] px-1 disabled:opacity-50">Remove spot</button>}
+        </div>
+        {live && (
+          <select value={pick} onChange={e => onPick(e.target.value)} className={`${INPUT} w-full mt-1`} aria-label={`Choose for the ${lead ? 'Party Lead' : 'crew'} spot`} disabled={busy}>
+            <option value="">Choose who works it…</option>
+            {options.map(m => {
+              const fit = lead ? m.fitLead : m.fitCrew
+              const notes = fit.conflicts.map(c => CONFLICT_LABEL[c])
+              return (
+                <option key={m.id} value={m.id} disabled={fit.conflicts.includes('on_party') || taken.has(m.id)}>
+                  {m.name}{m.isTest ? ' [test]' : ''}
+                  {notes.length ? ` — ${notes.join(', ')}` : ''}
+                </option>
+              )
+            })}
+          </select>
+        )}
+      </li>
+    )
+  }
+
+  // A filled spot: who on the left (initial, name, one line of chips), the one action on the right.
+  const via = slot.assignedVia === 'admin' ? 'Assigned' : slot.assignedVia === 'cover' ? 'Covering' : slot.assignedVia ? 'Claimed' : ''
   return (
-    <li className="py-3 flex flex-wrap items-center gap-3">
-      <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${lead ? 'bg-hampton-navy text-[#F6F1EB]' : 'bg-[#F6F1EB] text-hampton-navy'}`}>
-        {lead ? 'Party Lead' : 'Crew'}
-      </span>
-      {slot.memberId ? (
-        <>
-          <span className="font-semibold text-hampton-navy">{slot.memberName}</span>
-          <span className="text-xs text-hampton-navy/50">
-            {slot.isOwner ? '' : slot.confirmed ? 'confirmed' : 'not confirmed'}
-            {slot.assignedVia ? ` · ${slot.assignedVia === 'admin' ? 'assigned' : slot.assignedVia === 'cover' ? 'covering' : 'claimed'}` : ''}
-          </span>
-          {slot.activeCover && (
-            <span className="text-xs text-amber-800 bg-amber-50 rounded px-2 py-0.5">
-              can&apos;t make it ({slot.activeCover.reason}{slot.activeCover.note ? `: ${slot.activeCover.note}` : ''}), cover {slot.activeCover.status}
-              {slot.activeCover.offeredToAllAt ? ' · offered to everyone' : ''}
-            </span>
-          )}
-          {live && slot.activeCover && (
-            <div className="w-full flex flex-wrap items-center gap-2 pl-1">
+    <li className="rounded-xl bg-[#F6F1EB]/60 p-3">
+      <div className="flex items-center gap-3">
+        <span aria-hidden className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold ${lead ? 'bg-hampton-navy text-[#F6F1EB]' : 'bg-white text-hampton-navy border border-hampton-pink/30'}`}>
+          {(slot.memberName ?? '?').trim().charAt(0).toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-hampton-navy leading-tight break-words">{slot.memberName}</p>
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {lead && <span className={`${CHIP} bg-hampton-navy text-[#F6F1EB]`}>Party Lead</span>}
+            {!slot.isOwner && (slot.confirmed
+              ? <span className={`${CHIP} bg-emerald-100 text-emerald-800`}>✓ Confirmed</span>
+              : <span className={`${CHIP} bg-amber-100 text-amber-800`}>Not confirmed</span>)}
+            {via && <span className={`${CHIP} bg-white text-hampton-navy/60 border border-hampton-pink/20`}>{via}</span>}
+            {slot.status !== 'assigned' && <span className={`${CHIP} bg-violet-100 text-violet-800`}>{slot.status.replace(/_/g, ' ')}</span>}
+          </div>
+        </div>
+        {live && slot.status === 'assigned' && !slot.activeCover && (
+          <button
+            disabled={busy}
+            onClick={() => { if (window.confirm(`Take ${slot.memberName} off this party?`)) onUnassign() }}
+            className={BTN_SMALL_DANGER}
+          >
+            Unassign
+          </button>
+        )}
+      </div>
+      {slot.activeCover && (
+        <div className="mt-3 rounded-lg bg-amber-50 text-amber-900 p-3 text-sm space-y-2">
+          <p>
+            Can&apos;t make it ({slot.activeCover.reason}{slot.activeCover.note ? `: ${slot.activeCover.note}` : ''}) · cover {slot.activeCover.status}
+            {slot.activeCover.offeredToAllAt ? ' · offered to everyone' : ''}
+          </p>
+          {live && (
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
               {!slot.activeCover.offeredToAllAt && (
-                <button disabled={busy} onClick={() => onOfferAll(slot.activeCover!.id)} className={BTN_GHOST}>Offer to everyone free that day</button>
+                <button disabled={busy} onClick={() => onOfferAll(slot.activeCover!.id)} className={`${BTN_GHOST} w-full sm:w-auto`}>Offer to everyone free that day</button>
               )}
-              <select value={coverPick} onChange={e => setCoverPick(e.target.value)} className={INPUT} aria-label="Assign cover">
+              <select value={coverPick} onChange={e => setCoverPick(e.target.value)} className={`${INPUT} w-full sm:w-auto`} aria-label="Assign cover">
                 <option value="">Put someone on it…</option>
                 {options.filter(m => m.id !== slot.memberId).map(m => {
                   const fit = lead ? m.fitLead : m.fitCrew
@@ -415,35 +472,10 @@ function SlotRow({ slot, members, busy, live, pick, taken, onPick, onUnassign, o
                   )
                 })}
               </select>
-              <button disabled={busy || !coverPick} onClick={() => onAssignCover(slot.activeCover!.id, coverPick)} className={BTN_PRIMARY}>Assign cover</button>
+              <button disabled={busy || !coverPick} onClick={() => onAssignCover(slot.activeCover!.id, coverPick)} className={`${BTN_PRIMARY} w-full sm:w-auto`}>Assign cover</button>
             </div>
           )}
-          {live && slot.status === 'assigned' && !slot.activeCover && (
-            <button disabled={busy} onClick={onUnassign} className={`${BTN_DANGER} ml-auto`}>Unassign</button>
-          )}
-        </>
-      ) : (
-        <>
-          <span className="text-hampton-navy/50">Open</span>
-          {live && (
-            <div className="flex flex-wrap items-center gap-2 ml-auto">
-              <select value={pick} onChange={e => onPick(e.target.value)} className={INPUT} aria-label={`Choose for the ${lead ? 'Party Lead' : 'crew'} spot`} disabled={busy}>
-                <option value="">Choose…</option>
-                {options.map(m => {
-                  const fit = lead ? m.fitLead : m.fitCrew
-                  const notes = fit.conflicts.map(c => CONFLICT_LABEL[c])
-                  return (
-                    <option key={m.id} value={m.id} disabled={fit.conflicts.includes('on_party') || taken.has(m.id)}>
-                      {m.name}{m.isTest ? ' [test]' : ''}
-                      {notes.length ? ` — ${notes.join(', ')}` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-              {!lead && <button disabled={busy} onClick={onRemove} className={BTN_GHOST}>Remove spot</button>}
-            </div>
-          )}
-        </>
+        </div>
       )}
     </li>
   )
@@ -453,11 +485,13 @@ function CountOverride({ value, busy, onSave }: { value: number | null; busy: bo
   const [v, setV] = useState(value == null ? '' : String(value))
   useEffect(() => { setV(value == null ? '' : String(value)) }, [value])
   return (
-    <span className="flex items-center gap-2 text-sm text-hampton-navy">
-      Spot count
-      <input type="number" min={1} max={10} value={v} onChange={e => setV(e.target.value)} placeholder="auto" className={`${INPUT} w-20`} />
-      <button disabled={busy} onClick={() => onSave(v === '' ? null : Number(v))} className={BTN_GHOST}>Set</button>
-    </span>
+    <div className="text-sm text-hampton-navy">
+      <label htmlFor="spot-count" className="block text-hampton-navy/70 mb-1">Spot count <span className="text-hampton-navy/40">(blank = from the guest count)</span></label>
+      <div className="flex items-center gap-2">
+        <input id="spot-count" type="number" min={1} max={10} value={v} onChange={e => setV(e.target.value)} placeholder="auto" className={`${INPUT} w-24`} />
+        <button disabled={busy} onClick={() => onSave(v === '' ? null : Number(v))} className={BTN_GHOST}>Set</button>
+      </div>
+    </div>
   )
 }
 
