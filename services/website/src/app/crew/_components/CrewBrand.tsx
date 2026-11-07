@@ -9,7 +9,7 @@ import Link from 'next/link'
  */
 export default function CrewBrand({ href = '/crew' }: { href?: string }) {
   return (
-    <Link href={href} className="crew-brandmark" aria-label="Party Crew">
+    <Link href={href} prefetch className="crew-brandmark" aria-label="Party Crew">
       <span className="crew-wordmark" aria-hidden="true">Party Crew</span>
     </Link>
   )

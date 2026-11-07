@@ -1,6 +1,6 @@
 /**
- * The crew-management app's shell: a sticky top menu (sparkle, Leads, Bookings,
- * Staff, hamburger), no link back to the main admin, the Leads cards ordered by
+ * The crew-management app's shell: a sticky top menu (sparkle, Dashboard, Leads,
+ * Bookings, Staff, hamburger), no link back to the main admin, the Leads cards ordered by
  * most recent contact, and the staff-facing app's "Party Crew" header.
  */
 import fs from 'fs'
@@ -27,9 +27,9 @@ describe('the top menu', () => {
     return renderToStaticMarkup(createElement(CrewAdminBar))
   }
 
-  it('is, in order: sparkle, Leads, Bookings, Staff, then the hamburger on the right', () => {
+  it('is, in order: sparkle, Dashboard, Leads, Bookings, Staff, then the hamburger on the right', () => {
     const h = html('/admin/crew/leads')
-    const order = ['aria-label="Open the AI assistant"', '>Leads<', '>Bookings<', '>Staff<', 'aria-label="Menu"']
+    const order = ['aria-label="Open the AI assistant"', '>Dashboard<', '>Leads<', '>Bookings<', '>Staff<', 'aria-label="Menu"']
     const at = order.map(s => h.indexOf(s))
     expect(at.every(i => i > -1)).toBe(true)
     expect([...at].sort((a, b) => a - b)).toEqual(at)
@@ -48,36 +48,60 @@ describe('the top menu', () => {
   })
 
   it('marks the section you are in', () => {
+    expect(html('/admin/crew/dashboard')).toMatch(/aria-current="page"[^>]*>Dashboard</)
     expect(html('/admin/crew/leads')).toMatch(/aria-current="page"[^>]*>Leads</)
     expect(html('/admin/crew/bookings')).toMatch(/aria-current="page"[^>]*>Bookings</)
-    expect(html('/admin/crew')).toMatch(/aria-current="page"[^>]*>Staff</)
+    // Staff is the roster; the party-staff page belongs to it.
     expect(html('/admin/crew/members')).toMatch(/aria-current="page"[^>]*>Staff</)
     expect(html('/admin/crew/parties/abc')).toMatch(/aria-current="page"[^>]*>Staff</)
-    // Settings lives in the hamburger, so no tab is "current" on the rules page.
+    // The schedule and Settings live in the hamburger, so no tab is "current" on them.
+    expect(html('/admin/crew')).not.toMatch(/aria-current="page"/)
     expect(html('/admin/crew/rules')).not.toMatch(/aria-current="page"/)
   })
 
   it('maps paths to sections', () => {
+    expect(sectionOf('/admin/crew/dashboard')).toBe('dashboard')
     expect(sectionOf('/admin/crew/leads')).toBe('leads')
     expect(sectionOf('/admin/crew/bookings')).toBe('bookings')
     expect(sectionOf('/admin/crew/rules')).toBe('settings')
-    expect(sectionOf('/admin/crew')).toBe('staff')
-    expect(sectionOf(null)).toBe('staff')
+    expect(sectionOf('/admin/crew/members')).toBe('staff')
+    expect(sectionOf('/admin/crew/parties/abc')).toBe('staff')
+    expect(sectionOf('/admin/crew')).toBe('schedule')
+    expect(sectionOf('/admin/crew/')).toBe('schedule')
+    expect(sectionOf(null)).toBe('dashboard')
   })
 
-  it('puts Settings and Memories in the hamburger, and opens the assistant by event', () => {
+  it('puts the Staff schedule, Settings and Memories in the hamburger, and opens the assistant by event', () => {
     const s = read('app/admin/crew/_components/CrewAdminBar.tsx')
-    expect(s).toMatch(/href="\/admin\/crew\/rules"[\s\S]{0,200}Settings/)
+    expect(s).toMatch(/href="\/admin\/crew"[\s\S]{0,260}Staff schedule/)
+    expect(s).toMatch(/href="\/admin\/crew\/rules"[\s\S]{0,260}Settings/)
+    // The Staff tab goes to the roster, not the schedule.
+    expect(s).toMatch(/href: '\/admin\/crew\/members', label: 'Staff'/)
     expect(s).toMatch(/Memories/)
     expect(s).toMatch(/new CustomEvent\('hh:assistant-open'\)/)
     expect(s).toMatch(/<MemoryPanel \/>/)
   })
 
-  it('every crew-management page uses the one frame, which holds the menu', () => {
-    for (const p of ['page.tsx', 'members/page.tsx', 'rules/page.tsx', 'leads/page.tsx', 'bookings/page.tsx', 'parties/[id]/page.tsx']) {
+  it('every crew-management page uses the one frame, and the menu lives in the shell so it never remounts', () => {
+    for (const p of ['page.tsx', 'members/page.tsx', 'rules/page.tsx', 'leads/page.tsx', 'bookings/page.tsx', 'dashboard/page.tsx', 'parties/[id]/page.tsx']) {
       expect({ p, frame: /<CrewFrame/.test(read(`app/admin/crew/${p}`)) }).toEqual({ p, frame: true })
     }
-    expect(read('app/admin/crew/_components/adminCrew.tsx')).toMatch(/<CrewAdminBar \/>/)
+    expect(read('app/admin/crew/_components/CrewAdminShell.tsx')).toMatch(/<CrewAdminBar \/>/)
+    expect(read('app/admin/crew/_components/adminCrew.tsx')).not.toMatch(/<CrewAdminBar/)
+    expect(read('app/admin/crew/layout.tsx')).toMatch(/<CrewAdminShell>\{children\}<\/CrewAdminShell>/)
+  })
+
+  it('tabs are client-side links over warmed data, so a tab change waits for nothing', () => {
+    const bar = read('app/admin/crew/_components/CrewAdminBar.tsx')
+    expect(bar).toMatch(/<Link key=\{i\.key\} href=\{i\.href\} prefetch/)
+    expect(bar).not.toMatch(/<a key=/)
+    const shell = read('app/admin/crew/_components/CrewAdminShell.tsx')
+    for (const path of ['crew-app/dashboard', 'crew-app/bookings', 'api/admin/leads', 'crew/members']) expect(shell).toContain(path)
+    expect(shell).toMatch(/warm\(WARM_PATHS\)/)
+    expect(shell).toMatch(/router\.prefetch\(r\)/)
+    for (const route of ['dashboard', 'leads', 'bookings', 'members']) expect(shell).toContain(`'/admin/crew/${route}'`)
+    // The pages read through the cache, not a private fetch.
+    for (const p of ['dashboard', 'leads', 'bookings', 'members']) expect(read(`app/admin/crew/${p}/page.tsx`)).toMatch(/useAdminData/)
   })
 
   it('the assistant drawer opens on the event, and the floating button steps aside on these pages', () => {
@@ -186,9 +210,10 @@ describe('the Leads cards', () => {
     expect(agoLabel('2026-11-06T16:00:00Z', t)).toBe('1 day ago')
   })
 
-  it('the page offers copy / view invoice, open planner, the AI and the full booking, and writes nothing itself', () => {
-    const s = read('app/admin/crew/leads/page.tsx')
-    for (const label of ['Copy invoice link', 'View invoice', 'Open planner', 'Ask the AI to edit', 'Full booking']) expect(s).toContain(label)
+  it('the tile offers copy / view invoice, open planner and the AI, and writes nothing itself', () => {
+    expect(read('app/admin/crew/leads/page.tsx')).toMatch(/<PartyActions bookingId=\{lead\.id\} bookingRef=\{lead\.ref\} \/>/)
+    const s = read('app/admin/crew/_components/PartyActions.tsx')
+    for (const label of ['Copy invoice link', 'View invoice', 'Open planner', 'Ask the AI to edit']) expect(s).toContain(label)
     expect(s).toMatch(/hh:assistant-open/)
     // The only POST it makes is the Parties tab's own "make me a link" action.
     expect(Array.from(s.matchAll(/action: '([a-z_]+)'/g)).map(m => m[1])).toEqual(['generate_portal_url'])

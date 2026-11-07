@@ -6,9 +6,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { useAdminData } from './_components/adminData'
 import { WORK_TYPES, kindHasLead, workTypeOf, type WorkKind } from '@/lib/crew/workTypes'
 import {
-  BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, LoginGate, STATUS_STYLE, useAdminApi, whenLabel, whenParts,
+  BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, STATUS_STYLE, useAdminApi, whenLabel, whenParts,
 } from './_components/adminCrew'
 
 interface PartyRow {
@@ -136,25 +137,16 @@ function PartyCardMobile({ p }: { p: PartyRow }) {
 
 export default function CrewSchedulePage() {
   const api = useAdminApi()
-  const [authed, setAuthed] = useState<boolean | null>(null)
-  const [data, setData] = useState<Overview | null>(null)
-  const [error, setError] = useState('')
+  const sched = useAdminData<Overview>('/api/admin/crew')
+  const data = sched.data
+  const error = data ? '' : sched.error ?? ''
   const [filter, setFilter] = useState<Filter>('all')
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(null)
   const [showNew, setShowNew] = useState(false)
 
-  const load = useCallback(async (): Promise<'ok' | 'unauthorized' | 'error'> => {
-    const r = await api<Overview & { error?: string }>('/api/admin/crew')
-    if (r.status === 401) { setAuthed(false); return 'unauthorized' }
-    if (!r.ok) { setError(r.data.error || 'Could not read the schedule.'); setAuthed(true); return 'error' }
-    setData(r.data)
-    setError('')
-    setAuthed(true)
-    return 'ok'
-  }, [api])
-
-  useEffect(() => { load() }, [load])
+  const reload = sched.reload
+  const load = useCallback(async () => { await reload() }, [reload])
 
   async function syncNow() {
     setSyncing(true)
@@ -177,8 +169,6 @@ export default function CrewSchedulePage() {
     await load()
   }
 
-  if (authed === null) return <div className="min-h-screen bg-[#F6F1EB] grid place-items-center text-hampton-navy/60">Loading…</div>
-  if (!authed) return <LoginGate title="Crew" onSignedIn={load} />
 
   const parties = (data?.parties ?? []).filter(p => {
     if (filter === 'needs') return (p.status === 'published' || p.status === 'draft') && p.staffed < p.needed

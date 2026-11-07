@@ -8,9 +8,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { useAdminData } from '../../_components/adminData'
 import { kindHasLead, workTypeOf } from '@/lib/crew/workTypes'
 import {
-  BTN_DANGER, BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, LoginGate, STATUS_STYLE, money, useAdminApi, whenLabel,
+  BTN_DANGER, BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, STATUS_STYLE, money, useAdminApi, whenLabel,
 } from '../../_components/adminCrew'
 
 type Conflict = 'on_party' | 'overlap' | 'blocked' | 'not_lead' | 'inactive'
@@ -62,9 +63,10 @@ const CONFLICT_LABEL: Record<Conflict, string> = {
 
 export default function CrewPartyPage({ params }: { params: { id: string } }) {
   const api = useAdminApi()
-  const [authed, setAuthed] = useState<boolean | null>(null)
-  const [d, setD] = useState<Detail | null>(null)
-  const [error, setError] = useState('')
+  const detail = useAdminData<Detail>(`/api/admin/crew/parties/${params.id}`, 15_000)
+  const d = detail.data
+  const [actionError, setError] = useState('')
+  const error = actionError || (d ? '' : detail.error ?? '')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   /** Who is chosen for each open spot, applied together by the one Assign button. */
@@ -72,16 +74,8 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
   /** Picks the server flagged (another party then, marked unavailable…), waiting for one "Assign anyway". */
   const [pending, setPending] = useState<{ slotId: string; memberId: string; who: string; warnings: string[] }[]>([])
 
-  const load = useCallback(async (): Promise<'ok' | 'unauthorized' | 'error'> => {
-    const r = await api<Detail & { error?: string }>(`/api/admin/crew/parties/${params.id}`)
-    if (r.status === 401) { setAuthed(false); return 'unauthorized' }
-    setAuthed(true)
-    if (!r.ok) { setError(r.data.error || 'Could not read the party.'); return 'error' }
-    setD(r.data)
-    return 'ok'
-  }, [api, params.id])
-
-  useEffect(() => { load() }, [load])
+  const reload = detail.reload
+  const load = useCallback(async () => { await reload() }, [reload])
 
   async function act(body: Record<string, unknown>, done?: string) {
     setBusy(true)
@@ -159,9 +153,7 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
     await load()
   }
 
-  if (authed === null) return <div className="min-h-screen bg-[#F6F1EB] grid place-items-center text-hampton-navy/60">Loading…</div>
-  if (!authed) return <LoginGate title="Crew party" onSignedIn={load} />
-  if (!d) return <CrewFrame active="" title="Crew party"><Banner tone="error">{error || 'Loading…'}</Banner></CrewFrame>
+  if (!d) return <CrewFrame active="" title="Crew party"><Banner tone={error ? 'error' : 'info'}>{error || 'Loading…'}</Banner></CrewFrame>
 
   const p = d.party
   const live = p.status === 'draft' || p.status === 'published'

@@ -275,8 +275,8 @@ describe('the Copy button', () => {
     expect(chat).not.toMatch(/navigator\.clipboard/)
   })
 
-  it('the Leads page copy button ticks too', () => {
-    const s = decomment(fs.readFileSync(path.join(process.cwd(), 'src/app/admin/crew/leads/page.tsx'), 'utf8'))
+  it('the Leads and Bookings copy button (one component) ticks too', () => {
+    const s = decomment(fs.readFileSync(path.join(process.cwd(), 'src/app/admin/crew/_components/PartyActions.tsx'), 'utf8'))
     expect(s).toMatch(/if \(await copyText\(url\)\)/)
     expect(s).toMatch(/copied \? '✓ Copied'/)
   })

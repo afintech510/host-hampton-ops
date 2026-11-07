@@ -14,9 +14,11 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import {
-  BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, INPUT, LoginGate, useAdminApi,
+  BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, INPUT, useAdminApi, whenParts,
 } from '../_components/adminCrew'
+import { useAdminData, warm } from '../_components/adminData'
 import { CREW_SKILLS } from '@/lib/crew/skills'
 import { prefillFromApplication } from '@/lib/crew/adminForms'
 
@@ -26,6 +28,7 @@ interface Member {
   status: 'active' | 'paused' | 'removed'; needsReview: boolean; emailOptIn: boolean; smsOptIn: boolean
   adminNotes: string | null; jobApplicationId: string | null; joinedOn: string
   partiesWorked: number; noShows: number; lateCancelsUncovered: number; upcomingSpots: number
+  parties: { partyId: string; title: string; startsAt: string; endsAt: string; role: 'lead' | 'crew'; confirmed: boolean; status: string }[]
   onboarding: 'added' | 'link_sent' | 'signed_in' | 'profile_done' | 'agreement_signed' | 'not_required'
 }
 
@@ -72,23 +75,17 @@ function payload(f: FormState, mode: 'create' | 'edit' | 'owner') {
 
 export default function CrewMembersPage() {
   const api = useAdminApi()
-  const [authed, setAuthed] = useState<boolean | null>(null)
-  const [data, setData] = useState<Roster | null>(null)
-  const [error, setError] = useState('')
+  const roster = useAdminData<Roster>('/api/admin/crew/members')
+  const data = roster.data
+  const [actionError, setError] = useState('')
+  const error = actionError || (data ? '' : roster.error ?? '')
   const [notice, setNotice] = useState('')
   const [adding, setAdding] = useState<FormState | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [showRemoved, setShowRemoved] = useState(false)
 
-  const load = useCallback(async (): Promise<'ok' | 'unauthorized' | 'error'> => {
-    const r = await api<Roster & { error?: string }>('/api/admin/crew/members')
-    if (r.status === 401) { setAuthed(false); return 'unauthorized' }
-    setAuthed(true)
-    if (!r.ok) { setError(r.data.error || 'Could not read the roster.'); return 'error' }
-    setData(r.data)
-    return 'ok'
-  }, [api])
-  useEffect(() => { load() }, [load])
+  const reload = roster.reload
+  const load = useCallback(async () => { await reload() }, [reload])
 
   async function create(f: FormState) {
     setError('')
@@ -100,14 +97,12 @@ export default function CrewMembersPage() {
     return true
   }
 
-  if (authed === null) return <div className="min-h-screen bg-[#F6F1EB] grid place-items-center text-hampton-navy/60">Loading…</div>
-  if (!authed) return <LoginGate title="Crew roster" onSignedIn={load} />
-
   const members = (data?.members ?? []).filter(m => showRemoved || m.status !== 'removed')
 
   return (
-    <CrewFrame active="/admin/crew/members" title="Crew roster" sub="Pay is set per person, per hour, and is kept private.">
+    <CrewFrame active="/admin/crew/members" title="Crew roster" sub="Who is on the crew, and the parties each person is working. Pay is set per person, per hour, and is kept private.">
       {error && <Banner tone="error">{error}</Banner>}
+      {roster.loading && <div className="text-center text-hampton-navy/50 py-8">Loading the crew…</div>}
       {notice && <Banner tone="ok">{notice}</Banner>}
 
       <div className="flex flex-wrap gap-2 mb-5">
@@ -148,36 +143,13 @@ export default function CrewMembersPage() {
         </div>
       )}
 
-      <div className="md:hidden space-y-3">
+      <div className="space-y-3 max-w-3xl mx-auto">
         {members.map(m => (
           <MemberCard key={m.id} m={m} open={open === m.id}
             onToggle={() => setOpen(open === m.id ? null : m.id)}
             onChanged={async (msg) => { setNotice(msg); setError(''); await load() }}
             onError={setError} />
         ))}
-      </div>
-      <div className="hidden md:block bg-white rounded-2xl shadow-sm overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-hampton-navy/50 text-[11px] uppercase tracking-wider">
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Lead</th>
-              <th className="px-4 py-3">Worked</th>
-              <th className="px-4 py-3">Late, uncovered</th>
-              <th className="px-4 py-3">No-shows</th>
-              <th className="px-4 py-3">Onboarding</th>
-              <th className="px-4 py-3">Flags</th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.map(m => (
-              <MemberRow key={m.id} m={m} open={open === m.id}
-                onToggle={() => setOpen(open === m.id ? null : m.id)}
-                onChanged={async (msg) => { setNotice(msg); setError(''); await load() }}
-                onError={setError} />
-            ))}
-          </tbody>
-        </table>
       </div>
     </CrewFrame>
   )
@@ -229,33 +201,36 @@ function MemberPanel({ m, onChanged, onError }: { m: Member } & MemberHandlers) 
   )
 }
 
-function MemberRow({ m, open, onToggle, onChanged, onError }: {
-  m: Member; open: boolean; onToggle: () => void
-} & MemberHandlers) {
-  const flags = memberFlags(m)
+/** The parties a person is working, two short lines each, each a link to its party-staff page. */
+function WorkingParties({ parties }: { parties: Member['parties'] }) {
+  // The party-staff pages these lines open are ready before they are tapped.
+  const firstIds = parties.slice(0, 3).map(p => p.partyId).join(',')
+  useEffect(() => {
+    if (firstIds) warm(firstIds.split(',').map(id => `/api/admin/crew/parties/${id}`))
+  }, [firstIds])
+  if (parties.length === 0) return <div className="px-4 pb-3 -mt-1 text-xs text-hampton-navy/40">Not on any party yet.</div>
   return (
-    <>
-      <tr className={`border-t border-hampton-pink/10 cursor-pointer hover:bg-[#F6F1EB]/50 ${m.status === 'removed' ? 'opacity-50' : ''}`} onClick={onToggle}>
-        <td className="px-4 py-3 font-semibold text-hampton-navy">{m.firstName} {m.lastName ?? ''}</td>
-        <td className="px-4 py-3">{m.canLead ? 'Yes' : '—'}</td>
-        <td className="px-4 py-3">{m.partiesWorked}</td>
-        <td className="px-4 py-3">{m.lateCancelsUncovered}</td>
-        <td className="px-4 py-3">{m.noShows}</td>
-        <td className="px-4 py-3 text-xs">{STAGE_LABEL[m.onboarding]}</td>
-        <td className="px-4 py-3 text-xs text-hampton-navy/70">{flags.join(' · ') || '—'}</td>
-      </tr>
-      {open && (
-        <tr className="bg-[#F6F1EB]/40">
-          <td colSpan={7} className="px-4 py-4">
-            <MemberPanel m={m} onChanged={onChanged} onError={onError} />
-          </td>
-        </tr>
-      )}
-    </>
+    <ul className="px-4 pb-3 space-y-1.5" aria-label="Working">
+      {parties.slice(0, 6).map(p => {
+        const w = whenParts(p.startsAt, p.endsAt)
+        return (
+          <li key={p.partyId}>
+            <Link href={`/admin/crew/parties/${p.partyId}`} prefetch className="block rounded-lg bg-[#F6F1EB] px-3 py-1.5 leading-tight active:bg-hampton-navy/10">
+              <div className="text-xs font-semibold text-hampton-navy">{w.day} · {w.time}</div>
+              <div className="text-xs text-hampton-navy/70 truncate">
+                {p.title} · {p.role === 'lead' ? 'Party Lead' : 'Crew'} · <span className={p.confirmed ? 'text-emerald-700' : 'text-amber-700'}>{p.confirmed ? '✓ confirmed' : 'not confirmed'}</span>
+                {p.status === 'draft' ? ' · draft' : ''}
+              </div>
+            </Link>
+          </li>
+        )
+      })}
+      {parties.length > 6 && <li className="text-xs text-hampton-navy/50 px-1">+ {parties.length - 6} more</li>}
+    </ul>
   )
 }
 
-/** One crew member on a phone: tap to open the editor in place. */
+/** One crew member: tap the top to open the editor in place; the parties under it go to their staff pages. */
 function MemberCard({ m, open, onToggle, onChanged, onError }: {
   m: Member; open: boolean; onToggle: () => void
 } & MemberHandlers) {
@@ -286,6 +261,7 @@ function MemberCard({ m, open, onToggle, onChanged, onError }: {
         </div>
         {flags.length > 0 && <div className="mt-2 text-xs text-hampton-navy/70">{flags.join(' · ')}</div>}
       </button>
+      <WorkingParties parties={m.parties ?? []} />
       {open && (
         <div className="border-t border-hampton-pink/10 bg-[#F6F1EB]/40 rounded-b-2xl p-4">
           <MemberPanel m={m} onChanged={onChanged} onError={onError} />

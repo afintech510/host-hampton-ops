@@ -12,6 +12,9 @@ const TABS = [
 ]
 
 /**
+ * Every tab is a prefetched client-side link (the whole page is fetched ahead, not just its shell),
+ * so changing tab shows the page at once; app/crew/loading.tsx covers the rare cold one.
+ *
  * Tabs (spec §8): 🥳 Work · 🗓️ Availability · 🪪 Profile. Each carries its emoji AND an outline icon;
  * the look decides which shows (and whether the bar sits at the bottom or the top). "My pay" sits before
  * Profile only when pay figures are switched on; at launch they are not, and
@@ -22,7 +25,7 @@ export default function CrewNav({ showPay = false }: { showPay?: boolean }) {
   return (
     <nav className="crew-nav" aria-label="Crew">
       {TABS.filter(t => showPay || t.href !== '/crew/pay').map(t => (
-        <Link key={t.href} href={t.href} aria-current={t.match(pathname) ? 'page' : undefined}>
+        <Link key={t.href} href={t.href} prefetch aria-current={t.match(pathname) ? 'page' : undefined}>
           <span className="crew-nav-emoji" aria-hidden="true">{t.emoji}</span>
           <span className="crew-nav-line" aria-hidden="true"><t.Icon size={22} strokeWidth={2.2} /></span>
           <span>{t.label}</span>

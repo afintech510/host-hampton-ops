@@ -51,7 +51,7 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
       <div className="crew-party-main">
       <div className="crew-row" style={{ justifyContent: 'space-between' }}>
         <h3>
-          {linkToDetail ? <Link className="crew-link crew-party-link" href={`/crew/parties/${v.id}`}>{title}</Link> : title}
+          {linkToDetail ? <Link className="crew-link crew-party-link" href={`/crew/parties/${v.id}`} prefetch>{title}</Link> : title}
         </h3>
         {v.status === 'cancelled' && <span className="crew-chip crew-alert">Cancelled</span>}
         {v.mySlot && v.status !== 'cancelled' && (

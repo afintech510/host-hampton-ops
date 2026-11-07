@@ -69,7 +69,19 @@ export interface RosterRow {
   noShows: number
   lateCancelsUncovered: number
   upcomingSpots: number
+  /** The parties they are on from now on, soonest first: a line each on the roster. No pay. */
+  parties: RosterParty[]
   onboarding: OnboardingStage
+}
+
+export interface RosterParty {
+  partyId: string
+  title: string
+  startsAt: string
+  endsAt: string
+  role: 'lead' | 'crew'
+  confirmed: boolean
+  status: string
 }
 
 export interface HiredApplication { id: string; ref: string; name: string; email: string; phone: string; roleInterest: string }
@@ -80,7 +92,7 @@ export async function loadRoster(sb: Supa, s: CrewSettings, now: Date): Promise<
   const members = await listMembers(sb, { includeRemoved: true })
   if (members.kind !== 'ok') return members
   const [slots, events, apps, profiles, invites, rates] = await Promise.all([
-    sb.from('crew_slots').select('member_id, status, party_id').not('member_id', 'is', null).in('status', ['assigned', 'completed', 'no_show']),
+    sb.from('crew_slots').select('member_id, status, party_id, role, confirmed_at').not('member_id', 'is', null).in('status', ['assigned', 'completed', 'no_show']),
     sb.from('crew_events').select('member_id').eq('type', 'late_cancel_uncovered').eq('waived_grace', false),
     sb.from('job_applications').select('id, application_ref, name, email, phone, role_interest').eq('status', 'hired'),
     sb.from('crew_member_profiles').select('member_id, onboarding_completed_at, agreement_signed_at, agreement_version'),
@@ -98,14 +110,18 @@ export async function loadRoster(sb: Supa, s: CrewSettings, now: Date): Promise<
   const profileBy = new Map(((profiles.data ?? []) as { member_id: string; onboarding_completed_at: string | null; agreement_signed_at: string | null; agreement_version: string | null }[]).map(p => [p.member_id, p]))
   const invited = new Set(((invites.data ?? []) as { member_id: string }[]).map(r => r.member_id))
 
-  const slotRows = (slots.data ?? []) as { member_id: string; status: string; party_id: string }[]
+  const slotRows = (slots.data ?? []) as { member_id: string; status: string; party_id: string; role: 'lead' | 'crew'; confirmed_at: string | null }[]
   const assignedPartyIds = Array.from(new Set(slotRows.filter(r => r.status === 'assigned').map(r => r.party_id)))
   const upcomingParty = new Set<string>()
+  const partyInfo = new Map<string, { title: string; startsAt: string; endsAt: string; status: string }>()
   for (let i = 0; i < assignedPartyIds.length; i += 150) {
-    const { data, error } = await sb.from('crew_parties').select('id').in('id', assignedPartyIds.slice(i, i + 150))
+    const { data, error } = await sb.from('crew_parties').select('id, title, starts_at, ends_at, status').in('id', assignedPartyIds.slice(i, i + 150))
       .gt('starts_at', now.toISOString()).in('status', ['draft', 'published'])
     if (error) return { kind: 'unavailable', error: error.message }
-    for (const r of (data ?? []) as { id: string }[]) upcomingParty.add(r.id)
+    for (const r of (data ?? []) as { id: string; title: string; starts_at: string; ends_at: string; status: string }[]) {
+      upcomingParty.add(r.id)
+      partyInfo.set(r.id, { title: r.title, startsAt: r.starts_at, endsAt: r.ends_at, status: r.status })
+    }
   }
 
   const count = (pred: (r: { member_id: string; status: string; party_id: string }) => boolean) => {
@@ -113,6 +129,13 @@ export async function loadRoster(sb: Supa, s: CrewSettings, now: Date): Promise<
     for (const r of slotRows) if (pred(r)) m.set(r.member_id, (m.get(r.member_id) ?? 0) + 1)
     return m
   }
+  const partiesOf = new Map<string, RosterParty[]>()
+  for (const r of slotRows) {
+    const info = r.status === 'assigned' ? partyInfo.get(r.party_id) : undefined
+    if (!info) continue
+    partiesOf.set(r.member_id, [...(partiesOf.get(r.member_id) ?? []), { partyId: r.party_id, ...info, role: r.role, confirmed: !!r.confirmed_at }])
+  }
+  for (const list of Array.from(partiesOf.values())) list.sort((a, b) => a.startsAt.localeCompare(b.startsAt))
   const worked = count(r => r.status === 'completed')
   const noShows = count(r => r.status === 'no_show')
   const upcoming = count(r => r.status === 'assigned' && upcomingParty.has(r.party_id))
@@ -130,7 +153,7 @@ export async function loadRoster(sb: Supa, s: CrewSettings, now: Date): Promise<
           needsReview: m.needs_review, emailOptIn: m.email_opt_in, smsOptIn: m.sms_opt_in, adminNotes: m.admin_notes,
           jobApplicationId: m.job_application_id, joinedOn: m.joined_on,
           partiesWorked: worked.get(m.id) ?? 0, noShows: noShows.get(m.id) ?? 0,
-          lateCancelsUncovered: uncovered.get(m.id) ?? 0, upcomingSpots: upcoming.get(m.id) ?? 0,
+          lateCancelsUncovered: uncovered.get(m.id) ?? 0, upcomingSpots: upcoming.get(m.id) ?? 0, parties: partiesOf.get(m.id) ?? [],
           onboarding: onboardingStage(m, profileBy.get(m.id) ?? null, invited.has(m.id)),
         }
       }).sort((a, b) => (a.isOwner === b.isOwner ? (a.status === b.status ? a.firstName.localeCompare(b.firstName) : a.status === 'active' ? -1 : 1) : a.isOwner ? -1 : 1)),

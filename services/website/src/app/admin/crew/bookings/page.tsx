@@ -1,58 +1,110 @@
 'use client'
 
 /**
- * /admin/crew/bookings - the Parties list and the admin view of a party, the same
- * screen the main dashboard's Parties tab shows, inside the crew-management menu.
- * `?party=<id>` or `?ref=<booking ref>` opens that party (the Leads cards and the
- * assistant link here).
+ * /admin/crew/bookings - the booked parties as tiles, phone first.
+ *
+ * Pull buttons at the top (kind of party, the three months, the weeks of the month),
+ * then a tile per booking. Tap a tile and it opens to everything, including who is
+ * staffed and a button to the party-staff page. `?party=<id>` or `?ref=<ref>` opens
+ * that booking (the assistant and the Leads tiles link here).
+ *
+ * The data is already in memory when you arrive (the shell warms it), so the page
+ * paints at once and refreshes quietly.
  */
 
-import { useCallback, useEffect, useState } from 'react'
-import PartiesTab from '@/app/admin/PartiesTab'
-import { CrewFrame, LoginGate, useAdminApi } from '../_components/adminCrew'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { BookingTile as Tile } from '@/lib/crewAppData'
+import { etDateString } from '@/lib/partyTime'
+import { monthKeyOf, monthKeys, monthShort, passesDateFilter, weekNumberOf, weeksOfMonth } from '@/lib/bookingWeeks'
+import { Banner, CrewFrame } from '../_components/adminCrew'
+import { warm, useAdminData } from '../_components/adminData'
+import BookingTile from '../_components/BookingTile'
+import PartyFilters, { passesTypes, useRemembered, type TypeKey } from '../_components/PartyFilters'
 
-const TOKEN_KEY = 'hh_admin_token'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export default function CrewBookingsPage() {
-  const api = useAdminApi()
-  const [authed, setAuthed] = useState<boolean | null>(null)
-  const [deepLink, setDeepLink] = useState<{ id?: string; ref?: string } | null>(null)
-  const [headers, setHeaders] = useState<Record<string, string>>({ 'Content-Type': 'application/json' })
+  const { data, error, loading, refreshing } = useAdminData<{ bookings: Tile[]; today: string }>('/api/admin/crew-app/bookings')
+  const today = data?.today ?? etDateString()
+  const months = useMemo(() => monthKeys(today, 3), [today])
 
-  // Any admin route answers 401 to a stranger; this one is cheap and read-only.
-  const check = useCallback(async (): Promise<'ok' | 'unauthorized' | 'error'> => {
-    const r = await api('/api/admin/parties/resolve?ref=PING')
-    if (r.status === 401) { setAuthed(false); return 'unauthorized' }
-    const t = localStorage.getItem(TOKEN_KEY)
-    setHeaders({ 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) })
-    setAuthed(true)
-    return 'ok'
-  }, [api])
+  const [types, setTypes] = useRemembered<TypeKey[]>('bookings.types', [])
+  const [month, setMonth] = useRemembered<string>('bookings.month', months[0])
+  const [week, setWeek] = useRemembered<number | null>('bookings.week', null)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const deepLinked = useRef(false)
 
-  useEffect(() => { check() }, [check])
+  // A remembered month that has scrolled out of the three on offer falls back to this one.
+  const activeMonth = months.includes(month) ? month : months[0]
 
+  const all = useMemo(() => data?.bookings ?? [], [data])
+  const byType = useMemo(() => all.filter(t => passesTypes(t.partyType, types)), [all, types])
+  const monthCount = (m: string) => byType.filter(t => monthKeyOf(t.partyDate ?? '') === m).length
+  const inMonth = useMemo(() => byType.filter(t => passesDateFilter(t.partyDate, { month: activeMonth, week: null })), [byType, activeMonth])
+  const weekCounts = useMemo(() => {
+    const out: Record<number, number> = {}
+    for (const w of weeksOfMonth(activeMonth)) out[w.n] = 0
+    for (const t of inMonth) if (t.partyDate) out[weekNumberOf(t.partyDate)] = (out[weekNumberOf(t.partyDate)] ?? 0) + 1
+    return out
+  }, [inMonth, activeMonth])
+  const shown = useMemo(() => inMonth.filter(t => passesDateFilter(t.partyDate, { month: activeMonth, week })), [inMonth, activeMonth, week])
+
+  // Open the booking a link points at: light the filters that contain it, then open it.
   useEffect(() => {
+    if (deepLinked.current || !data) return
     const q = new URLSearchParams(window.location.search)
     const id = q.get('party') ?? ''
     const ref = q.get('ref') ?? ''
-    if (UUID.test(id)) setDeepLink({ id })
-    else if (/^[A-Za-z0-9-]{3,40}$/.test(ref)) setDeepLink({ ref })
-  }, [])
+    const hit = all.find(t => (UUID.test(id) && t.id === id) || (ref && t.ref === ref))
+    deepLinked.current = true
+    if (!hit) return
+    setTypes([])
+    if (hit.partyDate) {
+      setMonth(monthKeyOf(hit.partyDate))
+      setWeek(weekNumberOf(hit.partyDate))
+    }
+    setOpenId(hit.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
 
-  if (authed === null) return <div className="min-h-screen bg-[#F6F1EB] grid place-items-center text-hampton-navy/60">Loading…</div>
-  if (!authed) return <LoginGate title="Bookings" onSignedIn={check} />
+  // Have the first tiles' details ready before they are opened.
+  useEffect(() => {
+    warm(shown.slice(0, 8).map(t => `/api/admin/crew-app/booking/${t.id}`))
+  }, [shown])
+
+  const months3 = months.map(m => ({ key: m, label: monthShort(m), count: monthCount(m) }))
 
   return (
-    <CrewFrame active="/admin/crew/bookings" title="Bookings">
-      <PartiesTab
-        headers={headers}
-        deepLink={deepLink}
-        onLogout={() => {
-          localStorage.removeItem(TOKEN_KEY)
-          window.location.reload()
-        }}
-      />
+    <CrewFrame active="/admin/crew/bookings" title="Bookings" sub={data ? `${all.length} booked in the next three months${refreshing ? ' · refreshing…' : ''}` : null}>
+      <div className="max-w-3xl mx-auto">
+        {error && !data && <Banner tone="error">{error}</Banner>}
+        {loading && <div className="text-center text-hampton-navy/50 py-10">Loading the bookings…</div>}
+        {data && (
+          <>
+            <PartyFilters
+              types={types}
+              onTypes={setTypes}
+              months={months3}
+              month={activeMonth}
+              onMonth={setMonth}
+              weekCounts={weekCounts}
+              week={week}
+              onWeek={setWeek}
+            />
+            <div className="mt-5 space-y-3">
+              {shown.length === 0 && (
+                <div className="text-center text-hampton-navy/60 py-10">
+                  Nothing booked {week ? `in week ${week} of ${monthShort(activeMonth)}` : `in ${monthShort(activeMonth)}`}
+                  {types.length ? ' for those kinds of party' : ''}.
+                </div>
+              )}
+              {shown.map(t => (
+                <BookingTile key={t.id} tile={t} open={openId === t.id} onToggle={() => setOpenId(openId === t.id ? null : t.id)} />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </CrewFrame>
   )
 }

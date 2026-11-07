@@ -96,7 +96,7 @@ describe('the whole party tile is the link to its details', () => {
 
   it('the card is marked clickable only when it links, and the title link is the one anchor', () => {
     expect(card).toMatch(/className=\{`crew-card crew-party\$\{linkToDetail \? ' crew-party-click' : ''\}`\}/)
-    expect(card).toMatch(/<Link className="crew-link crew-party-link" href=\{`\/crew\/parties\/\$\{v\.id\}`\}>/)
+    expect(card).toMatch(/<Link className="crew-link crew-party-link" href=\{`\/crew\/parties\/\$\{v\.id\}`\} prefetch>/)
     expect(card.match(/<Link /g)).toHaveLength(1)
   })
 

@@ -1,24 +1,28 @@
 'use client'
 
 /**
- * /admin/crew/leads - the open leads as cards, the one in touch most recently on
- * top. Each card is a short summary; tapping it opens everything about the party and
- * the buttons to copy or view the invoice, open the planner, or ask the AI
- * assistant to make a change. Nothing here changes a booking or sends anything:
- * the buttons mint a link for YOU (the same ones the Parties tab makes), and the
- * assistant, as always, only proposes cards that you confirm.
+ * /admin/crew/leads - the open leads as tiles, phone first, in the same format as
+ * Bookings: pull buttons for the kind of party and the month / week it is for, then a
+ * tile per lead, the one in touch most recently on top. Tapping a tile opens
+ * everything about the party and the buttons to copy or view the invoice, open the
+ * planner, or ask the AI assistant to make a change. Nothing here changes a booking or
+ * sends anything: the buttons mint a link for YOU (the same ones the Parties tab
+ * makes), and the assistant, as always, only proposes cards that you confirm.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { LeadCard } from '@/lib/leadCards'
 import { PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
 import { STAGE_LABELS, STAGE_STYLE } from '@/lib/bookingStatus'
 import { etDateTime } from '@/lib/assistant/timeFormat'
 import { agoLabel } from '@/lib/agoLabel'
-import { copyText } from '@/lib/copyText'
-import { BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, LoginGate, useAdminApi } from '../_components/adminCrew'
-
-const money = (cents: number | null | undefined) => `$${((Number(cents) || 0) / 100).toFixed(2)}`
+import { etDateString } from '@/lib/partyTime'
+import { monthKeyOf, monthKeys, monthShort, weekNumberOf, weeksOfMonth } from '@/lib/bookingWeeks'
+import { Banner, CrewFrame, money } from '../_components/adminCrew'
+import { useAdminData } from '../_components/adminData'
+import { DateBlock, TYPE_SHORT } from '../_components/BookingTile'
+import PartyActions from '../_components/PartyActions'
+import PartyFilters, { passesTypes, useRemembered, type TypeKey } from '../_components/PartyFilters'
 
 /** "Sat, Dec 12" from a YYYY-MM-DD, noon-anchored so the day never slips. */
 function dayLabel(ymd: string | null): string {
@@ -44,108 +48,47 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
-function LeadCardView({
-  lead,
-  open,
-  onToggle,
-}: {
-  lead: LeadCard
-  open: boolean
-  onToggle: () => void
-}) {
-  const api = useAdminApi()
-  const [detail, setDetail] = useState<Detail | null>(null)
-  const [detailError, setDetailError] = useState('')
-  const [busy, setBusy] = useState('')
-  const [toast, setToast] = useState('')
-  const [copied, setCopied] = useState(false)
-
-  // The full party, fetched the first time the card opens.
-  useEffect(() => {
-    if (!open || detail) return
-    let cancelled = false
-    api<Detail & { error?: string }>(`/api/admin/parties/${lead.id}`).then(r => {
-      if (cancelled) return
-      if (r.ok) setDetail(r.data)
-      else setDetailError(r.data.error || 'Could not load the full party.')
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [open, detail, lead.id, api])
-
-  /** Mint a client link for the manager (the Parties tab's own action) and copy or open it. */
-  async function link(destination: 'invoice' | 'planner', mode: 'copy' | 'open') {
-    setBusy(`${destination}-${mode}`)
-    setToast('')
-    // Opened BEFORE the request so a phone does not treat the new tab as a pop-up.
-    const win = mode === 'open' ? window.open('', '_blank') : null
-    const r = await api<{ portalUrl?: string; error?: string }>(`/api/admin/parties/${lead.id}`, {
-      method: 'POST',
-      body: { action: 'generate_portal_url', destination },
-    })
-    setBusy('')
-    const url = r.data.portalUrl
-    if (!r.ok || !url) {
-      win?.close()
-      setToast(r.data.error || 'Could not make the link.')
-      return
-    }
-    if (mode === 'open') {
-      if (win) win.location.href = url
-      else window.open(url, '_blank')
-      return
-    }
-    if (await copyText(url)) {
-      // A check on the button for two seconds, the way every copy button works.
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-      setToast('It signs in whoever opens it as the client.')
-    } else {
-      // No clipboard permission (some phones, some embedded browsers): show it, selectable.
-      setToast(`Could not copy automatically. Press and hold to copy: ${url}`)
-    }
-  }
-
-  const askAssistant = () => window.dispatchEvent(new CustomEvent('hh:assistant-open', { detail: { bookingRef: lead.ref } }))
+function LeadTile({ lead, open, onToggle }: { lead: LeadCard; open: boolean; onToggle: () => void }) {
+  // The full party, fetched the first time the tile opens (then held by the cache).
+  const detailState = useAdminData<Detail>(open ? `/api/admin/parties/${lead.id}` : null, 120_000)
+  const detail = detailState.data
   const total = lead.totalCents
   const kid = [lead.childName, lead.childAge ? `${lead.childAge}` : null].filter(Boolean).join(', ')
 
   return (
     <article className="bg-white rounded-2xl shadow-sm overflow-hidden" data-lead-card data-ref={lead.ref}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="w-full text-left p-4 active:bg-[#F6F1EB]"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-lg font-semibold text-hampton-navy leading-tight truncate">{lead.name}</div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${STAGE_STYLE[lead.stage]}`}>{STAGE_LABELS[lead.stage]}</span>
-              {lead.waitingOnUs && <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-700">Waiting on us</span>}
+      <button type="button" onClick={onToggle} aria-expanded={open} className="w-full text-left p-3 active:bg-[#F6F1EB] flex gap-3 items-stretch">
+        <DateBlock date={lead.partyDate} time={lead.partyTime} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[17px] font-semibold text-hampton-navy leading-tight truncate">{lead.name}</div>
+              {kid && <div className="text-sm text-hampton-navy/60 truncate">{kid}</div>}
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-xs font-semibold text-hampton-navy" title={etDateTime(lead.lastContactAt)}>{agoLabel(lead.lastContactAt)}</div>
+              <div className="text-[11px] text-hampton-navy/50">
+                {lead.lastFrom === 'them' ? 'they wrote' : lead.lastFrom === 'us' ? 'we wrote' : 'first asked'}
+              </div>
             </div>
           </div>
-          <div className="text-right shrink-0">
-            <div className="text-xs font-semibold text-hampton-navy" title={etDateTime(lead.lastContactAt)}>{agoLabel(lead.lastContactAt)}</div>
-            <div className="text-[11px] text-hampton-navy/50">
-              {lead.lastFrom === 'them' ? 'they wrote' : lead.lastFrom === 'us' ? 'we wrote' : 'first asked'}
-            </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${STAGE_STYLE[lead.stage]}`}>{STAGE_LABELS[lead.stage]}</span>
+            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-hampton-navy/10 text-hampton-navy">
+              {TYPE_SHORT[lead.partyType ?? ''] ?? PARTY_TYPE_LABELS[lead.partyType || 'unknown']}
+            </span>
+            {lead.guests ? <span className="text-[11px] text-hampton-navy/60">{lead.guests} guests</span> : null}
+            {total && total > 0 ? <span className="text-[11px] font-semibold text-hampton-navy/70">{money(total)}</span> : null}
+            {lead.waitingOnUs && <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-700">Waiting on us</span>}
           </div>
-        </div>
-        <div className="mt-2 text-sm text-hampton-navy/80">
-          {[PARTY_TYPE_LABELS[lead.partyType || 'unknown'], kid || null, `${dayLabel(lead.partyDate)}${lead.partyTime ? ` · ${lead.partyTime}` : ''}`, lead.guests ? `${lead.guests} guests` : null]
-            .filter(Boolean)
-            .join(' · ')}
-        </div>
-        <div className="mt-1 text-sm text-hampton-navy/60 line-clamp-2">
-          {lead.lastTheirs ? `“${lead.lastTheirs.text}”` : 'No message from them on record.'}
+          <div className="mt-1.5 text-sm text-hampton-navy/60 line-clamp-2">
+            {lead.lastTheirs ? `“${lead.lastTheirs.text}”` : 'No message from them on record.'}
+          </div>
         </div>
       </button>
 
       {open && (
-        <div className="border-t border-hampton-navy/10 p-4 space-y-3 bg-[#FBF8F4]">
+        <div className="border-t border-hampton-navy/10 p-3 space-y-3 bg-[#FBF8F4]">
           <Row label="Reference">{lead.ref}</Row>
           <Row label="Phone">{lead.phone ? <a className="underline" href={`tel:${lead.phone}`}>{lead.phone}</a> : '—'}</Row>
           <Row label="Email">{lead.email ? <a className="underline" href={`mailto:${lead.email}`}>{lead.email}</a> : '—'}</Row>
@@ -160,8 +103,8 @@ function LeadCardView({
             {total && total > 0 ? `${money(total)} quoted · ${money(lead.paidCents)} paid` : 'Not priced yet'}
           </Row>
 
-          {detailError && <Banner tone="warn">{detailError}</Banner>}
-          {!detail && !detailError && <div className="text-sm text-hampton-navy/50">Loading the rest…</div>}
+          {detailState.error && !detail && <Banner tone="warn">{detailState.error}</Banner>}
+          {detailState.loading && <div className="text-sm text-hampton-navy/50">Loading the rest…</div>}
           {detail?.line_items && detail.line_items.length > 0 && (
             <div>
               <div className="text-sm text-hampton-navy/50 mb-1">On the quote</div>
@@ -177,16 +120,7 @@ function LeadCardView({
           )}
           {detail?.admin_notes && <Row label="Notes">{detail.admin_notes}</Row>}
 
-          <div className="flex flex-wrap gap-2 pt-1">
-            <button className={BTN_GHOST} disabled={!!busy} onClick={() => link('invoice', 'copy')}>
-              {busy === 'invoice-copy' ? 'Making…' : copied ? '✓ Copied' : 'Copy invoice link'}
-            </button>
-            <button className={BTN_GHOST} disabled={!!busy} onClick={() => link('invoice', 'open')}>View invoice</button>
-            <button className={BTN_GHOST} disabled={!!busy} onClick={() => link('planner', 'open')}>Open planner</button>
-            <a className={`${BTN_GHOST} inline-flex items-center`} href={`/admin/crew/bookings?party=${lead.id}`}>Full booking</a>
-            <button className={BTN_PRIMARY} onClick={askAssistant}>✨ Ask the AI to edit</button>
-          </div>
-          {toast && <div className="text-sm text-hampton-navy/70 break-all select-all">{toast}</div>}
+          <PartyActions bookingId={lead.id} bookingRef={lead.ref} />
         </div>
       )}
     </article>
@@ -194,48 +128,71 @@ function LeadCardView({
 }
 
 export default function CrewLeadsPage() {
-  const api = useAdminApi()
-  const [authed, setAuthed] = useState<boolean | null>(null)
-  const [leads, setLeads] = useState<LeadCard[] | null>(null)
-  const [truncated, setTruncated] = useState(false)
-  const [error, setError] = useState('')
+  const { data, error, loading, refreshing } = useAdminData<{ leads: LeadCard[]; truncated?: boolean }>('/api/admin/leads')
+  const today = etDateString()
+  const months = useMemo(() => monthKeys(today, 3), [today])
+  const [types, setTypes] = useRemembered<TypeKey[]>('leads.types', [])
+  const [month, setMonth] = useRemembered<string>('leads.month', 'all')
+  const [week, setWeek] = useRemembered<number | null>('leads.week', null)
   const [openRef, setOpenRef] = useState<string | null>(null)
 
-  const load = useCallback(async (): Promise<'ok' | 'unauthorized' | 'error'> => {
-    const r = await api<{ leads?: LeadCard[]; truncated?: boolean; error?: string }>('/api/admin/leads')
-    if (r.status === 401) { setAuthed(false); return 'unauthorized' }
-    setAuthed(true)
-    if (!r.ok || !r.data.leads) { setError(r.data.error || 'Could not read the leads.'); return 'error' }
-    setError('')
-    setLeads(r.data.leads)
-    setTruncated(!!r.data.truncated)
-    return 'ok'
-  }, [api])
+  const leads = useMemo(() => data?.leads ?? [], [data])
+  /** Which chip a lead's party date belongs to: a month on offer, 'later', or 'none'. */
+  const bucketOf = (l: LeadCard): string => {
+    if (!l.partyDate) return 'none'
+    const m = monthKeyOf(l.partyDate)
+    return months.includes(m) ? m : 'later'
+  }
 
-  useEffect(() => { load() }, [load])
-  // After the assistant changes something, the list is re-read.
-  useEffect(() => {
-    const again = () => { load() }
-    window.addEventListener('hh:admin-data-changed', again)
-    return () => window.removeEventListener('hh:admin-data-changed', again)
-  }, [load])
-
-  if (authed === null) return <div className="min-h-screen bg-[#F6F1EB] grid place-items-center text-hampton-navy/60">Loading…</div>
-  if (!authed) return <LoginGate title="Leads" onSignedIn={load} />
+  const byType = useMemo(() => leads.filter(l => passesTypes(l.partyType, types)), [leads, types])
+  const chipCount = (key: string) => (key === 'all' ? byType.length : byType.filter(l => bucketOf(l) === key).length)
+  const chips = [
+    { key: 'all', label: 'All', count: chipCount('all') },
+    ...months.map(m => ({ key: m, label: monthShort(m), count: chipCount(m) })),
+    ...(chipCount('later') ? [{ key: 'later', label: 'Later', count: chipCount('later') }] : []),
+    { key: 'none', label: 'No date', count: chipCount('none') },
+  ]
+  const activeMonth = chips.some(c => c.key === month) ? month : 'all'
+  const inMonth = byType.filter(l => activeMonth === 'all' || bucketOf(l) === activeMonth)
+  const weekCounts = useMemo(() => {
+    if (!/^\d{4}-\d{2}$/.test(activeMonth)) return null
+    const out: Record<number, number> = {}
+    for (const w of weeksOfMonth(activeMonth)) out[w.n] = 0
+    for (const l of inMonth) if (l.partyDate) out[weekNumberOf(l.partyDate)] = (out[weekNumberOf(l.partyDate)] ?? 0) + 1
+    return out
+  }, [inMonth, activeMonth])
+  const shown = inMonth.filter(l => week === null || !/^\d{4}-\d{2}$/.test(activeMonth) || (l.partyDate ? weekNumberOf(l.partyDate) === week : false))
 
   return (
     <CrewFrame
       active="/admin/crew/leads"
       title="Leads"
-      sub={leads ? `${leads.length} open ${leads.length === 1 ? 'lead' : 'leads'}, the one in touch most recently first.` : null}
+      sub={data ? `${leads.length} open ${leads.length === 1 ? 'lead' : 'leads'}, the one in touch most recently first.${refreshing ? ' · refreshing…' : ''}` : null}
     >
-      {error && <Banner tone="error">{error}</Banner>}
-      {truncated && <Banner tone="info">Showing the most recent 200 inquiries.</Banner>}
-      {leads && leads.length === 0 && !error && <Banner tone="ok">No open leads right now.</Banner>}
-      <div className="space-y-3 max-w-3xl">
-        {(leads ?? []).map(l => (
-          <LeadCardView key={l.id} lead={l} open={openRef === l.ref} onToggle={() => setOpenRef(openRef === l.ref ? null : l.ref)} />
-        ))}
+      <div className="max-w-3xl mx-auto">
+        {error && !data && <Banner tone="error">{error}</Banner>}
+        {loading && <div className="text-center text-hampton-navy/50 py-10">Loading the leads…</div>}
+        {data && (
+          <>
+            {data.truncated && <Banner tone="info">Showing the most recent 200 inquiries.</Banner>}
+            <PartyFilters
+              types={types}
+              onTypes={setTypes}
+              months={chips}
+              month={activeMonth}
+              onMonth={setMonth}
+              weekCounts={weekCounts}
+              week={week}
+              onWeek={setWeek}
+            />
+            <div className="mt-5 space-y-3">
+              {shown.length === 0 && <div className="text-center text-hampton-navy/60 py-10">{leads.length === 0 ? 'No open leads right now.' : 'No leads match those buttons.'}</div>}
+              {shown.map(l => (
+                <LeadTile key={l.id} lead={l} open={openRef === l.ref} onToggle={() => setOpenRef(openRef === l.ref ? null : l.ref)} />
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </CrewFrame>
   )

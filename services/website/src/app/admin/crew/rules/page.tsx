@@ -7,8 +7,9 @@
  * `settingsFromRows` reads it back exactly as typed.
  */
 
-import { useCallback, useEffect, useState } from 'react'
-import { BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, INPUT, LoginGate, useAdminApi } from '../_components/adminCrew'
+import { useCallback, useState } from 'react'
+import { useAdminData } from '../_components/adminData'
+import { BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, INPUT, useAdminApi } from '../_components/adminCrew'
 import { SETTING_SECTIONS, type SettingField, type SettingSection } from '@/lib/crew/adminForms'
 
 interface Row { key: string; value: Record<string, unknown>; description: string | null }
@@ -29,22 +30,11 @@ function addDays(date: string, n: number): string {
 
 export default function CrewRulesPage() {
   const api = useAdminApi()
-  const [authed, setAuthed] = useState<boolean | null>(null)
-  const [rows, setRows] = useState<Row[] | null>(null)
-  const [error, setError] = useState('')
-
-  const load = useCallback(async (): Promise<'ok' | 'unauthorized' | 'error'> => {
-    const r = await api<{ rows?: Row[]; error?: string }>('/api/admin/crew/settings')
-    if (r.status === 401) { setAuthed(false); return 'unauthorized' }
-    setAuthed(true)
-    if (!r.ok || !r.data.rows) { setError(r.data.error || 'Could not read the rules.'); return 'error' }
-    setRows(r.data.rows)
-    return 'ok'
-  }, [api])
-  useEffect(() => { load() }, [load])
-
-  if (authed === null) return <div className="min-h-screen bg-[#F6F1EB] grid place-items-center text-hampton-navy/60">Loading…</div>
-  if (!authed) return <LoginGate title="Crew rules" onSignedIn={load} />
+  const settings = useAdminData<{ rows?: Row[] }>('/api/admin/crew/settings')
+  const rows = settings.data?.rows ?? null
+  const error = rows ? '' : settings.error ?? ''
+  const reload = settings.reload
+  const load = useCallback(async () => { await reload() }, [reload])
 
   return (
     <CrewFrame active="/admin/crew/rules" title="Crew rules" sub="Every number the crew rules use. Each section saves on its own.">

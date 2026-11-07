@@ -36,15 +36,27 @@ describe('the schedule on a phone', () => {
 describe('the roster on a phone', () => {
   const page = read('app/admin/crew/members/page.tsx')
 
-  it('shows every member as a card below md, and the table only from md up', () => {
-    expect(page).toMatch(/<div className="md:hidden[^"]*">\s*\{members\.map\(m => \(\s*<MemberCard/)
-    expect(page).toMatch(/<div className="hidden md:block[^"]*overflow-x-auto">\s*<table/)
-    expect(page.match(/<table/g)).toHaveLength(1)
+  it('shows every member as a card at every width: mobile first, no desktop table', () => {
+    expect(page).toMatch(/<div className="space-y-3 max-w-3xl mx-auto">\s*\{members\.map\(m => \(\s*<MemberCard/)
+    expect(page).not.toMatch(/<table/)
+    expect(page).not.toMatch(/function MemberRow/)
   })
 
-  it('the editor under a member is one component used by both layouts', () => {
-    expect(page.match(/<MemberPanel /g)).toHaveLength(2)
+  it('the editor under a member is one component', () => {
+    expect(page.match(/<MemberPanel /g)).toHaveLength(1)
     expect(page.match(/<MemberForm /g)!.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('each card lists the parties the person is working, one link each to its party-staff page', () => {
+    const card = page.slice(page.indexOf('function WorkingParties'), page.indexOf('function MemberForm'))
+    expect(card).toMatch(/href=\{`\/admin\/crew\/parties\/\$\{p\.partyId\}`\}/)
+    expect(card).toMatch(/<WorkingParties parties=\{m\.parties \?\? \[\]\} \/>/)
+    // The lines sit OUTSIDE the card's toggle button (a link inside a button is invalid and swallows the tap).
+    const toggle = card.slice(card.indexOf('<button type="button" onClick={onToggle}'), card.indexOf('</button>'))
+    expect(toggle).not.toContain('<WorkingParties')
+    expect(toggle).not.toContain('<Link')
+    // And no pay is read: the lines are a title, a time and a role.
+    expect(card).not.toMatch(/pay|rate|steps|tip/i)
   })
 
   it('a card is a real button that says whether it is open', () => {
