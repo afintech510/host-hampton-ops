@@ -102,7 +102,7 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
         {!v.mySlot && b.upcoming && v.selection.mode !== 'pick' && !b.claimBlock && claimTargets(spots).map(s => (
           <CommitButton key={s.slotId} slotId={s.slotId} partyTitle={title}
             when={`${partyDayLabel(v.startsAt)}, ${partyTimeLabel(s.shiftStartsAt, s.shiftEndsAt)}`} roleWord={roleWord(s.role)}
-            label={`Commit to Work${s.role === 'lead' ? ' as Party Lead' : ''}${s.payCents != null ? ` (${formatCents(s.payCents)})` : ''}`} />
+            label={`Commit to Party${s.role === 'lead' ? ' as Party Lead' : ''}${s.payCents != null ? ` (${formatCents(s.payCents)})` : ''}`} />
         ))}
         {!v.mySlot && b.upcoming && v.selection.mode !== 'pick' && (
           <ActionButton

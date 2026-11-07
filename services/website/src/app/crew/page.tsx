@@ -49,7 +49,7 @@ export default async function CrewHomePage() {
         </div>
       ) : (
         <p className="crew-muted crew-small" style={{ marginTop: 0 }}>
-          Pick the work you want, and set the times you can&apos;t work in <Link className="crew-link" href="/crew/availability">Availability</Link>.
+          Pick the parties you want, and set the times you can&apos;t work in <Link className="crew-link" href="/crew/availability">Availability</Link>.
         </p>
       )}
 
@@ -64,16 +64,16 @@ export default async function CrewHomePage() {
       )}
 
       <section aria-labelledby="crew-mine">
-        <h2 id="crew-mine">My work</h2>
+        <h2 id="crew-mine">My parties</h2>
         {mine.length === 0
           ? <p className="crew-muted">{confirm.length > 0 ? 'Nothing accepted yet.' : "You're not on anything yet. Commit to a spot below."}</p>
           : mine.map(b => <PartyCard key={b.view.id} b={b} canLead={me.canLead} />)}
       </section>
 
       <section aria-labelledby="crew-open">
-        <h2 id="crew-open">Open work</h2>
+        <h2 id="crew-open">Open parties</h2>
         {open.length === 0
-          ? <p className="crew-muted">No open spots right now. New work shows up here as soon as it&apos;s posted.</p>
+          ? <p className="crew-muted">No open spots right now. New parties show up here as soon as it&apos;s posted.</p>
           : open.map(b => <PartyCard key={b.view.id} b={b} canLead={me.canLead} />)}
       </section>
 

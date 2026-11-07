@@ -34,13 +34,13 @@ describe('no Undo', () => {
   })
 })
 
-describe('Commit to Work', () => {
+describe('Commit to Party', () => {
   const card = squash(read('app', 'crew', '_components', 'PartyCard.tsx'))
   const commit = squash(read('app', 'crew', '_components', 'CommitButton.tsx'))
 
-  it('the card offers "Commit to Work" through the dialog, and the old labels are gone', () => {
+  it('the card offers "Commit to Party" through the dialog, and the old labels are gone', () => {
     expect(card).toMatch(/<CommitButton /)
-    expect(card).toMatch(/Commit to Work\$\{s\.role === 'lead' \? ' as Party Lead' : ''\}/)
+    expect(card).toMatch(/Commit to Party\$\{s\.role === 'lead' \? ' as Party Lead' : ''\}/)
     expect(card).not.toMatch(/Take a crew spot|Take the Lead spot|Taking it/)
   })
 

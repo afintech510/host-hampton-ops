@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Modal from './Modal'
 
 /**
- * "Commit to Work": taking a spot asks first, because a committed spot is not
+ * "Commit to Party": taking a spot asks first, because a committed spot is not
  * handed back with a tap. The dialog says so, and only the confirm button
  * claims it.
  */
@@ -42,7 +42,7 @@ export default function CommitButton(props: { slotId: string; label: string; par
   return (
     <>
       <button type="button" className="crew-btn" onClick={() => { setError(null); setOpen(true) }}>{props.label}</button>
-      <Modal open={open} onClose={() => { if (!busy) setOpen(false) }} title="Commit to work this party?">
+      <Modal open={open} onClose={() => { if (!busy) setOpen(false) }} title="Commit to this party?">
         <p style={{ marginTop: 0 }}>
           <strong>{props.partyTitle}</strong><br />
           {props.when} · {props.roleWord}

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { CalendarClock, PartyPopper, Receipt, UserRound } from 'lucide-react'
 
 const TABS = [
-  { href: '/crew', emoji: '🥳', Icon: PartyPopper, label: 'Work', match: (p: string) => p === '/crew' || p.startsWith('/crew/parties') },
+  { href: '/crew', emoji: '🥳', Icon: PartyPopper, label: 'Parties', match: (p: string) => p === '/crew' || p.startsWith('/crew/parties') },
   { href: '/crew/availability', emoji: '🗓️', Icon: CalendarClock, label: 'Availability', match: (p: string) => p.startsWith('/crew/availability') },
   { href: '/crew/pay', emoji: '💵', Icon: Receipt, label: 'My pay', match: (p: string) => p.startsWith('/crew/pay') },
   { href: '/crew/profile', emoji: '🪪', Icon: UserRound, label: 'Profile', match: (p: string) => p.startsWith('/crew/profile') },
@@ -15,7 +15,7 @@ const TABS = [
  * Every tab is a prefetched client-side link (the whole page is fetched ahead, not just its shell),
  * so changing tab shows the page at once; app/crew/loading.tsx covers the rare cold one.
  *
- * Tabs (spec §8): 🥳 Work · 🗓️ Availability · 🪪 Profile. Each carries its emoji AND an outline icon;
+ * Tabs (spec §8): 🥳 Parties ·🗓️ Availability · 🪪 Profile. Each carries its emoji AND an outline icon;
  * the look decides which shows (and whether the bar sits at the bottom or the top). "My pay" sits before
  * Profile only when pay figures are switched on; at launch they are not, and
  * there is no pay tab at all.

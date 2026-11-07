@@ -184,12 +184,12 @@ describe('the crew chrome', () => {
     expect(layout).toMatch(/--c-brand-blue': TENANT\.brand\.colors\.blue/)
   })
 
-  it('the bottom tabs carry the emoji Adam chose: 🥳 Work · 🗓️ Availability · 🪪 Profile', () => {
+  it('the bottom tabs carry the emoji Adam chose: 🥳 Parties · 🗓️ Availability · 🪪 Profile', () => {
     const nav = read('app', 'crew', '_components', 'CrewNav.tsx')
-    expect(nav).toMatch(/emoji: '🥳', Icon: \w+, label: 'Work'/)
+    expect(nav).toMatch(/emoji: '🥳', Icon: \w+, label: 'Parties'/)
     expect(nav).toMatch(/emoji: '🗓️', Icon: \w+, label: 'Availability'/)
     expect(nav).toMatch(/emoji: '🪪', Icon: \w+, label: 'Profile'/)
-    expect(nav).not.toMatch(/label: 'Parties'/)
+    expect(nav).not.toMatch(/label: 'Work'/)
   })
 
   it('Availability says nothing about "can\'t make it" under the form', () => {
