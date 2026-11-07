@@ -19,6 +19,8 @@ import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
 import { buildEnrolCard } from './nurture'
 import { maskEmail } from './outboundText'
+import { loadMemories, screenMemoryText, MAX_MEMORIES_PER_SCOPE } from './memory'
+import { clock12 } from './timeFormat'
 import { buildClientLinksCard, buildPhotosCard, type BuiltCard, type MessageEdits, type MessagePreview } from './messageCard'
 
 /**
@@ -336,6 +338,30 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: 'propose_remember',
+    description:
+      'PROPOSE saving a preference so the assistant keeps it in every future chat, e.g. "show times in 12-hour New York time". Use it when the manager says to remember something, always do something a certain way, or corrects how you present things. scope "personal" is just this manager; "business" is a studio rule everyone using the assistant gets (use business only when they say it is for everyone, or it is clearly a studio rule). One preference per memory, a short plain sentence. It cannot hold links, phone numbers or emails, and it cannot say to skip confirmation cards or act without asking. The card shows the exact sentence; nothing is saved until the manager clicks Confirm.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The preference, one short sentence.' },
+        scope: { type: 'string', enum: ['personal', 'business'] },
+      },
+      required: ['text', 'scope'],
+    },
+  },
+  {
+    name: 'propose_forget',
+    description:
+      'PROPOSE removing a saved preference (ids from list_memories). The card shows the sentence being removed. Nothing is removed until the manager clicks Confirm.',
+    input_schema: { type: 'object', properties: { memory_id: { type: 'string' } }, required: ['memory_id'] },
+  },
+  {
+    name: 'list_memories',
+    description: 'The preferences saved for the studio and for this manager, with ids (for propose_forget). Read-only.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
     name: 'propose_approve_party',
     description:
       'PROPOSE approving a party: sets its status to Approved, the same as the Approve button in the Parties tab. NOTE: sending the client a planner, invoice or portal link (propose_send_client_links) ALREADY approves a waiting party by itself, so use this only to approve without sending a link. By default it also EMAILS THE CLIENT the standard "Your Party is Confirmed!" message (the studio-rental version for rentals) with a link to their booking; set send_confirmation_email false to approve without telling them (only if the manager says the client already knows). Refused for a cancelled or lost party (use propose_reopen_party first), one already approved, and a party with no price yet. The card shows exactly what will happen. Nothing changes until the manager clicks Confirm.',
@@ -455,7 +481,7 @@ function shapeParty(row: Record<string, unknown>, today: string, paidCents: numb
     status: row.status,
     party_type: row.party_type,
     date: row.party_date,
-    time: row.party_time,
+    time: clock12(row.party_time as string | null),
     client: row.contact_name,
     child: row.child_name,
     guests: row.guest_count_approx,
@@ -489,6 +515,12 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await checkDate(supabase, input)
       case 'get_pricing':
         return await getPricing(supabase)
+      case 'list_memories':
+        return await listMemoriesTool(supabase, ctx)
+      case 'propose_remember':
+        return await proposeRemember(supabase, input, ctx)
+      case 'propose_forget':
+        return await proposeForget(supabase, input, ctx)
       case 'propose_create_party':
         return proposeCreateParty(input, ctx)
       case 'propose_send_client_links':
@@ -621,7 +653,7 @@ async function getParty(supabase: Supa, input: Record<string, unknown>): Promise
       status: b.status,
       party_type: inv.partyType,
       date: b.party_date,
-      time: b.party_time,
+      time: clock12(b.party_time),
       client: { name: b.contact_name, email: b.contact_email, phone: b.contact_phone },
       child: b.child_name,
       child_age: b.child_age,
@@ -842,6 +874,56 @@ async function proposeSendClientLinks(
     kinds, email, sms, edits, authored: hasEdits(edits) ? 'model' : 'default', now: ctx.now,
   })
   return messageCardOutcome('send_client_links', built, ctx, input)
+}
+
+async function listMemoriesTool(supabase: Supa, ctx: ToolContext): Promise<ToolOutcome> {
+  const m = await loadMemories(supabase, ctx.actor)
+  if (m.kind !== 'ok') return fail('Could not read the saved preferences right now. Say so; do not guess.')
+  const pick = (x: { id: string; body: string }) => ({ id: x.id, text: x.body })
+  return { result: { business: m.business.map(pick), personal: m.personal.map(pick), cap_per_scope: MAX_MEMORIES_PER_SCOPE } }
+}
+
+async function proposeRemember(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const scope = input.scope === 'business' ? 'business' : input.scope === 'personal' ? 'personal' : null
+  if (!scope) return fail('scope must be personal or business')
+  const screened = screenMemoryText(input.text)
+  if (!screened.ok) return fail(`Not saved: ${screened.reason}`)
+  const m = await loadMemories(supabase, ctx.actor)
+  if (m.kind !== 'ok') return fail('Could not read the saved preferences, so I cannot check for duplicates. Nothing was proposed.')
+  const mine = scope === 'business' ? m.business : m.personal
+  if (mine.some(x => x.body.toLowerCase() === screened.text.toLowerCase())) return fail('That is already saved. Nothing was proposed.')
+  if (mine.length >= MAX_MEMORIES_PER_SCOPE) return fail(`There are already ${MAX_MEMORIES_PER_SCOPE} ${scope} preferences saved. Propose forgetting one first.`)
+  return cardOutcome(
+    'remember',
+    { scope, text: screened.text },
+    scope === 'business' ? 'Remember for the whole studio' : 'Remember for you',
+    [
+      `"${screened.text}"`,
+      scope === 'business'
+        ? 'Everyone who uses the assistant gets this in every chat.'
+        : 'Only you get this. It is in every new chat you start.',
+      'It changes style and defaults only. It cannot turn off a confirmation card or change what a client is sent.',
+    ],
+    ctx,
+    'Nothing has been saved.',
+  )
+}
+
+async function proposeForget(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const id = str(input.memory_id, 64)
+  if (!id) return fail('memory_id is required (ids come from list_memories)')
+  const m = await loadMemories(supabase, ctx.actor)
+  if (m.kind !== 'ok') return fail('Could not read the saved preferences. Nothing was proposed.')
+  const hit = [...m.business, ...m.personal].find(x => x.id === id)
+  if (!hit) return fail('No saved preference with that id. Use list_memories for the ids.')
+  return cardOutcome(
+    'forget',
+    { memoryId: hit.id, text: hit.body },
+    'Forget a saved preference',
+    [`"${hit.body}"`, hit.scope === 'business' ? 'This is a studio-wide rule: it stops applying for everyone.' : 'It stops applying to you.'],
+    ctx,
+    'Nothing has been removed.',
+  )
 }
 
 /** A party by ref, INCLUDING cancelled and lost (loadBooking refuses those; reopen needs them). */

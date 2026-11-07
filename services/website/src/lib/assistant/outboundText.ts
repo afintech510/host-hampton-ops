@@ -83,7 +83,7 @@ function foreignBareDomain(text: string): string | null {
 }
 
 /** Names the message must never be written as, from the tenant config. */
-function ownerNameHit(text: string): string | null {
+export function ownerNameHit(text: string): string | null {
   for (const name of TENANT.people.neverSignAs) {
     const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     if (new RegExp(`\\b${esc}\\b`, 'i').test(text)) return name

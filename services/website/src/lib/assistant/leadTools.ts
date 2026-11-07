@@ -7,6 +7,7 @@ import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { getFirstInquiry, getNextStep, getSmsThread, listLeads, listPledges, MAX_LEADS } from './leadView'
 import { listSequences, SEQUENCE_SENDER_SCHEDULED } from './nurture'
 import { firstNameOf } from './outboundText'
+import { etDateTime } from './timeFormat'
 import type { ToolOutcome } from './tools'
 
 /**
@@ -143,7 +144,7 @@ export async function runLeadTool(name: string, input: Record<string, unknown>, 
       if (r.kind === 'absent') return fail(`No party with ref ${ref}`)
       return {
         result: {
-          ref: r.inquiry.ref, name: r.inquiry.name, received_at: r.inquiry.received_at, via: r.inquiry.source, subject: r.inquiry.subject,
+          ref: r.inquiry.ref, name: r.inquiry.name, received: etDateTime(r.inquiry.received_at), via: r.inquiry.source, subject: r.inquiry.subject,
           message_written_by_customer: r.inquiry.message ?? '(no message on record — they may have used the planner without typing anything)',
           parsed_details: r.inquiry.details,
         },
@@ -163,7 +164,7 @@ export async function runLeadTool(name: string, input: Record<string, unknown>, 
           ref: t.ref, name: t.name, phone: t.phone, complete: t.complete, source: t.source, ...(t.note ? { note: t.note } : {}),
           message_count: t.messages.length,
           // Oldest first, newest last.
-          messages: t.messages.map(m => ({ at: m.at, from: m.direction === 'in' ? 'customer' : 'us', text: m.text, ...(m.has_media ? { has_picture: true } : {}) })),
+          messages: t.messages.map(m => ({ at: etDateTime(m.at), from: m.direction === 'in' ? 'customer' : 'us', text: m.text, ...(m.has_media ? { has_picture: true } : {}) })),
         },
       }
     }

@@ -8,6 +8,7 @@ import { POST as planPayLinkRoute } from '@/app/api/plan/[ref]/pay-link/route'
 import { POST as enrolSequenceRoute } from '@/app/api/admin/sequences/enroll/route'
 import type { Proposal } from './proposals'
 import { screenOutboundText } from './outboundText'
+import { POST as memoryPost, DELETE as memoryDelete } from '@/app/api/admin/assistant/memory/route'
 
 /**
  * Carry out a CONFIRMED proposal by replaying the admin API call the dashboard
@@ -28,7 +29,7 @@ import { screenOutboundText } from './outboundText'
 
 const FORWARDED = ['cookie', 'authorization', 'sec-fetch-site', 'origin', 'host', 'cf-connecting-ip', 'x-forwarded-for', 'x-real-ip', 'user-agent']
 
-function replayRequest(original: NextRequest, path: string, body: unknown, method: 'POST' | 'PATCH' = 'POST'): NextRequest {
+function replayRequest(original: NextRequest, path: string, body: unknown, method: 'POST' | 'PATCH' | 'DELETE' = 'POST'): NextRequest {
   const headers = new Headers({ 'content-type': 'application/json' })
   for (const h of FORWARDED) {
     const v = original.headers.get(h)
@@ -295,6 +296,23 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       const { res, json } = await replayPartyAction(original, input.bookingId, { action: 'reopen' })
       if (!res.ok || json.ok !== true) return refused('Not reopened', res, json)
       return { ok: true, status: res.status, message: `Reopened ${input.bookingRef} as ${String(json.status ?? 'open')}. Nothing was sent to the client.` }
+    }
+
+    case 'remember': {
+      const input = proposal.input as { scope: 'personal' | 'business'; text: string }
+      // The Memory route re-screens the sentence, enforces the cap and writes it.
+      const res = await memoryPost(replayRequest(original, '/api/admin/assistant/memory', { scope: input.scope, text: input.text }))
+      const json = await readJson(res)
+      if (!res.ok || json.ok !== true) return refused('Not saved', res, json)
+      return { ok: true, status: res.status, message: `Saved (${input.scope}): ${input.text}` }
+    }
+
+    case 'forget': {
+      const input = proposal.input as { memoryId: string; text?: string }
+      const res = await memoryDelete(replayRequest(original, '/api/admin/assistant/memory', { id: input.memoryId }, 'DELETE'))
+      const json = await readJson(res)
+      if (!res.ok || json.ok !== true) return refused('Not forgotten', res, json)
+      return { ok: true, status: res.status, message: `Forgotten: ${String(json.text ?? input.text ?? '')}` }
     }
 
     case 'party_link': {
