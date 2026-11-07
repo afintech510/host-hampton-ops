@@ -56,6 +56,7 @@ const partyDay = (ymd: string | null) => (ymd ? new Date(`${ymd}T12:00:00Z`).toL
 function PaymentTile({ p }: { p: PaymentRow }) {
   const m = METHOD[p.method]
   const refund = p.amountCents < 0
+  const tipped = !refund && p.tipCents > 0
   const day = shortDay(dayOf(p.at))
   const kind = p.partyType ? PARTY_TYPE_LABELS[p.partyType] : null
   return (
@@ -76,15 +77,28 @@ function PaymentTile({ p }: { p: PaymentRow }) {
             </div>
             <div className="text-right shrink-0">
               <div className={`text-lg font-bold leading-tight ${refund ? 'text-red-700' : 'text-emerald-700'}`}>{refund ? '' : '+'}{dollars(p.amountCents)}</div>
-              {p.tipCents > 0 && <div className="text-[11px] text-hampton-navy/50">incl. {dollars(p.tipCents)} tip</div>}
+              {tipped && <div className="text-xs font-bold text-amber-700">+ {dollars(p.tipCents)} tip</div>}
             </div>
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${m.badge}`}>{m.label}</span>
             <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-hampton-navy/10 text-hampton-navy">{TYPE_WORD[p.type] ?? p.type}</span>
+            {tipped && <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900">🎁 Tip</span>}
             {p.kind === 'event' && <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800">Event</span>}
             {p.refunded && p.type !== 'refund' && <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-700">Refunded</span>}
           </div>
+
+          {tipped && (
+            <div className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" data-tip-note>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold">Tip for the party team</span>
+                <span className="font-bold">{dollars(p.tipCents)}</span>
+              </div>
+              <div className="text-xs text-amber-900/70">
+                On top of the payment, not counted toward the balance · {dollars(p.amountCents + p.tipCents)} with the tip
+              </div>
+            </div>
+          )}
 
           {p.bookingId && (
             <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-[#F6F1EB] px-3 py-2">
@@ -118,15 +132,18 @@ export default function CrewPaymentsPage() {
   const [source, setSource] = useRemembered<Source>('payments.source', 'all')
   const [methods, setMethods] = useRemembered<PayMethod[]>('payments.methods', [])
   const [period, setPeriod] = useRemembered<Period>('payments.period', '30')
+  const [tipsOnly, setTipsOnly] = useRemembered<boolean>('payments.tipsOnly', false)
 
   const today = etDateString()
   const since = period === '30' ? shiftEtDate(today, -29) : period === '90' ? shiftEtDate(today, -89) : period === 'year' ? `${today.slice(0, 4)}-01-01` : '0000-00-00'
   const all = useMemo(() => data?.payments ?? [], [data])
   const shown = useMemo(
-    () => all.filter(p => (source === 'all' || p.kind === source) && (methods.length === 0 || methods.includes(p.method)) && dayOf(p.at) >= since),
-    [all, source, methods, since],
+    () => all.filter(p => (source === 'all' || p.kind === source) && (methods.length === 0 || methods.includes(p.method)) && dayOf(p.at) >= since && (!tipsOnly || (p.amountCents > 0 && p.tipCents > 0))),
+    [all, source, methods, since, tipsOnly],
   )
   const net = shown.reduce((s, p) => s + p.amountCents, 0)
+  const tipped = shown.filter(p => p.amountCents > 0 && p.tipCents > 0)
+  const tipTotal = tipped.reduce((s, p) => s + p.tipCents, 0)
   const byMethod = METHODS.map(m => ({ ...m, cents: shown.filter(p => p.method === m.key).reduce((s, p) => s + p.amountCents, 0), n: shown.filter(p => p.method === m.key).length })).filter(m => m.n > 0)
 
   return (
@@ -153,6 +170,9 @@ export default function CrewPaymentsPage() {
                     </button>
                   )
                 })}
+                <button type="button" aria-pressed={tipsOnly} onClick={() => setTipsOnly(!tipsOnly)} className={pill(tipsOnly)}>
+                  🎁 With a tip
+                </button>
               </div>
               <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="How far back">
                 {PERIODS.map(pd => (
@@ -167,6 +187,12 @@ export default function CrewPaymentsPage() {
               <div className="text-xs font-bold uppercase tracking-wider text-hampton-navy/50">Collected</div>
               <div className="text-4xl font-bold text-hampton-navy">{dollars(net)}</div>
               <div className="text-xs text-hampton-navy/50">{shown.length} {shown.length === 1 ? 'payment' : 'payments'}, refunds taken off</div>
+              {tipTotal > 0 && (
+                <div className="mt-2 text-sm font-semibold text-amber-800" data-tip-total>
+                  🎁 Plus {dollars(tipTotal)} in tips from {tipped.length} {tipped.length === 1 ? 'payment' : 'payments'}
+                  <span className="font-normal text-hampton-navy/50"> · not counted above</span>
+                </div>
+              )}
               {byMethod.length > 0 && (
                 <div className="mt-3 flex flex-wrap justify-center gap-2">
                   {byMethod.map(m => (
