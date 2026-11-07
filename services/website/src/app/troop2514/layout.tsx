@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
-import { Baloo_2, Figtree } from 'next/font/google'
+import localFont from 'next/font/local'
 import { NOINDEX } from '@/lib/seo'
 
-const baloo = Baloo_2({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-troop-display', display: 'swap' })
-const figtree = Figtree({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-troop-body', display: 'swap' })
+// Local files, not next/font/google: see scripts/fetch-fonts.mjs for why the build must not ask Google.
+const baloo = localFont({ src: '../../fonts/Baloo2-latin-400-800.woff2', weight: '400 800', variable: '--font-troop-display', display: 'swap' })
+const figtree = localFont({ src: '../../fonts/Figtree-latin-300-900.woff2', weight: '300 900', variable: '--font-troop-body', display: 'swap' })
 
 // Unlisted: nothing on the site links here, it is not in the sitemap, and it
 // asks not to be indexed. Allie shares the link with the troop's families.

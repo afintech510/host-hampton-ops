@@ -1,9 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
-import {
-  Archivo, Archivo_Black, Fraunces, Graduate, Inter, Manrope, Montserrat, Outfit, Playfair_Display, Space_Grotesk, Space_Mono, Unbounded,
-} from 'next/font/google'
+import localFont from 'next/font/local'
 import { NOINDEX } from '@/lib/seo'
 import { TENANT } from '@/tenant'
 import { crewAppOpen } from '@/lib/crew/settings'
@@ -33,21 +31,31 @@ import { THEME_COOKIE, themeCss, themeFromCookie } from '@/lib/crew/themes'
 
 export const dynamic = 'force-dynamic'
 
+// Every face is a file in src/fonts/ (the latin subset, from scripts/fetch-fonts.mjs), NOT
+// `next/font/google`: that fetched from Google during `next build`, and Google's intermittent
+// extension-less file URLs crashed the build ("reading '1'"). Add a face to that script too.
+//
 // The default look (Pop): preloaded.
-const unbounded = Unbounded({ subsets: ['latin'], variable: '--crew-f-unbounded', display: 'swap' })
-const outfit = Outfit({ subsets: ['latin'], variable: '--crew-f-outfit', display: 'swap' })
+const unbounded = localFont({ src: '../../fonts/Unbounded-latin-200-900.woff2', weight: '200 900', variable: '--crew-f-unbounded', display: 'swap' })
+const outfit = localFont({ src: '../../fonts/Outfit-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-outfit', display: 'swap' })
 // The other looks: declared, fetched on use.
-const archivoBlack = Archivo_Black({ subsets: ['latin'], weight: '400', variable: '--crew-f-archivoblack', display: 'swap', preload: false })
-const archivo = Archivo({ subsets: ['latin'], variable: '--crew-f-archivo', display: 'swap', preload: false })
-const manrope = Manrope({ subsets: ['latin'], variable: '--crew-f-manrope', display: 'swap', preload: false })
-const inter = Inter({ subsets: ['latin'], variable: '--crew-f-inter', display: 'swap', preload: false })
-const space = Space_Grotesk({ subsets: ['latin'], variable: '--crew-f-space', display: 'swap', preload: false })
-const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], variable: '--crew-f-spacemono', display: 'swap', preload: false })
-const fraunces = Fraunces({ subsets: ['latin'], variable: '--crew-f-fraunces', display: 'swap', preload: false })
-const playfair = Playfair_Display({ subsets: ['latin'], variable: '--crew-f-playfair', display: 'swap', preload: false })
-const montserrat = Montserrat({ subsets: ['latin'], variable: '--crew-f-montserrat', display: 'swap', preload: false })
+const archivoBlack = localFont({ src: '../../fonts/ArchivoBlack-latin-400.woff2', weight: '400', variable: '--crew-f-archivoblack', display: 'swap', preload: false })
+const archivo = localFont({ src: '../../fonts/Archivo-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-archivo', display: 'swap', preload: false })
+const manrope = localFont({ src: '../../fonts/Manrope-latin-200-800.woff2', weight: '200 800', variable: '--crew-f-manrope', display: 'swap', preload: false })
+const inter = localFont({ src: '../../fonts/Inter-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-inter', display: 'swap', preload: false })
+const space = localFont({ src: '../../fonts/SpaceGrotesk-latin-300-700.woff2', weight: '300 700', variable: '--crew-f-space', display: 'swap', preload: false })
+const spaceMono = localFont({
+  src: [
+    { path: '../../fonts/SpaceMono-latin-400.woff2', weight: '400', style: 'normal' },
+    { path: '../../fonts/SpaceMono-latin-700.woff2', weight: '700', style: 'normal' },
+  ],
+  variable: '--crew-f-spacemono', display: 'swap', preload: false,
+})
+const fraunces = localFont({ src: '../../fonts/Fraunces-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-fraunces', display: 'swap', preload: false })
+const playfair = localFont({ src: '../../fonts/PlayfairDisplay-latin-400-900.woff2', weight: '400 900', variable: '--crew-f-playfair', display: 'swap', preload: false })
+const montserrat = localFont({ src: '../../fonts/Montserrat-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-montserrat', display: 'swap', preload: false })
 // The CREW wordmark: a collegiate slab, on every theme.
-const varsity = Graduate({ subsets: ['latin'], weight: '400', variable: '--crew-font-varsity', display: 'swap' })
+const varsity = localFont({ src: '../../fonts/Graduate-latin-400.woff2', weight: '400', variable: '--crew-font-varsity', display: 'swap' })
 
 const FONT_VARS = [archivoBlack, archivo, manrope, inter, unbounded, outfit, space, spaceMono, fraunces, playfair, montserrat, varsity].map(f => f.variable).join(' ')
 

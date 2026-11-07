@@ -1,15 +1,16 @@
-import { Cormorant_Garamond, Montserrat } from 'next/font/google'
+import localFont from 'next/font/local'
 
-const cormorant = Cormorant_Garamond({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
+// Local files, not next/font/google: see scripts/fetch-fonts.mjs for why the build must not ask Google.
+const cormorant = localFont({
+  src: '../../fonts/CormorantGaramond-latin-300-700.woff2',
+  weight: '300 700',
   variable: '--font-cormorant',
   display: 'swap',
 })
 
-const montserrat = Montserrat({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
+const montserrat = localFont({
+  src: '../../fonts/Montserrat-latin-100-900.woff2',
+  weight: '100 900',
   variable: '--font-montserrat',
   display: 'swap',
 })

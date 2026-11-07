@@ -128,7 +128,7 @@ describe('the roster title', () => {
     expect(page).not.toContain('Who is on the crew')
     expect(page).not.toContain('Crew roster')
     // The face is the staff app's own, loaded for these pages.
-    expect(read('app/admin/crew/layout.tsx')).toMatch(/Graduate\(\{[^}]*variable: '--crew-font-varsity'/)
-    expect(read('app/crew/layout.tsx')).toMatch(/Graduate\(\{[^}]*variable: '--crew-font-varsity'/)
+    expect(read('app/admin/crew/layout.tsx')).toMatch(/localFont\(\{ src: '[^']*Graduate-latin-400\.woff2'[^}]*variable: '--crew-font-varsity'/)
+    expect(read('app/crew/layout.tsx')).toMatch(/localFont\(\{ src: '[^']*Graduate-latin-400\.woff2'[^}]*variable: '--crew-font-varsity'/)
   })
 })

@@ -178,7 +178,7 @@ describe('the crew chrome', () => {
 
   it('the wordmark is varsity lettering, navy core with a dusty-blue border, in the tenant\'s own two colours', () => {
     const layout = read('app', 'crew', 'layout.tsx')
-    expect(layout).toMatch(/Graduate\(/)
+    expect(layout).toMatch(/localFont\(\{ src: '[^']*Graduate-latin-400\.woff2'/)
     expect(layout).toMatch(/\.crew-wordmark\{[^}]*text-transform:uppercase[^}]*color:var\(--c-brand-navy\)[^}]*text-shadow:/)
     expect(layout).toMatch(/--c-brand-navy': TENANT\.brand\.colors\.navy/)
     expect(layout).toMatch(/--c-brand-blue': TENANT\.brand\.colors\.blue/)
