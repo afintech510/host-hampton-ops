@@ -17,6 +17,7 @@ import { PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
 import { PAYMENT_LABELS, PAYMENT_STYLE, type PaymentStatus } from '@/lib/bookingStatus'
 import { BTN_GHOST, Banner, money, useAdminApi } from './adminCrew'
 import { load, useAdminData, warm } from './adminData'
+import ContactButtons from './ContactButtons'
 import PartyActions from './PartyActions'
 
 export const TYPE_SHORT: Record<string, string> = {
@@ -179,6 +180,7 @@ export default function BookingTile({ tile, open, onToggle }: { tile: Tile; open
               )}
             </>
           )}
+          {detail.data && <ContactButtons bookingId={tile.id} phone={detail.data.card.contact.phone} email={detail.data.card.contact.email} />}
           <Staffing tile={tile} onChanged={() => { void load('/api/admin/crew-app/bookings') }} />
           <PartyActions bookingId={tile.id} bookingRef={tile.ref} />
         </div>

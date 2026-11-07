@@ -64,14 +64,27 @@ export function bookingsWindow(today: string): { from: string; to: string } {
   return { from: `${keys[0]}-01`, to: `${keys[2]}-${String(daysInMonth(keys[2])).padStart(2, '0')}` }
 }
 
+/**
+ * The tiles for the Bookings screen: booked / completed parties in the three-month window.
+ * `includeId` adds one more booking whatever its date or stage (a link from the Payments
+ * screen to a past or cancelled party that still has money on it).
+ */
+export function inBookingsWindow(t: Pick<BookingTile, 'stage' | 'partyDate'>, today: string): boolean {
+  const { from, to } = bookingsWindow(today)
+  return (t.stage === 'booked' || t.stage === 'completed') && !!t.partyDate && t.partyDate >= from && t.partyDate <= to
+}
+
 export async function loadBookingTiles(
   sb: Supa,
   parties: BookedParty[],
   today: string,
+  includeId?: string,
 ): Promise<{ ok: true; tiles: BookingTile[] } | { ok: false; error: string }> {
   const { from, to } = bookingsWindow(today)
   const inWindow = parties.filter(
-    p => (p.stage === 'booked' || p.stage === 'completed') && p.party_date && p.party_date >= from && p.party_date <= to,
+    p =>
+      p.id === includeId ||
+      ((p.stage === 'booked' || p.stage === 'completed') && p.party_date && p.party_date >= from && p.party_date <= to),
   )
 
   // The crew parties behind these bookings, with who is on each spot.

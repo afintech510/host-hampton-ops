@@ -109,7 +109,7 @@ describe('R0: the walkers see the surface', () => {
     ]))
     expect(PAGE_FILES.map(rel)).toEqual([
       'app/admin/crew/bookings/page.tsx', 'app/admin/crew/dashboard/page.tsx', 'app/admin/crew/leads/page.tsx',
-      'app/admin/crew/members/page.tsx', 'app/admin/crew/page.tsx', 'app/admin/crew/parties/[id]/page.tsx', 'app/admin/crew/rules/page.tsx',
+      'app/admin/crew/members/page.tsx', 'app/admin/crew/page.tsx', 'app/admin/crew/parties/[id]/page.tsx', 'app/admin/crew/payments/page.tsx', 'app/admin/crew/rules/page.tsx',
     ])
     expect(HANDLERS.length).toBeGreaterThanOrEqual(12)
     for (const f of [...ADMIN_LIBS, SYNC]) expect(fs.existsSync(f)).toBe(true)

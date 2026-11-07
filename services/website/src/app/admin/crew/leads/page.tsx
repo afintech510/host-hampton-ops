@@ -21,6 +21,7 @@ import { monthKeyOf, monthKeys, monthShort, weekNumberOf, weeksOfMonth } from '@
 import { Banner, CrewFrame, money } from '../_components/adminCrew'
 import { useAdminData } from '../_components/adminData'
 import { DateBlock, TYPE_SHORT } from '../_components/BookingTile'
+import ContactButtons from '../_components/ContactButtons'
 import PartyActions from '../_components/PartyActions'
 import PartyFilters, { passesTypes, useRemembered, type TypeKey } from '../_components/PartyFilters'
 
@@ -120,6 +121,7 @@ function LeadTile({ lead, open, onToggle }: { lead: LeadCard; open: boolean; onT
           )}
           {detail?.admin_notes && <Row label="Notes">{detail.admin_notes}</Row>}
 
+          <ContactButtons bookingId={lead.id} phone={lead.phone} email={lead.email} />
           <PartyActions bookingId={lead.id} bookingRef={lead.ref} />
         </div>
       )}

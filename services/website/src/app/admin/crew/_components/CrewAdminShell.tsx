@@ -24,6 +24,7 @@ import { clearCache, warm } from './adminData'
 export const WARM_PATHS = [
   '/api/admin/crew-app/dashboard',
   '/api/admin/crew-app/bookings',
+  '/api/admin/crew-app/payments',
   '/api/admin/leads',
   '/api/admin/crew/members',
   '/api/admin/crew',
@@ -34,6 +35,7 @@ export const WARM_ROUTES = [
   '/admin/crew/dashboard',
   '/admin/crew/leads',
   '/admin/crew/bookings',
+  '/admin/crew/payments',
   '/admin/crew/members',
   '/admin/crew',
   '/admin/crew/rules',

@@ -387,3 +387,53 @@ export async function sendBulkSMSViaQuo(
 
   return results
 }
+
+// ── Opening a conversation in Quo ───────────────────────────────────────────
+
+/** Quo's web app. my.openphone.com redirects here. */
+export const QUO_WEB_BASE = 'https://my.quo.com'
+
+export type QuoLink =
+  | { kind: 'thread'; url: string }
+  /** No conversation with this number yet: the inbox, where a new message can be started. */
+  | { kind: 'inbox'; url: string }
+  | { kind: 'unconfigured' }
+  | { kind: 'unavailable'; reason: string }
+
+/**
+ * Where to open the conversation with this number in Quo. The conversation list's own
+ * `participants` filter is ignored by the API (the same way `externalIds[]` is on contacts), so
+ * the newest conversations are read and each is re-compared against the number here, newest
+ * first, up to ten pages. Read only: nothing is created or sent.
+ */
+export async function findQuoLink(phone: string): Promise<QuoLink> {
+  if (!process.env.QUO_API_KEY || !process.env.QUO_PHONE_NUMBER) return { kind: 'unconfigured' }
+  const want = normalizePhone(phone)
+  if (want.replace(/\D/g, '').length < 10) return { kind: 'unavailable', reason: 'That is not a phone number.' }
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 12000)
+  try {
+    const phoneNumberId = await quoPhoneNumberId(ctl.signal)
+    if (!phoneNumberId) return { kind: 'unavailable', reason: 'Could not resolve the studio number in Quo.' }
+    let after: string | null = null
+    for (let page = 0; page < 10; page++) {
+      const qs = new URLSearchParams({ phoneNumberId, limit: '50' })
+      if (after) qs.set('after', after)
+      const { status, json } = await quoDated('GET', `/conversations?${qs}`)
+      if (status !== 200 || !Array.isArray(json?.data)) return { kind: 'unavailable', reason: `Quo answered ${status}.` }
+      for (const c of json.data as Array<{ id?: string; participants?: string[]; deletedAt?: string | null }>) {
+        if (c.id && !c.deletedAt && (c.participants ?? []).some(p => normalizePhone(p) === want)) {
+          return { kind: 'thread', url: `${QUO_WEB_BASE}/inbox/${phoneNumberId}/c/${c.id}` }
+        }
+      }
+      after = json.nextCursor ?? null
+      if (!after) break
+    }
+    return { kind: 'inbox', url: `${QUO_WEB_BASE}/inbox/${phoneNumberId}` }
+  } catch (err) {
+    console.error('quo:findLink exception:', err instanceof Error ? err.message : err)
+    return { kind: 'unavailable', reason: 'Could not reach Quo.' }
+  } finally {
+    clearTimeout(timer)
+  }
+}

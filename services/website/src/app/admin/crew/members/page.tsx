@@ -97,7 +97,8 @@ export default function CrewMembersPage() {
     return true
   }
 
-  const members = (data?.members ?? []).filter(m => showRemoved || m.status !== 'removed')
+  // Allie (the owner row) is not a crew member to schedule, so she shows only with the removed ones.
+  const members = (data?.members ?? []).filter(m => showRemoved || (m.status !== 'removed' && !m.isOwner))
 
   return (
     <CrewFrame active="/admin/crew/members" title="Crew roster" sub="Who is on the crew, and the parties each person is working. Pay is set per person, per hour, and is kept private.">

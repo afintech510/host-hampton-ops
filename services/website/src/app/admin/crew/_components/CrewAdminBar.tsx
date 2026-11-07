@@ -10,7 +10,7 @@ import MemoryPanel from '@/components/admin/MemoryPanel'
  * The top menu of the crew-management app, stuck to the top of every /admin/crew
  * page:
  *
- *     ✨   Dashboard   Leads   Bookings   Staff                     ☰
+ *     ✨   Dashboard   Leads   Bookings   Staff                  $   ☰
  *
  *   ✨          opens the AI assistant (the drawer in app/admin/layout.tsx listens
  *               for `hh:assistant-open`)
@@ -18,6 +18,7 @@ import MemoryPanel from '@/components/admin/MemoryPanel'
  *   Leads       the open leads as cards, filtered by type, month and week
  *   Bookings    the booked parties as cards, with who is staffed on each
  *   Staff       the roster, with the parties each person is working
+ *   $           every payment: card, Venmo, Zelle, cash, event tickets
  *   ☰           Staff schedule, Settings (the crew rules) and Memories (what the
  *               assistant remembers)
  *
@@ -27,10 +28,11 @@ import MemoryPanel from '@/components/admin/MemoryPanel'
  * There is deliberately no link back to the main admin dashboard.
  */
 
-type Section = 'dashboard' | 'leads' | 'bookings' | 'staff' | 'schedule' | 'settings'
+type Section = 'dashboard' | 'payments' | 'leads' | 'bookings' | 'staff' | 'schedule' | 'settings'
 
 export function sectionOf(pathname: string | null | undefined): Section {
   const p = (pathname ?? '').replace(/\/+$/, '')
+  if (p.startsWith('/admin/crew/payments')) return 'payments'
   if (p.startsWith('/admin/crew/leads')) return 'leads'
   if (p.startsWith('/admin/crew/bookings')) return 'bookings'
   if (p.startsWith('/admin/crew/rules')) return 'settings'
@@ -93,6 +95,17 @@ export default function CrewAdminBar() {
             ))}
           </nav>
 
+          <div className="flex items-center gap-0.5 shrink-0">
+          <Link
+            href="/admin/crew/payments"
+            prefetch
+            aria-label="Payments"
+            title="Payments"
+            aria-current={section === 'payments' ? 'page' : undefined}
+            className={`grid place-items-center h-9 w-9 rounded-full text-lg font-bold leading-none ${section === 'payments' ? 'bg-hampton-navy text-[#F6F1EB]' : 'text-hampton-navy hover:bg-hampton-navy/10'}`}
+          >
+            $
+          </Link>
           <div className="relative shrink-0" ref={menuRef}>
             <button
               type="button"
@@ -137,6 +150,7 @@ export default function CrewAdminBar() {
                 </button>
               </div>
             )}
+          </div>
           </div>
         </div>
       </header>

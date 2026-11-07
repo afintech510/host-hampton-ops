@@ -32,6 +32,7 @@ export default function CrewBookingsPage() {
   const [month, setMonth] = useRemembered<string>('bookings.month', months[0])
   const [week, setWeek] = useRemembered<number | null>('bookings.week', null)
   const [openId, setOpenId] = useState<string | null>(null)
+  const [linkId, setLinkId] = useState<string | null>(null)
   const deepLinked = useRef(false)
 
   // A remembered month that has scrolled out of the three on offer falls back to this one.
@@ -57,6 +58,8 @@ export default function CrewBookingsPage() {
     const ref = q.get('ref') ?? ''
     const hit = all.find(t => (UUID.test(id) && t.id === id) || (ref && t.ref === ref))
     deepLinked.current = true
+    // Not among the three months on offer (a past or cancelled party reached from Payments): fetch it on its own.
+    if (!hit && UUID.test(id)) { setLinkId(id); setOpenId(id) }
     if (!hit) return
     setTypes([])
     if (hit.partyDate) {
@@ -66,6 +69,8 @@ export default function CrewBookingsPage() {
     setOpenId(hit.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
+
+  const linked = useAdminData<{ linked: Tile | null }>(linkId ? `/api/admin/crew-app/bookings?include=${linkId}` : null, 120_000).data?.linked ?? null
 
   // Have the first tiles' details ready before they are opened.
   useEffect(() => {
@@ -81,6 +86,12 @@ export default function CrewBookingsPage() {
         {loading && <div className="text-center text-hampton-navy/50 py-10">Loading the bookings…</div>}
         {data && (
           <>
+            {linked && (
+              <div className="mb-5">
+                <div className="text-center text-xs font-bold uppercase tracking-wider text-hampton-navy/50 mb-2">Opened from a link</div>
+                <BookingTile tile={linked} open={openId === linked.id} onToggle={() => setOpenId(openId === linked.id ? null : linked.id)} />
+              </div>
+            )}
             <PartyFilters
               types={types}
               onTypes={setTypes}
