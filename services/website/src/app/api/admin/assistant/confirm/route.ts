@@ -4,7 +4,7 @@ import { featureEnabled } from '@/tenant'
 import { getSupabase } from '@/lib/supabase'
 import { verifyProposal } from '@/lib/assistant/proposals'
 import { claimProposal, releaseProposal } from '@/lib/assistant/usedProposals'
-import { executeProposal } from '@/lib/assistant/execute'
+import { executeProposal, type ExecuteResult } from '@/lib/assistant/execute'
 import { contextKey, screenContext } from '@/lib/assistant/context'
 import { recordCardOutcome } from '@/lib/assistant/threads'
 
@@ -54,8 +54,8 @@ export async function POST(req: NextRequest) {
   }
 
   const ctx = screenContext(body?.context)
-  const note = (state: 'done' | 'failed', message: string, links?: { label: string; url: string }[]) =>
-    recordCardOutcome(supabase, actor, contextKey(ctx), ctx.bookingRef, { id: proposal.id, title: proposal.title }, { state, message, links })
+  const note = (state: 'done' | 'failed', message: string, links?: { label: string; url: string }[], party?: ExecuteResult['party']) =>
+    recordCardOutcome(supabase, actor, contextKey(ctx), ctx.bookingRef, { id: proposal.id, title: proposal.title }, { state, message, links, party })
 
   try {
     const result = await executeProposal(req, proposal)
@@ -71,8 +71,11 @@ export async function POST(req: NextRequest) {
     // A released card stays confirmable, so it is not written down as an outcome.
     // A party_link result is a client sign-in link: it goes back to the browser
     // that asked for it and nowhere else — not into the saved thread.
-    if (!released) await note(result.ok ? 'done' : 'failed', result.message, proposal.kind === 'party_link' ? undefined : result.links)
-    return NextResponse.json({ ok: result.ok, message: result.message, links: result.links ?? [], retryable: released })
+    // The links of a new party include its sign-in (planner) and invoice links, so those
+    // too go back to this browser only. The full party card holds no link and is kept.
+    const keepLinks = proposal.kind !== 'party_link' && proposal.kind !== 'create_party'
+    if (!released) await note(result.ok ? 'done' : 'failed', result.message, keepLinks ? result.links : undefined, result.party)
+    return NextResponse.json({ ok: result.ok, message: result.message, links: result.links ?? [], party: result.party ?? null, retryable: released })
   } catch (err) {
     console.error(`assistant: confirm ${proposal.kind} ${proposal.id} threw`, err)
     await note('failed', 'Something went wrong part-way. Check the party in the Parties tab before trying again.')

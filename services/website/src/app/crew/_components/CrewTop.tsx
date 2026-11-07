@@ -1,9 +1,8 @@
-import ActionButton from './ActionButton'
 import CrewBrand from './CrewBrand'
 import CrewNav from './CrewNav'
 import { crewPayLadderEnabled, crewShowPayEnabled } from '@/lib/crew/settings'
 
-/** Header (brand + sign out) and the bottom nav, around a signed-in page. */
+/** Header (brand, and who is signed in) and the bottom nav, around a signed-in page. Sign out lives on the Profile page. */
 export default function CrewTop({ firstName, isTest }: { firstName: string; isTest: boolean }) {
   return (
     <>
@@ -12,7 +11,6 @@ export default function CrewTop({ firstName, isTest }: { firstName: string; isTe
         <span className="crew-who crew-small">
           {isTest && <span className="crew-chip crew-gold">Test</span>}
           <span className="crew-muted crew-who-name">{firstName}</span>
-          <ActionButton endpoint="/api/crew/auth/logout" label="Sign out" variant="ghost" redirectTo="/crew/login" />
         </span>
       </div>
       <CrewNav showPay={crewShowPayEnabled() || crewPayLadderEnabled()} />

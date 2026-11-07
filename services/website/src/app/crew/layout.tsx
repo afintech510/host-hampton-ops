@@ -81,6 +81,9 @@ ${themeCss()}
 .crew-who{display:flex;align-items:center;flex-wrap:nowrap;gap:.5rem;min-width:0;flex-shrink:0}
 .crew-top .crew-btn{min-height:36px;padding:.3rem .8rem;font-size:.85rem}
 .crew-who-name{white-space:nowrap}
+.crew-title-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.35rem}
+.crew-title-row h1{margin:0}
+.crew-title-row .crew-btn{min-height:36px;padding:.3rem .8rem;font-size:.85rem}
 @media (max-width:480px){.crew-who-name{display:none}}
 .crew-muted{color:var(--c-muted)}
 .crew-small{font-size:.875rem}

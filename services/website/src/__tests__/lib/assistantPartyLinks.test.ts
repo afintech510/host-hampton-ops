@@ -143,9 +143,11 @@ describe('opening a party from a link', () => {
 describe('the source shape', () => {
   const read = (rel: string) => decomment(fs.readFileSync(path.join(process.cwd(), 'src', rel), 'utf8'))
 
-  it('P1: the confirm route never writes a party_link result into the saved thread', () => {
+  it('P1: the confirm route never writes the links of a party_link or a create_party result into the saved thread', () => {
     const s = read('app/api/admin/assistant/confirm/route.ts')
-    expect(s).toMatch(/proposal\.kind === 'party_link' \? undefined : result\.links/)
+    // A created party's links include its sign-in planner link and its invoice link.
+    expect(s).toMatch(/const keepLinks = proposal\.kind !== 'party_link' && proposal\.kind !== 'create_party'/)
+    expect(s).toMatch(/keepLinks \? result\.links : undefined/)
   })
 
   it('P2: the admin page reads tab / party / ref from the address and hands it to the Parties tab', () => {

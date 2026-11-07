@@ -15,6 +15,7 @@ import { PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
 import { STAGE_LABELS, STAGE_STYLE } from '@/lib/bookingStatus'
 import { etDateTime } from '@/lib/assistant/timeFormat'
 import { agoLabel } from '@/lib/agoLabel'
+import { copyText } from '@/lib/copyText'
 import { BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, LoginGate, useAdminApi } from '../_components/adminCrew'
 
 const money = (cents: number | null | undefined) => `$${((Number(cents) || 0) / 100).toFixed(2)}`
@@ -57,6 +58,7 @@ function LeadCardView({
   const [detailError, setDetailError] = useState('')
   const [busy, setBusy] = useState('')
   const [toast, setToast] = useState('')
+  const [copied, setCopied] = useState(false)
 
   // The full party, fetched the first time the card opens.
   useEffect(() => {
@@ -94,10 +96,12 @@ function LeadCardView({
       else window.open(url, '_blank')
       return
     }
-    try {
-      await navigator.clipboard.writeText(url)
-      setToast(`${destination === 'invoice' ? 'Invoice' : 'Planner'} link copied. It signs in whoever opens it as the client.`)
-    } catch {
+    if (await copyText(url)) {
+      // A check on the button for two seconds, the way every copy button works.
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+      setToast('It signs in whoever opens it as the client.')
+    } else {
       // No clipboard permission (some phones, some embedded browsers): show it, selectable.
       setToast(`Could not copy automatically. Press and hold to copy: ${url}`)
     }
@@ -175,7 +179,7 @@ function LeadCardView({
 
           <div className="flex flex-wrap gap-2 pt-1">
             <button className={BTN_GHOST} disabled={!!busy} onClick={() => link('invoice', 'copy')}>
-              {busy === 'invoice-copy' ? 'Making…' : 'Copy invoice link'}
+              {busy === 'invoice-copy' ? 'Making…' : copied ? '✓ Copied' : 'Copy invoice link'}
             </button>
             <button className={BTN_GHOST} disabled={!!busy} onClick={() => link('invoice', 'open')}>View invoice</button>
             <button className={BTN_GHOST} disabled={!!busy} onClick={() => link('planner', 'open')}>Open planner</button>

@@ -8,6 +8,7 @@ import { POST as planPayLinkRoute } from '@/app/api/plan/[ref]/pay-link/route'
 import { POST as enrolSequenceRoute } from '@/app/api/admin/sequences/enroll/route'
 import type { Proposal } from './proposals'
 import { screenOutboundText } from './outboundText'
+import { loadPartyCard, type PartyCardData } from './partyCard'
 import { POST as memoryPost, DELETE as memoryDelete } from '@/app/api/admin/assistant/memory/route'
 
 /**
@@ -56,6 +57,8 @@ export interface ExecuteResult {
   links?: { label: string; url: string }[]
   /** HTTP-ish status from the replayed route, for logging. */
   status: number
+  /** The full card of the party a confirmed action made or changed, when there is one. */
+  party?: PartyCardData
 }
 
 async function readJson(res: Response): Promise<Record<string, unknown>> {
@@ -74,14 +77,25 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       if (!res.ok || json.ok !== true) {
         return { ok: false, status: res.status, message: `Not created: ${String(json.error ?? `HTTP ${res.status}`)}` }
       }
+      // The invoice link, made the way the Parties tab's "Copy Invoice Link" makes it
+      // (mint only; nothing is sent). Best effort: the party exists either way.
+      let invoiceLink: { label: string; url: string } | null = null
+      if (typeof json.bookingId === 'string') {
+        const inv = await replayPartyAction(original, json.bookingId, { action: 'generate_portal_url', destination: 'invoice' })
+        if (inv.res.ok && typeof inv.json.portalUrl === 'string') invoiceLink = { label: 'Invoice link', url: inv.json.portalUrl }
+      }
+      // And the full card for the new party, so the manager sees all of it at once.
+      const made = typeof json.bookingRef === 'string' ? await loadPartyCard(getSupabase(), json.bookingRef).catch(() => null) : null
       return {
         ok: true,
         status: res.status,
-        message: `Created ${String(json.bookingRef)}.`,
+        message: `Created ${String(json.bookingRef)}.${invoiceLink ? '' : ' (The invoice link could not be made - use Copy Invoice Link in the Parties tab.)'}`,
         links: [
           ...(typeof json.adminUrl === 'string' ? [{ label: 'Open in admin', url: json.adminUrl }] : []),
+          ...(invoiceLink ? [invoiceLink] : []),
           ...(typeof json.builderUrl === 'string' ? [{ label: 'Open the planner', url: json.builderUrl }] : []),
         ],
+        ...(made && made.kind === 'ok' ? { party: made.card } : {}),
       }
     }
 

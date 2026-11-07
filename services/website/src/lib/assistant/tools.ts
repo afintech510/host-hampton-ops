@@ -19,6 +19,7 @@ import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
 import { buildEnrolCard } from './nurture'
 import { maskEmail } from './outboundText'
+import { loadPartyCard, type PartyCardData } from './partyCard'
 import { loadMemories, screenMemoryText, MAX_MEMORIES_PER_SCOPE } from './memory'
 import { clock12 } from './timeFormat'
 import { buildClientLinksCard, buildPhotosCard, type BuiltCard, type MessageEdits, type MessagePreview } from './messageCard'
@@ -60,6 +61,8 @@ export interface ToolOutcome {
   preview?: MessagePreview
   /** The pending card this one replaces (a reworded message). The chat route retires it. */
   supersedes?: string
+  /** Party cards to show the manager (a lookup that landed on one party). Display only. */
+  partyCards?: PartyCardData[]
 }
 
 const MAX_LIST = 25
@@ -507,10 +510,20 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
     switch (name) {
       case 'find_client':
         return await findClient(supabase, input)
-      case 'search_parties':
-        return await searchParties(supabase, input, today)
-      case 'get_party':
-        return await getParty(supabase, input)
+      case 'search_parties': {
+        const o = await searchParties(supabase, input, today)
+        // A search that finds exactly ONE party is about that party: show its card.
+        const found = (o.result as { parties?: Array<{ booking_ref?: unknown }> } | null)?.parties
+        if (!o.isError && Array.isArray(found) && found.length === 1 && typeof found[0].booking_ref === 'string') {
+          return withPartyCard(supabase, o, found[0].booking_ref, ctx.now)
+        }
+        return o
+      }
+      case 'get_party': {
+        const o = await getParty(supabase, input)
+        const ref = str(input.booking_ref, 40)
+        return o.isError || !ref ? o : withPartyCard(supabase, o, ref, ctx.now)
+      }
       case 'check_date':
         return await checkDate(supabase, input)
       case 'get_pricing':
@@ -634,6 +647,15 @@ async function searchParties(supabase: Supa, input: Record<string, unknown>, tod
       more_than_shown: rows.length > limit,
     },
   }
+}
+
+/**
+ * Add the party card to a lookup. A card that cannot be built is simply absent:
+ * the lookup's own answer still goes to the model, and nothing here can fail it.
+ */
+async function withPartyCard(supabase: Supa, o: ToolOutcome, ref: string, now?: Date): Promise<ToolOutcome> {
+  const c = await loadPartyCard(supabase, ref, now).catch(() => null)
+  return c && c.kind === 'ok' ? { ...o, partyCards: [c.card] } : o
 }
 
 async function getParty(supabase: Supa, input: Record<string, unknown>): Promise<ToolOutcome> {

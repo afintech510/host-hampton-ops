@@ -1,5 +1,6 @@
 import type { getSupabase } from '@/lib/supabase'
 import type { MessagePreview } from './messageCard'
+import type { PartyCardData } from './partyCard'
 
 /**
  * Persisted assistant conversations (migration 084, `assistant_threads`).
@@ -37,6 +38,8 @@ export interface ThreadCard {
   photos?: { id: string; url: string; alt: string }[]
   /** A message card's exact wording, recipient and send status. Display only. */
   message?: MessagePreview
+  /** The party a confirmed "create party" made, as a full card (no links in it). */
+  party?: PartyCardData
   result?: string
   links?: { label: string; url: string }[]
 }
@@ -45,6 +48,8 @@ export interface ThreadLine {
   role: 'user' | 'assistant' | 'note'
   text: string
   cards?: ThreadCard[]
+  /** Party cards for the parties this reply was about. A snapshot (see PartyCardData.asOf). */
+  parties?: PartyCardData[]
 }
 
 export interface Thread {
@@ -151,7 +156,7 @@ export async function recordCardOutcome(
   key: string,
   bookingRef: string | null,
   card: { id: string; title: string },
-  outcome: { state: 'done' | 'failed'; message: string; links?: { label: string; url: string }[] },
+  outcome: { state: 'done' | 'failed'; message: string; links?: { label: string; url: string }[]; party?: PartyCardData },
 ): Promise<void> {
   const read = await readThread(sb, actor, key)
   if (read.kind !== 'ok' || !read.thread) return
@@ -160,7 +165,9 @@ export async function recordCardOutcome(
       ? {
           ...l,
           cards: l.cards.map(c =>
-            c.id === card.id ? { ...c, state: outcome.state, result: outcome.message, links: outcome.links ?? [] } : c,
+            c.id === card.id
+              ? { ...c, state: outcome.state, result: outcome.message, links: outcome.links ?? [], ...(outcome.party ? { party: outcome.party } : {}) }
+              : c,
           ),
         }
       : l,

@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Brain, Check, Loader2, Pencil, RotateCcw, Send, Sparkles, X } from 'lucide-react'
 import MemoryPanel from './MemoryPanel'
+import CopyButton from './CopyButton'
+import PartyCardView from './PartyCardView'
+import type { PartyCardData } from '@/lib/assistant/partyCard'
 import type { MessagePreview, PreviewChannel } from '@/lib/assistant/messageCard'
 
 /**
@@ -37,6 +40,8 @@ interface Card {
   photos?: { id: string; url: string; alt: string }[]
   /** A message card: the exact wording, who it goes to and whether it would be refused now. */
   message?: MessagePreview
+  /** The full card of the party a confirmed "create party" made. */
+  party?: PartyCardData
   result?: string
   links?: { label: string; url: string }[]
 }
@@ -147,6 +152,8 @@ interface Line {
   role: 'user' | 'assistant' | 'note'
   text: string
   cards?: Card[]
+  /** Cards for the parties this reply was about. */
+  parties?: PartyCardData[]
 }
 
 function authHeaders(): Record<string, string> {
@@ -275,7 +282,7 @@ export default function AssistantChat({
               }
             : line,
         ),
-        { role: 'assistant', text: data.reply || '', cards: data.proposals || [] },
+        { role: 'assistant', text: data.reply || '', cards: data.proposals || [], parties: data.parties || [] },
       ])
     } catch {
       setError('Could not reach the assistant.')
@@ -298,7 +305,7 @@ export default function AssistantChat({
       // A refusal before anything happened (quiet hours, nothing owed) leaves the
       // card confirmable: say why, and let the manager fix the cause and retry.
       if (!ok && data.retryable) updateCard(card.id, { state: 'pending', result: message })
-      else updateCard(card.id, { state: ok ? 'done' : 'failed', result: message, links: data.links || [] })
+      else updateCard(card.id, { state: ok ? 'done' : 'failed', result: message, links: data.links || [], party: data.party || undefined })
       if (ok) onActionDone?.()
     } catch {
       updateCard(card.id, { state: 'failed', result: 'Could not reach the server — check the Parties tab before retrying.' })
@@ -439,6 +446,9 @@ export default function AssistantChat({
                   {line.role === 'assistant' ? <LinkedText text={line.text} /> : line.text}
                 </div>
               )}
+              {line.parties?.map(p => (
+                <PartyCardView key={p.ref} party={p} />
+              ))}
               {line.cards?.map(card => (
                 <div key={card.id} className="bg-white border-2 border-hampton-navy/20 rounded-xl p-4 text-sm text-hampton-navy">
                   <p className="font-bold mb-2">{card.title}</p>
@@ -528,15 +538,14 @@ export default function AssistantChat({
                           <a href={l.url} target="_blank" rel="noopener noreferrer" className="underline">
                             {l.label}
                           </a>
-                          <button
-                            type="button"
-                            onClick={() => navigator.clipboard?.writeText(l.url).catch(() => undefined)}
-                            className="text-xs border border-current rounded-full px-2 py-0.5"
-                          >
-                            Copy
-                          </button>
+                          <CopyButton text={l.url} />
                         </div>
                       ))}
+                      {card.party && (
+                        <div className="mt-3 text-hampton-navy">
+                          <PartyCardView party={card.party} />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

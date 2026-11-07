@@ -9,6 +9,7 @@ import { ASSISTANT_TOOLS, runAssistantTool } from './tools'
 import { contextPromptLine, GENERAL_CONTEXT, type AssistantContext } from './context'
 import type { ProposalPhoto } from './proposals'
 import type { MessagePreview } from './messageCard'
+import type { PartyCardData } from './partyCard'
 import { loadMemories, memoryPromptLines, type Memory } from './memory'
 
 /**
@@ -26,6 +27,7 @@ type MessageParam = LlmMessage
 
 export const ASSISTANT_ENTITY = 'manager_assistant'
 const MAX_ITERATIONS = 8
+const MAX_PARTY_CARDS = 3
 const MAX_HISTORY_MESSAGES = 120
 const MAX_HISTORY_BYTES = 900_000
 
@@ -48,6 +50,7 @@ export function systemPrompt(
     'How you act:',
     '- Read tools run immediately. Use them instead of guessing; if a lookup fails, say it failed.',
     '- Tools whose names start with propose_ do NOT do anything. They put a card in front of the manager with a Confirm button. After proposing, say plainly that nothing has happened yet and that they should review and confirm the card. Never say a party was created, a link was sent or a payment link exists until the conversation shows a confirmed result.',
+    '- Party cards: whenever the conversation is about ONE specific party (the manager names it, gives its ref, or asks about its details, money or status), call get_party for it (use search_parties first if you only have a name) so its full card appears in the chat: contact, when, type, child, guests, status, theme, activities, add-ons, food, desserts, extra guests, total, paid, owed and tip. The card already shows all of that, so do not list it again in your reply: answer the question in a sentence and say what you notice (for example a balance owed or no date). A card is a snapshot; call get_party again after a change to show the new one.',
     '- Leads: list_leads (recent inquiries, by derived stage, who is waiting on a reply), get_first_inquiry (what they first asked for), get_sms_thread (the text thread, newest last) and get_next_step (what to do next, naming the propose_* tool that prepares it) are read-only. Show compact lists: ref, stage, party type/date/guests, last touch and how long ago. Say a lead is waiting on a reply only if list_leads says waiting_on "us" and, for a text, the thread is complete. Phone numbers are masked; do not ask for or repeat full numbers. Suggestions are never sent by you: prepare them with the matching propose_* tool and let the manager confirm.',
     '- Mock invitation: get_invitation returns the invitation link of a lead and ready-made preview wording; send it with propose_send_client_links links ["invite"] passing that wording verbatim (sms_body / email_subject / email_body). Nurture: list_sequences, then propose_enrol_sequence with the booking_ref of the lead and a sequence id; the card shows the steps and the first email. Enrolling sends nothing today, and only leads who have not booked and have not opted out can be enrolled — say so plainly if the card shows it blocked.',
     '- Links for the manager: when asked to pull up a party in the admin, call get_party_links and give the admin_party_page link exactly as returned (plain text, it becomes clickable). For the invoice, party planner or booking portal page call propose_party_link: it is the client sign-in link, so it comes as a card the manager confirms, and it is for the manager, never sent to the client (sending is propose_send_client_links). Never invent a link.',
@@ -90,6 +93,8 @@ export interface TurnResult {
   messages: MessageParam[]
   reply: string
   proposals: ProposalCard[]
+  /** Party cards for the parties this turn looked at (one per party, at most three). */
+  parties: PartyCardData[]
   usd: number
 }
 
@@ -123,6 +128,7 @@ export async function runAssistantTurn(opts: {
   const model = assistantModel()
   const today = etToday(opts.now)
   const proposals: ProposalCard[] = []
+  const parties: PartyCardData[] = []
   let usd = 0
 
   // An unpriced model (an OpenAI id nobody has priced) is refused before a
@@ -131,7 +137,7 @@ export async function runAssistantTurn(opts: {
     assertModelPriced(model)
   } catch (err) {
     if (err instanceof UnpricedModelError) {
-      return { messages: [...opts.history, { role: 'user', content: opts.userText }], reply: `I can't run on the model "${model}" yet because it has no price configured. Set ASSISTANT_PRICE_IN_PER_MTOK and ASSISTANT_PRICE_OUT_PER_MTOK, or switch back to a priced model.`, proposals, usd }
+      return { messages: [...opts.history, { role: 'user', content: opts.userText }], reply: `I can't run on the model "${model}" yet because it has no price configured. Set ASSISTANT_PRICE_IN_PER_MTOK and ASSISTANT_PRICE_OUT_PER_MTOK, or switch back to a priced model.`, proposals, parties, usd }
     }
     throw err
   }
@@ -144,6 +150,7 @@ export async function runAssistantTurn(opts: {
         messages: [...opts.history, { role: 'user', content: opts.userText }],
         reply: 'The monthly AI budget is used up, so I cannot answer right now. Raise it in Marketing settings, or use the Parties tab directly.',
         proposals,
+        parties,
         usd,
       }
     }
@@ -191,9 +198,12 @@ export async function runAssistantTurn(opts: {
           ...(out.supersedes ? { supersedes: out.supersedes } : {}),
         })
       }
+      for (const c of out.partyCards ?? []) {
+        if (parties.length < MAX_PARTY_CARDS && !parties.some(p => p.ref === c.ref)) parties.push(c)
+      }
       return { result: out.result, isError: out.isError }
     },
   })
 
-  return { messages: loop.messages, reply: loop.reply, proposals, usd }
+  return { messages: loop.messages, reply: loop.reply, proposals, parties, usd }
 }

@@ -68,11 +68,11 @@ export async function POST(req: NextRequest) {
     const lines: ThreadLine[] = [
       ...retireReplacedCards(expireStaleCards(read.thread?.lines ?? []), replaced),
       { role: 'user', text },
-      { role: 'assistant', text: turn.reply, cards },
+      { role: 'assistant', text: turn.reply, cards, ...(turn.parties.length ? { parties: turn.parties } : {}) },
     ]
     const saved = await writeThread(supabase, actor, key, context.bookingRef, turn.messages, lines)
 
-    return NextResponse.json({ reply: turn.reply, proposals: cards, saved, replaced: Array.from(replaced) })
+    return NextResponse.json({ reply: turn.reply, proposals: cards, parties: turn.parties, saved, replaced: Array.from(replaced) })
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) {
       return NextResponse.json({ error: 'The AI service is busy — try again in a minute.' }, { status: 503 })

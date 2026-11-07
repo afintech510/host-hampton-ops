@@ -44,13 +44,16 @@ export default async function CrewProfilePage() {
           <CrewBrand />
           <span className="crew-who crew-small">
             <a className="crew-link" href="/crew/onboarding">Back</a>
-            <ActionButton endpoint="/api/crew/auth/logout" label="Sign out" variant="ghost" redirectTo="/crew/login" />
           </span>
         </div>
       ) : (
         <CrewTop firstName={member.first_name} isTest={member.is_test} />
       )}
-      <h1>Profile</h1>
+      {/* Sign out lives here, on the heading's line, at the right. */}
+      <div className="crew-title-row">
+        <h1>Profile</h1>
+        <ActionButton endpoint="/api/crew/auth/logout" label="Sign out" variant="ghost" redirectTo="/crew/login" />
+      </div>
 
       <h2>My details</h2>
       <ProfileForm ownerName={owner} />
