@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { formatMoney } from '@/lib/partyPricing'
+import { clock12 } from '@/lib/assistant/timeFormat'
 import { PARTY_TYPES, PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
 import {
   BOOKING_STAGES, STAGE_LABELS, STAGE_STYLE, PAYMENT_LABELS, PAYMENT_STYLE,
@@ -855,7 +856,7 @@ export default function PartiesTab({
                     : null}
                 </p>
                 <p>Date: <strong>{selected.party_date || 'TBD'}</strong></p>
-                <p>Time: <strong>{selected.party_time || 'TBD'}</strong></p>
+                <p>Time: <strong>{clock12(selected.party_time) || 'TBD'}</strong></p>
                 <p>Guests: <strong>{selected.guest_count_approx || '—'}</strong></p>
                 <p>Theme: <strong>{selected.package_type || '—'}</strong></p>
                 <FoodDetailLine snapshot={(selected as PartyDetail).quote_snapshot} />
