@@ -29,6 +29,24 @@ function formatTime(timeStr: string): string {
   } catch { return timeStr }
 }
 
+/** The party_tags a studio rental is created with. See `/api/studio-rental/checkout`, which writes the same set. */
+const STUDIO_RENTAL_TAGS = [
+  'rental_start_time', 'rental_end_time', 'rental_hours', 'is_weekend', 'event_label',
+  'address', 'seating_needed', 'balance_due_date', 'security_deposit_cents',
+] as const
+
+function screenRentalTags(raw: unknown): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {}
+  if (!raw || typeof raw !== 'object') return out
+  for (const key of STUDIO_RENTAL_TAGS) {
+    const v = (raw as Record<string, unknown>)[key]
+    if (typeof v === 'string') out[key] = v.slice(0, 200)
+    else if (typeof v === 'number' && Number.isFinite(v)) out[key] = v
+    else if (typeof v === 'boolean') out[key] = v
+  }
+  return out
+}
+
 export async function POST(req: NextRequest) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
@@ -38,7 +56,7 @@ export async function POST(req: NextRequest) {
       contactName, contactEmail, contactPhone, childName,
       partyDate, partyTime, guestCount, packageType,
       lineItems = [], notes, sendEmail = true, lockDate = true,
-      partyType, eventType, source, invoiceNumber, locationAddress,
+      partyType, eventType, source, invoiceNumber, locationAddress, partyTagsExtra,
     } = body as {
       contactName: string
       contactEmail: string
@@ -67,6 +85,13 @@ export async function POST(req: NextRequest) {
       source?: string
       invoiceNumber?: string
       locationAddress?: string
+      /**
+       * A studio rental's own facts (its window, label, seating), which the
+       * rental screens and the crew sync read from `party_tags`. Only the keys
+       * in STUDIO_RENTAL_TAGS are kept, and only as plain strings, numbers or
+       * booleans, so this can never become a way to write arbitrary tags.
+       */
+      partyTagsExtra?: Record<string, unknown>
     }
 
     if (!contactName || !contactEmail) {
@@ -96,9 +121,10 @@ export async function POST(req: NextRequest) {
       created_at: new Date().toISOString(),
       ...(locationAddress ? { location_address: locationAddress } : {}),
       ...(partyType === 'mobile_party' ? { location_type: 'mobile' } : {}),
+      ...screenRentalTags(partyTagsExtra),
     }
 
-    const snapshot = buildPlanSnapshot({ lineItems, guestCount: guests, packageType })
+    const snapshot = buildPlanSnapshot({ lineItems, guestCount: guests, packageType, partyType })
     const { total_cents: totalCents, deposit_amount: depositCents, balance_due_cents: balanceDueCents } =
       planTotals(snapshot)
 

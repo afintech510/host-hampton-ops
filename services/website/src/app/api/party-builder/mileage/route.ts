@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
+import { travelFeeForAddress } from '@/lib/mileage'
 
-// Host Hampton — 295 Montauk Hwy, Speonk NY 11972
-const HH_LAT = 40.8294
-const HH_LON = -72.6925
-const ROAD_FACTOR = 1.3 // crude convert from great-circle to road distance
-const PER_MILE_CENTS = 500 // $5/mile, one-way — server-side, not disclosed to UI
-
-// Owner ruling 2026-09-05: the first 20 miles from the studio are FREE; only
-// miles beyond that are billable. Previously this charged from mile zero, which
-// contradicted the published "no travel fee within 20 miles of Speonk" promise
-// and quietly added ~$150 to an East Hampton quote and ~$425 to Manhattan.
-const FREE_RADIUS_MILES = 20
+// The arithmetic (free first 20 miles, $5/mile beyond) is lib/mileage.ts.
 
 export async function POST(req: NextRequest) {
   const limited = guardRate(req, plannerRule('party-builder/mileage'))
@@ -19,44 +10,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const { address } = (await req.json()) as { address?: string }
-    if (!address || address.trim().length < 4) {
-      return NextResponse.json({ error: 'address required' }, { status: 400 })
-    }
-
-    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`
-    const geo = await fetch(url, {
-      headers: { 'User-Agent': 'Host Hampton Party Planner (hosthampton.com)' },
-    })
-    if (!geo.ok) return NextResponse.json({ error: 'geocode failed' }, { status: 502 })
-    const results = (await geo.json()) as Array<{ lat: string; lon: string; display_name: string }>
-    if (!results.length) return NextResponse.json({ error: 'address not found' }, { status: 404 })
-
-    const { lat, lon, display_name } = results[0]
-    const destLat = parseFloat(lat)
-    const destLon = parseFloat(lon)
-
-    // Haversine
-    const R = 3958.8 // miles
-    const toRad = (d: number) => (d * Math.PI) / 180
-    const dLat = toRad(destLat - HH_LAT)
-    const dLon = toRad(destLon - HH_LON)
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(HH_LAT)) * Math.cos(toRad(destLat)) * Math.sin(dLon / 2) ** 2
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-    const straightMiles = R * c
-    const drivingMilesEstimate = straightMiles * ROAD_FACTOR
-
-    // Mobile Party Fee component: only the miles BEYOND the free radius are
-    // billable, at $5/mile one-way. Inside the radius this is $0. No cap.
-    // Miles + rate stay server-side — the UI only ever sees the dollar amount.
-    const billableMiles = Math.max(0, drivingMilesEstimate - FREE_RADIUS_MILES)
-    const feeCents = Math.round(billableMiles * PER_MILE_CENTS)
-
-    return NextResponse.json({
-      feeCents,
-      resolvedAddress: display_name,
-    })
+    const fee = await travelFeeForAddress(address)
+    if (fee.kind === 'bad_address') return NextResponse.json({ error: 'address required' }, { status: 400 })
+    if (fee.kind === 'geocode_failed') return NextResponse.json({ error: 'geocode failed' }, { status: 502 })
+    if (fee.kind === 'not_found') return NextResponse.json({ error: 'address not found' }, { status: 404 })
+    return NextResponse.json({ feeCents: fee.feeCents, resolvedAddress: fee.resolvedAddress })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'mileage calculation failed'
     return NextResponse.json({ error: msg }, { status: 500 })

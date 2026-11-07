@@ -34,6 +34,8 @@ export type ProposalKind =
   | 'send_photos'
   | 'enrol_sequence'
   | 'party_link'
+  | 'create_mobile_party'
+  | 'create_studio_rental'
   | 'approve_party'
   | 'reopen_party'
   | 'remember'

@@ -17,6 +17,7 @@ import { ACTIVITY_TAGS, THEME_TAGS } from '@/lib/mediaVocab'
 import { loadQuoteCatalog, quoteFromCatalog, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
+import { BUILDER_TOOLS, isBuilderTool, runBuilderTool } from './partyBuilders'
 import { buildEnrolCard } from './nurture'
 import { maskEmail } from './outboundText'
 import { loadPartyCard, type PartyCardData } from './partyCard'
@@ -404,6 +405,7 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   ...LEAD_TOOLS,
+  ...BUILDER_TOOLS,
 ]
 
 /* ── Small screens ────────────────────────────────────────────────────── */
@@ -568,6 +570,7 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await proposeReopenParty(supabase, input, ctx)
       default:
         if (isLeadTool(name)) return await runLeadTool(name, input, supabase, ctx.now)
+        if (isBuilderTool(name)) return await runBuilderTool(name, input, { ...ctx, supabase })
         return { result: { error: `Unknown tool ${name}` }, isError: true }
     }
   } catch (err) {

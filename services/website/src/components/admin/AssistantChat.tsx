@@ -46,6 +46,38 @@ interface Card {
   links?: { label: string; url: string }[]
 }
 
+/** Card kinds drawn as a labelled sheet (with a badge) rather than a bullet list. */
+const KIND_BADGES: Record<string, string> = {
+  create_mobile_party: 'Mobile party',
+  create_studio_rental: 'Studio rental',
+}
+
+/** "Label: value" lines become a two-column sheet; any other line is a full-width note under it. */
+function DetailRows({ details }: { details: string[] }) {
+  const rows: { label: string; value: string }[] = []
+  const notes: string[] = []
+  for (const d of details) {
+    const m = /^([A-Z][A-Za-z' /]{1,24}): (.+)$/.exec(d)
+    if (m) rows.push({ label: m[1], value: m[2] })
+    else notes.push(d)
+  }
+  return (
+    <div className="mb-3">
+      <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1">
+        {rows.map((r, i) => (
+          <div key={i} className="contents">
+            <dt className="text-hampton-navy/50">{r.label}</dt>
+            <dd className={r.label === 'Total' ? 'font-bold' : ''}>{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {notes.map((n, i) => (
+        <p key={i} className="mt-1.5 text-xs text-hampton-navy/60">{n}</p>
+      ))}
+    </div>
+  )
+}
+
 /**
  * Makes a link in the assistant's reply clickable — OUR OWN pages only. A URL
  * is turned into an anchor only when it resolves to this site's origin; anything
@@ -451,6 +483,11 @@ export default function AssistantChat({
               ))}
               {line.cards?.map(card => (
                 <div key={card.id} className="bg-white border-2 border-hampton-navy/20 rounded-xl p-4 text-sm text-hampton-navy">
+                  {KIND_BADGES[card.kind] && (
+                    <span className="inline-block mb-1.5 rounded-full bg-hampton-navy/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-hampton-navy/70">
+                      {KIND_BADGES[card.kind]}
+                    </span>
+                  )}
                   <p className="font-bold mb-2">{card.title}</p>
                   {card.photos && card.photos.length > 0 && (
                     <div className="grid grid-cols-4 gap-1.5 mb-3">
@@ -460,11 +497,15 @@ export default function AssistantChat({
                       ))}
                     </div>
                   )}
-                  <ul className="space-y-1 text-hampton-navy/80 mb-3">
-                    {card.details.map((d, j) => (
-                      <li key={j}>• {d}</li>
-                    ))}
-                  </ul>
+                  {KIND_BADGES[card.kind] ? (
+                    <DetailRows details={card.details} />
+                  ) : (
+                    <ul className="space-y-1 text-hampton-navy/80 mb-3">
+                      {card.details.map((d, j) => (
+                        <li key={j}>• {d}</li>
+                      ))}
+                    </ul>
+                  )}
                   {card.message && (
                     <MessageView
                       message={card.message}

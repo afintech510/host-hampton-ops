@@ -102,13 +102,13 @@ describe('O1: every write tool is propose_* and has an executor branch', () => {
     const names = ASSISTANT_TOOLS.map(t => t.name)
     const others = names.filter(n => !n.startsWith('propose_'))
     expect(others.sort()).toEqual([...READ_TOOLS].sort())
-    expect(names.filter(n => n.startsWith('propose_')).length).toBe(16)
+    expect(names.filter(n => n.startsWith('propose_')).length).toBe(18)
     for (const t of ASSISTANT_TOOLS.filter(t => t.name.startsWith('propose_'))) expect(t.description).toMatch(/^PROPOSE /)
   })
 
   it('every proposal kind has a `case` in execute.ts, and every case is a kind', () => {
     const kinds = kindsInUnion()
-    expect(kinds.length).toBe(16)
+    expect(kinds.length).toBe(18)
     const exec = src('lib/assistant/execute.ts')
     const cases = Array.from(exec.matchAll(/case '([a-z_]+)':/g)).map(m => m[1])
     expect(cases.sort()).toEqual([...kinds].sort())

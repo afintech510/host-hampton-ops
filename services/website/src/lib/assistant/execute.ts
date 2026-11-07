@@ -71,7 +71,9 @@ async function readJson(res: Response): Promise<Record<string, unknown>> {
 
 export async function executeProposal(original: NextRequest, proposal: Proposal): Promise<ExecuteResult> {
   switch (proposal.kind) {
-    case 'create_party': {
+    case 'create_party':
+    case 'create_mobile_party':
+    case 'create_studio_rental': {
       const res = await createPartyRoute(replayRequest(original, '/api/admin/parties/create', proposal.input))
       const json = await readJson(res)
       if (!res.ok || json.ok !== true) {
