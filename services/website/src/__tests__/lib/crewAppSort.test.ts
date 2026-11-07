@@ -8,7 +8,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { decomment } from '../helpers/sourceScan'
 
-import { LEAD_SORTS, BOOKING_SORTS, sortLeads, sortBookings } from '@/lib/crewAppSort'
+import { LEAD_SORTS, BOOKING_SORTS, PAYMENT_SORTS, sortLeads, sortBookings, sortPayments } from '@/lib/crewAppSort'
 import { dollarsToCents, paymentBody, PAY_METHODS } from '@/app/admin/crew/_components/LeadActions'
 import { ADMIN_PAYMENT_METHODS } from '@/lib/adminMoney'
 import SortMenu from '@/app/admin/crew/_components/SortMenu'
@@ -135,5 +135,33 @@ describe('Add payment on a lead', () => {
     // The only two writes it can make are the Parties tab's own actions.
     expect(Array.from(s.matchAll(/action: '([a-z_]+)'/g)).map(m => m[1]).sort()).toEqual(['mark_lost', 'record_payment'])
     expect(read('app/admin/crew/leads/page.tsx')).toMatch(/<LeadActions bookingId=\{lead\.id\} name=\{lead\.name\} \/>/)
+  })
+})
+
+describe('payment sorting', () => {
+  const pay = (id: string, at: string, amountCents: number) => ({ id, at, amountCents })
+  const rows = [
+    pay('a', '2026-10-02T15:00:00Z', 110_000),
+    pay('b', '2026-10-30T15:00:00Z', 10_700),
+    pay('c', '2026-10-13T15:00:00Z', 70_000),
+    pay('refund', '2026-10-20T15:00:00Z', -5_000),
+    pay('d', '2026-10-13T15:00:00Z', 70_000),
+  ]
+  it('offers date and value, newest first by default', () => {
+    expect(PAYMENT_SORTS.map(o => o.key)).toEqual(['date_desc', 'date_asc', 'value_desc', 'value_asc'])
+  })
+  it('sorts by date either way and keeps every row', () => {
+    expect(sortPayments(rows, 'date_desc').map(r => r.id)).toEqual(['b', 'refund', 'c', 'd', 'a'])
+    expect(sortPayments(rows, 'date_asc').map(r => r.id)).toEqual(['a', 'c', 'd', 'refund', 'b'])
+    expect(sortPayments(rows, 'value_desc')).toHaveLength(rows.length)
+  })
+  it('sorts by value either way, ties newest first, a refund last when high to low', () => {
+    expect(sortPayments(rows, 'value_desc').map(r => r.id)).toEqual(['a', 'c', 'd', 'b', 'refund'])
+    expect(sortPayments(rows, 'value_asc').map(r => r.id)).toEqual(['refund', 'b', 'c', 'd', 'a'])
+  })
+  it('does not change the list it was given', () => {
+    const before = rows.map(r => r.id)
+    sortPayments(rows, 'value_asc')
+    expect(rows.map(r => r.id)).toEqual(before)
   })
 })

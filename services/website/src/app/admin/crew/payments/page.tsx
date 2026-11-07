@@ -11,6 +11,8 @@
 import { useMemo } from 'react'
 import Link from 'next/link'
 import type { PayMethod, PaymentRow } from '@/lib/crewAppPayments'
+import { PAYMENT_SORTS, sortPayments, type PaymentSortKey } from '@/lib/crewAppSort'
+import SortMenu from '../_components/SortMenu'
 import { etDateString, shiftEtDate } from '@/lib/partyTime'
 import { PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
 import { Banner, CrewFrame, money } from '../_components/adminCrew'
@@ -132,22 +134,20 @@ export default function CrewPaymentsPage() {
   const [source, setSource] = useRemembered<Source>('payments.source', 'all')
   const [methods, setMethods] = useRemembered<PayMethod[]>('payments.methods', [])
   const [period, setPeriod] = useRemembered<Period>('payments.period', '30')
-  const [tipsOnly, setTipsOnly] = useRemembered<boolean>('payments.tipsOnly', false)
+  const [sort, setSort] = useRemembered<PaymentSortKey>('payments.sort', 'date_desc')
 
   const today = etDateString()
   const since = period === '30' ? shiftEtDate(today, -29) : period === '90' ? shiftEtDate(today, -89) : period === 'year' ? `${today.slice(0, 4)}-01-01` : '0000-00-00'
   const all = useMemo(() => data?.payments ?? [], [data])
   const shown = useMemo(
-    () => all.filter(p => (source === 'all' || p.kind === source) && (methods.length === 0 || methods.includes(p.method)) && dayOf(p.at) >= since && (!tipsOnly || (p.amountCents > 0 && p.tipCents > 0))),
-    [all, source, methods, since, tipsOnly],
+    () => sortPayments(all.filter(p => (source === 'all' || p.kind === source) && (methods.length === 0 || methods.includes(p.method)) && dayOf(p.at) >= since), sort),
+    [all, source, methods, since, sort],
   )
   const net = shown.reduce((s, p) => s + p.amountCents, 0)
-  const tipped = shown.filter(p => p.amountCents > 0 && p.tipCents > 0)
-  const tipTotal = tipped.reduce((s, p) => s + p.tipCents, 0)
   const byMethod = METHODS.map(m => ({ ...m, cents: shown.filter(p => p.method === m.key).reduce((s, p) => s + p.amountCents, 0), n: shown.filter(p => p.method === m.key).length })).filter(m => m.n > 0)
 
   return (
-    <CrewFrame active="/admin/crew/payments" title="Payments" compact sub={refreshing ? 'refreshing…' : null}>
+    <CrewFrame active="/admin/crew/payments" title="Payments" compact sub={refreshing ? 'refreshing…' : null} actions={<SortMenu options={PAYMENT_SORTS} value={sort} onChange={setSort} />}>
       <div className="max-w-3xl mx-auto">
         {error && !data && <Banner tone="error">{error}</Banner>}
         {loading && <div className="text-center text-hampton-navy/50 py-10">Loading the payments…</div>}
@@ -170,9 +170,6 @@ export default function CrewPaymentsPage() {
                     </button>
                   )
                 })}
-                <button type="button" aria-pressed={tipsOnly} onClick={() => setTipsOnly(!tipsOnly)} className={pill(tipsOnly)}>
-                  🎁 With a tip
-                </button>
               </div>
               <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="How far back">
                 {PERIODS.map(pd => (
@@ -187,12 +184,6 @@ export default function CrewPaymentsPage() {
               <div className="text-xs font-bold uppercase tracking-wider text-hampton-navy/50">Collected</div>
               <div className="text-4xl font-bold text-hampton-navy">{dollars(net)}</div>
               <div className="text-xs text-hampton-navy/50">{shown.length} {shown.length === 1 ? 'payment' : 'payments'}, refunds taken off</div>
-              {tipTotal > 0 && (
-                <div className="mt-2 text-sm font-semibold text-amber-800" data-tip-total>
-                  🎁 Plus {dollars(tipTotal)} in tips from {tipped.length} {tipped.length === 1 ? 'payment' : 'payments'}
-                  <span className="font-normal text-hampton-navy/50"> · not counted above</span>
-                </div>
-              )}
               {byMethod.length > 0 && (
                 <div className="mt-3 flex flex-wrap justify-center gap-2">
                   {byMethod.map(m => (

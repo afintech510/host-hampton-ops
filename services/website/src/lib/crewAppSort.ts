@@ -81,3 +81,33 @@ export function sortBookings<T extends BookingLike>(rows: readonly T[], key: Boo
   }
   return [...rows].sort(by[key])
 }
+
+/* ── Payments ────────────────────────────────────────────────────────────── */
+
+export type PaymentSortKey = 'date_desc' | 'date_asc' | 'value_desc' | 'value_asc'
+
+export const PAYMENT_SORTS: SortOption<PaymentSortKey>[] = [
+  { key: 'date_desc', label: 'Date: newest first' },
+  { key: 'date_asc', label: 'Date: oldest first' },
+  { key: 'value_desc', label: 'Value: high to low' },
+  { key: 'value_asc', label: 'Value: low to high' },
+]
+
+interface PaymentLike {
+  /** ISO timestamp of when it was paid. */
+  at: string
+  /** Signed: a refund is negative, so it sorts below every payment by value. */
+  amountCents: number
+  id: string
+}
+
+export function sortPayments<T extends PaymentLike>(rows: readonly T[], key: PaymentSortKey): T[] {
+  const newest = (a: T, b: T) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id)
+  const by: Record<PaymentSortKey, (a: T, b: T) => number> = {
+    date_desc: newest,
+    date_asc: (a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id),
+    value_desc: (a, b) => b.amountCents - a.amountCents || newest(a, b),
+    value_asc: (a, b) => a.amountCents - b.amountCents || newest(a, b),
+  }
+  return [...rows].sort(by[key])
+}
