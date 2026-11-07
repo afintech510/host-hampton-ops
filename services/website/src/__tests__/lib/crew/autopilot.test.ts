@@ -179,12 +179,12 @@ describe('"new party" and "still need crew" go to free crew', () => {
     expect(asked('new_party:p1:')).toHaveLength(2)
   })
 
-  it('says nothing about pay at launch, and signs as Allie', async () => {
+  it('says nothing about pay at launch, and carries no signature', async () => {
     world()
     await runCrewAsks(jobs(), await published())
     const mail = tx.email.mock.calls.find(c => c[0] === 'a@example.test')![1]
     expect(mail.email.text).not.toMatch(/\$/)
-    expect(mail.email.text).toMatch(/— Allie, Host Hampton$/)
+    expect(mail.email.text).not.toMatch(/Allie|Host Hampton$/)
   })
 
   it('a Lead-only vacancy goes only to people who can lead', async () => {

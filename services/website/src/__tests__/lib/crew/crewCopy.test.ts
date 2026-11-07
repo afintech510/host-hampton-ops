@@ -14,7 +14,7 @@
  */
 import fs from 'fs'
 import path from 'path'
-import { templates, adminTemplates, CREW_SIGNATURE, type PartyRef } from '@/lib/crew/templates'
+import { templates, adminTemplates, type PartyRef } from '@/lib/crew/templates'
 import { decomment } from '../../helpers/sourceScan'
 
 const party: PartyRef = {
@@ -69,6 +69,18 @@ const LADDER_WORDS = /\b(rate|rates|step|steps|ladder|reset|two parties|counts a
  */
 const PHASE_5_NEVER_SENT_AT_LAUNCH = ['paid', 'stepUp', 'stepReset'] as const
 
+/**
+ * Crew messages carry NO signature (Adam, 2026-11-07): no "— Allie, Host Hampton", no
+ * sign-off line at all, on a text or an email. Checked on the tail, where a signature sits.
+ */
+function expectUnsigned(out: { sms: string; email: { text: string } }) {
+  for (const s of [out.sms, out.email.text]) {
+    expect(s).not.toMatch(/—s*Allie/)
+    expect(s).not.toMatch(/Allie,s*Host Hamptons*$/)
+    expect(s.trimEnd()).not.toMatch(/Host Hamptons*$/)
+  }
+}
+
 describe('crew templates', () => {
   const names = Object.keys(templates) as (keyof typeof templates)[]
 
@@ -78,10 +90,9 @@ describe('crew templates', () => {
   })
 
   for (const name of names) {
-    it(`${name}: signs as Allie and talks in dollars`, () => {
+    it(`${name}: carries no signature and talks in dollars`, () => {
       const out = render(templates[name] as never) as Out
-      expect(out.sms.endsWith(CREW_SIGNATURE)).toBe(true)
-      expect(out.email.text.endsWith(CREW_SIGNATURE)).toBe(true)
+      expectUnsigned(out)
       for (const s of parts(out)) {
         expect(s).not.toMatch(BANNED)
         expect(s).not.toMatch(/undefined|\[object Object\]|NaN/)
@@ -97,10 +108,9 @@ describe('crew templates', () => {
       // `partiesDigest` has two bodies (new / still open); every other template has one.
       const variants: Record<string, unknown>[] = name === 'partiesDigest' ? [{ open: true }, { open: false }] : [{}]
       for (const v of variants) {
-        it(`${name}${'open' in v ? ` (open=${String(v.open)})` : ''}: signs as Allie, no dollars, no word about a rate`, () => {
+        it(`${name}${'open' in v ? ` (open=${String(v.open)})` : ''}: unsigned, no dollars, no word about a rate`, () => {
           const out = render(templates[name] as never, { ...LAUNCH, ...v }) as Out
-          expect(out.sms.endsWith(CREW_SIGNATURE)).toBe(true)
-          expect(out.email.text.endsWith(CREW_SIGNATURE)).toBe(true)
+          expectUnsigned(out)
           for (const s of parts(out)) {
             expect(s).not.toContain('$')
             expect(s).not.toMatch(LADDER_WORDS)

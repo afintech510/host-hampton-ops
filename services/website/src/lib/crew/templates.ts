@@ -1,8 +1,9 @@
 /**
  * Host Hampton Crew — every word a crew member is sent. Spec §6.
  *
- * - Every message signs "— Allie, Host Hampton" (customer AND crew messages are
- *   always from Allie).
+ * - NO SIGNATURE, on a text or an email (Adam, 2026-11-07): a crew message ends
+ *   where its content ends. (Customer messages are a different thing and are
+ *   still signed by the tenant sign-off.) `crewCopy.test.ts` fails on a sign-off.
  * - Pay is dollars a party. Never a level, a tier or points —
  *   `crewCopy.test.ts` renders every template and fails on those words.
  * - LAUNCH MODE (2026-11-05): no pay figure and no word about a rate moving.
@@ -19,7 +20,6 @@
 import { STUDIO_PHONE_DISPLAY } from '@/lib/studioLocation'
 import { TENANT } from '@/tenant'
 
-export const CREW_SIGNATURE = `— ${TENANT.people.customerSignoff}, ${TENANT.business.name}`
 export const SMS_DISCLOSURE = 'Msg freq varies. Reply STOP to opt out, HELP for help.'
 
 export interface Rendered {
@@ -46,8 +46,8 @@ const calLine = (p: PartyRef) => (p.calUrl ? ` Add to your calendar: ${p.calUrl}
 
 function r(sms: string, subject: string, text: string, inApp?: string): Rendered {
   return {
-    sms: `${sms} ${CREW_SIGNATURE}`,
-    email: { subject, text: `${text}\n\n${CREW_SIGNATURE}` },
+    sms,
+    email: { subject, text },
     inApp: inApp ?? sms,
   }
 }
@@ -83,7 +83,7 @@ export const templates = {
     )
   },
 
-  /** The first crew text a person ever gets: one link, the opt-out line, signed like every crew message. */
+  /** The first crew text a person ever gets: one link and the opt-out line. */
   onboardingInvite(firstName: string): Rendered {
     const site = TENANT.business.siteUrl
     return r(

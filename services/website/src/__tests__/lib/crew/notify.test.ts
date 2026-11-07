@@ -104,7 +104,7 @@ describe('notifyMember: channels', () => {
     expect(second).not.toMatch(/Reply STOP/)
     for (const body of [first, second]) {
       expect(body).not.toMatch(/[—–’]/)
-      expect(body).toMatch(/- Allie, Host Hampton/)
+      expect(body).not.toMatch(/Allie|- Host Hampton/)
     }
     expect(rows(r => r.dedupe_key === 'sms_disclosure:m-1')[0]).toMatchObject({ status: 'sent', provider_id: 'quo-msg-1' })
   })
