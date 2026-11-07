@@ -4,7 +4,6 @@ import { requireCrewPage } from '@/lib/crew/page'
 import { loadCrewSettings } from '@/lib/crew/settings'
 import { loadBoard, loadViewerContext } from '@/lib/crew/board'
 import { meView } from '@/lib/crew/view'
-import { TENANT } from '@/tenant'
 import CrewTop, { CrewUnavailable } from './_components/CrewTop'
 import PartyCard, { visibleSpots } from './_components/PartyCard'
 
@@ -30,9 +29,7 @@ export default async function CrewHomePage() {
 
   const me = meView(member, settings.settings)
   const upcoming = board.data.filter(b => b.upcoming)
-  const allMine = upcoming.filter(b => b.view.mySlot)
-  const confirm = allMine.filter(b => b.needsConfirm)
-  const mine = allMine.filter(b => !b.needsConfirm)
+  const mine = upcoming.filter(b => b.view.mySlot)
   const open = upcoming.filter(b => !b.view.mySlot && visibleSpots(b, me.canLead).length > 0)
   const full = upcoming.filter(b => !b.view.mySlot && visibleSpots(b, me.canLead).length === 0)
 
@@ -49,31 +46,21 @@ export default async function CrewHomePage() {
         </div>
       ) : (
         <p className="crew-muted crew-small" style={{ marginTop: 0 }}>
-          Pick the parties you want, and set the times you can&apos;t work in <Link className="crew-link" href="/crew/availability">Availability</Link>.
+          Tell us which parties you&apos;re available to work, and set the times you can&apos;t work in <Link className="crew-link" href="/crew/availability">Availability</Link>.
         </p>
-      )}
-
-      {confirm.length > 0 && (
-        <section aria-labelledby="crew-confirm">
-          <h2 id="crew-confirm">Accept your assignments</h2>
-          <p className="crew-muted crew-small" style={{ marginTop: 0 }}>
-            {TENANT.people.customerSignoff} put you on {confirm.length === 1 ? 'this' : 'these'}. Check the shift, then tap Accept Assignment.
-          </p>
-          {confirm.map(b => <PartyCard key={b.view.id} b={b} canLead={me.canLead} />)}
-        </section>
       )}
 
       <section aria-labelledby="crew-mine">
         <h2 id="crew-mine">My parties</h2>
         {mine.length === 0
-          ? <p className="crew-muted">{confirm.length > 0 ? 'Nothing accepted yet.' : "You're not on anything yet. Commit to a spot below."}</p>
+          ? <p className="crew-muted">You&apos;re not on anything yet. Tell us below which parties you&apos;re available to work.</p>
           : mine.map(b => <PartyCard key={b.view.id} b={b} canLead={me.canLead} />)}
       </section>
 
       <section aria-labelledby="crew-open">
         <h2 id="crew-open">Open parties</h2>
         {open.length === 0
-          ? <p className="crew-muted">No open spots right now. New parties show up here as soon as it&apos;s posted.</p>
+          ? <p className="crew-muted">No open spots right now. New parties show up here as soon as they&apos;re posted.</p>
           : open.map(b => <PartyCard key={b.view.id} b={b} canLead={me.canLead} />)}
       </section>
 
@@ -81,7 +68,7 @@ export default async function CrewHomePage() {
         <section aria-labelledby="crew-full">
           <h2 id="crew-full">Full</h2>
           <p className="crew-muted crew-small" style={{ marginTop: 0 }}>
-            Join the waitlist, and if someone on the crew can&apos;t make it, you&apos;ll be among the first asked. No obligation.
+            These have the crew they need right now. If someone can&apos;t make it, the people on standby are asked first.
           </p>
           {full.map(b => <PartyCard key={b.view.id} b={b} canLead={me.canLead} />)}
         </section>

@@ -42,6 +42,7 @@ import { sendSMSViaQuo } from '@/lib/quo'
 import { sendCrewEmail, type CrewMailOutcome } from '@/lib/crew/mail'
 import { checkSmsQuietHours } from '@/lib/quietHours'
 import { gsm7Sanitize, smsSegmentInfo } from '@/lib/smsSegments'
+import { shortenCrewLinks } from '@/lib/crew/smsLinks'
 import { checkFreshness, reminderMaxLatenessMs } from '@/lib/scheduleFreshness'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { crewAdminEmail, crewAdminPhone, crewEnabled, crewOnboardingEnabled, crewPayLadderEnabled, crewSmsEnabled, inCrewPilot } from '@/lib/crew/settings'
@@ -141,7 +142,9 @@ async function deliverSms(
     carry = true
   }
 
-  const body = gsm7Sanitize(carry ? `${text} ${SMS_DISCLOSURE}` : text)
+  // Our links become /s/ short links here, at send time, to keep the text to as few segments as it can be.
+  const shortened = await shortenCrewLinks(ctx.sb, text, ctx.now)
+  const body = gsm7Sanitize(carry ? `${shortened} ${SMS_DISCLOSURE}` : shortened)
   const seg = smsSegmentInfo(body)
   let providerId: string | null = null
   try {
@@ -292,7 +295,7 @@ async function sendAdminSms(ctx: NotifyCtx, template: string, dedupeKey: string,
   if (!open) return 'skipped'
   const senders = ctx.senders ?? liveSenders
   let providerId: string | null = null
-  try { providerId = await senders.sms(phone, body) } catch (e) { console.error(`crew/notify: admin sms threw for row ${r.id}: ${errText(e)}`) }
+  try { providerId = await senders.sms(phone, await shortenCrewLinks(ctx.sb, body, ctx.now)) } catch (e) { console.error(`crew/notify: admin sms threw for row ${r.id}: ${errText(e)}`) }
   if (providerId) { await finish(ctx.sb, r.id, { status: 'sent', provider_id: providerId, sent_at: ctx.now.toISOString(), error: null }); return 'sent' }
   await finish(ctx.sb, r.id, { status: 'failed', error: 'quo returned no message id (see the quo:sendSMS log line)' })
   return 'failed'
@@ -373,12 +376,12 @@ export async function queuedStillRelevant(
     const wantsLive = row.template !== 'coveredRequester' && row.template !== 'coverClaimed'
     if (!st || (wantsLive && !LIVE_SWAP.includes(st))) return 'no'
   }
-  if (typeof p.slot_id === 'string' && ['confirmRequest', 'confirmReminder', 'dayBefore'].includes(row.template)) {
-    const { data, error } = await sb.from('crew_slots').select('status, member_id, confirmed_at').eq('id', p.slot_id).maybeSingle()
+  if (typeof p.slot_id === 'string' && ['threeDay', 'dayBefore'].includes(row.template)) {
+    const { data, error } = await sb.from('crew_slots').select('status, member_id').eq('id', p.slot_id).maybeSingle()
     if (error) return 'unavailable'
-    const sl = data as { status: string; member_id: string | null; confirmed_at: string | null } | null
+    const sl = data as { status: string; member_id: string | null } | null
+    // A reminder is only true while this person is still on it.
     if (!sl || sl.status !== 'assigned' || sl.member_id !== row.member_id) return 'no'
-    if (row.template !== 'dayBefore' && sl.confirmed_at) return 'no'
   }
   if (typeof p.party_id === 'string' && row.template !== 'partyCancelled') {
     const { data, error } = await sb.from('crew_parties').select('status, starts_at').eq('id', p.party_id).maybeSingle()

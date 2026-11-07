@@ -8,6 +8,7 @@
  *            publish | unpublish
  *            assign { slotId, memberId, force? }   via crew_admin_assign; Allie as Lead included
  *            approve_picks { picks: [{ slotId, memberId }], force? }   equitable scheduling: approve from the ranked list
+ *            standby { memberId }   move someone who is available into the standby pool (one text to them)
  *            unassign { slotId }
  *            add_spot | remove_spot { slotId }
  *            set_count { value: 1..10 | null }
@@ -23,7 +24,7 @@ import { getSupabase } from '@/lib/supabase'
 import { adminActorId, isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { loadCrewSettings } from '@/lib/crew/settings'
 import { loadAdminParty, shiftForAdmin } from '@/lib/crew/admin'
-import { approvePicks, loadPickPanel, notifyPickRound } from '@/lib/crew/pick'
+import { approvePicks, loadPickPanel, moveToStandby, notifyPickRound } from '@/lib/crew/pick'
 import { notifyAssigned } from '@/lib/crew/assigned'
 import {
   addSpot, assignMember, clearPartyFlag, publishParty, removeSpot, setPartyFields, setSlotsOverride, unassignMember,
@@ -87,6 +88,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     })
   }
 
+  // The other half of finalizing: a person who is available goes into the standby pool, not on a spot.
+  if (body?.action === 'standby') {
+    const out = await moveToStandby(sb, params.id, body.memberId, now)
+    if (!out.ok) return NextResponse.json({ error: out.error }, { status: out.status })
+    const told = await notifyPickRound({ sb, now }, s, [out.result])
+    return NextResponse.json({ ok: true, standby: 1, told })
+  }
+
   let r: ActionResult
   switch (body?.action) {
     case 'publish': r = await publishParty(sb, params.id, actor, now); break
@@ -102,7 +111,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     default: return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   }
   if (!r.ok) return NextResponse.json({ error: r.error, warnings: r.warnings ?? [] }, { status: r.status })
-  // Put on a spot by hand: tell them, with the whole shift, how to accept it and where to add it to a calendar.
+  // Put on a spot by hand: tell them, with the whole shift and where to add it to a calendar.
   if (body?.action === 'assign' && typeof body.slotId === 'string') {
     try { await notifyAssigned({ sb, now }, s, body.slotId) } catch (e) { console.error('crew/assign: notice not sent:', e instanceof Error ? e.message : e) }
   }

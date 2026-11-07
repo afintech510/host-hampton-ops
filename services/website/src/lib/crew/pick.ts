@@ -2,11 +2,12 @@
  * Equitable scheduling (Adam, 2026-11-06; migration 090). Server code only.
  *
  * A party published in PICK mode is not claimed first-come: each crew member
- * answers `work` ("I want to work this"), `unavailable` or `standby` ("add me as
- * standby"), none of which locks anything. The people who asked to work are
- * RANKED by who worked least recently, the manager approves (one tap on the
- * recommendation, or somebody else), and everyone else who asked becomes a
- * standby. This file is that whole flow except the screens and the cron tick:
+ * answers `work` ("Available to work") or `unavailable` ("Not available"), neither of
+ * which puts them on it (`standby` is the third stored answer, but since 2026-11-07
+ * only the MANAGER sets it). The people who are available are RANKED by who worked
+ * least recently, and the manager finalizes: each person goes on a spot or into the
+ * standby pool (`approvePicks` / `moveToStandby`), and being put on a spot is the
+ * confirmation. This file is that whole flow except the screens and the cron tick:
  *
  *   - `rankVolunteers` / `recommendPicks`   pure: the order and the recommendation;
  *   - `loadPickPanel`                       what the manager sees for one party;
@@ -224,7 +225,7 @@ export async function saveResponse(
 
   if (response === 'work') {
     const claimable = slots.filter(sl => sl.status === 'open' && (sl.role === 'crew' || member.can_lead))
-    if (claimable.length === 0) return refused(409, 'Every spot you could take is already filled. Add yourself as standby instead.')
+    if (claimable.length === 0) return refused(409, 'Every spot you could take is already filled.')
     const day = localParts(startsAt).dateKey
     const [windows, avail] = await Promise.all([
       myLiveWindows(sb, member.id),
@@ -244,32 +245,75 @@ export async function saveResponse(
     if (refusal) return refused(409, claimRefusalText(refusal))
   }
 
-  const found = await sb.from('crew_party_responses').select('id').eq('party_id', partyId).eq('member_id', member.id)
-  if (found.error) return { kind: 'unavailable' }
+  if (await recordResponse(sb, partyId, member.id, response, now) === 'unavailable') return { kind: 'unavailable' }
+  return { kind: 'ok', response }
+}
+
+/**
+ * Write (or clear, with `null`) one answer and keep `crew_standbys` in step with it:
+ * `standby` is mirrored into the live standby list the cover flow reads, anything else
+ * withdraws it. The one writer for a crew member's own answer AND the manager's
+ * "move to standby", so the two cannot drift.
+ */
+async function recordResponse(sb: Supa, partyId: string, memberId: string, response: PickResponse | null, now: Date): Promise<'ok' | 'unavailable'> {
+  const found = await sb.from('crew_party_responses').select('id').eq('party_id', partyId).eq('member_id', memberId)
+  if (found.error) return 'unavailable'
   const existing = ((found.data ?? []) as { id: string }[])[0] ?? null
   if (response === null) {
     if (existing) {
       const { error } = await sb.from('crew_party_responses').delete().eq('id', existing.id).select('id')
-      if (error) return { kind: 'unavailable' }
+      if (error) return 'unavailable'
     }
   } else if (existing) {
     const { error } = await sb.from('crew_party_responses').update({ response, updated_at: now.toISOString() }).eq('id', existing.id).select('id')
-    if (error) return { kind: 'unavailable' }
+    if (error) return 'unavailable'
   } else {
-    const { error } = await sb.from('crew_party_responses').insert({ party_id: partyId, member_id: member.id, response }).select('id').maybeSingle()
+    const { error } = await sb.from('crew_party_responses').insert({ party_id: partyId, member_id: memberId, response }).select('id').maybeSingle()
     // A double tap races its own insert: the unique pair says "already answered", which is fine.
-    if (error && (error as { code?: string }).code !== '23505') return { kind: 'unavailable' }
+    if (error && (error as { code?: string }).code !== '23505') return 'unavailable'
   }
 
   if (response === 'standby') {
-    const { error } = await sb.from('crew_standbys').insert({ party_id: partyId, member_id: member.id }).select('id').maybeSingle()
-    if (error && (error as { code?: string }).code !== '23505') return { kind: 'unavailable' }
+    const { error } = await sb.from('crew_standbys').insert({ party_id: partyId, member_id: memberId }).select('id').maybeSingle()
+    if (error && (error as { code?: string }).code !== '23505') return 'unavailable'
   } else {
     const { error } = await sb.from('crew_standbys').update({ withdrawn_at: now.toISOString() })
-      .eq('party_id', partyId).eq('member_id', member.id).is('withdrawn_at', null).select('id')
-    if (error) return { kind: 'unavailable' }
+      .eq('party_id', partyId).eq('member_id', memberId).is('withdrawn_at', null).select('id')
+    if (error) return 'unavailable'
   }
-  return { kind: 'ok', response }
+  return 'ok'
+}
+
+/**
+ * The manager puts someone who said they are available into the STANDBY POOL instead of a
+ * spot (Adam, 2026-11-07: she finalizes the staffing, each person either on the party or on
+ * standby). Their answer becomes `standby`, which is what the cover flow asks first when
+ * somebody cancels. Refused for someone already on the party (take them off first) and for
+ * a party that is over; it moves nobody off a spot and changes no spot.
+ */
+export async function moveToStandby(
+  sb: Supa, partyId: string, memberId: unknown, now: Date,
+): Promise<{ ok: true; result: ApproveResult } | { ok: false; status: number; error: string }> {
+  if (typeof memberId !== 'string') return { ok: false, status: 400, error: 'Who should go on standby?' }
+  const pws = await getPartyWithSlots(sb, partyId)
+  if (pws.kind !== 'ok') return { ok: false, status: 503, error: 'Could not read the party.' }
+  if (!pws.data) return { ok: false, status: 404, error: 'Unknown party.' }
+  const { party, slots } = pws.data
+  if (party.status !== 'published' || new Date(party.starts_at).getTime() <= now.getTime()) {
+    return { ok: false, status: 409, error: 'This party is not open any more.' }
+  }
+  if (slots.some(sl => sl.member_id === memberId && HELD.includes(sl.status))) {
+    return { ok: false, status: 409, error: 'They are on this party. Take them off first.' }
+  }
+  const members = await listMembers(sb)
+  if (members.kind !== 'ok') return { ok: false, status: 503, error: 'Could not read the roster.' }
+  const member = members.data.find(m => m.id === memberId)
+  if (!member || member.is_owner) return { ok: false, status: 404, error: 'Unknown crew member.' }
+  if (member.status !== 'active') return { ok: false, status: 409, error: `${member.first_name} is paused or removed.` }
+  if (await recordResponse(sb, partyId, memberId, 'standby', now) === 'unavailable') {
+    return { ok: false, status: 503, error: 'Could not save that. Try again.' }
+  }
+  return { ok: true, result: { partyId, assigned: [], flagged: [], failed: [], standbyMemberIds: [memberId], dropped: [] } }
 }
 
 // ── The manager's decision ──────────────────────────────────────────────────

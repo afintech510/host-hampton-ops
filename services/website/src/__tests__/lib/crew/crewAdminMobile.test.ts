@@ -21,7 +21,7 @@ describe('the schedule on a phone', () => {
   it('the whole card opens the party, and carries the same facts as the table row', () => {
     const card = page.slice(page.indexOf('function PartyCardMobile'), page.indexOf('export default function CrewSchedulePage'))
     expect(card).toContain('href={`/admin/crew/parties/${p.id}`}')
-    for (const fact of ['when.day', 'when.time', 'p.title', 'p.staffed', 'p.needed', 'p.guestCount', 'p.available', 'p.unconfirmed', 'crewNames(p)', 'p.status', '<PartyBits p={p} />', 'No Lead']) {
+    for (const fact of ['when.day', 'when.time', 'p.title', 'p.staffed', 'p.needed', 'p.guestCount', 'p.available', 'crewNames(p)', 'p.status', '<PartyBits p={p} />', 'No Lead']) {
       expect(card).toContain(fact)
     }
   })

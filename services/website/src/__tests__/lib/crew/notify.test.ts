@@ -132,7 +132,7 @@ describe('notifyMember: channels', () => {
 describe('quiet hours DEFER, never cancel, and the queue delivers', () => {
   it('a 10pm text is queued for 8am and nothing is sent', async () => {
     const s = senders()
-    const r = await notifyMember({ sb: db.sb, now: QUIET, senders: s }, member() as any, 'confirmRequest', templates.confirmRequest(ref, 'Wed'), 'q1')
+    const r = await notifyMember({ sb: db.sb, now: QUIET, senders: s }, member() as any, 'threeDay', templates.threeDay(ref), 'q1')
     expect((r as any).channels.sms).toBe('deferred')
     expect(s.sms).not.toHaveBeenCalled()
     const q = rows(r => r.channel === 'sms')[0]

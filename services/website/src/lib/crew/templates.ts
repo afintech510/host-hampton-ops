@@ -153,33 +153,33 @@ If you didn't ask for it, you can ignore this email.`,
     )
   },
 
-  /** Equitable scheduling: a new party in pick mode. Nothing is taken by answering; the manager picks. */
+  /** A new party: two answers, Available to work or Not available. Nothing is taken by answering; the manager finalizes the crew. */
   newPartyPick(p: PartyRef): Rendered {
     const kids = p.kids ? `, ${p.kids} kids` : ''
     return r(
-      `New party: ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}${kids}. Tell us if you want to work it, can't, or can stand by: ${p.url}`,
+      `New party: ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}${kids}. Are you available to work it? ${p.url}`,
       `New party: ${p.theme}, ${p.dayLabel}`,
       `${p.theme} on ${p.dayLabel}, ${p.shiftLabel ?? p.timeLabel}${kids}.
-Tell us if you want to work it, can't, or can stand by. Answering doesn't lock you in; the crew is picked fairly:
+Tell us if you're available to work it or not. Answering doesn't put you on it; the crew is picked fairly and you'll hear when it's set:
 ${p.url}`,
     )
   },
 
-  /** Pick mode: the ones who have not answered yet. */
+  /** The ones who have not answered yet. */
   pickReminder(p: PartyRef): Rendered {
     return r(
-      `Still need to hear from you on ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}: want to work it, can't, or can stand by? ${p.url}`,
+      `Still need to hear from you on ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}: available to work it or not? ${p.url}`,
       `Your answer: ${p.theme}, ${p.dayLabel}`,
-      `We still need to hear from you on ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. Tell us if you want to work it, can't, or can stand by. Answering doesn't lock you in:\n${p.url}`,
+      `We still need to hear from you on ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}. Tell us if you're available to work it or not. Answering doesn't put you on it:\n${p.url}`,
     )
   },
 
   partiesDigestPick(count: number, url: string): Rendered {
     const n = `${count} ${count === 1 ? 'party' : 'parties'}`
     return r(
-      `${n} just went up. Tell us which you want to work: ${url}`,
+      `${n} just went up. Tell us which you're available to work: ${url}`,
       `${n} just went up`,
-      `${n} just went up on the schedule. Tell us which you want to work, which you can't, and which you can stand by for:
+      `${n} just went up on the schedule. Tell us which you're available to work and which you're not:
 ${url}`,
     )
   },
@@ -191,14 +191,14 @@ ${url}`,
     const head = `${n} ${n === 1 ? 'party' : 'parties'}`
     const list = items.map(i => `${i.theme}, ${i.dayLabel}`).join('; ') + (more > 0 ? ` and ${more} more` : '')
     return r(
-      `Hi ${firstName}! You haven't told us about ${head} yet: ${list}. Work it, can't, or standby? ${url}`,
+      `Hi ${firstName}! You haven't told us about ${head} yet: ${list}. Available to work, or not? ${url}`,
       `${head} waiting for your answer`,
       `Hi ${firstName},
 
 We haven't heard from you on ${head} yet:
 ${items.map(i => `- ${i.theme}, ${i.dayLabel}`).join(NL)}${more > 0 ? `${NL}- and ${more} more` : ''}
 
-Tell us if you want to work it, can't, or can stand by. Answering doesn't lock you in; the crew is picked fairly, and nobody is put on a party without being asked first.
+Tell us if you're available to work it or not. Answering doesn't put you on it; the crew is picked fairly, and you'll hear when it's set.
 ${url}`,
     )
   },
@@ -207,22 +207,26 @@ ${url}`,
   pickStandby(firstName: string, count: number, url: string): Rendered {
     const n = `${count} ${count === 1 ? 'party' : 'parties'}`
     return r(
-      `Hi ${firstName}! Thanks for asking. For ${n} someone else was picked this round, so you're on standby. You'll be first asked if a spot opens: ${url}`,
+      `Hi ${firstName}! Thanks for saying you're available. For ${n} we have the crew we need right now, so you're on standby. You'll be asked first if a spot opens: ${url}`,
       `You're on standby for ${n}`,
       `Hi ${firstName},
 
-Thanks for asking to work. For ${n} someone else was picked this round, so you're on standby. If a spot opens you'll be asked, in turn.
+Thanks for saying you're available. For ${n} we have the crew we need right now, so you're on standby. If a spot opens you'll be asked, in turn.
 See where you stand: ${url}`,
     )
   },
 
-  /** The manager put this person on a spot (by hand, or from the ranked list): the whole shift, how to accept, and the calendar link. */
+  /**
+   * The manager put this person on a spot (by hand, or from the ranked list): the whole shift and the
+   * calendar link. It asks for nothing: being put on it is the confirmation (Adam, 2026-11-07).
+   */
   assignedByManager(p: PartyRef): Rendered {
     const when = `${p.dayLabel}, ${p.shiftLabel ?? p.timeLabel}`
     return r(
-      `You've been put on ${p.theme}, ${when}. Please open the app and tap Accept Assignment: ${p.url}${calLine(p)}`,
-      `You've been assigned: ${p.theme}, ${p.dayLabel}`,
-      `You've been put on ${p.theme}.\nYour shift: ${when}.\nPlease open the app and tap Accept Assignment so we know you have it:\n${p.url}${p.calUrl ? `\nAdd it to your calendar: ${p.calUrl}` : ''}`,
+      // No labels on the party link and a short "Calendar:", so with both links shortened this is one segment.
+      `You're on ${p.theme}, ${when}. ${p.url}${p.calUrl ? ` Calendar: ${p.calUrl}` : ''}`,
+      `You're on: ${p.theme}, ${p.dayLabel}`,
+      `You're on ${p.theme}.\nYour shift: ${when}.\nDetails: ${p.url}${p.calUrl ? `\nAdd it to your calendar: ${p.calUrl}` : ''}`,
     )
   },
 
@@ -234,19 +238,12 @@ See where you stand: ${url}`,
     )
   },
 
-  confirmRequest(p: PartyRef, dueLabel: string): Rendered {
+  /** 3 days before: the first of the two work reminders. Tells, never asks. */
+  threeDay(p: PartyRef): Rendered {
     return r(
-      `Still on for ${p.theme} ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel}? Reply Y or tap ${p.url} by ${dueLabel}.${calLine(p)}`,
-      `Confirm: ${p.theme}, ${p.dayLabel}`,
-      `Please confirm you're still on for ${p.theme}, ${p.dayLabel} ${p.shiftLabel ?? p.timeLabel} by ${dueLabel}.\nConfirm, or tell us you can't make it: ${p.url}${p.calUrl ? `\nAdd it to your calendar: ${p.calUrl}` : ''}`,
-    )
-  },
-
-  confirmReminder(p: PartyRef, dueLabel: string): Rendered {
-    return r(
-      `Reminder: confirm ${p.theme} ${p.dayLabel} by ${dueLabel}. Reply Y or tap ${p.url}`,
-      `Reminder: confirm ${p.theme}, ${p.dayLabel}`,
-      `A reminder to confirm ${p.theme}, ${p.dayLabel} by ${dueLabel}: ${p.url}`,
+      `Reminder: you're working ${p.theme} ${p.dayLabel}, ${p.shiftLabel ?? p.timeLabel}. Details: ${p.url}`,
+      `In 3 days: ${p.theme}, ${p.dayLabel}`,
+      `A reminder that you're working ${p.theme}, ${p.dayLabel}, ${p.shiftLabel ?? p.timeLabel}.\nDetails: ${p.url}\nIf something has come up, use Can't make it in the app as soon as you can.`,
     )
   },
 

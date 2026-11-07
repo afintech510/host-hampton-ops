@@ -129,6 +129,14 @@ export interface CrewPartyView {
 const LIVE: SlotStatus[] = ['assigned', 'completed', 'no_show']
 
 /**
+ * Whether a held spot counts as confirmed. Being put on a party is the confirmation
+ * (Adam, 2026-11-07), so every held spot is: a spot that predates that, or came in
+ * by a path that never stamped `confirmed_at`, must not read "Needs your acceptance"
+ * with nothing the person can tap.
+ */
+const slotConfirmed = (sl: Pick<CrewSlotRow, 'status' | 'confirmed_at'>) => !!sl.confirmed_at || LIVE.includes(sl.status)
+
+/**
  * One party as `viewer` may see it. Returns null for a party a crew member
  * must not see at all: a draft, or a cancelled/completed party they were not
  * on. `firstNames` maps member id → first name for teammates (and nothing else).
@@ -178,7 +186,7 @@ export function partyView(
     .map(sl => ({
       firstName: firstNames.get(sl.member_id as string) ?? 'Crew',
       role: sl.role,
-      confirmed: !!sl.confirmed_at,
+      confirmed: slotConfirmed(sl),
       isMe: sl.member_id === viewer.id,
     }))
 
@@ -206,7 +214,7 @@ export function partyView(
           slotId: mine.id,
           role: mine.role,
           status: mine.status,
-          confirmed: !!mine.confirmed_at,
+          confirmed: slotConfirmed(mine),
           payCents: shownCents(partyPayCents(mine.role, viewer.steps, extra, s), s),
         }
       : null,

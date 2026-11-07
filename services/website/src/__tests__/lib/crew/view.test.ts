@@ -94,7 +94,8 @@ describe('partyView', () => {
     }, S)!
     expect(v.location).toBe('1 Real St')
     expect(v.notesForCrew).toBe(SENTINELS.partyNotes)
-    expect(v.mySlot).toEqual({ slotId: 'mine', role: 'crew', status: 'assigned', confirmed: false, payCents: 5850 })
+    // Held means confirmed: being put on a party is the confirmation (2026-11-07), stamp or no stamp.
+    expect(v.mySlot).toEqual({ slotId: 'mine', role: 'crew', status: 'assigned', confirmed: true, payCents: 5850 })
     const json = JSON.stringify(v)
     for (const k of ['email', 'phone', 'notes', 'reason', 'otherId', 'paidNote'] as const) expect(json).not.toContain(SENTINELS[k])
     expect(json).not.toContain(String(OTHER_PAY))

@@ -53,7 +53,7 @@ const CODE_BYTES = 16
 /** Default life of a short link. Matches REVIEW_TOKEN_TTL_MS (§20). */
 export const SHORT_LINK_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
-export type ShortLinkKind = 'review' | 'slack' | 'portal'
+export type ShortLinkKind = 'review' | 'slack' | 'portal' | 'crew'
 
 export interface MintedShortLink {
   /** Raw code — goes in the SMS, never stored. */

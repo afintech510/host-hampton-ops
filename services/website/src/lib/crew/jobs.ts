@@ -43,7 +43,7 @@ import {
 } from '@/lib/crew/db'
 import { adminTemplates, templates, type Rendered } from '@/lib/crew/templates'
 import {
-  crewLink, drainCrewQueue, isTestParty, markCoveredByDigest, messageClock, messageDayLabel, notifyAdmin, notifyMember, partyRefFor,
+  crewLink, drainCrewQueue, isTestParty, markCoveredByDigest, messageDayLabel, notifyAdmin, notifyMember, partyRefFor,
   type DrainSummary, type NotifyCtx,
 } from '@/lib/crew/notify'
 import {
@@ -53,6 +53,7 @@ import { ALERT_DAYS_BACK } from '@/lib/crew/admin'
 import { publishParty } from '@/lib/crew/adminActions'
 import { withCalendar } from '@/lib/crew/calendar'
 import { approvePicks, listPickParties, loadPickPanel, notifyPickRound, partyResponses, PICK_RESPONSE_HOURS, type ApproveResult } from '@/lib/crew/pick'
+import { crewPickAutoApproveEnabled } from '@/lib/crew/settings'
 import { etDateString, etToUtc } from '@/lib/partyTime'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -61,8 +62,6 @@ const HOUR_MS = 3_600_000
 const DAY_MS = 24 * HOUR_MS
 /** "Tomorrow" stays true for this long after the day-before mark. */
 export const DAY_BEFORE_WINDOW_MS = 6 * HOUR_MS
-/** A reminder and an overdue alert wait this long after the request actually went. */
-export const AFTER_REQUEST_MS = 12 * HOUR_MS
 /** The availability reminder goes after this Eastern hour, never at midnight. */
 export const AVAILABILITY_FROM_HOUR = 9
 
@@ -79,7 +78,8 @@ export interface JobsReport {
   autoPublished: number
   /** Autopilot: "new party" and "still need crew" asks sent this tick (digests count once). */
   asks: { newParty: number; nudges: number }
-  confirmations: { requests: number; reminders: number; overdue: number; dayBefore: number }
+  /** Work reminders sent this tick: 3 days before, and 24 hours before. */
+  confirmations: { threeDay: number; dayBefore: number }
   covers: { reasked: number; advanced: number; escalated: number; autoOffered: number; warned: number; expired: number }
   attendance: number
   /** The manager told a published party is still short of crew (the one routine manager touch). */
@@ -105,34 +105,18 @@ function memberInScope(ctx: JobsCtx, m: Pick<CrewMemberRow, 'is_test'>): boolean
   return ctx.scope === 'all' ? true : m.is_test
 }
 
+// ── 2. Work reminders ───────────────────────────────────────────────────────
+
 /**
- * When the in-app row for a dedupe key was written, or null if it never was.
- * Read from `scheduled_for`, which `notifyMember` stamps with the tick's own
- * `now` — the clock every other comparison here uses.
+ * Staff who are on a party hear about it twice more: 3 days before and 24 hours
+ * before ("you're working it"). Nobody is asked to confirm (Adam, 2026-11-07):
+ * being put on a party IS the confirmation, so there is no request, no reminder
+ * to confirm and no "has not confirmed" alert for a text to chase.
  */
-async function sentAt(sb: Supa, dedupeKey: string): Promise<Date | null | 'unavailable'> {
-  const { data, error } = await sb.from('crew_notifications').select('scheduled_for').eq('dedupe_key', dedupeKey).eq('channel', 'in_app').maybeSingle()
-  if (error) return 'unavailable'
-  const at = (data as { scheduled_for: string } | null)?.scheduled_for
-  return at ? new Date(at) : null
-}
-
-/** The deadline in words; once it has passed, a few hours from now (never a time already gone). */
-function dueLabelFor(dueAt: Date, startsAt: Date, now: Date): string {
-  let due = dueAt
-  if (due.getTime() <= now.getTime()) {
-    const soon = new Date(now.getTime() + 6 * HOUR_MS)
-    due = soon.getTime() < startsAt.getTime() ? soon : startsAt
-  }
-  return `${messageDayLabel(due)} ${messageClock(due)}`
-}
-
-// ── 2. Confirmations ────────────────────────────────────────────────────────
-
 export async function runConfirmations(
   ctx: JobsCtx, parties: PartyWithSlots[], members: Map<string, CrewMemberRow>,
 ): Promise<JobsReport['confirmations'] & { unavailable: boolean }> {
-  const out = { requests: 0, reminders: 0, overdue: 0, dayBefore: 0, unavailable: false }
+  const out = { threeDay: 0, dayBefore: 0, unavailable: false }
   const s = ctx.settings
   const now = ctx.now.getTime()
   for (const { party, slots } of parties) {
@@ -149,28 +133,12 @@ export async function runConfirmations(
       const ref = withCalendar(partyRefFor(party, s, undefined, slot.role), party, slot, s)
       const payload = { party_id: party.id, slot_id: slot.id }
 
-      if (!slot.confirmed_at && now >= sched.requestAt.getTime()) {
-        const reqKey = `confirm_request:${key}`
-        const r = await notifyMember(ctx, m, 'confirmRequest',
-          templates.confirmRequest(ref, dueLabelFor(sched.dueAt, startsAt, ctx.now)), reqKey, { payload })
-        if (r.kind === 'done' && r.channels.in_app === 'sent') out.requests++
-        const requested = await sentAt(ctx.sb, reqKey)
-        if (requested === 'unavailable') { out.unavailable = true; continue }
-        const reqMs = requested ? requested.getTime() : null
-
-        if (reqMs !== null && assignedAt < sched.reminderAt.getTime()
-          && now >= sched.reminderAt.getTime() && now < sched.dueAt.getTime() && now - reqMs >= AFTER_REQUEST_MS) {
-          const rr = await notifyMember(ctx, m, 'confirmReminder',
-            templates.confirmReminder(ref, dueLabelFor(sched.dueAt, startsAt, ctx.now)), `confirm_reminder:${key}`, { payload })
-          if (rr.kind === 'done' && rr.channels.in_app === 'sent') out.reminders++
-        }
-
-        if (reqMs !== null && assignedAt < sched.dueAt.getTime()
-          && now >= Math.max(sched.dueAt.getTime(), reqMs + AFTER_REQUEST_MS)) {
-          const a = await notifyAdmin(ctx, 'unconfirmed', adminTemplates.unconfirmed(m.first_name, ref, adminUrl(party.id)),
-            `unconfirmed:${key}`, { test: isTestParty(party), payload })
-          if (a.in_app === 'sent') out.overdue++
-        }
+      // Only someone who was on it BEFORE the mark is reminded then: a person put on at 40 hours out
+      // was just told, and "3 days to go" would be false.
+      if (assignedAt < sched.threeDayAt.getTime()
+        && now >= sched.threeDayAt.getTime() && now < sched.threeDayAt.getTime() + DAY_BEFORE_WINDOW_MS) {
+        const r = await notifyMember(ctx, m, 'threeDay', templates.threeDay(ref), `three_day:${key}`, { payload })
+        if (r.kind === 'done' && r.channels.in_app === 'sent') out.threeDay++
       }
 
       if (assignedAt < sched.dayBeforeAt.getTime()
@@ -647,7 +615,7 @@ export async function runCrewJobs(ctx: JobsCtx): Promise<JobsReport> {
     ok: true,
     autoPublished: 0,
     asks: { newParty: 0, nudges: 0 },
-    confirmations: { requests: 0, reminders: 0, overdue: 0, dayBefore: 0 },
+    confirmations: { threeDay: 0, dayBefore: 0 },
     covers: { reasked: 0, advanced: 0, escalated: 0, autoOffered: 0, warned: 0, expired: 0 },
     attendance: 0, understaffed: 0, availability: 0, picksAutoApproved: 0, pickDigests: 0,
     queue: { scanned: 0, sent: 0, deferred: 0, skipped: 0, failed: 0, raced: 0 },
@@ -677,7 +645,7 @@ export async function runCrewJobs(ctx: JobsCtx): Promise<JobsReport> {
   } else {
     const byId = new Map(members.data.map(m => [m.id, m]))
     const c = await runConfirmations(ctx, parties.data, byId)
-    report.confirmations = { requests: c.requests, reminders: c.reminders, overdue: c.overdue, dayBefore: c.dayBefore }
+    report.confirmations = { threeDay: c.threeDay, dayBefore: c.dayBefore }
     if (c.unavailable) down('confirmations')
 
     const cv = await runCovers(ctx, byId)
@@ -698,9 +666,13 @@ export async function runCrewJobs(ctx: JobsCtx): Promise<JobsReport> {
 
     report.availability = await runAvailabilityReminder(ctx, members.data)
 
-    const pk = await runPickAutoApprove(ctx)
-    report.picksAutoApproved = pk.approved
-    if (pk.unavailable) down('picks')
+    // The manager finalizes the staffing (Adam, 2026-11-07): nobody is put on a party by the tick
+    // unless CREW_PICK_AUTOAPPROVE is switched on.
+    if (crewPickAutoApproveEnabled()) {
+      const pk = await runPickAutoApprove(ctx)
+      report.picksAutoApproved = pk.approved
+      if (pk.unavailable) down('picks')
+    }
 
     const dg = await runPickDigest(ctx)
     report.pickDigests = dg.sent

@@ -6,19 +6,22 @@ import { useRouter } from 'next/navigation'
 type Answer = 'work' | 'unavailable' | 'standby'
 
 const notes = (who: string): Record<Answer | 'none', string> => ({
-  none: `Answering doesn't lock you in. ${who} picks the crew fairly.`,
-  work: `You asked to work this. ${who} will let you know. It doesn't lock you in, and you can change your answer until the crew is picked.`,
+  none: `Tell ${who} if you can work this one. Answering doesn't put you on it; the crew is picked fairly and you'll hear when it's set.`,
+  work: `You said you're available. ${who} will let you know when the crew is set. You can change your answer until then.`,
   unavailable: `You told ${who} you can't work this one. Tap it again to take that back.`,
-  standby: "You're on standby. If a spot opens you'll be asked, in turn. Tap it again to take that back.",
+  standby: "You're on standby. If a spot opens you'll be asked first.",
 })
 
 /**
- * The three answers on a party the manager picks: "I want to work this",
- * "Unavailable to work", "Add me as standby". None of them takes a spot. Tapping
- * the answer you already gave takes it back. The server (`/api/crew/respond`)
- * refuses only what the person could not do anyway.
+ * The two answers on a party that still has a spot: "Available to work" and "Not
+ * available". Neither puts the person on it (the manager does that, or puts them on
+ * standby, from her side). Tapping the answer you already gave takes it back. The
+ * server (`/api/crew/respond`) refuses only what the person could not do anyway.
+ *
+ * `standby` is not something a person picks any more; it is shown (not pressed) when
+ * the manager put them there, and either button moves them out of it.
  */
-export default function ResponseButtons(props: { partyId: string; current: Answer | null; canWork: boolean; noun: 'party' | 'shift'; managerName: string }) {
+export default function ResponseButtons(props: { partyId: string; current: Answer | null; canWork: boolean; managerName: string }) {
   const router = useRouter()
   const [current, setCurrent] = useState<Answer | null>(props.current)
   const [busy, setBusy] = useState(false)
@@ -55,9 +58,8 @@ export default function ResponseButtons(props: { partyId: string; current: Answe
 
   return (
     <div className="crew-resp">
-      {props.canWork && btn('work', `I want to work this ${props.noun}`)}
-      {btn('unavailable', 'Unavailable to work')}
-      {btn('standby', props.canWork ? 'Add me as standby' : 'Add me to the waitlist')}
+      {(props.canWork || current === 'work') && btn('work', 'Available to work')}
+      {btn('unavailable', 'Not available')}
       <p className="crew-resp-note" role="status">{notes(props.managerName)[current ?? 'none']}</p>
       {error && <p role="alert" className="crew-small" style={{ color: 'var(--c-alert-ink)', margin: 0 }}>{error}</p>}
     </div>

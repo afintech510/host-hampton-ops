@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import { CalendarDays, Clock, MapPin, Users } from 'lucide-react'
-import AcceptAssignment from './AcceptAssignment'
 import ActionButton from './ActionButton'
 import CommitButton from './CommitButton'
 import FindCover from './FindCover'
@@ -54,11 +53,8 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
           {linkToDetail ? <Link className="crew-link crew-party-link" href={`/crew/parties/${v.id}`} prefetch>{title}</Link> : title}
         </h3>
         {v.status === 'cancelled' && <span className="crew-chip crew-alert">Cancelled</span>}
-        {v.mySlot && v.status !== 'cancelled' && (
-          v.mySlot.confirmed
-            ? <span className="crew-chip crew-ok">Confirmed</span>
-            : <span className="crew-chip crew-warn">Needs your acceptance</span>
-        )}
+        {/* Being put on a party is the confirmation: there is no "needs your acceptance" state. */}
+        {v.mySlot && v.status !== 'cancelled' && <span className="crew-chip crew-ok">Confirmed</span>}
       </div>
       {v.work && <p className="crew-kind"><span aria-hidden="true">{v.work.emoji}</span> {v.work.label}</p>}
       <div className="crew-meta">
@@ -91,13 +87,9 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
       )}
 
       <div className="crew-row">
-        {b.needsConfirm && v.mySlot && (
-          <AcceptAssignment slotId={v.mySlot.slotId} partyTitle={title} dayLabel={partyDayLabel(v.startsAt)}
-            shiftLabel={partyTimeLabel(v.shiftStartsAt, v.shiftEndsAt)} roleWord={roleWord(v.mySlot.role)} calUrl={b.calUrl} />
-        )}
-        {!v.mySlot && b.upcoming && v.selection.mode === 'pick' && (
+        {!v.mySlot && b.upcoming && v.selection.mode === 'pick' && (spots.length > 0 || v.selection.myResponse !== null) && (
           <ResponseButtons partyId={v.id} current={v.selection.myResponse} canWork={!b.claimBlock && claimTargets(spots).length > 0}
-            noun={v.work ? 'shift' : 'party'} managerName={TENANT.people.customerSignoff} />
+            managerName={TENANT.people.customerSignoff} />
         )}
         {!v.mySlot && b.upcoming && v.selection.mode !== 'pick' && !b.claimBlock && claimTargets(spots).map(s => (
           <CommitButton key={s.slotId} slotId={s.slotId} partyTitle={title}

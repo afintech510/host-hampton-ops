@@ -176,7 +176,9 @@ describe('N2: notifyMember asks first, claims second, defers on quiet hours', ()
   it('the disclosure rides on the first text, through its own dedupe row', () => {
     const d = bodyOf(notify, 'deliverSms')
     expect(d).toMatch(/dedupe_key: `sms_disclosure:\$\{member\.id\}`/)
-    expect(d).toMatch(/gsm7Sanitize\(carry \? `\$\{text\} \$\{SMS_DISCLOSURE\}` : text\)/)
+    // Our links are shortened first (Adam, 2026-11-07), then the disclosure is added to what is sent.
+    expect(d).toMatch(/const shortened = await shortenCrewLinks\(ctx\.sb, text, ctx\.now\)/)
+    expect(d).toMatch(/gsm7Sanitize\(carry \? `\$\{shortened\} \$\{SMS_DISCLOSURE\}` : shortened\)/)
     expect(d).toMatch(/smsSegmentInfo\(body\)/)
   })
 })

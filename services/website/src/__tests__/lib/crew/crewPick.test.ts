@@ -8,10 +8,12 @@ import fs from 'fs'
 import path from 'path'
 import { DEFAULT_SETTINGS, type CrewSettings } from '@/lib/crew/rules'
 import {
-  approveAllRecommended, approvePicks, loadPickPanel, notifyPickRound, rankVolunteers, recommendPicks, saveResponse,
+  approveAllRecommended, approvePicks, loadPickPanel, moveToStandby, notifyPickRound, rankVolunteers, recommendPicks, saveResponse,
   type PickCandidate, type RankedVolunteer,
 } from '@/lib/crew/pick'
-import { publishParty } from '@/lib/crew/adminActions'
+import { assignMember, publishParty } from '@/lib/crew/adminActions'
+import { crewPickAutoApproveEnabled } from '@/lib/crew/settings'
+import { templates } from '@/lib/crew/templates'
 import { runCrewAsks, runPickAutoApprove, runPickDigest, type JobsCtx } from '@/lib/crew/jobs'
 import type { CrewSenders } from '@/lib/crew/notify'
 import { fakeAdminAssign, fakeCrewDb, type FakeCrewDb } from '../../helpers/fakeCrewDb'
@@ -241,9 +243,9 @@ describe('saveResponse: nothing locks', () => {
   it('"work" needs a spot they could take: none open, or only a Lead spot and they cannot lead', async () => {
     const db = world({ slots: [] })
     db.tables.crew_slots = [slot('l', 'p1', null, 'lead')]
-    expect(await saveResponse(db.sb, S, member(db, 'b'), 'p1', 'work', NOW)).toMatchObject({ kind: 'refused', error: expect.stringMatching(/standby/) })
+    expect(await saveResponse(db.sb, S, member(db, 'b'), 'p1', 'work', NOW)).toMatchObject({ kind: 'refused', error: expect.stringMatching(/already filled/) })
     expect(await saveResponse(db.sb, S, member(db, 'a'), 'p1', 'work', NOW)).toEqual({ kind: 'ok', response: 'work' })
-    // Standby and unavailable are always allowed on a full party.
+    // Standby (the manager's answer now, still accepted by the writer) and unavailable are allowed on a full party.
     db.tables.crew_slots = [slot('x', 'p1', 'c', 'crew')]
     expect(await saveResponse(db.sb, S, member(db, 'b'), 'p1', 'standby', NOW)).toEqual({ kind: 'ok', response: 'standby' })
   })
@@ -502,7 +504,7 @@ describe('the asks on a picked party', () => {
     const bodies = rows(db, 'crew_notifications').filter(n => n.channel === 'in_app').map(n => String(n.payload?.text ?? ''))
     expect(bodies.length).toBeGreaterThan(0)
     for (const b of bodies) {
-      expect(b).toMatch(/want to work it/i)
+      expect(b).toMatch(/available to work/i)
       expect(b).not.toMatch(/claim|take a spot|take the ones/i)
     }
   })
@@ -514,8 +516,8 @@ describe('the switch', () => {
   const ENV = { ...process.env }
   afterEach(() => { process.env = ENV })
 
-  it('a party published while CREW_PICK_FLOW is on is picked; while it is off it is first come', async () => {
-    for (const [flag, want] of [['true', 'pick'], [undefined, 'first_come'], ['false', 'first_come'], ['TRUE', 'first_come']] as const) {
+  it('a party is published as picked unless CREW_PICK_FLOW is explicitly false (every party works one way, 2026-11-07)', async () => {
+    for (const [flag, want] of [['true', 'pick'], [undefined, 'pick'], ['TRUE', 'pick'], ['false', 'first_come']] as const) {
       process.env = { ...ENV }
       if (flag === undefined) delete process.env.CREW_PICK_FLOW
       else process.env.CREW_PICK_FLOW = flag
@@ -613,5 +615,115 @@ describe('runPickDigest: one message a day for the parties someone has not answe
     const before = JSON.stringify([rows(db, 'crew_slots'), rows(db, 'crew_party_responses')])
     await runPickDigest(jobs(db))
     expect(JSON.stringify([rows(db, 'crew_slots'), rows(db, 'crew_party_responses')])).toBe(before)
+  })
+})
+
+// ── The tightened flow (Adam, 2026-11-07) ───────────────────────────────────
+
+const srcOf = (...parts: string[]) => fs.readFileSync(path.join(process.cwd(), 'src', ...parts), 'utf8')
+
+describe('the manager finalizes: on the party, or in the standby pool', () => {
+  it('moveToStandby records standby as the answer and a live standby row, and takes them off the ranked list', async () => {
+    const db = world(merge({ responses: asked('a', 'b') }))
+    const r = await moveToStandby(db.sb, 'p1', 'a', NOW)
+    expect(r).toMatchObject({ ok: true, result: { standbyMemberIds: ['a'], assigned: [] } })
+    expect(rows(db, 'crew_party_responses').find(x => x.member_id === 'a')!.response).toBe('standby')
+    expect(rows(db, 'crew_standbys').filter(x => !x.withdrawn_at).map(x => x.member_id)).toEqual(['a'])
+    const panel = await loadPickPanel(db.sb, 'p1', S)
+    if (panel.kind !== 'ok' || !panel.data) throw new Error('no panel')
+    expect(panel.data.volunteers.map(v => v.memberId)).toEqual(['b'])
+    expect(panel.data.standbys.map(x => x.memberId)).toEqual(['a'])
+  })
+
+  it('it changes no spot, and doing it twice is the same as once', async () => {
+    const db = world(merge({ responses: asked('a') }))
+    const before = JSON.stringify(rows(db, 'crew_slots'))
+    await moveToStandby(db.sb, 'p1', 'a', NOW)
+    expect((await moveToStandby(db.sb, 'p1', 'a', NOW)).ok).toBe(true)
+    expect(JSON.stringify(rows(db, 'crew_slots'))).toBe(before)
+    expect(rows(db, 'crew_standbys').filter(x => !x.withdrawn_at)).toHaveLength(1)
+  })
+
+  it('refuses someone already on the party, a party that has started, the owner, a paused member and a stranger', async () => {
+    const held = world(merge({ slots: [slot('p1-x', 'p1', 'b')], responses: asked('b') }))
+    expect(await moveToStandby(held.sb, 'p1', 'b', NOW)).toMatchObject({ ok: false, status: 409, error: expect.stringMatching(/on this party/i) })
+    const over = world(merge({ responses: asked('a') }))
+    over.tables.crew_parties[0].starts_at = iso(NOW.getTime() - H)
+    expect(await moveToStandby(over.sb, 'p1', 'a', NOW)).toMatchObject({ ok: false, status: 409 })
+    const db = world({ members: [person('p', { status: 'paused' })] })
+    // Allie holds the Lead spot in this world, so she is refused as someone already on it.
+    expect(await moveToStandby(db.sb, 'p1', 'owner', NOW)).toMatchObject({ ok: false, status: 409 })
+    expect(await moveToStandby(db.sb, 'p1', 'p', NOW)).toMatchObject({ ok: false, status: 409, error: expect.stringMatching(/paused/) })
+    expect(await moveToStandby(db.sb, 'p1', 'nobody', NOW)).toMatchObject({ ok: false, status: 404 })
+    expect(await moveToStandby(db.sb, 'p1', undefined, NOW)).toMatchObject({ ok: false, status: 400 })
+    expect(rows(db, 'crew_standbys')).toHaveLength(0)
+  })
+
+  it('the admin route has a standby action that sends one round of messages', () => {
+    const src = srcOf('app', 'api', 'admin', 'crew', 'parties', '[id]', 'route.ts')
+    expect(src).toMatch(/body\?\.action === 'standby'[\s\S]{0,400}moveToStandby\(sb, params\.id, body\.memberId, now\)[\s\S]{0,300}notifyPickRound/)
+  })
+
+  it('the ranked list gives each person Put on party and Standby, and the standby pool can be put on the party', () => {
+    const page = srcOf('app', 'admin', 'crew', 'parties', '[id]', 'page.tsx')
+    expect(page).toContain('Put on party')
+    expect(page).toMatch(/onStandby\(v\.memberId, v\.name\)/)
+    expect(page).toMatch(/action: 'standby', memberId/)
+    expect(page).toContain('Standby pool')
+    // No "Not confirmed" label with nothing to do about it.
+    expect(page).not.toMatch(/Not confirmed/)
+  })
+})
+
+describe('being assigned is the confirmation', () => {
+  it('assignMember stamps confirmed_at from the assignment itself, so nothing is left "needing acceptance"', async () => {
+    const db = world()
+    expect(await assignMember(db.sb, 'p1', { slotId: 'p1-c1', memberId: 'b' }, ACTOR, S)).toEqual({ ok: true })
+    const slotRow = rows(db, 'crew_slots').find(x => x.id === 'p1-c1')!
+    expect(slotRow).toMatchObject({ status: 'assigned', member_id: 'b' })
+    expect(slotRow.confirmed_at).toBeTruthy()
+    expect(slotRow.confirmed_at).toBe(slotRow.assigned_at)
+  })
+
+  it('approving from the ranked list confirms them too', async () => {
+    const db = world(merge({ responses: asked('b', 'c') }))
+    const r = await approvePicks(db.sb, 'p1', [{ slotId: 'p1-c1', memberId: 'b' }, { slotId: 'p1-c2', memberId: 'c' }], opts)
+    if (!r.ok) throw new Error(r.error)
+    expect(rows(db, 'crew_slots').filter(x => x.status === 'assigned' && x.member_id !== 'owner').every(x => !!x.confirmed_at)).toBe(true)
+  })
+})
+
+describe('the crew see two answers, and the tick does not staff a party on its own', () => {
+  it('Available to work and Not available are the only buttons; Add me as standby and the old wording are gone', () => {
+    const src = srcOf('app', 'crew', '_components', 'ResponseButtons.tsx')
+    expect(src).toContain("'Available to work'")
+    expect(src).toContain("'Not available'")
+    expect(src.match(/\bbtn\('/g)).toHaveLength(2)
+    expect(src).not.toMatch(/Add me as standby|Add me to the waitlist|I want to work this/)
+    expect(srcOf('app', 'crew', '_components', 'PartyCard.tsx')).toMatch(/<ResponseButtons partyId=\{v\.id\}/)
+  })
+
+  it('every picked-party text asks "available to work or not", never "stand by"', () => {
+    const ref = { theme: 'Glow Party', dayLabel: 'Sat Nov 14', timeLabel: '1-4 PM', url: 'https://www.hosthampton.com/crew/parties/x' }
+    const all = [templates.newPartyPick(ref), templates.pickReminder(ref), templates.partiesDigestPick(2, ref.url), templates.pickDigest('Ava', [{ theme: 'Glow', dayLabel: 'Sat' }], 0, ref.url)]
+    for (const m of all) {
+      for (const body of [m.sms, m.email.text, m.inApp]) {
+        expect(body).toMatch(/available/i)
+        expect(body).not.toMatch(/stand by|can't, or|want to work it/i)
+      }
+    }
+  })
+
+  it('the tick approving a recommendation by itself is OFF unless CREW_PICK_AUTOAPPROVE is exactly true', () => {
+    const ENV = process.env
+    try {
+      for (const [v, want] of [[undefined, false], ['false', false], ['TRUE', false], ['true', true]] as const) {
+        process.env = { ...ENV }
+        if (v === undefined) delete process.env.CREW_PICK_AUTOAPPROVE
+        else process.env.CREW_PICK_AUTOAPPROVE = v
+        expect(crewPickAutoApproveEnabled()).toBe(want)
+      }
+    } finally { process.env = ENV }
+    expect(srcOf('lib', 'crew', 'jobs.ts')).toMatch(/if \(crewPickAutoApproveEnabled\(\)\) \{\s*const pk = await runPickAutoApprove\(ctx\)/)
   })
 })

@@ -434,8 +434,13 @@ export function confirmationSchedule(startsAt: Date, s: CrewSettings = DEFAULT_S
     reminderAt: at(s.confirmations.reminderHoursBefore),
     dueAt: at(s.confirmations.dueHoursBefore),
     dayBeforeAt: at(s.confirmations.dayBeforeHours),
+    /** The first work reminder (Adam, 2026-11-07): 3 days before. The second is `dayBeforeAt`, 24 hours before. */
+    threeDayAt: at(THREE_DAY_HOURS),
   }
 }
+
+/** Hours before the party that the "you're working it" reminder goes: 3 days. */
+export const THREE_DAY_HOURS = 72
 
 // ---------------------------------------------------------------------------
 // Local time, availability, overlap, hours on record

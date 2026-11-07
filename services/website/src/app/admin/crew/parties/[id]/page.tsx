@@ -223,7 +223,9 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
         <section className="lg:col-span-2 space-y-5">
           {d.pick && (
             <PickCard pick={d.pick} busy={busy} live={live}
-              onApprove={() => assignAll(d.pick!.recommendation.map(r => ({ slotId: r.slotId, memberId: r.memberId, who: r.name, force: false })))} />
+              onApprove={() => assignAll(d.pick!.recommendation.map(r => ({ slotId: r.slotId, memberId: r.memberId, who: r.name, force: false })))}
+              onAssign={(slotId, memberId, who) => assignAll([{ slotId, memberId, who, force: false }])}
+              onStandby={(memberId, who) => act({ action: 'standby', memberId }, `${who} is on standby.`)} />
           )}
           <div className="bg-white rounded-2xl shadow-sm p-5">
             <div className="mb-4">
@@ -349,56 +351,102 @@ function lastWorkedLabel(iso: string | null): string {
 }
 
 /**
- * Equitable scheduling: everyone who asked to work this party, best placed first
- * (worked least recently, then fewest in the last 30 days), with the system's
- * recommendation for the open spots. Approving it is one tap; anyone else can be
- * chosen with the spot menus below, and either way the rest who asked become
- * standby once the party is full.
+ * Everyone who said they are available to work this party, best placed first (worked
+ * least recently, then fewest in the last 30 days), with the system's recommendation for
+ * the open spots. The manager finalizes it: each person goes ON the party (a spot) or into
+ * the STANDBY pool, one tap each, or "Approve recommended" does the whole recommendation.
+ * Being put on a spot is the confirmation; nobody is asked to accept it.
  */
-function PickCard({ pick, busy, live, onApprove }: { pick: PickPanelView; busy: boolean; live: boolean; onApprove: () => void }) {
+function PickCard({ pick, busy, live, onApprove, onAssign, onStandby }: {
+  pick: PickPanelView; busy: boolean; live: boolean; onApprove: () => void
+  onAssign: (slotId: string, memberId: string, name: string) => void; onStandby: (memberId: string, name: string) => void
+}) {
   const rec = new Map(pick.recommendation.map(r => [r.memberId, r.role]))
   const names = (l: { name: string }[]) => l.map(x => x.name).join(', ')
+  /** The spot a person goes on: the one recommended for them, else a crew spot, else (a Lead) the Lead spot. */
+  const spotFor = (memberId: string, canLead: boolean): string | null =>
+    pick.recommendation.find(r => r.memberId === memberId)?.slotId
+    ?? pick.openSpots.find(sp => sp.role === 'crew')?.slotId
+    ?? (canLead ? pick.openSpots.find(sp => sp.role === 'lead')?.slotId ?? null : null)
+  const noSpot = pick.openSpots.length === 0
   return (
     <div className="bg-white rounded-2xl shadow-sm p-5">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
-        <h2 className="font-semibold text-hampton-navy">Who asked to work this ({pick.volunteers.length + pick.conflicted.length})</h2>
+        <h2 className="font-semibold text-hampton-navy">Available to work this ({pick.volunteers.length + pick.conflicted.length})</h2>
         {live && pick.openSpots.length > 0 && pick.recommendation.length > 0 && (
-          <button disabled={busy} onClick={onApprove} className={BTN_PRIMARY}>
+          <button disabled={busy} onClick={onApprove} className={`${BTN_PRIMARY} w-full sm:w-auto`}>
             Approve recommended ({pick.recommendation.length})
           </button>
         )}
       </div>
       <p className="text-hampton-navy/50 text-xs mb-3">
-        Ranked by who worked least recently, then who has fewer parties in the 30 days around this one. Answering faster counts for nothing.
-        Anyone approved for another party that is ahead counts as recent.
+        Put each person on the party or on standby. Ranked by who worked least recently, then who has fewer parties in the 30 days around this one;
+        answering faster counts for nothing. Anyone approved for another party that is ahead counts as recent.
       </p>
       {pick.volunteers.length === 0 ? (
-        <p className="text-hampton-navy/50 text-sm">Nobody has asked to work this one yet.</p>
+        <p className="text-hampton-navy/50 text-sm">Nobody has said they are available yet.</p>
       ) : (
-        <ol className="divide-y divide-hampton-pink/10 text-sm">
-          {pick.volunteers.map(v => (
-            <li key={v.memberId} className="py-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="w-6 text-hampton-navy/40 font-semibold">{v.rank}</span>
-              <span className="font-semibold text-hampton-navy">{v.name}</span>
-              {v.canLead && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-hampton-navy text-[#F6F1EB]">Lead</span>}
-              <span className="text-hampton-navy/60">{lastWorkedLabel(v.lastWorkedAt)} · {v.recent} in 30 days</span>
-              {rec.has(v.memberId) && (
-                <span className="ml-auto text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
-                  ★ recommended: {rec.get(v.memberId) === 'lead' ? 'Lead spot' : 'crew spot'}
-                </span>
-              )}
-            </li>
-          ))}
+        <ol className="space-y-3 text-sm">
+          {pick.volunteers.map(v => {
+            const spot = spotFor(v.memberId, v.canLead)
+            return (
+              <li key={v.memberId} className="rounded-xl bg-[#F6F1EB]/60 p-3">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="w-5 text-hampton-navy/40 font-semibold">{v.rank}</span>
+                  <span className="font-semibold text-hampton-navy">{v.name}</span>
+                  {v.canLead && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-hampton-navy text-[#F6F1EB]">Lead</span>}
+                  {rec.has(v.memberId) && (
+                    <span className="ml-auto text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
+                      ★ recommended: {rec.get(v.memberId) === 'lead' ? 'Lead spot' : 'crew spot'}
+                    </span>
+                  )}
+                </div>
+                <div className="text-hampton-navy/60 text-xs mt-0.5 pl-8">{lastWorkedLabel(v.lastWorkedAt)} · {v.recent} in 30 days</div>
+                {live && (
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <button disabled={busy || !spot} title={spot ? '' : 'No open spot for them'} onClick={() => spot && onAssign(spot, v.memberId, v.name)} className={BTN_PRIMARY}>
+                      Put on party
+                    </button>
+                    <button disabled={busy} onClick={() => onStandby(v.memberId, v.name)} className={BTN_GHOST}>
+                      Standby
+                    </button>
+                  </div>
+                )}
+              </li>
+            )
+          })}
         </ol>
+      )}
+      {live && noSpot && pick.volunteers.length > 0 && (
+        <p className="text-hampton-navy/50 text-xs mt-2">Every spot is filled, so Standby is the only choice. Add a spot below to put more people on.</p>
       )}
       {pick.conflicted.length > 0 && (
         <p className="text-amber-800 bg-amber-50 rounded-lg p-3 text-xs mt-3">
-          Asked, but now busy or marked unavailable then, so not recommended: {names(pick.conflicted)}.
+          Said they are available, but now busy or marked unavailable then, so not recommended: {names(pick.conflicted)}.
         </p>
       )}
+      {pick.standbys.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-hampton-pink/10">
+          <p className="text-xs font-semibold text-hampton-navy mb-1">Standby pool ({pick.standbys.length})</p>
+          <ul className="text-sm space-y-1">
+            {pick.standbys.map(sb => {
+              const spot = spotFor(sb.memberId, false)
+              return (
+                <li key={sb.memberId} className="flex items-center justify-between gap-3">
+                  <span className="text-hampton-navy">{sb.name}</span>
+                  {live && spot && (
+                    <button disabled={busy} onClick={() => onAssign(spot, sb.memberId, sb.name)} className="text-sm font-semibold underline text-hampton-navy disabled:opacity-50 min-h-[40px] px-1">
+                      Put on party
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
       <div className="mt-3 pt-3 border-t border-hampton-pink/10 text-xs text-hampton-navy/70 space-y-1">
-        {pick.standbys.length > 0 && <p><strong>Standby:</strong> {names(pick.standbys)}</p>}
-        {pick.unavailable.length > 0 && <p><strong>Unavailable:</strong> {names(pick.unavailable)}</p>}
+        {pick.unavailable.length > 0 && <p><strong>Not available:</strong> {names(pick.unavailable)}</p>}
         {pick.noResponse.length > 0 && <p><strong>Not answered yet:</strong> {names(pick.noResponse)}</p>}
       </div>
     </div>
@@ -459,9 +507,6 @@ function SlotRow({ slot, members, busy, live, pick, taken, onPick, onUnassign, o
           <p className="font-semibold text-hampton-navy leading-tight break-words">{slot.memberName}</p>
           <div className="flex flex-wrap gap-1.5 mt-1">
             {lead && <span className={`${CHIP} bg-hampton-navy text-[#F6F1EB]`}>Party Lead</span>}
-            {!slot.isOwner && (slot.confirmed
-              ? <span className={`${CHIP} bg-emerald-100 text-emerald-800`}>✓ Confirmed</span>
-              : <span className={`${CHIP} bg-amber-100 text-amber-800`}>Not confirmed</span>)}
             {via && <span className={`${CHIP} bg-white text-hampton-navy/60 border border-hampton-pink/20`}>{via}</span>}
             {slot.status !== 'assigned' && <span className={`${CHIP} bg-violet-100 text-violet-800`}>{slot.status.replace(/_/g, ' ')}</span>}
           </div>

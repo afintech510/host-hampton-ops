@@ -168,21 +168,24 @@ describe('the assignment message', () => {
   const p = party('p1', 10) as any
   const ref = withCalendar(partyRefFor(p, S, undefined, 'crew'), p, { id: SLOT, role: 'crew', member_id: 'm' }, S)
 
-  it('names the whole shift, says Accept Assignment, and carries the calendar link on every channel', () => {
+  it('names the whole shift, asks for nothing, and carries the calendar link on every channel', () => {
     expect(ref.shiftLabel).toBeTruthy()
     expect(ref.shiftLabel).not.toBe(ref.timeLabel)
     const m = templates.assignedByManager(ref)
     for (const body of [m.sms, m.email.text, m.inApp]) {
-      expect(body).toContain('Accept Assignment')
+      // Being put on a party IS the confirmation (Adam, 2026-11-07): no Accept, no Y, no "please confirm".
+      expect(body).not.toMatch(/accept|confirm|reply y|yes or no/i)
+      expect(body).toMatch(/You're on /)
     }
     expect(m.sms).toContain(ref.shiftLabel)
     expect(m.sms).toContain(ref.calUrl!)
     expect(m.email.text).toContain(ref.calUrl!)
   })
 
-  it('the confirmation request and the confirmation also carry it', () => {
-    expect(templates.confirmRequest(ref, 'Friday').sms).toContain(ref.calUrl!)
+  it('the confirmation text still carries the calendar link, and there is no longer a confirmation REQUEST', () => {
     expect(templates.confirmed(ref).sms).toContain(ref.calUrl!)
+    expect((templates as Record<string, unknown>).confirmRequest).toBeUndefined()
+    expect((templates as Record<string, unknown>).confirmReminder).toBeUndefined()
   })
 
   it('without a link there is no empty "Add to your calendar" line', () => {
@@ -230,7 +233,7 @@ describe('notifyAssigned', () => {
 
 // ── The card ────────────────────────────────────────────────────────────────
 
-describe('needsConfirm and the calendar link on the board', () => {
+describe('there is nothing to accept, and the calendar link on the board', () => {
   async function board(db: FakeCrewDb) {
     const member = rows(db, 'crew_members').find(m => m.id === 'a')
     const ctx = await loadViewerContext(db.sb, member, S, NOW)
@@ -240,22 +243,19 @@ describe('needsConfirm and the calendar link on the board', () => {
     return b.data
   }
 
-  it('a spot the manager assigned needs acceptance now, however far out the party is', async () => {
-    const b = await board(world([slot(SLOT, 'p1', 'a', { assigned_via: 'admin' })]))
+  it('a spot the manager assigned is confirmed on the board, with no stamp needed, and offers the calendar', async () => {
+    const b = await board(world([slot(SLOT, 'p1', 'a', { assigned_via: 'admin', confirmed_at: null })]))
     expect(b).toHaveLength(1)
-    expect(b[0].needsConfirm).toBe(true)
+    expect(b[0]).not.toHaveProperty('needsConfirm')
+    expect(b[0].view.mySlot).toMatchObject({ status: 'assigned', confirmed: true })
     expect(b[0].calUrl).toContain('/crew/cal/')
   })
 
-  it('a spot I claimed myself waits for the confirmation request, as before', async () => {
-    const b = await board(world([slot(SLOT, 'p1', 'a', { assigned_via: 'claim' })]))
-    expect(b[0].needsConfirm).toBe(false)
-  })
-
-  it('once accepted it no longer asks, and still offers the calendar', async () => {
-    const b = await board(world([slot(SLOT, 'p1', 'a', { assigned_via: 'admin', confirmed_at: '2026-11-02T12:00:00Z' })]))
-    expect(b[0].needsConfirm).toBe(false)
-    expect(b[0].calUrl).not.toBeNull()
+  it('a spot I took myself or covered is confirmed too: there is no "Needs your acceptance" with nothing to tap', async () => {
+    for (const via of ['claim', 'cover']) {
+      const b = await board(world([slot(SLOT, 'p1', 'a', { assigned_via: via, confirmed_at: null })]))
+      expect(b[0].view.mySlot?.confirmed).toBe(true)
+    }
   })
 
   it('someone who holds nothing gets no link, and the view carries the shift, not the party hours', async () => {
@@ -348,9 +348,10 @@ describe('GET /crew/cal/[token]', () => {
 describe('the screens', () => {
   const src = (f: string) => fs.readFileSync(path.join(__dirname, '../../../', f), 'utf8')
 
-  it('the card shows the SHIFT and opens Accept Assignment, not a bare confirm button', () => {
+  it('the card shows the SHIFT, and there is no accept dialog or "needs your acceptance" label', () => {
     const card = src('app/crew/_components/PartyCard.tsx')
-    expect(card).toContain('<AcceptAssignment')
+    expect(card).not.toContain('AcceptAssignment')
+    expect(card).not.toMatch(/Needs your acceptance/)
     expect(card).not.toContain("I'll be there")
     expect(card).toMatch(/partyTimeLabel\(v\.shiftStartsAt, v\.shiftEndsAt\)/)
     expect(card).toMatch(/partyTimeLabel\(s\.shiftStartsAt, s\.shiftEndsAt\)/)
@@ -358,24 +359,11 @@ describe('the screens', () => {
     expect(card).not.toMatch(/partyTimeLabel\(v\.startsAt, v\.endsAt\)/)
   })
 
-  it('only the dialog\'s own confirm button accepts', () => {
-    const c = src('app/crew/_components/AcceptAssignment.tsx')
-    expect(c).toContain('Accept Assignment')
-    expect(c).toContain('Yes, accept assignment')
-    expect(c.match(/fetch\(/g) ?? []).toHaveLength(1)
-    // The opening button must not post: it only opens the dialog.
-    const opener = /<button[^>]*onClick=\{\(\) => \{[^}]*setOpen\(true\)[^}]*\}\}[^>]*>Accept Assignment<\/button>/.exec(c)
-    expect(opener).not.toBeNull()
-    expect(opener![0]).not.toContain('accept()')
-    expect(c).toContain('?format=google')
-    expect(c).toContain('?format=ics')
-  })
-
-  it('the home page lists assignments to accept as full cards', () => {
+  it('the accept dialog is gone, and the home page has no list of assignments to accept', () => {
+    expect(fs.existsSync(path.join(__dirname, '../../../app/crew/_components/AcceptAssignment.tsx'))).toBe(false)
     const page = src('app/crew/page.tsx')
-    expect(page).toContain('Accept your assignments')
-    expect(page).not.toContain("I'll be there")
-    expect(page).toMatch(/confirm\.map\(b => <PartyCard/)
+    expect(page).not.toContain('Accept your assignments')
+    expect(page).not.toMatch(/needsConfirm|Accept Assignment/)
   })
 
   it('the detail page offers the calendar to someone who holds a spot', () => {

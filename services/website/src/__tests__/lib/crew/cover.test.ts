@@ -10,6 +10,7 @@ import { assignCover, autoOfferToEveryone, claimCover, coverOptions, dropAnyway,
 import { runConfirmations, runCovers, runCrewJobs, runPartyAlerts, type JobsCtx } from '@/lib/crew/jobs'
 import { handleCrewInboundSms, isConfirmReply } from '@/lib/crew/inbound'
 import type { CrewSenders } from '@/lib/crew/notify'
+import { templates } from '@/lib/crew/templates'
 import { fakeCoverRpc, fakeCrewDb, type FakeCrewDb } from '../../helpers/fakeCrewDb'
 import { openCoverNobodyToAsk } from '../../helpers/openCover'
 
@@ -305,31 +306,42 @@ describe('the cron: confirmations and alerts', () => {
   const byId = () => new Map(db.tables.crew_members.map(m => [m.id, m as any]))
   const parties = () => [{ party: db.tables.crew_parties[0] as any, slots: db.tables.crew_slots as any[] }]
 
-  it('requests at 120 h (once), reminds only after 12 h, alerts Allie after the deadline — never the owner', async () => {
-    NOW = new Date(Date.parse(START) - 119 * H)
-    expect((await runConfirmations(jobs(), parties(), byId())).requests).toBe(1)
-    expect((await runConfirmations(jobs(), parties(), byId())).requests).toBe(0)
-    NOW = new Date(Date.parse(START) - 95 * H)
-    expect((await runConfirmations(jobs(), parties(), byId())).reminders).toBe(1)
+  it('reminds 3 days before (once) and never asks anyone to confirm, never alerts about confirming, never the owner', async () => {
+    NOW = new Date(Date.parse(START) - 100 * H)
+    expect((await runConfirmations(jobs(), parties(), byId())).threeDay).toBe(0)
     NOW = new Date(Date.parse(START) - 71 * H)
-    expect((await runConfirmations(jobs(), parties(), byId())).overdue).toBe(1)
-    expect((await runConfirmations(jobs(), parties(), byId())).overdue).toBe(0)
+    expect((await runConfirmations(jobs(), parties(), byId())).threeDay).toBe(1)
+    expect((await runConfirmations(jobs(), parties(), byId())).threeDay).toBe(0)
+    // Nothing between the two reminders, and no confirmation traffic of any kind.
+    NOW = new Date(Date.parse(START) - 40 * H)
+    expect(await runConfirmations(jobs(), parties(), byId())).toMatchObject({ threeDay: 0, dayBefore: 0 })
+    expect(keys().some(k => /confirm_request|confirm_reminder|unconfirmed/.test(k))).toBe(false)
     expect(notes(r => r.member_id === 'allie')).toHaveLength(0)
   })
 
-  it('Allie on the Lead spot, unconfirmed, is never asked and never reported to herself', async () => {
+  it("the 3-day reminder is a statement, not a question: 'you're working', no Y, no confirm", () => {
+    const t = templates.threeDay({ theme: 'Glow Party', dayLabel: 'Sat Nov 14', timeLabel: '1-4 PM', shiftLabel: '12:30-4:30 PM', url: 'https://www.hosthampton.com/crew/parties/x' } as any)
+    for (const body of [t.sms, t.email.text, t.inApp]) {
+      expect(body).toMatch(/you're working Glow Party/)
+      expect(body).not.toMatch(/confirm|reply y|yes or no|accept/i)
+    }
+  })
+
+  it('Allie on the Lead spot is never reminded or reported to herself', async () => {
     db.tables.crew_slots.find(s => s.id === 's-lead').confirmed_at = null
-    NOW = new Date(Date.parse(START) - 119 * H)
+    NOW = new Date(Date.parse(START) - 71 * H)
     await runConfirmations(jobs(), parties(), byId())
-    NOW = new Date(Date.parse(START) - 60 * H)
+    NOW = new Date(Date.parse(START) - 23 * H)
     await runConfirmations(jobs(), parties(), byId())
     expect(keys().filter(k => k.includes('s-lead'))).toEqual([])
   })
 
-  it('a cron that first runs AFTER the reminder time sends the request, not request + reminder at once', async () => {
-    NOW = new Date(Date.parse(START) - 90 * H)
-    const r = await runConfirmations(jobs(), parties(), byId())
-    expect(r).toMatchObject({ requests: 1, reminders: 0, overdue: 0 })
+  it('a cron that first runs inside the 3-day window still sends it once, and one that first runs after the window sends nothing', async () => {
+    NOW = new Date(Date.parse(START) - 67 * H)
+    expect(await runConfirmations(jobs(), parties(), byId())).toMatchObject({ threeDay: 1 })
+    seed()
+    NOW = new Date(Date.parse(START) - 60 * H)
+    expect(await runConfirmations(jobs(), parties(), byId())).toMatchObject({ threeDay: 0 })
   })
 
   it('"tomorrow" goes only inside its window, and only to someone on it before then', async () => {
@@ -416,12 +428,12 @@ describe('the cron: confirmations and alerts', () => {
   })
 
   it('test scope touches TEST parties only', async () => {
-    NOW = new Date(Date.parse(START) - 119 * H)
-    expect((await runConfirmations(jobs('test'), parties(), byId())).requests).toBe(0)
+    NOW = new Date(Date.parse(START) - 71 * H)
+    expect((await runConfirmations(jobs('test'), parties(), byId())).threeDay).toBe(0)
     db.tables.crew_parties[0] = { ...db.tables.crew_parties[0], booking_id: null, title: 'TEST — Glow' }
-    expect((await runConfirmations(jobs('test'), parties(), byId())).requests).toBe(0) // A is not a test member
+    expect((await runConfirmations(jobs('test'), parties(), byId())).threeDay).toBe(0) // A is not a test member
     member('a').is_test = true
-    expect((await runConfirmations(jobs('test'), [{ party: db.tables.crew_parties[0] as any, slots: db.tables.crew_slots as any[] }], byId())).requests).toBe(1)
+    expect((await runConfirmations(jobs('test'), [{ party: db.tables.crew_parties[0] as any, slots: db.tables.crew_slots as any[] }], byId())).threeDay).toBe(1)
   })
 })
 

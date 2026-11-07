@@ -12,8 +12,8 @@
  *
  * Nothing here sends anything. A message to crew is Phase 4.
  *
- * `publishParty` also fixes the party's SELECTION MODE for good: 'pick' while CREW_PICK_FLOW
- * is on (crew say what they want and the manager approves), else 'first_come'.
+ * `publishParty` also fixes the party's SELECTION MODE for good: 'pick' (crew say Available
+ * or Not available and the manager finalizes), unless CREW_PICK_FLOW is explicitly `false`.
  */
 
 import type { getSupabase } from '@/lib/supabase'
@@ -303,7 +303,18 @@ export async function assignMember(
   const r = await adminAssign(sb, slot.id, member.id, actor)
   if (r.kind !== 'ok') return refuse(500, r.error)
   switch (r.result) {
-    case 'assigned': return { ok: true }
+    case 'assigned': {
+      // Being put on a party IS the confirmation (Adam, 2026-11-07): nobody is asked to accept it,
+      // so a spot can never sit at "needs acceptance" with no way to finish it. Stamped from the
+      // spot's own assigned_at, and only if still unset, so a retry changes nothing.
+      const { data: placed, error: placedErr } = await sb.from('crew_slots').select('assigned_at').eq('id', slot.id).maybeSingle()
+      if (placedErr) console.error(`crew/assign: could not read the assignment time: ${placedErr.message}`)
+      const { error: confErr } = await sb.from('crew_slots')
+        .update({ confirmed_at: (placed as { assigned_at: string | null } | null)?.assigned_at ?? new Date().toISOString() })
+        .eq('id', slot.id).eq('member_id', member.id).eq('status', 'assigned').is('confirmed_at', null).select('id')
+      if (confErr) console.error(`crew/assign: could not stamp the confirmation: ${confErr.message}`)
+      return { ok: true }
+    }
     case 'not_lead': return refuse(409, `${member.first_name} is not a Party Lead.`)
     case 'already_on_party': return refuse(409, `${member.first_name} is already on this party.`)
     case 'inactive': return refuse(409, `${member.first_name} is paused or removed.`)

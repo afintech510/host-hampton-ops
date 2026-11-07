@@ -243,17 +243,21 @@ describe('assigning, including Allie as Lead', () => {
     const o = await loadAdminOverview(db.sb, NOW, S)
     if (o.kind !== 'ok') throw new Error(o.error)
     const row = o.data.parties.find(p => p.id === P)!
-    expect(row).toMatchObject({ staffed: 1, needed: 3, leadFilled: true, unconfirmed: 0 })
+    expect(row).toMatchObject({ staffed: 1, needed: 3, leadFilled: true })
+    expect(row).not.toHaveProperty('unconfirmed')
     expect(row.crew).toEqual([{ firstName: 'Allie', role: 'lead', confirmed: true, isOwner: true }])
   })
 
-  it('Allie is never counted as unconfirmed, even on a row that somehow lacks confirmed_at', async () => {
+  it('a held spot is confirmed even on a row that lacks confirmed_at: being put on it is the confirmation, and nothing alerts', async () => {
     const db = partyDb()
     Object.assign(db.tables.crew_slots.find(s => s.id === 'lead')!, { status: 'assigned', member_id: 'owner', confirmed_at: null })
     Object.assign(db.tables.crew_slots.find(s => s.id === 'c1')!, { status: 'assigned', member_id: 'ava', confirmed_at: null })
     const o = await loadAdminOverview(db.sb, NOW, S)
     if (o.kind !== 'ok') throw new Error(o.error)
-    expect(o.data.parties.find(p => p.id === P)).toMatchObject({ staffed: 2, unconfirmed: 1 })
+    const row = o.data.parties.find(p => p.id === P)!
+    expect(row).toMatchObject({ staffed: 2 })
+    expect(row.crew.every(c => c.confirmed)).toBe(true)
+    expect(o.data.alerts.some(a => a.kind === 'unconfirmed')).toBe(false)
   })
 
   it('a member who cannot lead is refused the Lead spot before the database is asked', async () => {

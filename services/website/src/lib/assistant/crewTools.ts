@@ -291,7 +291,6 @@ async function listParties(sb: Supa, input: Record<string, unknown>, s: CrewSett
         status: p.status,
         spots: `${p.staffed} of ${p.needed} filled`,
         lead_filled: p.leadFilled,
-        unconfirmed: p.unconfirmed,
         flags: p.flags.map(flagText),
         crew: p.crew.map(c => ({ name: c.firstName, role: c.role, confirmed: c.confirmed })),
       })),

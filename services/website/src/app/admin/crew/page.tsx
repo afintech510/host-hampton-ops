@@ -32,7 +32,6 @@ interface PartyRow {
   needed: number
   staffed: number
   leadFilled: boolean
-  unconfirmed: number
   available: number
   crew: { firstName: string; role: 'lead' | 'crew'; confirmed: boolean; isOwner: boolean }[]
 }
@@ -48,7 +47,7 @@ interface Overview {
   switches: { crewEnabled: boolean; smsEnabled: boolean; testLogin: boolean }
 }
 
-type Filter = 'all' | 'needs' | 'unconfirmed' | 'drafts'
+type Filter = 'all' | 'needs' | 'drafts'
 
 const SEVERITY: Record<Alert['severity'], string> = {
   urgent: 'border-l-4 border-red-500 bg-red-50 text-red-900',
@@ -91,7 +90,7 @@ function PartyBits({ p }: { p: PartyRow }) {
 }
 
 const crewNames = (p: PartyRow) =>
-  p.crew.map(c => `${c.firstName}${c.role === 'lead' ? ' (Lead)' : ''}${c.confirmed || c.isOwner ? '' : '?'}`).join(', ')
+  p.crew.map(c => `${c.firstName}${c.role === 'lead' ? ' (Lead)' : ''}`).join(', ')
 
 /** One party on a phone: the whole card opens it. The table is for screens wide enough to hold it. */
 function PartyCardMobile({ p }: { p: PartyRow }) {
@@ -123,11 +122,9 @@ function PartyCardMobile({ p }: { p: PartyRow }) {
           <div className="text-[11px] uppercase tracking-wide text-hampton-navy/50 mt-1">Available</div>
         </div>
       </div>
-      {(noLead || p.unconfirmed > 0) && (
+      {noLead && (
         <div className="mt-2 text-xs">
-          {noLead && <span className="text-red-700 font-semibold">No Lead</span>}
-          {noLead && p.unconfirmed > 0 && ' · '}
-          {p.unconfirmed > 0 && <span className="text-amber-700 font-semibold">{p.unconfirmed} unconfirmed</span>}
+          <span className="text-red-700 font-semibold">No Lead</span>
         </div>
       )}
       <div className="mt-2 text-sm text-hampton-navy/80"><span className="text-hampton-navy/50">Crew: </span>{p.crew.length === 0 ? '—' : crewNames(p)}</div>
@@ -172,7 +169,6 @@ export default function CrewSchedulePage() {
 
   const parties = (data?.parties ?? []).filter(p => {
     if (filter === 'needs') return (p.status === 'published' || p.status === 'draft') && p.staffed < p.needed
-    if (filter === 'unconfirmed') return p.unconfirmed > 0
     if (filter === 'drafts') return p.status === 'draft'
     return true
   })
@@ -231,7 +227,7 @@ export default function CrewSchedulePage() {
       )}
 
       <div className="flex flex-wrap gap-2 mb-3">
-        {([['all', 'All'], ['needs', 'Needs crew'], ['unconfirmed', 'Unconfirmed'], ['drafts', 'Drafts']] as const).map(([k, l]) => (
+        {([['all', 'All'], ['needs', 'Needs crew'], ['drafts', 'Drafts']] as const).map(([k, l]) => (
           <button key={k} onClick={() => setFilter(k)}
             className={`text-sm font-semibold rounded-full px-4 py-1.5 ${filter === k ? 'bg-hampton-navy text-[#F6F1EB]' : 'bg-white text-hampton-navy'}`}>
             {l}
@@ -271,7 +267,6 @@ export default function CrewSchedulePage() {
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className={p.staffed >= p.needed ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>{p.staffed}/{p.needed}</span>
                       {!p.leadFilled && kindHasLead(p.kind) && <div className="text-red-700 text-xs">no Lead</div>}
-                      {p.unconfirmed > 0 && <div className="text-amber-700 text-xs">{p.unconfirmed} unconfirmed</div>}
                     </td>
                     <td className="px-4 py-3">{p.status === 'draft' || p.status === 'published' ? p.available : '—'}</td>
                     <td className="px-4 py-3 text-hampton-navy/80">{p.crew.length === 0 ? '—' : crewNames(p)}</td>
@@ -285,7 +280,7 @@ export default function CrewSchedulePage() {
           </div>
         </>
       )}
-      {parties.length > 0 && <p className="text-hampton-navy/40 text-xs px-1 py-3">A name with “?” has not confirmed. Allie counts toward staffed when she is on a party.</p>}
+      {parties.length > 0 && <p className="text-hampton-navy/40 text-xs px-1 py-3">Allie counts toward staffed when she is on a party.</p>}
     </CrewFrame>
   )
 }

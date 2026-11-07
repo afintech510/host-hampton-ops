@@ -16,7 +16,7 @@
 
 import type { getSupabase } from '@/lib/supabase'
 import {
-  attendanceAlertAt, confirmationSchedule, isBlockedByAvailability, localParts, shiftWindow, staffingShortfall, understaffedAlertAt,
+  attendanceAlertAt, isBlockedByAvailability, localParts, shiftWindow, staffingShortfall, understaffedAlertAt,
   shiftsOverlap, unclaimedWarningAt, type AvailabilityBlock, type CrewSettings, type DateBlock, type PartyWindow, type RecurringBlock, type SlotRole,
 } from '@/lib/crew/rules'
 import {
@@ -162,7 +162,6 @@ export interface AdminPartyRow {
   /** Spots held, including the Lead (and Allie, who counts). */
   staffed: number
   leadFilled: boolean
-  unconfirmed: number
   /** Active, not blocked that day, no overlapping party, not on it. */
   available: number
   crew: { firstName: string; role: SlotRole; confirmed: boolean; isOwner: boolean }[]
@@ -263,13 +262,6 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
         const days = (startsAt.getTime() - nowMs) / DAY_MS
         alerts.push({ kind: 'picks_waiting', severity: days <= 7 ? 'urgent' : 'warn', text: `${label(p)}: ${asked} ${asked === 1 ? 'person wants' : 'people want'} to work it, ${openSpots} ${openSpots === 1 ? 'spot' : 'spots'} open. Pick who is on.`, partyId: p.id })
       }
-      const due = confirmationSchedule(startsAt, s).dueAt.getTime()
-      for (const sl of held) {
-        const m = sl.member_id ? memberById.get(sl.member_id) : undefined
-        if (sl.status === 'assigned' && !sl.confirmed_at && !m?.is_owner && nowMs >= due) {
-          alerts.push({ kind: 'unconfirmed', severity: 'warn', text: `${nameOf(sl.member_id)} has not confirmed ${label(p)}.`, partyId: p.id, memberId: sl.member_id ?? undefined })
-        }
-      }
       // The same question the emailed alert asks (`staffingShortfall` +
       // `understaffedAlertAt`): short of crew, or of a Lead — never for a studio
       // rental, which has no Lead spot. One definition, so the page and the inbox agree.
@@ -318,11 +310,11 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
       needed: live.length,
       staffed: held.length,
       leadFilled,
-      unconfirmed: held.filter(sl => sl.status === 'assigned' && !sl.confirmed_at && !memberById.get(sl.member_id as string)?.is_owner).length,
       available,
       crew: held
         .sort((a, b) => (a.role === b.role ? 0 : a.role === 'lead' ? -1 : 1))
-        .map(sl => ({ firstName: nameOf(sl.member_id), role: sl.role, confirmed: !!sl.confirmed_at, isOwner: !!memberById.get(sl.member_id as string)?.is_owner })),
+        // Held means confirmed: being put on a party is the confirmation (2026-11-07).
+        .map(sl => ({ firstName: nameOf(sl.member_id), role: sl.role, confirmed: true, isOwner: !!memberById.get(sl.member_id as string)?.is_owner })),
     })
   }
 
@@ -514,7 +506,8 @@ export async function loadAdminParty(sb: Supa, partyId: string, s: CrewSettings)
         memberId: sl.member_id,
         memberName: m ? fullName(m) : sl.member_id ? 'Removed member' : null,
         isOwner: !!m?.is_owner,
-        confirmed: !!sl.confirmed_at,
+        // Held means confirmed (2026-11-07); an open spot has nobody to confirm.
+        confirmed: true,
         assignedVia: sl.assigned_via,
         assignedBy: sl.assigned_by,
         activeCover: cover

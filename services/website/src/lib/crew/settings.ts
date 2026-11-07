@@ -38,13 +38,23 @@ export function crewPayLadderEnabled(): boolean {
 }
 
 /**
- * Equitable scheduling (migration 090): parties PUBLISHED while this is exactly
- * `true` are picked by the manager from what the crew ask for, instead of
- * first come, first served. OFF by default, and a party keeps the mode it was
- * published with: turning it on or off never changes a party people are already on.
+ * Equitable scheduling (migration 090): parties PUBLISHED are picked by the
+ * manager from what the crew say (Available to work / Not available), instead of
+ * first come, first served. ON by default since 2026-11-07 (Adam: every party
+ * works one way); only an explicit `false` brings first come back. A party keeps
+ * the mode it was published with.
  */
 export function crewPickFlowEnabled(): boolean {
-  return process.env.CREW_PICK_FLOW === 'true'
+  return process.env.CREW_PICK_FLOW !== 'false'
+}
+
+/**
+ * The tick approving a ranked recommendation by itself once everyone who asked
+ * fits. OFF unless exactly `true`: the manager finalizes the staffing (assign to
+ * the party, or to the standby pool), and nobody is put on a party unseen.
+ */
+export function crewPickAutoApproveEnabled(): boolean {
+  return process.env.CREW_PICK_AUTOAPPROVE === 'true'
 }
 
 /** Dollar figures anywhere in the crew app or a crew message. OFF unless exactly `true` (or the ladder is on). */
