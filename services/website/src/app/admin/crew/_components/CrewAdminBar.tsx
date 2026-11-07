@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BotMessageSquare, Calendar, DollarSign, LayoutDashboard, Menu, UserPlus, Users, X } from 'lucide-react'
+import { BotMessageSquare, Brain, Calendar, CalendarClock, DollarSign, LayoutDashboard, Menu, Settings, UserPlus, Users, X } from 'lucide-react'
 import MemoryPanel from '@/components/admin/MemoryPanel'
 
 /**
@@ -23,6 +23,9 @@ import MemoryPanel from '@/components/admin/MemoryPanel'
  *               assistant remembers)
  *
  * Each has an accessible name (aria-label) and a hover title, since there is no text.
+ * Opening the ☰ drops a panel from the bar: every icon's name directly under it (the
+ * seven are equal-width cells, so the labels line up), then the three menu items, each
+ * with a line saying what it does. Closed, the bar is icons only.
  * Every tab is a client-side link, and the data behind them is warmed by the shell
  * (adminData.ts), so a tab change does not wait for anything.
  *
@@ -52,14 +55,22 @@ const ITEMS: Array<{ key: Section; href: string; label: string; Icon: typeof Use
 
 const BTN = 'grid place-items-center h-10 w-10 rounded-full'
 const ICON = 'text-hampton-navy'
+/** One of the seven equal-width cells of the bar, and of the label row under it. */
+const CELL = 'flex-1 min-w-0 flex justify-center'
+
+/** The label row's names, in the bar's order: the assistant, the five tabs, then the hamburger. */
+const LABELS = ['Assistant', ...ITEMS.map(i => i.label), 'Menu']
+
+const MENU_ITEM = 'flex w-full items-center gap-3 px-3 py-2.5 text-left text-hampton-navy hover:bg-[#F6F1EB] active:bg-[#F6F1EB]'
 
 export default function CrewAdminBar() {
   const section = sectionOf(usePathname())
   const [menuOpen, setMenuOpen] = useState(false)
   const [memoriesOpen, setMemoriesOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLElement>(null)
+  const menuActive = section === 'settings' || section === 'schedule'
 
-  // Close the dropdown on an outside click or Escape.
+  // Close the panel on an outside click or Escape. The ref is the whole header, panel included.
   useEffect(() => {
     if (!menuOpen) return
     const onDown = (e: MouseEvent) => {
@@ -80,27 +91,34 @@ export default function CrewAdminBar() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 bg-white border-b border-hampton-navy/10 shadow-sm print:hidden" data-crew-admin-bar>
-        <nav aria-label="Crew management" className="max-w-xl mx-auto flex items-center justify-evenly h-14 px-1">
-          <button
-            type="button"
-            aria-label="Open the AI assistant"
-            title="AI assistant"
-            onClick={() => window.dispatchEvent(new CustomEvent('hh:assistant-open'))}
-            className={`${BTN} ${on(false)}`}
-          >
-            <BotMessageSquare size={22} className={ICON} />
-          </button>
+      <header ref={menuRef} className="sticky top-0 z-50 bg-white border-b border-hampton-navy/10 shadow-sm print:hidden" data-crew-admin-bar>
+        <nav aria-label="Crew management" className="max-w-xl mx-auto flex items-center h-14 px-1">
+          <div className={CELL}>
+            <button
+              type="button"
+              aria-label="Open the AI assistant"
+              title="AI assistant"
+              onClick={() => {
+                setMenuOpen(false)
+                window.dispatchEvent(new CustomEvent('hh:assistant-open'))
+              }}
+              className={`${BTN} ${on(false)}`}
+            >
+              <BotMessageSquare size={22} className={ICON} />
+            </button>
+          </div>
           {ITEMS.map(({ key, href, label, Icon }) => {
             const active = section === key
             return (
-              <Link key={key} href={href} prefetch aria-label={label} title={label} aria-current={active ? 'page' : undefined} className={`${BTN} ${on(active)}`}>
-                <Icon size={22} className={active ? 'text-[#F6F1EB]' : ICON} />
-              </Link>
+              <div key={`cell-${key}`} className={CELL}>
+                <Link key={key} href={href} prefetch aria-label={label} title={label} aria-current={active ? 'page' : undefined} onClick={() => setMenuOpen(false)} className={`${BTN} ${on(active)}`}>
+                  <Icon size={22} className={active ? 'text-[#F6F1EB]' : ICON} />
+                </Link>
+              </div>
             )
           })}
 
-          <div className="relative" ref={menuRef}>
+          <div className={CELL}>
             <button
               type="button"
               aria-label="Menu"
@@ -108,29 +126,41 @@ export default function CrewAdminBar() {
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(v => !v)}
-              className={`${BTN} ${on(section === 'settings' || section === 'schedule')}`}
+              className={`${BTN} ${on(menuActive || menuOpen)}`}
             >
-              <Menu size={22} className={section === 'settings' || section === 'schedule' ? 'text-[#F6F1EB]' : ICON} />
+              {menuOpen ? <X size={22} className="text-[#F6F1EB]" /> : <Menu size={22} className={menuActive ? 'text-[#F6F1EB]' : ICON} />}
             </button>
-            {menuOpen && (
-              <div role="menu" className="absolute right-0 mt-2 w-48 rounded-xl bg-white shadow-lg border border-hampton-navy/10 py-1">
-                <Link
-                  role="menuitem"
-                  href="/admin/crew"
-                  prefetch
-                  onClick={() => setMenuOpen(false)}
-                  className="block px-4 py-2.5 text-sm text-hampton-navy hover:bg-[#F6F1EB]"
-                >
-                  Staff schedule
+          </div>
+        </nav>
+
+        {menuOpen && (
+          <div className="absolute inset-x-0 top-full bg-white border-b border-hampton-navy/10 shadow-lg" data-crew-menu-panel>
+            <div className="max-w-xl mx-auto px-1">
+              {/* What each icon above is. Decorative: every control already has its own name. */}
+              <div aria-hidden="true" className="flex pb-2 -mt-1">
+                {LABELS.map((name, i) => {
+                  const here = i === 0 ? false : i === LABELS.length - 1 ? menuActive : ITEMS[i - 1].key === section
+                  return (
+                    <span key={name} className={`flex-1 min-w-0 text-center text-[11px] leading-tight ${here ? 'font-bold text-hampton-navy' : 'font-medium text-hampton-navy/65'}`}>
+                      {name}
+                    </span>
+                  )
+                })}
+              </div>
+              <div role="menu" className="border-t border-hampton-navy/10 py-1">
+                <Link role="menuitem" href="/admin/crew" prefetch onClick={() => setMenuOpen(false)} className={MENU_ITEM}>
+                  <CalendarClock size={20} aria-hidden="true" className="shrink-0" />
+                  <span>
+                    <span className="block text-sm font-semibold">Staff schedule</span>
+                    <span className="block text-xs text-hampton-navy/60">Who is working which party</span>
+                  </span>
                 </Link>
-                <Link
-                  role="menuitem"
-                  href="/admin/crew/rules"
-                  prefetch
-                  onClick={() => setMenuOpen(false)}
-                  className="block px-4 py-2.5 text-sm text-hampton-navy hover:bg-[#F6F1EB]"
-                >
-                  Settings
+                <Link role="menuitem" href="/admin/crew/rules" prefetch onClick={() => setMenuOpen(false)} className={MENU_ITEM}>
+                  <Settings size={20} aria-hidden="true" className="shrink-0" />
+                  <span>
+                    <span className="block text-sm font-semibold">Settings</span>
+                    <span className="block text-xs text-hampton-navy/60">The crew rules</span>
+                  </span>
                 </Link>
                 <button
                   type="button"
@@ -139,14 +169,18 @@ export default function CrewAdminBar() {
                     setMenuOpen(false)
                     setMemoriesOpen(true)
                   }}
-                  className="block w-full text-left px-4 py-2.5 text-sm text-hampton-navy hover:bg-[#F6F1EB]"
+                  className={MENU_ITEM}
                 >
-                  Memories
+                  <Brain size={20} aria-hidden="true" className="shrink-0" />
+                  <span>
+                    <span className="block text-sm font-semibold">Memories</span>
+                    <span className="block text-xs text-hampton-navy/60">What the assistant remembers</span>
+                  </span>
                 </button>
               </div>
-            )}
+            </div>
           </div>
-        </nav>
+        )}
       </header>
 
       {memoriesOpen && (

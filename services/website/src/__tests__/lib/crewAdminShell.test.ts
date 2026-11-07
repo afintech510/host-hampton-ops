@@ -49,8 +49,24 @@ describe('the top menu', () => {
     expect(h.match(/ title="/g)!.length).toBe(7)
   })
 
-  it('spreads the icons evenly across the width', () => {
-    expect(html('/admin/crew')).toMatch(/<nav[^>]*class="[^"]*flex items-center justify-evenly/)
+  it('spreads the icons evenly across the width: seven equal cells, so the labels under them line up', () => {
+    const h = html('/admin/crew')
+    expect(h).toMatch(/<nav[^>]*class="[^"]*flex items-center/)
+    expect(h.match(/<div class="flex-1 min-w-0 flex justify-center">/g)).toHaveLength(7)
+  })
+
+  it('opening the hamburger names every icon below it and says what each menu item does', () => {
+    const s = read('app/admin/crew/_components/CrewAdminBar.tsx')
+    // Closed, the bar is icons only (pinned above); the words live in a panel that renders only when open.
+    expect(s).toMatch(/\{menuOpen && \(\s*<div className="absolute inset-x-0 top-full/)
+    // The label row is the bar's own order, built from the same tab list so a new tab cannot go unnamed.
+    expect(s).toMatch(/const LABELS = \['Assistant', \.\.\.ITEMS\.map\(i => i\.label\), 'Menu'\]/)
+    expect(s).toMatch(/LABELS\.map\(/)
+    for (const line of ['Who is working which party', 'The crew rules', 'What the assistant remembers']) expect(s).toContain(line)
+    // The hamburger shows an X while the panel is open.
+    expect(s).toMatch(/menuOpen \? <X /)
+    // A tab, the assistant or a menu item closes the panel.
+    expect(s.match(/setMenuOpen\(false\)/g)!.length).toBeGreaterThanOrEqual(6)
   })
 
   it('is stuck to the top', () => {
