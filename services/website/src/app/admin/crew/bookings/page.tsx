@@ -3,7 +3,7 @@
 /**
  * /admin/crew/bookings - the booked parties as tiles, phone first.
  *
- * Pull buttons at the top (kind of party, the three months, the weeks of the month),
+ * Pull buttons at the top (kind of party, the three months, weekends and dates),
  * then a tile per booking. Tap a tile and it opens to everything, including who is
  * staffed and a button to the party-staff page. `?party=<id>` or `?ref=<ref>` opens
  * that booking (the assistant and the Leads tiles link here).
@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BookingTile as Tile } from '@/lib/crewAppData'
 import { etDateString } from '@/lib/partyTime'
-import { monthKeyOf, monthKeys, monthShort, passesDateFilter, weekNumberOf, weeksOfMonth } from '@/lib/bookingWeeks'
+import { countByDate, dayCaption, monthKeyOf, monthKeys, monthShort, passesDateFilter, passesWeekend, type WeekendKey } from '@/lib/bookingWeeks'
 import { Banner, CrewFrame } from '../_components/adminCrew'
 import { warm, useAdminData } from '../_components/adminData'
 import BookingTile from '../_components/BookingTile'
@@ -32,7 +32,8 @@ export default function CrewBookingsPage() {
 
   const [types, setTypes] = useRemembered<TypeKey[]>('bookings.types', [])
   const [month, setMonth] = useRemembered<string>('bookings.month', months[0])
-  const [week, setWeek] = useRemembered<number | null>('bookings.week', null)
+  const [day, setDay] = useRemembered<string | null>('bookings.day', null)
+  const [weekend, setWeekend] = useRemembered<WeekendKey[]>('bookings.weekend', [])
   const [sort, setSort] = useRemembered<BookingSortKey>('bookings.sort', 'date_asc')
   const [openId, setOpenId] = useState<string | null>(null)
   const [linkId, setLinkId] = useState<string | null>(null)
@@ -45,15 +46,13 @@ export default function CrewBookingsPage() {
   const byType = useMemo(() => all.filter(t => passesTypes(t.partyType, types)), [all, types])
   const monthCount = (m: string) => byType.filter(t => monthKeyOf(t.partyDate ?? '') === m).length
   const inMonth = useMemo(() => byType.filter(t => passesDateFilter(t.partyDate, { month: activeMonth, week: null })), [byType, activeMonth])
-  const weekCounts = useMemo(() => {
-    const out: Record<number, number> = {}
-    for (const w of weeksOfMonth(activeMonth)) out[w.n] = 0
-    for (const t of inMonth) if (t.partyDate) out[weekNumberOf(t.partyDate)] = (out[weekNumberOf(t.partyDate)] ?? 0) + 1
-    return out
-  }, [inMonth, activeMonth])
+  const weekendRows = useMemo(() => inMonth.filter(t => passesWeekend(t.partyDate, weekend)), [inMonth, weekend])
+  // The dates that have a party on, after the Sat / Sun buttons; a lit date that has dropped out of them is not lit.
+  const dayCounts = useMemo(() => countByDate(weekendRows.map(t => t.partyDate)), [weekendRows])
+  const activeDay = day && dayCounts[day] ? day : null
   const shown = useMemo(
-    () => sortBookings(inMonth.filter(t => passesDateFilter(t.partyDate, { month: activeMonth, week })), sort),
-    [inMonth, activeMonth, week, sort],
+    () => sortBookings(weekendRows.filter(t => !activeDay || t.partyDate === activeDay), sort),
+    [weekendRows, activeDay, sort],
   )
 
   // Open the booking a link points at: light the filters that contain it, then open it.
@@ -70,7 +69,8 @@ export default function CrewBookingsPage() {
     setTypes([])
     if (hit.partyDate) {
       setMonth(monthKeyOf(hit.partyDate))
-      setWeek(weekNumberOf(hit.partyDate))
+      setDay(hit.partyDate)
+      setWeekend([])
     }
     setOpenId(hit.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,14 +104,16 @@ export default function CrewBookingsPage() {
               months={months3}
               month={activeMonth}
               onMonth={setMonth}
-              weekCounts={weekCounts}
-              week={week}
-              onWeek={setWeek}
+              dayCounts={dayCounts}
+              day={activeDay}
+              onDay={setDay}
+              weekend={weekend}
+              onWeekend={setWeekend}
             />
             <div className="mt-3 space-y-3">
               {shown.length === 0 && (
                 <div className="text-center text-hampton-navy/60 py-10">
-                  Nothing booked {week ? `in week ${week} of ${monthShort(activeMonth)}` : `in ${monthShort(activeMonth)}`}
+                  Nothing booked {activeDay ? `on ${dayCaption(activeDay)}` : weekend.length ? `on ${weekend.map(k => (k === 'sat' ? 'Saturdays' : 'Sundays')).join(' or ')} in ${monthShort(activeMonth)}` : `in ${monthShort(activeMonth)}`}
                   {types.length ? ' for those kinds of party' : ''}.
                 </div>
               )}

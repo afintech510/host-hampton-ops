@@ -2,7 +2,7 @@
  * The crew-management Dashboard's numbers and the month / week filter.
  * Pure functions, so every figure is pinned with a worked example.
  */
-import { monthKeys, weeksOfMonth, weekNumberOf, weekCaption, passesDateFilter, monthShort } from '@/lib/bookingWeeks'
+import { monthKeys, weeksOfMonth, weekNumberOf, weekCaption, passesDateFilter, monthShort, passesWeekend, weekdayOf, countByDate, dayCaption, dayOfMonth } from '@/lib/bookingWeeks'
 import {
   ytdSales, backlog, bookingsMade, bookingWindows, leadVelocity, openLeads, upcomingEvents, sundayOf,
   type BookedRow, type LedgerRow,
@@ -61,6 +61,32 @@ describe('months and weeks', () => {
 })
 
 const TODAY = '2026-11-07' // a Saturday
+
+describe('Sat / Sun and the date buttons', () => {
+  it('reads the weekday off the plain date', () => {
+    expect(weekdayOf('2026-11-07')).toBe(6)
+    expect(weekdayOf('2026-11-08')).toBe(0)
+    expect(weekdayOf('2026-11-09')).toBe(1)
+    expect(dayCaption('2026-11-07')).toBe('Sat Nov 7')
+    expect(dayOfMonth('2026-11-07')).toBe(7)
+  })
+
+  it('no day lit passes everything, including a missing date; lit days narrow', () => {
+    expect(passesWeekend('2026-11-10', [])).toBe(true)
+    expect(passesWeekend(null, [])).toBe(true)
+    expect(passesWeekend('2026-11-07', ['sat'])).toBe(true)
+    expect(passesWeekend('2026-11-08', ['sat'])).toBe(false)
+    expect(passesWeekend('2026-11-08', ['sun'])).toBe(true)
+    expect(passesWeekend('2026-11-08', ['sat', 'sun'])).toBe(true)
+    expect(passesWeekend('2026-11-10', ['sat', 'sun'])).toBe(false)
+    expect(passesWeekend(null, ['sat'])).toBe(false)
+  })
+
+  it('counts only the dates that have something on', () => {
+    expect(countByDate(['2026-11-07', null, '2026-11-01', '2026-11-07', undefined])).toEqual({ '2026-11-07': 2, '2026-11-01': 1 })
+    expect(countByDate([])).toEqual({})
+  })
+})
 
 describe('YTD gross sales', () => {
   const rows: LedgerRow[] = [

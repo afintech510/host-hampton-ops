@@ -2,7 +2,7 @@
 
 /**
  * /admin/crew/leads - the open leads as tiles, phone first, in the same format as
- * Bookings: pull buttons for the kind of party and the month / week it is for, then a
+ * Bookings: pull buttons for the kind of party and the month and the day / weekend it is for, then a
  * tile per lead, the one in touch most recently on top. Tapping a tile opens
  * everything about the party and the buttons to copy or view the invoice, open the
  * planner, or ask the AI assistant to make a change. Nothing here changes a booking or
@@ -17,7 +17,7 @@ import { STAGE_LABELS, STAGE_STYLE } from '@/lib/bookingStatus'
 import { etDateTime } from '@/lib/assistant/timeFormat'
 import { agoLabel } from '@/lib/agoLabel'
 import { etDateString } from '@/lib/partyTime'
-import { monthKeyOf, monthKeys, monthShort, weekNumberOf, weeksOfMonth } from '@/lib/bookingWeeks'
+import { countByDate, monthKeyOf, monthKeys, monthShort, passesWeekend, type WeekendKey } from '@/lib/bookingWeeks'
 import { Banner, CrewFrame, money } from '../_components/adminCrew'
 import { useAdminData } from '../_components/adminData'
 import { DateBlock, TYPE_SHORT } from '../_components/BookingTile'
@@ -139,7 +139,8 @@ export default function CrewLeadsPage() {
   const months = useMemo(() => monthKeys(today, 3), [today])
   const [types, setTypes] = useRemembered<TypeKey[]>('leads.types', [])
   const [month, setMonth] = useRemembered<string>('leads.month', 'all')
-  const [week, setWeek] = useRemembered<number | null>('leads.week', null)
+  const [day, setDay] = useRemembered<string | null>('leads.day', null)
+  const [weekend, setWeekend] = useRemembered<WeekendKey[]>('leads.weekend', [])
   const [sort, setSort] = useRemembered<LeadSortKey>('leads.sort', 'contact_desc')
   const [openRef, setOpenRef] = useState<string | null>(null)
 
@@ -161,17 +162,14 @@ export default function CrewLeadsPage() {
   ]
   const activeMonth = chips.some(c => c.key === month) ? month : 'all'
   const inMonth = byType.filter(l => activeMonth === 'all' || bucketOf(l) === activeMonth)
-  const weekCounts = useMemo(() => {
-    if (!/^\d{4}-\d{2}$/.test(activeMonth)) return null
-    const out: Record<number, number> = {}
-    for (const w of weeksOfMonth(activeMonth)) out[w.n] = 0
-    for (const l of inMonth) if (l.partyDate) out[weekNumberOf(l.partyDate)] = (out[weekNumberOf(l.partyDate)] ?? 0) + 1
-    return out
-  }, [inMonth, activeMonth])
-  const shown = sortLeads(
-    inMonth.filter(l => week === null || !/^\d{4}-\d{2}$/.test(activeMonth) || (l.partyDate ? weekNumberOf(l.partyDate) === week : false)),
-    sort,
+  const weekendRows = useMemo(() => inMonth.filter(l => passesWeekend(l.partyDate, weekend)), [inMonth, weekend])
+  // The dates are offered for a real month only; a lit date that has dropped out of them is not lit.
+  const dayCounts = useMemo(
+    () => (/^\d{4}-\d{2}$/.test(activeMonth) ? countByDate(weekendRows.map(l => l.partyDate)) : null),
+    [weekendRows, activeMonth],
   )
+  const activeDay = day && dayCounts?.[day] ? day : null
+  const shown = sortLeads(weekendRows.filter(l => !activeDay || l.partyDate === activeDay), sort)
 
   return (
     <CrewFrame
@@ -192,9 +190,11 @@ export default function CrewLeadsPage() {
               months={chips}
               month={activeMonth}
               onMonth={setMonth}
-              weekCounts={weekCounts}
-              week={week}
-              onWeek={setWeek}
+              dayCounts={dayCounts}
+              day={activeDay}
+              onDay={setDay}
+              weekend={weekend}
+              onWeekend={setWeekend}
             />
             <div className="mt-3 space-y-3">
               {shown.length === 0 && <div className="text-center text-hampton-navy/60 py-10">{leads.length === 0 ? 'No open leads right now.' : 'No leads match those buttons.'}</div>}

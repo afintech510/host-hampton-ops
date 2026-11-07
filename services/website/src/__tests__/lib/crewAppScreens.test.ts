@@ -101,30 +101,46 @@ describe('the filter buttons', () => {
     renderToStaticMarkup(
       createElement(PartyFilters, {
         types: [], onTypes: noop, months: [{ key: '2026-11', label: 'Nov', count: 5 }, { key: '2026-12', label: 'Dec', count: 2 }, { key: '2027-01', label: 'Jan', count: 0 }],
-        month: '2026-11', onMonth: noop, weekCounts: { 1: 3, 2: 2, 3: 0, 4: 0, 5: 0 }, week: null, onWeek: noop, ...over,
+        month: '2026-11', onMonth: noop, dayCounts: { '2026-11-01': 1, '2026-11-05': 2, '2026-11-07': 1 }, day: null, onDay: noop, weekend: [], onWeekend: noop, ...over,
       } as never),
     )
 
-  it('has, centred and in order: the three kinds, the three months, then the weeks', () => {
+  it('has, centred and in order: the three kinds, the three months, then the Sat / Sun / date row', () => {
     const h = html()
-    const at = ['>Theme Party<', '>Mobile<', '>Studio Rental<', 'Nov', 'Dec', 'Jan', '>All<', '>1<', '>2<', '>5<'].map(s => h.indexOf(s))
+    const at = ['>Theme Party<', '>Mobile<', '>Studio Rental<', 'Nov', 'Dec', 'Jan', '>All<', '>Sat<', '>Sun<', '>1<', '>5<', '>7<'].map(s => h.indexOf(s))
     expect(at.every(i => i > -1)).toBe(true)
     expect([...at].sort((a, b) => a - b)).toEqual(at)
     expect(h.match(/justify-center/g)!.length).toBeGreaterThanOrEqual(3)
-    expect(h).toContain('Nov 1-7')
+    // Only the dates that have something on are offered, and never a week number.
+    expect(h).not.toContain('>2<')
+    expect(h).not.toContain('Week of the month')
+    expect(h).toContain('Sun Nov 1')
+    expect(h).toContain('Thu Nov 5')
   })
 
-  it('lights the chosen kind, month and week', () => {
-    const h = html({ types: ['mobile_party'], month: '2026-12', week: 2, weekCounts: { 1: 0, 2: 1, 3: 0, 4: 0, 5: 0 } })
+  it('lights the chosen kind, month and date', () => {
+    const h = html({ types: ['mobile_party'], month: '2026-12', day: '2026-12-12', dayCounts: { '2026-12-12': 1 } })
     expect(h).toMatch(/aria-pressed="true"[^>]*>Mobile</)
     expect(h).toMatch(/aria-pressed="false"[^>]*>Theme Party</)
     expect(h).toMatch(/aria-pressed="true"[^>]*>Dec/)
-    expect(h).toMatch(/aria-pressed="true"[^>]*>2</)
-    expect(h).toContain('Dec 6-12')
+    expect(h).toMatch(/aria-pressed="true"[^>]*>12</)
+    expect(h).toMatch(/aria-pressed="false"[^>]*>All</)
+    expect(h).toContain('Sat Dec 12')
   })
 
-  it('shows no week row for a bucket that is not a month', () => {
-    expect(html({ month: 'none', weekCounts: null })).not.toContain('Week of the month')
+  it('lights Sat and Sun on their own, and All only when nothing narrows', () => {
+    const h = html({ weekend: ['sat'] })
+    expect(h).toMatch(/aria-pressed="true"[^>]*>Sat</)
+    expect(h).toMatch(/aria-pressed="false"[^>]*>Sun</)
+    expect(h).toMatch(/aria-pressed="false"[^>]*>All</)
+    expect(html()).toMatch(/aria-pressed="true"[^>]*>All</)
+  })
+
+  it('has no day row for the No date bucket, and no date buttons where no month is lit', () => {
+    expect(html({ month: 'none', dayCounts: null })).not.toContain('aria-label="Day"')
+    const later = html({ month: 'later', dayCounts: null })
+    expect(later).toContain('>Sat<')
+    expect(later).not.toMatch(/>\d{1,2}<\/button>/)
   })
 
   it('no kind lit means every kind passes; lit kinds narrow', () => {

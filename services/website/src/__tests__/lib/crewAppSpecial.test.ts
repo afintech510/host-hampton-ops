@@ -94,11 +94,11 @@ describe('the tops of Leads and Bookings are compact', () => {
   const noop = () => undefined
   const filters = renderToStaticMarkup(
     createElement(PartyFilters, {
-      types: [], onTypes: noop, months: [{ key: '2026-11', label: 'Nov', count: 1 }], month: '2026-11', onMonth: noop, weekCounts: { 1: 1 }, week: null, onWeek: noop,
+      types: [], onTypes: noop, months: [{ key: '2026-11', label: 'Nov', count: 1 }], month: '2026-11', onMonth: noop, dayCounts: { '2026-11-07': 1 }, day: null, onDay: noop, weekend: [], onWeekend: noop,
     } as never),
   )
 
-  it('small pull buttons, tight gaps, and no caption line under the weeks', () => {
+  it('small pull buttons, tight gaps, and no caption line under the dates', () => {
     expect(filters).toMatch(/class="[^"]*\bh-8\b[^"]*"/)
     expect(filters).not.toMatch(/min-h-\[40px\]/)
     expect(filters).toMatch(/gap-1\.5/)

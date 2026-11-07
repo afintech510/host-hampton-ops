@@ -89,3 +89,38 @@ export function passesDateFilter(date: string | null | undefined, f: DateFilter)
   const w = weeksOfMonth(f.month).find(r => r.n === f.week)
   return !!w && date >= w.start && date <= w.end
 }
+
+export type WeekendKey = 'sat' | 'sun'
+
+const WEEKEND_DOW: Record<WeekendKey, number> = { sun: 0, sat: 6 }
+
+/** 0 = Sunday … 6 = Saturday, read off the plain date so no time zone can move it. */
+export function weekdayOf(date: string): number {
+  const [y, m, d] = date.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay()
+}
+
+/** The day of the month: 7 for `2026-11-07`. */
+export function dayOfMonth(date: string): number {
+  return Number(date.split('-')[2])
+}
+
+/** Does a date fall on a lit weekend day? None lit = every day passes; a missing date fails once one is lit. */
+export function passesWeekend(date: string | null | undefined, lit: WeekendKey[]): boolean {
+  if (lit.length === 0) return true
+  if (!date) return false
+  return lit.some(k => WEEKEND_DOW[k] === weekdayOf(date))
+}
+
+/** "Sat Nov 7": the tooltip on a date button. */
+export function dayCaption(date: string): string {
+  const [, m] = date.split('-').map(Number)
+  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][weekdayOf(date)]} ${MONTHS[m - 1]} ${dayOfMonth(date)}`
+}
+
+/** How many dates fall on each day, for the dates that have at least one; sorted by the caller's keys. */
+export function countByDate(dates: Array<string | null | undefined>): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const d of dates) if (d) out[d] = (out[d] ?? 0) + 1
+  return out
+}

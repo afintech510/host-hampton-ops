@@ -5,15 +5,14 @@
  *
  *   [Theme Party] [Mobile] [Studio Rental]      what kind of party (none lit = all)
  *   [Nov · 12] [Dec · 4] [Jan · 1]              the three months
- *   [All] [1] [2] [3] [4] [5]                   the weeks of the month, for drill-down
- *   Nov 8-14                                    what the lit week covers
+ *   [All] [Sat] [Sun] [1] [5] [7]               weekends, then the dates that have something on
  *
  * They only narrow what is on screen; nothing here writes anything. The choices are
  * remembered while the app stays open, so coming back to a tab finds it as you left it.
  */
 
 import { useState } from 'react'
-import { weekCaption, weeksOfMonth, type WeekRange } from '@/lib/bookingWeeks'
+import { dayCaption, dayOfMonth, type WeekendKey } from '@/lib/bookingWeeks'
 
 export const TYPE_PILLS = [
   { key: 'in_studio_theme', label: 'Theme Party' },
@@ -61,21 +60,29 @@ export default function PartyFilters({
   months,
   month,
   onMonth,
-  weekCounts,
-  week,
-  onWeek,
+  dayCounts,
+  day,
+  onDay,
+  weekend,
+  onWeekend,
 }: {
   types: TypeKey[]
   onTypes: (t: TypeKey[]) => void
   months: MonthChip[]
   month: string
   onMonth: (m: string) => void
-  /** Count per week number for the lit month; omitted for a month with no weeks (All / No date). */
-  weekCounts: Record<number, number> | null
-  week: number | null
-  onWeek: (w: number | null) => void
+  /** Count per `YYYY-MM-DD` for the dates that have something on in the lit month; null for All / Later / No date. */
+  dayCounts: Record<string, number> | null
+  /** The lit date, or null for the whole month. */
+  day: string | null
+  onDay: (d: string | null) => void
+  /** Lit weekend days; none lit = every day. */
+  weekend: WeekendKey[]
+  onWeekend: (w: WeekendKey[]) => void
 }) {
-  const weeks: WeekRange[] = /^\d{4}-\d{2}$/.test(month) ? weeksOfMonth(month) : []
+  const dates = dayCounts ? Object.keys(dayCounts).sort() : []
+  const showRow = month !== 'none'
+  const clearAll = day === null && weekend.length === 0
   return (
     <div className="flex flex-col items-center gap-1.5" data-party-filters>
       <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="Kind of party">
@@ -103,7 +110,7 @@ export default function PartyFilters({
             aria-pressed={month === m.key}
             onClick={() => {
               onMonth(m.key)
-              onWeek(null)
+              onDay(null)
             }}
             className={pill(month === m.key)}
           >
@@ -112,29 +119,52 @@ export default function PartyFilters({
         ))}
       </div>
 
-      {weeks.length > 0 && (
-        <div className="flex flex-col items-center">
-          <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="Week of the month">
-            <button type="button" aria-pressed={week === null} onClick={() => onWeek(null)} className={pill(week === null)}>
-              All
-            </button>
-            {weeks.map(w => {
-              const n = weekCounts?.[w.n] ?? 0
-              return (
-                <button
-                  key={w.n}
-                  type="button"
-                  aria-pressed={week === w.n}
-                  aria-label={`Week ${w.n}, ${weekCaption(w)}, ${n} ${n === 1 ? 'party' : 'parties'}`}
-                  title={`${weekCaption(w)} · ${n}`}
-                  onClick={() => onWeek(week === w.n ? null : w.n)}
-                  className={`${pill(week === w.n)} !px-0 w-8 ${n === 0 && week !== w.n ? 'opacity-50' : ''}`}
-                >
-                  {w.n}
-                </button>
-              )
-            })}
-          </div>
+      {showRow && (
+        <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="Day">
+          <button
+            type="button"
+            aria-pressed={clearAll}
+            onClick={() => {
+              onDay(null)
+              onWeekend([])
+            }}
+            className={pill(clearAll)}
+          >
+            All
+          </button>
+          {(['sat', 'sun'] as const).map(k => {
+            const on = weekend.includes(k)
+            return (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={on}
+                onClick={() => {
+                  onDay(null)
+                  onWeekend(on ? weekend.filter(x => x !== k) : [...weekend, k])
+                }}
+                className={pill(on)}
+              >
+                {k === 'sat' ? 'Sat' : 'Sun'}
+              </button>
+            )
+          })}
+          {dates.map(d => {
+            const n = dayCounts?.[d] ?? 0
+            return (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={day === d}
+                aria-label={`${dayCaption(d)}, ${n} ${n === 1 ? 'party' : 'parties'}`}
+                title={`${dayCaption(d)} · ${n}`}
+                onClick={() => onDay(day === d ? null : d)}
+                className={`${pill(day === d)} !px-0 w-8`}
+              >
+                {dayOfMonth(d)}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
