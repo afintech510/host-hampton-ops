@@ -6,10 +6,10 @@ import { useRouter } from 'next/navigation'
 type Answer = 'work' | 'unavailable' | 'standby'
 
 const notes = (who: string): Record<Answer | 'none', string> => ({
-  none: `Tell ${who} if you can work this one. Answering doesn't put you on it; the crew is picked fairly and you'll hear when it's set.`,
-  work: `You said you're available. ${who} will let you know when the crew is set. You can change your answer until then.`,
-  unavailable: `You told ${who} you can't work this one. Tap it again to take that back.`,
-  standby: "You're on standby. If a spot opens you'll be asked first.",
+  none: `Let us know if you're available to work. ${who} will finalize the crew within a day or two.`,
+  work: `You're available. ${who} will finalize the crew soon.`,
+  unavailable: "You're not available. Tap again to undo.",
+  standby: "You're on standby. We'll ask you first if a spot opens.",
 })
 
 /**
