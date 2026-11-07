@@ -80,7 +80,7 @@ describe('the sort button', () => {
     expect(h).toContain('aria-label="Sort"')
     expect(h).toContain('</svg> Sort</button>')
     expect(h).toContain('aria-haspopup="listbox"')
-    expect(h).not.toContain('listbox"') // closed until pressed: the list is not rendered
+    expect(h).not.toContain('role="listbox"') // closed until pressed: the list is not rendered
   })
 
   it('the heading and the Sort button share one row, heading left and button right', () => {
