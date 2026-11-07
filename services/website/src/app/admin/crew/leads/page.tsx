@@ -22,7 +22,10 @@ import { Banner, CrewFrame, money } from '../_components/adminCrew'
 import { useAdminData } from '../_components/adminData'
 import { DateBlock, TYPE_SHORT } from '../_components/BookingTile'
 import ContactButtons from '../_components/ContactButtons'
+import LeadActions from '../_components/LeadActions'
 import PartyActions from '../_components/PartyActions'
+import SortMenu from '../_components/SortMenu'
+import { LEAD_SORTS, sortLeads, type LeadSortKey } from '@/lib/crewAppSort'
 import PartyFilters, { passesTypes, useRemembered, type TypeKey } from '../_components/PartyFilters'
 
 /** "Sat, Dec 12" from a YYYY-MM-DD, noon-anchored so the day never slips. */
@@ -123,6 +126,7 @@ function LeadTile({ lead, open, onToggle }: { lead: LeadCard; open: boolean; onT
 
           <ContactButtons bookingId={lead.id} phone={lead.phone} email={lead.email} />
           <PartyActions bookingId={lead.id} bookingRef={lead.ref} />
+          <LeadActions bookingId={lead.id} name={lead.name} />
         </div>
       )}
     </article>
@@ -130,12 +134,13 @@ function LeadTile({ lead, open, onToggle }: { lead: LeadCard; open: boolean; onT
 }
 
 export default function CrewLeadsPage() {
-  const { data, error, loading, refreshing } = useAdminData<{ leads: LeadCard[]; truncated?: boolean }>('/api/admin/leads')
+  const { data, error, loading } = useAdminData<{ leads: LeadCard[]; truncated?: boolean }>('/api/admin/leads')
   const today = etDateString()
   const months = useMemo(() => monthKeys(today, 3), [today])
   const [types, setTypes] = useRemembered<TypeKey[]>('leads.types', [])
   const [month, setMonth] = useRemembered<string>('leads.month', 'all')
   const [week, setWeek] = useRemembered<number | null>('leads.week', null)
+  const [sort, setSort] = useRemembered<LeadSortKey>('leads.sort', 'contact_desc')
   const [openRef, setOpenRef] = useState<string | null>(null)
 
   const leads = useMemo(() => data?.leads ?? [], [data])
@@ -163,14 +168,17 @@ export default function CrewLeadsPage() {
     for (const l of inMonth) if (l.partyDate) out[weekNumberOf(l.partyDate)] = (out[weekNumberOf(l.partyDate)] ?? 0) + 1
     return out
   }, [inMonth, activeMonth])
-  const shown = inMonth.filter(l => week === null || !/^\d{4}-\d{2}$/.test(activeMonth) || (l.partyDate ? weekNumberOf(l.partyDate) === week : false))
+  const shown = sortLeads(
+    inMonth.filter(l => week === null || !/^\d{4}-\d{2}$/.test(activeMonth) || (l.partyDate ? weekNumberOf(l.partyDate) === week : false)),
+    sort,
+  )
 
   return (
     <CrewFrame
       active="/admin/crew/leads"
       title="Leads"
       compact
-      sub={refreshing ? 'refreshing…' : null}
+      actions={<SortMenu options={LEAD_SORTS} value={sort} onChange={setSort} />}
     >
       <div className="max-w-3xl mx-auto">
         {error && !data && <Banner tone="error">{error}</Banner>}

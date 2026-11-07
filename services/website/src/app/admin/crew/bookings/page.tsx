@@ -19,18 +19,21 @@ import { monthKeyOf, monthKeys, monthShort, passesDateFilter, weekNumberOf, week
 import { Banner, CrewFrame } from '../_components/adminCrew'
 import { warm, useAdminData } from '../_components/adminData'
 import BookingTile from '../_components/BookingTile'
+import SortMenu from '../_components/SortMenu'
+import { BOOKING_SORTS, sortBookings, type BookingSortKey } from '@/lib/crewAppSort'
 import PartyFilters, { passesTypes, useRemembered, type TypeKey } from '../_components/PartyFilters'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export default function CrewBookingsPage() {
-  const { data, error, loading, refreshing } = useAdminData<{ bookings: Tile[]; today: string }>('/api/admin/crew-app/bookings')
+  const { data, error, loading } = useAdminData<{ bookings: Tile[]; today: string }>('/api/admin/crew-app/bookings')
   const today = data?.today ?? etDateString()
   const months = useMemo(() => monthKeys(today, 3), [today])
 
   const [types, setTypes] = useRemembered<TypeKey[]>('bookings.types', [])
   const [month, setMonth] = useRemembered<string>('bookings.month', months[0])
   const [week, setWeek] = useRemembered<number | null>('bookings.week', null)
+  const [sort, setSort] = useRemembered<BookingSortKey>('bookings.sort', 'date_asc')
   const [openId, setOpenId] = useState<string | null>(null)
   const [linkId, setLinkId] = useState<string | null>(null)
   const deepLinked = useRef(false)
@@ -48,7 +51,10 @@ export default function CrewBookingsPage() {
     for (const t of inMonth) if (t.partyDate) out[weekNumberOf(t.partyDate)] = (out[weekNumberOf(t.partyDate)] ?? 0) + 1
     return out
   }, [inMonth, activeMonth])
-  const shown = useMemo(() => inMonth.filter(t => passesDateFilter(t.partyDate, { month: activeMonth, week })), [inMonth, activeMonth, week])
+  const shown = useMemo(
+    () => sortBookings(inMonth.filter(t => passesDateFilter(t.partyDate, { month: activeMonth, week })), sort),
+    [inMonth, activeMonth, week, sort],
+  )
 
   // Open the booking a link points at: light the filters that contain it, then open it.
   useEffect(() => {
@@ -80,7 +86,7 @@ export default function CrewBookingsPage() {
   const months3 = months.map(m => ({ key: m, label: monthShort(m), count: monthCount(m) }))
 
   return (
-    <CrewFrame active="/admin/crew/bookings" title="Bookings" compact sub={refreshing ? 'refreshing…' : null}>
+    <CrewFrame active="/admin/crew/bookings" title="Bookings" compact actions={<SortMenu options={BOOKING_SORTS} value={sort} onChange={setSort} />}>
       <div className="max-w-3xl mx-auto">
         {error && !data && <Banner tone="error">{error}</Banner>}
         {loading && <div className="text-center text-hampton-navy/50 py-10">Loading the bookings…</div>}

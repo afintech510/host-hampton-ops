@@ -81,6 +81,7 @@ export function CrewFrame({
   title,
   sub,
   compact,
+  actions,
   wordmark,
   children,
 }: {
@@ -89,6 +90,8 @@ export function CrewFrame({
   sub?: React.ReactNode
   /** Phone-first screens that lead with their own controls: no heading, tight padding. */
   compact?: boolean
+  /** Compact only: controls for the top right of the heading row (a Sort button). With any, the heading is shown beside them. */
+  actions?: React.ReactNode
   /** Show the title as the staff app's "PARTY CREW" lettering. */
   wordmark?: boolean
   children: React.ReactNode
@@ -96,8 +99,15 @@ export function CrewFrame({
   if (compact) {
     return (
       <div className="px-3 py-3">
-        <h1 className="sr-only">{title}</h1>
         <div className="max-w-6xl mx-auto">
+          {actions ? (
+            <div className="max-w-3xl mx-auto mb-2 flex items-center justify-between gap-3">
+              <h1 className="font-serif text-xl text-hampton-navy leading-none">{title}</h1>
+              {actions}
+            </div>
+          ) : (
+            <h1 className="sr-only">{title}</h1>
+          )}
           {sub && <div className="text-center text-xs text-hampton-navy/50 mb-2">{sub}</div>}
           {children}
         </div>
