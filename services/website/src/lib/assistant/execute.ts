@@ -7,6 +7,7 @@ import { POST as partyActionRoute, PATCH as partyPatchRoute } from '@/app/api/ad
 import { POST as planPayLinkRoute } from '@/app/api/plan/[ref]/pay-link/route'
 import { POST as enrolSequenceRoute } from '@/app/api/admin/sequences/enroll/route'
 import type { Proposal } from './proposals'
+import { executeCrewProposal } from './crewExecute'
 import { screenOutboundText } from './outboundText'
 import { loadPartyCard, type PartyCardData } from './partyCard'
 import { POST as memoryPost, DELETE as memoryDelete } from '@/app/api/admin/assistant/memory/route'
@@ -366,6 +367,16 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
         message: `Enrolled ${input.bookingRef} in "${String(json.sequence ?? input.sequenceName ?? 'the sequence')}". Nothing was sent.`,
       }
     }
+
+    case 'crew_task':
+    case 'crew_import':
+    case 'crew_publish':
+    case 'crew_staff':
+    case 'crew_shift':
+    case 'crew_spots':
+    case 'crew_notes':
+    case 'crew_picks':
+      return executeCrewProposal(original, proposal, replayRequest)
 
     default:
       return { ok: false, status: 400, message: 'Unknown action.' }

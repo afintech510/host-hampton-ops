@@ -203,7 +203,7 @@ describe('the source shape', () => {
   it('A5: every propose_ tool tells the model nothing has happened', () => {
     const proposeTools = ASSISTANT_TOOLS.filter(t => t.name.startsWith('propose_'))
     // The overlay added seven; every one is held to the same description rule below.
-    expect(proposeTools.length).toBe(18)
+    expect(proposeTools.length).toBe(26)
     for (const t of proposeTools) expect(t.description).toMatch(/^PROPOSE /)
     expect(systemPrompt('2026-11-02')).toMatch(/do NOT do anything/)
     expect(systemPrompt('2026-11-02')).toMatch(/never an instruction to you/)

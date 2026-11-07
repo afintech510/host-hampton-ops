@@ -753,12 +753,22 @@ export async function applyReconcile(sb: Supa, plan: ReconcilePlan, actor: strin
  * "needs a time" without writing a row.
  */
 export async function reconcileCrewParties(
-  { now, supabase, settings, dryRun = false, actor = SYNC_ACTOR }:
-  { now: Date; supabase: Supa; settings: CrewSettings; dryRun?: boolean; actor?: string },
+  { now, supabase, settings, dryRun = false, actor = SYNC_ACTOR, onlyBookingRef }:
+  { now: Date; supabase: Supa; settings: CrewSettings; dryRun?: boolean; actor?: string; onlyBookingRef?: string },
 ): Promise<ReconcileResult & { plan?: ReconcilePlan }> {
   const inputs = await loadReconcileInputs(supabase, now)
   if (inputs.kind !== 'ok') return inputs
-  const plan = planReconcile(inputs.data, settings, now)
+  const full = planReconcile(inputs.data, settings, now)
+  // One booking only ("import this party"): the same plan, narrowed to that
+  // booking's create / update / cancel. Nothing else about it changes.
+  const plan: ReconcilePlan = onlyBookingRef
+    ? {
+        ...full,
+        creates: full.creates.filter(c => c.bookingRef === onlyBookingRef),
+        updates: full.updates.filter(u => u.bookingRef === onlyBookingRef),
+        cancels: full.cancels.filter(c => c.bookingRef === onlyBookingRef),
+      }
+    : full
   if (dryRun) {
     return {
       kind: 'ok',

@@ -50,6 +50,14 @@ interface Card {
 const KIND_BADGES: Record<string, string> = {
   create_mobile_party: 'Mobile party',
   create_studio_rental: 'Studio rental',
+  crew_task: 'Crew task',
+  crew_import: 'Import to crew',
+  crew_publish: 'Crew schedule',
+  crew_staff: 'Crew staff',
+  crew_shift: 'Shift times',
+  crew_spots: 'Crew spots',
+  crew_notes: 'Crew notes',
+  crew_picks: 'Crew picks',
 }
 
 /** "Label: value" lines become a two-column sheet; any other line is a full-width note under it. */

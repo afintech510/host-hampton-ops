@@ -20,8 +20,14 @@ export async function POST(req: NextRequest) {
   const sb = getSupabase()
   const settings = await loadCrewSettings(sb)
   if (settings.kind !== 'ok') return NextResponse.json({ error: `Could not read the crew rules: ${settings.error}` }, { status: 503 })
-  const dryRun = new URL(req.url).searchParams.get('dryRun') === '1'
-  const r = await reconcileCrewParties({ now: new Date(), supabase: sb, settings: settings.settings, dryRun, actor: adminActorId(req) })
+  const params = new URL(req.url).searchParams
+  const dryRun = params.get('dryRun') === '1'
+  // `?booking=HH-PTY-…` imports that one booking and leaves the rest of the plan alone.
+  const booking = params.get('booking')
+  if (booking !== null && !/^[A-Za-z0-9-]{3,40}$/.test(booking)) return NextResponse.json({ error: 'That is not a booking reference.' }, { status: 400 })
+  const r = await reconcileCrewParties({
+    now: new Date(), supabase: sb, settings: settings.settings, dryRun, actor: adminActorId(req), ...(booking ? { onlyBookingRef: booking } : {}),
+  })
   if (r.kind !== 'ok') return NextResponse.json({ error: `Could not read the bookings: ${r.error}` }, { status: 503 })
   const s = r.summary
   console.log(`crew sync${dryRun ? ' (dry run)' : ''}: created ${s.created}, updated ${s.updated}, cancelled ${s.cancelled}, spots ${s.spotsAdded}, raced ${s.raced}, errors ${s.errors.length}`)
