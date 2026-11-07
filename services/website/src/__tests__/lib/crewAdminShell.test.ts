@@ -27,13 +27,30 @@ describe('the top menu', () => {
     return renderToStaticMarkup(createElement(CrewAdminBar))
   }
 
-  it('is, in order: sparkle, Dashboard, Leads, Bookings, Staff, then the hamburger on the right', () => {
+  it('is icons only, in order: AI chat, Dashboard, Leads, Calendar, Staff, $, then the hamburger', () => {
     const h = html('/admin/crew/leads')
-    const order = ['aria-label="Open the AI assistant"', '>Dashboard<', '>Leads<', '>Bookings<', '>Staff<', 'aria-label="Menu"']
-    const at = order.map(s => h.indexOf(s))
+    const order = [
+      ['aria-label="Open the AI assistant"', 'lucide-bot-message-square'],
+      ['aria-label="Dashboard"', 'lucide-layout-dashboard'],
+      ['aria-label="Leads"', 'lucide-user-plus'],
+      ['aria-label="Bookings"', 'lucide-calendar'],
+      ['aria-label="Staff"', 'lucide-users'],
+      ['aria-label="Payments"', 'lucide-dollar-sign'],
+      ['aria-label="Menu"', 'lucide-menu'],
+    ]
+    const at = order.map(([label]) => h.indexOf(label))
     expect(at.every(i => i > -1)).toBe(true)
     expect([...at].sort((a, b) => a - b)).toEqual(at)
-    expect(h).toContain('✨')
+    for (const [, icon] of order) expect(h).toContain(icon)
+    // No words in the bar: every control is an icon with a name and a hover title.
+    const bar = h.replace(/<svg[\s\S]*?<\/svg>/g, '')
+    expect(bar.replace(/<[^>]*>/g, '').trim()).toBe('')
+    expect(h).not.toContain('✨')
+    expect(h.match(/ title="/g)!.length).toBe(7)
+  })
+
+  it('spreads the icons evenly across the width', () => {
+    expect(html('/admin/crew')).toMatch(/<nav[^>]*class="[^"]*flex items-center justify-evenly/)
   })
 
   it('is stuck to the top', () => {
@@ -48,12 +65,14 @@ describe('the top menu', () => {
   })
 
   it('marks the section you are in', () => {
-    expect(html('/admin/crew/dashboard')).toMatch(/aria-current="page"[^>]*>Dashboard</)
-    expect(html('/admin/crew/leads')).toMatch(/aria-current="page"[^>]*>Leads</)
-    expect(html('/admin/crew/bookings')).toMatch(/aria-current="page"[^>]*>Bookings</)
+    const current = (p: string, label: string) => new RegExp(`aria-label="${label}"[^>]*aria-current="page"`).test(html(p))
+    expect(current('/admin/crew/dashboard', 'Dashboard')).toBe(true)
+    expect(current('/admin/crew/leads', 'Leads')).toBe(true)
+    expect(current('/admin/crew/bookings', 'Bookings')).toBe(true)
+    expect(current('/admin/crew/payments', 'Payments')).toBe(true)
     // Staff is the roster; the party-staff page belongs to it.
-    expect(html('/admin/crew/members')).toMatch(/aria-current="page"[^>]*>Staff</)
-    expect(html('/admin/crew/parties/abc')).toMatch(/aria-current="page"[^>]*>Staff</)
+    expect(current('/admin/crew/members', 'Staff')).toBe(true)
+    expect(current('/admin/crew/parties/abc', 'Staff')).toBe(true)
     // The schedule and Settings live in the hamburger, so no tab is "current" on them.
     expect(html('/admin/crew')).not.toMatch(/aria-current="page"/)
     expect(html('/admin/crew/rules')).not.toMatch(/aria-current="page"/)
@@ -93,7 +112,7 @@ describe('the top menu', () => {
 
   it('tabs are client-side links over warmed data, so a tab change waits for nothing', () => {
     const bar = read('app/admin/crew/_components/CrewAdminBar.tsx')
-    expect(bar).toMatch(/<Link key=\{i\.key\} href=\{i\.href\} prefetch/)
+    expect(bar).toMatch(/<Link key=\{key\} href=\{href\} prefetch/)
     expect(bar).not.toMatch(/<a key=/)
     const shell = read('app/admin/crew/_components/CrewAdminShell.tsx')
     for (const path of ['crew-app/dashboard', 'crew-app/bookings', 'api/admin/leads', 'crew/members']) expect(shell).toContain(path)

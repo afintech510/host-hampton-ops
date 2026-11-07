@@ -39,7 +39,10 @@ interface PickResult {
   flagged?: { slotId: string; memberId: string; name: string; warnings: string[] }[]
   dropped?: { memberName: string; partyTitle: string }[]
 }
+interface Special { kind: 'party_helper' | 'face_painter' | 'character' | 'entertainment'; label: string; quantity: number; crewSpot: boolean; action: string }
 interface Detail {
+  /** What the booking bought that needs a particular person. null = could not be read. */
+  special?: Special[] | null
   /** Equitable scheduling: who asked, ranked, and what the system recommends. Null when the party is first come, first served. */
   pick: PickPanelView | null
   party: {
@@ -59,6 +62,29 @@ interface Detail {
 
 const CONFLICT_LABEL: Record<Conflict, string> = {
   on_party: 'on this party', overlap: 'another party then', blocked: 'marked unavailable', not_lead: 'not a Lead', inactive: 'inactive',
+}
+
+const SPECIAL_ICON: Record<Special['kind'], string> = { party_helper: '🧤', face_painter: '🎨', character: '🦸', entertainment: '🎤' }
+
+/** An alert for each thing the booking bought that needs a particular person, so it is not missed. */
+function SpecialStaffingAlert({ special, staffed, needed }: { special: Special[] | null | undefined; staffed: number; needed: number }) {
+  if (special === null) return <Banner tone="warn">Could not read what this booking bought, so special staffing (a helper, a face painter, a character) is not checked. Reload to try again.</Banner>
+  if (!special || special.length === 0) return null
+  return (
+    <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4 mb-4" role="alert" data-special-staffing>
+      <div className="text-sm font-bold text-amber-900 mb-2">⚠ Special staffing on this booking</div>
+      <ul className="space-y-2">
+        {special.map((s, i) => (
+          <li key={i} className="text-sm text-amber-950">
+            <span aria-hidden="true">{SPECIAL_ICON[s.kind]} </span>
+            <span className="font-semibold">{s.label}{s.quantity > 1 ? ` ×${s.quantity}` : ''}</span>
+            {s.crewSpot && <span className={staffed >= needed ? ' text-emerald-800' : ' font-semibold text-red-700'}> · {staffed} of {needed} spots filled</span>}
+            <div className="text-amber-900/80">{s.action}</div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 export default function CrewPartyPage({ params }: { params: { id: string } }) {
@@ -179,6 +205,7 @@ export default function CrewPartyPage({ params }: { params: { id: string } }) {
     >
       {error && <Banner tone="error">{error}</Banner>}
       {notice && <Banner tone="ok">{notice}</Banner>}
+      <SpecialStaffingAlert special={d.special} staffed={d.staffed} needed={d.needed} />
       {p.sync_flags.length > 0 && (
         <Banner tone="warn">
           {p.sync_flags.map(f => (

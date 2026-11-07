@@ -101,7 +101,7 @@ export default function CrewMembersPage() {
   const members = (data?.members ?? []).filter(m => showRemoved || (m.status !== 'removed' && !m.isOwner))
 
   return (
-    <CrewFrame active="/admin/crew/members" title="Crew roster" sub="Who is on the crew, and the parties each person is working. Pay is set per person, per hour, and is kept private.">
+    <CrewFrame active="/admin/crew/members" title="Party Crew" wordmark>
       {error && <Banner tone="error">{error}</Banner>}
       {roster.loading && <div className="text-center text-hampton-navy/50 py-8">Loading the crew…</div>}
       {notice && <Banner tone="ok">{notice}</Banner>}

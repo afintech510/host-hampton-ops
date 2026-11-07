@@ -30,6 +30,8 @@ import {
   setPartyShift, unpublishParty, type ActionResult,
 } from '@/lib/crew/adminActions'
 
+import { loadSpecialStaffing } from '@/lib/crew/specialStaffing'
+
 export const dynamic = 'force-dynamic'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -50,7 +52,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (panel.kind !== 'ok') return NextResponse.json({ error: `Could not read who asked: ${panel.error}` }, { status: 503 })
     pick = panel.data
   }
-  return NextResponse.json({ ...r.data, pick, shift: shiftForAdmin(r.data.party, settings.settings), settings: { extraMaxCents: 100_000 } })
+  // What the booking bought that needs a particular person (a Party Helper, a face painter, a character). null = could not be read.
+  const special = await loadSpecialStaffing(sb, r.data.booking?.id)
+  return NextResponse.json({ ...r.data, pick, special, shift: shiftForAdmin(r.data.party, settings.settings), settings: { extraMaxCents: 100_000 } })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {

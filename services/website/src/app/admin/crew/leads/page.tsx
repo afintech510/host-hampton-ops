@@ -169,7 +169,8 @@ export default function CrewLeadsPage() {
     <CrewFrame
       active="/admin/crew/leads"
       title="Leads"
-      sub={data ? `${leads.length} open ${leads.length === 1 ? 'lead' : 'leads'}, the one in touch most recently first.${refreshing ? ' · refreshing…' : ''}` : null}
+      compact
+      sub={refreshing ? 'refreshing…' : null}
     >
       <div className="max-w-3xl mx-auto">
         {error && !data && <Banner tone="error">{error}</Banner>}
@@ -187,7 +188,7 @@ export default function CrewLeadsPage() {
               week={week}
               onWeek={setWeek}
             />
-            <div className="mt-5 space-y-3">
+            <div className="mt-3 space-y-3">
               {shown.length === 0 && <div className="text-center text-hampton-navy/60 py-10">{leads.length === 0 ? 'No open leads right now.' : 'No leads match those buttons.'}</div>}
               {shown.map(l => (
                 <LeadTile key={l.id} lead={l} open={openRef === l.ref} onToggle={() => setOpenRef(openRef === l.ref ? null : l.ref)} />

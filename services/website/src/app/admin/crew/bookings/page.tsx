@@ -80,7 +80,7 @@ export default function CrewBookingsPage() {
   const months3 = months.map(m => ({ key: m, label: monthShort(m), count: monthCount(m) }))
 
   return (
-    <CrewFrame active="/admin/crew/bookings" title="Bookings" sub={data ? `${all.length} booked in the next three months${refreshing ? ' · refreshing…' : ''}` : null}>
+    <CrewFrame active="/admin/crew/bookings" title="Bookings" compact sub={refreshing ? 'refreshing…' : null}>
       <div className="max-w-3xl mx-auto">
         {error && !data && <Banner tone="error">{error}</Banner>}
         {loading && <div className="text-center text-hampton-navy/50 py-10">Loading the bookings…</div>}
@@ -102,7 +102,7 @@ export default function CrewBookingsPage() {
               week={week}
               onWeek={setWeek}
             />
-            <div className="mt-5 space-y-3">
+            <div className="mt-3 space-y-3">
               {shown.length === 0 && (
                 <div className="text-center text-hampton-navy/60 py-10">
                   Nothing booked {week ? `in week ${week} of ${monthShort(activeMonth)}` : `in ${monthShort(activeMonth)}`}

@@ -13,7 +13,7 @@
  */
 
 import { useState } from 'react'
-import { monthShort, weekCaption, weeksOfMonth, type WeekRange } from '@/lib/bookingWeeks'
+import { weekCaption, weeksOfMonth, type WeekRange } from '@/lib/bookingWeeks'
 
 export const TYPE_PILLS = [
   { key: 'in_studio_theme', label: 'Theme Party' },
@@ -42,8 +42,9 @@ export function useRemembered<T>(key: string, initial: T): [T, (v: T) => void] {
   ]
 }
 
-const pill = (on: boolean) =>
-  `min-h-[40px] rounded-full px-4 text-sm font-semibold whitespace-nowrap transition-colors ${
+/** The small pull-button look shared by every filter row (Bookings, Leads, Payments). */
+export const pill = (on: boolean) =>
+  `h-8 rounded-full px-3 text-xs font-semibold whitespace-nowrap transition-colors ${
     on ? 'bg-hampton-navy text-[#F6F1EB] shadow-sm' : 'bg-white text-hampton-navy border border-hampton-navy/15 active:bg-hampton-navy/10'
   }`
 
@@ -75,10 +76,9 @@ export default function PartyFilters({
   onWeek: (w: number | null) => void
 }) {
   const weeks: WeekRange[] = /^\d{4}-\d{2}$/.test(month) ? weeksOfMonth(month) : []
-  const lit = weeks.find(w => w.n === week)
   return (
-    <div className="flex flex-col items-center gap-3" data-party-filters>
-      <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="Kind of party">
+    <div className="flex flex-col items-center gap-1.5" data-party-filters>
+      <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="Kind of party">
         {TYPE_PILLS.map(t => {
           const on = types.includes(t.key)
           return (
@@ -95,7 +95,7 @@ export default function PartyFilters({
         })}
       </div>
 
-      <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="Month">
+      <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="Month">
         {months.map(m => (
           <button
             key={m.key}
@@ -113,8 +113,8 @@ export default function PartyFilters({
       </div>
 
       {weeks.length > 0 && (
-        <div className="flex flex-col items-center gap-1.5">
-          <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="Week of the month">
+        <div className="flex flex-col items-center">
+          <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="Week of the month">
             <button type="button" aria-pressed={week === null} onClick={() => onWeek(null)} className={pill(week === null)}>
               All
             </button>
@@ -126,15 +126,15 @@ export default function PartyFilters({
                   type="button"
                   aria-pressed={week === w.n}
                   aria-label={`Week ${w.n}, ${weekCaption(w)}, ${n} ${n === 1 ? 'party' : 'parties'}`}
+                  title={`${weekCaption(w)} · ${n}`}
                   onClick={() => onWeek(week === w.n ? null : w.n)}
-                  className={`${pill(week === w.n)} !px-0 w-10 ${n === 0 && week !== w.n ? 'opacity-50' : ''}`}
+                  className={`${pill(week === w.n)} !px-0 w-8 ${n === 0 && week !== w.n ? 'opacity-50' : ''}`}
                 >
                   {w.n}
                 </button>
               )
             })}
           </div>
-          <div className="text-xs text-hampton-navy/60 h-4">{lit ? `${weekCaption(lit)} · ${weekCounts?.[lit.n] ?? 0}` : `${monthShort(month)} · whole month`}</div>
         </div>
       )}
     </div>

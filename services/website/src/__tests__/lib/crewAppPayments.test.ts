@@ -223,8 +223,10 @@ describe('the screens', () => {
   it('the $ is in the top bar, before the hamburger, and Payments is its own section', () => {
     expect(sectionOf('/admin/crew/payments')).toBe('payments')
     const bar = read('app/admin/crew/_components/CrewAdminBar.tsx')
-    expect(bar).toMatch(/href="\/admin\/crew\/payments"[\s\S]{0,200}aria-label="Payments"/)
-    expect(bar.indexOf('aria-label="Payments"')).toBeLessThan(bar.indexOf('aria-label="Menu"'))
+    expect(bar).toMatch(/href: '\/admin\/crew\/payments', label: 'Payments', Icon: DollarSign/)
+    // It is the last of the tabs, just before the hamburger.
+    expect(bar.indexOf("label: 'Payments'")).toBeLessThan(bar.indexOf('aria-label="Menu"'))
+    expect(bar.indexOf("label: 'Staff'")).toBeLessThan(bar.indexOf("label: 'Payments'"))
   })
 
   it('Text in Quo and Email in Gmail are on the open Lead and Booking tiles', () => {

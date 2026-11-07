@@ -15,7 +15,7 @@ import { etDateString, shiftEtDate } from '@/lib/partyTime'
 import { PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
 import { Banner, CrewFrame, money } from '../_components/adminCrew'
 import { useAdminData } from '../_components/adminData'
-import { useRemembered } from '../_components/PartyFilters'
+import { pill, useRemembered } from '../_components/PartyFilters'
 
 const METHODS: Array<{ key: PayMethod; label: string; badge: string }> = [
   { key: 'card', label: 'Card', badge: 'bg-indigo-100 text-indigo-800' },
@@ -41,11 +41,6 @@ const PERIODS: Array<{ key: Period; label: string }> = [
 ]
 
 const TYPE_WORD: Record<string, string> = { deposit: 'Deposit', partial: 'Payment', final: 'Balance', refund: 'Refund', tickets: 'Tickets' }
-
-const pill = (on: boolean) =>
-  `min-h-[40px] rounded-full px-4 text-sm font-semibold whitespace-nowrap transition-colors ${
-    on ? 'bg-hampton-navy text-[#F6F1EB] shadow-sm' : 'bg-white text-hampton-navy border border-hampton-navy/15 active:bg-hampton-navy/10'
-  }`
 
 /** Whole-dollar-aware: $1,020.00. */
 const dollars = (cents: number) => {
@@ -135,21 +130,21 @@ export default function CrewPaymentsPage() {
   const byMethod = METHODS.map(m => ({ ...m, cents: shown.filter(p => p.method === m.key).reduce((s, p) => s + p.amountCents, 0), n: shown.filter(p => p.method === m.key).length })).filter(m => m.n > 0)
 
   return (
-    <CrewFrame active="/admin/crew/payments" title="Payments" sub={data ? `Newest first${refreshing ? ' · refreshing…' : ''}` : null}>
+    <CrewFrame active="/admin/crew/payments" title="Payments" compact sub={refreshing ? 'refreshing…' : null}>
       <div className="max-w-3xl mx-auto">
         {error && !data && <Banner tone="error">{error}</Banner>}
         {loading && <div className="text-center text-hampton-navy/50 py-10">Loading the payments…</div>}
         {data && (
           <>
-            <div className="flex flex-col items-center gap-3" data-payment-filters>
-              <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="Where from">
+            <div className="flex flex-col items-center gap-1.5" data-payment-filters>
+              <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="Where from">
                 {SOURCES.map(s => (
                   <button key={s.key} type="button" aria-pressed={source === s.key} onClick={() => setSource(s.key)} className={pill(source === s.key)}>
                     {s.label}
                   </button>
                 ))}
               </div>
-              <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="How paid">
+              <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="How paid">
                 {METHODS.map(m => {
                   const on = methods.includes(m.key)
                   return (
@@ -159,7 +154,7 @@ export default function CrewPaymentsPage() {
                   )
                 })}
               </div>
-              <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="How far back">
+              <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="How far back">
                 {PERIODS.map(pd => (
                   <button key={pd.key} type="button" aria-pressed={period === pd.key} onClick={() => setPeriod(pd.key)} className={pill(period === pd.key)}>
                     {pd.label}
@@ -168,7 +163,7 @@ export default function CrewPaymentsPage() {
               </div>
             </div>
 
-            <section className="mt-5 bg-white rounded-2xl shadow-sm p-4 text-center">
+            <section className="mt-3 bg-white rounded-2xl shadow-sm p-3 text-center">
               <div className="text-xs font-bold uppercase tracking-wider text-hampton-navy/50">Collected</div>
               <div className="text-4xl font-bold text-hampton-navy">{dollars(net)}</div>
               <div className="text-xs text-hampton-navy/50">{shown.length} {shown.length === 1 ? 'payment' : 'payments'}, refunds taken off</div>
@@ -184,7 +179,7 @@ export default function CrewPaymentsPage() {
             </section>
 
             {data.truncated && <div className="mt-3"><Banner tone="info">Showing the most recent payments only; older ones are not listed.</Banner></div>}
-            <div className="mt-4 space-y-3">
+            <div className="mt-3 space-y-3">
               {shown.length === 0 && <div className="text-center text-hampton-navy/60 py-10">No payments match those buttons.</div>}
               {shown.map(p => (
                 <PaymentTile key={p.id} p={p} />

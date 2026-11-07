@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useState } from 'react'
+import VarsityTitle from './VarsityTitle'
 
 const TOKEN_KEY = 'hh_admin_token'
 
@@ -76,12 +77,38 @@ export function LoginGate({ title, onSignedIn }: { title: string; onSignedIn: ()
  * in the shell (CrewAdminShell, from app/admin/crew/layout.tsx), so it stays put and
  * does not remount when a tab is tapped. No link back to the main admin.
  */
-export function CrewFrame({ title, sub, children }: { active?: string; title: string; sub?: React.ReactNode; children: React.ReactNode }) {
+export function CrewFrame({
+  title,
+  sub,
+  compact,
+  wordmark,
+  children,
+}: {
+  active?: string
+  title: string
+  sub?: React.ReactNode
+  /** Phone-first screens that lead with their own controls: no heading, tight padding. */
+  compact?: boolean
+  /** Show the title as the staff app's "PARTY CREW" lettering. */
+  wordmark?: boolean
+  children: React.ReactNode
+}) {
+  if (compact) {
+    return (
+      <div className="px-3 py-3">
+        <h1 className="sr-only">{title}</h1>
+        <div className="max-w-6xl mx-auto">
+          {sub && <div className="text-center text-xs text-hampton-navy/50 mb-2">{sub}</div>}
+          {children}
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="px-4 sm:px-5 py-6">
       <div className="max-w-6xl mx-auto">
-        <h1 className="font-serif text-3xl text-hampton-navy">{title}</h1>
-        {sub && <div className="text-hampton-navy/60 text-sm mt-1">{sub}</div>}
+        {wordmark ? <VarsityTitle>{title}</VarsityTitle> : <h1 className="font-serif text-3xl text-hampton-navy">{title}</h1>}
+        {sub && <div className={`text-hampton-navy/60 text-sm mt-1 ${wordmark ? 'text-center' : ''}`}>{sub}</div>}
         <div className="mt-6">{children}</div>
       </div>
     </div>

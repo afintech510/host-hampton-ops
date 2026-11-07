@@ -14,6 +14,7 @@ import PartyCardView from '@/components/admin/PartyCardView'
 import type { PartyCardData } from '@/lib/assistant/partyCard'
 import type { BookingTile as Tile } from '@/lib/crewAppData'
 import { PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
+import { specialStaffingOf, type SpecialStaffing } from '@/lib/crew/specialStaffing'
 import { PAYMENT_LABELS, PAYMENT_STYLE, type PaymentStatus } from '@/lib/bookingStatus'
 import { BTN_GHOST, Banner, money, useAdminApi } from './adminCrew'
 import { load, useAdminData, warm } from './adminData'
@@ -57,7 +58,7 @@ function crewChip(t: Tile) {
   return { text, cls: staffed === 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }
 }
 
-function Staffing({ tile, onChanged }: { tile: Tile; onChanged: () => void }) {
+function Staffing({ tile, special, onChanged }: { tile: Tile; special: SpecialStaffing[]; onChanged: () => void }) {
   const api = useAdminApi()
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -88,6 +89,19 @@ function Staffing({ tile, onChanged }: { tile: Tile; onChanged: () => void }) {
         <div className="text-xs font-bold uppercase tracking-wide text-hampton-navy/60">Staffing</div>
         <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${crewChip(tile).cls}`}>{crewChip(tile).text}</span>
       </div>
+      {special.length > 0 && (
+        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" role="alert" data-special-staffing>
+          <div className="font-bold text-amber-900">⚠ Special staffing</div>
+          <ul className="mt-1 space-y-1">
+            {special.map((sp, i) => (
+              <li key={i}>
+                <span className="font-semibold">{sp.label}{sp.quantity > 1 ? ` ×${sp.quantity}` : ''}</span>
+                <div className="text-xs text-amber-900/80">{sp.action}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {c && c.people.length > 0 && (
         <ul className="mt-2 space-y-1 text-sm text-hampton-navy">
           {c.people.map((p, i) => (
@@ -127,6 +141,8 @@ export default function BookingTile({ tile, open, onToggle }: { tile: Tile; open
   useEffect(() => {
     if (open && crewPartyId) warm([`/api/admin/crew/parties/${crewPartyId}`])
   }, [open, crewPartyId])
+  // What was bought that needs a particular person: a Party Helper, a face painter, a character.
+  const special = detail.data ? specialStaffingOf(detail.data.card.addOns.map(l => ({ name: l.name, quantity: l.quantity, is_optional: l.optional }))) : []
   const pay = tile.paymentStatus as PaymentStatus
   const kid = tile.childName ? (/s$/i.test(tile.childName) ? `${tile.childName}' Party` : `${tile.childName}'s Party`) : null
   const owed = tile.balanceCents > 0
@@ -181,7 +197,7 @@ export default function BookingTile({ tile, open, onToggle }: { tile: Tile; open
             </>
           )}
           {detail.data && <ContactButtons bookingId={tile.id} phone={detail.data.card.contact.phone} email={detail.data.card.contact.email} />}
-          <Staffing tile={tile} onChanged={() => { void load('/api/admin/crew-app/bookings') }} />
+          <Staffing tile={tile} special={special} onChanged={() => { void load('/api/admin/crew-app/bookings') }} />
           <PartyActions bookingId={tile.id} bookingRef={tile.ref} />
         </div>
       )}
