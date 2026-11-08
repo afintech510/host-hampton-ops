@@ -16,8 +16,10 @@
  */
 
 import { useState } from 'react'
-import { BTN_GHOST, BTN_PRIMARY, INPUT, useAdminApi } from './adminCrew'
+import { CreditCard, X } from 'lucide-react'
+import { BTN_PRIMARY, INPUT, useAdminApi } from './adminCrew'
 import { refreshAll } from './adminData'
+import { CARD_ACTION } from './PartyTile'
 
 export const PAY_METHODS = [
   { key: 'cash', label: 'Cash', method: 'cash', note: '' },
@@ -113,12 +115,13 @@ export default function LeadActions({ bookingId, name }: { bookingId: string; na
   }
 
   return (
-    <div className="rounded-xl bg-white border border-hampton-navy/10 p-3" data-lead-actions>
-      <div className="flex flex-wrap justify-center gap-2">
-        <button type="button" className={BTN_GHOST} disabled={!!busy} onClick={() => setForm(v => !v)} aria-expanded={form}>
-          {form ? 'Close payment' : '$ Add payment'}
+    <div className="border-t border-hampton-navy/10 pt-4" data-lead-actions>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button type="button" className={CARD_ACTION} disabled={!!busy} onClick={() => setForm(v => !v)} aria-expanded={form}>
+          <CreditCard size={15} aria-hidden="true" />{form ? 'Close payment' : 'Add payment'}
         </button>
-        <button type="button" className={`${BTN_GHOST} !border-red-300 !text-red-700`} disabled={!!busy} onClick={markLost}>
+        <button type="button" className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 disabled:opacity-50 sm:text-sm" disabled={!!busy} onClick={markLost}>
+          <X size={14} aria-hidden="true" />
           {busy === 'lost' ? 'Marking…' : 'Mark lead lost'}
         </button>
       </div>

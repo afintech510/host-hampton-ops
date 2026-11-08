@@ -8,8 +8,10 @@
  */
 
 import { useState } from 'react'
+import { BotMessageSquare, Copy, ExternalLink, FileText } from 'lucide-react'
 import { copyText } from '@/lib/copyText'
-import { BTN_GHOST, BTN_PRIMARY, useAdminApi } from './adminCrew'
+import { useAdminApi } from './adminCrew'
+import { CARD_ACTION, CardSection } from './PartyTile'
 
 export function usePartyLinks(bookingId: string) {
   const api = useAdminApi()
@@ -56,17 +58,18 @@ export default function PartyActions({ bookingId, bookingRef, children }: { book
   const { link, busy, toast, copied } = usePartyLinks(bookingId)
   const askAssistant = () => window.dispatchEvent(new CustomEvent('hh:assistant-open', { detail: { bookingRef } }))
   return (
-    <div>
-      <div className="flex flex-wrap justify-center gap-2 pt-1">
-        <button className={BTN_GHOST} disabled={!!busy} onClick={() => link('invoice', 'copy')}>
+    <CardSection title="Invoice & planning">
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" className={CARD_ACTION} disabled={!!busy} onClick={() => link('invoice', 'copy')}>
+          <Copy size={15} className="shrink-0" aria-hidden="true" />
           {busy === 'invoice-copy' ? 'Making…' : copied ? '✓ Copied' : 'Copy invoice link'}
         </button>
-        <button className={BTN_GHOST} disabled={!!busy} onClick={() => link('invoice', 'open')}>View invoice</button>
-        <button className={BTN_GHOST} disabled={!!busy} onClick={() => link('planner', 'open')}>Open planner</button>
+        <button type="button" className={CARD_ACTION} disabled={!!busy} onClick={() => link('invoice', 'open')}><FileText size={15} className="shrink-0" aria-hidden="true" />View invoice</button>
+        <button type="button" className={CARD_ACTION} disabled={!!busy} onClick={() => link('planner', 'open')}><ExternalLink size={15} className="shrink-0" aria-hidden="true" />Open planner</button>
         {children}
-        <button className={BTN_PRIMARY} onClick={askAssistant}>✨ Ask the AI to edit</button>
+        <button type="button" className={CARD_ACTION} onClick={askAssistant}><BotMessageSquare size={15} className="shrink-0" aria-hidden="true" />Ask the AI to edit</button>
       </div>
-      {toast && <div className="mt-2 text-center text-sm text-hampton-navy/70 break-all select-all">{toast}</div>}
-    </div>
+      {toast && <div role="status" className="mt-2 text-sm text-hampton-navy/70 break-all select-all">{toast}</div>}
+    </CardSection>
   )
 }
