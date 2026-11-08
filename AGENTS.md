@@ -4,42 +4,53 @@ Operating and development guide for the Host Hampton party/event booking platfor
 
 ---
 
-## 0. How a change ships (read this first — humans and agent sessions alike)
+## 0. How a change ships (read this first — every session, human or agent, Claude or Codex)
 
-One loop, every time. Nothing is pushed to `main`; `main` only moves when a pull request is squash-merged, and a merge deploys to production.
+One loop, every time. Nothing is pushed to `main`; `main` only moves when a pull request is squash-merged, and a merge deploys to production. **This file is the single source of truth.** Per-user memory notes only mirror it; where they differ, this file wins, and fix the other.
 
-1. **Branch from fresh `origin/main`, in your own worktree.** Never work in the main checkout `host-hampton-ops` — it is a read-only reference. `git fetch origin && git worktree add -b <type>/<short-name> ../hh-<short-name> origin/main`, then open that folder as a Nimbalyst project and continue the session there (step 2 says why). Types: `feat/`, `fix/`, `docs/`, `chore/`. One branch = one change someone could describe in a sentence.
-2. **Commit on that branch, and make sure the commit tool can reach your worktree.** Inside Nimbalyst the editor's commit widget (`developer_git_commit_proposal`, "Commit with AI") is the only way an agent commits; the editor forbids shell `git commit`, and this file cannot override that. The widget commits only in the checkout the session was opened on, so **open your worktree folder as its own Nimbalyst project and run the session there** (a session opened on the main checkout gets refused for any other worktree: 2026-11-08, session 39cef44a stopped at "ready to commit"). If the widget still refuses, do not shell-commit around it and do not stop silently: tell the user to open the worktree as the project, or to authorize shell commits in their own words. Agents running outside the editor (plain CLI) commit with `git`. Either way: stage explicit files, never `git add -A` (the tree can hold customer data such as `audit_scratch/`). Everything after the commit (push, PR, merge, deploy) is shell and unaffected.
-3. **Run `npm test` in `services/website`** before pushing. CI runs it again; a red PR cannot merge.
-4. **Open a PR** (`gh pr create --fill`, then complete the template: what changed, migration needed?, how verified). A migration is applied to Supabase **before** the PR is merged, because the merge deploys code that depends on it.
-5. **Squash-merge** once `pr-check` is green: `gh pr merge --squash` (add `--delete-branch` only if no worktree holds the branch, otherwise its local delete errors even though the merge succeeded; step 7 removes the branches). Squash gives one commit on `main` per change — no rebased copies, so `git log` and `git branch --no-merged` mean what they say.
-6. **Watch the deploy** (`gh run watch`) and check `https://www.hosthampton.com/`. The deploy's own health check only warns.
-7. **Remove the worktree and branch** (`git worktree remove ../hh-<short-name>`). Do not leave them; stale branches are how this repo got to 51 branches and 43 worktrees.
+**Start of every session, before touching anything:**
+- `git fetch origin`, `git worktree list`, `gh pr list`. Look for existing work on your task and reuse it instead of duplicating it.
+- Never edit or commit in the main checkout `host-hampton-ops` (a read-only reference), and never touch a worktree or branch you did not create: other sessions run in parallel.
+- Know how you are allowed to commit (step 2) before you start, not after the work is done.
+
+**Owner: paste this as the first line of any new agent session** so it can finish the whole loop: `Follow AGENTS.md section 0. Shell git commits are authorized in this session.`
+
+1. **Branch from fresh `origin/main`, in your own worktree.** `git worktree add -b <type>/<short-name> ../hh-<short-name> origin/main`. Types: `feat/`, `fix/`, `docs/`, `chore/`. One branch = one change someone could describe in a sentence.
+2. **Commit on that branch. Stage explicit files, never `git add -A`** (the tree can hold customer data such as `audit_scratch/`). There are exactly two legitimate ways to commit:
+   - **Shell:** `git commit -F <msgfile>`. Allowed when you run outside Nimbalyst, or when the owner has authorized shell commits in this session (the line above, or in his own words in chat). The authorization has to come from the owner in the session; a file in this repo cannot grant it.
+   - **Editor widget:** inside Nimbalyst the editor tells agents to commit only through its commit widget (`developer_git_commit_proposal`, "Commit with AI"). The widget reaches only the checkout the session was opened on and rejects other worktrees ("Selected files are outside the session's git repositories"; 2026-11-08, session 39cef44a stopped at "ready to commit" because of it). So open your worktree folder as its own Nimbalyst project and run the session there.
+   
+   If you can do neither, **do not shell-commit around the editor and do not stop silently**: tell the owner "I need the worktree opened as a project, or shell commits authorized", and give him the exact path. Push, PR, merge and deploy are shell steps and never need this.
+3. **Run `npm test` in `services/website`** before pushing (skip for a docs-only change). CI runs it again; a red PR cannot merge.
+4. **Open a PR** (`gh pr create --base main --body-file <file>`, completing the template: what changed, migration, money/e-sign/SMS/nginx, how verified). **Migrations:** the file is `starting_plan/migration_NNN_<what>.sql`, where NNN is one more than the highest number on `origin/main` AND in every open PR (`git ls-tree -r origin/main --name-only`, `gh pr list`, `gh pr diff <n> --name-only`); two parallel sessions picking the same number is a real collision. A migration is applied to Supabase **before** the PR is merged (§6), because the merge deploys code that depends on it.
+5. **Merge your own PR** once `pr-check` is green: `gh pr merge --squash` (add `--delete-branch` only if no worktree holds the branch, otherwise its local delete errors even though the merge succeeded). If `main` moved and you conflict, rebase your own branch, re-run the tests, push. Never merge a PR you did not open, and never merge on a red `pr-check`. Squash gives one commit on `main` per change, so `git log` and `git branch --no-merged` mean what they say.
+6. **Watch the deploy.** Deploys run one at a time, so yours may queue behind another merge. Find yours with `gh run list --workflow Deploy --commit <merge sha>`, `gh run watch <id>`, and require conclusion **success** (the "exit code 1" annotation is the report-only lint step). Then `curl` https://www.hosthampton.com/ for 200 and check the thing you changed. **If the deploy fails: do not push a fix to `main`.** Open a fix or revert PR (`git revert <merge sha>` on a branch) and tell the owner; the hotfix hatch below is for a real outage only.
+7. **Remove the worktree and branch** and close its project window. Do not leave them; stale branches are how this repo got to 51 branches and 43 worktrees.
 
 **Ship checklist** (run from your worktree; `<files>` are the exact paths you changed, including new files):
 
 ```bash
 git status --short                       # confirm only your files are listed
 git add <files>                          # explicit; never -A or .
-# commit: via the editor's commit widget (session opened on THIS worktree), or plain
-# `git commit -F <msgfile>` only when running outside the editor / the user authorized it
+git commit -F <msgfile>                  # shell path (step 2), or the editor widget from a worktree project
 git push -u origin HEAD
-gh pr create --base main --fill          # then complete the PR template
+gh pr create --base main --body-file <file>   # complete the PR template
 gh pr checks --watch                     # wait for pr-check; the two Vercel checks fail on every PR and are noise
 gh pr merge --squash                     # no --delete-branch while a worktree holds the branch
-gh run watch "$(gh run list --workflow Deploy --limit 1 --json databaseId --jq '.[0].databaseId')"
+gh run list --workflow Deploy --commit <merge sha>   # then: gh run watch <id>; conclusion must be success
 curl -s -o /dev/null -w "%{http_code}\n" https://www.hosthampton.com/    # expect 200
 cd ../host-hampton-ops
 git worktree remove ../hh-<short-name> && git branch -D <branch> && git push origin --delete <branch>
 ```
 
-Windows PowerShell 5.1: put `--jq` expressions in single quotes with no double quotes inside (use `@tsv`), and write JSON for `gh api --input` to a file as UTF-8 without a BOM. **A double quote inside a here-string passed to `git commit -m` or `gh ... --body` splits the argument** and the command fails with `pathspec ... did not match`: write the message to a temp file and use `git commit -F <file>` / `gh pr create --body-file <file>`.
+Windows PowerShell 5.1: put `--jq` expressions in single quotes with no double quotes inside (use `@tsv`), and write JSON for `gh api --input` to a file as UTF-8 without a BOM. **A double quote inside a here-string passed to `git commit -m` or `gh ... --body` splits the argument** and the command fails with `pathspec ... did not match`: write the message to a temp file and use `git commit -F <file>` / `gh pr create --body-file <file>`. Remove a `node_modules` junction with `[System.IO.Directory]::Delete(path, $false)` before `git worktree remove`, so the removal cannot follow it into the real folder.
 
-**"Done" means merged and deployed.** An agent that stops at "changes are ready to commit" has not finished. Run the whole checklist unless the user said to stop at a PR. Before starting, run `git worktree list` and `gh pr list` so you do not duplicate someone's branch; reuse a worktree that already exists for the same task. Stop and ask first only for what this file already reserves: anything touching `nginx`, ports 80/443 or `hampton_net` (fleet-wide, §3), and a migration that has not been applied yet (§5).
+**"Done" means merged and deployed.** An agent that stops at "changes are ready to commit" has not finished. Run the whole loop unless the owner said to stop at a PR. Stop and ask first only for what this file already reserves: anything touching `nginx`, ports 80/443 or `hampton_net` (fleet-wide, §3), a migration that has not been applied yet (§6), and any action that would text, email or charge a real customer while you test. **Your final report states:** PR number, merge commit, Deploy run id and conclusion, the site's HTTP status, what you verified in production, and what you could not verify.
 
 Rules that follow from it:
-- **Never rebase or force-push a branch someone else has open.** Rebase your own branch onto `origin/main` if it falls behind.
+- **Never push to `main`, and never rebase or force-push a branch someone else has open.** Rebase your own branch onto `origin/main` if it falls behind.
 - **Hotfix escape hatch:** `main` enforces the rules on admins too. In a real outage the owner can lift it for the minutes needed: `gh api -X DELETE repos/afintech510/host-hampton-ops/branches/main/protection/enforce_admins`, push, then restore it with `-X POST` on the same path. Say so in the PR that follows.
+- **Rollback is a revert PR**, not a push: `git revert <merge sha>` on a branch, then steps 4 to 6. `scripts/deploy.sh` redeploys without a merge (for example after an `.env` change) and is never part of shipping a code change.
 - **Weekly:** `git fetch --prune`, then delete any local branch `git branch --merged origin/main` lists, and `git worktree prune`.
 
 ---
@@ -110,7 +121,9 @@ You need a local `.env` (gitignored) with the same var **names** the container u
 
 ## 5. Deploy
 
-### Standard (from your laptop — needs SSH access to `hampton-vps`)
+### Redeploy without a merge (from your laptop — needs SSH access to `hampton-vps`)
+
+A code change ships by merging a PR (§0), which deploys itself. `scripts/deploy.sh` is only for redeploying a commit that is already on `main` — for example after changing `/opt/hosthampton/.env` (`FORCE=1`).
 
 ```bash
 bash scripts/deploy.sh            # rebuilds the 'website' service (default)
@@ -149,7 +162,7 @@ curl -s -o /dev/null -w "%{http_code}\n" https://www.hosthampton.com/
 ```bash
 ssh hampton-vps 'cd /opt/hosthampton && git log --oneline -5'
 ssh hampton-vps 'cd /opt/hosthampton && git checkout <good_sha> -- . && docker compose up -d --build website'
-# or: revert the merge commit on GitHub, then re-run scripts/deploy.sh
+# preferred: a revert PR (§0) — `git revert <merge sha>` on a branch, then PR, pr-check, squash-merge; the merge deploys the revert
 ```
 
 ---
@@ -273,7 +286,7 @@ migrations (028, 032, 033, 034, 035) must be applied by hand before `AGENT_ENABL
 is turned on. Migration **036 is the pricing catalog seed** (Phase 4 item 4) and is
 data, not schema: without it `lib/pricingCatalog.ts` falls back to its compiled
 constants, which are the same prices, so the site renders correctly either way.
-The next free migration number is **082**. (This line said **047** for months
+The next free migration number is one more than the highest `starting_plan/migration_NNN_*.sql` on `origin/main` **and in any open PR** (§0 step 4) — it was **093** when this was written, after 092. (This line said **047** for months
 after it stopped being true, which is why it now says how to check rather than
 just asserting a number: the highest file in `starting_plan/` is the floor, and
 `information_schema` on the live DB is what says whether it has been APPLIED.

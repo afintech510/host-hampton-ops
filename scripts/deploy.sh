@@ -31,7 +31,7 @@ cd "${DIR}"
 
 # ONE deploy at a time, box-wide.
 #
-# Every push to main ALSO deploys, via .github/workflows/deploy.yml, which runs
+# Every merge to main ALSO deploys, via .github/workflows/deploy.yml, which runs
 # the same `docker compose up -d --build website` over SSH once the tests pass.
 # Pushing and then running this script started two recreates of the same
 # container ~a second apart; on 2026-10-01 that happened twice and both times

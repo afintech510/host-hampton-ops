@@ -40,7 +40,7 @@ Run the phase prompts in this folder in order. **Stop at every STOP gate and wai
 - **There is no staging.** `staging.hosthampton.com` is the same container and the same database.
   - Everything ships to `main` behind `CREW_ENABLED=false`.
   - Test in production with throwaway rows, probing the **container IP** and not Cloudflare. Clean up afterwards.
-- **A push to `main` is a production deploy.** Watch it with `gh run watch`, verify the site, and never also run `scripts/deploy.sh`.
+- **A merge to `main` is a production deploy** (`main` is PR-only; follow `AGENTS.md` §0). Watch it with `gh run watch`, verify the site, and never also run `scripts/deploy.sh`.
 - **Working tree:**
   - Local `main` holds other sessions' uncommitted work. Build in a worktree off `origin/main`.
   - Stage explicit files only.
