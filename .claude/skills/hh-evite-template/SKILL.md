@@ -107,7 +107,7 @@ SAMPLE_CASE=long npx jest src/__tests__/zz_preview/samples   # review mosaic onl
 ## 7. Ask, deploy, confirm
 
 - **Show Adam** `sheet.jpg`, `og.jpg` and the `sample.jpg` (`mcp__nimbalyst__display_to_user`) and get his OK — unless he already said to ship it.
-- Commit only your files (template, art, sample, registry/types/themes edits) with a message like `feat(evites): <Label> invitation design`. **A push to `main` IS a production deploy**: rebase on `origin/main`, push, `gh run watch <id>` (do not also run `scripts/deploy.sh`).
+- Commit only your files (template, art, sample, registry/types/themes edits) with a message like `feat(evites): <Label> invitation design`. **A merge to `main` IS a production deploy**: ship by the loop in `AGENTS.md` §0 (own worktree, PR, `pr-check`, squash-merge, `gh run watch <id>`; never push to `main`, never also run `scripts/deploy.sh`).
 - Confirm live: `curl -s https://www.hosthampton.com/invitations | grep -c '<Gallery name>'` ≥ 1 and `curl -sI https://www.hosthampton.com/evites/<slug>/sample.jpg` → 200. Tell Adam it's on https://www.hosthampton.com/invitations.
 
 ## Hard rules

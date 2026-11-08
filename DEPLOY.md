@@ -2,13 +2,13 @@
 
 Production is a single Hetzner VPS running Docker Compose. The live website,
 dashboard, and API are all served by the `hampton_website` container behind
-`hampton_nginx`. **Every push to `main` deploys itself**: `.github/workflows/deploy.yml`
+`hampton_nginx`. **Every merge to `main` deploys itself** (`main` is protected: changes arrive only by pull request, see `AGENTS.md` §0): `.github/workflows/deploy.yml`
 runs the Jest suite, then SSHes in and rebuilds `website`. `scripts/deploy.sh` is
-for redeploying without a push (e.g. `FORCE=1` after an `.env` change). Both take
+for redeploying without a merge (e.g. `FORCE=1` after an `.env` change). Both take
 the box-wide lock `/run/lock/hosthampton-deploy.lock` and skip a commit already
 recorded in `/var/lib/hosthampton/deployed-website` — two concurrent recreates
-left the site 502 twice on 2026-10-01. Push, then `gh run watch`; do not also run
-`deploy.sh` for the same push.
+left the site 502 twice on 2026-10-01. Merge, then `gh run watch`; do not also run
+`deploy.sh` for the same merge.
 
 - **VPS:** `5.161.88.134` · SSH alias `hampton-vps` (root, key `id_ed25519_headless`)
 - **Repo on box:** `/opt/hosthampton` (tracks `main`)
@@ -17,7 +17,9 @@ left the site 502 twice on 2026-10-01. Push, then `gh run watch`; do not also ru
 
 ---
 
-## TL;DR — deploy `main` to production
+## TL;DR — redeploy main without a merge
+
+Shipping a code change is **branch → PR → squash-merge** (`AGENTS.md` §0); the merge deploys. Use this only to redeploy a commit already on `main`.
 
 From your laptop (needs `gh` logged in + SSH access):
 
@@ -114,7 +116,7 @@ validation error (e.g. `POST /api/.../checkout` → 400, not 404).
 ```bash
 ssh hampton-vps 'cd /opt/hosthampton && git log --oneline -5'
 ssh hampton-vps 'cd /opt/hosthampton && git checkout <good_sha> -- . && docker compose up -d --build website'
-# or revert the merge commit on GitHub and re-run scripts/deploy.sh
+# or (preferred) a revert PR: git revert <merge sha> on a branch, PR, squash-merge
 ```
 
 ---

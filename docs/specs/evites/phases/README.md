@@ -26,7 +26,7 @@ P07 and P08 can run in parallel once P06 is merged into the branch. Everything e
 ## Rules for every operator
 
 1. **Branch:** all evite work goes on `feat/evites`, one commit per phase (message `feat(evites): P0X <title>`). P00 goes on its own branch, `fix/my-booking-card-pay`.
-2. **A push to `main` is a production deploy** (`.github/workflows/deploy.yml`). Operators never push to `main`, never merge, never run `scripts/deploy.sh`, never apply a migration and never change the box. Those belong to the orchestrator, after Adam says yes.
+2. **A merge to `main` is a production deploy** (`.github/workflows/deploy.yml`; `main` is PR-only, `AGENTS.md` §0). Operators never push to `main`, never merge, never run `scripts/deploy.sh`, never apply a migration and never change the box. Those belong to the orchestrator, after Adam says yes.
 3. **Read before writing.** Each prompt names the spec sections and existing files to read first. AGENTS.md §11 holds hard-won rules that apply:
    - Read every write's `{error}`.
    - Use three-outcome reads.
