@@ -4,13 +4,14 @@
  * One booked party as a tile: a date block, who it is for, what kind, and the two
  * things you scan for - what is still owed and whether the crew is covered. Tap it
  * and it opens to everything: the full party card, the venue for a mobile party, the
- * admin notes, who is staffed (with a button to the party-staff page), and the link
- * buttons.
+ * admin notes, who is staffed (a short list; "Manage staff" opens the controls in place -
+ * assign, remove, add a spot, the shift times - with a link to the full party-staff page),
+ * and the link buttons.
  */
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, Users } from 'lucide-react'
+import { AlertCircle, ChevronDown, Users } from 'lucide-react'
 import PartyTile, { CARD_ACTION, CardBadge, CardSection, partyTitle } from './PartyTile'
 import BookingDetails from './BookingDetails'
 import type { PartyCardData } from '@/lib/assistant/partyCard'
@@ -37,6 +38,7 @@ function Staffing({ tile, special, onChanged }: { tile: Tile; special: SpecialSt
   const api = useAdminApi()
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const [managing, setManaging] = useState(false)
 
   async function importIt() {
     setBusy(true)
@@ -53,19 +55,16 @@ function Staffing({ tile, special, onChanged }: { tile: Tile; special: SpecialSt
     const s = r.data.summary
     if (s?.errors?.length) setMsg(s.errors[0])
     else if (!s?.created) setMsg('Nothing was added: it may need a start time or address first, or it is already there.')
-    else setMsg('Added as a draft. Set the staff and shift below, then publish when you are ready.')
+    else setMsg('Added as a draft. Open Manage staff to set the staff and shift, then publish when you are ready.')
     onChanged()
   }
 
   const c = tile.crew
+  const chip = crewChip(tile)
   return (
     <CardSection title="Staffing">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-hampton-navy/70">Crew coverage</span>
-        <CardBadge className={crewChip(tile).cls}>{crewChip(tile).text}</CardBadge>
-      </div>
       {special.length > 0 && (
-        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" role="alert" data-special-staffing>
+        <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" role="alert" data-special-staffing>
           <div className="flex items-center gap-2 font-semibold text-amber-900"><AlertCircle size={16} aria-hidden="true" />Special staffing</div>
           <ul className="mt-1 space-y-1">
             {special.map((sp, i) => (
@@ -77,10 +76,11 @@ function Staffing({ tile, special, onChanged }: { tile: Tile; special: SpecialSt
           </ul>
         </div>
       )}
-      {c && c.people.length > 0 && (
-        <ul className="mt-3 divide-y divide-hampton-navy/10 text-sm text-hampton-navy">
+      {/* Collapsed: who is on it. Open: the controls below take over, so the same people are not listed twice. */}
+      {c && c.people.length > 0 && !managing && (
+        <ul className="divide-y divide-hampton-navy/10 text-sm text-hampton-navy">
           {c.people.map((p, i) => (
-            <li key={i} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
+            <li key={i} className="flex flex-wrap items-center justify-between gap-x-3 py-1.5">
               <span>
                 {p.firstName}
                 <span className="text-hampton-navy/70"> · {p.role === 'lead' ? 'Party Lead' : 'Crew'}</span>
@@ -90,20 +90,30 @@ function Staffing({ tile, special, onChanged }: { tile: Tile; special: SpecialSt
           ))}
         </ul>
       )}
-      {c && c.people.length === 0 && c.status !== 'cancelled' && <p className="mt-2 text-sm text-hampton-navy/70">Nobody is on it yet.</p>}
-      {!c && <p className="mt-2 text-sm text-hampton-navy/70">This booking is not on the crew schedule yet.</p>}
-      <div className="mt-3 flex">
+      {c && c.people.length === 0 && c.status !== 'cancelled' && !managing && <p className="text-sm text-hampton-navy/70">Nobody is on it yet.</p>}
+      {!c && <p className="text-sm text-hampton-navy/70">This booking is not on the crew schedule yet.</p>}
+      <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 ${c && c.people.length > 0 && !managing ? 'mt-2' : ''}`}>
         {c ? (
-          <Link href={`/admin/crew/parties/${c.partyId}`} prefetch className={`${CARD_ACTION} w-full sm:w-auto !bg-hampton-navy !text-white`}>
+          <button
+            type="button"
+            aria-expanded={managing}
+            onClick={() => setManaging(v => !v)}
+            className={`${CARD_ACTION} !min-h-[40px] !bg-hampton-navy !text-white`}
+          >
             Manage staff
-          </Link>
+            <ChevronDown size={15} aria-hidden="true" className={`transition-transform ${managing ? 'rotate-180' : ''}`} />
+          </button>
         ) : (
-          <button className={`${CARD_ACTION} w-full sm:w-auto`} disabled={busy} onClick={importIt}>
+          <button className={CARD_ACTION} disabled={busy} onClick={importIt}>
             {busy ? 'Adding…' : 'Add to crew schedule'}
           </button>
         )}
+        <span className={`inline-flex items-center rounded-md px-2 py-1 text-[11px] font-semibold ${chip.cls}`}>{chip.text}</span>
+        {c && managing && (
+          <Link href={`/admin/crew/parties/${c.partyId}`} prefetch className="text-xs font-semibold underline text-hampton-navy/70">Full staff page</Link>
+        )}
       </div>
-      {c && <div className="mt-4"><CrewPartyEditor partyId={c.partyId} embedded onChanged={onChanged} /></div>}
+      {c && managing && <div className="mt-3"><CrewPartyEditor partyId={c.partyId} embedded onChanged={onChanged} /></div>}
       {msg && <p role="status" className="mt-2 text-sm text-hampton-navy/70">{msg}</p>}
     </CardSection>
   )
@@ -112,7 +122,7 @@ function Staffing({ tile, special, onChanged }: { tile: Tile; special: SpecialSt
 export default function BookingTile({ tile, open, onToggle }: { tile: Tile; open: boolean; onToggle: () => void }) {
   const detail = useAdminData<{ card: PartyCardData; venue: string | null; adminNotes: string | null }>(open ? `/api/admin/crew-app/booking/${tile.id}` : null, 120_000)
   const chip = crewChip(tile)
-  // The party-staff page behind "Manage staff" is ready before it is tapped.
+  // The party-staff data behind "Manage staff" is ready before it is tapped.
   const crewPartyId = tile.crew?.partyId
   useEffect(() => {
     if (open && crewPartyId) warm([`/api/admin/crew/parties/${crewPartyId}`])

@@ -3,8 +3,13 @@
 /**
  * /admin/crew/parties/[id] — one crew party (prompt 04 §3): facts and the
  * booking link, publish / back to draft, the spots (assign, including Allie as
- * Lead; unassign; add; remove an open one; override the count), extra pay per
- * person, notes for crew, and the standby list. Attendance is Phase 5.
+ * Lead; unassign; add; remove an open one; override the count), the shift times,
+ * notes for crew, and the standby list. Attendance is Phase 5.
+ *
+ * `embedded` is the compact form inside a booking tile (Bookings, under "Manage staff"):
+ * just what you do to staff one party - assign, unassign, add or remove a spot, the shift
+ * times, publish, notes - in tighter cards. The facts, the standby list and "Remove from
+ * staffing" stay on the full page, which the tile links to.
  */
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
@@ -13,7 +18,7 @@ import { load as refresh } from './adminData'
 import { useAdminData } from './adminData'
 import { kindHasLead, workTypeOf } from '@/lib/crew/workTypes'
 import {
-  BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, STATUS_STYLE, money, useAdminApi, whenLabel,
+  BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, STATUS_STYLE, useAdminApi, whenLabel,
 } from './adminCrew'
 
 type Conflict = 'on_party' | 'overlap' | 'blocked' | 'not_lead' | 'inactive'
@@ -49,7 +54,7 @@ interface Detail {
   pick: PickPanelView | null
   party: {
     id: string; title: string; theme: string | null; party_kind: string; starts_at: string; ends_at: string; guest_count: number | null
-    location: string; notes_for_crew: string | null; slots_override: number | null; extra_flat_cents: number; status: string
+    location: string; notes_for_crew: string | null; slots_override: number | null; status: string
     published_at: string | null; sync_flags: string[]; booking_id: string | null; updated_by?: string | null
   }
   shift: Shift
@@ -91,6 +96,7 @@ function SpecialStaffingAlert({ special, staffed, needed }: { special: Special[]
 
 export default function CrewPartyEditor({ partyId, embedded = false, onChanged }: { partyId: string; embedded?: boolean; onChanged?: () => void }) {
   const params = { id: partyId }
+  const card = embedded ? 'bg-white rounded-xl border border-hampton-navy/10 p-3' : 'bg-white rounded-2xl shadow-sm p-5'
   const [removeConfirm, setRemoveConfirm] = useState(false)
 
   const api = useAdminApi()
@@ -230,23 +236,23 @@ export default function CrewPartyEditor({ partyId, embedded = false, onChanged }
         </Banner>
       )}
 
-      <div className={embedded ? "grid gap-5" : "grid lg:grid-cols-3 gap-5"}>
-        <section className="lg:col-span-2 space-y-5">
+      <div className={embedded ? 'grid gap-3' : 'grid lg:grid-cols-3 gap-5'}>
+        <section className={embedded ? 'space-y-3' : 'lg:col-span-2 space-y-5'}>
           {d.pick && (
-            <PickCard pick={d.pick} busy={busy} live={live}
+            <PickCard pick={d.pick} busy={busy} live={live} cardClass={card}
               onApprove={() => assignAll(d.pick!.recommendation.map(r => ({ slotId: r.slotId, memberId: r.memberId, who: r.name, force: false })))}
               onAssign={(slotId, memberId, who) => assignAll([{ slotId, memberId, who, force: false }])}
               onStandby={(memberId, who) => act({ action: 'standby', memberId }, `${who} is on standby.`)} />
           )}
-          <div className="bg-white rounded-2xl shadow-sm p-5">
-            <div className="mb-4">
+          <div className={card}>
+            <div className={embedded ? 'mb-2' : 'mb-4'}>
               <div className="flex items-center justify-between gap-3">
                 <h2 className="font-semibold text-hampton-navy">Spots</h2>
                 <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${d.staffed >= d.needed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                   {d.staffed} of {d.needed} staffed
                 </span>
               </div>
-              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 mt-3 empty:hidden">
+              <div className={`flex flex-col sm:flex-row sm:flex-wrap gap-2 empty:hidden ${embedded ? 'mt-2' : 'mt-3'}`}>
                 {live && liveSlots.some(s => !s.memberId) && (
                   <button disabled={busy || chosen.length === 0} onClick={() => assignAll(chosen)} className={`${BTN_PRIMARY} w-full sm:w-auto`}>
                     {busy ? 'Assigning…' : chosen.length > 1 ? `Assign ${chosen.length}` : 'Assign'}
@@ -264,9 +270,9 @@ export default function CrewPartyEditor({ partyId, embedded = false, onChanged }
               )}
             </div>
 
-            <ul className="space-y-3">
+            <ul className={embedded ? 'space-y-2' : 'space-y-3'}>
               {d.slots.filter(s => s.status !== 'cancelled').map(s => (
-                <SlotRow key={s.id} slot={s} members={d.members} busy={busy} live={live}
+                <SlotRow key={s.id} slot={s} members={d.members} busy={busy} live={live} compact={embedded}
                   pick={picks[s.id] ?? ''} taken={takenElsewhere(s.id)}
                   onPick={memberId => setPicks(prev => ({ ...prev, [s.id]: memberId }))}
                   onUnassign={() => act({ action: 'unassign', slotId: s.id }, 'Unassigned; the spot is open again.')}
@@ -295,7 +301,7 @@ export default function CrewPartyEditor({ partyId, embedded = false, onChanged }
             )}
 
             {live && (
-              <div className="mt-4 pt-4 border-t border-hampton-pink/10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+              <div className={`border-t border-hampton-pink/10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 ${embedded ? 'mt-3 pt-3' : 'mt-4 pt-4'}`}>
                 <button disabled={busy || liveSlots.length >= 10} onClick={() => act({ action: 'add_spot' }, 'Spot added.')} className={`${BTN_GHOST} w-full sm:w-auto`}>+ Add a spot</button>
                 <CountOverride value={p.slots_override} busy={busy} onSave={v => act({ action: 'set_count', value: v }, 'Count saved.')} />
               </div>
@@ -303,17 +309,16 @@ export default function CrewPartyEditor({ partyId, embedded = false, onChanged }
           </div>
 
           {live && (
-            <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4">
-              <h2 className="font-semibold text-hampton-navy">For the crew</h2>
+            <div className={`${card} ${embedded ? 'space-y-3' : 'space-y-4'}`}>
+              <h2 className="font-semibold text-hampton-navy">Shift and notes</h2>
               <ShiftEditor shift={d.shift} rental={!kindHasLead(p.party_kind)} busy={busy}
                 onSave={v => act({ action: 'shift', ...v }, 'Shift saved.')} />
-              <ExtraPay cents={p.extra_flat_cents} busy={busy} onSave={c => act({ action: 'fields', extra_flat_cents: c }, 'Extra pay saved.')} />
               <Notes initial={p.notes_for_crew ?? ''} busy={busy} onSave={v => act({ action: 'fields', notes_for_crew: v }, 'Notes saved.')} />
             </div>
           )}
         </section>
 
-        <aside className="space-y-5">
+        {!embedded && <aside className="space-y-5">
           <div className="bg-white rounded-2xl shadow-sm p-5 text-sm space-y-1.5 text-hampton-navy/80">
             <h2 className="font-semibold text-hampton-navy mb-2">Facts</h2>
             <p>Kind: {workTypeOf(p.party_kind) ? `${workTypeOf(p.party_kind)!.emoji} ${workTypeOf(p.party_kind)!.label}` : p.party_kind.replace(/_/g, ' ')}</p>
@@ -332,7 +337,6 @@ export default function CrewPartyEditor({ partyId, embedded = false, onChanged }
                 {d.about.cupcake && <p>Cupcakes: <strong>{d.about.cupcake}</strong></p>}
               </>
             )}
-            <p>Extra pay per person: {money(p.extra_flat_cents)}</p>
             <p>Spot count: {p.slots_override ? `${p.slots_override} (set by hand)` : 'from the guest count'}</p>
             {d.booking ? (
               <p><a className="underline" href={`/admin/lead/${encodeURIComponent(d.booking.ref)}`}>Open the booking</a> ({d.booking.status ?? '—'})</p>
@@ -346,9 +350,9 @@ export default function CrewPartyEditor({ partyId, embedded = false, onChanged }
             )}
             <p className="text-hampton-navy/40 text-xs mt-2">Crew who said they can cover. They are asked first if someone cancels late.</p>
           </div>
-        </aside>
+        </aside>}
       </div>
-      {(live || (p.status === 'cancelled' && actionError)) && <div className="mt-5 rounded-xl border border-red-200 p-4">
+      {!embedded && (live || (p.status === 'cancelled' && actionError)) && <div className="mt-5 rounded-xl border border-red-200 p-4">
         {removeConfirm ? <>
           <p className="text-sm text-hampton-navy mb-3">Remove {p.title} from staffing? Assigned staff and cover requests will be cancelled. The booking and staffing history are kept.</p>
           <div className="flex flex-wrap gap-2">
@@ -377,8 +381,8 @@ function lastWorkedLabel(iso: string | null): string {
  * the STANDBY pool, one tap each, or "Approve recommended" does the whole recommendation.
  * Being put on a spot is the confirmation; nobody is asked to accept it.
  */
-function PickCard({ pick, busy, live, onApprove, onAssign, onStandby }: {
-  pick: PickPanelView; busy: boolean; live: boolean; onApprove: () => void
+function PickCard({ pick, busy, live, cardClass, onApprove, onAssign, onStandby }: {
+  pick: PickPanelView; busy: boolean; live: boolean; cardClass: string; onApprove: () => void
   onAssign: (slotId: string, memberId: string, name: string) => void; onStandby: (memberId: string, name: string) => void
 }) {
   const rec = new Map(pick.recommendation.map(r => [r.memberId, r.role]))
@@ -390,7 +394,7 @@ function PickCard({ pick, busy, live, onApprove, onAssign, onStandby }: {
     ?? (canLead ? pick.openSpots.find(sp => sp.role === 'lead')?.slotId ?? null : null)
   const noSpot = pick.openSpots.length === 0
   return (
-    <div className="bg-white rounded-2xl shadow-sm p-5">
+    <div className={cardClass}>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
         <h2 className="font-semibold text-hampton-navy">Available to work this ({pick.volunteers.length + pick.conflicted.length})</h2>
         {live && pick.openSpots.length > 0 && pick.recommendation.length > 0 && (
@@ -477,8 +481,10 @@ function PickCard({ pick, busy, live, onApprove, onAssign, onStandby }: {
 const BTN_SMALL_DANGER = 'shrink-0 text-sm font-semibold rounded-full px-3.5 min-h-[40px] border-2 border-red-200 text-red-700 bg-white disabled:opacity-50'
 const CHIP = 'text-[11px] font-semibold px-2 py-0.5 rounded-full'
 
-function SlotRow({ slot, members, busy, live, pick, taken, onPick, onUnassign, onRemove, onOfferAll, onAssignCover }: {
+function SlotRow({ slot, members, busy, live, compact = false, pick, taken, onPick, onUnassign, onRemove, onOfferAll, onAssignCover }: {
   slot: Slot; members: Choice[]; busy: boolean; live: boolean
+  /** Tighter, for the editor inside a booking tile. */
+  compact?: boolean
   /** The person chosen for this open spot, and the people already chosen for the others. The page's one Assign button applies them. */
   pick: string; taken: ReadonlySet<string>; onPick: (memberId: string) => void
   onUnassign: () => void; onRemove: () => void
@@ -491,7 +497,7 @@ function SlotRow({ slot, members, busy, live, pick, taken, onPick, onUnassign, o
   // An open spot: one dashed card, the role named once, the choice full width.
   if (!slot.memberId) {
     return (
-      <li className="rounded-xl border-2 border-dashed border-hampton-pink/40 p-3">
+      <li className={`rounded-xl border-2 border-dashed border-hampton-pink/40 ${compact ? 'p-2' : 'p-3'}`}>
         <div className="flex items-center justify-between gap-3">
           <span className="font-semibold text-hampton-navy/70">{lead ? 'Party Lead spot' : 'Crew spot'} <span className="font-normal text-hampton-navy/50">· open</span></span>
           {live && !lead && <button disabled={busy} onClick={onRemove} className="text-sm text-hampton-navy/60 underline min-h-[40px] px-1 disabled:opacity-50">Remove spot</button>}
@@ -518,9 +524,9 @@ function SlotRow({ slot, members, busy, live, pick, taken, onPick, onUnassign, o
   // A filled spot: who on the left (initial, name, one line of chips), the one action on the right.
   const via = slot.assignedVia === 'admin' ? 'Assigned' : slot.assignedVia === 'cover' ? 'Covering' : slot.assignedVia ? 'Claimed' : ''
   return (
-    <li className="rounded-xl bg-[#F6F1EB]/60 p-3">
+    <li className={`rounded-xl bg-[#F6F1EB]/60 ${compact ? 'p-2' : 'p-3'}`}>
       <div className="flex items-center gap-3">
-        <span aria-hidden className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold ${lead ? 'bg-hampton-navy text-[#F6F1EB]' : 'bg-white text-hampton-navy border border-hampton-pink/30'}`}>
+        <span aria-hidden className={`shrink-0 ${compact ? 'w-8 h-8 text-sm' : 'w-10 h-10'} rounded-full flex items-center justify-center font-bold ${lead ? 'bg-hampton-navy text-[#F6F1EB]' : 'bg-white text-hampton-navy border border-hampton-pink/30'}`}>
           {(slot.memberName ?? '?').trim().charAt(0).toUpperCase()}
         </span>
         <div className="min-w-0 flex-1">
@@ -633,29 +639,13 @@ function ShiftEditor({ shift, rental, busy, onSave }: {
   )
 }
 
-function ExtraPay({ cents, busy, onSave }: { cents: number; busy: boolean; onSave: (c: number) => void }) {
-  const [v, setV] = useState((cents / 100).toFixed(2))
-  useEffect(() => { setV((cents / 100).toFixed(2)) }, [cents])
-  const parsed = Math.round(Number(v) * 100)
-  const valid = v.trim() !== '' && Number.isFinite(parsed) && parsed >= 0 && parsed <= 100_000
-  return (
-    <label className="block text-sm text-hampton-navy">
-      Extra pay per person (e.g. a holiday weekend)
-      <span className="flex items-center gap-2 mt-1">
-        $<input value={v} onChange={e => setV(e.target.value)} inputMode="decimal" className={`${INPUT} w-28`} />
-        <button disabled={busy || !valid || parsed === cents} onClick={() => onSave(parsed)} className={BTN_GHOST}>Save</button>
-      </span>
-    </label>
-  )
-}
-
 function Notes({ initial, busy, onSave }: { initial: string; busy: boolean; onSave: (v: string) => void }) {
   const [v, setV] = useState(initial)
   useEffect(() => { setV(initial) }, [initial])
   return (
     <label className="block text-sm text-hampton-navy">
       Notes for crew (only the people working it see these)
-      <textarea value={v} onChange={e => setV(e.target.value)} rows={3} maxLength={2000} className={`${INPUT} w-full mt-1`} />
+      <textarea value={v} onChange={e => setV(e.target.value)} rows={2} maxLength={2000} className={`${INPUT} w-full mt-1`} />
       {v !== initial && <button disabled={busy} onClick={() => onSave(v)} className={`${BTN_GHOST} mt-2`}>Save notes</button>}
     </label>
   )

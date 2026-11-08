@@ -95,11 +95,13 @@ describe('the sort button', () => {
   it('Leads and Bookings show the heading and Sort, with no sub line under the heading', () => {
     for (const [p, label] of [['leads', 'LEAD_SORTS'], ['bookings', 'BOOKING_SORTS']] as const) {
       const s = read(`app/admin/crew/${p}/page.tsx`)
-      expect(s).toMatch(new RegExp(`<CrewFrame[\\s\\S]{0,200}compact[\\s\\S]{0,120}actions=\\{<SortMenu options=\\{${label}\\}`))
+      expect(s).toMatch(new RegExp(`<CrewFrame[\\s\\S]{0,200}compact[\\s\\S]{0,120}actions=\\{[\\s\\S]{0,240}<SortMenu options=\\{${label}\\}`))
       expect(s).not.toMatch(/<CrewFrame[^>]*\bsub=/)
       expect(s).not.toContain('refreshing')
     }
     expect(read('app/admin/crew/leads/page.tsx')).toMatch(/sortLeads\(/)
+    // Leads also has the Refresh button, ahead of Sort in the same row.
+    expect(read('app/admin/crew/leads/page.tsx')).toMatch(/<RefreshButton busy=\{refresh\.busy\} onClick=\{refresh\.run\} \/>\s*<SortMenu/)
     expect(read('app/admin/crew/bookings/page.tsx')).toMatch(/sortBookings\(/)
   })
 })

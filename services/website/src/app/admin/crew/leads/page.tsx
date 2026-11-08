@@ -2,7 +2,7 @@
 
 /**
  * /admin/crew/leads - the open leads as tiles, phone first, in the same format as
- * Bookings: pull buttons for the kind of party and the month and the day / weekend it is for, then a
+ * Bookings: a Refresh button (check email and texts for anything new), pull buttons for the kind of party and the month and the day / weekend it is for, then a
  * tile per lead, the one in touch most recently on top. Tapping a tile opens
  * everything about the party and the buttons to copy or view the invoice, open the
  * planner, or ask the AI assistant to make a change. Nothing here changes a booking or
@@ -27,6 +27,7 @@ import ContactButtons from '../_components/ContactButtons'
 import LeadActions from '../_components/LeadActions'
 import PartyActions from '../_components/PartyActions'
 import SortMenu from '../_components/SortMenu'
+import { RefreshButton, RefreshOutcome, useLeadsRefresh } from '../_components/LeadsRefresh'
 import { LEAD_SORTS, sortLeads, type LeadSortKey } from '@/lib/crewAppSort'
 import PartyFilters, { passesTypes, useRemembered, type TypeKey } from '../_components/PartyFilters'
 
@@ -130,6 +131,7 @@ export default function CrewLeadsPage() {
   const [weekend, setWeekend] = useRemembered<WeekendKey[]>('leads.weekend', [])
   const [sort, setSort] = useRemembered<LeadSortKey>('leads.sort', 'contact_desc')
   const [openRef, setOpenRef] = useState<string | null>(null)
+  const refresh = useLeadsRefresh()
 
   const leads = useMemo(() => data?.leads ?? [], [data])
   /** Which chip a lead's party date belongs to: a month on offer, 'later', or 'none'. */
@@ -163,13 +165,19 @@ export default function CrewLeadsPage() {
       active="/admin/crew/leads"
       title="Leads"
       compact
-      actions={<SortMenu options={LEAD_SORTS} value={sort} onChange={setSort} />}
+      actions={
+        <div className="flex items-center gap-2">
+          <RefreshButton busy={refresh.busy} onClick={refresh.run} />
+          <SortMenu options={LEAD_SORTS} value={sort} onChange={setSort} />
+        </div>
+      }
     >
       <div className="max-w-3xl mx-auto">
         {error && !data && <Banner tone="error">{error}</Banner>}
         {loading && <div className="text-center text-hampton-navy/70 py-10">Loading the leads…</div>}
         {data && (
           <>
+            <RefreshOutcome busy={refresh.busy} outcome={refresh.outcome} />
             {data.truncated && <Banner tone="info">Showing the most recent 200 inquiries.</Banner>}
             <PartyFilters
               types={types}

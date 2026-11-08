@@ -93,6 +93,22 @@ export function passesDateFilter(date: string | null | undefined, f: DateFilter)
 
 export type WeekendKey = 'sat' | 'sun'
 
+/**
+ * Where "upcoming" starts: today, or on a Sunday yesterday, so that the weekend you are in still
+ * shows its Saturday. Plain date text in, plain date text out.
+ */
+export function upcomingFrom(today: string): string {
+  if (weekdayOf(today) !== 0) return today
+  const [y, m, d] = today.split('-').map(Number)
+  const t = new Date(Date.UTC(y, m - 1, d - 1))
+  return ymd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate())
+}
+
+/** Is this party this weekend or later? A booking with no date yet is kept, not hidden. */
+export function isUpcoming(date: string | null | undefined, today: string): boolean {
+  return !date || date >= upcomingFrom(today)
+}
+
 const WEEKEND_DOW: Record<WeekendKey, number> = { sun: 0, sat: 6 }
 
 /** 0 = Sunday … 6 = Saturday, read off the plain date so no time zone can move it. */
