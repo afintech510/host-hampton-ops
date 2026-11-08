@@ -193,6 +193,13 @@ describe('what the widget will link or load', () => {
     expect(segs.filter(s => s.kind === 'link')).toEqual([{ kind: 'link', text: 'https://www.example.com/plan/X', href: 'https://www.example.com/plan/X' }])
     expect(segs.map(s => s.text).join('')).toBe('Plan: https://www.example.com/plan/X. Or https://evil.example.org/x now')
   })
+  it('a filled-in planner link reads as a label, and still goes to the whole URL', () => {
+    const long = `https://www.example.com/party-builder?q=${'x'.repeat(300)}`
+    const [link] = linkSegments(`Here: ${long}`, origins).filter(s => s.kind === 'link')
+    expect(link).toEqual({ kind: 'link', text: 'Open this party in the planner', href: long })
+    const plain = linkSegments('https://www.example.com/party-builder', origins)[0]
+    expect(plain.text).toBe('https://www.example.com/party-builder')
+  })
   it('refuses javascript:, protocol-relative and look-alike hosts', () => {
     expect(sameOriginUrl('javascript:alert(1)', origins)).toBeNull()
     expect(sameOriginUrl('//www.example.com/x', origins)).toBeNull()

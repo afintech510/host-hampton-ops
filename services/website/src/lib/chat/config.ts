@@ -31,6 +31,12 @@ export const MAX_TURNS_PER_SESSION = 40
 export const MAX_REPLY_TOKENS = 1024
 /** Tool round-trips inside one visitor message. */
 export const MAX_TOOL_ITERATIONS = 6
+/**
+ * Characters of one tool result the model sees. 24k because the business
+ * overview (the /llms.txt document) is ~14k and was being cut at 12k — the
+ * studio-rental and policy half of it never reached the model.
+ */
+export const MAX_TOOL_RESULT_CHARS = 24_000
 /** Bytes of persisted history per session. A tool-use transcript cannot be truncated safely, so it is closed. */
 export const MAX_HISTORY_BYTES = 150_000
 /** One chat may spend at most this much, whatever the daily cap says. */

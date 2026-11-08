@@ -13,8 +13,12 @@
 
 import type { getSupabase } from '@/lib/supabase'
 import { loadPricingCatalog, type PricingCatalog } from '@/lib/pricingCatalog'
+import { buildPlanSnapshot } from '@/lib/plan'
+import type { BookingLineItem } from '@/types/booking-flow'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
-import { buildQuoteItems, computeQuote, type Quote, type QuoteItems, type QuoteSelection } from '@/lib/quoteEngine'
+import {
+  buildQuoteItems, computeQuote, MAX_PREMIUM_ACTIVITIES, MAX_STANDARD_ACTIVITIES, type Quote, type QuoteItems, type QuoteLineItem, type QuoteSelection,
+} from '@/lib/quoteEngine'
 import type { PricingItem } from '@/components/QuoteBuilder/types'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -26,7 +30,19 @@ export interface QuoteGroups {
   beverages: PricingItem[]; decor: PricingItem[]; entertainment: PricingItem[]; partyAddOns: PricingItem[]
 }
 
-export interface LoadedCatalog { cat: PricingCatalog; groups: QuoteGroups; items: QuoteItems }
+/**
+ * A theme's website face: the `party_themes` row (name, slug, copy) linked to the
+ * `pricing_items` row the planner charges. The two names can differ ("Sweets &
+ * Treats" on the site, "Sweets-n-Treats Party" on the price list), and before
+ * 2026-11-07 the theme list handed ChatGPT one and the quote refused it.
+ */
+export interface ThemeInfo { pricing_item_id: string | null; name: string; slug: string; description: string | null }
+
+export interface LoadedCatalog {
+  cat: PricingCatalog; groups: QuoteGroups; items: QuoteItems
+  /** The website names and slugs for the priced themes; empty when unreadable (themes still match by price-list name). */
+  themeInfo?: ThemeInfo[]
+}
 
 /** The same rows the planner's server page reads (`app/party-builder/page.tsx`). */
 export async function loadQuoteCatalog(sb: Supa): Promise<{ kind: 'ok'; data: LoadedCatalog } | { kind: 'unavailable'; error: string }> {
@@ -45,7 +61,53 @@ export async function loadQuoteCatalog(sb: Supa): Promise<{ kind: 'ok'; data: Lo
     desserts: by('dessert-add-on'), beverages: by('beverage-add-on'), decor: by('decor-add-on'), entertainment: by('entertainment-add-on'),
     partyAddOns: by('party-add-on'),
   }
-  return { kind: 'ok', data: { cat: await loadPricingCatalog(), groups, items: buildQuoteItems(groups) } }
+  const info = await sb.from('party_themes').select('pricing_item_id, name, slug, description').eq('is_active', true).order('sort_order', { ascending: true })
+  if (info.error) console.error('loadQuoteCatalog: party_themes unreadable, matching themes by price-list name only —', info.error.message)
+  return {
+    kind: 'ok',
+    data: { cat: await loadPricingCatalog(), groups, items: buildQuoteItems(groups), themeInfo: (info.data ?? []) as ThemeInfo[] },
+  }
+}
+
+/** Every name a theme answers to: its price-list name, its website name and its slug. */
+export function themeAliases(loaded: Pick<LoadedCatalog, 'themeInfo'>, theme: PricingItem): string[] {
+  const linked = (loaded.themeInfo ?? []).filter(t => t.pricing_item_id === theme.id)
+  return [theme.name, ...linked.map(t => t.name), ...linked.map(t => t.slug)]
+}
+
+/**
+ * Exact (normalised) match on ANY alias first, so the website's own name for a
+ * theme always prices; then the ordinary `matchByName` on price-list names.
+ */
+export function matchTheme(loaded: Pick<LoadedCatalog, 'groups' | 'themeInfo'>, wanted: string): NameMatch {
+  const w = norm(wanted)
+  if (!w) return { kind: 'none' }
+  const hits = loaded.groups.themes.filter(t => themeAliases(loaded, t).some(a => norm(a) === w))
+  if (hits.length === 1) return { kind: 'one', item: hits[0] }
+  if (hits.length > 1) return { kind: 'ambiguous', names: hits.map(h => h.name) }
+  return matchByName(loaded.groups.themes, wanted)
+}
+
+/** One studio theme as every AI surface lists it. `name` is accepted by the quote as-is. */
+export interface ThemeListing { name: string; price_list_name: string; slug: string | null; price_cents: number; about: string | null }
+
+/**
+ * The priced themes, named the way the website names them. Built from the SAME
+ * rows the quote matches, so a listed name always prices. Every active theme on
+ * the price list is listed — including ones with no marketing page (Adam,
+ * 2026-11-07: Custom, Trucker Hat, Unicorn and Race Car are offered).
+ */
+export function listThemes(loaded: Pick<LoadedCatalog, 'groups' | 'themeInfo'>): ThemeListing[] {
+  return loaded.groups.themes.map(t => {
+    const face = (loaded.themeInfo ?? []).find(i => i.pricing_item_id === t.id)
+    return {
+      name: face?.name ?? t.name,
+      price_list_name: t.name,
+      slug: face?.slug ?? null,
+      price_cents: t.price_cents,
+      about: (face?.description ?? t.description ?? null)?.replace(/\s+/g, ' ').trim() || null,
+    }
+  })
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim()
@@ -98,11 +160,19 @@ export type QuoteAnswer =
       addOns: string[]
       unmatched: string[]
       ambiguous: { asked: string; options: string[] }[]
+      /** Activities past the planner's limits (2 premium, 3 standard) — dropped, NOT priced. */
+      overLimit: string[]
       /** Mobile totals do not include travel: it is priced from the address when the party is booked. */
       travelNotIncluded: boolean
       plannerUrl: string
     }
   | { ok: false; error: string }
+
+/** The planner's own total and deposit for these items — the arithmetic `/api/party-builder/save` will run. */
+export function plannerTotals(lineItems: QuoteLineItem[], guests: number): { totalCents: number; depositCents: number } {
+  const snap = buildPlanSnapshot({ lineItems: lineItems as unknown as BookingLineItem[], guestCount: guests })
+  return { totalCents: snap.totalCents, depositCents: snap.depositCents }
+}
 
 const WORDS = (v: unknown, max: number): string[] => (Array.isArray(v) ? v : []).filter((x): x is string => typeof x === 'string').map(x => x.trim().slice(0, 80)).filter(Boolean).slice(0, max)
 
@@ -126,14 +196,26 @@ export function quoteFromCatalog(loaded: LoadedCatalog, raw: QuoteRequest): Quot
   if (raw.partyType === 'studio') {
     const wanted = typeof raw.theme === 'string' ? raw.theme.trim().slice(0, 80) : ''
     if (!wanted) return { ok: false, error: 'A studio quote needs a theme. Use list_party_themes for the names.' }
-    themeItem = resolve(wanted, groups.themes)
+    const m = matchTheme(loaded, wanted)
+    if (m.kind === 'one') themeItem = m.item
+    else if (m.kind === 'ambiguous') ambiguous.push({ asked: wanted, options: m.names })
+    else unmatched.push(wanted)
   }
 
   const activityIds: string[] = []
   const activityNames: string[] = []
+  const overLimit: string[] = []
+  const premiumIds = new Set(groups.premiumActivities.map(a => a.id))
   for (const a of WORDS(raw.activities, 8)) {
     const it = resolve(a, [...groups.premiumActivities, ...groups.standardActivities])
-    if (it && !activityIds.includes(it.id)) { activityIds.push(it.id); activityNames.push(it.name) }
+    if (!it || activityIds.includes(it.id)) continue
+    // The planner will not let a parent pick more than this; a quote must not price what cannot be booked.
+    if (raw.partyType === 'studio') {
+      const isPremium = premiumIds.has(it.id)
+      const already = activityIds.filter(id => premiumIds.has(id) === isPremium).length
+      if (already >= (isPremium ? MAX_PREMIUM_ACTIVITIES : MAX_STANDARD_ACTIVITIES)) { overLimit.push(it.name); continue }
+    }
+    activityIds.push(it.id); activityNames.push(it.name)
   }
 
   const sel: QuoteSelection = {
@@ -159,12 +241,13 @@ export function quoteFromCatalog(loaded: LoadedCatalog, raw: QuoteRequest): Quot
   }
 
   if (raw.partyType === 'studio' && !themeItem) {
-    return { ok: false, error: ambiguous.some(x => x.asked === raw.theme) ? `"${raw.theme}" matches more than one theme: ${ambiguous[0].options.join(', ')}.` : `No theme named "${raw.theme}". Use list_party_themes for the names.` }
+    const amb = ambiguous.find(x => x.asked === String(raw.theme).trim().slice(0, 80))
+    return { ok: false, error: amb ? `"${raw.theme}" matches more than one theme: ${amb.options.join(', ')}.` : `No theme named "${raw.theme}". Use list_party_themes for the names.` }
   }
 
   const quote = computeQuote(cat, items, sel)
   return {
-    ok: true, quote, theme: themeItem?.name ?? null, activities: activityNames, addOns: addOnNames, unmatched, ambiguous,
+    ok: true, quote, theme: themeItem?.name ?? null, activities: activityNames, addOns: addOnNames, unmatched, ambiguous, overLimit,
     travelNotIncluded: raw.partyType === 'mobile', plannerUrl: quoteToPlannerUrl(sel, themeItem?.name ?? null),
   }
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import {
-  getCalendarEvents,
+  readCalendarMonth,
   parseCalendarBlocks,
   addMinutes,
   rangesOverlap,
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const bookingTypeSlug = req.nextUrl.searchParams.get('bookingType')
 
   // Fetch Google Calendar events with full time ranges
-  const calEvents = await getCalendarEvents(month)
+  const { events: calEvents, failed: calendarFailed } = await readCalendarMonth(month)
   const calBlocks = parseCalendarBlocks(calEvents)
   const configured = calEvents.length > 0 || !!process.env.GOOGLE_CALENDAR_ID
 
@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       blockedDates: Array.from(blockedDatesSet).sort(),
       configured,
+      ...(calendarFailed ? { calendarFailed: true } : {}),
     })
   }
 
@@ -107,6 +108,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     blockedDates: Array.from(blockedDatesSet).sort(),
     configured,
+    ...(calendarFailed ? { calendarFailed: true } : {}),
     slots,
     bookingType: {
       slug: bt.slug,

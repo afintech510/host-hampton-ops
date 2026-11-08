@@ -26,7 +26,7 @@ import { publicChatModel, selectProvider } from '@/lib/ai/select'
 import { assertModelPriced, callUsd, UnpricedModelError } from '@/lib/ai/pricing'
 import { assertLlmBudget, recordLlmSpend, BudgetExceededError } from '@/lib/marketing/budget'
 import {
-  CHAT_ENTITY, ESTIMATED_TURN_USD, MAX_HISTORY_BYTES, MAX_REPLY_TOKENS, MAX_SESSION_USD, MAX_TOOL_ITERATIONS,
+  CHAT_ENTITY, ESTIMATED_TURN_USD, MAX_HISTORY_BYTES, MAX_REPLY_TOKENS, MAX_SESSION_USD, MAX_TOOL_ITERATIONS, MAX_TOOL_RESULT_CHARS,
   MAX_TURNS_PER_SESSION, dailyUsdCap,
 } from '@/lib/chat/config'
 import { CHAT_TOOLS, runChatTool, type ChatCard } from '@/lib/chat/tools'
@@ -143,7 +143,7 @@ export async function runChatTurn(opts: {
       tools: CHAT_TOOLS,
       maxIterations: MAX_TOOL_ITERATIONS,
       maxTokens: MAX_REPLY_TOKENS,
-      maxToolResultChars: 12_000,
+      maxToolResultChars: MAX_TOOL_RESULT_CHARS,
       // Spend is recorded on EVERY call: a turn that dies on iteration 4 still spent 1-3.
       async onCall(call) {
         const cost = callUsd(model, call.usage.inputTokens, call.usage.outputTokens, env)

@@ -1,4 +1,5 @@
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
+import { includesSentence } from '@/lib/partyMenu'
 import { CRAFT_PARTIES } from '@/lib/craftParties'
 import { locationsByRegion } from '@/lib/locations'
 import { RATING } from '@/lib/reviews'
@@ -28,12 +29,13 @@ import {
  * studio and guest rules from `loadPricingCatalog()` — the same reads the
  * checkout uses — so this file cannot drift from what a customer is charged.
  *
- * NO MOBILE FIGURE, deliberately. /mobile-party does publish starting tiers
- * (Adam chose to keep them up), but mobile pricing is his alone and is being
- * reworked (plan §15) — repeating a number here would put a price he is
- * replacing into one more place an assistant treats as authoritative. So this
- * POINTS at the page, which stays the single source. One exception, Adam's own
- * ruling 2026-10-06: an at-home SPA party starts at $950 (also on /spa-party).
+ * NO MOBILE FIGURE, deliberately. Mobile pricing is Adam's alone and is being
+ * reworked (plan §15), and he removed the published tiers from /mobile-party on
+ * 2026-11-05 — a number here would be one more place an assistant treats as
+ * authoritative. So this POINTS at the page. One exception, his ruling
+ * 2026-10-06: an at-home SPA party starts at $950 (also on /spa-party). The AI
+ * tools have their own switch for a starting figure (`mobile_quote_from`, off
+ * since 2026-11-08, lib/partyMenu.ts); it never appears in this document.
  *
  * Per-request for the same reason as sitemap.xml: Supabase credentials do not
  * exist at build time, and prerendering would silently publish the fallback.
@@ -93,7 +95,7 @@ export async function GET() {
     `- Mini Party: ${usd(g.miniPartyDiscountCents)} off the classic price, 1.5 hours, for a smaller guest list. ` +
       `(A "starting at" price ${usd(g.miniPartyDiscountCents)} below a theme's classic price is the Mini Party price, not a different rate.)`,
     `- Deposit: a flat ${usd(BOOKING_DEPOSIT_CENTS)} holds the date and comes off the total.`,
-    '- Included: a dedicated host, full themed decor and setup, the theme activities, pizza or bagels, cupcakes, juice and water, a treat cart, a Host Hampton EVITE, and full cleanup.',
+    `- Included: ${includesSentence()}.`,
     '',
   )
   if (themes.length) {

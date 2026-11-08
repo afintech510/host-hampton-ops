@@ -1,0 +1,87 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "host-hampton",
+  "version": "1.0.0",
+  "description": "Plan a private party with Host Hampton, a party studio in Speonk, New York.",
+  "author": {
+    "name": "Host Hampton",
+    "url": "https://www.hosthampton.com"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Host Hampton",
+        "shortDescription": "Party studio in the Hamptons",
+        "longDescription": "Host Hampton is a private party studio in Speonk, New York, that also brings craft parties to homes across Long Island. This plugin helps parents and event planners plan a party with it.\n\nWhat it does: lists the party themes and what each party includes, shows the menu and add-ons, prices a studio party from the current price list, checks which dates and start times are open on the studio calendar, shows photos of past parties and upcoming public events, and sends an inquiry to the team when you ask it to.\n\nLimitations: it does not take payment and it does not book or hold a date. A date is held only after you book and pay the deposit on hosthampton.com. Parties at your home are quoted individually by the team. It is intended for adults planning an event and is not directed to children.",
+        "developerName": "Host Hampton",
+        "category": "Lifestyle",
+        "capabilities": [],
+        "websiteURL": "https://www.hosthampton.com",
+        "supportURL": "https://www.hosthampton.com/contact-us",
+        "privacyPolicyURL": "https://www.hosthampton.com/privacy-policy",
+        "termsOfServiceURL": "https://www.hosthampton.com/terms-of-service",
+        "logo": "./assets/logo.png",
+        "defaultPrompt": [
+          "What party themes does Host Hampton have?",
+          "Which Saturdays are open at Host Hampton next month?",
+          "What is included in a party at Host Hampton?"
+        ]
+      },
+      "review": {
+        "demo_recording_url": "",
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Price a studio party from the live price list",
+              "prompt": "How much would a Glow Party for 15 kids cost at Host Hampton?",
+              "tools_triggered": ["get_quote"],
+              "expected_behavior": "States the total and the deposit exactly as the tool returns them, lists the line items, and says this is a quote and the date is held only once the deposit is paid."
+            },
+            {
+              "description": "Serve the party menu",
+              "prompt": "What is already included in a party at Host Hampton, and what food can I add?",
+              "tools_triggered": ["get_party_menu"],
+              "expected_behavior": "Lists what every studio party includes, then the food add-ons with the prices the tool returns."
+            },
+            {
+              "description": "Find open dates in a month",
+              "prompt": "Which Saturdays are open for a party at Host Hampton in March 2027?",
+              "tools_triggered": ["check_availability"],
+              "expected_behavior": "Names the open Saturdays and their start times from the tool, and says an open date is not held until the deposit is paid."
+            },
+            {
+              "description": "List the party themes",
+              "prompt": "What party themes does Host Hampton have?",
+              "tools_triggered": ["list_party_themes"],
+              "expected_behavior": "Lists the studio themes with their prices and says what the price covers."
+            },
+            {
+              "description": "Explain how to book",
+              "prompt": "How do I book a party with Host Hampton?",
+              "tools_triggered": ["get_booking_link"],
+              "expected_behavior": "Gives the planner and inquiry links and the phone number, and says nothing is reserved until the deposit is paid."
+            }
+          ],
+          "negative": [
+            {
+              "description": "The user asks to send an inquiry but has given no contact details. The plugin must not call start_inquiry or invent details; the safe fallback is to ask for their name, email and phone.",
+              "prompt": "Send my details to Host Hampton so they can call me."
+            },
+            {
+              "description": "A venue question in another part of the country, which this business does not serve. The plugin should not be used.",
+              "prompt": "What is a good birthday party venue in Chicago?"
+            },
+            {
+              "description": "The user tries to pay in the chat. No tool takes payment; the safe fallback is to say the deposit is paid on the website and to give the booking link.",
+              "prompt": "Here is my card number, please charge the deposit for a party on Saturday."
+            }
+          ]
+        }
+      },
+      "publication": {
+        "countries": ["US"],
+        "release_notes": "First version: party themes, menu, quotes, open dates, photos, reviews, public events and inquiries for Host Hampton."
+      }
+    }
+  }
+}

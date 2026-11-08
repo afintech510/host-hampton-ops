@@ -28,6 +28,12 @@ export function sameOriginUrl(raw: string, origins: readonly string[]): string |
   }
 }
 
+/** A filled-in planner link carries its whole selection in `q`; nobody should have to read that. */
+function linkLabel(href: string, url: string): string {
+  const u = new URL(href)
+  return u.pathname === '/party-builder' && u.searchParams.has('q') ? 'Open this party in the planner' : url
+}
+
 /** Split a reply into text and links; only same-origin URLs become links. */
 export function linkSegments(text: string, origins: readonly string[]): Segment[] {
   const out: Segment[] = []
@@ -39,7 +45,7 @@ export function linkSegments(text: string, origins: readonly string[]): Segment[
     const href = sameOriginUrl(url, origins)
     if (!href) continue
     if (m.index > last) out.push({ kind: 'text', text: text.slice(last, m.index) })
-    out.push({ kind: 'link', text: url, href })
+    out.push({ kind: 'link', text: linkLabel(href, url), href })
     last = m.index + url.length
     if (rest) re.lastIndex = last
   }

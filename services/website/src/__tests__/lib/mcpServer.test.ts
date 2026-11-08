@@ -12,14 +12,35 @@ import { decomment } from '../helpers/sourceScan'
 const leadPost = jest.fn()
 jest.mock('@/app/api/lead/route', () => ({ POST: (...a: unknown[]) => leadPost(...a) }))
 jest.mock('@/app/llms.txt/route', () => ({ GET: async () => new Response('# Overview text') }))
-jest.mock('@/app/api/availability/route', () => ({
-  GET: async () => Response.json({ blockedDates: ['2099-06-13'], configured: true }),
-}))
+const HOURS = ['11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00']
+const daySlots = (blocked: string[] = []) =>
+  HOURS.map(start => ({ start, end: `${String(Number(start.slice(0, 2)) + 1).padStart(2, '0')}:00`, status: blocked.includes(start) ? 'blocked' : 'open' }))
+const availabilityGet = jest.fn(async (r: Request) => {
+  if (new URL(r.url).searchParams.get('month') === '2027-07') {
+    return Response.json({ blockedDates: [], configured: true, calendarFailed: true, slots: { '2027-07-10': daySlots() } })
+  }
+  if (new URL(r.url).searchParams.get('bookingType') === 'kids-party') {
+    return Response.json({
+      blockedDates: ['2027-06-13'], configured: true,
+      slots: { '2027-06-13': daySlots(), '2027-06-14': daySlots(['12:00', '15:00']), '2027-06-20': daySlots() },
+    })
+  }
+  return Response.json({ blockedDates: ['2099-06-13'], configured: true })
+})
+jest.mock('@/app/api/availability/route', () => ({ GET: (r: Request) => availabilityGet(r) }))
 jest.mock('@/app/api/events/route', () => ({
   GET: async () => Response.json({ events: [{ title: 'Bingo', slug: 'bingo', event_date: '2099-01-01', price_cents: 4500 }] }),
 }))
-jest.mock('@/lib/partyCostFaq', () => ({
-  loadStudioThemes: async () => [{ name: 'Slime', slug: 'slime', price_cents: 59500, description: 'Gooey', pricing_item_id: null }],
+const themesForAgents = jest.fn(async () => ({
+  kind: 'ok', themes: [{ name: 'Sweets & Treats', price_list_name: 'Sweets-n-Treats Party', slug: 'sweets-treats', price_cents: 95000, about: 'Decorating' }],
+}))
+const partyMenu = jest.fn(async () => ({ kind: 'ok', menu: { studio_party: { length: '2 hours' }, add_ons: { food: [{ name: 'Fruit Platter', price: '$75' }] } } }))
+jest.mock('@/lib/mcp/readers', () => ({
+  themesForAgents: () => themesForAgents(),
+  partyMenu: () => partyMenu(),
+  quoteParty: jest.fn(),
+  photosFor: jest.fn(),
+  mobileQuoteAnchor: jest.fn(),
 }))
 
 import { handleRpc, listTools, MCP_PROTOCOL_VERSIONS } from '@/lib/mcp/server'
@@ -64,6 +85,25 @@ describe('protocol', () => {
     expect(listTools(OFF).map(t => t.name)).not.toContain('start_inquiry')
   })
 
+  it('every tool states all three safety hints, and the one send is marked irreversible and open-world', () => {
+    // The ChatGPT directory rejects a tool that leaves one out.
+    for (const t of listTools(ON)) {
+      for (const hint of ['readOnlyHint', 'destructiveHint', 'openWorldHint'] as const) expect(typeof t.annotations[hint]).toBe('boolean')
+    }
+    const inquiry = listTools(ON).find(t => t.name === 'start_inquiry')!
+    expect(inquiry.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, openWorldHint: true })
+  })
+
+  it("start_inquiry does not ask for a child's name, and drops one if a client sends it", async () => {
+    const inquiry = listTools(ON).find(t => t.name === 'start_inquiry')!
+    expect(Object.keys((inquiry.inputSchema as { properties: object }).properties)).not.toContain('child_name')
+    leadPost.mockResolvedValue(Response.json({ success: true }))
+    await call('start_inquiry', { full_name: 'Pat Example', email: 'pat@example.com', phone: '631-555-0100', event_type: 'Kids Birthday Party', child_name: 'Sam', child_age: 7 })
+    const body = await (leadPost.mock.calls[0][0] as Request).json()
+    expect(body.childName).toBeUndefined()
+    expect(body.childAge).toBe(7)
+  })
+
   it('calling a tool that is not listed is refused', async () => {
     const r = await handleRpc(
       { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'start_inquiry', arguments: {} } },
@@ -88,8 +128,52 @@ describe('read tools', () => {
   })
 
   it('themes and events come back with prices from their loaders', async () => {
-    expect((await call('list_party_themes', {})).structuredContent).toMatchObject({ studio_themes: [{ name: 'Slime', from_price: '$595' }] })
+    // The website's name for the theme is listed, and it is the name get_quote accepts (lib/quoteRequest matchTheme).
+    expect((await call('list_party_themes', {})).structuredContent).toMatchObject({ studio_themes: [{ name: 'Sweets & Treats', price: '$950' }] })
+    themesForAgents.mockResolvedValueOnce({ kind: 'unavailable' } as never)
+    expect((await call('list_party_themes', {})).isError).toBe(true)
     expect((await call('list_upcoming_events', {})).structuredContent).toMatchObject({ events: [{ title: 'Bingo', from_price: '$45' }] })
+  })
+})
+
+describe('get_party_menu and check_availability', () => {
+  it("the menu is the readers' menu, verbatim; an unreadable price list is an error that points at the menu page", async () => {
+    expect((await call('get_party_menu', {})).structuredContent).toMatchObject({ add_ons: { food: [{ name: 'Fruit Platter', price: '$75' }] } })
+    partyMenu.mockResolvedValueOnce({ kind: 'unavailable' } as never)
+    const r = await call('get_party_menu', {})
+    expect(r.isError).toBe(true)
+    expect(r.content[0].text).toMatch(/party-menu/)
+  })
+
+  it('a month: open dates with the start times a 2-hour party fits; a date with anything booked is not offered', async () => {
+    const r = (await call('check_availability', { month: '2027-06' })).structuredContent as {
+      open_dates: { date: string; weekday: string; start_times: string[] }[]; booked_dates: string[]
+    }
+    const asked = availabilityGet.mock.calls[availabilityGet.mock.calls.length - 1][0] as Request
+    expect(new URL(asked.url).searchParams.get('bookingType')).toBe('kids-party')
+    expect(r.booked_dates).toContain('2027-06-13')
+    const d14 = r.open_dates.find(d => d.date === '2027-06-14')!
+    // 12:00 and 15:00 are taken, so 11:00 (needs 12) and 14:00 (needs 15) cannot start a 2-hour party; 18:00 runs past close.
+    expect(d14.start_times).toEqual(['1:00 PM', '4:00 PM', '5:00 PM'])
+    expect(d14.weekday).toBe('Monday')
+    expect(r.open_dates.find(d => d.date === '2027-06-20')!.start_times[0]).toBe('11:00 AM')
+  })
+
+  it('a calendar that could not be read is never reported open, for a month or for one date', async () => {
+    const month = await call('check_availability', { month: '2027-07' })
+    expect(month.structuredContent).toMatchObject({ available: null })
+    expect(month.structuredContent).not.toHaveProperty('open_dates')
+    expect((await call('check_date_availability', { date: '2027-07-10' })).structuredContent).toMatchObject({ available: null })
+  })
+
+  it('reviews point at our own page, the only kind of link the website assistant may hand out', async () => {
+    const r = (await call('get_reviews', {})).structuredContent as { all_reviews: string }
+    expect(new URL(r.all_reviews).pathname).toBe('/reviews')
+    expect(new URL(r.all_reviews).hostname).not.toMatch(/google/)
+  })
+
+  it('refuses a malformed, past or far-future month', async () => {
+    for (const month of ['June', '2099-13', '2001-01', '2999-01']) expect((await call('check_availability', { month })).isError).toBe(true)
   })
 })
 

@@ -301,6 +301,8 @@ services:
       - PUBLIC_CHAT_DAILY_USD_CAP=${PUBLIC_CHAT_DAILY_USD_CAP:-}
       - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY:-}
       - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY:-}
+      # The token OpenAI's plugin portal shows; served at /.well-known/openai-apps-challenge. Unset = 404.
+      - OPENAI_APPS_CHALLENGE=${OPENAI_APPS_CHALLENGE:-}
       # EVITE (party invitations; docs/specs/evites/03-architecture-spec.md §14, §16).
       # EVITES_PAGES gates creation, pages and renders; EVITES_SENDS gates every evite
       # email. Each is off | pilot | on, and ANYTHING else (unset, empty, a typo) reads as

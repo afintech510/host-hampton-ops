@@ -66,7 +66,7 @@ beforeEach(() => {
 describe('the tool list', () => {
   it('has exactly the public tools, the one proposal tool and the one write tool', () => {
     expect(CHAT_TOOLS.map(t => t.name).sort()).toEqual(
-      ['check_date_availability', 'find_photos', 'get_booking_link', 'get_quote', 'list_party_themes', 'propose_booking', 'start_inquiry'],
+      ['check_availability', 'check_date_availability', 'find_photos', 'get_booking_link', 'get_business_overview', 'get_party_menu', 'get_quote', 'get_reviews', 'list_party_themes', 'list_upcoming_events', 'propose_booking', 'start_inquiry'],
     )
     expect(WRITE_TOOLS).toEqual(['start_inquiry'])
     expect(PROPOSE_TOOLS).toEqual(['propose_booking'])
@@ -94,6 +94,34 @@ describe('get_quote', () => {
     expect(out.deposit_due_to_hold_the_date).toMatch(/^\$\d+/)
     // The model's `price` / `total_cents` never reached the engine.
     expect(quoteParty).toHaveBeenCalledWith({ partyType: 'studio', guests: 10, theme: 'Glow Party', activities: ['Slime Making', 'Skydiving'], mini: false, addOns: [] })
+  })
+})
+
+describe('get_quote (mobile) and the read tools routed through the MCP server', () => {
+  it("a mobile quote is the connector's anchor answer, never the engine's total", async () => {
+    mcpCall.mockResolvedValue({ content: [{ type: 'text', text: '' }], structuredContent: { mobile_party: { starts_at: '$850', for_kids: 10 } } })
+    const r = await runChatTool('get_quote', { party_type: 'mobile', guests: 12, activities: ['Slime Making'] }, ctx([]))
+    expect(r.isError).toBeFalsy()
+    expect(quoteParty).not.toHaveBeenCalled()
+    expect(mcpCall).toHaveBeenCalledWith('get_quote', { party_type: 'mobile', guests: 12 }, expect.anything())
+    expect(r.result).toMatchObject({ mobile_party: { starts_at: '$850' } })
+  })
+
+  it("the menu, overview, reviews and events are the MCP server's own tools, called with no arguments", async () => {
+    for (const name of ['get_party_menu', 'get_business_overview', 'get_reviews', 'list_upcoming_events']) {
+      mcpCall.mockClear()
+      await runChatTool(name, { anything: 'ignored' }, ctx([]))
+      expect(mcpCall).toHaveBeenCalledWith(name, {}, expect.anything())
+    }
+  })
+
+  it('check_availability takes a month and nothing else, and refuses a malformed one before calling out', async () => {
+    mcpCall.mockClear()
+    expect((await runChatTool('check_availability', { month: 'March' }, ctx([]))).isError).toBe(true)
+    expect((await runChatTool('check_availability', { month: '2027-13' }, ctx([]))).isError).toBe(true)
+    expect(mcpCall).not.toHaveBeenCalled()
+    await runChatTool('check_availability', { month: '2027-03', extra: 1 }, ctx([]))
+    expect(mcpCall).toHaveBeenCalledWith('check_availability', { month: '2027-03' }, expect.anything())
   })
 })
 

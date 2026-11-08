@@ -30,15 +30,14 @@ import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { etToday } from '@/lib/bookingStatus'
 import { callTool } from '@/lib/mcp/server'
 import { photosFor, quoteParty } from '@/lib/mcp/readers'
+import { ACTIVITY_TAGS, THEME_TAGS } from '@/lib/mediaVocab'
 import { POST as leadRoute } from '@/app/api/lead/route'
 import { NextRequest } from 'next/server'
 import type { LlmTool, ToolRunResult } from '@/lib/ai/provider'
-import { MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
-import { buildPlanSnapshot, coerceIsoDate } from '@/lib/plan'
+import { MAX_QUOTE_GUESTS, plannerTotals } from '@/lib/quoteRequest'
+import { coerceIsoDate } from '@/lib/plan'
 import { screenPublicGuestCount, screenPublicLineItems } from '@/lib/publicIntake'
 import { isPlausibleEmailAddress } from '@/lib/contactLookup'
-import type { BookingLineItem } from '@/types/booking-flow'
-import type { QuoteLineItem } from '@/lib/quoteEngine'
 import { unstatedByVisitor } from '@/lib/chat/text'
 import { mintCard } from '@/lib/chat/card'
 import { claimInquiry, markInquiry, releaseInquiry } from '@/lib/chat/session'
@@ -89,24 +88,28 @@ function forwardHeaders(original: Request, extra: Record<string, string> = {}): 
   return headers
 }
 
-/** The planner's own total for these items — the arithmetic `/api/party-builder/save` will run. */
-export function plannerTotals(lineItems: QuoteLineItem[], guests: number): { totalCents: number; depositCents: number } {
-  const snap = buildPlanSnapshot({ lineItems: lineItems as unknown as BookingLineItem[], guestCount: guests })
-  return { totalCents: snap.totalCents, depositCents: snap.depositCents }
-}
-
 /* ── the tool list ───────────────────────────────────────────────────────── */
 
 export const CHAT_TOOLS: LlmTool[] = [
   {
+    name: 'get_business_overview',
+    description: `Everything about ${TENANT.business.name}: what it offers, party types, prices, what is included, service area, location, policies and links. Use it for any general question (adult parties, showers, studio rental, how far you travel, parking, ages).`,
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
     name: 'list_party_themes',
-    description: `The current studio party themes at ${TENANT.business.name} with their live starting prices, plus the hosted theme groups. Call this before quoting so names match the catalog.`,
+    description: `The studio party themes at ${TENANT.business.name} with their live prices (10 kids, 2 hours), plus the custom themes we have hosted. Every theme name it returns can be passed to get_quote as written.`,
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'get_party_menu',
+    description: 'What a studio party includes, the activity choices and their rules, and every add-on (food, desserts, drinks, decor, entertainment, extras) with its live price, plus how mobile parties are priced. Use it when a parent asks what is included, what food there is, or what they can add. Use the exact names with get_quote.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'get_quote',
     description:
-      'Price a party from the live price list. You pass NAMES (theme, activities, add-ons) and a guest count; the price comes back from the same engine as the website planner. Never state a price that did not come from this tool. A quote is not a booking. Names that are not matched are NOT priced.',
+      'Price a studio party from the live price list. You pass NAMES (theme, activities, add-ons) and a guest count; the price comes back from the same engine as the website planner. Never state a price that did not come from this tool. A quote is not a booking. Names that are not matched are NOT priced. For a mobile party it returns how those are priced and the quote link, never a total.',
     input_schema: {
       type: 'object',
       properties: {
@@ -122,15 +125,36 @@ export const CHAT_TOOLS: LlmTool[] = [
     },
   },
   {
+    name: 'check_availability',
+    description:
+      'The open dates in a month for a studio party, with the start times a 2-hour party fits. Use it when the visitor has no date yet or asks what is free ("any Saturdays in March?"). An open date is NOT held: it is held only once the deposit is paid.',
+    input_schema: {
+      type: 'object',
+      properties: { month: { type: 'string', description: 'YYYY-MM' } },
+      required: ['month'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'check_date_availability',
     description:
-      'Is a date already blocked on the studio calendar? An open date is NOT held: it is held only once the deposit is paid. Never say a date is reserved.',
+      'Is one date already blocked on the studio calendar? An open date is NOT held: it is held only once the deposit is paid. Never say a date is reserved.',
     input_schema: {
       type: 'object',
       properties: { date: { type: 'string', description: 'YYYY-MM-DD' } },
       required: ['date'],
       additionalProperties: false,
     },
+  },
+  {
+    name: 'list_upcoming_events',
+    description: `Ticketed public events and classes coming up at ${TENANT.business.name}, with dates, prices and ticket links.`,
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'get_reviews',
+    description: `${TENANT.business.name}'s Google rating and a few verbatim reviews from parents.`,
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'find_photos',
@@ -140,8 +164,8 @@ export const CHAT_TOOLS: LlmTool[] = [
       type: 'object',
       properties: {
         party_type: { type: 'string', enum: ['in_studio_theme', 'mobile_party', 'public_event'] },
-        theme: { type: 'string', description: 'Theme slug, e.g. glow-party.' },
-        activity: { type: 'string', description: 'Activity tag, e.g. slime-making.' },
+        theme: { type: 'string', enum: [...THEME_TAGS] },
+        activity: { type: 'string', enum: Object.keys(ACTIVITY_TAGS) },
         limit: { type: 'integer', description: 'How many, 1-8. Default 4.' },
       },
       additionalProperties: false,
@@ -209,9 +233,19 @@ export const PROPOSE_TOOLS = ['propose_booking'] as const
 export async function runChatTool(name: string, rawInput: unknown, ctx: ChatToolContext): Promise<ToolRunResult> {
   const args = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>
   switch (name) {
+    case 'get_business_overview':
     case 'list_party_themes':
+    case 'get_party_menu':
+    case 'list_upcoming_events':
+    case 'get_reviews':
     case 'get_booking_link':
       return viaMcp(name, {}, ctx)
+
+    case 'check_availability': {
+      const month = str(args.month, 7)
+      if (!month || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return fail('month must be YYYY-MM')
+      return viaMcp('check_availability', { month }, ctx)
+    }
 
     case 'check_date_availability': {
       const date = str(args.date, 10)
@@ -220,6 +254,8 @@ export async function runChatTool(name: string, rawInput: unknown, ctx: ChatTool
     }
 
     case 'get_quote':
+      // Mobile parties are not totalled anywhere an AI answers (Adam, 2026-11-07): the connector's anchor answer is the one implementation.
+      if (args.party_type === 'mobile') return viaMcp('get_quote', { party_type: 'mobile', guests: args.guests }, ctx)
       return getQuote(args)
 
     case 'find_photos':
@@ -270,10 +306,12 @@ async function getQuote(args: Record<string, unknown>): Promise<ToolRunResult> {
     })),
     not_found: ans.unmatched,
     ambiguous: ans.ambiguous,
+    over_the_activity_limit: ans.overLimit,
+    open_in_planner: ans.plannerUrl,
     notes: [
-      ans.travelNotIncluded ? 'Mobile parties: the travel fee is added from the party address when it is booked, so it is not in this total. Mobile parties cannot be booked in this chat — offer start_inquiry or the planner link.' : null,
       'This is a quote, not a booking. The date is held once the deposit is paid.',
-      ans.unmatched.length || ans.ambiguous.length ? 'Some names were not matched and are NOT in the total. Ask the visitor, or call list_party_themes.' : null,
+      ans.unmatched.length || ans.ambiguous.length ? 'Some names were not matched and are NOT in the total. Ask the visitor, or use list_party_themes / get_party_menu for the exact names.' : null,
+      ans.overLimit.length ? 'Some activities are past the limit (2 premium, 3 standard) and are NOT in the total. Ask the visitor which to keep.' : null,
     ].filter(Boolean),
   })
 }
@@ -290,7 +328,7 @@ async function findPhotos(args: Record<string, unknown>, ctx: ChatToolContext): 
     descriptions: photos.map(p => p.alt),
     note: photos.length
       ? 'The photos are displayed to the visitor as a carousel with a link to the full gallery. Do not paste links.'
-      : `No reviewed photos match that yet. The full gallery is at ${moreUrl}.`,
+      : `No photos of that to show yet. Offer other party photos, or the full gallery at ${moreUrl}.`,
   })
 }
 
@@ -341,7 +379,10 @@ async function proposeBooking(args: Record<string, unknown>, ctx: ChatToolContex
   if (!q.answer.ok) return fail(q.answer.error)
   const ans = q.answer
   if (ans.unmatched.length || ans.ambiguous.length) {
-    return fail(`These names were not matched exactly, so no card was made: ${[...ans.unmatched, ...ans.ambiguous.map(a => a.asked)].join(', ')}. Confirm them with list_party_themes and the visitor.`)
+    return fail(`These names were not matched exactly, so no card was made: ${[...ans.unmatched, ...ans.ambiguous.map(a => a.asked)].join(', ')}. Confirm them with list_party_themes, get_party_menu and the visitor.`)
+  }
+  if (ans.overLimit.length) {
+    return fail(`Too many activities (2 premium and 3 standard at most), so no card was made: ${ans.overLimit.join(', ')}. Ask the visitor which to keep.`)
   }
 
   // The card will be saved through the planner's own route, which screens the items

@@ -120,11 +120,28 @@ export interface GuestRules {
   miniPartyMaxGuests: number
 }
 
+/**
+ * The one mobile figure the AI surfaces may say: "starts at $X for N kids".
+ * Not a charge: nothing prices from it, and the website does not print it
+ * (Adam removed mobile prices from the pages on 2026-11-05).
+ *
+ * OFF today: on 2026-11-08 he chose no figure on the agents either, so the row
+ * is inactive and they say "quoted individually". Null unless an ACTIVE
+ * `mobile_quote_from` row says otherwise, with deliberately no compiled fallback:
+ * that row is the switch, and a read failure must not publish a mobile price
+ * nobody chose to publish.
+ */
+export interface MobileQuoteFrom {
+  cents: number
+  kids: number
+}
+
 export interface PricingCatalog {
   mobileTiers: MobileTier[]
   mobileBands: MobileBands
   mobilePolicy: MobilePolicy
   mobileStations: MobileStation[]
+  mobileQuoteFrom: MobileQuoteFrom | null
   studioRates: StudioRates
   guestRules: GuestRules
   /** False when any part of this came from the compiled fallback. */
@@ -248,6 +265,7 @@ export const FALLBACK_CATALOG: PricingCatalog = {
   mobileBands: FALLBACK_MOBILE_BANDS,
   mobilePolicy: FALLBACK_MOBILE_POLICY,
   mobileStations: FALLBACK_MOBILE_STATIONS,
+  mobileQuoteFrom: null,
   studioRates: FALLBACK_STUDIO_RATES,
   guestRules: FALLBACK_GUEST_RULES,
   fromDb: false,
@@ -357,6 +375,13 @@ export function catalogFromRows(rows: CatalogRow[]): PricingCatalog {
     freeTravelMiles: metaNum(get('mobile_free_travel_miles'), 'value') ?? FALLBACK_MOBILE_POLICY.freeTravelMiles,
   }
 
+  // Optional on purpose (not in REQUIRED_KEYS, and not `cents()`, which would
+  // restore a constant): no usable row means no mobile figure, never a default.
+  const fromCents = Number(get('mobile_quote_from')?.price_cents)
+  const fromKids = metaNum(get('mobile_quote_from'), 'kids')
+  const mobileQuoteFrom: MobileQuoteFrom | null =
+    fromCents > 0 && fromKids !== null && fromKids > 0 ? { cents: fromCents, kids: fromKids } : null
+
   const studioRates: StudioRates = {
     weekendBaseCents: cents(get('studio_weekend_base'), FALLBACK_STUDIO_RATES.weekendBaseCents, overridden),
     weekdayBaseCents: cents(get('studio_weekday_base'), FALLBACK_STUDIO_RATES.weekdayBaseCents, overridden),
@@ -403,7 +428,7 @@ export function catalogFromRows(rows: CatalogRow[]): PricingCatalog {
   const fromDb = REQUIRED_KEYS.every(k => byKey.has(k)) && stationRows.length > 0
 
   return {
-    mobileTiers: tiers, mobileBands: bands, mobilePolicy, mobileStations,
+    mobileTiers: tiers, mobileBands: bands, mobilePolicy, mobileStations, mobileQuoteFrom,
     studioRates, guestRules, fromDb, fallbackFields: overridden,
   }
 }
