@@ -40,7 +40,7 @@ export default function CrewBookingsPage() {
   const deepLinked = useRef(false)
 
   // A remembered month that has scrolled out of the three on offer falls back to this one.
-  const activeMonth = months.includes(month) ? month : months[0]
+  const activeMonth = month === 'all' || months.includes(month) ? month : months[0]
 
   const all = useMemo(() => data?.bookings ?? [], [data])
   const byType = useMemo(() => all.filter(t => passesTypes(t.partyType, types)), [all, types])
@@ -68,7 +68,7 @@ export default function CrewBookingsPage() {
     if (!hit) return
     setTypes([])
     if (hit.partyDate) {
-      setMonth(monthKeyOf(hit.partyDate))
+      setMonth(months.includes(monthKeyOf(hit.partyDate)) ? monthKeyOf(hit.partyDate) : 'all')
       setDay(hit.partyDate)
       setWeekend([])
     }
@@ -83,7 +83,8 @@ export default function CrewBookingsPage() {
     warm(shown.slice(0, 8).map(t => `/api/admin/crew-app/booking/${t.id}`))
   }, [shown])
 
-  const months3 = months.map(m => ({ key: m, label: monthShort(m), count: monthCount(m) }))
+  const periodLabel = activeMonth === 'all' ? 'across all months' : `in ${monthShort(activeMonth)}`
+  const months3 = [{ key: 'all', label: 'All', count: byType.length }, ...months.map(m => ({ key: m, label: monthShort(m), count: monthCount(m) }))]
 
   return (
     <CrewFrame active="/admin/crew/bookings" title="Bookings" compact actions={<SortMenu options={BOOKING_SORTS} value={sort} onChange={setSort} />}>
@@ -104,7 +105,7 @@ export default function CrewBookingsPage() {
               months={months3}
               month={activeMonth}
               onMonth={setMonth}
-              dayCounts={dayCounts}
+              dayCounts={activeMonth === 'all' ? null : dayCounts}
               day={activeDay}
               onDay={setDay}
               weekend={weekend}
@@ -117,7 +118,7 @@ export default function CrewBookingsPage() {
             <div className="space-y-4">
               {shown.length === 0 && (
                 <div className="text-center text-hampton-navy/70 py-10">
-                  Nothing booked {activeDay ? `on ${dayCaption(activeDay)}` : weekend.length ? `on ${weekend.map(k => (k === 'sat' ? 'Saturdays' : 'Sundays')).join(' or ')} in ${monthShort(activeMonth)}` : `in ${monthShort(activeMonth)}`}
+                  Nothing booked {activeDay ? `on ${dayCaption(activeDay)}` : weekend.length ? `on ${weekend.map(k => (k === 'sat' ? 'Saturdays' : 'Sundays')).join(' or ')} ${periodLabel}` : periodLabel}
                   {types.length ? ' for those kinds of party' : ''}.
                 </div>
               )}

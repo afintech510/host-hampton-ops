@@ -117,7 +117,7 @@ export default function CalendarGrid({
 
           const daySlots = slots[dateStr]
           const status = getDayStatus(daySlots)
-          const disabled = isPast || notAllowed || status === 'blocked' || status === 'none'
+          const disabled = loading || !configured || isPast || notAllowed || status === 'blocked' || status === 'none'
 
           return (
             <button

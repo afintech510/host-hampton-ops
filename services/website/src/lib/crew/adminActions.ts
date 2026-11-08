@@ -437,3 +437,28 @@ export async function createManualParty(sb: Supa, body: Record<string, unknown>,
   if (sErr) return refuse(500, `Party created as a draft, but its spots were not: ${sErr.message}`)
   return { ok: true, id }
 }
+
+/** Remove from staffing, keeping the booking and assignment history. Retrying repairs a partial cancellation. */
+export async function removeParty(sb: Supa, partyId: string, actor: string, now: Date): Promise<ActionResult> {
+  const read = await readParty(sb, partyId)
+  if ('error' in read) return read.error
+  const { party, slots } = read.pws
+  if (party.status === 'completed') return refuse(409, 'Completed work stays in the staffing history.')
+  if (party.status !== 'cancelled') {
+    const { data, error } = await sb.from('crew_parties')
+      .update({ status: 'cancelled', cancelled_at: now.toISOString(), updated_by: actor })
+      .eq('id', partyId).eq('updated_at', party.updated_at).in('status', ['draft', 'published']).select('id')
+    if (error) return refuse(500, error.message)
+    if (!data?.length) return refuse(409, 'Somebody changed this party. Reload.')
+  }
+  // Closing the party first also stops concurrent crew/admin claims.
+  const { error: slotError } = await sb.from('crew_slots').update({ status: 'cancelled' })
+    .eq('party_id', partyId).in('status', ['open', 'assigned']).select('id')
+  if (slotError) return refuse(500, `Party removed; cancelling spots failed. Retry: ${slotError.message}`)
+  if (slots.length) {
+    const { error } = await sb.from('crew_swap_requests').update({ status: 'cancelled', resolved_at: now.toISOString() })
+      .in('slot_id', slots.map(sl => sl.id)).in('status', ['open', 'escalated']).select('id')
+    if (error) return refuse(500, `Party removed; cancelling cover requests failed. Retry: ${error.message}`)
+  }
+  return { ok: true }
+}

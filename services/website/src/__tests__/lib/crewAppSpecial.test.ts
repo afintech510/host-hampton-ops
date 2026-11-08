@@ -69,7 +69,7 @@ describe('where the alert shows', () => {
     const route = read('app/api/admin/crew/parties/[id]/route.ts')
     expect(route).toMatch(/loadSpecialStaffing\(sb, r\.data\.booking\?\.id\)/)
     expect(route).toMatch(/NextResponse\.json\(\{ \.\.\.r\.data, pick, special,/)
-    const page = read('app/admin/crew/parties/[id]/page.tsx')
+    const page = read('app/admin/crew/_components/CrewPartyEditor.tsx')
     expect(page).toMatch(/<SpecialStaffingAlert special=\{d\.special\} staffed=\{d\.staffed\} needed=\{d\.needed\} \/>/)
     expect(page).toMatch(/role="alert"/)
     // It says when it could not check, rather than staying silent.

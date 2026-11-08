@@ -7,6 +7,7 @@ import UniversalCalendar from '@/components/UniversalCalendar'
 import type { CalendarSelection } from '@/components/UniversalCalendar/types'
 import { loadStripe } from '@stripe/stripe-js'
 import { formatMoney, calculateCardFee, getDepositCents, getCategoryLockState, type LockCategory } from '@/lib/partyPricing'
+import { isMobilePlannerRequest, MOBILE_QUOTE_MESSAGE, MOBILE_QUOTE_URL } from '@/lib/mobileQuotePolicy'
 import { FALLBACK_CATALOG, mobileBaseCentsFor, type PricingCatalog } from '@/lib/pricingCatalog'
 import {
   PREMIUM_EXTRA_CENTS, PREMIUM_UPGRADE_FLAT_CENTS, STANDARD_EXTRA_CENTS, MAX_PREMIUM_ACTIVITIES, MAX_STANDARD_ACTIVITIES,
@@ -1177,6 +1178,7 @@ export default function PartyBuilderContent({
 
   /* ── save for later ── */
   async function handleSaveForLater(options?: { sendEmail?: boolean }) {
+    if (isMobilePlannerRequest({ locationType })) { setError(MOBILE_QUOTE_MESSAGE); return }
     if (!contact.fullName || !contact.email || !contact.phone) {
       setError('Please fill in Name, Email, and Phone to save your quote.')
       return
@@ -1254,6 +1256,7 @@ export default function PartyBuilderContent({
 
   /* ── book party (pay deposit) ── */
   async function handlePayDeposit() {
+    if (isMobilePlannerRequest({ locationType })) { setPayError(MOBILE_QUOTE_MESSAGE); return }
     if (!contact.fullName || !contact.email || !contact.phone) {
       setPayError('Please fill in your contact info above.')
       return
@@ -1867,6 +1870,16 @@ export default function PartyBuilderContent({
     }
   }
 
+  if (isMobilePlannerRequest({ locationType })) return (
+    <main className="mx-auto max-w-2xl px-5 py-16 text-center">
+      <h1 className="font-serif text-3xl text-hampton-navy mb-4">Your mobile party</h1>
+      <p className="text-hampton-navy/75 mb-6">{MOBILE_QUOTE_MESSAGE}</p>
+      <a href={MOBILE_QUOTE_URL} className="inline-flex rounded-xl bg-hampton-navy text-white px-6 py-3 font-semibold">Request a custom quote</a>
+      {loadedBooking && <p className="mt-5"><a href={isAdmin ? `/admin/lead/${loadedBooking.booking_ref}` : '/my-booking'} className="text-hampton-navy underline">View your saved booking and quoted price</a></p>}
+      <p className="mt-5"><button type="button" onClick={() => setLocationType('host_hampton')} className="text-hampton-navy underline">Plan a party at Host Hampton</button></p>
+    </main>
+  )
+
   return (
     // -mt-20 cancels the global pt-20 in layout.tsx that exists to clear the
     // fixed Nav — Nav is hidden on /party-planner + /party-builder, so the
@@ -2236,7 +2249,7 @@ export default function PartyBuilderContent({
               </button>
               <button
                 type="button"
-                onClick={() => setLocationType('mobile')}
+                onClick={() => { window.location.href = MOBILE_QUOTE_URL }}
                 disabled={depositPaid}
                 className={`text-left p-5 rounded-2xl border-2 transition-all duration-200 ${
                   locationType === 'mobile'

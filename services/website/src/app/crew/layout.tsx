@@ -1,11 +1,10 @@
 import type { Metadata, Viewport } from 'next'
-import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import localFont from 'next/font/local'
 import { NOINDEX } from '@/lib/seo'
 import { TENANT } from '@/tenant'
 import { crewAppOpen } from '@/lib/crew/settings'
-import { THEME_COOKIE, themeCss, themeFromCookie } from '@/lib/crew/themes'
+import { DEFAULT_THEME, themeCss } from '@/lib/crew/themes'
 
 /**
  * The crew app shell (spec §8, prompt 03). A staff tool, not a page of the site:
@@ -35,9 +34,9 @@ export const dynamic = 'force-dynamic'
 // `next/font/google`: that fetched from Google during `next build`, and Google's intermittent
 // extension-less file URLs crashed the build ("reading '1'"). Add a face to that script too.
 //
-// The default look (Pop): preloaded.
-const unbounded = localFont({ src: '../../fonts/Unbounded-latin-200-900.woff2', weight: '200 900', variable: '--crew-f-unbounded', display: 'swap' })
-const outfit = localFont({ src: '../../fonts/Outfit-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-outfit', display: 'swap' })
+// The former default faces are fetched only if used.
+const unbounded = localFont({ src: '../../fonts/Unbounded-latin-200-900.woff2', weight: '200 900', variable: '--crew-f-unbounded', display: 'swap', preload: false })
+const outfit = localFont({ src: '../../fonts/Outfit-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-outfit', display: 'swap', preload: false })
 // The other looks: declared, fetched on use.
 const archivoBlack = localFont({ src: '../../fonts/ArchivoBlack-latin-400.woff2', weight: '400', variable: '--crew-f-archivoblack', display: 'swap', preload: false })
 const archivo = localFont({ src: '../../fonts/Archivo-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-archivo', display: 'swap', preload: false })
@@ -52,8 +51,8 @@ const spaceMono = localFont({
   variable: '--crew-f-spacemono', display: 'swap', preload: false,
 })
 const fraunces = localFont({ src: '../../fonts/Fraunces-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-fraunces', display: 'swap', preload: false })
-const playfair = localFont({ src: '../../fonts/PlayfairDisplay-latin-400-900.woff2', weight: '400 900', variable: '--crew-f-playfair', display: 'swap', preload: false })
-const montserrat = localFont({ src: '../../fonts/Montserrat-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-montserrat', display: 'swap', preload: false })
+const playfair = localFont({ src: '../../fonts/PlayfairDisplay-latin-400-900.woff2', weight: '400 900', variable: '--crew-f-playfair', display: 'swap' })
+const montserrat = localFont({ src: '../../fonts/Montserrat-latin-100-900.woff2', weight: '100 900', variable: '--crew-f-montserrat', display: 'swap' })
 // The CREW wordmark: a collegiate slab, on every theme.
 const varsity = localFont({ src: '../../fonts/Graduate-latin-400.woff2', weight: '400', variable: '--crew-font-varsity', display: 'swap' })
 
@@ -67,7 +66,7 @@ export const metadata: Metadata = {
   twitter: null,
 }
 
-export const viewport: Viewport = { themeColor: '#1E1B3A' }
+export const viewport: Viewport = { themeColor: TENANT.brand.colors.navy }
 
 /** The ring of dusty blue around the wordmark: 16 offsets of 2px, no blur, so it reads as a clean border on any background. */
 const RING = [
@@ -169,7 +168,7 @@ dialog.crew-modal::backdrop{background:var(--c-scrim)}
 
 export default function CrewLayout({ children }: { children: React.ReactNode }) {
   if (!crewAppOpen()) notFound()
-  const theme = themeFromCookie(cookies().get(THEME_COOKIE)?.value)
+  const theme = DEFAULT_THEME
   // The brand's own two colours, for the wordmark: the same on every theme.
   const brand = { '--c-brand-navy': TENANT.brand.colors.navy, '--c-brand-blue': TENANT.brand.colors.blue } as React.CSSProperties
   return (

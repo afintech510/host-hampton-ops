@@ -82,6 +82,7 @@ export interface DateFilter {
 
 /** Does a date pass the month / week filter? A missing date passes only the 'none' month. */
 export function passesDateFilter(date: string | null | undefined, f: DateFilter): boolean {
+  if (f.month === 'all') return true
   if (!date) return f.month === 'none'
   if (f.month === 'none') return false
   if (monthKeyOf(date) !== f.month) return false

@@ -177,7 +177,7 @@ describe('pay is private: per person, per hour, never shown', () => {
     const roster = read('app/admin/crew/members/page.tsx')
     expect(roster).not.toMatch(/Set their step|StepOverride|Starting step|crewRateCents|leadRateCents|money\(/)
     expect(roster).toMatch(/Pay per hour/)
-    const party = read('app/admin/crew/parties/[id]/page.tsx')
+    const party = read('app/admin/crew/_components/CrewPartyEditor.tsx')
     expect(party).not.toMatch(/RateCents/)
     const opt = party.slice(party.indexOf('<option key={m.id}'), party.indexOf('</option>', party.indexOf('<option key={m.id}')))
     expect(opt).not.toMatch(/money\(|RateCents|\$\d/)

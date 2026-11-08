@@ -118,7 +118,7 @@ describe('the top menu', () => {
   })
 
   it('every crew-management page uses the one frame, and the menu lives in the shell so it never remounts', () => {
-    for (const p of ['page.tsx', 'members/page.tsx', 'rules/page.tsx', 'leads/page.tsx', 'bookings/page.tsx', 'dashboard/page.tsx', 'parties/[id]/page.tsx']) {
+    for (const p of ['page.tsx', 'members/page.tsx', 'rules/page.tsx', 'leads/page.tsx', 'bookings/page.tsx', 'dashboard/page.tsx', '_components/CrewPartyEditor.tsx']) {
       expect({ p, frame: /<CrewFrame/.test(read(`app/admin/crew/${p}`)) }).toEqual({ p, frame: true })
     }
     expect(read('app/admin/crew/_components/CrewAdminShell.tsx')).toMatch(/<CrewAdminBar \/>/)

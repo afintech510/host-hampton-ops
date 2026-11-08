@@ -6,11 +6,9 @@
  * a flat list row or a ticket stub, what a date looks like, what a button and a
  * pill are shaped like, and which icon set the tabs use.
  *
- * Every colour, face and radius in the crew stylesheet comes from a variable, so
- * a look can never leave a piece of the app behind. Which look a person sees is
- * their own choice, kept in a cookie scoped to `/crew` (Profile → Appearance);
- * it decides looks only, never what the app says or does. `DEFAULT_THEME` is what
- * everyone sees until they pick.
+ * Every colour, face and radius comes from a variable. The layout enforces
+ * the Host Hampton house style for everyone, ignoring old device cookies.
+ * Other palettes remain in code for future design work.
  *
  * The CREW wordmark is NOT themed: navy lettering with a dusty-blue border is
  * the brand, on every look.
@@ -20,7 +18,7 @@ export const THEME_COOKIE = 'hh_crew_theme'
 
 export type ThemeId = 'bold' | 'clean' | 'pop' | 'midnight' | 'editorial' | 'hosthampton'
 
-export const DEFAULT_THEME: ThemeId = 'pop'
+export const DEFAULT_THEME: ThemeId = 'hosthampton'
 
 /** The faces the layout loads (`app/crew/layout.tsx`), as the CSS variables next/font defines. */
 const FACE = {

@@ -79,12 +79,13 @@ export async function loadBookingTiles(
   parties: BookedParty[],
   today: string,
   includeId?: string,
+  allMonths = false,
 ): Promise<{ ok: true; tiles: BookingTile[] } | { ok: false; error: string }> {
   const { from, to } = bookingsWindow(today)
   const inWindow = parties.filter(
     p =>
       p.id === includeId ||
-      ((p.stage === 'booked' || p.stage === 'completed') && p.party_date && p.party_date >= from && p.party_date <= to),
+      ((p.stage === 'booked' || p.stage === 'completed') && (allMonths || (p.party_date && p.party_date >= from && p.party_date <= to))),
   )
 
   // The crew parties behind these bookings, with who is on each spot.

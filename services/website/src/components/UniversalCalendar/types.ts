@@ -27,6 +27,7 @@ export interface CalendarSelection {
 }
 
 export interface AvailabilityResponse {
+  calendarFailed?: boolean
   blockedDates: string[]
   configured: boolean
   slots?: Record<string, TimeSlot[]>

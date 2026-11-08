@@ -45,6 +45,16 @@ describe('the pilot allow-list', () => {
     expect(crewMessagingAllowed(member(KAT))).toBe('not_pilot')
   })
 
+  it('opens only onboarding to the rest of the roster without lifting pilot messaging or scheduling', () => {
+    process.env.CREW_PILOT_MEMBER_IDS = LEXI
+    process.env.CREW_ONBOARDING_ENABLED = 'true'
+    expect(crewMemberMayEnter(member(KAT), 'onboarding')).toBe(true)
+    expect(crewMemberMayEnter(member(KAT), 'app')).toBe(false)
+    expect(crewMessagingAllowed(member(KAT))).toBe('not_pilot')
+    expect(crewMemberMayEnter(member(KAT, { status: 'removed' }), 'onboarding')).toBe(false)
+    expect(crewMemberMayEnter(member(KAT, { is_owner: true }), 'onboarding')).toBe(false)
+  })
+
   it('is case- and space-tolerant, and a member with no id is never in', () => {
     process.env.CREW_PILOT_MEMBER_IDS = ` ${LEXI.toUpperCase()} , ${KAT} `
     expect(inCrewPilot(member(LEXI))).toBe(true)

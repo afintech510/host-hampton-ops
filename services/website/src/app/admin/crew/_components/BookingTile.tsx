@@ -22,6 +22,7 @@ import { dollars as money } from '@/lib/assistant/dollars'
 import { load, useAdminData, warm } from './adminData'
 import ContactButtons from './ContactButtons'
 import PartyActions from './PartyActions'
+import CrewPartyEditor from './CrewPartyEditor'
 
 function crewChip(t: Tile) {
   if (!t.crew) return { text: 'Not scheduled', cls: 'bg-slate-100 text-slate-600' }
@@ -52,7 +53,7 @@ function Staffing({ tile, special, onChanged }: { tile: Tile; special: SpecialSt
     const s = r.data.summary
     if (s?.errors?.length) setMsg(s.errors[0])
     else if (!s?.created) setMsg('Nothing was added: it may need a start time or address first, or it is already there.')
-    else setMsg('Added as a draft. Publish it from the party-staff page when you are ready.')
+    else setMsg('Added as a draft. Set the staff and shift below, then publish when you are ready.')
     onChanged()
   }
 
@@ -102,6 +103,7 @@ function Staffing({ tile, special, onChanged }: { tile: Tile; special: SpecialSt
           </button>
         )}
       </div>
+      {c && <div className="mt-4"><CrewPartyEditor partyId={c.partyId} embedded onChanged={onChanged} /></div>}
       {msg && <p role="status" className="mt-2 text-sm text-hampton-navy/70">{msg}</p>}
     </CardSection>
   )

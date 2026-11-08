@@ -27,7 +27,7 @@ import { loadAdminParty, shiftForAdmin } from '@/lib/crew/admin'
 import { approvePicks, loadPickPanel, moveToStandby, notifyPickRound } from '@/lib/crew/pick'
 import { notifyAssigned } from '@/lib/crew/assigned'
 import {
-  addSpot, assignMember, clearPartyFlag, publishParty, removeSpot, setPartyFields, setSlotsOverride, unassignMember,
+  removeParty, addSpot, assignMember, clearPartyFlag, publishParty, removeSpot, setPartyFields, setSlotsOverride, unassignMember,
   setPartyShift, unpublishParty, type ActionResult,
 } from '@/lib/crew/adminActions'
 
@@ -98,6 +98,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   let r: ActionResult
   switch (body?.action) {
+    case 'remove': r = await removeParty(sb, params.id, actor, now); break
     case 'publish': r = await publishParty(sb, params.id, actor, now); break
     case 'unpublish': r = await unpublishParty(sb, params.id, actor); break
     case 'assign': r = await assignMember(sb, params.id, { slotId: body.slotId, memberId: body.memberId, force: body.force }, actor, s); break

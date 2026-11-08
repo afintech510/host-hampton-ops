@@ -120,8 +120,8 @@ export type CrewScope = 'app' | 'onboarding'
 export function crewMemberMayEnter(m: { id?: string; status: string; is_owner: boolean; is_test: boolean }, scope: CrewScope = 'app'): boolean {
   if (!crewAppOpen()) return false
   if (m.status !== 'active' || m.is_owner) return false
-  if (!inCrewPilot(m)) return false
   if (scope === 'onboarding' && crewOnboardingEnabled()) return true
+  if (!inCrewPilot(m)) return false
   if (!crewEnabled() && !m.is_test) return false
   return true
 }
