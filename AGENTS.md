@@ -8,8 +8,8 @@ Operating and development guide for the Host Hampton party/event booking platfor
 
 One loop, every time. Nothing is pushed to `main`; `main` only moves when a pull request is squash-merged, and a merge deploys to production.
 
-1. **Branch from fresh `origin/main`, in your own worktree.** Never work in the main checkout `host-hampton-ops` — it is a read-only reference. `git fetch origin && git worktree add -b <type>/<short-name> ../hh-<short-name> origin/main`. Types: `feat/`, `fix/`, `docs/`, `chore/`. One branch = one change someone could describe in a sentence.
-2. **Commit on that branch, with plain `git` from inside your worktree.** Stage explicit files, never `git add -A` (the tree can hold customer data such as `audit_scratch/`). **Do not use the editor's commit-review widget** (Nimbalyst "Commit with AI" / `developer_git_commit_proposal`): it is bound to the checkout the session was opened on and refuses any other worktree (2026-11-08, session 39cef44a stopped at "ready to commit" because of it). That refusal is not a blocker and not a place to stop. Commit, push and open the PR from the shell.
+1. **Branch from fresh `origin/main`, in your own worktree.** Never work in the main checkout `host-hampton-ops` — it is a read-only reference. `git fetch origin && git worktree add -b <type>/<short-name> ../hh-<short-name> origin/main`, then open that folder as a Nimbalyst project and continue the session there (step 2 says why). Types: `feat/`, `fix/`, `docs/`, `chore/`. One branch = one change someone could describe in a sentence.
+2. **Commit on that branch, and make sure the commit tool can reach your worktree.** Inside Nimbalyst the editor's commit widget (`developer_git_commit_proposal`, "Commit with AI") is the only way an agent commits; the editor forbids shell `git commit`, and this file cannot override that. The widget commits only in the checkout the session was opened on, so **open your worktree folder as its own Nimbalyst project and run the session there** (a session opened on the main checkout gets refused for any other worktree: 2026-11-08, session 39cef44a stopped at "ready to commit"). If the widget still refuses, do not shell-commit around it and do not stop silently: tell the user to open the worktree as the project, or to authorize shell commits in their own words. Agents running outside the editor (plain CLI) commit with `git`. Either way: stage explicit files, never `git add -A` (the tree can hold customer data such as `audit_scratch/`). Everything after the commit (push, PR, merge, deploy) is shell and unaffected.
 3. **Run `npm test` in `services/website`** before pushing. CI runs it again; a red PR cannot merge.
 4. **Open a PR** (`gh pr create --fill`, then complete the template: what changed, migration needed?, how verified). A migration is applied to Supabase **before** the PR is merged, because the merge deploys code that depends on it.
 5. **Squash-merge** once `pr-check` is green: `gh pr merge --squash` (add `--delete-branch` only if no worktree holds the branch, otherwise its local delete errors even though the merge succeeded; step 7 removes the branches). Squash gives one commit on `main` per change — no rebased copies, so `git log` and `git branch --no-merged` mean what they say.
@@ -21,7 +21,8 @@ One loop, every time. Nothing is pushed to `main`; `main` only moves when a pull
 ```bash
 git status --short                       # confirm only your files are listed
 git add <files>                          # explicit; never -A or .
-git commit -m "feat(scope): what changed and why"
+# commit: via the editor's commit widget (session opened on THIS worktree), or plain
+# `git commit -F <msgfile>` only when running outside the editor / the user authorized it
 git push -u origin HEAD
 gh pr create --base main --fill          # then complete the PR template
 gh pr checks --watch                     # wait for pr-check; the two Vercel checks fail on every PR and are noise
