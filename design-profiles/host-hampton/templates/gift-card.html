@@ -1,0 +1,98 @@
+<!-- @dsCard group="Templates" name="Gift card" subtitle="6×4 printed gift card · code + amount from the URL" viewport-width="900" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gift card — Host Hampton</title>
+<link rel="stylesheet" href="../brand.css">
+<style>@page{size:6in 4in;margin:0}</style>
+<style>
+  /*
+    A printed gift card, 6 × 4 in landscape. The CODE and AMOUNT come from the
+    URL — gift-card.html?code=HH-XXXX-XXXX&amount=100 — and never from this
+    file: this repository is public, and a code written here is a code anyone
+    can spend. The code must already exist in `gift_cards` (status 'active',
+    balance = amount) or the card prints a promise the site will refuse.
+
+    No amount → $TBD, no code → a highlighted placeholder, so an unfinished
+    card cannot be printed by accident (README, "Never invent a price").
+  */
+  .card{width:6in;height:4in;background:var(--hh-ivory);font-size:calc(4in * .028);padding:.2in}
+  .card .hh-frame{height:100%;display:grid;grid-template-columns:1.12fr 1fr;align-items:center;padding:0 .28in}
+  .left{text-align:left;padding-right:.24in;border-right:.06em solid var(--hh-silver);height:72%;display:flex;flex-direction:column;justify-content:center}
+  .left .hh-rule{margin:.9em 0}
+  .hh-title{font-size:2.5em}
+  .lead{font-size:1.02em;margin-top:.9em;max-width:17em}
+  .lines{margin-top:1.5em;display:grid;gap:1.05em}
+  .line{display:flex;align-items:flex-end;gap:.6em;font-weight:600;font-size:.95em}
+  .line span{flex:1;border-bottom:.08em solid var(--hh-navy);min-height:1.1em;font-family:var(--hh-serif);font-weight:700;font-size:1.15em;line-height:1.1;padding-left:.2em}
+
+  .right{text-align:center;padding-left:.24in}
+  .right .hh-price{font-size:5em}
+  .right .hh-unit{display:block;font-size:.8em;text-transform:uppercase;letter-spacing:.16em;margin-top:.55em}
+  .code{margin:1.5em auto 0;border:.1em dashed var(--hh-navy);border-radius:.4em;padding:.6em .8em;display:inline-block}
+  .code small{display:block;font-weight:700;font-size:.62em;letter-spacing:.2em;text-transform:uppercase;color:var(--hh-muted)}
+  .code b{display:block;font-family:var(--hh-sans);font-weight:700;font-size:1.55em;letter-spacing:.12em;margin-top:.25em;
+          font-variant-numeric:tabular-nums lining-nums}
+  .right .hh-fine{font-size:.6em;margin-top:1.3em;white-space:nowrap}
+
+  /* &bare — just the card, for rendering a PNG with headless Chrome. */
+  .bare .hh-desk{background:none;padding:0;display:block;min-height:0}
+  .bare .hh-panel{display:none}
+  .bare .hh-sheet{box-shadow:none}
+</style>
+</head>
+<body>
+<div class="hh-desk">
+  <div class="hh-panel">
+    <h1>Gift card</h1>
+    <p>Open as <code>gift-card.html?code=HH-XXXX-XXXX&amp;amount=100</code>, optionally
+       <code>&amp;to=…&amp;from=…&amp;expires=YYYY-MM-DD</code>. The code must already be an active
+       card in the admin Gift Cards tab. Print: <b>Ctrl&nbsp;+&nbsp;P</b> → paper 4 × 6 in, landscape → Margins <b>None</b> → Scale <b>100%</b>.</p>
+  </div>
+
+  <div class="hh-sheet card">
+    <div class="hh-frame">
+      <div class="left">
+        <div class="hh-mark">Host Hampton</div>
+        <span class="hh-rule"></span>
+        <h1 class="hh-title">A Gift to Celebrate</h1>
+        <p class="hh-body lead">Good toward any party, event or experience at Host Hampton.</p>
+        <div class="lines hh-body">
+          <div class="line">To<span id="to"></span></div>
+          <div class="line">From<span id="from"></span></div>
+        </div>
+      </div>
+      <div class="right">
+        <div class="hh-price" id="amount"></div>
+        <span class="hh-unit">Gift card value</span>
+        <div class="code"><small>Gift code</small><b id="code"></b></div>
+        <p class="hh-fine">Use the code at checkout on hosthampton.com<br>
+           or bring this card to the studio.<br>
+           <span id="expires">No expiration</span> · not redeemable for cash<br>
+           295 Montauk Hwy, Speonk, NY 11972 · 631-998-9325</p>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search);
+  if (q.has('bare')) document.documentElement.classList.add('bare');
+  const code = (q.get('code') || '').trim().toUpperCase();
+  const amount = (q.get('amount') || '').replace(/[^0-9]/g, '');
+  const a = document.getElementById('amount'), c = document.getElementById('code');
+  if (amount) a.textContent = '$' + Number(amount).toLocaleString('en-US');
+  else a.innerHTML = '<span class="hh-tbd">$TBD</span>';
+  if (/^HH-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) c.textContent = code;
+  else c.innerHTML = '<span class="hh-tbd">HH-XXXX-XXXX</span>';
+  // Optional. Blank To/From lines are for handwriting. `expires` is YYYY-MM-DD
+  // and must match gift_cards.expires_at, or the card promises a date the site
+  // will not honour.
+  for (const k of ['to', 'from']) if (q.get(k)) document.getElementById(k).textContent = q.get(k);
+  const exp = /^(\d{4})-(\d{2})-(\d{2})$/.exec(q.get('expires') || '');
+  if (exp) document.getElementById('expires').textContent = 'Expires ' +
+    new Date(+exp[1], +exp[2] - 1, +exp[3]).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+</script>
+</body>
+</html>

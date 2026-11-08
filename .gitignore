@@ -90,3 +90,10 @@ revenue/
 
 # Nimbalyst editor state (session transcripts, screenshots) - local only
 .nimbalyst/
+
+# Customer data that lives in the working tree, never in this PUBLIC repo:
+# hand-made quotes/invoices (customer names, addresses), per-party summary sheets,
+# and Nimbalyst's local plan files.
+invoices/
+party-summary-sheets/
+nimbalyst-local/

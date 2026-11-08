@@ -1,0 +1,6 @@
+# One label per line:   Item name | Price | Small print | How many
+# Lines starting with # are ignored. Leave the price blank and it prints $TBD.
+# Then run:  python make_labels.py          (add --fill to repeat the list to fill the sheet)
+Letter Keychain | 15 | each | 2
+Bedazzled Keychain | 12 | each | 2
+Hair Tinsel | 10 |  | 1
