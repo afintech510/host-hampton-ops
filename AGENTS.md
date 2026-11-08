@@ -9,12 +9,32 @@ Operating and development guide for the Host Hampton party/event booking platfor
 One loop, every time. Nothing is pushed to `main`; `main` only moves when a pull request is squash-merged, and a merge deploys to production.
 
 1. **Branch from fresh `origin/main`, in your own worktree.** Never work in the main checkout `host-hampton-ops` — it is a read-only reference. `git fetch origin && git worktree add -b <type>/<short-name> ../hh-<short-name> origin/main`. Types: `feat/`, `fix/`, `docs/`, `chore/`. One branch = one change someone could describe in a sentence.
-2. **Commit on that branch.** Stage explicit files, never `git add -A` (the tree can hold customer data such as `audit_scratch/`).
+2. **Commit on that branch, with plain `git` from inside your worktree.** Stage explicit files, never `git add -A` (the tree can hold customer data such as `audit_scratch/`). **Do not use the editor's commit-review widget** (Nimbalyst "Commit with AI" / `developer_git_commit_proposal`): it is bound to the checkout the session was opened on and refuses any other worktree (2026-11-08, session 39cef44a stopped at "ready to commit" because of it). That refusal is not a blocker and not a place to stop. Commit, push and open the PR from the shell.
 3. **Run `npm test` in `services/website`** before pushing. CI runs it again; a red PR cannot merge.
 4. **Open a PR** (`gh pr create --fill`, then complete the template: what changed, migration needed?, how verified). A migration is applied to Supabase **before** the PR is merged, because the merge deploys code that depends on it.
-5. **Squash-merge** once `pr-check` is green: `gh pr merge --squash --delete-branch`. Squash gives one commit on `main` per change — no rebased copies, so `git log` and `git branch --no-merged` mean what they say.
+5. **Squash-merge** once `pr-check` is green: `gh pr merge --squash` (add `--delete-branch` only if no worktree holds the branch, otherwise its local delete errors even though the merge succeeded; step 7 removes the branches). Squash gives one commit on `main` per change — no rebased copies, so `git log` and `git branch --no-merged` mean what they say.
 6. **Watch the deploy** (`gh run watch`) and check `https://www.hosthampton.com/`. The deploy's own health check only warns.
 7. **Remove the worktree and branch** (`git worktree remove ../hh-<short-name>`). Do not leave them; stale branches are how this repo got to 51 branches and 43 worktrees.
+
+**Ship checklist** (run from your worktree; `<files>` are the exact paths you changed, including new files):
+
+```bash
+git status --short                       # confirm only your files are listed
+git add <files>                          # explicit; never -A or .
+git commit -m "feat(scope): what changed and why"
+git push -u origin HEAD
+gh pr create --base main --fill          # then complete the PR template
+gh pr checks --watch                     # wait for pr-check; the two Vercel checks fail on every PR and are noise
+gh pr merge --squash                     # no --delete-branch while a worktree holds the branch
+gh run watch "$(gh run list --workflow Deploy --limit 1 --json databaseId --jq '.[0].databaseId')"
+curl -s -o /dev/null -w "%{http_code}\n" https://www.hosthampton.com/    # expect 200
+cd ../host-hampton-ops
+git worktree remove ../hh-<short-name> && git branch -D <branch> && git push origin --delete <branch>
+```
+
+Windows PowerShell 5.1: put `--jq` expressions in single quotes with no double quotes inside (use `@tsv`), and write JSON for `gh api --input` to a file as UTF-8 without a BOM.
+
+**"Done" means merged and deployed.** An agent that stops at "changes are ready to commit" has not finished. Run the whole checklist unless the user said to stop at a PR. Before starting, run `git worktree list` and `gh pr list` so you do not duplicate someone's branch; reuse a worktree that already exists for the same task. Stop and ask first only for what this file already reserves: anything touching `nginx`, ports 80/443 or `hampton_net` (fleet-wide, §3), and a migration that has not been applied yet (§5).
 
 Rules that follow from it:
 - **Never rebase or force-push a branch someone else has open.** Rebase your own branch onto `origin/main` if it falls behind.
