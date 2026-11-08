@@ -18,7 +18,7 @@ import { createRequire } from 'node:module'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { loadEnv, outRoot } from '../lib/env.mjs'
+import { loadEnv, outRoot, primaryRoot } from '../lib/env.mjs'
 import { checkBudget, record } from '../lib/spend.mjs'
 
 // USD per million tokens (first-party API prices, 2026-10-06 cache of the model table).
@@ -107,7 +107,8 @@ if (!process.env.ANTHROPIC_API_KEY) {
 }
 const require = createRequire(import.meta.url)
 let sdkPath
-for (const paths of [undefined, [join(outRoot(), 'sdk')]]) {
+// The app's own node_modules first (the SDK is an app dependency), then the scratch install.
+for (const paths of [[join(primaryRoot(), 'services', 'website')], [join(outRoot(), 'sdk')]]) {
   try { sdkPath = require.resolve('@anthropic-ai/sdk', paths ? { paths } : undefined); break } catch {}
 }
 if (!sdkPath) {

@@ -106,7 +106,7 @@ HostHampton-Content (local originals, never modified)
   8. approve       at /admin/photo-library, by a person, as today
 ```
 
-Steps 1, 2, 6 and the contact sheets are built (`services/website/scripts/image-tools/photo-pipeline/pipeline.py`).
+Steps 1, 2, 6 and the contact sheets are built (`scripts/image-tools/photo-pipeline/pipeline.py`).
 Run them with `python -I`. The tool belt's safety guard also reads `face_flags.csv`, so a photo with a face
 (or no check on record) is refused as a reference image by the generator.
 

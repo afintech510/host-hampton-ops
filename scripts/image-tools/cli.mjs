@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Host Hampton image tool belt - LOCAL tooling, not a production route.
 //
-//   node services/website/scripts/image-tools/cli.mjs <command> [options]
+//   node scripts/image-tools/cli.mjs <command> [options]
 //
 //   generate   text and/or reference images -> a new image   (default model: nano-banana-pro)
 //   upscale    enlarge and sharpen one image                  (default: recraft-upscale)

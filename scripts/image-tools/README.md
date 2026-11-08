@@ -51,7 +51,7 @@ Override with `IMAGE_TOOLS_OUT`. Do not commit generated images.
 ## Use
 
 ```bash
-T=services/website/scripts/image-tools/cli.mjs
+T=scripts/image-tools/cli.mjs
 
 node $T models                      # what each model is for, cost, and what went wrong with it
 node $T spend                       # today's ledger total vs the cap

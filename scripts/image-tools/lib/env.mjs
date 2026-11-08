@@ -26,13 +26,13 @@ export function primaryRoot() {
     }).trim()
     return resolve(common, '..')
   } catch {
-    return resolve(HERE, '..', '..', '..', '..', '..')
+    return resolve(HERE, '..', '..', '..')
   }
 }
 
 /** This worktree's root (may equal primaryRoot()). */
 export function worktreeRoot() {
-  return resolve(HERE, '..', '..', '..', '..', '..')
+  return resolve(HERE, '..', '..', '..')
 }
 
 /** Everything the tool writes lives here. `audit_scratch/` is gitignored (verify:
