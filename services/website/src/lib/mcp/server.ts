@@ -1,17 +1,18 @@
 import { NextRequest } from 'next/server'
 import { TENANT, featureEnabled } from '@/tenant'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
-import { loadStudioThemes } from '@/lib/partyCostFaq'
 import { HOSTED_THEME_GROUPS } from '@/lib/hostedThemes'
-import { RATING, HOMEPAGE_REVIEWS, PACKAGES_REVIEWS, GOOGLE_REVIEWS_URL } from '@/lib/reviews'
+import { RATING, HOMEPAGE_REVIEWS, PACKAGES_REVIEWS } from '@/lib/reviews'
 import { STUDIO_ADDRESS_LINE } from '@/lib/studioLocation'
 import { etToday } from '@/lib/bookingStatus'
 import { GET as llmsTxt } from '@/app/llms.txt/route'
 import { GET as availabilityRoute } from '@/app/api/availability/route'
 import { GET as eventsRoute } from '@/app/api/events/route'
 import { POST as leadRoute } from '@/app/api/lead/route'
-import { MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
-import { photosFor, quoteParty } from '@/lib/mcp/readers'
+import { MAX_QUOTE_GUESTS, plannerTotals } from '@/lib/quoteRequest'
+import { mobileQuoteAnchor, partyMenu, photosFor, quoteParty, themesForAgents } from '@/lib/mcp/readers'
+import { ACTIVITY_TAGS, THEME_TAGS } from '@/lib/mediaVocab'
+import { summarizeMonth, type AvailabilityResponse } from '@/lib/agentAvailability'
 
 /**
  * The PUBLIC MCP server: what ChatGPT, Claude or Gemini can ask this business
@@ -37,12 +38,14 @@ interface McpTool {
   title: string
   description: string
   inputSchema: Record<string, unknown>
-  annotations: { readOnlyHint: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean }
+  // All three are stated on every tool: the ChatGPT directory rejects a tool that leaves one out.
+  annotations: { readOnlyHint: boolean; destructiveHint: boolean; openWorldHint: boolean; idempotentHint?: boolean }
 }
 
-const READ = { readOnlyHint: true, openWorldHint: false }
+const READ = { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+const ISO_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 const EVENT_TYPES = ['Kids Birthday Party', 'Studio Rental', 'Mobile Services', 'Permanent Jewelry', 'Other'] as const
 
 export function listTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
@@ -51,15 +54,35 @@ export function listTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
     {
       name: 'get_business_overview',
       title: `About ${name}`,
-      description: `Everything an assistant needs to answer questions about ${name}: what it offers, party types, studio prices, what is included, service area, location, booking policy and links. Call this first for any general question.`,
+      description: `Everything an assistant needs to answer questions about ${name}: what it offers, party types, studio prices, what is included, service area, location, booking policy and links. Use it for general questions.`,
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: READ,
     },
     {
       name: 'list_party_themes',
       title: 'Party themes and studio prices',
-      description: `The current studio party themes at ${name} with their live starting prices, plus the full list of hosted themes by group.`,
+      description: `The studio party themes at ${name} with their live prices (10 kids, 2 hours), plus the custom themes we have hosted, by group. Every theme name returned here can be passed to get_quote exactly as written.`,
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: READ,
+    },
+    {
+      name: 'get_party_menu',
+      title: 'The party menu',
+      description: `What a studio party at ${name} includes, the activity choices and rules, and every add-on (food, desserts, drinks, decor, entertainment, extras) with its live price, plus how mobile parties are priced. Use the exact item names with get_quote.`,
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: READ,
+    },
+    {
+      name: 'check_availability',
+      title: 'Open dates in a month',
+      description:
+        'The dates in a month that are open for a studio party, with the start times a 2-hour party fits, from the live studio calendar. Use this when a parent asks what is available ("which Saturdays in March?"). An open date is not held until the deposit is paid.',
+      inputSchema: {
+        type: 'object',
+        properties: { month: { type: 'string', description: 'YYYY-MM' } },
+        required: ['month'],
+        additionalProperties: false,
+      },
       annotations: READ,
     },
     {
@@ -73,7 +96,7 @@ export function listTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
         required: ['date'],
         additionalProperties: false,
       },
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: READ,
     },
     {
       name: 'list_upcoming_events',
@@ -92,7 +115,7 @@ export function listTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
     {
       name: 'get_quote',
       title: 'Price a party',
-      description: `Price a party at ${name} from the live price list: the theme (studio parties), guest count, activities and add-ons. Prices come from the same engine as the website's party planner; never estimate one yourself. Names must match the catalog — call list_party_themes first. Returns the total, each line item, and a planner link already filled in. A quote is not a booking.`,
+      description: `Price a studio party at ${name} from the live price list: the theme, guest count, activities and add-ons. Prices come from the same engine as the website's party planner; never estimate one yourself. Names must match the catalog — use list_party_themes and get_party_menu. Returns the total, each line item, the deposit and a planner link already filled in. A quote is not a booking. Mobile parties are not totalled: the answer is their starting price and how to get a quote.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -116,8 +139,8 @@ export function listTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
         type: 'object',
         properties: {
           party_type: { type: 'string', enum: ['in_studio_theme', 'mobile_party', 'public_event'], description: 'Optional.' },
-          theme: { type: 'string', description: 'Optional theme slug, e.g. glow-party.' },
-          activity: { type: 'string', description: 'Optional activity tag, e.g. slime-making.' },
+          theme: { type: 'string', enum: [...THEME_TAGS], description: 'Optional.' },
+          activity: { type: 'string', enum: Object.keys(ACTIVITY_TAGS), description: 'Optional.' },
           limit: { type: 'integer', description: 'How many, 1-8. Default 4.' },
         },
         additionalProperties: false,
@@ -146,7 +169,7 @@ export function listTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           event_type: { type: 'string', enum: [...EVENT_TYPES] },
           preferred_date: { type: 'string', description: 'YYYY-MM-DD, if they have one.' },
           guest_count: { type: 'integer', description: 'Approximate number of kids/guests.' },
-          child_name: { type: 'string' },
+          // No child's name on this surface: the age helps plan the party, the name can wait for a person.
           child_age: { type: 'integer' },
           theme: { type: 'string', description: 'A theme they are interested in, if any.' },
           notes: { type: 'string', description: 'Anything else they want the business to know.' },
@@ -154,7 +177,8 @@ export function listTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
         required: ['full_name', 'email', 'phone', 'event_type'],
         additionalProperties: false,
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      // destructive = irreversible, not harmful: an inquiry that went out cannot be recalled. It makes the client confirm first.
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     })
   }
   return tools
@@ -209,14 +233,44 @@ export async function callTool(
     }
 
     case 'list_party_themes': {
-      const themes = await loadStudioThemes()
+      const r = await themesForAgents()
+      if (r.kind !== 'ok') return fail(`The theme list could not be read right now. Please call ${TENANT.contact.phoneDisplay}.`)
       const data = {
-        studio_themes: themes.map(t => ({ name: t.name, from_price: usd(t.price_cents), about: t.description })),
+        studio_themes: r.themes.map(t => ({ name: t.name, price: usd(t.price_cents), about: t.about })),
+        price_covers: '10 kids plus the birthday child, 2 hours. Use get_party_menu for what is included and the add-ons.',
         hosted_theme_groups: HOSTED_THEME_GROUPS.map(g => ({ group: g.title, themes: g.themes.map(t => t.name) })),
-        plan_and_price_a_party: `${CANONICAL_ORIGIN}/party-planner`,
+        plan_and_price_a_party: `${CANONICAL_ORIGIN}/party-builder`,
         book: `${CANONICAL_ORIGIN}/book`,
       }
       return ok(data)
+    }
+
+    case 'get_party_menu': {
+      const r = await partyMenu()
+      if (r.kind !== 'ok') return fail(`The menu could not be read right now. The full menu is at ${CANONICAL_ORIGIN}/party-menu.`)
+      return ok(r.menu as unknown as Record<string, unknown>)
+    }
+
+    case 'check_availability': {
+      const month = str(args.month, 7)
+      if (!month || !ISO_MONTH.test(month)) return fail('month must be YYYY-MM')
+      const today = etToday()
+      if (month < today.slice(0, 7)) return fail('That month has passed.')
+      const horizon = `${Number(today.slice(0, 4)) + 2}${today.slice(4, 7)}`
+      if (month > horizon) return fail('That month is more than two years away.')
+      const res = await availabilityRoute(internalGet(req, `/api/availability?month=${month}&bookingType=kids-party`))
+      if (!res.ok) return fail('The calendar could not be checked right now.')
+      const json = (await res.json()) as AvailabilityResponse
+      if (!json.configured || json.calendarFailed) {
+        return ok({ month, available: null, reason: `Availability is confirmed directly — call ${TENANT.contact.phoneDisplay}.` })
+      }
+      return ok({
+        ...summarizeMonth(month, json, today),
+        note:
+          'Open dates come from the studio calendar and are not held until the deposit is paid. A date with anything already booked is not offered; a person can check whether another time works that day. Dates listed as too soon can still be asked about by phone or text.',
+        book: `${CANONICAL_ORIGIN}/party-builder`,
+        phone: TENANT.contact.phoneDisplay,
+      })
     }
 
     case 'check_date_availability': {
@@ -225,8 +279,9 @@ export async function callTool(
       if (date < etToday()) return ok({ date, available: false, reason: 'That date has passed.' })
       const res = await availabilityRoute(internalGet(req, `/api/availability?month=${date.slice(0, 7)}`))
       if (!res.ok) return fail('The calendar could not be checked right now.')
-      const json = (await res.json()) as { blockedDates?: string[]; configured?: boolean }
-      if (!json.configured) {
+      const json = (await res.json()) as AvailabilityResponse
+      // A calendar we could not read is not an empty one: `available: null` makes propose_booking refuse too.
+      if (!json.configured || json.calendarFailed) {
         return ok({ date, available: null, reason: `Availability is confirmed directly — call ${TENANT.contact.phoneDisplay}.` })
       }
       const blocked = (json.blockedDates ?? []).includes(date)
@@ -264,12 +319,18 @@ export async function callTool(
         rating: RATING.ratingValue,
         review_count: RATING.reviewCount,
         source: 'Google',
-        all_reviews: GOOGLE_REVIEWS_URL,
+        // Our own page, which holds every review verbatim: the website assistant may only hand out links to this site.
+        all_reviews: `${CANONICAL_ORIGIN}/reviews`,
         reviews,
       })
     }
 
     case 'get_quote': {
+      if (args.party_type === 'mobile') {
+        const a = await mobileQuoteAnchor()
+        if (a.kind !== 'ok') return fail(`Mobile parties are quoted individually — please call ${TENANT.contact.phoneDisplay} or use ${CANONICAL_ORIGIN}/mobile-party.`)
+        return ok({ mobile_party: a.anchor })
+      }
       const strList = (v: unknown) => (Array.isArray(v) ? (v as unknown[]).filter((x): x is string => typeof x === 'string') : [])
       const q = await quoteParty({
         partyType: args.party_type as 'studio' | 'mobile',
@@ -282,17 +343,26 @@ export async function callTool(
       if (q.kind !== 'ok') return fail(`The price list could not be read right now. Please call ${TENANT.contact.phoneDisplay}.`)
       const ans = q.answer
       if (!ans.ok) return fail(ans.error)
+      const guests = ans.quote.effectiveGuestCount
       const data = {
         total: usd(ans.quote.totalCents),
         total_cents: ans.quote.totalCents,
-        guests_priced: ans.quote.effectiveGuestCount,
-        line_items: ans.quote.lineItems.map(l => ({ item: l.name, quantity: l.quantity, each: usd(l.unit_price_cents), per_guest: l.guest_multiplied })),
+        deposit_to_hold_the_date: usd(plannerTotals(ans.quote.lineItems, guests).depositCents),
+        guests_priced: guests,
+        line_items: ans.quote.lineItems.map(l => ({
+          item: l.name,
+          quantity: l.quantity,
+          each: usd(l.unit_price_cents),
+          per_guest: l.guest_multiplied,
+          line_total: usd(l.guest_multiplied ? l.unit_price_cents * l.quantity * guests : l.unit_price_cents * l.quantity),
+        })),
         not_found: ans.unmatched,
         ambiguous: ans.ambiguous,
+        over_the_activity_limit: ans.overLimit,
         notes: [
-          ans.travelNotIncluded ? 'Mobile parties: the travel fee is added from the party address when it is booked, so it is not in this total.' : null,
           'This is a quote, not a booking. The date is held once the deposit is paid.',
-          ans.unmatched.length || ans.ambiguous.length ? 'Some names were not matched and are NOT in the total — ask the parent, or use list_party_themes.' : null,
+          ans.unmatched.length || ans.ambiguous.length ? 'Some names were not matched and are NOT in the total — ask the parent, or use list_party_themes and get_party_menu for the exact names.' : null,
+          ans.overLimit.length ? 'Some activities are past the limit (2 premium, 3 standard) and are NOT in the total.' : null,
         ].filter(Boolean),
         open_in_planner: ans.plannerUrl,
         book: `${CANONICAL_ORIGIN}/book`,
@@ -346,7 +416,6 @@ export async function callTool(
         fullName,
         email,
         phone,
-        childName: str(args.child_name, 80),
         childAge: Number.isFinite(Number(args.child_age)) ? Number(args.child_age) : undefined,
         guestCount: args.guest_count,
         partyTheme: str(args.theme, 200),
@@ -397,8 +466,9 @@ export function serverInstructions(): string {
   return [
     `${TENANT.business.name}: ${TENANT.business.oneLiner}`,
     `Location: ${STUDIO_ADDRESS_LINE}. Phone ${TENANT.contact.phoneDisplay}. Website ${CANONICAL_ORIGIN}.`,
-    'Use get_business_overview for general questions, list_party_themes for themes and studio prices, get_quote to price a specific party, find_photos for real party photos, check_date_availability for a date, get_booking_link for how to book, and start_inquiry only when the parent asks you to send their details.',
-    'Quote only prices these tools return. Never promise a date is reserved.',
+    'Use get_business_overview for general questions, list_party_themes for themes and studio prices, get_party_menu for what a party includes and every add-on, get_quote to price a specific party, check_availability for open dates in a month (check_date_availability for one date), find_photos for real party photos, list_upcoming_events for public events, get_reviews for reviews, get_booking_link for how to book, and start_inquiry only when the parent asks you to send their details.',
+    'Quote only prices these tools return, exactly as returned. Mobile (at-home) parties are quoted individually: give their starting price and the quote link, never a total. Never promise a date is reserved: it is held once the deposit is paid.',
+    'To book, send the parent to the open_in_planner link from get_quote (it opens the planner already filled in), or use get_booking_link.',
   ].join('\n')
 }
 

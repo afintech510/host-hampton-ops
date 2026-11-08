@@ -1,7 +1,12 @@
 /** The public MCP tools get_quote, find_photos and get_booking_link (lib/mcp/server.ts → lib/mcp/readers.ts). */
 const quoteParty = jest.fn()
 const photosFor = jest.fn()
-jest.mock('@/lib/mcp/readers', () => ({ quoteParty: (...a: unknown[]) => quoteParty(...a), photosFor: (...a: unknown[]) => photosFor(...a) }))
+const mobileQuoteAnchor = jest.fn()
+jest.mock('@/lib/mcp/readers', () => ({
+  quoteParty: (...a: unknown[]) => quoteParty(...a),
+  photosFor: (...a: unknown[]) => photosFor(...a),
+  mobileQuoteAnchor: () => mobileQuoteAnchor(),
+}))
 jest.mock('@/app/api/lead/route', () => ({ POST: jest.fn() }))
 jest.mock('@/app/llms.txt/route', () => ({ GET: async () => new Response('x') }))
 jest.mock('@/app/api/availability/route', () => ({ GET: async () => Response.json({}) }))
@@ -30,7 +35,7 @@ describe('tool list', () => {
 
 describe('get_quote', () => {
   const answer = {
-    ok: true, theme: 'Glow Party', activities: [], addOns: [], unmatched: ['Skydiving'], ambiguous: [], travelNotIncluded: false,
+    ok: true, theme: 'Glow Party', activities: [], addOns: [], unmatched: ['Skydiving'], ambiguous: [], overLimit: ['Perfume Making'], travelNotIncluded: false,
     plannerUrl: 'https://www.example.com/party-builder?q=abc',
     quote: { totalCents: 85000, effectiveGuestCount: 10, lineItems: [{ name: 'Glow Party', quantity: 1, unit_price_cents: 85000, guest_multiplied: false }] },
   }
@@ -42,6 +47,20 @@ describe('get_quote', () => {
     expect(r.structuredContent).toMatchObject({ total: '$850', total_cents: 85000, not_found: ['Skydiving'], open_in_planner: answer.plannerUrl })
     expect(JSON.stringify(r.structuredContent!.notes)).toMatch(/NOT in the total/)
     expect(JSON.stringify(r.structuredContent!.notes)).toMatch(/not a booking/)
+    expect(r.structuredContent).toMatchObject({ over_the_activity_limit: ['Perfume Making'], deposit_to_hold_the_date: '$250' })
+    expect(JSON.stringify(r.structuredContent!.notes)).toMatch(/past the limit/)
+  })
+
+  it('a mobile party is never totalled: the answer is the starting price, and the engine is not asked', async () => {
+    mobileQuoteAnchor.mockResolvedValue({ kind: 'ok', anchor: { starts_at: '$850', for_kids: 10, get_a_quote: 'https://www.example.com/mobile-party' } })
+    const r = await call('get_quote', { party_type: 'mobile', guests: 10, activities: ['Slime'] })
+    expect(quoteParty).not.toHaveBeenCalled()
+    expect(r.structuredContent).toEqual({ mobile_party: { starts_at: '$850', for_kids: 10, get_a_quote: 'https://www.example.com/mobile-party' } })
+    expect(JSON.stringify(r.structuredContent)).not.toMatch(/total/)
+    mobileQuoteAnchor.mockResolvedValue({ kind: 'unavailable' })
+    const down = await call('get_quote', { party_type: 'mobile', guests: 10 })
+    expect(down.isError).toBe(true)
+    expect(down.content[0].text).toMatch(/quoted individually/)
   })
 
   it('a refusal from the quote layer is an error result, and an unreadable price list is a polite error', async () => {

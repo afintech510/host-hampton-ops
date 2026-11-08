@@ -81,9 +81,19 @@ export async function getGoogleAccessToken(): Promise<string | null> {
 
 /** Fetch Google Calendar events for a month, returning full time ranges */
 export async function getCalendarEvents(month: string): Promise<CalendarEvent[]> {
+  return (await readCalendarMonth(month)).events
+}
+
+/**
+ * The same read, saying whether it worked. An empty month and a refused token
+ * both used to come back as `[]`, so a Google outage reported every date open —
+ * to the booking agents as well, which then offered them.
+ */
+export async function readCalendarMonth(month: string): Promise<{ events: CalendarEvent[]; failed: boolean }> {
   const calendarId = process.env.GOOGLE_CALENDAR_ID
   const accessToken = await getGoogleAccessToken()
-  if (!calendarId || !accessToken) return []
+  if (!calendarId) return { events: [], failed: false }
+  if (!accessToken) return { events: [], failed: true }
 
   // The month in EASTERN time. The window used to be UTC midnight to UTC
   // midnight, which dropped any party starting after 7–8pm ET on the last day
@@ -107,11 +117,11 @@ export async function getCalendarEvents(month: string): Promise<CalendarEvent[]>
 
   if (!res.ok) {
     console.error('Google Calendar API error:', res.status)
-    return []
+    return { events: [], failed: true }
   }
 
   const data = await res.json()
-  return data.items || []
+  return { events: data.items || [], failed: false }
 }
 
 export interface ListedCalendarEvent {

@@ -85,8 +85,13 @@ Add it as a custom connector in ChatGPT (developer mode / Apps) or Claude
 | Tool | Source |
 |---|---|
 | `get_business_overview` | the `/llms.txt` document, verbatim |
-| `list_party_themes` | `loadStudioThemes` + `HOSTED_THEME_GROUPS` |
-| `check_date_availability` | `GET /api/availability` (calendar blocks) |
+| `list_party_themes` | `loadQuoteCatalog` (the rows the quote matches, so every listed name prices) + `HOSTED_THEME_GROUPS` |
+| `get_party_menu` | `buildPartyMenu` over the same catalog: inclusions, activity rules, every add-on, the mobile anchor |
+| `get_quote` | the planner's engine. A mobile party gets its starting price and the quote link, never a total |
+| `check_availability` | `GET /api/availability?bookingType=kids-party`: a month's open dates and start times |
+| `check_date_availability` | `GET /api/availability` (calendar blocks). A calendar that could not be read is `available: null`, never open |
+| `find_photos` | `findPhotos`: approved, no identifiable child |
+| `get_booking_link` | the planner, the form and the phone |
 | `list_upcoming_events` | `GET /api/events` |
 | `get_reviews` | `lib/reviews.ts` |
 | `start_inquiry` | **replays `POST /api/lead`** — screened, rate-limited, owner emailed + texted, customer auto-reply, attributed `utm_source=mcp`, `sourcePage=ai-assistant-mcp`, `heardAbout=ai_assistant`, `marketingConsent:false` |
@@ -96,3 +101,5 @@ shared, so the caller bucket is loose on purpose); `/api/lead`'s own intake
 limit still applies to `start_inquiry`.
 
 To count MCP leads: `bookings.party_tags->>'source_page' = 'ai-assistant-mcp'`.
+
+Turning on the website chat, the ChatGPT directory package and the eval: `docs/ai-agents-launch.md`.

@@ -120,7 +120,7 @@ describe('C4: only the signed card can write a booking', () => {
 
   it('the model can name exactly these tools, and only two can write anything', () => {
     const names = Array.from(tools.matchAll(/name:\s*'([a-z_]+)'/g)).map(m => m[1])
-    expect(names.sort()).toEqual(['check_date_availability', 'find_photos', 'get_booking_link', 'get_quote', 'list_party_themes', 'propose_booking', 'start_inquiry'])
+    expect(names.sort()).toEqual(['check_availability', 'check_date_availability', 'find_photos', 'get_booking_link', 'get_business_overview', 'get_party_menu', 'get_quote', 'get_reviews', 'list_party_themes', 'list_upcoming_events', 'propose_booking', 'start_inquiry'])
   })
 
   it('no tool saves a plan: the planner save route is imported by confirm.ts alone', () => {
