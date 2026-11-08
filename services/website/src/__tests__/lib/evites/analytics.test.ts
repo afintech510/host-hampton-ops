@@ -111,7 +111,10 @@ describe('the Conversions API body', () => {
   })
 
   it('carries no slug, name, title, email or phone, and never a hashed email', () => {
-    const wire = JSON.stringify(event) // the data, not the token
+    // The data, not the token. event_id is a random UUID (its shape is asserted above), and a random
+    // run of hex digits can spell '631' about once in 140 runs, so it is held constant here: the scan
+    // is about what the payload says, not about which UUID this run drew.
+    const wire = JSON.stringify({ ...event, event_id: 'fixed-for-the-scan' })
     for (const forbidden of ['mia', 'glow', 'party', 'pat@example', 'Pat', '631', 'hh_iv_', '/i/mia', ' em"', '"em"', 'CompleteRegistration', 'ph"']) {
       expect(wire.toLowerCase()).not.toContain(forbidden.toLowerCase())
     }
