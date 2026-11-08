@@ -32,7 +32,7 @@ cd ../host-hampton-ops
 git worktree remove ../hh-<short-name> && git branch -D <branch> && git push origin --delete <branch>
 ```
 
-Windows PowerShell 5.1: put `--jq` expressions in single quotes with no double quotes inside (use `@tsv`), and write JSON for `gh api --input` to a file as UTF-8 without a BOM.
+Windows PowerShell 5.1: put `--jq` expressions in single quotes with no double quotes inside (use `@tsv`), and write JSON for `gh api --input` to a file as UTF-8 without a BOM. **A double quote inside a here-string passed to `git commit -m` or `gh ... --body` splits the argument** and the command fails with `pathspec ... did not match`: write the message to a temp file and use `git commit -F <file>` / `gh pr create --body-file <file>`.
 
 **"Done" means merged and deployed.** An agent that stops at "changes are ready to commit" has not finished. Run the whole checklist unless the user said to stop at a PR. Before starting, run `git worktree list` and `gh pr list` so you do not duplicate someone's branch; reuse a worktree that already exists for the same task. Stop and ask first only for what this file already reserves: anything touching `nginx`, ports 80/443 or `hampton_net` (fleet-wide, §3), and a migration that has not been applied yet (§5).
 
