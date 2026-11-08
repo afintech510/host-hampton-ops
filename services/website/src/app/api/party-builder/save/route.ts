@@ -1,5 +1,6 @@
 import { ownerEmail } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
+import { isMobilePlannerRequest, MOBILE_QUOTE_MESSAGE, MOBILE_QUOTE_URL } from '@/lib/mobileQuotePolicy'
 import { getSupabase } from '@/lib/supabase'
 import { upsertContact } from '@/lib/contacts'
 import { enrollInSequence } from '@/lib/sequences'
@@ -63,6 +64,9 @@ export async function POST(req: NextRequest) {
     if (limited) return limited
 
     const body = await req.json()
+    if (isMobilePlannerRequest(body)) {
+      return NextResponse.json({ error: MOBILE_QUOTE_MESSAGE, quoteUrl: MOBILE_QUOTE_URL }, { status: 409 })
+    }
 
     // The first touch, screened at entry (lib/attribution.ts). One reader for
 

@@ -49,7 +49,7 @@ export default function UniversalCalendar({
     return `${y}-${m}`
   }, [viewDate])
 
-  const { slots, configured, loading } = useCalendarAvailability(
+  const { slots, configured, loading, error, retry } = useCalendarAvailability(
     month,
     mode === 'booking' ? resolvedType : undefined
   )
@@ -58,6 +58,10 @@ export default function UniversalCalendar({
     () => types.find(t => t.slug === resolvedType),
     [types, resolvedType]
   )
+
+  useEffect(() => {
+    if (loading || error) setSelectedSlot(null)
+  }, [loading, error])
 
   // Auto-select time slot when defaultTime is provided and slots have loaded
   const defaultTimeApplied = useRef(false)
@@ -108,7 +112,7 @@ export default function UniversalCalendar({
   }, [onTypeChange])
 
   const handleBook = useCallback(() => {
-    if (!selectedDate || !selectedSlot || !currentBookingType) return
+    if (loading || error || !selectedDate || !selectedSlot || !currentBookingType) return
     const selection: CalendarSelection = {
       date: selectedDate,
       timeSlot: selectedSlot,
@@ -125,10 +129,10 @@ export default function UniversalCalendar({
       })
       window.location.href = `/book?${params}`
     }
-  }, [selectedDate, selectedSlot, currentBookingType, onBook])
+  }, [selectedDate, selectedSlot, currentBookingType, onBook, loading, error])
 
   const selection: CalendarSelection | null =
-    selectedDate && selectedSlot && currentBookingType
+    !loading && !error && selectedDate && selectedSlot && currentBookingType
       ? { date: selectedDate, timeSlot: selectedSlot, bookingType: currentBookingType }
       : null
 
@@ -156,6 +160,10 @@ export default function UniversalCalendar({
           />
         )}
 
+        {error && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-hampton-navy">
+          <p>{error}</p>
+          <button type="button" className="mt-2 font-semibold underline" onClick={retry}>Try again</button>
+        </div>}
         {/* Calendar grid */}
         <CalendarGrid
           viewDate={viewDate}

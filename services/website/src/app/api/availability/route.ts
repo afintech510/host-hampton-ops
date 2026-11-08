@@ -24,7 +24,10 @@ export async function GET(req: NextRequest) {
   const bookingTypeSlug = req.nextUrl.searchParams.get('bookingType')
 
   // Fetch Google Calendar events with full time ranges
-  const { events: calEvents, failed: calendarFailed } = await readCalendarMonth(month)
+  const { events: calEvents, failed: calendarFailed } = await readCalendarMonth(month).catch(() => ({ events: [], failed: true }))
+  if (calendarFailed || !process.env.GOOGLE_CALENDAR_ID) {
+    return NextResponse.json({ blockedDates: [], slots: {}, configured: false, calendarFailed: true })
+  }
   const calBlocks = parseCalendarBlocks(calEvents)
   const configured = calEvents.length > 0 || !!process.env.GOOGLE_CALENDAR_ID
 

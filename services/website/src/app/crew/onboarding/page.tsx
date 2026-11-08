@@ -1,6 +1,6 @@
 import { TENANT } from '@/tenant'
 import { requireCrewPage } from '@/lib/crew/page'
-import { crewEnabled } from '@/lib/crew/settings'
+import { crewMemberMayEnter } from '@/lib/crew/settings'
 import { CrewUnavailable } from '../_components/CrewTop'
 import ActionButton from '../_components/ActionButton'
 import CrewBrand from '../_components/CrewBrand'
@@ -28,7 +28,7 @@ export default async function CrewOnboardingPage() {
         </span>
       </div>
       <h1>Set up your account</h1>
-      <OnboardingFlow boardOpen={crewEnabled() || member.is_test} businessName={TENANT.business.name} ownerName={TENANT.people.customerSignoff} />
+      <OnboardingFlow boardOpen={crewMemberMayEnter(member, 'app')} businessName={TENANT.business.name} ownerName={TENANT.people.customerSignoff} />
     </main>
   )
 }

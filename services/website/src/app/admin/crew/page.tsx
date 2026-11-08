@@ -47,7 +47,7 @@ interface Overview {
   switches: { crewEnabled: boolean; smsEnabled: boolean; testLogin: boolean }
 }
 
-type Filter = 'all' | 'needs' | 'drafts'
+type Filter = 'all' | 'needs' | 'drafts' | 'removed'
 
 const SEVERITY: Record<Alert['severity'], string> = {
   urgent: 'border-l-4 border-red-500 bg-red-50 text-red-900',
@@ -168,6 +168,8 @@ export default function CrewSchedulePage() {
 
 
   const parties = (data?.parties ?? []).filter(p => {
+    if (filter === 'removed') return p.status === 'cancelled'
+    if (p.status === 'cancelled') return false
     if (filter === 'needs') return (p.status === 'published' || p.status === 'draft') && p.staffed < p.needed
     if (filter === 'drafts') return p.status === 'draft'
     return true
@@ -227,7 +229,7 @@ export default function CrewSchedulePage() {
       )}
 
       <div className="flex flex-wrap gap-2 mb-3">
-        {([['all', 'All'], ['needs', 'Needs crew'], ['drafts', 'Drafts']] as const).map(([k, l]) => (
+        {([['all', 'All'], ['needs', 'Needs crew'], ['drafts', 'Drafts'], ['removed', 'Removed']] as const).map(([k, l]) => (
           <button key={k} onClick={() => setFilter(k)}
             className={`text-sm font-semibold rounded-full px-4 py-1.5 ${filter === k ? 'bg-hampton-navy text-[#F6F1EB]' : 'bg-white text-hampton-navy'}`}>
             {l}

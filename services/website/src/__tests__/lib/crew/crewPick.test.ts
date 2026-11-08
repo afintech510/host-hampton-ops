@@ -665,7 +665,7 @@ describe('the manager finalizes: on the party, or in the standby pool', () => {
   })
 
   it('the ranked list gives each person Put on party and Standby, and the standby pool can be put on the party', () => {
-    const page = srcOf('app', 'admin', 'crew', 'parties', '[id]', 'page.tsx')
+    const page = srcOf('app', 'admin', 'crew', '_components', 'CrewPartyEditor.tsx')
     expect(page).toContain('Put on party')
     expect(page).toMatch(/onStandby\(v\.memberId, v\.name\)/)
     expect(page).toMatch(/action: 'standby', memberId/)

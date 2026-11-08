@@ -197,7 +197,7 @@ describe('a look is a layout, not just a palette', () => {
     const def = THEMES.find(x => x.id === DEFAULT_THEME)!.tokens
     const defaultFaces = Array.from(new Set([def.fontDisplay, def.fontBody].flatMap(f => Array.from(f.matchAll(/--crew-f-[a-z]+/g)).map(m => m[0])))).sort()
     expect(preloaded).toEqual(defaultFaces)
-    expect(DEFAULT_THEME).toBe('pop')
+    expect(DEFAULT_THEME).toBe('hosthampton')
   })
 
   it('an old cookie from before the redesign falls back to the default', () => {

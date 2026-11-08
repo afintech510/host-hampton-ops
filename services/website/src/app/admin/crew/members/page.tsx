@@ -19,6 +19,8 @@ import {
   BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, INPUT, useAdminApi, whenParts,
 } from '../_components/adminCrew'
 import { useAdminData, warm } from '../_components/adminData'
+import { staffStatus, staffNotes, staffStatusUpdate, type StaffStatus } from '@/lib/crew/memberStatus'
+import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { CREW_SKILLS } from '@/lib/crew/skills'
 import { prefillFromApplication } from '@/lib/crew/adminForms'
 
@@ -40,7 +42,7 @@ interface Roster { members: Member[]; hired: Hired[] }
 
 type FormState = {
   first_name: string; last_name: string; email: string; phone: string; can_lead: boolean; skills: string[]; extras: string
-  email_opt_in: boolean; sms_opt_in: boolean; admin_notes: string; status: Member['status']; hourly_dollars: string; job_application_id: string | null
+  email_opt_in: boolean; sms_opt_in: boolean; admin_notes: string; status: StaffStatus; hourly_dollars: string; job_application_id: string | null
 }
 
 const EMPTY: FormState = {
@@ -48,13 +50,14 @@ const EMPTY: FormState = {
   email_opt_in: true, sms_opt_in: false, admin_notes: '', status: 'active', hourly_dollars: '', job_application_id: null,
 }
 
+const ONBOARDING_URL = `${CANONICAL_ORIGIN}/crew/login`
 const known = new Set<string>(CREW_SKILLS)
 
 function formFrom(m: Member): FormState {
   return {
     first_name: m.firstName, last_name: m.lastName ?? '', email: m.email ?? '', phone: m.phone ?? '', can_lead: m.canLead,
     skills: m.skills.filter(s => known.has(s)), extras: m.skills.filter(s => !known.has(s)).join(', '),
-    email_opt_in: m.emailOptIn, sms_opt_in: m.smsOptIn, admin_notes: m.adminNotes ?? '', status: m.status, hourly_dollars: '',
+    email_opt_in: m.emailOptIn, sms_opt_in: m.smsOptIn, admin_notes: staffNotes(m.adminNotes), status: staffStatus(m.status, m.adminNotes), hourly_dollars: '',
     job_application_id: m.jobApplicationId,
   }
 }
@@ -64,7 +67,7 @@ function payload(f: FormState, mode: 'create' | 'edit' | 'owner') {
   if (mode === 'owner') return { first_name: f.first_name, last_name: f.last_name, admin_notes: f.admin_notes, skills }
   const base: Record<string, unknown> = {
     first_name: f.first_name, last_name: f.last_name, email: f.email, phone: f.phone, can_lead: f.can_lead, skills,
-    email_opt_in: f.email_opt_in, sms_opt_in: f.sms_opt_in, admin_notes: f.admin_notes, status: f.status,
+    email_opt_in: f.email_opt_in, sms_opt_in: f.sms_opt_in, ...staffStatusUpdate(f.status, f.admin_notes),
   }
   // Pay per hour: only sent when typed, so saving the form never rewrites it.
   const dollars = Number(f.hourly_dollars)
@@ -109,7 +112,7 @@ export default function CrewMembersPage() {
       <div className="flex flex-wrap gap-2 mb-5">
         <button onClick={() => setAdding(adding ? null : { ...EMPTY })} className={BTN_PRIMARY}>{adding ? 'Close' : 'Add a crew member'}</button>
         <label className="flex items-center gap-2 text-sm text-hampton-navy/70 ml-2">
-          <input type="checkbox" checked={showRemoved} onChange={e => setShowRemoved(e.target.checked)} /> Show removed
+          <input type="checkbox" checked={showRemoved} onChange={e => setShowRemoved(e.target.checked)} /> Show archived / former staff
         </label>
       </div>
 
@@ -159,7 +162,7 @@ export default function CrewMembersPage() {
 const memberFlags = (m: Member) => [
   m.isOwner ? 'owner' : null,
   m.isTest ? 'test' : null,
-  m.status !== 'active' ? m.status : null,
+  m.status !== 'active' ? staffStatus(m.status, m.adminNotes) : null,
   m.needsReview ? 'needs a talk' : null,
   m.upcomingSpots ? `${m.upcomingSpots} upcoming` : null,
 ].filter(Boolean)
@@ -169,6 +172,8 @@ type MemberHandlers = { onChanged: (msg: string) => Promise<void>; onError: (e: 
 /** The editor under an open member: the same on the table and on the phone. */
 function MemberPanel({ m, onChanged, onError }: { m: Member } & MemberHandlers) {
   const api = useAdminApi()
+  const [archive, setArchive] = useState(false)
+  const [archiving, setArchiving] = useState(false)
   async function save(f: FormState) {
     const r = await api<{ error?: string }>(`/api/admin/crew/members/${m.id}`, { method: 'PATCH', body: payload(f, m.isOwner ? 'owner' : 'edit') })
     if (!r.ok) { onError(r.data.error || 'Could not save.'); return false }
@@ -186,6 +191,20 @@ function MemberPanel({ m, onChanged, onError }: { m: Member } & MemberHandlers) 
           <p className="text-sm text-hampton-navy/70">Allie is the owner row: she can be assigned as Party Lead and counts toward staffed, and is never paid, notified or removed.</p>
         ) : (
           <>
+            {m.status !== 'removed' && (archive ? <div className="rounded-xl border border-amber-200 p-3 text-sm">
+              <p className="mb-2">Archive {m.firstName}? They will lose crew access and stop receiving crew notices. Unassign upcoming work first.</p>
+              <div className="flex flex-wrap gap-2">
+                <button disabled={archiving} className={BTN_PRIMARY} onClick={async () => {
+                  setArchiving(true)
+                  const r = await api<{ error?: string }>(`/api/admin/crew/members/${m.id}`, { method: 'PATCH', body: staffStatusUpdate('archived', m.adminNotes ?? '') })
+                  setArchiving(false)
+                  if (!r.ok) onError(r.data.error || 'Could not archive.')
+                  else await onChanged(`${m.firstName} archived.`)
+                  setArchive(false)
+                }}>Archive staff member</button>
+                <button disabled={archiving} className={BTN_GHOST} onClick={() => setArchive(false)}>Keep active</button>
+              </div>
+            </div> : <button className={BTN_GHOST} onClick={() => setArchive(true)}>Archive staff member</button>)}
             <Invite m={m} onChanged={onChanged} onError={onError} />
             <Onboarding m={m} onChanged={onChanged} onError={onError} />
             {m.needsReview && (
@@ -298,7 +317,9 @@ function MemberForm({ initial, mode, hasHourlyRate = false, onSave }: {
             <select className={`${INPUT} w-full mt-1`} value={f.status} onChange={e => set('status', e.target.value as FormState['status'])}>
               <option value="active">Active</option>
               <option value="paused">Paused</option>
-              <option value="removed">Removed</option>
+              <option value="archived">Archived</option>
+              <option value="quit">Quit</option>
+              <option value="fired">Fired</option>
             </select>
           </label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={f.can_lead} onChange={e => set('can_lead', e.target.checked)} /> Can be Party Lead</label>
@@ -363,20 +384,14 @@ function Onboarding({ m, onChanged, onError }: { m: Member; onChanged: (msg: str
   return (
     <div className="space-y-2">
       <p className="text-xs text-hampton-navy/60">Onboarding: <strong>{STAGE_LABEL[m.onboarding]}</strong></p>
-      <button
-        disabled={busy || !m.phone || m.status !== 'active'}
-        className={BTN_GHOST}
-        title={!m.phone ? 'No phone number' : ''}
-        onClick={async () => {
-          setBusy(true)
-          const r = await api<{ error?: string }>(`/api/admin/crew/members/${m.id}/onboarding-link`, { method: 'POST' })
-          setBusy(false)
-          if (!r.ok) onError(r.data.error || 'Could not send it.')
-          else await onChanged(`Onboarding link texted to ${m.firstName}.`)
-        }}
-      >
-        Send onboarding link
-      </button>
+      <p className="text-xs text-hampton-navy/70">Share the onboarding link yourself. No onboarding text is sent here.</p>
+      <a href="/crew/login" target="_blank" rel="noopener noreferrer" className="block text-sm underline break-all">{ONBOARDING_URL}</a>
+      <button className={BTN_GHOST} onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(ONBOARDING_URL)
+          await onChanged('Onboarding link copied. Share it manually with the staff member.')
+        } catch { onError('Could not copy. Select the link above and copy it.') }
+      }}>Copy onboarding link</button>
       <button
         disabled={busy}
         className={BTN_GHOST}

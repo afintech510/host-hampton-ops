@@ -12,7 +12,7 @@ jest.mock('@/lib/crew/mail', () => ({ sendCrewEmail: jest.fn(async () => ({ kind
 import { SETTING_SECTIONS, crewPhoneE164, screenCrewSetting, screenMemberInput, prefillFromApplication } from '@/lib/crew/adminForms'
 import { DEFAULT_SETTINGS, settingsFromRows } from '@/lib/crew/rules'
 import {
-  addSpot, assignMember, publishParty, removeSpot, setPartyFields, setSlotsOverride, unassignMember, unpublishParty, createManualParty,
+  removeParty, addSpot, assignMember, publishParty, removeSpot, setPartyFields, setSlotsOverride, unassignMember, unpublishParty, createManualParty,
 } from '@/lib/crew/adminActions'
 import { createMember, inviteMember, loadRoster, overrideSteps, updateMember } from '@/lib/crew/adminMembers'
 import { loadAdminOverview } from '@/lib/crew/admin'
@@ -525,5 +525,36 @@ describe('the roster', () => {
     expect(r.data.members.find(m => m.id === 'ava')).toMatchObject({ partiesWorked: 1, noShows: 1, lateCancelsUncovered: 1, hasHourlyRate: false })
     expect(r.data.members[0]).toMatchObject({ id: 'owner', hasHourlyRate: false })
     expect(r.data.hired.map(h => h.id)).toEqual(['app1'])
+  })
+})
+
+
+describe('remove from staffing', () => {
+  it('closes work, slots and cover requests while retaining the booking and member history', async () => {
+    const db = partyDb()
+    await assignMember(db.sb, P, { slotId: 'c1', memberId: 'ava' }, ACTOR, S)
+    db.tables.crew_swap_requests.push({ id: 'sw', slot_id: 'c1', status: 'open' })
+    expect(await removeParty(db.sb, P, ACTOR, NOW)).toEqual({ ok: true })
+    expect(db.tables.crew_parties[0]).toMatchObject({ status: 'cancelled', updated_by: ACTOR })
+    expect(db.tables.crew_slots.every(s => s.status === 'cancelled')).toBe(true)
+    expect(db.tables.crew_slots.find(s => s.id === 'c1')!.member_id).toBe('ava')
+    expect(db.tables.crew_swap_requests[0].status).toBe('cancelled')
+    expect(await removeParty(db.sb, P, ACTOR, NOW)).toEqual({ ok: true })
+  })
+  it('reports a partial cancellation and repairs it on retry', async () => {
+    const db = partyDb()
+    db.failOn.add('update:crew_slots')
+    expect(await removeParty(db.sb, P, ACTOR, NOW)).toMatchObject({ ok: false, status: 500 })
+    expect(db.tables.crew_parties[0].status).toBe('cancelled')
+    db.failOn.clear()
+    expect(await removeParty(db.sb, P, ACTOR, NOW)).toEqual({ ok: true })
+    expect(db.tables.crew_slots.every(s => s.status === 'cancelled')).toBe(true)
+  })
+  it('keeps completed work and stands down on an unreadable party', async () => {
+    const db = partyDb()
+    db.tables.crew_parties[0].status = 'completed'
+    expect(await removeParty(db.sb, P, ACTOR, NOW)).toMatchObject({ ok: false, status: 409 })
+    db.failOn.add('select:crew_parties')
+    expect(await removeParty(db.sb, P, ACTOR, NOW)).toMatchObject({ ok: false, status: 503 })
   })
 })

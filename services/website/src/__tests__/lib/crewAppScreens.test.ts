@@ -80,6 +80,18 @@ describe('the booking tiles\' data', () => {
     expect(r.tiles.find(t => t.id === 'late')!.crew).toBeNull()
   })
 
+  it('All includes past, later and undated bookings while excluding leads and cancelled parties', async () => {
+    const r = await loadBookingTiles(fakeDb({}), [
+      party({ id: 'past', party_date: '2025-12-01' }),
+      party({ id: 'later', party_date: '2028-04-01' }),
+      party({ id: 'no-date', party_date: null }),
+      party({ id: 'lead', stage: 'quoted' }),
+      party({ id: 'cancelled', stage: 'cancelled' }),
+    ], TODAY, undefined, true)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.tiles.map(t => t.id).sort()).toEqual(['later', 'no-date', 'past'])
+  })
+
   it('an unreadable crew table is an error, not "nobody is staffed"', async () => {
     const r = await loadBookingTiles(fakeDb({}, 'crew_parties'), [party({})] as never, TODAY)
     expect(r.ok).toBe(false)

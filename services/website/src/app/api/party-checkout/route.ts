@@ -1,5 +1,6 @@
 import { ownerEmail, notifyOwnerSms, leadSmsLine } from '@/lib/ownerNotify'
 import { NextRequest, NextResponse } from 'next/server'
+import { isMobilePlannerRequest, MOBILE_QUOTE_MESSAGE, MOBILE_QUOTE_URL } from '@/lib/mobileQuotePolicy'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { screenPublicLineItems, screenPublicGuestCount } from '@/lib/publicIntake'
 import { getSupabase } from '@/lib/supabase'
@@ -22,6 +23,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
+    if (isMobilePlannerRequest(body)) {
+      return NextResponse.json({ error: MOBILE_QUOTE_MESSAGE, quoteUrl: MOBILE_QUOTE_URL }, { status: 409 })
+    }
     // The first touch, screened at entry (lib/attribution.ts). One reader for
     // every intake route, and it accepts the pre-053 `utm` field name too.
     const attribution = attributionFromBody(body)
