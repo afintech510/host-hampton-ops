@@ -89,12 +89,12 @@ export default function CrewBookingsPage() {
     <CrewFrame active="/admin/crew/bookings" title="Bookings" compact actions={<SortMenu options={BOOKING_SORTS} value={sort} onChange={setSort} />}>
       <div className="max-w-3xl mx-auto">
         {error && !data && <Banner tone="error">{error}</Banner>}
-        {loading && <div className="text-center text-hampton-navy/50 py-10">Loading the bookings…</div>}
+        {loading && <div className="text-center text-hampton-navy/70 py-10">Loading the bookings…</div>}
         {data && (
           <>
             {linked && (
               <div className="mb-5">
-                <div className="text-center text-xs font-bold uppercase tracking-wider text-hampton-navy/50 mb-2">Opened from a link</div>
+                <div className="text-center text-xs font-bold uppercase tracking-wider text-hampton-navy/70 mb-2">Opened from a link</div>
                 <BookingTile tile={linked} open={openId === linked.id} onToggle={() => setOpenId(openId === linked.id ? null : linked.id)} />
               </div>
             )}
@@ -110,9 +110,13 @@ export default function CrewBookingsPage() {
               weekend={weekend}
               onWeekend={setWeekend}
             />
-            <div className="mt-3 space-y-3">
+            <div className="mb-3 mt-5 flex items-center justify-between gap-3 text-xs text-hampton-navy/70" role="status">
+              <span>{shown.length} {shown.length === 1 ? 'booking' : 'bookings'}</span>
+              {shown.some(t => t.balanceCents > 0) && <span>{shown.filter(t => t.balanceCents > 0).length} with a balance due</span>}
+            </div>
+            <div className="space-y-4">
               {shown.length === 0 && (
-                <div className="text-center text-hampton-navy/60 py-10">
+                <div className="text-center text-hampton-navy/70 py-10">
                   Nothing booked {activeDay ? `on ${dayCaption(activeDay)}` : weekend.length ? `on ${weekend.map(k => (k === 'sat' ? 'Saturdays' : 'Sundays')).join(' or ')} in ${monthShort(activeMonth)}` : `in ${monthShort(activeMonth)}`}
                   {types.length ? ' for those kinds of party' : ''}.
                 </div>

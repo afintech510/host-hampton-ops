@@ -13,7 +13,9 @@
  */
 
 import { useState } from 'react'
-import { BTN_GHOST, useAdminApi } from './adminCrew'
+import { Mail, MessageSquare, Phone } from 'lucide-react'
+import { useAdminApi } from './adminCrew'
+import { CARD_ACTION } from './PartyTile'
 
 export default function ContactButtons({ bookingId, phone, email }: { bookingId: string; phone: string | null; email: string | null }) {
   const api = useAdminApi()
@@ -40,24 +42,24 @@ export default function ContactButtons({ bookingId, phone, email }: { bookingId:
   if (!phone && !email) return null
   return (
     <div>
-      <div className="flex flex-wrap justify-center gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
         {phone && (
-          <button className={BTN_GHOST} disabled={!!busy} onClick={() => open('quo')}>
-            {busy === 'quo' ? 'Opening…' : '💬 Text in Quo'}
+          <button type="button" className={CARD_ACTION} disabled={!!busy} onClick={() => open('quo')}>
+            <MessageSquare size={15} className="shrink-0" aria-hidden="true" />{busy === 'quo' ? 'Opening…' : 'Text in Quo'}
           </button>
         )}
         {email && (
-          <button className={BTN_GHOST} disabled={!!busy} onClick={() => open('gmail')}>
-            {busy === 'gmail' ? 'Opening…' : '✉️ Email in Gmail'}
+          <button type="button" className={CARD_ACTION} disabled={!!busy} onClick={() => open('gmail')}>
+            <Mail size={15} className="shrink-0" aria-hidden="true" />{busy === 'gmail' ? 'Opening…' : 'Email in Gmail'}
           </button>
         )}
         {phone && (
-          <a className={`${BTN_GHOST} inline-flex items-center`} href={`tel:${phone}`}>
-            📞 Call
+          <a className={CARD_ACTION} href={`tel:${phone}`}>
+            <Phone size={15} className="shrink-0" aria-hidden="true" />Call
           </a>
         )}
       </div>
-      {note && <div className="mt-2 text-center text-sm text-hampton-navy/70">{note}</div>}
+      {note && <div role="status" className="mt-2 text-sm text-hampton-navy/70">{note}</div>}
     </div>
   )
 }
