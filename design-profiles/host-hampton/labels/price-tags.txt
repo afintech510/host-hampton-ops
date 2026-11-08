@@ -1,0 +1,15 @@
+# Cut-out price labels on plain letter paper:  python make_labels.py price-tags.txt --cut
+# Item name | Price | Small print | How many      (blank name = price-only label)
+ | 7  | each | 3
+ | 8  | each | 3
+ | 9  | each | 3
+ | 10 | each | 3
+ | 12 | each | 3
+ | 15 | each | 3
+ | 30 | each | 3
+Keychain       | 20 | each | 3
+Keychain Charm | 5  | each | 3
+Keychain Charm | 7  | each | 3
+Keychain Charm | 10 | each | 3
+Keychain Charm | 12 | each | 3
+Charm          | 10 | each | 3

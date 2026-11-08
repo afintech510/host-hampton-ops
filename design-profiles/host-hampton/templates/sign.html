@@ -1,0 +1,131 @@
+<!-- @dsCard group="Templates" name="Sign" subtitle="Fridge-sign style · letter, 5×7, 4×6 · click to edit" viewport-width="900" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign — Host Hampton</title>
+<link rel="stylesheet" href="../brand.css">
+<style id="page-size">@page{size:8.5in 11in;margin:0}</style>
+<style>
+  /*
+    The fridge sign (Downloads/Fridge Sign.pdf, 2026-09-18), rebuilt as a
+    template: ivory paper, an inset navy frame, the gold HOST HAMPTON mark, a
+    short gold rule, the message in Playfair, the instruction in Montserrat, a
+    second rule, a sign-off.
+
+    Every size is a fraction of the paper's SHORT side (--short), so a 4×6
+    table tent and a letter-size door sign come out as the same design at two
+    scales rather than two designs.
+  */
+  .sign{width:var(--w);height:var(--h);background:var(--hh-ivory);font-size:calc(var(--short) * .0225);
+        padding:calc(var(--short) * .06)}
+  .sign.white{background:#fff}
+  .sign .hh-frame{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 8%}
+  .content{max-width:19em}
+  .hh-title{font-size:2.6em;max-width:6.9em;margin:0 auto}
+  .hh-body{font-size:1.05em;margin-top:1.1em}
+  .closer{font-family:var(--hh-sans);font-weight:600;font-size:.85em}
+  .no-closer .closer,.no-closer .rule-2{display:none}
+
+  [contenteditable]{outline:none;border-radius:.15em;transition:box-shadow .15s}
+  [contenteditable]:hover{box-shadow:0 0 0 .12em rgba(143,168,191,.55)}
+  [contenteditable]:focus{box-shadow:0 0 0 .12em var(--hh-blue)}
+  @media print{[contenteditable]:hover,[contenteditable]:focus{box-shadow:none}}
+</style>
+</head>
+<body>
+<div class="hh-desk">
+
+  <div class="hh-panel">
+    <h1>Sign</h1>
+    <p>Click any text on the sign to change it. Edits are kept in this browser.
+       To print: <b>Ctrl&nbsp;+&nbsp;P</b> → set the paper size to match → Margins <b>None</b> → Scale <b>100%</b>.</p>
+    <div class="row">
+      <label>Paper
+        <select id="size">
+          <option value="8.5,11">Letter · portrait</option>
+          <option value="11,8.5">Letter · landscape</option>
+          <option value="5.5,8.5">Half letter · 5.5 × 8.5 in</option>
+          <option value="5,7">5 × 7 in</option>
+          <option value="4,6">4 × 6 in</option>
+        </select>
+      </label>
+      <label>Paper colour
+        <select id="paper"><option value="ivory">Ivory (like the site)</option><option value="white">White (saves ink)</option></select>
+      </label>
+      <label>Start from
+        <select id="preset">
+          <option value="">— keep my edits —</option>
+          <option value="fridge">Fridge — purchase only</option>
+          <option value="blank">Blank</option>
+        </select>
+      </label>
+      <button onclick="window.print()">Print</button>
+    </div>
+  </div>
+
+  <div class="hh-sheet sign" id="sign">
+    <div class="hh-frame">
+      <div class="content">
+        <div class="hh-mark" contenteditable data-k="mark"></div>
+        <span class="hh-rule"></span>
+        <h1 class="hh-title" contenteditable data-k="title"></h1>
+        <p class="hh-body" contenteditable data-k="body"></p>
+        <span class="hh-rule rule-2"></span>
+        <p class="closer" contenteditable data-k="closer"></p>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+  // The fridge sign's own words, verbatim. Presets hold COPY only; prices
+  // belong on price-labels.html, where a missing one shows up as $TBD.
+  const PRESETS = {
+    fridge: { mark:'Host Hampton', title:'Items in the Fridge Are for Purchase Only',
+              body:'Please see a staff member to pay before taking anything.', closer:'Thank you!' },
+    blank:  { mark:'Host Hampton', title:'Your Headline Here',
+              body:'One or two short lines telling a guest what to do.', closer:'' },
+  };
+  const KEY = 'hh-sign-v1';
+  const sign = document.getElementById('sign');
+  const fields = [...document.querySelectorAll('[data-k]')];
+
+  function load(data){ fields.forEach(f => { f.innerHTML = data[f.dataset.k] ?? '' }); tidy(); }
+  function save(){
+    const data = { size:size.value, paper:paper.value };
+    fields.forEach(f => data[f.dataset.k] = f.innerHTML);
+    localStorage.setItem(KEY, JSON.stringify(data));
+  }
+  // An empty sign-off hides itself and the rule above it, so a two-part sign
+  // does not print a stray gold bar over nothing.
+  function tidy(){
+    const closer = fields.find(f => f.dataset.k === 'closer');
+    sign.classList.toggle('no-closer', closer.textContent.trim() === '' && document.activeElement !== closer);
+  }
+  function applySize(){
+    const [w,h] = size.value.split(',').map(Number);
+    sign.style.setProperty('--w', w+'in'); sign.style.setProperty('--h', h+'in');
+    sign.style.setProperty('--short', Math.min(w,h)+'in');
+    document.getElementById('page-size').textContent = `@page{size:${w}in ${h}in;margin:0}`;
+  }
+  const size = document.getElementById('size'), paper = document.getElementById('paper'), preset = document.getElementById('preset');
+
+  const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+  if (saved) { size.value = saved.size; paper.value = saved.paper; load(saved); } else load(PRESETS.fridge);
+  applySize(); sign.classList.toggle('white', paper.value === 'white');
+
+  size.onchange  = () => { applySize(); save(); };
+  paper.onchange = () => { sign.classList.toggle('white', paper.value === 'white'); save(); };
+  preset.onchange = () => { if (PRESETS[preset.value]) { load(PRESETS[preset.value]); save(); } preset.value=''; };
+  fields.forEach(f => {
+    f.addEventListener('input', save);
+    f.addEventListener('focus', () => sign.classList.remove('no-closer'));
+    f.addEventListener('blur', tidy);
+    // Paste as plain text, so a sign never inherits a font from wherever the words came from.
+    f.addEventListener('paste', e => { e.preventDefault(); document.execCommand('insertText', false, e.clipboardData.getData('text/plain')); });
+  });
+</script>
+</body>
+</html>

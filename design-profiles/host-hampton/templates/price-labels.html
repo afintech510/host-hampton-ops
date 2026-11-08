@@ -1,0 +1,201 @@
+<!-- @dsCard group="Templates" name="Price labels" subtitle="Avery sheets or cardstock · type a list, print" viewport-width="900" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Price Labels — Host Hampton</title>
+<link rel="stylesheet" href="../brand.css">
+<style>
+  @page{size:8.5in 11in;margin:0}
+
+  .sheet{width:8.5in;height:11in;background:#fff;position:relative}
+  .cell{position:absolute;padding:.07in}           /* inset so a slightly off feed never clips the frame */
+
+  /* Screen: faint dashed outline of every label position so you can see the sheet. */
+  .cell::after{content:"";position:absolute;inset:0;border:1px dashed rgba(47,52,59,.16);border-radius:.06in;pointer-events:none}
+  @media print{ .cell::after{display:none} }
+  /* Cardstock you cut yourself: real cut guides, printed. */
+  .cut .cell::after{display:block;border:.5px solid #c9c9c9;border-radius:0}
+  /* Alignment test: print every outline in navy on plain paper and hold it against the label sheet. */
+  .test .cell::after{display:block;border:1px solid var(--hh-navy)}
+  .test .label{visibility:hidden}
+
+  .label{height:100%;display:flex;overflow:hidden}
+  .label.ivory{background:var(--hh-ivory)}
+  .label .hh-frame{flex:1;display:flex;min-width:0}
+
+  /* ── Stacked: any label 1.25in tall or more. The fridge sign, in miniature. ── */
+  .stack .hh-frame{flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 7%}
+  .stack .hh-rule{margin:.55em auto .6em}
+  .stack .name{font-size:1.45em;max-width:100%}
+  .stack .price{font-size:2.6em;margin-top:.22em}
+  .stack .note{font-size:.78em;margin-top:.45em}
+
+  /* ── In a row: short address-label stock. Name left, price right. ── */
+  .row .hh-frame{align-items:center;padding:0 5% 0 6%;gap:6%}
+  .row .left{flex:1;min-width:0}
+  .row .hh-mark{font-size:.52em}
+  .row .name{font-size:1.15em;margin-top:.12em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .note{font-size:.68em;margin-top:.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .right{text-align:right;padding-left:6%;border-left:.12em solid var(--hh-gold);align-self:stretch;display:flex;align-items:center}
+  .row .price{font-size:2em}
+
+  .nomark .hh-mark,.nomark .stack .hh-rule{display:none}
+</style>
+</head>
+<body>
+<div class="hh-desk">
+
+  <div class="hh-panel">
+    <h1>Price labels</h1>
+    <p>One label per line: <code>Item name | Price | Small print | How many</code>.
+       Only the name is required. A missing price prints as <span class="hh-tbd">$TBD</span> so it can't slip through.
+       To print: <b>Ctrl&nbsp;+&nbsp;P</b> → Letter → Margins <b>None</b> → Scale <b>100%</b> (never "Fit to page").</p>
+    <textarea id="list" spellcheck="false"></textarea>
+    <div class="row">
+      <label>Sheet <select id="stock"></select></label>
+      <label>Skip first <input type="number" id="skip" min="0" value="0"> labels</label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="fill"> Repeat the list to fill the sheet</label>
+      <label><input type="checkbox" id="ivory" checked> Ivory fill</label>
+      <label><input type="checkbox" id="mark" checked> HOST HAMPTON mark</label>
+      <label><input type="checkbox" id="test"> Alignment test (outlines only)</label>
+    </div>
+    <div class="row">
+      <button onclick="window.print()">Print</button>
+      <span id="status"></span>
+    </div>
+  </div>
+
+  <div id="sheets" style="display:contents"></div>
+
+</div>
+<script>
+  /*
+    Label stock geometry, in inches, from the manufacturer's template: label
+    size, grid, the sheet's top/left margin to the first label, and the pitch
+    (label + gap) between labels. Before printing a full sheet on a new box of
+    labels, tick "Alignment test", print on plain paper, and hold it up to the
+    light against a label sheet — printers feed a little differently.
+  */
+  const STOCKS = {
+    // The box in the studio (2026-10-09). Spec from onlinelabels.com/products/ol800:
+    // 0.375 side margins, 0.5 top/bottom, 0.125 gap both ways — sums to exactly 8.5 × 11.
+    'ol800':{ name:'OnlineLabels OL800WX — 2½ × 1.5625 in, 18 per sheet', w:2.5, h:1.5625, cols:3, rows:6, top:.5, left:.375, px:2.625, py:1.6875 },
+    '5160': { name:'Avery 5160 / 8160 — 1 × 2⅝ in, 30 per sheet',      w:2.625, h:1,    cols:3, rows:10, top:.5,  left:.1875,  px:2.75,   py:1 },
+    '5163': { name:'Avery 5163 / 8163 — 2 × 4 in, 10 per sheet',        w:4,     h:2,    cols:2, rows:5,  top:.5,  left:.15625, px:4.1875, py:2 },
+    '5164': { name:'Avery 5164 / 8164 — 3⅓ × 4 in, 6 per sheet',        w:4,     h:10/3, cols:2, rows:3,  top:.5,  left:.15625, px:4.1875, py:10/3 },
+    '8371': { name:'Avery 8371 / 5371 cards — 2 × 3½ in, 10 per sheet', w:3.5,   h:2,    cols:2, rows:5,  top:.5,  left:.75,    px:3.5,    py:2 },
+    'cut35':{ name:'Plain cardstock, cut by hand — 2 × 3½ in, 10 per sheet', w:3.5, h:2, cols:2, rows:5, top:.5, left:.75, px:3.5, py:2, cut:true },
+    'cut43':{ name:'Plain cardstock, cut by hand — 3 × 4 in, 6 per sheet',   w:4,   h:3, cols:2, rows:3, top:1,  left:.25, px:4,   py:3, cut:true },
+  };
+
+  const SAMPLE = [
+    '# One label per line:   Item name | Price | Small print | How many',
+    '# Lines starting with # are ignored. Leave the price blank and it prints $TBD.',
+    'Bottled Water | | each | 2',
+    'Cake Pops | | each | 2',
+    'Item Name | | small print here | 1',
+  ].join('\n');
+
+  const KEY = 'hh-price-labels-v1';
+  const $ = id => document.getElementById(id);
+  const ui = { list:$('list'), stock:$('stock'), skip:$('skip'), fill:$('fill'), ivory:$('ivory'), mark:$('mark'), test:$('test') };
+
+  for (const [k, s] of Object.entries(STOCKS)) ui.stock.add(new Option(s.name, k));
+
+  const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+  ui.list.value = saved?.list ?? SAMPLE;
+  if (saved) for (const k of ['stock','skip']) ui[k].value = saved[k];
+  if (saved) for (const k of ['fill','ivory','mark','test']) ui[k].checked = saved[k];
+  if (!saved || !STOCKS[ui.stock.value]) ui.stock.value = 'ol800';
+
+  // "12" and "4.5" become "$12" and "$4.50"; anything else ("2 for $10") is printed as typed.
+  function formatPrice(raw){
+    const p = (raw || '').trim();
+    if (!p || /^\$?tbd$/i.test(p)) return null;
+    const m = p.replace(/^\$/, '').match(/^(\d+)(?:\.(\d{1,2}))?$/);
+    if (!m) return p;
+    return '$' + m[1] + (m[2] ? '.' + m[2].padEnd(2, '0') : '');
+  }
+
+  function parse(text){
+    const items = [];
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim() || line.trim().startsWith('#')) continue;
+      const [name = '', price = '', note = '', qty = ''] = line.split('|').map(s => s.trim());
+      if (!name) continue;
+      const n = Math.max(1, Math.min(300, parseInt(qty, 10) || 1));
+      for (let i = 0; i < n; i++) items.push({ name, price: formatPrice(price), note });
+    }
+    return items;
+  }
+
+  function el(tag, cls, text){ const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  function makeLabel(item, stacked){
+    const label = el('div', 'label ' + (stacked ? 'stack' : 'row') + (ui.ivory.checked ? ' ivory' : ''));
+    const frame = el('div', 'hh-frame');
+    const price = el('div', 'hh-price price' + (item.price ? '' : ' hh-tbd'), item.price || '$TBD');
+    const name  = el('div', 'hh-title name', item.name);
+    const note  = item.note ? el('div', 'hh-unit note', item.note) : null;
+    if (stacked) {
+      frame.append(el('div', 'hh-mark', 'Host Hampton'), el('span', 'hh-rule'), name, price);
+      if (note) frame.append(note);
+    } else {
+      const left = el('div', 'left'); left.append(el('div', 'hh-mark', 'Host Hampton'), name); if (note) left.append(note);
+      const right = el('div', 'right'); right.append(price);
+      frame.append(left, right);
+    }
+    label.append(frame);
+    return label;
+  }
+
+  function render(){
+    const s = STOCKS[ui.stock.value];
+    const perSheet = s.cols * s.rows;
+    const skip = Math.max(0, Math.min(perSheet - 1, parseInt(ui.skip.value, 10) || 0));
+    let items = parse(ui.list.value);
+    if (ui.fill.checked && items.length) {
+      const target = Math.ceil((skip + items.length) / perSheet) * perSheet - skip;
+      const base = items.slice(); while (items.length < target) items.push(base[items.length % base.length]);
+    }
+
+    const stacked = s.h >= 1.25;
+    // One base size per stock; every part of the label is in em off this.
+    const base = stacked ? Math.min(s.w, s.h) * 0.085 : s.h * 0.13;
+
+    const host = $('sheets'); host.innerHTML = '';
+    const slots = [...Array(skip).fill(null), ...items];
+    const pages = Math.max(1, Math.ceil(slots.length / perSheet));
+    for (let p = 0; p < pages; p++) {
+      const sheet = el('div', 'hh-sheet sheet' + (s.cut ? ' cut' : '') + (ui.test.checked ? ' test' : '') + (ui.mark.checked ? '' : ' nomark'));
+      sheet.style.fontSize = base + 'in';
+      for (let i = 0; i < perSheet; i++) {
+        const item = slots[p * perSheet + i];
+        const cell = el('div', 'cell');
+        const c = i % s.cols, r = Math.floor(i / s.cols);
+        Object.assign(cell.style, { left: (s.left + c * s.px) + 'in', top: (s.top + r * s.py) + 'in', width: s.w + 'in', height: s.h + 'in' });
+        if (item) cell.append(makeLabel(item, stacked));
+        sheet.append(cell);
+      }
+      host.append(sheet);
+    }
+
+    const tbd = items.filter(i => !i.price).length;
+    $('status').innerHTML = `${items.length} label${items.length === 1 ? '' : 's'} on ${pages} sheet${pages === 1 ? '' : 's'}`
+      + (tbd ? ` · <span class="warn">${tbd} still say $TBD</span>` : '');
+
+    localStorage.setItem(KEY, JSON.stringify({
+      list: ui.list.value, stock: ui.stock.value, skip: ui.skip.value,
+      fill: ui.fill.checked, ivory: ui.ivory.checked, mark: ui.mark.checked, test: ui.test.checked,
+    }));
+  }
+
+  Object.values(ui).forEach(c => c.addEventListener('input', render));
+  render();
+</script>
+</body>
+</html>
