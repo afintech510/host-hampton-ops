@@ -80,3 +80,13 @@ client_secret_*.json
 
 # EVITE design source SVGs (9 MB, reference only - kept out of the public repo)
 docs/specs/evites/handoff/assets/glow/source-svg/
+
+# Host Hampton's books: bank exports, Venmo statements, customer and contractor
+# names, amounts. NEVER for this public repo. Each folder is its own LOCAL git repo
+# (no remote) driven by expenses/books.py; the process lives in
+# .claude/skills/hh-accounting/SKILL.md, which holds no customer data.
+expenses/
+revenue/
+
+# Nimbalyst editor state (session transcripts, screenshots) - local only
+.nimbalyst/
