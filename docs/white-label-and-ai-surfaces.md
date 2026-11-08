@@ -86,8 +86,8 @@ Add it as a custom connector in ChatGPT (developer mode / Apps) or Claude
 |---|---|
 | `get_business_overview` | the `/llms.txt` document, verbatim |
 | `list_party_themes` | `loadQuoteCatalog` (the rows the quote matches, so every listed name prices) + `HOSTED_THEME_GROUPS` |
-| `get_party_menu` | `buildPartyMenu` over the same catalog: inclusions, activity rules, every add-on, the mobile anchor |
-| `get_quote` | the planner's engine. A mobile party gets its starting price and the quote link, never a total |
+| `get_party_menu` | `buildPartyMenu` over the same catalog: inclusions, activity rules, every add-on, how mobile parties are priced |
+| `get_quote` | the planner's engine. A mobile party gets how it is priced and the quote link, never a total |
 | `check_availability` | `GET /api/availability?bookingType=kids-party`: a month's open dates and start times |
 | `check_date_availability` | `GET /api/availability` (calendar blocks). A calendar that could not be read is `available: null`, never open |
 | `find_photos` | `findPhotos`: approved, no identifiable child |

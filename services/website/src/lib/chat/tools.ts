@@ -109,7 +109,7 @@ export const CHAT_TOOLS: LlmTool[] = [
   {
     name: 'get_quote',
     description:
-      'Price a studio party from the live price list. You pass NAMES (theme, activities, add-ons) and a guest count; the price comes back from the same engine as the website planner. Never state a price that did not come from this tool. A quote is not a booking. Names that are not matched are NOT priced. For a mobile party it returns the starting price only — never total a mobile party.',
+      'Price a studio party from the live price list. You pass NAMES (theme, activities, add-ons) and a guest count; the price comes back from the same engine as the website planner. Never state a price that did not come from this tool. A quote is not a booking. Names that are not matched are NOT priced. For a mobile party it returns how those are priced and the quote link, never a total.',
     input_schema: {
       type: 'object',
       properties: {

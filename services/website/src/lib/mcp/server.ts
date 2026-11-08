@@ -115,7 +115,7 @@ export function listTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
     {
       name: 'get_quote',
       title: 'Price a party',
-      description: `Price a studio party at ${name} from the live price list: the theme, guest count, activities and add-ons. Prices come from the same engine as the website's party planner; never estimate one yourself. Names must match the catalog — use list_party_themes and get_party_menu. Returns the total, each line item, the deposit and a planner link already filled in. A quote is not a booking. Mobile parties are not totalled: the answer is their starting price and how to get a quote.`,
+      description: `Price a studio party at ${name} from the live price list: the theme, guest count, activities and add-ons. Prices come from the same engine as the website's party planner; never estimate one yourself. Names must match the catalog — use list_party_themes and get_party_menu. Returns the total, each line item, the deposit and a planner link already filled in. A quote is not a booking. Mobile parties are not totalled: the answer is how they are priced and how to get a quote.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -467,7 +467,7 @@ export function serverInstructions(): string {
     `${TENANT.business.name}: ${TENANT.business.oneLiner}`,
     `Location: ${STUDIO_ADDRESS_LINE}. Phone ${TENANT.contact.phoneDisplay}. Website ${CANONICAL_ORIGIN}.`,
     'Use get_business_overview for general questions, list_party_themes for themes and studio prices, get_party_menu for what a party includes and every add-on, get_quote to price a specific party, check_availability for open dates in a month (check_date_availability for one date), find_photos for real party photos, list_upcoming_events for public events, get_reviews for reviews, get_booking_link for how to book, and start_inquiry only when the parent asks you to send their details.',
-    'Quote only prices these tools return, exactly as returned. Mobile (at-home) parties are quoted individually: give their starting price and the quote link, never a total. Never promise a date is reserved: it is held once the deposit is paid.',
+    'Quote only prices these tools return, exactly as returned. Mobile (at-home) parties are quoted individually: give the quote link and never a total, and no dollar figure unless a tool returns one. Never promise a date is reserved: it is held once the deposit is paid.',
     'To book, send the parent to the open_in_planner link from get_quote (it opens the planner already filled in), or use get_booking_link.',
   ].join('\n')
 }

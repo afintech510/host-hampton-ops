@@ -123,14 +123,13 @@ export interface GuestRules {
 /**
  * The one mobile figure the AI surfaces may say: "starts at $X for N kids".
  * Not a charge: nothing prices from it, and the website does not print it
- * (Adam removed mobile prices from the pages on 2026-11-05). The planner's mobile
- * ladder (`mobileBands`) is below his target and the full mobile grid is not
- * built, so the website chat and the ChatGPT connector quote this and hand the
- * rest to a person (Adam, 2026-11-07).
+ * (Adam removed mobile prices from the pages on 2026-11-05).
  *
- * Null unless an ACTIVE `mobile_quote_from` row says otherwise, and there is
- * deliberately no compiled fallback: deactivating that row is the off switch,
- * and a read failure must not publish a mobile price nobody chose to publish.
+ * OFF today: on 2026-11-08 he chose no figure on the agents either, so the row
+ * is inactive and they say "quoted individually". Null unless an ACTIVE
+ * `mobile_quote_from` row says otherwise, with deliberately no compiled fallback:
+ * that row is the switch, and a read failure must not publish a mobile price
+ * nobody chose to publish.
  */
 export interface MobileQuoteFrom {
   cents: number

@@ -32,7 +32,7 @@
 --      studio-rental manage page finds them in its menu.
 --   4. A partial UNIQUE index on (category, lower(name)) WHERE is_active, so the
 --      same item cannot be listed twice in one category again.
---   5. Seeds the `mobile_quote_from` anchor row (see step 5 below).
+--   5. Seeds the `mobile_quote_from` row, INACTIVE (see step 5 below).
 --
 -- ── WHAT IT DOES NOT DO ──
 --
@@ -146,16 +146,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_pricing_items_active_category_name
   ON public.pricing_items (category, lower(name))
   WHERE is_active;
 
--- 5. The mobile "starts at" anchor the website chat and the ChatGPT connector
---    quote instead of a planner total (Adam, 2026-11-07: "starts at $850 for 10
---    kids, quoted individually"). Nothing charges from it: `lib/pricingCatalog.ts`
---    reads it by key as `mobileQuoteFrom`, outside REQUIRED_KEYS, and the planner's
---    mobile ladder is untouched. Edit this row to move the figure both agents say;
---    set is_active = false and they say no mobile figure at all.
+-- 5. The switch for a mobile "starts at" figure on the website chat and the ChatGPT
+--    connector. Nothing charges from it: `lib/pricingCatalog.ts` reads it by key as
+--    `mobileQuoteFrom`, outside REQUIRED_KEYS, and the planner's mobile ladder is
+--    untouched. INACTIVE: Adam chose no mobile figure on the agents, same as the
+--    website (2026-11-08), so they say "quoted individually". Set is_active = true
+--    and they say "starts at $850 for 10 kids". It was applied active for a few
+--    hours that day and deactivated before any code read it.
 INSERT INTO public.pricing_items (name, description, category, price_cents, price_type, is_active, sort_order, metadata)
 SELECT 'Mobile Party — starting price (quoted individually)',
-       'What the website chat and the ChatGPT connector quote for a mobile party. Not charged by anything.',
-       'mobile-package', 85000, 'flat', true, 90,
+       'The starting figure the website chat and the ChatGPT connector give for a mobile party while this row is active. Not charged by anything.',
+       'mobile-package', 85000, 'flat', false, 90,
        '{"catalog_key": "mobile_quote_from", "kids": 10}'::jsonb
  WHERE NOT EXISTS (SELECT 1 FROM public.pricing_items WHERE metadata->>'catalog_key' = 'mobile_quote_from');
 

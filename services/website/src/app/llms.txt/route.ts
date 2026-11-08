@@ -32,10 +32,10 @@ import {
  * NO MOBILE FIGURE, deliberately. Mobile pricing is Adam's alone and is being
  * reworked (plan §15), and he removed the published tiers from /mobile-party on
  * 2026-11-05 — a number here would be one more place an assistant treats as
- * authoritative. So this POINTS at the page. Exceptions, both his rulings: an
- * at-home SPA party starts at $950 (2026-10-06, also on /spa-party), and the AI
- * tools may give the `mobile_quote_from` anchor (2026-11-07, lib/partyMenu.ts) —
- * from the tools, which can switch it off, and never from this document.
+ * authoritative. So this POINTS at the page. One exception, his ruling
+ * 2026-10-06: an at-home SPA party starts at $950 (also on /spa-party). The AI
+ * tools have their own switch for a starting figure (`mobile_quote_from`, off
+ * since 2026-11-08, lib/partyMenu.ts); it never appears in this document.
  *
  * Per-request for the same reason as sitemap.xml: Supabase credentials do not
  * exist at build time, and prerendering would silently publish the fallback.

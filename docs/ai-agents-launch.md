@@ -68,25 +68,25 @@ Then open the site in a private window, tap the bubble and ask a real question. 
 
 **To turn it off:** set `PUBLIC_CHAT_ENABLED=false` and run the same `docker compose` line.
 
-**What it costs:** about **$0.02 per visitor message** on `claude-sonnet-5-5` (measured over 38 eval cases). The default ceiling is **$3 a day** (`PUBLIC_CHAT_DAILY_USD_CAP`), roughly 150 messages, and $0.75 per conversation. At a ceiling the chat hands the visitor to Text us / Call.
+**What it costs:** about **$0.02 per visitor message** on `claude-sonnet-5-5` (measured over 39 eval cases). The default ceiling is **$3 a day** (`PUBLIC_CHAT_DAILY_USD_CAP`), roughly 150 messages, and $0.75 per conversation. At a ceiling the chat hands the visitor to Text us / Call.
 
-## Mobile parties: the one figure
+## Mobile parties: no figure
 
-Adam removed mobile prices from the website on 2026-11-05, and on 2026-11-07 chose this for the agents: **"starts at $850 for 10 kids, quoted individually"**, never a total. So the agents publish one mobile figure that the website does not.
+Adam removed mobile prices from the website on 2026-11-05 and chose the same for the agents on 2026-11-08. They say mobile parties are quoted individually, state no dollar figure and never a total, and offer the quote form or an inquiry. The one exception is his 2026-10-06 ruling that an at-home spa party starts at $950, which they read from `/llms.txt`.
 
-It is one row, the only thing that makes either agent say a mobile figure. `/llms.txt` deliberately does not repeat it.
+If he changes his mind, it is one row and no deploy:
 
 ```sql
--- change what they say (takes effect within a minute):
-UPDATE pricing_items SET price_cents = 85000, metadata = metadata || '{"kids": 10}'
+-- agents say "starts at $850 for 10 kids, quoted individually" (within a minute):
+UPDATE pricing_items SET is_active = true, price_cents = 85000, metadata = metadata || '{"kids": 10}'
  WHERE metadata->>'catalog_key' = 'mobile_quote_from';
 
--- no mobile figure at all: they say "quoted individually" and link the quote form:
+-- back to no figure:
 UPDATE pricing_items SET is_active = false
  WHERE metadata->>'catalog_key' = 'mobile_quote_from';
 ```
 
-Still mismatched, on purpose until the mobile grid exists: **the planner still charges its own lower mobile ladder** ($400 base), so a parent who finds the planner themselves sees a lower number than $850. The agents send mobile parents to the quote form, not the planner. See plan §15.
+Still mismatched, until the mobile grid exists: **the planner still shows and charges its own mobile ladder** ($400 base), below Adam's target, so a parent who finds the planner themselves sees a number the agents will not state. The agents send mobile parents to the quote form, not the planner. See plan §15.
 
 ## ChatGPT
 
@@ -139,7 +139,7 @@ Sources: [submission](https://developers.openai.com/plugins/deploy/submission), 
 
 ## Testing the model ("training")
 
-We don't fine-tune anything. The agents are grounded in live tools and rules, and the eval is how we know they behave: 38 real parent questions through the real chat turn, on live data.
+We don't fine-tune anything. The agents are grounded in live tools and rules, and the eval is how we know they behave: 39 real parent questions through the real chat turn, on live data.
 
 ```bash
 cd services/website

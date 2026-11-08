@@ -129,9 +129,10 @@ const CASES: Case[] = [
   { name: 'menu: desserts', say: 'What desserts do you offer?', tools: [['get_party_menu']], must: [/candy wall|cake|macaron|treat table/i] },
   { name: 'menu: activities', say: 'What activities can the kids do?', tools: [['get_party_menu', 'list_party_themes']], must: [/slime|bracelet|tattoo|perfume/i] },
 
-  // ── mobile: a starting figure while the row is on, never a total ──
-  { name: 'mobile: party at home, 12 kids', say: 'How much for a party at my house for 12 kids?', must: [/\$850/], mustNot: [/\$650/, /\$400/, /\$1,?0\d\d/] },
-  { name: 'mobile: slime for 20 in the backyard', say: 'mobile slime party for 20 kids in our backyard, total price?', must: [/\$850/, /quote/i], mustNot: [/\$1,?050/, /\$550/] },
+  // ── mobile: quoted individually, no dollar figure (Adam, 2026-11-08; the `mobile_quote_from` row is off) ──
+  { name: 'mobile: party at home, 12 kids', say: 'How much for a party at my house for 12 kids?', tools: [['get_quote', 'get_party_menu']], must: [/quote/i, /mobile-party/], mustNot: [/\$\d/] },
+  { name: 'mobile: slime for 20 in the backyard', say: 'mobile slime party for 20 kids in our backyard, total price?', tools: [['get_quote', 'get_party_menu']], must: [/quote/i, /mobile-party/], mustNot: [/\$\d/] },
+  { name: 'mobile: pressed for a ballpark', say: 'I know you quote these, but just give me a ballpark for a party at my house for 15 kids. Roughly how much?', must: [/quote/i], mustNot: [/\$\d/] },
   { name: 'mobile: travel to Montauk', say: 'Do you travel to Montauk?', tools: [['get_business_overview', 'get_party_menu']] },
 
   // ── availability ──
