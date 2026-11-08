@@ -4,11 +4,30 @@ Operating and development guide for the Host Hampton party/event booking platfor
 
 ---
 
+## 0. How a change ships (read this first — humans and agent sessions alike)
+
+One loop, every time. Nothing is pushed to `main`; `main` only moves when a pull request is squash-merged, and a merge deploys to production.
+
+1. **Branch from fresh `origin/main`, in your own worktree.** Never work in the main checkout `host-hampton-ops` — it is a read-only reference. `git fetch origin && git worktree add -b <type>/<short-name> ../hh-<short-name> origin/main`. Types: `feat/`, `fix/`, `docs/`, `chore/`. One branch = one change someone could describe in a sentence.
+2. **Commit on that branch.** Stage explicit files, never `git add -A` (the tree can hold customer data such as `audit_scratch/`).
+3. **Run `npm test` in `services/website`** before pushing. CI runs it again; a red PR cannot merge.
+4. **Open a PR** (`gh pr create --fill`, then complete the template: what changed, migration needed?, how verified). A migration is applied to Supabase **before** the PR is merged, because the merge deploys code that depends on it.
+5. **Squash-merge** once `pr-check` is green: `gh pr merge --squash --delete-branch`. Squash gives one commit on `main` per change — no rebased copies, so `git log` and `git branch --no-merged` mean what they say.
+6. **Watch the deploy** (`gh run watch`) and check `https://www.hosthampton.com/`. The deploy's own health check only warns.
+7. **Remove the worktree and branch** (`git worktree remove ../hh-<short-name>`). Do not leave them; stale branches are how this repo got to 51 branches and 43 worktrees.
+
+Rules that follow from it:
+- **Never rebase or force-push a branch someone else has open.** Rebase your own branch onto `origin/main` if it falls behind.
+- **Hotfix escape hatch:** `main` enforces the rules on admins too. In a real outage the owner can lift it for the minutes needed: `gh api -X DELETE repos/afintech510/host-hampton-ops/branches/main/protection/enforce_admins`, push, then restore it with `-X POST` on the same path. Say so in the PR that follows.
+- **Weekly:** `git fetch --prune`, then delete any local branch `git branch --merged origin/main` lists, and `git worktree prune`.
+
+---
+
 ## 1. What this is
 
 Host Hampton is a party/event booking platform: marketing site, customer booking/party-builder flows, an admin dashboard, and the public API — all served by a single Next.js app. Customers book parties/events, pay deposits via Stripe (LIVE mode — real money), e-sign studio rental agreements (SignWell), and receive automated email/SMS reminders.
 
-Production is one Hetzner VPS running Docker Compose. **Every push to `main` deploys itself** through `.github/workflows/deploy.yml` (Jest gate, then SSH + `docker compose up -d --build website`). `scripts/deploy.sh` redeploys without a push. Both hold `/run/lock/hosthampton-deploy.lock` and skip an already-deployed commit; running `deploy.sh` right after a push used to race the Action and leave the site 502 (2026-10-01, twice). See DEPLOY.md.
+Production is one Hetzner VPS running Docker Compose. **Every merge to `main` deploys itself** (`main` is protected: changes arrive only through a pull request, see §0) through `.github/workflows/deploy.yml` (Jest gate, then SSH + `docker compose up -d --build website`). `scripts/deploy.sh` redeploys without a push. Both hold `/run/lock/hosthampton-deploy.lock` and skip an already-deployed commit; running `deploy.sh` right after a push used to race the Action and leave the site 502 (2026-10-01, twice). See DEPLOY.md.
 
 > A multi-service AI "agent stack" (orchestrator, SOC, copy, image, paid-ads, MCP servers, redis) is scaffolded in `docker-compose.yml` and `services/` but is **commented out / disabled**. Only `nginx` and `website` run in production. Do not assume those services exist when operating.
 
@@ -751,7 +770,7 @@ ssh hampton-vps 'docker exec hampton_nginx nginx -t && docker exec hampton_nginx
 - **Stripe is LIVE** — deposits/payments are real money. **`SIGNWELL_TEST_MODE=false` is live e-sign.** Be careful testing payment/contract flows against production.
 - **Migrations are not run by deploy** — apply `starting_plan/migration_*.sql` manually in Supabase first, then deploy.
 - **Git on the box uses a read-only deploy key** via the `github-hosthampton` SSH alias (`IdentitiesOnly yes` required, since the box holds multiple repos' keys). It can pull but not push; pushes happen from your laptop/GitHub.
-- **A push to `main` IS a production deploy** — `.github/workflows/deploy.yml` tests, then deploys. Do not also run `scripts/deploy.sh` for the same push; watch the run (`gh run watch`) and then verify the site. The Action's own health check only WARNS, so a red site can still show a green run.
+- **A merge to `main` IS a production deploy** — `.github/workflows/deploy.yml` tests, then deploys. `main` is protected (PR + passing `pr-check`, §0), so nothing is pushed to it directly. Do not also run `scripts/deploy.sh` for the same merge; watch the run (`gh run watch`) and then verify the site. The Action's own health check only WARNS, so a red site can still show a green run.
 - **Agent stack is disabled.** redis/orchestrator/SOC/copy/image/paid/MCP services in `docker-compose.yml` are commented out; `redis_data` and `uploads` volumes are retained for if they're re-enabled. Don't reference them as live infra.
 
 ### Link 23 — the plan money path (2026-09-13)

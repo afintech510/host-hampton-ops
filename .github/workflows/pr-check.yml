@@ -1,0 +1,49 @@
+name: PR Check
+on:
+  pull_request:
+    branches: [main]
+
+# A newer push to the same PR makes the older run pointless.
+concurrency:
+  group: pr-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # This job's name ("pr-check") is the required status check on main's branch
+  # protection. Same gate as the test job in deploy.yml, so a green PR is a PR
+  # whose merge will pass the deploy gate. No paths filter on purpose: a required
+  # check that is skipped for a docs-only PR can never go green.
+  pr-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: services/website/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Anti-gaming — no focused/disabled tests committed
+        run: |
+          set -e
+          if grep -rnE '\.only\(' src/__tests__ e2e 2>/dev/null; then
+            echo "::error::Found .only( in tests — remove focused tests."; exit 1
+          fi
+          if grep -rnE '(describe|it|test)\.skip\(|xit\(|xdescribe\(' src/__tests__ 2>/dev/null; then
+            echo "::error::Found a static .skip in Jest tests — remove it."; exit 1
+          fi
+
+      # Report-only, as in deploy.yml: the codebase carries lint debt.
+      - name: Lint (report-only)
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Jest
+        run: npm test
