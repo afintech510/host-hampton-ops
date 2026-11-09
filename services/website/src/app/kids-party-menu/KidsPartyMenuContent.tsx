@@ -137,7 +137,7 @@ function SelectableAddOnCard({ item, selected, onClick }: {
 }) {
   return (
     <button type="button" onClick={onClick}
-      className={`text-left p-3.5 rounded-xl border-2 transition-all duration-200 flex items-center justify-between gap-3 ${
+      className={`text-left min-w-0 p-3.5 rounded-xl border-2 transition-all duration-200 flex items-center justify-between gap-3 ${
         selected ? 'border-hampton-navy bg-hampton-navy/5 shadow-sm' : 'border-hampton-mauve/20 bg-white hover:border-hampton-blue'
       }`}>
       <div className="min-w-0 flex-1">
@@ -164,7 +164,7 @@ function SelectableAddOnCardWithQty({ item, selected, qty, onClick, onQtyChange 
   onClick: () => void; onQtyChange: (qty: number) => void
 }) {
   return (
-    <div className={`rounded-xl border-2 transition-all duration-200 ${
+    <div className={`min-w-0 rounded-xl border-2 transition-all duration-200 ${
       selected ? 'border-hampton-navy bg-hampton-navy/5 shadow-sm' : 'border-hampton-mauve/20 bg-white hover:border-hampton-blue'
     }`}>
       <button type="button" onClick={onClick}
@@ -217,7 +217,7 @@ function AddOnGrid({ items, selected, onToggle }: {
 }) {
   if (items.length === 0) return null
   return (
-    <div className="grid sm:grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {items.map(i => (
         <SelectableAddOnCard key={i.id} item={i} selected={selected.has(i.id)} onClick={() => onToggle(i.id)} />
       ))}
@@ -234,7 +234,7 @@ function AddOnGridWithQty({ items, selected, qty, onToggle, onQtyChange }: {
 }) {
   if (items.length === 0) return null
   return (
-    <div className="grid sm:grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {items.map(i => (
         <SelectableAddOnCardWithQty
           key={i.id}
