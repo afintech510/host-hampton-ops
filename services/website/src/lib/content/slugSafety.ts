@@ -97,6 +97,7 @@ export const STATIC_ROUTE_PATTERNS: readonly string[] = [
   '/crew/pay',
   '/crew/profile',
   '/crew/skills',
+  '/crew/time',
   '/custom-accessories',
   '/esm-sharks',
   '/esm-sharks/order',

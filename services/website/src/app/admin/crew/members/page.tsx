@@ -20,6 +20,7 @@ import {
 } from '../_components/adminCrew'
 import { useAdminData, warm } from '../_components/adminData'
 import { useSnapToTop } from '../_components/useSnapToTop'
+import TimeClockPanel from '../_components/TimeClockPanel'
 import { staffStatus, staffNotes, staffStatusUpdate, type StaffStatus } from '@/lib/crew/memberStatus'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { CREW_SKILLS } from '@/lib/crew/skills'
@@ -171,7 +172,17 @@ const memberFlags = (m: Member) => [
 type MemberHandlers = { onChanged: (msg: string) => Promise<void>; onError: (e: string) => void }
 
 /** The editor under an open member: the same on the table and on the phone. */
-function MemberPanel({ m, onChanged, onError }: { m: Member } & MemberHandlers) {
+function MemberPanel(props: { m: Member } & MemberHandlers) {
+  return (
+    <>
+      <MemberPanelInner {...props} />
+      {/* Hours under the person: renders nothing unless they have a time clock. */}
+      {!props.m.isOwner && <TimeClockPanel memberId={props.m.id} firstName={props.m.firstName} />}
+    </>
+  )
+}
+
+function MemberPanelInner({ m, onChanged, onError }: { m: Member } & MemberHandlers) {
   const api = useAdminApi()
   const [archive, setArchive] = useState(false)
   const [archiving, setArchiving] = useState(false)
