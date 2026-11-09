@@ -18,6 +18,12 @@ const TOKEN_KEY = 'hh_admin_token'
 
 export type ApiResult<T = any> = { status: number; ok: boolean; data: T }
 
+/** The Bearer header for a fetch made outside `useAdminApi` (empty when the `hh_admin` cookie is what signs this browser in). */
+export function adminAuthHeaders(): Record<string, string> {
+  const t = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
 export function useAdminApi() {
   const call = useCallback(async <T = any,>(path: string, init: { method?: string; body?: unknown } = {}): Promise<ApiResult<T>> => {
     const t = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
