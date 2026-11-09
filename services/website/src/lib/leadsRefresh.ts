@@ -29,7 +29,9 @@ type Supa = ReturnType<typeof getSupabase>
 export const REFRESH_WINDOW_DAYS = 14
 const MAX_THREADS = 40
 const THREAD_LIMIT = 30
-const PARALLEL = 4
+/** Quo allows about 10 requests a second and answers 429 past it; four reads at once tripped it (7-12 of 21 failed). One at a time, with a breath between. */
+const PAUSE_MS = 150
+const RETRY_AFTER_MS = 1500
 const IN_CHUNK = 100
 
 export interface TextRefresh {
@@ -54,9 +56,12 @@ interface Target {
 export interface TextRefreshDeps {
   listConversations: (sinceIso: string) => Promise<QuoConversation[] | null>
   fetchThread: (phone: string, opts: { limit: number }) => Promise<QuoThread>
+  /** Wait; replaced in tests. */
+  sleep?: (ms: number) => Promise<void>
 }
 
 const realDeps: TextRefreshDeps = { listConversations: listRecentQuoConversations, fetchThread: fetchQuoThread }
+const realSleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
 /** The bookings worth watching: not closed out, and upcoming or not dated yet. */
 async function loadTargets(sb: Supa, today: string): Promise<Target[] | null> {
@@ -117,20 +122,28 @@ export async function refreshQuoTexts(sb: Supa, now: Date = new Date(), deps: Te
   const batch = matched.slice(0, MAX_THREADS)
   if (matched.length > batch.length) out.more = true
 
+  const sleep = deps.sleep ?? realSleep
   const threads: Array<{ target: Target; thread: QuoThread }> = []
-  for (let i = 0; i < batch.length; i += PARALLEL) {
-    const chunk = batch.slice(i, i + PARALLEL)
-    threads.push(...(await Promise.all(chunk.map(async target => ({ target, thread: await deps.fetchThread(target.phone, { limit: THREAD_LIMIT }) })))))
+  for (const target of batch) {
+    let thread = await deps.fetchThread(target.phone, { limit: THREAD_LIMIT })
+    // Rate limited: wait it out and ask once more rather than report a thread we could have read.
+    if (thread.kind === 'unavailable' && thread.reason.includes('429')) {
+      await sleep(RETRY_AFTER_MS)
+      thread = await deps.fetchThread(target.phone, { limit: THREAD_LIMIT })
+    }
+    threads.push({ target, thread })
+    await sleep(PAUSE_MS)
   }
 
   let failed = 0
+  let firstReason = ''
   const wanted: Array<{ target: Target; m: Extract<QuoThread, { kind: 'ok' }>['messages'][number] }> = []
   for (const { target, thread } of threads) {
-    if (thread.kind !== 'ok') { failed++; continue }
+    if (thread.kind !== 'ok') { failed++; if (!firstReason && thread.kind === 'unavailable') firstReason = thread.reason; continue }
     out.checked++
     for (const m of thread.messages) if (m.id && m.at >= since) wanted.push({ target, m })
   }
-  if (failed > 0) out.unavailable = `${failed} of ${batch.length} conversations could not be read.`
+  if (failed > 0) out.unavailable = `${failed} of ${batch.length} conversations could not be read${firstReason ? ` (${firstReason.replace(/\.$/, '')})` : ''}.`
 
   const seen = await alreadyRecorded(sb, wanted.map(w => `quo:${w.m.id}`))
   if (!seen) return { ...out, unavailable: 'Could not check which texts are already recorded.' }

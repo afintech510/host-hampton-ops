@@ -55,6 +55,7 @@ function deps(conversations: Array<{ id: string; participants: string[] }> | nul
   const read: string[] = []
   return {
     read,
+    sleep: async () => {},
     listConversations: async () => conversations && conversations.map(c => ({ ...c, lastActivityId: null })),
     fetchThread: async (phone: string) => {
       read.push(phone)
@@ -133,7 +134,43 @@ describe('refreshQuoTexts', () => {
     const r = await refreshQuoTexts(sb, NOW, d)
     expect(r.checked).toBe(1)
     expect(r.newInbound).toBe(1)
-    expect(r.unavailable).toMatch(/1 of 2/)
+    expect(r.unavailable).toMatch(/1 of 2 conversations could not be read \(x\)/)
+  })
+
+  it('asks again once when Quo says 429, then reads the thread', async () => {
+    const { sb } = world({ bookings: BOOKINGS })
+    let calls = 0
+    const d = deps([{ id: 'CN1', participants: ['+16315550100'] }], () => (++calls === 1 ? { kind: 'unavailable', reason: 'Quo answered 429.' } : { kind: 'ok', messages: [msg('AC1', 'in', 'hi')] }))
+    const r = await refreshQuoTexts(sb, NOW, d)
+    expect(calls).toBe(2)
+    expect(r.newInbound).toBe(1)
+    expect(r.unavailable).toBeUndefined()
+  })
+
+  it('names the reason when a conversation still cannot be read, and does not retry other failures', async () => {
+    const { sb } = world({ bookings: BOOKINGS })
+    let calls = 0
+    const d = deps([{ id: 'CN1', participants: ['+16315550100'] }], () => (calls++, { kind: 'unavailable', reason: 'Quo answered 500.' }))
+    const r = await refreshQuoTexts(sb, NOW, d)
+    expect(calls).toBe(1)
+    expect(r.unavailable).toBe('1 of 1 conversations could not be read (Quo answered 500).')
+  })
+
+  it('reads one conversation at a time', async () => {
+    const { sb } = world({ bookings: BOOKINGS })
+    let open = 0
+    let peak = 0
+    const d = deps([{ id: 'CN1', participants: ['+16315550100'] }, { id: 'CN2', participants: ['+16315550200'] }], async () => ({ kind: 'ok', messages: [] }))
+    const inner = d.fetchThread
+    d.fetchThread = async (phone, o) => {
+      open++
+      peak = Math.max(peak, open)
+      const r = await inner(phone, o)
+      open--
+      return r
+    }
+    await refreshQuoTexts(sb, NOW, d)
+    expect(peak).toBe(1)
   })
 
   it('does not count a refused write as a new text', async () => {
