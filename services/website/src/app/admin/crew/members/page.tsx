@@ -13,12 +13,13 @@
  * never on screen for someone looking over a shoulder. There are no steps.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, INPUT, useAdminApi, whenParts,
 } from '../_components/adminCrew'
 import { useAdminData, warm } from '../_components/adminData'
+import { useSnapToTop } from '../_components/useSnapToTop'
 import { staffStatus, staffNotes, staffStatusUpdate, type StaffStatus } from '@/lib/crew/memberStatus'
 import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { CREW_SKILLS } from '@/lib/crew/skills'
@@ -255,8 +256,10 @@ function MemberCard({ m, open, onToggle, onChanged, onError }: {
   m: Member; open: boolean; onToggle: () => void
 } & MemberHandlers) {
   const flags = memberFlags(m)
+  const cardRef = useRef<HTMLDivElement>(null)
+  useSnapToTop(cardRef, open)
   return (
-    <div className={`bg-white rounded-2xl shadow-sm ${m.status === 'removed' ? 'opacity-50' : ''}`}>
+    <div ref={cardRef} className={`bg-white rounded-2xl shadow-sm ${m.status === 'removed' ? 'opacity-50' : ''}`}>
       <button type="button" onClick={onToggle} aria-expanded={open} className="w-full text-left p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="text-lg font-semibold text-hampton-navy leading-tight">{m.firstName} {m.lastName ?? ''}</div>

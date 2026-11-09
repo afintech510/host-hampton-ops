@@ -1,8 +1,9 @@
 'use client'
 
-import { useId, type ReactNode } from 'react'
+import { useId, useRef, type ReactNode } from 'react'
 import { CalendarDays, ChevronDown, Clock3, Users } from 'lucide-react'
 import { PARTY_TYPE_LABELS } from '@/lib/pipelineStages'
+import { useSnapToTop } from './useSnapToTop'
 
 const TYPE_SHORT: Record<string, string> = {
   in_studio_theme: 'Theme Party',
@@ -64,8 +65,11 @@ export default function PartyTile({
   children: ReactNode
 }) {
   const panelId = useId()
+  const cardRef = useRef<HTMLElement>(null)
+  useSnapToTop(cardRef, open)
   return (
     <article
+      ref={cardRef}
       className={`overflow-hidden rounded-2xl border bg-white shadow-[0_2px_8px_rgba(27,47,69,0.03)] transition-[border-color,box-shadow] ${open ? 'border-hampton-navy/30 shadow-md' : attention ? 'border-amber-300/80' : 'border-hampton-navy/10 hover:border-hampton-navy/25 hover:shadow-md'}`}
       data-lead-card={kind === 'lead' ? '' : undefined}
       data-booking-tile={kind === 'booking' ? '' : undefined}
