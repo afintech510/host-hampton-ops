@@ -3,7 +3,7 @@
 /**
  * /admin/crew/bookings - the booked parties as tiles, phone first.
  *
- * Pull buttons at the top (kind of party, the three months, weekends and dates),
+ * Pull buttons at the top (kind of party, Upcoming = this weekend and later, the three months, weekends and dates),
  * then a tile per booking. Tap a tile and it opens to everything, including who is
  * staffed and a button to the party-staff page. `?party=<id>` or `?ref=<ref>` opens
  * that booking (the assistant and the Leads tiles link here).
@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BookingTile as Tile } from '@/lib/crewAppData'
 import { etDateString } from '@/lib/partyTime'
-import { countByDate, dayCaption, monthKeyOf, monthKeys, monthShort, passesDateFilter, passesWeekend, type WeekendKey } from '@/lib/bookingWeeks'
+import { countByDate, dayCaption, isUpcoming, monthKeyOf, monthKeys, monthShort, passesDateFilter, passesWeekend, type WeekendKey } from '@/lib/bookingWeeks'
 import { Banner, CrewFrame } from '../_components/adminCrew'
 import { warm, useAdminData } from '../_components/adminData'
 import BookingTile from '../_components/BookingTile'
@@ -45,7 +45,12 @@ export default function CrewBookingsPage() {
   const all = useMemo(() => data?.bookings ?? [], [data])
   const byType = useMemo(() => all.filter(t => passesTypes(t.partyType, types)), [all, types])
   const monthCount = (m: string) => byType.filter(t => monthKeyOf(t.partyDate ?? '') === m).length
-  const inMonth = useMemo(() => byType.filter(t => passesDateFilter(t.partyDate, { month: activeMonth, week: null })), [byType, activeMonth])
+  // "Upcoming" is this weekend and everything after it; a month chip still shows its whole month.
+  const upcoming = useMemo(() => byType.filter(t => isUpcoming(t.partyDate, today)), [byType, today])
+  const inMonth = useMemo(
+    () => (activeMonth === 'all' ? upcoming : byType.filter(t => passesDateFilter(t.partyDate, { month: activeMonth, week: null }))),
+    [byType, upcoming, activeMonth],
+  )
   const weekendRows = useMemo(() => inMonth.filter(t => passesWeekend(t.partyDate, weekend)), [inMonth, weekend])
   // The dates that have a party on, after the Sat / Sun buttons; a lit date that has dropped out of them is not lit.
   const dayCounts = useMemo(() => countByDate(weekendRows.map(t => t.partyDate)), [weekendRows])
@@ -83,8 +88,8 @@ export default function CrewBookingsPage() {
     warm(shown.slice(0, 8).map(t => `/api/admin/crew-app/booking/${t.id}`))
   }, [shown])
 
-  const periodLabel = activeMonth === 'all' ? 'across all months' : `in ${monthShort(activeMonth)}`
-  const months3 = [{ key: 'all', label: 'All', count: byType.length }, ...months.map(m => ({ key: m, label: monthShort(m), count: monthCount(m) }))]
+  const periodLabel = activeMonth === 'all' ? 'from this weekend on' : `in ${monthShort(activeMonth)}`
+  const months3 = [{ key: 'all', label: 'Upcoming', count: upcoming.length }, ...months.map(m => ({ key: m, label: monthShort(m), count: monthCount(m) }))]
 
   return (
     <CrewFrame active="/admin/crew/bookings" title="Bookings" compact actions={<SortMenu options={BOOKING_SORTS} value={sort} onChange={setSort} />}>

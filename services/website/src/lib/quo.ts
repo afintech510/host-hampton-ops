@@ -312,6 +312,8 @@ export async function getQuoMessageRef(messageId: string): Promise<QuoMessageRef
 export interface QuoConversation {
   id: string
   lastActivityId: string | null
+  /** The numbers in the conversation, as Quo writes them. Empty when the response had none. */
+  participants: string[]
 }
 
 /**
@@ -334,7 +336,7 @@ export async function listQuoConversationsSince(
         console.error('quo:listConversations error:', status)
         return null
       }
-      for (const c of json.data) out.set(c.id, { id: c.id, lastActivityId: c.lastActivityId ?? null })
+      for (const c of json.data) out.set(c.id, { id: c.id, lastActivityId: c.lastActivityId ?? null, participants: Array.isArray(c.participants) ? c.participants.filter((p: unknown) => typeof p === 'string') : [] })
       after = json.nextCursor ?? null
       if (!after) return out
     }
@@ -343,6 +345,28 @@ export async function listQuoConversationsSince(
   } catch (err) {
     console.error('quo:listConversations exception:', err)
     return null
+  }
+}
+
+/**
+ * Every conversation on the studio number touched since `sinceIso`, with who is in each. Null when
+ * Quo is not set up or any page of the read failed (a partial list would read as "no activity").
+ * Read only.
+ */
+export async function listRecentQuoConversations(sinceIso: string): Promise<QuoConversation[] | null> {
+  if (!process.env.QUO_API_KEY || !process.env.QUO_PHONE_NUMBER) return null
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 8000)
+  try {
+    const phoneNumberId = await quoPhoneNumberId(ctl.signal)
+    if (!phoneNumberId) return null
+    const map = await listQuoConversationsSince(phoneNumberId, sinceIso)
+    return map ? Array.from(map.values()) : null
+  } catch (err) {
+    console.error('quo:listRecentConversations exception:', err instanceof Error ? err.message : err)
+    return null
+  } finally {
+    clearTimeout(timer)
   }
 }
 
