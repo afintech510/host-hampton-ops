@@ -500,34 +500,65 @@ export interface AddOnCatalogItem {
   name: string
   priceCents: number
   guestMultiplied: boolean
+  /** The `pricing_items` category, so a line added from here is filed where the planner would file it. */
+  category?: string
 }
 
 /**
- * Priced add-ons for the admin invoice editor's autocomplete — `service-add-on`
- * and `decor-add-on` rows (Photobooth, Face Painter, Character Visit, Sodas &
- * Seltzers, …), the same table `/party-room-rental` reads live. Deliberately a
- * separate query from `loadPricingCatalog`: those categories aren't part of the
- * required-keys/fallback contract above (there's no compiled constant for them
- * to fall back to), so a row without a real price is dropped rather than shown
- * with a misleading $0 that would silently zero the item if added as-is.
+ * Every category an invoice line can be added from. `pricing_items` is the ONE price table, but
+ * this list is its own filter: it had only `service-add-on` and `decor-add-on`, so the Hot Chocolate
+ * Bar (`beverage-add-on`) and every food, dessert and extra could not be found by the Manager
+ * assistant's "add to invoice" or the Parties tab's Add Line Item box (2026-11-09, Alise Pulliam's
+ * Dec 12 lead). Themes, activities, packages, rates, deposits and guest overage stay out: they are
+ * priced by the planner's own rules, not added by name.
+ */
+export const LINE_ITEM_CATEGORIES = [
+  'service-add-on',
+  'decor-add-on',
+  'food-add-on',
+  'beverage-add-on',
+  'dessert-add-on',
+  'entertainment-add-on',
+  'party-add-on',
+] as const
+
+/**
+ * Priced add-ons for the admin invoice editor's autocomplete and the assistant's invoice tool —
+ * the same table `/party-room-rental` and the planner read live. Deliberately a separate query
+ * from `loadPricingCatalog`: those categories aren't part of the required-keys/fallback contract
+ * above (there's no compiled constant for them to fall back to), so a row without a real price is
+ * dropped rather than shown with a misleading $0 that would silently zero the item if added as-is.
+ *
+ * Three items are sold under two categories at the same price (Photo Booth, Soft Play Setup, Linen
+ * Rentals): those collapse to one entry, the first by sort order. The same name at DIFFERENT prices
+ * is kept as two, which the assistant then reports as ambiguous rather than guessing.
  */
 export async function loadLineItemAddOns(supabase?: Supa): Promise<AddOnCatalogItem[]> {
   try {
     const db = supabase ?? getSupabase()
     const { data, error } = await db
       .from('pricing_items')
-      .select('name, price_cents, price_type')
+      .select('name, price_cents, price_type, category')
       .eq('is_active', true)
-      .in('category', ['service-add-on', 'decor-add-on'])
+      .in('category', [...LINE_ITEM_CATEGORIES])
       .order('sort_order', { ascending: true })
     if (error || !data) return []
-    return data
-      .filter(r => Number(r.price_cents) > 0)
-      .map(r => ({
+    const seen = new Set<string>()
+    const out: AddOnCatalogItem[] = []
+    for (const r of data) {
+      if (!(Number(r.price_cents) > 0)) continue
+      const item: AddOnCatalogItem = {
         name: r.name as string,
         priceCents: Number(r.price_cents),
         guestMultiplied: r.price_type === 'per_person',
-      }))
+        category: r.category as string,
+      }
+      const key = `${item.name.trim().toLowerCase()}|${item.priceCents}|${item.guestMultiplied}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(item)
+    }
+    return out
   } catch (err) {
     console.error('loadLineItemAddOns threw (returning none):', err)
     return []

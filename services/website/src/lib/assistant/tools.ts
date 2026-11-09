@@ -1439,6 +1439,7 @@ async function proposeAddLineItem(supabase: Supa, input: Record<string, unknown>
   let cents: number
   let guestMultiplied: boolean
   let source: string
+  let catalogCategory: string | undefined
   const catalogName = str(input.add_on, 120)
   if (catalogName) {
     // The price comes from the catalog, not from the model.
@@ -1459,6 +1460,7 @@ async function proposeAddLineItem(supabase: Supa, input: Record<string, unknown>
     name = hits[0].name
     cents = hits[0].priceCents
     guestMultiplied = hits[0].guestMultiplied
+    catalogCategory = hits[0].category
     source = 'catalog price'
   } else {
     const n = str(input.name, 120)
@@ -1494,7 +1496,7 @@ async function proposeAddLineItem(supabase: Supa, input: Record<string, unknown>
       bookingId: b.id,
       bookingRef: b.booking_ref,
       name,
-      category: str(input.category, 40) ?? 'add-on',
+      category: str(input.category, 40) ?? catalogCategory ?? 'add-on',
       quantity: qty,
       unit_price_cents: cents,
       guest_multiplied: guestMultiplied,
