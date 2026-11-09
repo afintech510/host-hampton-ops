@@ -11,14 +11,15 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ChevronDown, Users } from 'lucide-react'
+import { AlertCircle, Camera, ChevronDown, Users } from 'lucide-react'
 import PartyTile, { CARD_ACTION, CardBadge, CardSection, partyTitle } from './PartyTile'
 import BookingDetails from './BookingDetails'
 import type { PartyCardData } from '@/lib/assistant/partyCard'
 import type { BookingTile as Tile } from '@/lib/crewAppData'
 import { specialStaffingOf, type SpecialStaffing } from '@/lib/crew/specialStaffing'
 import { PAYMENT_LABELS, PAYMENT_STYLE, STAGE_LABELS, STAGE_STYLE, type BookingStage, type PaymentStatus } from '@/lib/bookingStatus'
-import { Banner, useAdminApi } from './adminCrew'
+import { Banner, adminAuthHeaders, useAdminApi } from './adminCrew'
+import PhotoAlbumSender, { type PhotoAlbumBooking } from '../../PhotoAlbumSender'
 import { dollars as money } from '@/lib/assistant/dollars'
 import { load, useAdminData, warm } from './adminData'
 import ContactButtons from './ContactButtons'
@@ -119,8 +120,39 @@ function Staffing({ tile, special, onChanged }: { tile: Tile; special: SpecialSt
   )
 }
 
+/**
+ * Photo Booth: paste the Fotoshare album link, check the exact message, and email and/or text it
+ * to the host. Collapsed by default; the sender is the same component (and the same
+ * `send_photo_album` action, with its confirm and already-sent guard) the Parties tab uses.
+ */
+function PhotoBooth({ booking, onSent }: { booking: PhotoAlbumBooking; onSent: () => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const saved = !!booking.photo_gallery_url
+  return (
+    <section>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded(v => !v)}
+        className={`${CARD_ACTION} !min-h-[40px] w-full !justify-between`}
+      >
+        <span className="inline-flex items-center gap-2"><Camera size={15} aria-hidden="true" />Photo Booth</span>
+        <span className="inline-flex items-center gap-2">
+          {saved && <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">Link saved</span>}
+          <ChevronDown size={15} aria-hidden="true" className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-3">
+          <PhotoAlbumSender key={booking.id} booking={booking} headers={adminAuthHeaders()} onSent={onSent} />
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function BookingTile({ tile, open, onToggle }: { tile: Tile; open: boolean; onToggle: () => void }) {
-  const detail = useAdminData<{ card: PartyCardData; venue: string | null; adminNotes: string | null }>(open ? `/api/admin/crew-app/booking/${tile.id}` : null, 120_000)
+  const detail = useAdminData<{ card: PartyCardData; venue: string | null; adminNotes: string | null; photoAlbum: PhotoAlbumBooking }>(open ? `/api/admin/crew-app/booking/${tile.id}` : null, 120_000)
   const chip = crewChip(tile)
   // The party-staff data behind "Manage staff" is ready before it is tapped.
   const crewPartyId = tile.crew?.partyId
@@ -174,6 +206,9 @@ export default function BookingTile({ tile, open, onToggle }: { tile: Tile; open
         />
       )}
       <Staffing tile={tile} special={special} onChanged={() => { void load('/api/admin/crew-app/bookings') }} />
+      {detail.data?.photoAlbum && (
+        <PhotoBooth booking={detail.data.photoAlbum} onSent={() => { void load(`/api/admin/crew-app/booking/${tile.id}`) }} />
+      )}
       <PartyActions bookingId={tile.id} bookingRef={tile.ref} />
     </PartyTile>
   )
