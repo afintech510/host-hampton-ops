@@ -79,14 +79,14 @@ function Staffing({ tile, special, onChanged }: { tile: Tile; special: SpecialSt
       )}
       {/* Collapsed: who is on it. Open: the controls below take over, so the same people are not listed twice. */}
       {c && c.people.length > 0 && !managing && (
-        <ul className="divide-y divide-hampton-navy/10 text-sm text-hampton-navy">
+        <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm text-hampton-navy">
           {c.people.map((p, i) => (
-            <li key={i} className="flex flex-wrap items-center justify-between gap-x-3 py-1.5">
-              <span>
+            <li key={i} className="min-w-0">
+              <span className="block leading-snug">
                 {p.firstName}
                 <span className="text-hampton-navy/70"> · {p.role === 'lead' ? 'Party Lead' : 'Crew'}</span>
               </span>
-              <span className={p.confirmed ? 'text-emerald-700' : 'text-amber-700'}>{p.confirmed ? 'Confirmed' : 'Awaiting confirmation'}</span>
+              <span className={`block text-[11px] leading-tight ${p.confirmed ? 'text-emerald-700' : 'text-amber-700'}`}>{p.confirmed ? 'Confirmed' : 'Awaiting confirmation'}</span>
             </li>
           ))}
         </ul>

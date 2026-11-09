@@ -121,27 +121,37 @@ export default function PartyTile({
           </span>
         </span>
       </button>
-      {open && <div id={panelId} role="region" aria-label={`${title} details`} className="space-y-5 border-t border-hampton-navy/10 bg-[#FCFBF9] p-4 sm:p-5">{children}</div>}
+      {open && <div id={panelId} role="region" aria-label={`${title} details`} className="space-y-3.5 border-t border-hampton-navy/10 bg-[#FCFBF9] p-3 sm:space-y-4 sm:p-5">{children}</div>}
     </article>
   )
 }
 
-export function CardSection({ title, children }: { title: string; children: ReactNode }) {
+export function CardSection({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
     <section>
-      <h3 className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-hampton-navy/70">{title}</h3>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h3 className="text-[11px] font-bold uppercase tracking-[0.12em] text-hampton-navy/70">{title}</h3>
+        {aside && <span className="text-right text-[11px] text-hampton-navy/70">{aside}</span>}
+      </div>
       {children}
     </section>
   )
 }
 
-export function CardField({ label, children }: { label: string; children: ReactNode }) {
+/**
+ * A label over a value. `right` right-justifies both, for the second column of a two-column
+ * grid (`CARD_GRID`), so the "what and when" of a party reads down the right edge of the card.
+ */
+export function CardField({ label, children, right = false }: { label: string; children: ReactNode; right?: boolean }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-xs text-hampton-navy/70">{label}</dt>
-      <dd className="mt-1 break-words text-sm leading-relaxed text-hampton-navy">{children}</dd>
+    <div className={`min-w-0 ${right ? 'text-right' : ''}`}>
+      <dt className="text-[11px] leading-tight text-hampton-navy/70 sm:text-xs">{label}</dt>
+      <dd className="mt-0.5 break-words text-sm leading-snug text-hampton-navy">{children}</dd>
     </div>
   )
 }
+
+/** Two columns at every width, tight rows: the one grid every opened card's fields sit in. */
+export const CARD_GRID = 'grid grid-cols-2 items-start gap-x-4 gap-y-2.5'
 
 export const CARD_ACTION = 'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg border border-hampton-navy/15 bg-white px-3 py-2 text-xs font-semibold text-hampton-navy transition-colors hover:border-hampton-navy/35 hover:bg-[#F6F1EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-hampton-navy focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-50 sm:text-sm'
