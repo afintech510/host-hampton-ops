@@ -222,6 +222,20 @@ describe('O2: the propose tools write nothing', () => {
     expect(d.log.filter(l => /^(INSERT|UPDATE|DELETE)/.test(l))).toEqual([])
   })
 
+  it('propose_add_line_item finds a food or drink by its catalog name, at the catalog price, filed under its own category', async () => {
+    mockAddOns.mockResolvedValue([
+      { name: 'Coffee Bar', priceCents: 15000, guestMultiplied: false, category: 'beverage-add-on' },
+      { name: 'Hot Chocolate Bar', priceCents: 15000, guestMultiplied: false, category: 'beverage-add-on' },
+    ])
+    const out = await runAssistantTool('propose_add_line_item', { booking_ref: 'HH-PTY-OVR01', add_on: 'Hot Chocolate Bar' }, { actor: ACTOR, supabase: mkdb().client as never })
+    expect(out.isError).toBeFalsy()
+    expect(out.proposal?.proposal.input).toMatchObject({ name: 'Hot Chocolate Bar', unit_price_cents: 15000, category: 'beverage-add-on' })
+    // A name that is not on the list is still refused, never approximated.
+    const no = await runAssistantTool('propose_add_line_item', { booking_ref: 'HH-PTY-OVR01', add_on: 'Hot Cocoa Fountain' }, { actor: ACTOR, supabase: mkdb().client as never })
+    expect(no.isError).toBe(true)
+    expect(no.proposal).toBeUndefined()
+  })
+
   it('propose_mark_lost: a lead with nothing paid is proposed; a party with money is pointed at cancel', async () => {
     mockLoadInvoice.mockResolvedValue({ ok: true, invoice: { booking: BOOKING, totalCents: 90000, paidCents: 0, outstandingCents: 90000, guestCount: 10 } })
     const ok = await runAssistantTool('propose_mark_lost', { booking_ref: 'HH-PTY-OVR01' }, { actor: ACTOR, supabase: mkdb().client as never })
