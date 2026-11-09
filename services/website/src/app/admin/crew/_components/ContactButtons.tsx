@@ -18,6 +18,9 @@ import { useAdminApi } from './adminCrew'
 import { CARD_ACTION } from './PartyTile'
 import { quoAppLink } from '@/lib/quoAppLink'
 
+/** The three buttons share one row: equal widths, label wraps under the icon on a narrow phone. */
+const BTN = `${CARD_ACTION} min-w-0 flex-1 basis-0 !flex-col !gap-1 !px-1.5 !py-1.5 !min-h-[48px] text-center leading-tight sm:!flex-row sm:!gap-2 sm:!px-3`
+
 export default function ContactButtons({ bookingId, phone, email }: { bookingId: string; phone: string | null; email: string | null }) {
   const api = useAdminApi()
   const [busy, setBusy] = useState('')
@@ -48,19 +51,19 @@ export default function ContactButtons({ bookingId, phone, email }: { bookingId:
   if (!phone && !email) return null
   return (
     <div>
-      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+      <div className="flex gap-1.5">
         {textLink && (
-          <a className={CARD_ACTION} href={textLink} onClick={() => { setNote(''); setLaunched('text') }}>
+          <a className={BTN} href={textLink} onClick={() => { setNote(''); setLaunched('text') }}>
             <MessageSquare size={15} className="shrink-0" aria-hidden="true" />Text in Quo
           </a>
         )}
         {callLink && (
-          <a className={CARD_ACTION} href={callLink} onClick={() => { setNote(''); setLaunched('call') }}>
+          <a className={BTN} href={callLink} onClick={() => { setNote(''); setLaunched('call') }}>
             <Phone size={15} className="shrink-0" aria-hidden="true" />Call in Quo
           </a>
         )}
         {email && (
-          <button type="button" className={CARD_ACTION} disabled={!!busy} onClick={() => open('gmail')}>
+          <button type="button" className={BTN} disabled={!!busy} onClick={() => open('gmail')}>
             <Mail size={15} className="shrink-0" aria-hidden="true" />{busy === 'gmail' ? 'Opening…' : 'Email in Gmail'}
           </button>
         )}

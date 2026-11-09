@@ -22,7 +22,7 @@ import { countByDate, monthKeyOf, monthKeys, monthShort, passesWeekend, type Wee
 import { Banner, CrewFrame } from '../_components/adminCrew'
 import { dollars as money } from '@/lib/assistant/dollars'
 import { useAdminData } from '../_components/adminData'
-import PartyTile, { CardBadge, CardField, CardSection, partyTitle } from '../_components/PartyTile'
+import PartyTile, { CARD_GRID, CardBadge, CardField, CardSection, partyTitle } from '../_components/PartyTile'
 import ContactButtons from '../_components/ContactButtons'
 import LeadActions from '../_components/LeadActions'
 import PartyActions from '../_components/PartyActions'
@@ -76,15 +76,21 @@ function LeadTile({ lead, open, onToggle }: { lead: LeadCard; open: boolean; onT
       open={open}
       onToggle={onToggle}
     >
-      <CardSection title="Contact">
-        <dl className="mb-3 grid gap-3 sm:grid-cols-2">
+      <section>
+        {/* Two columns: who on the left, the party on the right (right-justified), then the contact buttons on one row. */}
+        <dl className={`mb-3 ${CARD_GRID}`}>
           <CardField label="Host">{lead.name}</CardField>
-          <CardField label="Booking reference">{lead.ref}</CardField>
+          <CardField label="Booking reference" right>{lead.ref}</CardField>
           <CardField label="Phone">{lead.phone ? <a className="underline decoration-hampton-navy/25 underline-offset-4" href={`tel:${lead.phone}`}>{lead.phone}</a> : 'Not provided'}</CardField>
+          <CardField label="Party type" right>{PARTY_TYPE_LABELS[lead.partyType || 'unknown'] ?? 'Party'}</CardField>
           <CardField label="Email">{lead.email ? <a className="underline decoration-hampton-navy/25 underline-offset-4" href={`mailto:${lead.email}`}>{lead.email}</a> : 'Not provided'}</CardField>
+          <CardField label="Package" right>{detail?.package_type || lead.packageType || 'Not chosen yet'}</CardField>
+          <CardField label="First inquiry">{etDateTime(lead.createdAt)}</CardField>
+          <CardField label="Payments received" right>{money(lead.paidCents)}</CardField>
+          {typeof detail?.party_tags?.location_address === 'string' && <div className="col-span-2"><CardField label="Venue">{detail.party_tags.location_address}</CardField></div>}
         </dl>
         <ContactButtons bookingId={lead.id} phone={lead.phone} email={lead.email} />
-      </CardSection>
+      </section>
       {lead.lastTheirs && (
         <CardSection title="Latest from client">
           <blockquote className="border-l-2 border-hampton-navy/15 pl-3 text-sm leading-relaxed text-hampton-navy/75">{lead.lastTheirs.text}</blockquote>
@@ -93,20 +99,11 @@ function LeadTile({ lead, open, onToggle }: { lead: LeadCard; open: boolean; onT
       )}
       {detailState.error && !detail && <Banner tone="warn">{detailState.error}</Banner>}
       {detailState.loading && <div role="status" className="text-sm text-hampton-navy/70">Loading party details…</div>}
-      <CardSection title="Party details">
-        <dl className="grid gap-3 sm:grid-cols-2">
-          <CardField label="Party type">{PARTY_TYPE_LABELS[lead.partyType || 'unknown'] ?? 'Party'}</CardField>
-          <CardField label="Package">{detail?.package_type || lead.packageType || 'Not chosen yet'}</CardField>
-          <CardField label="First inquiry">{etDateTime(lead.createdAt)}</CardField>
-          <CardField label="Payments received">{money(lead.paidCents)}</CardField>
-          {typeof detail?.party_tags?.location_address === 'string' && <CardField label="Venue">{detail.party_tags.location_address}</CardField>}
-        </dl>
-      </CardSection>
       {detail?.line_items && detail.line_items.length > 0 && (
         <CardSection title="On the quote">
           <ul className="divide-y divide-hampton-navy/10 text-sm text-hampton-navy">
             {detail.line_items.map(li => (
-              <li key={li.id} className="flex justify-between gap-3 py-2 first:pt-0">
+              <li key={li.id} className="flex justify-between gap-3 py-1.5 first:pt-0">
                 <span className="min-w-0 break-words">{li.name}{li.quantity > 1 ? ` ×${li.quantity}` : ''}{li.guest_multiplied ? ' (per guest)' : ''}</span>
                 <span className="shrink-0 tabular-nums text-hampton-navy/70">{money(li.unit_price_cents * li.quantity)}{li.guest_multiplied ? ' ea' : ''}</span>
               </li>
