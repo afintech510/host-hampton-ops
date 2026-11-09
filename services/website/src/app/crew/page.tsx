@@ -6,6 +6,8 @@ import { loadBoard, loadViewerContext } from '@/lib/crew/board'
 import { meView } from '@/lib/crew/view'
 import CrewTop, { CrewUnavailable } from './_components/CrewTop'
 import PartyCard, { visibleSpots } from './_components/PartyCard'
+import TimeClockCard from './_components/TimeClockCard'
+import { listPunches, loadClockMember } from '@/lib/crew/timeClock'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +28,11 @@ export default async function CrewHomePage() {
   if (ctx.kind !== 'ok') return <CrewUnavailable />
   const board = await loadBoard(sb, ctx.data)
   if (board.kind !== 'ok') return <CrewUnavailable />
+
+  // The time clock exists only for a member with a row in crew_time_clock_members.
+  const clockMember = await loadClockMember(sb, member.id)
+  const clockPunches = clockMember.kind === 'ok' && clockMember.data ? await listPunches(sb, member.id, 5) : null
+  const clockOpen = clockPunches && clockPunches.kind === 'ok' ? clockPunches.data.find(p => !p.punched_out_at)?.punched_in_at ?? null : null
 
   const me = meView(member, settings.settings)
   const upcoming = board.data.filter(b => b.upcoming)
@@ -48,6 +55,10 @@ export default async function CrewHomePage() {
         <p className="crew-muted crew-small" style={{ marginTop: 0 }}>
           Tell us which parties you&apos;re available to work, and set the times you can&apos;t work in <Link className="crew-link" href="/crew/availability">Availability</Link>.
         </p>
+      )}
+
+      {clockMember.kind === 'ok' && clockMember.data && clockPunches?.kind === 'ok' && (
+        <TimeClockCard open={clockOpen} noticeAccepted={clockMember.data.noticeAccepted} />
       )}
 
       <section aria-labelledby="crew-mine">
