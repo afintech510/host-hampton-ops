@@ -11,6 +11,17 @@ import { findLoginMember, parseLoginIdentity } from '@/lib/crew/loginIdentity'
 export const dynamic = 'force-dynamic'
 
 /**
+ * Every refusal below answers `{ ok: true }` so the form never says who is on the crew, which
+ * also means someone who got no text sees the same screen as someone who did. The reason goes
+ * to the log instead, WITHOUT the number or address that was typed:
+ * `docker logs hampton_website | grep "no code sent"`. It is never the hour: the sign-in
+ * code text is exempt from quiet hours and goes out 24/7 (`lib/quietHours.ts`).
+ */
+function noCode(reason: string, channel: 'email' | 'phone') {
+  console.warn(`crew/auth/request: no code sent (${channel}): ${reason}`)
+}
+
+/**
  * Crew login, step 1: send a 6-digit code (spec §5) — by email, or by text to a
  * phone number on the roster. The portal's
  * `/api/portal/email-auth/request`, keyed by MEMBER rather than by address.
@@ -44,6 +55,7 @@ export async function POST(req: NextRequest) {
     // The onboarding scope: a real member may sign in to finish setting up even
     // before the board opens (CREW_ONBOARDING_ENABLED).
     if (!member || !crewMemberMayEnter(member, 'onboarding')) {
+      noCode(member ? `member ${member.id} may not enter (paused, removed or the owner)` : 'no crew member has that number or address', identity.kind)
       // Same answer, about the same time, as the send path's fast exits.
       await new Promise(r => setTimeout(r, 250))
       return NextResponse.json({ ok: true })
@@ -51,11 +63,13 @@ export async function POST(req: NextRequest) {
     // A code can only go to the channel they asked for AND that we hold.
     const destination = identity.kind === 'email' ? member.email : member.phone
     if (!destination) {
+      noCode(`member ${member.id} has no ${identity.kind} on file`, identity.kind)
       await new Promise(r => setTimeout(r, 250))
       return NextResponse.json({ ok: true })
     }
 
     if (guardRecipient(`${identity.kind}:crew:${member.id}`, { label: 'crew-login-code', max: 3, windowMs: HOUR_MS })) {
+      noCode(`member ${member.id} asked for more than 3 codes this hour (in-memory limit)`, identity.kind)
       return NextResponse.json({ ok: true })
     }
 
@@ -70,7 +84,10 @@ export async function POST(req: NextRequest) {
       console.error('crew/auth/request: code count failed:', countErr.message)
       return NextResponse.json({ error: 'We could not send a code just now. Try again.' }, { status: 503 })
     }
-    if ((count ?? 0) >= 3) return NextResponse.json({ ok: true })
+    if ((count ?? 0) >= 3) {
+      noCode(`member ${member.id} was already sent 3 codes in the last hour`, identity.kind)
+      return NextResponse.json({ ok: true })
+    }
 
     const secret = portalSigningSecret()
     const { code } = generateEmailLoginCode()
