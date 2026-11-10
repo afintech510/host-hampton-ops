@@ -1465,6 +1465,9 @@ async function proposeAddLineItem(supabase: Supa, input: Record<string, unknown>
   } else {
     const n = str(input.name, 120)
     if (!n) return fail('Give add_on (a catalog name) or a custom name and unit_price_cents.')
+    // The extra heads on a theme party are the guest count, not a line: the PATCH keeps the
+    // planner's own "Additional Guests" line in step, and a typed copy is charged a second time.
+    if (/^(additional|extra) (guests?|kids?|children)(\s*\(.*\))?$/i.test(n.trim())) return fail('Do not add an extra-guest line: use propose_update_party to set the guest count. The invoice keeps its own "Additional Guests" line equal to guests minus the included number, and a typed copy would be charged twice.')
     const c = Math.round(Number(input.unit_price_cents))
     // Not negative: a discount is a deliberate act in the dashboard, not
     // something a chat transcript should be able to slip onto an invoice.
