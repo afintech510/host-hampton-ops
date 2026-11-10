@@ -421,10 +421,10 @@ describe('the cron: confirmations and alerts', () => {
     })
   })
 
-  it('attendance not marked 12 h after the end alerts Allie once', async () => {
+  it('does not send an attendance alert after a party', async () => {
     NOW = new Date(Date.parse(END) + 13 * H)
-    expect((await runPartyAlerts(jobs(), parties())).attendance).toBe(1)
-    expect((await runPartyAlerts(jobs(), parties())).attendance).toBe(0)
+    expect((await runPartyAlerts(jobs(), parties())).understaffed).toBe(0)
+    expect(keys()).not.toContain('attendance_due:p1')
   })
 
   it('test scope touches TEST parties only', async () => {

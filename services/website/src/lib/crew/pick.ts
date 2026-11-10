@@ -458,21 +458,28 @@ export async function notifyPickRound(ctx: NotifyCtx, s: CrewSettings, results: 
  * and at least one person asking to work it. Earliest first, so a person approved
  * for one is already "recent" when the next is ranked.
  */
-export async function partiesNeedingPicks(sb: Supa, now: Date): Promise<Read<PartyWithSlots[]>> {
+export async function partiesNeedingPicks(sb: Supa, now: Date, s: CrewSettings): Promise<Read<PartyWithSlots[]>> {
   const parties = await listPickParties(sb, now)
   if (parties.kind !== 'ok') return parties
   const open = parties.data.filter(p => p.slots.some(sl => sl.status === 'open'))
   if (open.length === 0) return { kind: 'ok', data: [] }
   const counts = await responseCounts(sb, open.map(p => p.party.id))
   if (counts.kind !== 'ok') return counts
-  return { kind: 'ok', data: open.filter(p => (counts.data.get(p.party.id)?.work ?? 0) > 0) }
+  const waiting: PartyWithSlots[] = []
+  for (const p of open) {
+    if ((counts.data.get(p.party.id)?.work ?? 0) === 0) continue
+    const panel = await loadPickPanel(sb, p.party.id, s)
+    if (panel.kind !== 'ok') return panel
+    if (panel.data && panel.data.volunteers.length > 0) waiting.push(p)
+  }
+  return { kind: 'ok', data: waiting }
 }
 
 /** Approve the recommendation for every party that needs one, earliest first. One round of messages. */
 export async function approveAllRecommended(
   sb: Supa, opts: { actor: string; s: CrewSettings; now: Date },
 ): Promise<{ ok: true; results: ApproveResult[]; parties: number } | { ok: false; status: number; error: string }> {
-  const need = await partiesNeedingPicks(sb, opts.now)
+  const need = await partiesNeedingPicks(sb, opts.now, opts.s)
   if (need.kind !== 'ok') return { ok: false, status: 503, error: 'Could not read the parties waiting.' }
   const results: ApproveResult[] = []
   for (const { party } of need.data) {

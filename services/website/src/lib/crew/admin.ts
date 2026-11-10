@@ -16,13 +16,14 @@
 
 import type { getSupabase } from '@/lib/supabase'
 import {
-  attendanceAlertAt, isBlockedByAvailability, localParts, shiftWindow, staffingShortfall, understaffedAlertAt,
+  isBlockedByAvailability, localParts, shiftWindow, staffingShortfall, understaffedAlertAt,
   shiftsOverlap, unclaimedWarningAt, type AvailabilityBlock, type CrewSettings, type DateBlock, type PartyWindow, type RecurringBlock, type SlotRole,
 } from '@/lib/crew/rules'
 import {
   listMembers, responseCounts, slotsForParties, type CrewMemberRow, type CrewPartyRow, type CrewSlotRow, type CrewSwapRow, type PartyWithSlots, type Read,
 } from '@/lib/crew/db'
 import { reconcileCrewParties, type ReconcileSummary } from '@/lib/crew/sync'
+import { loadPickPanel } from '@/lib/crew/pick'
 import { ADMIN_ABOUT_COLUMNS, adminAboutFromRow, type AdminPartyAbout } from '@/lib/crew/partyDetails'
 import { etDateString, etToUtc, shiftEtDate } from '@/lib/partyTime'
 
@@ -30,7 +31,7 @@ type Supa = ReturnType<typeof getSupabase>
 
 const DAY_MS = 86_400_000
 export const SCHEDULE_DAYS_AHEAD = 42
-/** How far back the alerts look for things still unresolved (attendance, drops, releases). */
+/** How far back the schedule and alerts look for unresolved drops and releases. */
 export const ALERT_DAYS_BACK = 30
 
 const LIVE_HELD = ['assigned', 'completed', 'no_show']
@@ -127,7 +128,7 @@ export function memberFit(
 export interface AdminAlert {
   kind:
     | 'unconfirmed' | 'released' | 'cover_open' | 'cover_escalated' | 'cover_unclaimed_48h' | 'dropped'
-    | 'attendance' | 'understaffed' | 'needs_review' | 'needs_time' | 'sync_flag' | 'unclassified' | 'reactivated'
+    | 'understaffed' | 'needs_review' | 'needs_time' | 'sync_flag' | 'unclassified' | 'reactivated'
     | 'picks_waiting'
   severity: 'urgent' | 'warn' | 'info'
   text: string
@@ -233,6 +234,19 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
   const counts = await responseCounts(sb, parties.data.filter(p => p.party.selection_mode === 'pick').map(p => p.party.id))
   if (counts.kind !== 'ok') return counts
 
+  // A response can linger after assignment, deactivation, or a test member's
+  // response to a real party. The party editor is the source of truth for who
+  // can actually be picked, so its count must drive both the list and alerts.
+  const canPick = new Map<string, number>()
+  for (const { party } of parties.data) {
+    if (party.status !== 'published' || new Date(party.starts_at).getTime() <= now.getTime()) continue
+    if ((counts.data.get(party.id)?.work ?? 0) === 0) continue
+    const panel = await loadPickPanel(sb, party.id, s)
+    if (panel.kind !== 'ok') return panel
+    if (!panel.data) return { kind: 'unavailable', error: `Could not read picks for ${party.id}` }
+    canPick.set(party.id, panel.data.volunteers.length)
+  }
+
   const memberById = new Map(members.data.map(m => [m.id, m]))
   const nameOf = (id: string | null) => (id ? memberById.get(id)?.first_name ?? 'Someone' : 'Someone')
   const windows = windowsByMember(parties.data)
@@ -256,7 +270,7 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
     // Alerts that belong to this party.
     if (p.status === 'published' && upcoming) {
       // Equitable scheduling: people have asked and a spot is open, so it is waiting on the manager.
-      const asked = p.selection_mode === 'pick' ? counts.data.get(p.id)?.work ?? 0 : 0
+      const asked = p.selection_mode === 'pick' ? canPick.get(p.id) ?? 0 : 0
       const openSpots = live.filter(sl => sl.status === 'open').length
       if (asked > 0 && openSpots > 0) {
         const days = (startsAt.getTime() - nowMs) / DAY_MS
@@ -270,9 +284,6 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
         const need = [sf.leadShort ? 'a Party Lead' : null, sf.crewShort > 0 ? `${sf.crewShort} crew ${sf.crewShort === 1 ? 'spot' : 'spots'}` : null].filter(Boolean).join(' and ')
         alerts.push({ kind: 'understaffed', severity: 'urgent', text: `Short on crew: ${label(p)} still needs ${need}.`, partyId: p.id })
       }
-    }
-    if (p.status === 'published' && !p.attendance_marked_at && nowMs >= attendanceAlertAt(endsAt, s).getTime()) {
-      alerts.push({ kind: 'attendance', severity: 'warn', text: `Attendance not marked: ${label(p)}.`, partyId: p.id })
     }
     if (isLive && upcoming && p.sync_flags?.length) {
       alerts.push({ kind: 'sync_flag', severity: 'info', text: `${label(p)}: ${p.sync_flags.map(flagText).join('; ')}.`, partyId: p.id })
@@ -301,7 +312,9 @@ export async function loadAdminOverview(sb: Supa, now: Date, s: CrewSettings): P
       parentName: p.booking_id ? refs.data.get(p.booking_id)?.parent ?? null : null,
       food: p.booking_id ? refs.data.get(p.booking_id)?.food ?? null : null,
       cupcake: p.booking_id ? refs.data.get(p.booking_id)?.cupcake ?? null : null,
-      pick: p.selection_mode === 'pick' ? counts.data.get(p.id) ?? { work: 0, standby: 0, unavailable: 0 } : null,
+      pick: p.selection_mode === 'pick'
+        ? { ...(counts.data.get(p.id) ?? { work: 0, standby: 0, unavailable: 0 }), work: canPick.get(p.id) ?? 0 }
+        : null,
       startsAt: p.starts_at,
       endsAt: p.ends_at,
       guestCount: p.guest_count,

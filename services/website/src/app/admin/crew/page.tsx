@@ -201,8 +201,6 @@ export default function CrewSchedulePage() {
 
       <PicksWaitingCard onDone={load} />
 
-      <WeekendSummaryCard />
-
       {data && (
         <section className="mb-8">
           <h2 className="text-hampton-navy text-xs uppercase tracking-wider font-bold mb-2">Alerts</h2>
@@ -284,81 +282,6 @@ export default function CrewSchedulePage() {
       )}
       {parties.length > 0 && <p className="text-hampton-navy/40 text-xs px-1 py-3">Allie counts toward staffed when she is on a party.</p>}
     </CrewFrame>
-  )
-}
-
-interface WItem { name: string; quantity: number }
-interface WParty {
-  partyId: string; title: string; kind: string; status: string; startsAt: string; endsAt: string; kids: number | null
-  child: string | null; parent: string | null; theme: string | null; main: string | null; cupcakes: string | null
-  food: WItem[]; drinks: WItem[]; addOns: WItem[]; activities: WItem[]
-}
-interface Weekend {
-  from: string; to: string; parties: WParty[]
-  totals: { parties: number; kids: number; pizzaKids: number; bagelKids: number; cupcakes: { label: string; parties: number }[]
-    food: WItem[]; drinks: WItem[]; addOns: WItem[]; activities: { name: string; parties: number }[] }
-}
-
-const itemText = (xs: WItem[]) => xs.map(i => (i.quantity > 1 ? `${i.name} ×${i.quantity}` : i.name)).join(', ')
-
-/** The upcoming Saturday and Sunday, with what has to be on hand for each party. */
-function WeekendSummaryCard() {
-  const api = useAdminApi()
-  const [w, setW] = useState<Weekend | null>(null)
-  const [err, setErr] = useState('')
-  useEffect(() => {
-    api<Weekend & { error?: string }>('/api/admin/crew/weekend').then(r => {
-      if (r.ok) setW(r.data)
-      else if (r.status !== 401) setErr(r.data.error || 'Could not read the weekend.')
-    })
-  }, [api])
-  if (err) return <Banner tone="error">{err}</Banner>
-  if (!w) return null
-  const t = w.totals
-  const label = (d: string) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(`${d}T12:00:00Z`))
-  return (
-    <section className="mb-8">
-      <h2 className="text-hampton-navy text-xs uppercase tracking-wider font-bold mb-2">This weekend, {label(w.from)} – {label(w.to)}: what to prep</h2>
-      {w.parties.length === 0 ? (
-        <p className="bg-white rounded-2xl p-5 text-hampton-navy/50 text-sm">No crew parties this weekend.</p>
-      ) : (
-        <div className="bg-white rounded-2xl shadow-sm p-5 text-sm text-hampton-navy">
-          <p className="mb-3">
-            <strong>{t.parties}</strong> {t.parties === 1 ? 'party' : 'parties'} · <strong>{t.kids}</strong> kids
-            {t.pizzaKids > 0 && <> · Pizza for <strong>{t.pizzaKids}</strong> kids</>}
-            {t.bagelKids > 0 && <> · Bagels for <strong>{t.bagelKids}</strong> kids</>}
-            {t.cupcakes.length > 0 && <> · Cupcakes: {t.cupcakes.map(c => `${c.label} (${c.parties})`).join(', ')}</>}
-          </p>
-          {(t.food.length > 0 || t.drinks.length > 0 || t.addOns.length > 0 || t.activities.length > 0) && (
-            <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 mb-4 pb-4 border-b border-hampton-pink/10">
-              {t.food.length > 0 && (<><dt className="text-hampton-navy/50">Extra food</dt><dd>{itemText(t.food)}</dd></>)}
-              {t.drinks.length > 0 && (<><dt className="text-hampton-navy/50">Drinks</dt><dd>{itemText(t.drinks)}</dd></>)}
-              {t.addOns.length > 0 && (<><dt className="text-hampton-navy/50">Add-ons</dt><dd>{itemText(t.addOns)}</dd></>)}
-              {t.activities.length > 0 && (<><dt className="text-hampton-navy/50">Activities</dt><dd>{t.activities.map(a => (a.parties > 1 ? `${a.name} (${a.parties} parties)` : a.name)).join(', ')}</dd></>)}
-            </dl>
-          )}
-          <ul className="space-y-3">
-            {w.parties.map(p => (
-              <li key={p.partyId}>
-                <a href={`/admin/crew/parties/${p.partyId}`} className="font-semibold underline">{p.title}</a>
-                <span className="text-hampton-navy/60"> · {whenLabel(p.startsAt, p.endsAt)} · {p.kids ?? '?'} kids{p.status === 'draft' ? ' · draft' : ''}</span>
-                {(p.child || p.parent) && <div className="text-xs text-hampton-navy/70">{p.child && `Child: ${p.child}`}{p.child && p.parent && ' · '}{p.parent && `Parent: ${p.parent}`}</div>}
-                <div className="text-xs text-hampton-navy/80">
-                  {[
-                    p.main && `${p.main}${p.cupcakes ? ` + ${p.cupcakes} cupcakes` : ''}`,
-                    !p.main && p.cupcakes && `${p.cupcakes} cupcakes`,
-                    p.food.length > 0 && `Food: ${itemText(p.food)}`,
-                    p.drinks.length > 0 && `Drinks: ${itemText(p.drinks)}`,
-                    p.addOns.length > 0 && `Add-ons: ${itemText(p.addOns)}`,
-                    p.activities.length > 0 && `Activities: ${itemText(p.activities)}`,
-                  ].filter(Boolean).join(' · ') || 'Nothing extra booked.'}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </section>
   )
 }
 

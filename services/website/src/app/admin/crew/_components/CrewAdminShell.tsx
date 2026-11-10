@@ -23,6 +23,7 @@ import { clearCache, warm } from './adminData'
 /** Every read a screen starts from. */
 export const WARM_PATHS = [
   '/api/admin/crew-app/dashboard',
+  '/api/admin/crew/weekend',
   '/api/admin/crew-app/bookings',
   '/api/admin/crew-app/payments',
   '/api/admin/leads',

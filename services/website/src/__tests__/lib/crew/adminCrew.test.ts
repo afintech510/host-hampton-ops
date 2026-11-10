@@ -231,6 +231,25 @@ function partyDb(extra: { parties?: any[]; slots?: any[]; members?: any[]; unava
   }, { rpc })
 }
 
+it('does not show attendance alerts for past parties on the crew schedule', async () => {
+  const db = partyDb()
+  Object.assign(db.tables.crew_parties[0], { status: 'published', attendance_marked_at: null })
+  const o = await loadAdminOverview(db.sb, new Date('2026-11-10T12:00:00Z'), S)
+  if (o.kind !== 'ok') throw new Error(o.error)
+  expect(o.data.alerts.map(a => a.text).join(' ')).not.toMatch(/attendance not marked/i)
+})
+
+it('does not count an assigned member as waiting to be picked', async () => {
+  const db = partyDb()
+  Object.assign(db.tables.crew_parties[0], { status: 'published', selection_mode: 'pick' })
+  Object.assign(db.tables.crew_slots.find(s => s.id === 'c1')!, { status: 'assigned', member_id: 'ava' })
+  db.tables.crew_party_responses = [{ party_id: P, member_id: 'ava', response: 'work' }]
+  const o = await loadAdminOverview(db.sb, NOW, S)
+  if (o.kind !== 'ok') throw new Error(o.error)
+  expect(o.data.parties.find(p => p.id === P)?.pick?.work).toBe(0)
+  expect(o.data.alerts.some(a => a.kind === 'picks_waiting')).toBe(false)
+})
+
 describe('assigning, including Allie as Lead', () => {
   it('Allie can be assigned as Lead, is confirmed at once, and counts toward staffed', async () => {
     const db = partyDb()

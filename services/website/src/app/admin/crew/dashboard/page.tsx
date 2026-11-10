@@ -21,6 +21,7 @@
 
 import { Banner, CrewFrame, money } from '../_components/adminCrew'
 import { useAdminData } from '../_components/adminData'
+import WeekendPrep from '../_components/WeekendPrep'
 import { pill, useRemembered } from '../_components/PartyFilters'
 import type { SalesPeriod, SalesPeriodKey } from '@/lib/dashboardMetrics'
 
@@ -197,6 +198,7 @@ export default function CrewDashboardPage() {
   return (
     <CrewFrame active="/admin/crew/dashboard" title="Dashboard" sub={d ? `As of ${asOf}${refreshing ? ' · refreshing…' : ''}` : null}>
       <div className="max-w-3xl mx-auto space-y-3">
+        <WeekendPrep />
         {error && !d && <Banner tone="error">{error}</Banner>}
         {loading && <div className="text-center text-hampton-navy/50 py-10">Loading the numbers…</div>}
         {d && d.errors.length > 0 && <Banner tone="warn">{d.errors.join(' ')}</Banner>}

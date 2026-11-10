@@ -6,12 +6,11 @@
  *      Allie (72 h), the day-before reminder (24 h)
  *   3. cover requests: escalate (the standby window passed, or nobody could be
  *      asked), the 48-hour warning, expire at the start
- *   4. the attendance-not-marked alert
- *   5. the no-Lead alert, 7 days out — never for a studio rental: a rental's
+ *   4. the no-Lead alert, 7 days out — never for a studio rental: a rental's
  *      spots are helper spots and it has no Lead (Adam, 2026-10-27)
- *   6. the availability reminder (from the 10th, until the 15th)
- *   7. the queue: deferred texts and the reconcile's `partyCancelled` notices
- *   8. equitable scheduling: a party the manager picks, where everyone who asked fits the open
+ *   5. the availability reminder (from the 10th, until the 15th)
+ *   6. the queue: deferred texts and the reconcile's `partyCancelled` notices
+ *   7. equitable scheduling: a party the manager picks, where everyone who asked fits the open
  *      spots, is approved without waiting once the crew have answered or 48 hours have passed
  *
  * IDEMPOTENT BY CONSTRUCTION. Every message has a dedupe key and goes through
@@ -35,7 +34,7 @@
 import { createHash } from 'crypto'
 import type { getSupabase } from '@/lib/supabase'
 import {
-  attendanceAlertAt, confirmationSchedule, formatCents, localParts, nudgeMarks, partyRateCents, payLabelFor,
+  confirmationSchedule, formatCents, localParts, nudgeMarks, partyRateCents, payLabelFor,
   coverTurnEndsAt, staffingShortfall, understaffedAlertAt, unclaimedWarningAt, type CrewSettings,
 } from '@/lib/crew/rules'
 import {
@@ -81,7 +80,6 @@ export interface JobsReport {
   /** Work reminders sent this tick: 3 days before, and 24 hours before. */
   confirmations: { threeDay: number; dayBefore: number }
   covers: { reasked: number; advanced: number; escalated: number; autoOffered: number; warned: number; expired: number }
-  attendance: number
   /** The manager told a published party is still short of crew (the one routine manager touch). */
   understaffed: number
   availability: number
@@ -95,7 +93,6 @@ export interface JobsReport {
 }
 
 const adminUrl = (partyId: string) => crewLink(`/admin/crew/parties/${partyId}`)
-const HELD = ['assigned', 'completed', 'no_show']
 
 function inScope(ctx: JobsCtx, party: Pick<CrewPartyRow, 'booking_id' | 'title'>): boolean {
   return ctx.scope === 'all' || isTestParty(party)
@@ -258,24 +255,16 @@ export async function runCovers(ctx: JobsCtx, members: Map<string, CrewMemberRow
   return out
 }
 
-// ── 4 & 5. Allie's party alerts ─────────────────────────────────────────────
+// ── 4. Allie's staffing alerts ───────────────────────────────────────────────
 
-export async function runPartyAlerts(ctx: JobsCtx, parties: PartyWithSlots[]): Promise<{ attendance: number; understaffed: number }> {
-  const out = { attendance: 0, understaffed: 0 }
+export async function runPartyAlerts(ctx: JobsCtx, parties: PartyWithSlots[]): Promise<{ understaffed: number }> {
+  const out = { understaffed: 0 }
   const s = ctx.settings
   const now = ctx.now.getTime()
   for (const { party, slots } of parties) {
     if (party.status !== 'published' || !inScope(ctx, party)) continue
     const startsAt = new Date(party.starts_at)
-    const endsAt = new Date(party.ends_at)
-    const held = slots.filter(sl => sl.member_id && HELD.includes(sl.status))
     const opts = { test: isTestParty(party), payload: { party_id: party.id } }
-
-    if (!party.attendance_marked_at && held.length > 0 && now >= attendanceAlertAt(endsAt, s).getTime()
-      && now - endsAt.getTime() <= ALERT_DAYS_BACK * DAY_MS) {
-      const a = await notifyAdmin(ctx, 'attendanceDue', adminTemplates.attendanceDue(partyRefFor(party, s), adminUrl(party.id)), `attendance_due:${party.id}`, opts)
-      if (a.in_app === 'sent') out.attendance++
-    }
 
     // THE routine manager touch: a published party still short of crew (or of a
     // Lead; never for a studio rental, which has none) as the day gets close.
@@ -617,7 +606,7 @@ export async function runCrewJobs(ctx: JobsCtx): Promise<JobsReport> {
     asks: { newParty: 0, nudges: 0 },
     confirmations: { threeDay: 0, dayBefore: 0 },
     covers: { reasked: 0, advanced: 0, escalated: 0, autoOffered: 0, warned: 0, expired: 0 },
-    attendance: 0, understaffed: 0, availability: 0, picksAutoApproved: 0, pickDigests: 0,
+    understaffed: 0, availability: 0, picksAutoApproved: 0, pickDigests: 0,
     queue: { scanned: 0, sent: 0, deferred: 0, skipped: 0, failed: 0, raced: 0 },
     unavailable: [],
   }
@@ -653,7 +642,6 @@ export async function runCrewJobs(ctx: JobsCtx): Promise<JobsReport> {
     if (cv.unavailable) down('covers')
 
     const pa = await runPartyAlerts(ctx, parties.data)
-    report.attendance = pa.attendance
     report.understaffed = pa.understaffed
 
     const recent = await listRecentlyPublished(ctx.sb, ctx.now)

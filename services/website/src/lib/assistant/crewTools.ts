@@ -636,7 +636,7 @@ async function proposeNotes(sb: Supa, input: Record<string, unknown>, s: CrewSet
 }
 
 async function proposePicks(sb: Supa, s: CrewSettings, ctx: ToolContext, now: Date): Promise<ToolOutcome> {
-  const need = await partiesNeedingPicks(sb, now)
+  const need = await partiesNeedingPicks(sb, now, s)
   if (need.kind !== 'ok') return fail('The picks could not be read - say so.')
   if (need.data.length === 0) return fail('No crew party is waiting on a pick.')
   const lines: string[] = []
