@@ -28,7 +28,7 @@ import { fetchQuoThread } from '@/lib/quo'
 
 type Supa = ReturnType<typeof getSupabase>
 
-const SENT_BY_DASHBOARD = /^(Links sent to customer|Photos sent to customer|Portal link sent|Portal link texted|Photo album sent)/i
+const SENT_BY_DASHBOARD = /^(Links sent to customer|Message sent to customer|Photos sent to customer|Portal link sent|Portal link texted|Photo album sent)/i
 
 export async function threadHasIntroduced(
   sb: Supa,

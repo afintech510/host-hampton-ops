@@ -33,6 +33,7 @@ export type ProposalKind =
   | 'set_preferences'
   | 'change_theme'
   | 'add_discount'
+  | 'send_message'
   | 'record_payment'
   | 'cancel_party'
   | 'mark_lost'

@@ -156,6 +156,33 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       return { ok: true, status: res.status, message: `Sent to ${input.bookingRef} by ${sentVia}.${approved}${approvalFailed}${failures}` }
     }
 
+    case 'send_message': {
+      const input = proposal.input as {
+        bookingId: string
+        bookingRef: string
+        email: boolean
+        sms: boolean
+        emailSubject?: string
+        emailBody?: string
+        smsBody?: string
+      }
+      // The wording on the card is the wording that goes, screened again at this last gate.
+      const bound = boundWording(input, ['sms', 'emailSubject', 'emailBody'], ['message'])
+      if (!bound.ok) return { ok: false, status: 422, message: `Not sent: ${bound.reason}` }
+      const { res, json } = await replayPartyAction(original, input.bookingId, {
+        action: 'send_message',
+        confirm: true,
+        email: input.email === true,
+        sms: input.sms === true,
+        ...(input.email ? { emailSubject: bound.text.emailSubject, emailBody: bound.text.emailBody } : {}),
+        ...(input.sms ? { smsBody: bound.text.sms } : {}),
+      })
+      if (!res.ok || json.ok !== true) return refused('Not sent', res, json)
+      const sentVia = Array.isArray(json.sentVia) ? (json.sentVia as string[]).join(' and ') : 'the chosen channel'
+      const failures = Array.isArray(json.failures) && json.failures.length ? ` Problems: ${(json.failures as string[]).join(' ')}` : ''
+      return { ok: true, status: res.status, message: `Sent to ${input.bookingRef} by ${sentVia}.${failures}` }
+    }
+
     case 'create_pay_link': {
       const input = proposal.input as { bookingRef: string; purpose: 'deposit' | 'balance' }
       const res = await planPayLinkRoute(
@@ -469,7 +496,7 @@ function boundWording(
   fields: ('sms' | 'emailSubject' | 'emailBody')[],
   linkKinds: string[],
 ): { ok: true; text: { sms?: string; emailSubject?: string; emailBody?: string } } | { ok: false; reason: string } {
-  const allowed = linkKinds.includes('photos') ? ['photos'] : ['invite', 'rsvps', 'planner', 'invoice', 'portal']
+  const allowed = linkKinds.includes('message') ? [] : linkKinds.includes('photos') ? ['photos'] : ['invite', 'rsvps', 'planner', 'invoice', 'portal']
   const out: { sms?: string; emailSubject?: string; emailBody?: string } = {}
   const spec: Array<['sms' | 'emailSubject' | 'emailBody', string | undefined, 'sms' | 'email' | 'subject']> = [
     ['sms', input.smsBody, 'sms'],

@@ -1057,6 +1057,94 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, action: 'client_links_sent', sentVia, failures, approved: approval === 'approved', approvalFailed: approval === 'failed' })
   }
 
+  // A plain message to the customer in the manager's words (no links). The same guards as
+  // send_client_links: explicit confirm, not for a cancelled or lost party, a real address,
+  // 8am-9pm Eastern, a STOP on file refuses the text, every refusal changes nothing, and the
+  // send is written to the booking's own change log (which is also how the assistant knows
+  // the first, introduced message has gone).
+  if (action === 'send_message') {
+    if (body.confirm !== true) return NextResponse.json({ error: 'Sending to a client must be confirmed' }, { status: 400 })
+    const wantsEmail = body.email === true
+    const wantsSms = body.sms === true
+    if (!wantsEmail && !wantsSms) return NextResponse.json({ error: 'Pick email, text, or both' }, { status: 400 })
+    if (booking.status === 'cancelled' || booking.status === 'lost') {
+      return NextResponse.json({ error: `This booking is ${booking.status} — nothing was sent.` }, { status: 409 })
+    }
+    const email = typeof booking.contact_email === 'string' ? booking.contact_email.trim() : ''
+    const phone = typeof booking.contact_phone === 'string' ? booking.contact_phone.trim() : ''
+    if (wantsEmail && !isPlausibleEmailAddress(email)) {
+      return NextResponse.json({ error: 'No valid email address on this booking. Nothing was sent.' }, { status: 409 })
+    }
+    if (wantsSms && !phone) return NextResponse.json({ error: 'No phone number on this booking. Nothing was sent.' }, { status: 409 })
+
+    const problems: string[] = []
+    let subject = ''
+    let emailBody = ''
+    let smsBody = ''
+    if (wantsEmail) {
+      const s = screenSubject(body.emailSubject)
+      const b = screenBody(body.emailBody, 'email')
+      if (!s.ok) problems.push(s.reason); else subject = s.text
+      if (!b.ok) problems.push(b.reason); else emailBody = b.text
+    }
+    if (wantsSms) {
+      const b = screenBody(body.smsBody, 'text')
+      if (!b.ok) problems.push(b.reason)
+      else if (!/\bstop\b/i.test(b.text)) problems.push('A text must carry the opt-out line ("Reply STOP to opt out").')
+      else smsBody = b.text
+    }
+    // No links in a free-form message: a brace means a placeholder that would be sent as-is.
+    for (const t of [subject, emailBody, smsBody]) if (/[{}]/.test(t)) problems.push('A plain message cannot carry link placeholders. Send links with send_client_links.')
+    if (problems.length > 0) return NextResponse.json({ error: problems.join(' '), problems }, { status: 400 })
+
+    let smsBlocked: string | null = null
+    if (wantsSms) {
+      const quiet = checkSmsQuietHours(new Date())
+      const stop = quiet.kind === 'open' ? await phoneHasExplicitStop(supabase, phone) : null
+      if (quiet.kind !== 'open') smsBlocked = 'Text NOT sent — it is outside 8am–9pm. Send again after 8am.'
+      else if (stop === 'stopped') smsBlocked = 'Text NOT sent — this number has a STOP (opt-out) on file.'
+      else if (stop !== 'clear') smsBlocked = 'Text NOT sent — could not check this number for a STOP. Try again.'
+    }
+    const sendSms = wantsSms && !smsBlocked
+    if (!wantsEmail && !sendSms) return NextResponse.json({ error: smsBlocked, failures: [smsBlocked] }, { status: 409 })
+
+    const sentVia: string[] = []
+    const failures: string[] = smsBlocked ? [smsBlocked] : []
+    if (wantsEmail) {
+      if (!process.env.RESEND_API_KEY) {
+        failures.push('Email is not configured')
+      } else {
+        const { Resend } = await import('resend')
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const from = process.env.RESEND_FROM_EMAIL || `noReply@mail.${TENANT.business.apexHost}`
+        const { error: mailErr } = await resend.emails.send({
+          from, to: email, replyTo: ownerEmail(),
+          subject,
+          html: clientLinksEmailHtml(emailBody, {}),
+          text: emailBody,
+        })
+        if (mailErr) failures.push(`Email failed: ${mailErr.message}`)
+        else sentVia.push('email')
+      }
+    }
+    if (sendSms) {
+      const sid = await sendSMSVia('quo', normalizePhone(phone), smsBody)
+      if (sid) sentVia.push('text')
+      else failures.push('Text failed to send — check the number and Quo config')
+    }
+
+    const sample = (wantsEmail ? emailBody : smsBody).replace(/\s+/g, ' ').slice(0, 120)
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: sentVia.length
+        ? `Message sent to customer via ${sentVia.join(' + ')}${failures.length ? `; ${failures.join('; ')}` : ''}: "${sample}"`
+        : `Message NOT sent: ${failures.join('; ')}`,
+      newData: { sent_via: sentVia },
+    })
+    if (sentVia.length === 0) return NextResponse.json({ error: failures.join(' ') || 'Nothing was sent', failures }, { status: 502 })
+    return NextResponse.json({ ok: true, action: 'message_sent', sentVia, failures })
+  }
+
   // Text the customer their pre-arrival check-in link. Any staff may do this.
   if (action === 'send_checkin_link') {
     if (!booking.contact_phone) {
