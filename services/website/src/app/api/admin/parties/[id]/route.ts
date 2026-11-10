@@ -210,6 +210,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   let totalCents: number | undefined
   let balanceCents: number | undefined
   if (updates.guest_count_approx !== undefined) {
+    const extraGuestsProblem = await syncExtraGuestsLine(supabase, id, updates.guest_count_approx)
     const totals = await recalcTotals(supabase, id, { guest_count_approx: updates.guest_count_approx })
     totalsUpdated = totals.ok
     if (totals.ok) {
@@ -218,6 +219,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     } else {
       totalsWarning = `Guest count was saved but the invoice total could not be recalculated (${totals.message}). Reload before quoting this customer.`
     }
+    if (extraGuestsProblem) totalsWarning = `${totalsWarning ? totalsWarning + ' ' : ''}Guest count was saved but ${extraGuestsProblem}. Check the invoice before quoting this customer.`
     await logBookingChange(supabase, {
       bookingId: id, actor: adminActorId(req),
       summary: totals.ok
@@ -1465,6 +1467,73 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+}
+
+/**
+ * Keep an in-studio theme party's flat "Additional Guests" line equal to
+ * `guest_count_approx - includedGuests`, the line the planner and the quote
+ * engine write themselves (category `theme`, no pricing_item_id, flat, quantity
+ * = the extra heads). `recalcTotals` only scales PER-HEAD lines, so changing the
+ * guest count here used to leave this flat line stale; the manager's assistant
+ * then typed its own "Additional guest" custom line to make the invoice right,
+ * and the planner (which derives the extras from the count AND loads any
+ * pricing_item_id-less non-theme line as a custom) charged both: Denise, 2026-11-09,
+ * $315 twice. Only a booking that carries a catalogue theme line is touched, so a
+ * mobile party or a rental is never given one. A hand-typed duplicate under
+ * another category is removed, and the change is logged.
+ */
+const EXTRA_GUESTS_NAME = /^(additional|extra) (guests?|kids?|children)$/i
+
+async function syncExtraGuestsLine(
+  supabase: ReturnType<typeof getSupabase>,
+  bookingId: string,
+  guestCount: unknown,
+): Promise<string | null> {
+  const guests = Math.floor(Number(guestCount))
+  if (!(guests >= 1)) return null
+  const fail = (what: string, message: string) => {
+    console.error(`syncExtraGuestsLine: ${bookingId} - ${what}:`, message)
+    return `the Additional Guests line could not be updated (${what}: ${message})`
+  }
+  try {
+    const { data, error } = await supabase
+      .from('booking_line_items')
+      .select('id, name, category, pricing_item_id, sort_order')
+      .eq('booking_id', bookingId)
+    if (error || !data) return fail('line items unreadable', error?.message ?? 'no data')
+    const rows = data as { id: string; name: string; category: string; pricing_item_id: string | null; sort_order: number | null }[]
+    if (!rows.some(r => r.category === 'theme' && r.pricing_item_id)) return null
+
+    const catalog = await loadPricingCatalog(supabase)
+    const wanted = Math.max(0, guests - catalog.guestRules.includedGuests)
+    const matches = rows.filter(r => !r.pricing_item_id && EXTRA_GUESTS_NAME.test(r.name.trim()))
+    const keep = matches.find(r => r.category === 'theme')
+    const strays = matches.filter(r => r !== keep)
+
+    if (strays.length) {
+      const { error: delErr } = await supabase.from('booking_line_items').delete().in('id', strays.map(r => r.id)).eq('booking_id', bookingId)
+      if (delErr) return fail('duplicate extra-guest line not removed', delErr.message)
+    }
+    if (keep && wanted === 0) {
+      const { error: delErr } = await supabase.from('booking_line_items').delete().eq('id', keep.id).eq('booking_id', bookingId)
+      if (delErr) return fail('line not removed', delErr.message)
+    } else if (keep) {
+      const { error: updErr } = await supabase.from('booking_line_items').update({
+        quantity: wanted, unit_price_cents: catalog.guestRules.extraGuestCents, price_type: 'flat', guest_multiplied: false,
+      }).eq('id', keep.id).eq('booking_id', bookingId)
+      if (updErr) return fail('line not updated', updErr.message)
+    } else if (wanted > 0) {
+      const maxSort = Math.max(0, ...rows.map(r => r.sort_order ?? 0))
+      const { error: insErr } = await supabase.from('booking_line_items').insert({
+        booking_id: bookingId, name: 'Additional Guests', category: 'theme', quantity: wanted,
+        unit_price_cents: catalog.guestRules.extraGuestCents, price_type: 'flat', guest_multiplied: false, sort_order: maxSort + 1,
+      })
+      if (insErr) return fail('line not added', insErr.message)
+    }
+    return null
+  } catch (e) {
+    return fail('unexpected error', e instanceof Error ? e.message : String(e))
+  }
 }
 
 /**
