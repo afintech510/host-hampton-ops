@@ -5,8 +5,9 @@ import { mintPortalLink, mintPortalLinks } from '@/lib/portalLinkMint'
 import { formatMoney, screenTipCents } from '@/lib/partyPricing'
 import { partyApprovedHtml, partyChangesRequestedHtml, partyPortalMagicLinkHtml, partyPaymentReceivedHtml, studioRentalApprovedHtml } from '@/lib/emailTemplates'
 import { syncBookingCalendar, clearBookingCalendar } from '@/lib/calendarSync'
-import { studioRentalRateWith, hoursBetween, customHourlyRateCents, customHourlyRentalPrice, isWeekendDate, time12 } from '@/lib/studioRental'
+import { time12, hoursBetween } from '@/lib/studioRental'
 import { loadPricingCatalog, loadLineItemAddOns } from '@/lib/pricingCatalog'
+import { priceRentalWindow, addHoursToTime, type RentalPrice } from '@/lib/rentalPricing'
 import { draftForBookingByHand } from '@/lib/agent/manualDraft'
 import { sendSMSVia, normalizePhone } from '@/lib/sms'
 import { sendCheckinLinkSms } from '@/lib/checkinLink'
@@ -171,6 +172,36 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       newData: updates,
     })
 
+  // A studio rental is priced from its date (weekday/weekend card) and its
+  // window, and carries the window in `party_tags`. Moving the date or start time
+  // used to write the column and leave the price, the tags and the label alone.
+  // The window keeps its length when only the start moves.
+  let rentalProblem: string | undefined
+  let rentalTotals: { totalCents?: number; balanceCents?: number } = {}
+  if (updates.party_date !== undefined || updates.party_time !== undefined) {
+    const { data: rental } = await supabase
+      .from('bookings').select('id, event_type, party_date, party_time, party_tags').eq('id', id).single()
+    if (rental && rental.event_type === 'studio-rental') {
+      const tags = (rental.party_tags as Record<string, unknown> | null) || {}
+      const oldStart = typeof tags.rental_start_time === 'string' ? tags.rental_start_time : null
+      const oldEnd = typeof tags.rental_end_time === 'string' ? tags.rental_end_time : null
+      if (oldStart && oldEnd) {
+        const startTime = updates.party_time !== undefined ? String(updates.party_time) : oldStart
+        const hoursKept = Math.max(1, hoursBetween(oldStart, oldEnd))
+        const endTime = updates.party_time !== undefined && startTime !== oldStart ? addHoursToTime(startTime, hoursKept) : oldEnd
+        if (!endTime) {
+          rentalProblem = `The rental window would run past midnight from ${startTime}; the price and times were NOT updated. Use the rental time editor.`
+        } else {
+          const applied = await applyRentalWindow(supabase, id, rental as Record<string, unknown>, { startTime, endTime })
+          if (applied.ok) rentalTotals = { totalCents: applied.totalCents, balanceCents: applied.balanceCents }
+          else rentalProblem = applied.error
+        }
+      } else {
+        rentalProblem = 'This rental has no stored start and end time, so its price was NOT recalculated. Use the rental time editor.'
+      }
+    }
+  }
+
   // Date changes are free, so they happen often. Both check-in texts are
   // scheduled off the party start, so they have to move with it — otherwise a
   // rescheduled party texts its customer on the old date.
@@ -230,6 +261,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   return NextResponse.json({
     ok: true,
+    ...(rentalProblem ? { warning: rentalProblem } : {}),
+    ...(rentalTotals.totalCents !== undefined ? { totalsUpdated: true, ...rentalTotals } : {}),
     ...(totalsUpdated !== undefined ? { totalsUpdated, totalCents, balanceCents, warning: totalsWarning } : {}),
   })
 }
@@ -1397,76 +1430,96 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const startTime = body.startTime as string
     const endTime = body.endTime as string
     if (!startTime || !endTime) return NextResponse.json({ error: 'startTime and endTime required' }, { status: 400 })
-    const hours = hoursBetween(startTime, endTime)
-    const tags = (booking.party_tags as Record<string, unknown> | null) || {}
 
-    // An owner-approved hourly rate on this booking wins over the rate card —
-    // see `customHourlyRateCents`. Without this, shortening a $75/hr photoshoot
-    // re-priced it at the $600 weekend base.
-    const customRate = customHourlyRateCents(tags)
-    let rate: { hours: number; isWeekend: boolean; rentalCents: number; unitCents: number; quantity: number; lineItemLabel: string; description?: string }
-    if (customRate) {
-      if (hours < 1) {
-        return NextResponse.json({ error: 'End time must be at least an hour after the start time' }, { status: 400 })
-      }
-      const p = customHourlyRentalPrice(tags, customRate, startTime, endTime, hours)
-      rate = {
-        hours: p.hours, isWeekend: isWeekendDate(booking.party_date as string), rentalCents: p.rentalCents,
-        unitCents: p.unitCents, quantity: p.hours, lineItemLabel: p.lineItemLabel, description: p.description,
-      }
-    } else {
-      const { studioRates } = await loadPricingCatalog()
-      if (hours < studioRates.minHours) {
-        return NextResponse.json({ error: `Minimum rental is ${studioRates.minHours} hours` }, { status: 400 })
-      }
-      const card = studioRentalRateWith(studioRates, booking.party_date as string, hours)
-      rate = { ...card, unitCents: card.rentalCents, quantity: 1 }
-    }
+    const applied = await applyRentalWindow(supabase, id, booking, { startTime, endTime })
+    if (!applied.ok) return NextResponse.json({ error: applied.error }, { status: applied.status })
 
-    // Update (or create) the rental line item.
-    const { data: rentalLi } = await supabase
-      .from('booking_line_items').select('id').eq('booking_id', id).eq('category', 'rental').limit(1).maybeSingle()
-    // Re-pricing a studio rental IS the quote. A refused write here with a
-    // `{ok:true}` answer means the admin believes they changed the price and the
-    // customer's invoice still says the old one.
-    const rentalWrite = rentalLi
-      ? await supabase.from('booking_line_items').update({
-          name: rate.lineItemLabel, unit_price_cents: rate.unitCents, quantity: rate.quantity, guest_multiplied: false,
-          ...(rate.description ? { description: rate.description } : {}),
-        }).eq('id', rentalLi.id).select('id')
-      : await supabase.from('booking_line_items').insert({
-          booking_id: id, name: rate.lineItemLabel, category: 'rental', quantity: rate.quantity,
-          unit_price_cents: rate.unitCents, price_type: 'flat', guest_multiplied: false, sort_order: 0,
-          ...(rate.description ? { description: rate.description } : {}),
-        }).select('id')
-    if (rentalWrite.error || !rentalWrite.data?.length) {
-      return NextResponse.json(
-        { error: `Rental fee NOT updated: ${rentalWrite.error?.message || 'no row matched'}` },
-        { status: 500 },
-      )
-    }
-
-    // Update times on the booking + party_tags.
-    await supabase.from('bookings').update({
-      party_time: startTime,
-      party_tags: { ...tags, rental_start_time: startTime, rental_end_time: endTime, rental_hours: rate.hours, is_weekend: rate.isWeekend },
-      updated_at: new Date().toISOString(),
-    }).eq('id', id)
-
-    await recalcTotals(supabase, id, booking)
-
-    // Move the calendar block to the new window.
-    await syncCalendar(supabase, id)
+    // A moved window moves the check-in texts too (the PATCH path always did).
+    await rescheduleCheckin(id)
 
     await logBookingChange(supabase, {
       bookingId: id, actor: adminActorId(req),
-      summary: `Rental time → ${startTime}–${endTime} (${rate.hours} hrs); rental fee ${formatMoney(rate.rentalCents)}`,
+      summary: `Rental time → ${startTime}–${endTime} (${applied.rate.hours} hrs); rental fee ${formatMoney(applied.rate.rentalCents)}`,
     })
 
-    return NextResponse.json({ ok: true, action: 'rental_edited', rentalCents: rate.rentalCents, hours: rate.hours })
+    return NextResponse.json({
+      ok: true, action: 'rental_edited', rentalCents: applied.rate.rentalCents, hours: applied.rate.hours,
+      ...(applied.totalCents !== undefined ? { totalCents: applied.totalCents, balanceCents: applied.balanceCents } : {}),
+    })
   }
 
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+}
+
+/**
+ * Re-price a studio rental for a new date and/or window and keep everything that
+ * hangs off it in step: the rental line (updated in place, or created), the
+ * `rental_*` and `is_weekend` tags, `party_time`, the totals and the calendar.
+ * `edit_rental` and the date/time PATCH both come here (the PATCH used to write
+ * the column and stop, so moving a rental from a weekday to a weekend kept the
+ * weekday price). Every write is checked: an `ok` over a stale total is the
+ * version of this that costs money.
+ */
+async function applyRentalWindow(
+  supabase: ReturnType<typeof getSupabase>,
+  id: string,
+  booking: Record<string, unknown>,
+  change: { startTime: string; endTime: string; partyDate?: string },
+): Promise<
+  | { ok: true; rate: RentalPrice; totalCents?: number; balanceCents?: number }
+  | { ok: false; error: string; status: number }
+> {
+  const partyDate = change.partyDate ?? (booking.party_date as string)
+  const tags = (booking.party_tags as Record<string, unknown> | null) || {}
+  const { studioRates } = await loadPricingCatalog()
+  const priced = priceRentalWindow(tags, partyDate, change.startTime, change.endTime, studioRates)
+  if (!priced.ok) return { ok: false, error: priced.error, status: 400 }
+  const rate = priced.rate
+
+  const { data: rentalLi } = await supabase
+    .from('booking_line_items').select('id').eq('booking_id', id).eq('category', 'rental').limit(1).maybeSingle()
+  const rentalWrite = rentalLi
+    ? await supabase.from('booking_line_items').update({
+        name: rate.lineItemLabel, unit_price_cents: rate.unitCents, quantity: rate.quantity, guest_multiplied: false,
+        ...(rate.description ? { description: rate.description } : {}),
+      }).eq('id', rentalLi.id).select('id')
+    : await supabase.from('booking_line_items').insert({
+        booking_id: id, name: rate.lineItemLabel, category: 'rental', quantity: rate.quantity,
+        unit_price_cents: rate.unitCents, price_type: 'flat', guest_multiplied: false, sort_order: 0,
+        ...(rate.description ? { description: rate.description } : {}),
+      }).select('id')
+  if (rentalWrite.error || !rentalWrite.data?.length) {
+    return { ok: false, error: `Rental fee NOT updated: ${rentalWrite.error?.message || 'no row matched'}`, status: 500 }
+  }
+
+  const { data: bookingWrite, error: bookingErr } = await supabase.from('bookings').update({
+    party_time: change.startTime,
+    ...(change.partyDate ? { party_date: change.partyDate } : {}),
+    party_tags: { ...tags, rental_start_time: change.startTime, rental_end_time: change.endTime, rental_hours: rate.hours, is_weekend: rate.isWeekend },
+    updated_at: new Date().toISOString(),
+  }).eq('id', id).select('id')
+  if (bookingErr || !bookingWrite?.length) {
+    return { ok: false, error: `Rental fee was updated but the times were NOT saved: ${bookingErr?.message || 'no row matched'}`, status: 500 }
+  }
+
+  const totals = await recalcTotals(supabase, id, booking)
+  if (!totals.ok) {
+    return { ok: false, error: `Rental updated but the invoice total could not be recalculated (${totals.message}). Reload before quoting this customer.`, status: 500 }
+  }
+  await syncCalendar(supabase, id)
+  return { ok: true, rate, totalCents: totals.totalCents, balanceCents: totals.balanceCents }
+}
+
+/** Re-enqueue the check-in texts from the booking's current date and time. */
+async function rescheduleCheckin(id: string): Promise<void> {
+  const supabase = getSupabase()
+  const { data: fresh } = await supabase
+    .from('bookings').select('booking_ref, contact_email, party_date, party_time, checkin_status').eq('id', id).single()
+  if (fresh && fresh.checkin_status !== 'complete') {
+    await enqueueCheckinReminders({
+      bookingRef: fresh.booking_ref, contactEmail: fresh.contact_email, partyDate: fresh.party_date, partyTime: fresh.party_time,
+    })
+  }
 }
 
 /**
