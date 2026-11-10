@@ -102,13 +102,13 @@ describe('O1: every write tool is propose_* and has an executor branch', () => {
     const names = ASSISTANT_TOOLS.map(t => t.name)
     const others = names.filter(n => !n.startsWith('propose_'))
     expect(others.sort()).toEqual([...READ_TOOLS].sort())
-    expect(names.filter(n => n.startsWith('propose_')).length).toBe(26)
+    expect(names.filter(n => n.startsWith('propose_')).length).toBe(29)
     for (const t of ASSISTANT_TOOLS.filter(t => t.name.startsWith('propose_'))) expect(t.description).toMatch(/^PROPOSE /)
   })
 
   it('every proposal kind has a `case` in execute.ts, and every case is a kind', () => {
     const kinds = kindsInUnion()
-    expect(kinds.length).toBe(26)
+    expect(kinds.length).toBe(29)
     const exec = src('lib/assistant/execute.ts')
     const cases = Array.from(exec.matchAll(/case '([a-z_]+)':/g)).map(m => m[1])
     expect(cases.sort()).toEqual([...kinds].sort())
@@ -205,6 +205,8 @@ describe('O2: the propose tools write nothing', () => {
     ['propose_update_party', { booking_ref: 'HH-PTY-OVR01', guest_count: 14, party_time: '15:00' }, 'update_party'],
     ['propose_add_line_item', { booking_ref: 'HH-PTY-OVR01', add_on: 'Balloon Garland' }, 'add_line_item'],
     ['propose_remove_line_item', { booking_ref: 'HH-PTY-OVR01', line_item_name: 'Extra kid' }, 'remove_line_item'],
+    ['propose_edit_line_item', { booking_ref: 'HH-PTY-OVR01', line_item_name: 'Extra kid', unit_price_cents: 4000 }, 'edit_line_item'],
+    ['propose_set_preferences', { booking_ref: 'HH-PTY-OVR01', pizza_or_bagels: 'bagels', character_request: 'Elsa' }, 'set_preferences'],
     ['propose_record_payment', { booking_ref: 'HH-PTY-OVR01', amount_cents: 25000, payment_method: 'venmo' }, 'record_payment'],
     ['propose_cancel', { booking_ref: 'HH-PTY-OVR01' }, 'cancel_party'],
     ['propose_send_photos', { booking_ref: 'HH-PTY-OVR01', photo_ids: [P1, P2], email: true, sms: false }, 'send_photos'],
@@ -540,6 +542,9 @@ describe('O6: execute.ts replays the right admin action', () => {
   it.each([
     ['add_line_item', { bookingId: BK, bookingRef: 'R', name: 'Balloon Garland', category: 'add-on', quantity: 1, unit_price_cents: 15000, guest_multiplied: false }, { action: 'add_line_item', name: 'Balloon Garland', unit_price_cents: 15000 }],
     ['remove_line_item', { bookingId: BK, bookingRef: 'R', lineItemId: 'li-2' }, { action: 'remove_line_item', line_item_id: 'li-2' }],
+    ['edit_line_item', { bookingId: BK, bookingRef: 'R', lineItemId: 'li-2', changes: { unit_price_cents: 4000, status: 'paid_in_full' } }, { action: 'edit_line_item', line_item_id: 'li-2', unit_price_cents: 4000 }],
+    ['edit_rental', { bookingId: BK, bookingRef: 'R', startTime: '10:00', endTime: '15:00' }, { action: 'edit_rental', startTime: '10:00', endTime: '15:00' }],
+    ['set_preferences', { bookingId: BK, bookingRef: 'R', preferences: { pizzaOrBagels: 'bagels', total_cents: 1 } }, { action: 'set_preferences', pizzaOrBagels: 'bagels' }],
     ['cancel_party', { bookingId: BK, bookingRef: 'R' }, { action: 'cancel' }],
     ['mark_lost', { bookingId: BK, bookingRef: 'R' }, { action: 'mark_lost' }],
     ['send_photos', { bookingId: BK, bookingRef: 'R', photoIds: [P1], email: true, sms: false }, { action: 'send_photos', confirm: true, photoIds: [P1], email: true, sms: false }],

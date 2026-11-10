@@ -1,0 +1,156 @@
+/**
+ * The assistant's field-edit tools: edit one invoice line, move a rental window, record
+ * menu choices, append to the internal note. Each only PROPOSES a card (no write), refuses
+ * the lines the system derives, and previews the money.
+ */
+type Row = Record<string, any>
+let tables: Record<string, Row[]> = {}
+
+const mockLoadInvoice = jest.fn()
+jest.mock('@/lib/planInvoice', () => ({
+  ...jest.requireActual('@/lib/planInvoice'),
+  loadPlanInvoice: (...a: unknown[]) => mockLoadInvoice(...a),
+}))
+jest.mock('@/lib/pricingCatalog', () => ({
+  ...jest.requireActual('@/lib/pricingCatalog'),
+  loadPricingCatalog: async () => ({
+    studioRates: {
+      weekendBaseCents: 60000, weekdayBaseCents: 47500, weekendAddlHourCents: 15000, weekdayAddlHourCents: 10000,
+      weekendFullDayCents: 97500, weekdayFullDayCents: 70000, minHours: 3, securityDepositCents: 25000,
+    },
+  }),
+  loadLineItemAddOns: async () => [],
+}))
+jest.mock('@/app/api/admin/parties/create/route', () => ({ POST: jest.fn() }))
+jest.mock('@/app/api/admin/parties/[id]/route', () => ({ POST: jest.fn(), PATCH: jest.fn() }))
+jest.mock('@/app/api/plan/[ref]/pay-link/route', () => ({ POST: jest.fn() }))
+
+const db = {
+  from: (t: string) => {
+    let rows = [...(tables[t] ?? [])]
+    const q: Record<string, any> = {}
+    q.select = () => q
+    q.eq = (c: string, v: unknown) => ((rows = rows.filter(r => r[c] === v)), q)
+    q.in = (c: string, vs: unknown[]) => ((rows = rows.filter(r => vs.includes(r[c]))), q)
+    q.order = () => q
+    q.limit = () => q
+    q.maybeSingle = async () => ({ data: rows[0] ?? null, error: null })
+    q.single = async () => ({ data: rows[0] ?? null, error: null })
+    q.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: rows, error: null }).then(res)
+    return q
+  },
+}
+
+import { runAssistantTool } from '@/lib/assistant/tools'
+
+const BK = 'bbbbbbbb-0000-4000-8000-0000000000f1'
+const CTX = { actor: 'admin:test', supabase: db as never, now: new Date('2026-11-04T15:00:00Z') }
+const BOOKING = {
+  id: BK, booking_ref: 'HH-PTY-EDT01', status: 'approved', contact_name: 'Pat Example', contact_email: 'parent@example.com',
+  contact_phone: '631-555-0100', child_name: 'Sam', child_age: 6, party_type: 'in_studio_theme', event_type: 'kid-party',
+  party_date: '2026-12-05', party_time: '14:00', guest_count_approx: 10, package_type: 'Slime Party', admin_notes: null, total_cents: 90000,
+}
+
+beforeEach(() => {
+  tables = {
+    bookings: [{ ...BOOKING }],
+    booking_line_items: [
+      { id: 'li-1', booking_id: BK, name: 'Slime Party', category: 'theme', quantity: 1, unit_price_cents: 59500, guest_multiplied: false },
+      { id: 'li-2', booking_id: BK, name: 'Balloon Garland', category: 'extra', quantity: 1, unit_price_cents: 15000, guest_multiplied: false },
+      { id: 'li-3', booking_id: BK, name: 'Additional Guests', category: 'theme', quantity: 9, unit_price_cents: 3500, guest_multiplied: false },
+      { id: 'li-4', booking_id: BK, name: 'Friends discount', category: 'discount', quantity: 1, unit_price_cents: -5000, guest_multiplied: false },
+      { id: 'li-5', booking_id: BK, name: 'Studio Rental', category: 'rental', quantity: 1, unit_price_cents: 47500, guest_multiplied: false },
+    ],
+  }
+  mockLoadInvoice.mockReset()
+  mockLoadInvoice.mockResolvedValue({
+    ok: true,
+    invoice: { booking: BOOKING, totalCents: 90000, paidCents: 25000, outstandingCents: 65000, guestCount: 10, depositOwedCents: 0 },
+  })
+})
+
+describe('propose_edit_line_item', () => {
+  it('previews the price change and the new invoice total', async () => {
+    const out = await runAssistantTool('propose_edit_line_item', { booking_ref: BOOKING.booking_ref, line_item_name: 'Balloon Garland', unit_price_cents: 18000 }, CTX)
+    expect(out.isError).toBeFalsy()
+    const shown = (out.result as { shown_to_manager: string[] }).shown_to_manager.join('\n')
+    expect(shown).toContain('$150.00 → $180.00')
+    expect(shown).toContain('$900.00 → $930.00')
+    expect(out.proposal?.proposal.kind).toBe('edit_line_item')
+  })
+
+  it.each([
+    ['Studio Rental', /propose_edit_rental/],
+    ['Additional Guests', /guest count/],
+    ['Friends discount', /discount/i],
+  ])('refuses the derived or discount line %s', async (name, why) => {
+    const out = await runAssistantTool('propose_edit_line_item', { booking_ref: BOOKING.booking_ref, line_item_name: name, unit_price_cents: 100 }, CTX)
+    expect(out.isError).toBe(true)
+    expect(JSON.stringify(out.result)).toMatch(why)
+    expect(out.proposal).toBeUndefined()
+  })
+
+  it('refuses a negative price and an empty change', async () => {
+    const neg = await runAssistantTool('propose_edit_line_item', { booking_ref: BOOKING.booking_ref, line_item_name: 'Balloon Garland', unit_price_cents: -100 }, CTX)
+    expect(neg.isError).toBe(true)
+    const none = await runAssistantTool('propose_edit_line_item', { booking_ref: BOOKING.booking_ref, line_item_name: 'Balloon Garland' }, CTX)
+    expect(none.isError).toBe(true)
+  })
+})
+
+describe('propose_edit_rental', () => {
+  beforeEach(() => {
+    tables.bookings = [{
+      ...BOOKING, event_type: 'studio-rental', party_type: 'studio_rental',
+      party_tags: { rental_start_time: '10:00', rental_end_time: '13:00', rental_hours: 3 },
+    }]
+  })
+
+  it('previews the re-priced window', async () => {
+    const out = await runAssistantTool('propose_edit_rental', { booking_ref: BOOKING.booking_ref, start_time: '10:00', end_time: '15:00' }, CTX)
+    expect(out.isError).toBeFalsy()
+    const shown = (out.result as { shown_to_manager: string[] }).shown_to_manager.join('\n')
+    expect(shown).toContain('$475.00 → $900.00')
+    expect(out.proposal?.proposal.kind).toBe('edit_rental')
+  })
+
+  it('uses the booking own hourly rate', async () => {
+    tables.bookings[0].party_tags = { ...tables.bookings[0].party_tags, custom_hourly_rate_cents: 7500 }
+    const out = await runAssistantTool('propose_edit_rental', { booking_ref: BOOKING.booking_ref, start_time: '10:00', end_time: '12:00' }, CTX)
+    expect((out.result as { shown_to_manager: string[] }).shown_to_manager.join('\n')).toContain('$150.00')
+  })
+
+  it('refuses a window under the minimum, a backwards window and a non-rental', async () => {
+    expect((await runAssistantTool('propose_edit_rental', { booking_ref: BOOKING.booking_ref, start_time: '10:00', end_time: '11:00' }, CTX)).isError).toBe(true)
+    expect((await runAssistantTool('propose_edit_rental', { booking_ref: BOOKING.booking_ref, start_time: '15:00', end_time: '10:00' }, CTX)).isError).toBe(true)
+    tables.bookings = [{ ...BOOKING }]
+    expect((await runAssistantTool('propose_edit_rental', { booking_ref: BOOKING.booking_ref, start_time: '10:00', end_time: '14:00' }, CTX)).isError).toBe(true)
+  })
+})
+
+describe('propose_set_preferences', () => {
+  it('records menu choices and says they price nothing', async () => {
+    const out = await runAssistantTool('propose_set_preferences', { booking_ref: BOOKING.booking_ref, pizza_or_bagels: 'bagels', cupcake_flavor: 'chocolate', character_request: 'Elsa' }, CTX)
+    expect(out.isError).toBeFalsy()
+    expect(out.proposal?.proposal.input).toMatchObject({ preferences: { pizzaOrBagels: 'bagels', cupcakeFlavor: 'chocolate', characterRequest: 'Elsa' } })
+  })
+
+  it('refuses an unknown choice and an empty call', async () => {
+    expect((await runAssistantTool('propose_set_preferences', { booking_ref: BOOKING.booking_ref, pizza_or_bagels: 'tacos' }, CTX)).isError).toBe(true)
+    expect((await runAssistantTool('propose_set_preferences', { booking_ref: BOOKING.booking_ref }, CTX)).isError).toBe(true)
+  })
+})
+
+describe('admin_notes_append', () => {
+  it('keeps the existing note and adds to it', async () => {
+    tables.bookings[0].admin_notes = 'Allergy: nuts'
+    const out = await runAssistantTool('propose_update_party', { booking_ref: BOOKING.booking_ref, admin_notes_append: 'Wants early setup' }, CTX)
+    expect(out.isError).toBeFalsy()
+    expect((out.proposal?.proposal.input as { updates: Row }).updates.admin_notes).toBe('Allergy: nuts\nWants early setup')
+  })
+
+  it('refuses replace and append together', async () => {
+    const out = await runAssistantTool('propose_update_party', { booking_ref: BOOKING.booking_ref, admin_notes: 'x', admin_notes_append: 'y' }, CTX)
+    expect(out.isError).toBe(true)
+  })
+})

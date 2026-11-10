@@ -62,7 +62,8 @@ One PR at a time. Each PR: own worktree, tests, `pr-check` green, squash-merge, 
 - [x] **PR 1 Invoice integrity (bugs 1, 2, 3, 5; bug 4 deferred).** Customer rental edit keeps admin-only lines and honours the custom hourly rate. Admin date/time PATCH on a rental reprices through the same code as `edit_rental`. Portal guest-count PATCH re-derives the flat lines and totals. `edit_rental` checks its errors and re-enqueues reminders.
 - [x] **PR 2 Switch fixes (bugs 6-8).** Raw totals, `party_tags` and `status` leave the PATCH allowlist; theme / `party_type` changes warn when the lines disagree (a real rebuild needs choices, so it is a PR 3 action); the planner stops loading the stored mobile package as a custom.
 - [x] **PR 3a Portal guest count reprices** (ruling above; mini-party cap respected).
-- [ ] **PR 3 Assistant field tools.** Edit a line's price/qty, mobile address (reprices travel), rental hours/times/seating/custom rate (`edit_rental`), mini flag, food choices / preferences / character request, notes append, theme swap, party-type switch.
+- [x] **PR 3 Assistant field tools (part 1).** `propose_edit_line_item`, `propose_edit_rental`, `propose_set_preferences`, `admin_notes_append`. Two new admin actions (`edit_line_item`, `set_preferences`). Mobile address is in flight in another session's worktree (`hh-assistant-invoice-address`), so it is not duplicated here.
+- [ ] **PR 3b Assistant field tools (part 2):** theme swap, party-type switch, mini flag (rebuild lines through the quote engine).
 - [ ] **PR 4 Assistant money and messages.** Discounts (card names the amount and the reason), tips, security deposit, receipt, check-in link, e-sign resend, photo album, reminders, and free-form SMS / email. **No refunds.** Messages: the existing screen (STOP line, 8am-9pm ET, opt-out, no foreign URLs or phone numbers); the first message to a number is signed as Allie, later ones are not.
 - [ ] **PR 5 Cleanup (bugs 9-11).**
 
