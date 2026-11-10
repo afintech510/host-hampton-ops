@@ -15,6 +15,7 @@ import { ADMIN_PAYMENT_METHODS, PAYMENT_TYPES } from '@/lib/adminMoney'
 import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
 import { ACTIVITY_TAGS, THEME_TAGS } from '@/lib/mediaVocab'
 import { loadQuoteCatalog, quoteFromCatalog, matchTheme, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
+import { screenTipCents } from '@/lib/partyPricing'
 import { priceRentalWindow } from '@/lib/rentalPricing'
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
@@ -363,6 +364,21 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: 'propose_add_discount',
+    description:
+      "PROPOSE a discount on a party's invoice: a dollar amount OR a percent of the current total, with a short reason. It shows on the invoice as a negative line. Refused if it would take the total below what the client has already paid (refunds are not made in chat) or below zero. Nothing changes until the manager clicks Confirm; the total is recalculated when it does.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        amount_cents: { type: 'integer', description: 'The discount in cents, positive. Give this OR percent.' },
+        percent: { type: 'number', description: 'Percent off the current total, 1-100. Give this OR amount_cents.' },
+        reason: { type: 'string', description: 'Why, in a few words (shown on the invoice), e.g. "Returning client".' },
+      },
+      required: ['booking_ref', 'reason'],
+    },
+  },
+  {
     name: 'propose_record_payment',
     description:
       'PROPOSE writing down a payment that arrived outside Stripe (cash, Venmo, Zelle, check) against a party. It records money in the books and moves the balance; it takes no money and by default emails the client nothing. Use the amount and method the manager stated; never guess either. Nothing is recorded until the manager clicks Confirm.',
@@ -375,6 +391,7 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
         payment_type: { type: 'string', enum: [...PAYMENT_TYPES.filter(t => t !== 'refund')], description: 'Default partial.' },
         notes: { type: 'string' },
         send_receipt: { type: 'boolean', description: 'Email the client a receipt. Default FALSE; only true if the manager asked.' },
+        tip_cents: { type: 'integer', description: 'A gratuity the client handed over WITH this payment, in cents. Recorded on top of amount_cents; it is not credited to the balance.' },
       },
       required: ['booking_ref', 'amount_cents', 'payment_method'],
     },
@@ -639,6 +656,8 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await proposeSetPreferences(supabase, input, ctx)
       case 'propose_change_theme':
         return await proposeChangeTheme(supabase, input, ctx)
+      case 'propose_add_discount':
+        return await proposeAddDiscount(supabase, input, ctx)
       case 'propose_record_payment':
         return await proposeRecordPayment(supabase, input, ctx)
       case 'propose_cancel':
@@ -1863,6 +1882,58 @@ async function proposeSetPreferences(supabase: Supa, input: Record<string, unkno
   )
 }
 
+async function proposeAddDiscount(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const reason = str(input.reason, 120)
+  if (!reason) return fail('reason is required: a few words, shown on the invoice.')
+  const hasAmount = input.amount_cents !== undefined
+  const hasPercent = input.percent !== undefined
+  if (hasAmount === hasPercent) return fail('Give amount_cents OR percent, not both and not neither.')
+
+  const pic = await moneyPicture(supabase, b.booking_ref)
+  if (!pic) return fail('The invoice could not be read, so the discount cannot be checked against it — say so.')
+  if (pic.total <= 0) return fail('This party has no priced total yet; there is nothing to discount.')
+
+  let cents: number
+  let how: string
+  if (hasPercent) {
+    const p = Number(input.percent)
+    if (!Number.isFinite(p) || p <= 0 || p > 100) return fail('percent must be between 0 and 100.')
+    cents = Math.round(pic.total * (p / 100))
+    how = `${p}% of ${money(pic.total)}`
+  } else {
+    cents = Math.round(Number(input.amount_cents))
+    if (!Number.isSafeInteger(cents) || cents <= 0 || cents > MAX_ITEM_CENTS) return fail('amount_cents must be a positive whole number of cents (up to $10,000).')
+    how = 'a fixed amount'
+  }
+  if (cents <= 0) return fail('That works out to a $0 discount.')
+  if (cents > pic.total) return fail(`A ${money(cents)} discount is more than the whole ${money(pic.total)} invoice.`)
+  const newTotal = pic.total - cents
+  if (newTotal < pic.paid) {
+    return fail(
+      `That would take the invoice to ${money(newTotal)} when ${money(pic.paid)} has already been paid, leaving the client overpaid. Refunds are not made in chat: reduce the discount to at most ${money(Math.max(0, pic.total - pic.paid))}, or handle the refund in the dashboard.`,
+    )
+  }
+
+  const label = `Discount: ${reason}`.slice(0, 120)
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    `Discount: -${money(cents)} (${how}) — "${reason}"`,
+    `Invoice ${money(pic.total)} → ${money(newTotal)}; outstanding ${money(pic.outstanding)} → ${money(Math.max(0, newTotal - pic.paid))}.`,
+    'It appears as a negative line on the invoice. The total is recalculated when you confirm. The client is not notified.',
+  ]
+  return cardOutcome(
+    'add_discount',
+    { bookingId: b.id, bookingRef: b.booking_ref, label, discountCents: cents, reason },
+    `Discount ${money(cents)} on ${b.booking_ref}`,
+    details,
+    ctx,
+    'Nothing has been discounted.',
+  )
+}
+
 async function proposeRecordPayment(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
   const l = await loadBooking(supabase, input)
   if (!l.ok) return l.out
@@ -1882,11 +1953,14 @@ async function proposeRecordPayment(supabase: Supa, input: Record<string, unknow
   }
   const sendReceipt = input.send_receipt === true
   const notes = str(input.notes, 300)
+  const tipCents = input.tip_cents === undefined ? 0 : screenTipCents(input.tip_cents)
+  if (input.tip_cents !== undefined && tipCents === 0) return fail('tip_cents must be a positive whole number of cents.')
 
   const pic = await moneyPicture(supabase, b.booking_ref)
   const details = [
     `Party: ${partyLabel(b)}`,
     `Record: ${money(cents)} by ${method} (${type}).${notes ? ` Note: ${notes}` : ''}`,
+    ...(tipCents > 0 ? [`Plus a ${money(tipCents)} tip: recorded with the payment, not credited to the balance.`] : []),
     pic
       ? `Now: total ${money(pic.total)}, paid ${money(pic.paid)}, outstanding ${money(pic.outstanding)} → outstanding about ${money(Math.max(0, pic.outstanding - cents))} after.`
       : 'The current balance could not be read to preview.',
@@ -1906,6 +1980,7 @@ async function proposeRecordPayment(supabase: Supa, input: Record<string, unknow
       payment_type: type,
       notes: notes ?? undefined,
       send_receipt: sendReceipt,
+      ...(tipCents > 0 ? { tip_cents: tipCents } : {}),
     },
     `Record ${money(cents)} ${method} payment on ${b.booking_ref}`,
     details,

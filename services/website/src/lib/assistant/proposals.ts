@@ -32,6 +32,7 @@ export type ProposalKind =
   | 'edit_rental'
   | 'set_preferences'
   | 'change_theme'
+  | 'add_discount'
   | 'record_payment'
   | 'cancel_party'
   | 'mark_lost'
