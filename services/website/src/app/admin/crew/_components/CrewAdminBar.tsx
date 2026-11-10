@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BotMessageSquare, Brain, Calendar, CalendarClock, DollarSign, LayoutDashboard, Menu, Settings, UserPlus, Users, X } from 'lucide-react'
+import { BotMessageSquare, Brain, Calendar, CalendarDays, DollarSign, LayoutDashboard, Menu, Settings, UserPlus, Users, X } from 'lucide-react'
 import MemoryPanel from '@/components/admin/MemoryPanel'
 
 /**
@@ -17,14 +17,14 @@ import MemoryPanel from '@/components/admin/MemoryPanel'
  *   Dashboard   the numbers: sales, backlog, bookings, events, leads
  *   Leads       the open leads as tiles, filtered by type, month and week
  *   Calendar    the bookings as tiles, with who is staffed on each
- *   Staff       the roster, with the parties each person is working
+ *   Staff       the schedule, with a second row for Schedule and People
  *   $           every payment: card, Venmo, Zelle, cash, event tickets
- *   ☰           Staff schedule, Settings (the crew rules) and Memories (what the
+ *   ☰           Settings (the crew rules) and Memories (what the
  *               assistant remembers)
  *
  * Each has an accessible name (aria-label) and a hover title, since there is no text.
  * Opening the ☰ drops a panel from the bar: every icon's name directly under it (the
- * seven are equal-width cells, so the labels line up), then the three menu items, each
+ * seven are equal-width cells, so the labels line up), then the menu items, each
  * with a line saying what it does. Closed, the bar is icons only.
  * Every tab is a client-side link, and the data behind them is warmed by the shell
  * (adminData.ts), so a tab change does not wait for anything.
@@ -32,7 +32,7 @@ import MemoryPanel from '@/components/admin/MemoryPanel'
  * There is deliberately no link back to the main admin dashboard.
  */
 
-type Section = 'dashboard' | 'payments' | 'leads' | 'bookings' | 'staff' | 'schedule' | 'settings'
+type Section = 'dashboard' | 'payments' | 'leads' | 'bookings' | 'staff' | 'settings'
 
 export function sectionOf(pathname: string | null | undefined): Section {
   const p = (pathname ?? '').replace(/\/+$/, '')
@@ -40,8 +40,7 @@ export function sectionOf(pathname: string | null | undefined): Section {
   if (p.startsWith('/admin/crew/leads')) return 'leads'
   if (p.startsWith('/admin/crew/bookings')) return 'bookings'
   if (p.startsWith('/admin/crew/rules')) return 'settings'
-  if (p.startsWith('/admin/crew/members') || p.startsWith('/admin/crew/parties')) return 'staff'
-  if (p === '/admin/crew') return 'schedule'
+  if (p.startsWith('/admin/crew/members') || p.startsWith('/admin/crew/parties') || p === '/admin/crew' || p === '/admin/crew/schedule') return 'staff'
   return 'dashboard'
 }
 
@@ -49,7 +48,7 @@ const ITEMS: Array<{ key: Section; href: string; label: string; Icon: typeof Use
   { key: 'dashboard', href: '/admin/crew/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
   { key: 'leads', href: '/admin/crew/leads', label: 'Leads', Icon: UserPlus },
   { key: 'bookings', href: '/admin/crew/bookings', label: 'Bookings', Icon: Calendar },
-  { key: 'staff', href: '/admin/crew/members', label: 'Staff', Icon: Users },
+  { key: 'staff', href: '/admin/crew/schedule', label: 'Staff', Icon: Users },
   { key: 'payments', href: '/admin/crew/payments', label: 'Payments', Icon: DollarSign },
 ]
 
@@ -64,11 +63,13 @@ const LABELS = ['Assistant', ...ITEMS.map(i => i.label), 'Menu']
 const MENU_ITEM = 'flex w-full items-center gap-3 px-3 py-2.5 text-left text-hampton-navy hover:bg-[#F6F1EB] active:bg-[#F6F1EB]'
 
 export default function CrewAdminBar() {
-  const section = sectionOf(usePathname())
+  const pathname = usePathname()
+  const section = sectionOf(pathname)
   const [menuOpen, setMenuOpen] = useState(false)
   const [memoriesOpen, setMemoriesOpen] = useState(false)
   const menuRef = useRef<HTMLElement>(null)
-  const menuActive = section === 'settings' || section === 'schedule'
+  const menuActive = section === 'settings'
+  const staffView = pathname?.startsWith('/admin/crew/members') ? 'people' : 'schedule'
 
   // Close the panel on an outside click or Escape. The ref is the whole header, panel included.
   useEffect(() => {
@@ -133,6 +134,19 @@ export default function CrewAdminBar() {
           </div>
         </nav>
 
+        {section === 'staff' && (
+          <nav aria-label="Staff views" className="max-w-xl mx-auto grid grid-cols-2 gap-2 px-3 pb-2">
+            <Link href="/admin/crew/schedule" prefetch aria-current={staffView === 'schedule' ? 'page' : undefined}
+              className={`flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold ${staffView === 'schedule' ? 'bg-hampton-navy text-white' : 'text-hampton-navy hover:bg-hampton-navy/10'}`}>
+              <CalendarDays size={18} aria-hidden="true" /> Schedule
+            </Link>
+            <Link href="/admin/crew/members" prefetch aria-current={staffView === 'people' ? 'page' : undefined}
+              className={`flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold ${staffView === 'people' ? 'bg-hampton-navy text-white' : 'text-hampton-navy hover:bg-hampton-navy/10'}`}>
+              <Users size={18} aria-hidden="true" /> People
+            </Link>
+          </nav>
+        )}
+
         {menuOpen && (
           <div className="absolute inset-x-0 top-full bg-white border-b border-hampton-navy/10 shadow-lg" data-crew-menu-panel>
             <div className="max-w-xl mx-auto px-1">
@@ -148,13 +162,6 @@ export default function CrewAdminBar() {
                 })}
               </div>
               <div role="menu" className="border-t border-hampton-navy/10 py-1">
-                <Link role="menuitem" href="/admin/crew" prefetch onClick={() => setMenuOpen(false)} className={MENU_ITEM}>
-                  <CalendarClock size={20} aria-hidden="true" className="shrink-0" />
-                  <span>
-                    <span className="block text-sm font-semibold">Staff schedule</span>
-                    <span className="block text-xs text-hampton-navy/60">Who is working which party</span>
-                  </span>
-                </Link>
                 <Link role="menuitem" href="/admin/crew/rules" prefetch onClick={() => setMenuOpen(false)} className={MENU_ITEM}>
                   <Settings size={20} aria-hidden="true" className="shrink-0" />
                   <span>

@@ -9,7 +9,7 @@ import path from 'path'
 const read = (f: string) => fs.readFileSync(path.join(__dirname, '../../../', f), 'utf8').replace(/\r\n/g, '\n')
 
 describe('the schedule on a phone', () => {
-  const page = read('app/admin/crew/page.tsx')
+  const page = read('app/admin/crew/schedule/page.tsx')
 
   it('shows every party as a card below md, and the table only from md up', () => {
     expect(page).toMatch(/<ul className="md:hidden[^"]*"[^>]*>\s*\{parties\.map\(p => <li key=\{p\.id\}><PartyCardMobile p=\{p\} \/><\/li>\)\}/)
@@ -37,7 +37,7 @@ describe('the roster on a phone', () => {
   const page = read('app/admin/crew/members/page.tsx')
 
   it('shows every member as a card at every width: mobile first, no desktop table', () => {
-    expect(page).toMatch(/<div className="space-y-3 max-w-3xl mx-auto">\s*\{members\.map\(m => \(\s*<MemberCard/)
+    expect(page).toMatch(/<div className="space-y-3 max-w-3xl mx-auto">\s*\{visibleMembers\.map\(m => \(\s*<MemberCard/)
     expect(page).not.toMatch(/<table/)
     expect(page).not.toMatch(/function MemberRow/)
   })

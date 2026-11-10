@@ -109,7 +109,7 @@ describe('R0: the walkers see the surface', () => {
     ]))
     expect(PAGE_FILES.map(rel)).toEqual([
       'app/admin/crew/bookings/page.tsx', 'app/admin/crew/dashboard/page.tsx', 'app/admin/crew/leads/page.tsx',
-      'app/admin/crew/members/page.tsx', 'app/admin/crew/page.tsx', 'app/admin/crew/parties/[id]/page.tsx', 'app/admin/crew/payments/page.tsx', 'app/admin/crew/rules/page.tsx',
+      'app/admin/crew/members/page.tsx', 'app/admin/crew/parties/[id]/page.tsx', 'app/admin/crew/payments/page.tsx', 'app/admin/crew/rules/page.tsx', 'app/admin/crew/schedule/page.tsx',
     ])
     expect(HANDLERS.length).toBeGreaterThanOrEqual(12)
     for (const f of [...ADMIN_LIBS, SYNC]) expect(fs.existsSync(f)).toBe(true)
@@ -310,9 +310,9 @@ describe('R8: a spot is assigned only by crew_admin_assign', () => {
 })
 
 describe('R9: the way in', () => {
-  it("/admin's Manage group links to /admin/crew", () => {
+  it("/admin's Manage group links to the crew schedule", () => {
     const src = squash(read(path.join(SRC, 'app', 'admin', 'page.tsx')))
-    expect(src).toMatch(/\{ href: '\/admin\/crew', label: 'Crew', Icon: \w+, group: 'manage' \}/)
+    expect(src).toMatch(/\{ href: '\/admin\/crew\/schedule', label: 'Crew', Icon: \w+, group: 'manage' \}/)
     expect(src).toMatch(/LINKS\.filter\(l => l\.group === group\)\.map/)
   })
 })

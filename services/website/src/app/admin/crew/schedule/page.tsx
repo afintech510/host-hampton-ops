@@ -1,16 +1,16 @@
 'use client'
 
 /**
- * /admin/crew — Allie's staffing screen (prompt 04 §2): Sync now, alerts, and
+ * /admin/crew/schedule — Allie's staffing screen: Sync now, alerts, and
  * the next six weeks of crew parties. Works whether or not CREW_ENABLED is on.
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import { useAdminData } from './_components/adminData'
+import { useAdminData } from '../_components/adminData'
 import { WORK_TYPES, kindHasLead, workTypeOf, type WorkKind } from '@/lib/crew/workTypes'
 import {
   BTN_GHOST, BTN_PRIMARY, Banner, CrewFrame, FLAG_TEXT, INPUT, STATUS_STYLE, useAdminApi, whenLabel, whenParts,
-} from './_components/adminCrew'
+} from '../_components/adminCrew'
 
 interface PartyRow {
   id: string
@@ -177,7 +177,7 @@ export default function CrewSchedulePage() {
 
   return (
     <CrewFrame
-      active="/admin/crew"
+      active="/admin/crew/schedule"
       title="Crew schedule"
       sub={data ? `${data.counts.members} active crew, ${data.counts.canLead} can lead. Next six weeks.` : null}
     >

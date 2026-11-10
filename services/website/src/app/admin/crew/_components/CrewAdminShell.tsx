@@ -38,7 +38,7 @@ export const WARM_ROUTES = [
   '/admin/crew/bookings',
   '/admin/crew/payments',
   '/admin/crew/members',
-  '/admin/crew',
+  '/admin/crew/schedule',
   '/admin/crew/rules',
 ]
 
