@@ -244,6 +244,18 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       return { ok: true, status: res.status, message: `Rental on ${input.bookingRef} is now ${input.startTime}-${input.endTime}.${warningNote(json)}${totalsNote(json)}` }
     }
 
+    case 'change_theme': {
+      const input = proposal.input as { bookingId: string; bookingRef: string; themeId: string; themeName: string; mini?: boolean; fromMobile?: boolean }
+      const { res, json } = await replayPartyAction(original, input.bookingId, {
+        action: 'change_theme',
+        theme_id: input.themeId,
+        ...(input.mini !== undefined ? { mini: input.mini === true } : {}),
+        ...(input.fromMobile === true ? { from_mobile: true } : {}),
+      })
+      if (!res.ok || json.ok !== true) return refused('Theme not changed', res, json)
+      return { ok: true, status: res.status, message: `${input.bookingRef} is now ${input.themeName}.${warningNote(json)}${totalsNote(json)}` }
+    }
+
     case 'set_preferences': {
       const input = proposal.input as { bookingId: string; bookingRef: string; preferences: Record<string, unknown> }
       const { res, json } = await replayPartyAction(original, input.bookingId, {

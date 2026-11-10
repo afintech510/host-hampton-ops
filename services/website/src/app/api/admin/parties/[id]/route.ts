@@ -1450,6 +1450,82 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // Menu choices and requests the host made in the planner. They live in `quote_snapshot`
   // (that is where the planner and the portal read them) and price nothing.
+  // Swap an in-studio theme party to another studio theme, toggle the mini-party discount,
+  // or convert a mobile party to an in-studio theme party. The theme line and its price come
+  // from the catalogue row (never from the card), the extra-guest line and totals follow.
+  // Activity lines are NOT re-derived (they depend on the whole selection); the response says so.
+  if (action === 'change_theme') {
+    if (booking.event_type === 'studio-rental') {
+      return NextResponse.json({ error: 'A studio rental has no theme.' }, { status: 400 })
+    }
+    const themeId = typeof body.theme_id === 'string' ? body.theme_id : ''
+    if (!themeId) return NextResponse.json({ error: 'theme_id required' }, { status: 400 })
+    const { data: item, error: itemErr } = await supabase
+      .from('pricing_items').select('id, name, category, price_cents, is_active').eq('id', themeId).maybeSingle()
+    if (itemErr) return NextResponse.json({ error: `Could not read the theme: ${itemErr.message}` }, { status: 500 })
+    if (!item || item.category !== 'party-theme' || item.is_active === false) {
+      return NextResponse.json({ error: 'That is not an active studio theme' }, { status: 400 })
+    }
+    const { data: liRows, error: liErr } = await supabase
+      .from('booking_line_items').select('id, name, category, pricing_item_id, unit_price_cents, quantity').eq('booking_id', id)
+    if (liErr) return NextResponse.json({ error: `Could not read the invoice lines: ${liErr.message}` }, { status: 500 })
+    const li = (liRows ?? []) as { id: string; name: string; category: string; pricing_item_id: string | null; unit_price_cents: number; quantity: number }[]
+    const mobileLines = li.filter(r => r.category === 'mobile-package')
+    const fromMobile = body.from_mobile === true
+    if (mobileLines.length && !fromMobile) {
+      return NextResponse.json({ error: 'This is a mobile party. Say you are converting it (from_mobile) to swap its package for a studio theme.' }, { status: 400 })
+    }
+    const snap = { ...(((booking.quote_snapshot as Record<string, unknown> | null)) || {}) } as Record<string, unknown>
+    const isMini = body.mini !== undefined ? body.mini === true : snap.isMiniParty === true
+    const catalog = await loadPricingCatalog(supabase)
+    const price = Math.max(0, item.price_cents - (isMini ? catalog.guestRules.miniPartyDiscountCents : 0))
+    const oldTheme = li.find(r => r.category === 'theme' && r.pricing_item_id)
+
+    if (fromMobile && mobileLines.length) {
+      const { error: delErr } = await supabase.from('booking_line_items').delete().in('id', mobileLines.map(r => r.id)).eq('booking_id', id)
+      if (delErr) return NextResponse.json({ error: `Mobile package NOT removed: ${delErr.message}` }, { status: 500 })
+    }
+    const themeWrite = oldTheme
+      ? await supabase.from('booking_line_items').update({ name: item.name, unit_price_cents: price, pricing_item_id: item.id, quantity: 1, price_type: 'flat', guest_multiplied: false }).eq('id', oldTheme.id).eq('booking_id', id).select('id')
+      : await supabase.from('booking_line_items').insert({ booking_id: id, name: item.name, category: 'theme', pricing_item_id: item.id, quantity: 1, unit_price_cents: price, price_type: 'flat', guest_multiplied: false, sort_order: 0 }).select('id')
+    if (themeWrite.error || !themeWrite.data?.length) {
+      return NextResponse.json({ error: `Theme line NOT changed: ${themeWrite.error?.message || 'no row matched'}` }, { status: 500 })
+    }
+
+    const tags = { ...(((booking.party_tags as Record<string, unknown> | null)) || {}) } as Record<string, unknown>
+    if (fromMobile) tags.location_type = 'studio'
+    const { data: bookingWrite, error: bookingWriteErr } = await supabase.from('bookings').update({
+      package_type: item.name,
+      ...(fromMobile ? { party_type: 'in_studio_theme', party_tags: tags } : {}),
+      quote_snapshot: { ...snap, theme: item.id, themeName: item.name, isMiniParty: isMini, ...(fromMobile ? { locationType: 'studio' } : {}) },
+      updated_at: new Date().toISOString(),
+    }).eq('id', id).select('id')
+    if (bookingWriteErr || !bookingWrite?.length) {
+      return NextResponse.json({ error: `Theme line changed but the booking was NOT updated: ${bookingWriteErr?.message || 'no row matched'}. Reload before quoting this customer.` }, { status: 500 })
+    }
+
+    const extraProblem = await syncExtraGuestsLine(supabase, id, booking.guest_count_approx)
+    const totals = await recalcTotals(supabase, id, booking)
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: `Theme ${oldTheme ? oldTheme.name : '(none)'} -> ${item.name}${isMini ? ' (mini party)' : ''}${fromMobile ? '; converted from a mobile party' : ''}` +
+        (totals.ok ? ` — total now ${formatMoney(totals.totalCents)}` : ` — TOTAL NOT RECALCULATED (${totals.message})`),
+    })
+    const hasActivities = li.some(r => r.category === 'activity-add-on')
+    const warnings = [
+      extraProblem,
+      totals.ok ? null : `the invoice total could not be recalculated (${totals.message})`,
+      hasActivities ? 'the activity lines (included or upgrade) were not re-derived: review them against the new theme' : null,
+    ].filter(Boolean)
+    return NextResponse.json({
+      ok: true,
+      action: 'theme_changed',
+      totalsUpdated: totals.ok,
+      ...(totals.ok ? { totalCents: totals.totalCents, balanceCents: totals.balanceCents } : {}),
+      ...(warnings.length ? { warning: `Theme changed, but ${warnings.join('; ')}.` } : {}),
+    })
+  }
+
   if (action === 'set_preferences') {
     const snap = { ...(((booking.quote_snapshot as Record<string, unknown> | null)) || {}) } as Record<string, unknown>
     const before: Record<string, unknown> = {}

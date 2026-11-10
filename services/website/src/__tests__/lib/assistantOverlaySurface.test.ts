@@ -102,13 +102,13 @@ describe('O1: every write tool is propose_* and has an executor branch', () => {
     const names = ASSISTANT_TOOLS.map(t => t.name)
     const others = names.filter(n => !n.startsWith('propose_'))
     expect(others.sort()).toEqual([...READ_TOOLS].sort())
-    expect(names.filter(n => n.startsWith('propose_')).length).toBe(29)
+    expect(names.filter(n => n.startsWith('propose_')).length).toBe(30)
     for (const t of ASSISTANT_TOOLS.filter(t => t.name.startsWith('propose_'))) expect(t.description).toMatch(/^PROPOSE /)
   })
 
   it('every proposal kind has a `case` in execute.ts, and every case is a kind', () => {
     const kinds = kindsInUnion()
-    expect(kinds.length).toBe(29)
+    expect(kinds.length).toBe(30)
     const exec = src('lib/assistant/execute.ts')
     const cases = Array.from(exec.matchAll(/case '([a-z_]+)':/g)).map(m => m[1])
     expect(cases.sort()).toEqual([...kinds].sort())
@@ -544,6 +544,7 @@ describe('O6: execute.ts replays the right admin action', () => {
     ['remove_line_item', { bookingId: BK, bookingRef: 'R', lineItemId: 'li-2' }, { action: 'remove_line_item', line_item_id: 'li-2' }],
     ['edit_line_item', { bookingId: BK, bookingRef: 'R', lineItemId: 'li-2', changes: { unit_price_cents: 4000, status: 'paid_in_full' } }, { action: 'edit_line_item', line_item_id: 'li-2', unit_price_cents: 4000 }],
     ['edit_rental', { bookingId: BK, bookingRef: 'R', startTime: '10:00', endTime: '15:00' }, { action: 'edit_rental', startTime: '10:00', endTime: '15:00' }],
+    ['change_theme', { bookingId: BK, bookingRef: 'R', themeId: 'th-1', themeName: 'Glow Party', mini: true, fromMobile: true, price_cents: 1 }, { action: 'change_theme', theme_id: 'th-1', mini: true, from_mobile: true }],
     ['set_preferences', { bookingId: BK, bookingRef: 'R', preferences: { pizzaOrBagels: 'bagels', total_cents: 1 } }, { action: 'set_preferences', pizzaOrBagels: 'bagels' }],
     ['cancel_party', { bookingId: BK, bookingRef: 'R' }, { action: 'cancel' }],
     ['mark_lost', { bookingId: BK, bookingRef: 'R' }, { action: 'mark_lost' }],
