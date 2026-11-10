@@ -22,7 +22,7 @@ jest.mock('@/lib/calendarSync', () => ({ syncBookingCalendar: jest.fn(async () =
 jest.mock('@/lib/checkinReminders', () => ({ enqueueCheckinReminders: jest.fn(), cancelCheckinReminders: jest.fn() }))
 jest.mock('@/lib/pricingCatalog', () => ({
   ...jest.requireActual('@/lib/pricingCatalog'),
-  loadPricingCatalog: async () => ({ guestRules: { includedGuests: 10, extraGuestCents: 3500 } }),
+  loadPricingCatalog: async () => ({ guestRules: { includedGuests: 10, extraGuestCents: 3500, miniPartyMaxGuests: 6 } }),
 }))
 
 function table(name: string) {
@@ -35,6 +35,7 @@ function table(name: string) {
   q.select = () => q
   q.eq = (c: string, v: any) => (filters.push([c, [v]]), q)
   q.in = (c: string, vs: any[]) => (filters.push([c, vs]), q)
+  q.single = async () => ({ data: src().filter(match)[0] ?? null, error: null })
   q.update = (p: Row) => ((op = 'update'), (patch = p), q)
   q.delete = () => ((op = 'delete'), q)
   q.insert = (p: Row) => {
@@ -92,6 +93,14 @@ describe('guest count on a theme party', () => {
 
   it('leaves a booking with no catalogue theme line alone (mobile, rental)', async () => {
     lines = [{ booking_id: 'b1', id: 'm', name: 'Mobile Party Package', category: 'mobile-package', pricing_item_id: null, quantity: 1, unit_price_cents: 135000, guest_multiplied: false, sort_order: 1 }]
+    await patch(19)
+    expect(extra()).toHaveLength(0)
+  })
+})
+
+describe('a mini party bills at most the mini cap', () => {
+  it('adds no extra-guest line past ten when the party is a mini party capped at six', async () => {
+    booking.quote_snapshot = { isMiniParty: true }
     await patch(19)
     expect(extra()).toHaveLength(0)
   })
