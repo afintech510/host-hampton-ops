@@ -7,6 +7,7 @@ One PR at a time. Each PR: own worktree, tests, `pr-check` green, squash-merge, 
 ## Owner rulings (Adam, 2026-11-09)
 
 - **No refunds** through the assistant. Refunds stay in Stripe / the dashboard.
+- **Guest count is fluid until the final invoice is paid, and changing it changes the price** (customer portal included). Locked once paid in full.
 - **Tips: yes. Discounts: yes** (propose cards, confirmed by a human click, like every other write).
 - **Free-form texts and emails: yes**, through a reviewed card. **Sign as Allie once per number**, not on every message.
 
@@ -18,7 +19,7 @@ One PR at a time. Each PR: own worktree, tests, `pr-check` green, squash-merge, 
 | 1 | Customer rental edit rewrites every line: admin discounts and hand-typed lines (Party Helper, custom) are deleted, total rises | `studio-rental/edit/route.ts:129` | **Fixed, PR 1** (keeps lines with no pricing_item_id) |
 | 2 | Customer rental edit ignores `custom_hourly_rate_cents`; reprices at the rate card | `edit/route.ts:99-113`, `StudioManageContent.tsx:98` | **Fixed, PR 1** server side (`lib/rentalPricing.ts`). The manage page's live price preview still shows the card rate: PR 5. |
 | 3 | Admin `party_date`/`party_time` PATCH on a rental does not reprice or update `rental_*`/`is_weekend` tags or label | `admin/parties/[id]` PATCH | **Fixed, PR 1** |
-| 4 | Portal guest-count PATCH does not re-derive totals; planner restores the old `snap.guestCount` over it | `portal/booking/route.ts:312`, `PartyBuilderContent.tsx:775` | **Deferred, needs Adam**: that route left totals alone on purpose (a customer's own click would change their invoice and balance). Decide whether a customer guest-count edit should reprice. |
+| 4 | Portal guest-count PATCH does not re-derive totals; planner restores the old `snap.guestCount` over it | `portal/booking/route.ts:312`, `PartyBuilderContent.tsx:775` | **Fixed, PR 3a** (per the guest-count ruling; locked once paid in full; shared `lib/bookingTotals.ts`) |
 | 5 | `edit_rental` ignores errors on the tags write and `recalcTotals`, answers ok with a stale total; does not re-enqueue reminders | `admin/parties/[id]` ~1448 | **Fixed, PR 1** |
 | 6 | Admin `package_type` / `party_type` PATCH writes the column only; theme line, travel fee, rental lines, `event_type`, evite unchanged | PATCH | PR 2 |
 | 7 | PATCH accepts raw `total_cents`, `balance_due_cents`, `party_tags`, `status` (skips cancel/approve handling) | PATCH allowlist | **Fixed, PR 2**: `status`, `total_cents`, `balance_due_cents` refused; `party_tags` limited to `modifications_unlocked` / `catchy_party_name` and merged. |
@@ -60,6 +61,7 @@ One PR at a time. Each PR: own worktree, tests, `pr-check` green, squash-merge, 
 - [x] **PR 0 (#26)** Guest count drives "Additional Guests"; assistant refuses a typed extra-guest line.
 - [x] **PR 1 Invoice integrity (bugs 1, 2, 3, 5; bug 4 deferred).** Customer rental edit keeps admin-only lines and honours the custom hourly rate. Admin date/time PATCH on a rental reprices through the same code as `edit_rental`. Portal guest-count PATCH re-derives the flat lines and totals. `edit_rental` checks its errors and re-enqueues reminders.
 - [x] **PR 2 Switch fixes (bugs 6-8).** Raw totals, `party_tags` and `status` leave the PATCH allowlist; theme / `party_type` changes warn when the lines disagree (a real rebuild needs choices, so it is a PR 3 action); the planner stops loading the stored mobile package as a custom.
+- [x] **PR 3a Portal guest count reprices** (ruling above; mini-party cap respected).
 - [ ] **PR 3 Assistant field tools.** Edit a line's price/qty, mobile address (reprices travel), rental hours/times/seating/custom rate (`edit_rental`), mini flag, food choices / preferences / character request, notes append, theme swap, party-type switch.
 - [ ] **PR 4 Assistant money and messages.** Discounts (card names the amount and the reason), tips, security deposit, receipt, check-in link, e-sign resend, photo album, reminders, and free-form SMS / email. **No refunds.** Messages: the existing screen (STOP line, 8am-9pm ET, opt-out, no foreign URLs or phone numbers); the first message to a number is signed as Allie, later ones are not.
 - [ ] **PR 5 Cleanup (bugs 9-11).**

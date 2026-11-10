@@ -113,6 +113,7 @@ const MONEY_MODULES = [
   'lib/plan.ts', // the snapshot a save writes
   'lib/partyPricing.ts', // the deposit and the card fee
   'lib/bookingBalance.ts', // the admin/webhook answer
+  'lib/bookingTotals.ts', // recalcTotals: writes the stored total/balance from billedTotalCents; shared by the admin routes and the portal
   'lib/stripePaymentNotice.ts', // DISPLAYS the stored balance in the owner's payment email; derives none
   'lib/assistant/tools.ts', // DISPLAYS loadPlanInvoice's figures to the admin; its card total is billedTotalCents; writes nothing
   'lib/assistant/partyCard.ts', // DISPLAYS loadPlanInvoice's total/paid/owed on the party card; each line is billedTotalCents; writes nothing
@@ -144,7 +145,7 @@ describe('R0 · the surface is walked, and every module in it is accounted for',
   it('every named arithmetic module exists on disk', () => {
     const missing = MONEY_MODULES.filter(m => !fs.existsSync(path.join(SRC, m)))
     expect(missing).toEqual([])
-    expect(MONEY_MODULES.length).toBe(13)
+    expect(MONEY_MODULES.length).toBe(14)
   })
 
   it('no arithmetic module has appeared that the list does not name', () => {
@@ -255,7 +256,7 @@ describe('R2 · an optional line item never reaches a total', () => {
   })
 
   it('`recalcTotals` selects the column it has to honour', () => {
-    const admin = read('app/api/admin/parties/[id]/route.ts')
+    const admin = read('lib/bookingTotals.ts')
     const fn = sliceDecl(admin, 'async function recalcTotals')
     expect(fn).toMatch(/billedTotalCents\(/)
     // It used to select only three columns and could not have honoured it.
@@ -792,7 +793,7 @@ describe('R10 · a duplicate is recognised by code, not by message text', () => 
         if (!/'23505'/.test(before)) offenders.push(`${f}: ${m[0]}`)
       }
     }
-    expect(examined).toBe(13)
+    expect(examined).toBe(14)
     expect(offenders).toEqual([])
   })
 })

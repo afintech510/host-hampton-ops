@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { recalcTotals, syncExtraGuestsLine } from '@/lib/bookingTotals'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { isModificationAllowed, getDepositCents, BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
@@ -254,6 +255,13 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: CANCELLED_REASON }, { status: 409 })
   }
 
+  if (body.guest_count_approx !== undefined && booking.status === 'paid_in_full') {
+    return NextResponse.json(
+      { error: `Your balance is paid in full, so the guest count is locked. Please call us on ${PUBLIC_PHONE_DISPLAY} to change it.` },
+      { status: 409 },
+    )
+  }
+
   // Check if the change type is allowed (admin unlock bypasses date cutoffs)
   const unlocked = !!(booking.party_tags as Record<string, unknown> | null)?.modifications_unlocked
   if (!unlocked) {
@@ -304,10 +312,12 @@ export async function PATCH(req: NextRequest) {
    * `lib/inquiryDrafts.ts` independently treat `> 0` as the validity test, which
    * is a third and fourth copy of the same idea.
    *
-   * What this does NOT do is re-derive `total_cents` / `balance_due_cents` after
-   * the change. Those columns go stale against the invoice, which is the same
-   * disagreement as needs-Adam 41 and is Adam's to settle — so the delta is put
-   * in the audit row below instead, where the Parties tab renders it.
+   * Owner ruling, 2026-11-09: the headcount is fluid until the final invoice is
+   * paid, and changing it changes the price. So the change re-derives the flat
+   * "Additional Guests" line and `total_cents` / `balance_due_cents` in the same
+   * request (the shared code the admin PATCH uses), and once the booking is paid
+   * in full the count is locked here: the customer is asked to call, because a
+   * paid invoice is not theirs to reopen.
    */
   if (body.guest_count_approx !== undefined) {
     const n = screenPublicGuestCount(body.guest_count_approx)
@@ -367,6 +377,21 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Update failed' }, { status: 500 })
   }
 
+  // A new headcount reprices the plan: the flat "Additional Guests" line, then the
+  // stored total and balance. A failure here must not read as success: the count
+  // is saved, the invoice may not match it, and the customer is told to check.
+  let repriced: { totalCents: number; balanceCents: number } | null = null
+  let repriceWarning: string | undefined
+  if (allowed.guest_count_approx !== undefined) {
+    const problem = await syncExtraGuestsLine(supabase, booking.id, allowed.guest_count_approx)
+    const totals = await recalcTotals(supabase, booking.id, { guest_count_approx: allowed.guest_count_approx })
+    if (totals.ok) repriced = { totalCents: totals.totalCents, balanceCents: totals.balanceCents }
+    if (problem || !totals.ok) {
+      repriceWarning = `Your guest count was saved, but we could not update the price. Please call us on ${PUBLIC_PHONE_DISPLAY}.`
+      console.error(`portal booking PATCH: guest count saved for ${bookingRef} but repricing failed —`, problem ?? (totals.ok ? '' : totals.message))
+    }
+  }
+
   // Log modification. Rule 19: the audit trail's own write was unchecked, so an
   // edit could land on the booking with nothing recording who changed what.
 
@@ -396,5 +421,5 @@ export async function PATCH(req: NextRequest) {
     console.error('portal booking PATCH: audit log write FAILED for', bookingRef, '—', auditErr.message)
   }
 
-  return NextResponse.json({ ok: true, audited: !auditErr })
+  return NextResponse.json({ ok: true, audited: !auditErr, ...(repriced ?? {}), ...(repriceWarning ? { warning: repriceWarning } : {}) })
 }

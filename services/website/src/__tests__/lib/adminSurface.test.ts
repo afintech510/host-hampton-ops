@@ -492,7 +492,7 @@ describe('R8: a money or customer-state write reads its result', () => {
     // The sharpest one on this surface: a failed booking_line_items read left
     // `items` null, the loop added nothing, and it WROTE total_cents: 0 over a
     // real customer's invoice — then answered {ok:true}.
-    const src = decomment(fs.readFileSync(path.join(ADMIN_ROOT, 'parties/[id]/route.ts'), 'utf8'))
+    const src = decomment(fs.readFileSync(path.join(ADMIN_ROOT, '../../../lib/bookingTotals.ts'), 'utf8'))
     const fn = src.slice(src.indexOf('async function recalcTotals'))
     const updateIdx = fn.indexOf("from('bookings').update(")
     expect(updateIdx).toBeGreaterThan(-1)

@@ -772,7 +772,8 @@ export default function PartyBuilderContent({
         const snap = b.quote_snapshot
         if (snap) {
           if (snap.theme) setSelectedTheme(snap.theme)
-          if (snap.guestCount) setGuestCount(snap.guestCount)
+          // The booking's own count wins: the portal edits the column, not the snapshot.
+          if (snap.guestCount || b.guest_count_approx) setGuestCount(b.guest_count_approx > 0 ? b.guest_count_approx : snap.guestCount)
           if (snap.isMiniParty) setIsMiniParty(true)
           if (snap.activities) setSelectedActivities(new Set(snap.activities))
           if (snap.food) setSelectedFood(new Set(snap.food))
