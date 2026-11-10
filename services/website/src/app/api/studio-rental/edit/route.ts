@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { calculateLineItemTotal, formatMoney } from '@/lib/partyPricing'
-import { studioRentalRateWith, hoursBetween, STUDIO_STANDING_CAPACITY } from '@/lib/studioRental'
+import { STUDIO_STANDING_CAPACITY } from '@/lib/studioRental'
+import { priceRentalWindow } from '@/lib/rentalPricing'
 import { loadPricingCatalog } from '@/lib/pricingCatalog'
 import { updateCalendarEvent, createCalendarEvent } from '@/lib/googleCalendar'
 import type { BookingLineItem } from '@/types/booking-flow'
@@ -94,25 +95,42 @@ export async function POST(req: NextRequest) {
     }
 
     const partyDate = booking.party_date as string
-    const hours = hoursBetween(startTime, endTime)
     const { studioRates } = await loadPricingCatalog()
-    if (hours < studioRates.minHours) {
-      return NextResponse.json({ error: `Minimum rental is ${studioRates.minHours} hours.` }, { status: 400 })
-    }
-    const rate = studioRentalRateWith(studioRates, partyDate, hours)
+    const oldTagsForRate = (booking.party_tags as Record<string, unknown> | null) || {}
+    const priced = priceRentalWindow(oldTagsForRate, partyDate, startTime, endTime, studioRates)
+    if (!priced.ok) return NextResponse.json({ error: priced.error }, { status: 400 })
+    const rate = priced.rate
 
-    // Rebuild full line-item set: rental first, then the screened add-ons.
+    // The page only knows catalogue add-ons, and this save replaces every row. Lines
+    // an admin typed (a discount, a manual Party Helper, a custom charge) carry no
+    // pricing_item_id and are not the customer's to remove, so they are read back
+    // and kept; without this the first customer save deleted an admin discount and
+    // raised the total. A failed read refuses the save rather than risk wiping them.
+    const { data: keptRows, error: keptErr } = await supabase
+      .from('booking_line_items')
+      .select('name, category, quantity, unit_price_cents, price_type, guest_multiplied, description, is_featured, is_optional, sort_order')
+      .eq('booking_id', booking.id)
+      .is('pricing_item_id', null)
+      .neq('category', 'rental')
+    if (keptErr) {
+      console.error('studio-rental/edit: kept lines unreadable —', keptErr.message)
+      return NextResponse.json({ error: 'Could not load your booking. Please try again.' }, { status: 503 })
+    }
+    const keptLines = ((keptRows ?? []) as unknown as BookingLineItem[]).map(l => ({ ...l, pricing_item_id: null }))
+
+    // Rebuild full line-item set: rental first, then the screened add-ons, then the kept lines.
     const rentalLine = {
       pricing_item_id: null,
       name: rate.lineItemLabel,
       category: 'rental',
-      quantity: 1,
-      unit_price_cents: rate.rentalCents,
+      quantity: rate.quantity,
+      unit_price_cents: rate.unitCents,
       price_type: 'flat',
       guest_multiplied: false,
       sort_order: 0,
+      ...(rate.description ? { description: rate.description } : {}),
     } as unknown as BookingLineItem
-    const allLineItems: BookingLineItem[] = [rentalLine, ...addOns]
+    const allLineItems: BookingLineItem[] = [rentalLine, ...addOns, ...keptLines]
     const totalCents = calculateLineItemTotal(allLineItems, guestCount)
 
     // Balance from actual payments, through the one definition. An unreadable
