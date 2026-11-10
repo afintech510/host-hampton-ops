@@ -15,6 +15,7 @@ import { ADMIN_PAYMENT_METHODS, PAYMENT_TYPES } from '@/lib/adminMoney'
 import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
 import { ACTIVITY_TAGS, THEME_TAGS } from '@/lib/mediaVocab'
 import { loadQuoteCatalog, quoteFromCatalog, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
+import { priceRentalWindow } from '@/lib/rentalPricing'
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
 import { BUILDER_TOOLS, isBuilderTool, runBuilderTool } from './partyBuilders'
@@ -255,7 +256,8 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
         contact_email: { type: 'string' },
         contact_phone: { type: 'string' },
         party_type: { type: 'string', enum: [...PARTY_TYPES] },
-        admin_notes: { type: 'string', description: 'Internal note. Never shown to the client.' },
+        admin_notes: { type: 'string', description: 'REPLACES the internal note. Never shown to the client. Prefer admin_notes_append.' },
+        admin_notes_append: { type: 'string', description: 'Adds a line to the end of the existing internal note, keeping it.' },
       },
       required: ['booking_ref'],
     },
@@ -291,6 +293,56 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
         booking_ref: { type: 'string' },
         line_item_name: { type: 'string' },
         line_item_id: { type: 'string', description: 'Only when two lines share a name and a previous call listed candidates.' },
+      },
+      required: ['booking_ref'],
+    },
+  },
+  {
+    name: 'propose_edit_line_item',
+    description:
+      "PROPOSE changing ONE existing invoice line in place: its price, quantity, name, description, whether it is optional (quoted, not in the total) or per guest. Use this instead of remove + add to fix a price. Not for the rental fee (propose_edit_rental), the Additional Guests line (change the guest count) or discounts. Nothing changes until the manager clicks Confirm; the total is recalculated when it does.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        line_item_name: { type: 'string', description: 'The line as shown by get_party.' },
+        line_item_id: { type: 'string', description: 'Only when two lines share a name and a previous call listed candidates.' },
+        unit_price_cents: { type: 'integer', description: 'New price each, in cents (0 up to $10,000).' },
+        quantity: { type: 'integer', description: '1-100.' },
+        new_name: { type: 'string' },
+        description: { type: 'string' },
+        optional: { type: 'boolean', description: 'true = shown but not in the total.' },
+        per_guest: { type: 'boolean' },
+      },
+      required: ['booking_ref'],
+    },
+  },
+  {
+    name: 'propose_edit_rental',
+    description:
+      "PROPOSE changing a studio rental's start and end time. The rental fee is re-priced for the new window (the booking's own hourly rate if it has one, else the rate card, weekday or weekend by its date), and the totals, calendar block and check-in texts follow. The client is not notified. Only for studio rentals. Nothing changes until the manager clicks Confirm.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        start_time: { type: 'string', description: 'HH:mm, 24-hour' },
+        end_time: { type: 'string', description: 'HH:mm, 24-hour, after the start' },
+      },
+      required: ['booking_ref', 'start_time', 'end_time'],
+    },
+  },
+  {
+    name: 'propose_set_preferences',
+    description:
+      "PROPOSE recording what the host chose for a party's menu and requests: pizza or bagels, cupcake flavor, party preferences (allergies, themes, colours) and a character request. These price nothing. Nothing changes until the manager clicks Confirm.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        pizza_or_bagels: { type: 'string', enum: ['pizza', 'bagels'] },
+        cupcake_flavor: { type: 'string', enum: ['vanilla', 'chocolate'] },
+        party_preferences: { type: 'string' },
+        character_request: { type: 'string' },
       },
       required: ['booking_ref'],
     },
@@ -564,6 +616,12 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await proposeAddLineItem(supabase, input, ctx)
       case 'propose_remove_line_item':
         return await proposeRemoveLineItem(supabase, input, ctx)
+      case 'propose_edit_line_item':
+        return await proposeEditLineItem(supabase, input, ctx)
+      case 'propose_edit_rental':
+        return await proposeEditRental(supabase, input, ctx)
+      case 'propose_set_preferences':
+        return await proposeSetPreferences(supabase, input, ctx)
       case 'propose_record_payment':
         return await proposeRecordPayment(supabase, input, ctx)
       case 'propose_cancel':
@@ -1406,13 +1464,22 @@ async function proposeUpdateParty(supabase: Supa, input: Record<string, unknown>
     if (!v) return fail('admin_notes cannot be empty')
     set('admin_notes', 'Internal note', b.admin_notes ? '(existing note)' : null, v)
   }
+  if (input.admin_notes_append !== undefined) {
+    if (input.admin_notes !== undefined) return fail('Give admin_notes (replace) or admin_notes_append (add), not both.')
+    const v = str(input.admin_notes_append, 1000)
+    if (!v) return fail('admin_notes_append cannot be empty')
+    const joined = b.admin_notes ? `${b.admin_notes}\n${v}` : v
+    if (joined.length > 2000) return fail('The note would be over 2000 characters. Shorten it or replace the note.')
+    set('admin_notes', 'Internal note', b.admin_notes ? '(existing note kept)' : null, `${b.admin_notes ? '... + ' : ''}${v}`)
+    updates.admin_notes = joined
+  }
   if (changes.length === 0) return fail('Nothing to change — give at least one field.')
 
   const shown = (v: unknown) => (v === null || v === undefined || v === '' ? 'not set' : String(v))
   const details = [
     `Party: ${partyLabel(b)}`,
     ...changes.map(([, label, old, next]) => `${label}: ${shown(old)} → ${shown(next)}`),
-    ...(changes.some(c => c[0] === 'guest_count_approx') ? ['Per-guest items are re-priced and the invoice total is recalculated.'] : []),
+    ...(changes.some(c => c[0] === 'guest_count_approx') ? ['The extra-guest line and per-guest items are re-priced and the invoice total is recalculated.'] : []),
     ...(changes.some(c => c[0] === 'contact_email')
       ? ['The email is what the client signs in to their booking page with — changing it changes who can open it.']
       : []),
@@ -1561,6 +1628,169 @@ async function proposeRemoveLineItem(supabase: Supa, input: Record<string, unkno
     details,
     ctx,
     'Nothing has been removed.',
+  )
+}
+
+async function proposeEditLineItem(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const wanted = str(input.line_item_name, 120)
+  const wantedId = str(input.line_item_id, 60)
+  if (!wanted && !wantedId) return fail('line_item_name is required (as shown by get_party).')
+
+  const { data, error } = await supabase
+    .from('booking_line_items')
+    .select('id, name, category, quantity, unit_price_cents, guest_multiplied, is_optional, description')
+    .eq('booking_id', b.id)
+  if (error) return fail('Could not read the invoice lines — say so.')
+  type Row = { id: string; name: string; category: string; quantity: number; unit_price_cents: number; guest_multiplied: boolean; is_optional: boolean | null; description: string | null }
+  const rows = (data ?? []) as Row[]
+  const hits = wantedId ? rows.filter(r => r.id === wantedId) : rows.filter(r => r.name.trim().toLowerCase() === (wanted as string).toLowerCase())
+  if (hits.length === 0) return fail(`No line item named "${wanted ?? wantedId}" on ${b.booking_ref}. Lines: ${rows.map(r => r.name).join('; ') || 'none'}.`)
+  if (hits.length > 1) {
+    return {
+      result: {
+        error: `More than one line is named "${wanted}". Call again with line_item_id for the one the manager means.`,
+        candidates: hits.map(r => ({ line_item_id: r.id, name: r.name, quantity: r.quantity, each: money(r.unit_price_cents), per_guest: r.guest_multiplied })),
+      },
+      isError: true,
+    }
+  }
+  const li = hits[0]
+  if (li.category === 'rental') return fail('That is the rental fee: use propose_edit_rental to change the window and the fee follows.')
+  if (/^(additional|extra) (guests?|kids?|children)$/i.test(li.name.trim()) && li.category === 'theme') {
+    return fail('"Additional Guests" follows the guest count. Use propose_update_party with guest_count.')
+  }
+  if (li.unit_price_cents < 0) return fail('That line is a discount. Discounts are changed in the Parties tab for now; nothing was proposed.')
+
+  const changes: Record<string, unknown> = {}
+  const lines: string[] = []
+  if (input.unit_price_cents !== undefined) {
+    const c = Math.round(Number(input.unit_price_cents))
+    if (!Number.isFinite(c) || c < 0 || c > MAX_ITEM_CENTS) return fail('unit_price_cents must be between $0 and $10,000.')
+    changes.unit_price_cents = c
+    lines.push(`Price: ${money(li.unit_price_cents)} → ${money(c)}${li.guest_multiplied ? ' per guest' : ''}`)
+  }
+  if (input.quantity !== undefined) {
+    const q = Math.floor(Number(input.quantity))
+    if (!(q >= 1 && q <= 100)) return fail('quantity must be 1-100')
+    changes.quantity = q
+    lines.push(`Quantity: ${li.quantity} → ${q}`)
+  }
+  if (input.new_name !== undefined) {
+    const n = str(input.new_name, 120)
+    if (!n) return fail('new_name cannot be empty')
+    changes.name = n
+    lines.push(`Name: ${li.name} → ${n}`)
+  }
+  if (input.description !== undefined) {
+    changes.description = str(input.description, 400) ?? ''
+    lines.push('Description updated')
+  }
+  if (input.optional !== undefined) {
+    changes.is_optional = input.optional === true
+    lines.push(input.optional === true ? 'Becomes optional: shown, not in the total' : 'Becomes part of the total')
+  }
+  if (input.per_guest !== undefined) {
+    changes.guest_multiplied = input.per_guest === true
+    lines.push(input.per_guest === true ? 'Priced per guest' : 'Priced as a flat amount')
+  }
+  if (Object.keys(changes).length === 0) return fail('Nothing to change — give a new price, quantity, name, description, optional or per_guest.')
+
+  const pic = await moneyPicture(supabase, b.booking_ref)
+  const guests = pic?.guests ?? b.guest_count_approx
+  const after: BilledItem = {
+    unit_price_cents: (changes.unit_price_cents as number | undefined) ?? li.unit_price_cents,
+    quantity: (changes.quantity as number | undefined) ?? li.quantity,
+    guest_multiplied: (changes.guest_multiplied as boolean | undefined) ?? li.guest_multiplied,
+    is_optional: (changes.is_optional as boolean | undefined) ?? (li.is_optional === true),
+  }
+  const delta = billedTotalCents([after], guests) - billedTotalCents([li], guests)
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    `Line: ${li.name}`,
+    ...lines,
+    pic
+      ? `Invoice ${money(pic.total)} → ${money(pic.total + delta)} (${delta >= 0 ? '+' : '-'}${money(Math.abs(delta))}).`
+      : `Changes the invoice by about ${delta >= 0 ? '+' : '-'}${money(Math.abs(delta))}. (The current total could not be read to preview.)`,
+    'The total is recalculated when you confirm. The client is not notified.',
+  ]
+  return cardOutcome('edit_line_item', { bookingId: b.id, bookingRef: b.booking_ref, lineItemId: li.id, changes }, `Change ${li.name} on ${b.booking_ref}`, details, ctx, 'Nothing has been changed.')
+}
+
+async function proposeEditRental(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const start = str(input.start_time, 5)
+  const end = str(input.end_time, 5)
+  if (!start || !end || !HHMM.test(start) || !HHMM.test(end)) return fail('start_time and end_time must be HH:mm (24-hour)')
+  if (end <= start) return fail('end_time must be after start_time')
+
+  const { data: row, error } = await supabase.from('bookings').select('event_type, party_date, party_tags').eq('id', b.id).maybeSingle()
+  if (error || !row) return fail('Could not read that rental — say so.')
+  const r = row as { event_type: string | null; party_date: string | null; party_tags: Record<string, unknown> | null }
+  if (r.event_type !== 'studio-rental' || !r.party_date) return fail(`${b.booking_ref} is not a studio rental with a date. Use propose_update_party for other parties.`)
+
+  const { studioRates } = await loadPricingCatalog()
+  const priced = priceRentalWindow(r.party_tags, r.party_date, start, end, studioRates)
+  if (!priced.ok) return fail(priced.error)
+  const tags = r.party_tags ?? {}
+  const oldStart = typeof tags.rental_start_time === 'string' ? tags.rental_start_time : null
+  const oldEnd = typeof tags.rental_end_time === 'string' ? tags.rental_end_time : null
+  const ownRate = typeof tags.custom_hourly_rate_cents === 'number' ? ' (at this booking’s own hourly rate)' : ''
+
+  const pic = await moneyPicture(supabase, b.booking_ref)
+  const { data: rentalRows } = await supabase.from('booking_line_items').select('quantity, unit_price_cents').eq('booking_id', b.id).eq('category', 'rental')
+  const oldFee = ((rentalRows ?? []) as { quantity: number; unit_price_cents: number }[]).reduce((n, x) => n + x.quantity * x.unit_price_cents, 0)
+  const delta = priced.rate.rentalCents - oldFee
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    `Window: ${oldStart && oldEnd ? `${clock12(oldStart)}–${clock12(oldEnd)}` : 'not set'} → ${clock12(start)}–${clock12(end)} (${priced.rate.hours} hrs)`,
+    `Rental fee: ${money(oldFee)} → ${money(priced.rate.rentalCents)}${ownRate}`,
+    ...(pic ? [`Invoice ${money(pic.total)} → ${money(pic.total + delta)}.`] : []),
+    'The calendar block and the check-in texts move with it. The client is not notified.',
+  ]
+  return cardOutcome('edit_rental', { bookingId: b.id, bookingRef: b.booking_ref, startTime: start, endTime: end }, `Move the rental window on ${b.booking_ref}`, details, ctx, 'Nothing has been changed.')
+}
+
+async function proposeSetPreferences(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const prefs: Record<string, unknown> = {}
+  const lines: string[] = []
+  if (input.pizza_or_bagels !== undefined) {
+    if (input.pizza_or_bagels !== 'pizza' && input.pizza_or_bagels !== 'bagels') return fail('pizza_or_bagels must be pizza or bagels')
+    prefs.pizzaOrBagels = input.pizza_or_bagels
+    lines.push(`Food: ${input.pizza_or_bagels}`)
+  }
+  if (input.cupcake_flavor !== undefined) {
+    if (input.cupcake_flavor !== 'vanilla' && input.cupcake_flavor !== 'chocolate') return fail('cupcake_flavor must be vanilla or chocolate')
+    prefs.cupcakeFlavor = input.cupcake_flavor
+    lines.push(`Cupcakes: ${input.cupcake_flavor}`)
+  }
+  if (input.party_preferences !== undefined) {
+    const v = str(input.party_preferences, 1000)
+    if (!v) return fail('party_preferences cannot be empty')
+    prefs.partyPreferences = v
+    lines.push(`Preferences: ${v}`)
+  }
+  if (input.character_request !== undefined) {
+    const v = str(input.character_request, 1000)
+    if (!v) return fail('character_request cannot be empty')
+    prefs.characterRequest = v
+    lines.push(`Character request: ${v}`)
+  }
+  if (Object.keys(prefs).length === 0) return fail('Nothing to record — give at least one choice.')
+  return cardOutcome(
+    'set_preferences',
+    { bookingId: b.id, bookingRef: b.booking_ref, preferences: prefs },
+    `Record the party choices on ${b.booking_ref}`,
+    [`Party: ${partyLabel(b)}`, ...lines, 'These price nothing and are not sent to the client.'],
+    ctx,
+    'Nothing has been recorded.',
   )
 }
 

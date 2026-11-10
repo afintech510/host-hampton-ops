@@ -33,7 +33,7 @@ import { ownerEmail } from '@/lib/ownerNotify'
 import { writeLedger } from '@/lib/marketing/graph'
 import { enqueueCheckinReminders, cancelCheckinReminders } from '@/lib/checkinReminders'
 import { readBalanceInputs, computeBalance, sumPayments } from '@/lib/bookingBalance'
-import { recalcTotals, syncExtraGuestsLine } from '@/lib/bookingTotals'
+import { recalcTotals, syncExtraGuestsLine, EXTRA_GUESTS_NAME } from '@/lib/bookingTotals'
 import { logBookingChange } from '@/lib/bookingAudit'
 import { approveOnLinkSend, linkSendApproves } from '@/lib/linkApproval'
 import {
@@ -1376,6 +1376,110 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     return NextResponse.json({ ok: true, action: 'booking_deleted' })
+  }
+
+  // Change ONE existing line in place (price, quantity, name, description, flags). The
+  // only other way to fix a typo'd price was remove + add, which loses the sort position
+  // and, for the assistant, two cards where one will do. Not for lines the system derives:
+  // the rental fee (edit_rental) and "Additional Guests" (the guest count) own their
+  // numbers. A discount stays a discount: the sign of a line cannot be flipped here.
+  if (action === 'edit_line_item') {
+    const lineId = typeof body.line_item_id === 'string' ? body.line_item_id : ''
+    if (!lineId) return NextResponse.json({ error: 'line_item_id required' }, { status: 400 })
+    const { data: li, error: liReadErr } = await supabase
+      .from('booking_line_items')
+      .select('id, name, category, quantity, unit_price_cents, guest_multiplied, description, is_optional, is_featured')
+      .eq('id', lineId).eq('booking_id', id).maybeSingle()
+    if (liReadErr) return NextResponse.json({ error: `Could not read the line: ${liReadErr.message}` }, { status: 500 })
+    if (!li) return NextResponse.json({ error: 'That line is not on this booking' }, { status: 404 })
+    if (li.category === 'rental') {
+      return NextResponse.json({ error: 'The rental fee follows the rental window: use edit_rental.' }, { status: 400 })
+    }
+    if (EXTRA_GUESTS_NAME.test(String(li.name).trim()) && li.category === 'theme') {
+      return NextResponse.json({ error: 'Additional Guests follows the guest count: change the guest count instead.' }, { status: 400 })
+    }
+    const patch: Record<string, unknown> = {}
+    if (body.unit_price_cents !== undefined) {
+      const c = Number(body.unit_price_cents)
+      if (!Number.isSafeInteger(c) || Math.abs(c) > 1_000_000) return NextResponse.json({ error: 'unit_price_cents must be a whole number of cents within $10,000' }, { status: 400 })
+      if ((c < 0) !== (li.unit_price_cents < 0) && c !== 0 && li.unit_price_cents !== 0) {
+        return NextResponse.json({ error: 'A discount stays a discount and a charge stays a charge: remove the line and add a new one to change its sign.' }, { status: 400 })
+      }
+      patch.unit_price_cents = c
+    }
+    if (body.quantity !== undefined) {
+      const q = Math.floor(Number(body.quantity))
+      if (!(q >= 1 && q <= 100)) return NextResponse.json({ error: 'quantity must be 1-100' }, { status: 400 })
+      patch.quantity = q
+    }
+    if (body.name !== undefined) {
+      const n = typeof body.name === 'string' ? body.name.trim().slice(0, 120) : ''
+      if (!n) return NextResponse.json({ error: 'name cannot be empty' }, { status: 400 })
+      patch.name = n
+    }
+    if (body.description !== undefined) {
+      patch.description = typeof body.description === 'string' && body.description.trim() ? body.description.trim().slice(0, 400) : null
+    }
+    if (body.is_optional !== undefined) patch.is_optional = body.is_optional === true
+    if (body.is_featured !== undefined) patch.is_featured = body.is_featured === true
+    if (body.guest_multiplied !== undefined) {
+      patch.guest_multiplied = body.guest_multiplied === true
+      patch.price_type = body.guest_multiplied === true ? 'per_person' : 'flat'
+    }
+    if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'Nothing to change' }, { status: 400 })
+
+    const { data: wrote, error: liErr } = await supabase
+      .from('booking_line_items').update(patch).eq('id', lineId).eq('booking_id', id).select('id')
+    if (liErr || !wrote?.length) {
+      return NextResponse.json({ error: `Line item NOT changed: ${liErr?.message || 'no row matched'}` }, { status: 500 })
+    }
+    const totals = await recalcTotals(supabase, id, booking)
+    const changedKeys = Object.keys(patch)
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: `Edited line item "${li.name}": ` + changedKeys.map(k => `${k} ${String((li as Record<string, unknown>)[k] ?? '-')} -> ${String(patch[k] ?? '-')}`).join(', ') +
+        (totals.ok ? ` — total now ${formatMoney(totals.totalCents)}` : ` — TOTAL NOT RECALCULATED (${totals.message})`),
+    })
+    return NextResponse.json({
+      ok: true,
+      action: 'line_item_edited',
+      totalsUpdated: totals.ok,
+      ...(totals.ok ? { totalCents: totals.totalCents, balanceCents: totals.balanceCents } : { warning: `The line was changed but the invoice total could not be recalculated (${totals.message}).` }),
+    })
+  }
+
+  // Menu choices and requests the host made in the planner. They live in `quote_snapshot`
+  // (that is where the planner and the portal read them) and price nothing.
+  if (action === 'set_preferences') {
+    const snap = { ...(((booking.quote_snapshot as Record<string, unknown> | null)) || {}) } as Record<string, unknown>
+    const before: Record<string, unknown> = {}
+    const set = (key: string, value: unknown) => { before[key] = snap[key] ?? null; snap[key] = value }
+    if (body.pizzaOrBagels !== undefined) {
+      if (body.pizzaOrBagels !== 'pizza' && body.pizzaOrBagels !== 'bagels') return NextResponse.json({ error: 'pizzaOrBagels must be pizza or bagels' }, { status: 400 })
+      set('pizzaOrBagels', body.pizzaOrBagels)
+    }
+    if (body.cupcakeFlavor !== undefined) {
+      if (body.cupcakeFlavor !== 'vanilla' && body.cupcakeFlavor !== 'chocolate') return NextResponse.json({ error: 'cupcakeFlavor must be vanilla or chocolate' }, { status: 400 })
+      set('cupcakeFlavor', body.cupcakeFlavor)
+    }
+    for (const key of ['partyPreferences', 'characterRequest'] as const) {
+      if (body[key] !== undefined) {
+        if (typeof body[key] !== 'string' || (body[key] as string).length > 1000) return NextResponse.json({ error: `${key} must be text under 1000 characters` }, { status: 400 })
+        set(key, (body[key] as string).trim())
+      }
+    }
+    if (Object.keys(before).length === 0) return NextResponse.json({ error: 'Nothing to change' }, { status: 400 })
+    const { data: wrote, error: prefErr } = await supabase
+      .from('bookings').update({ quote_snapshot: snap, updated_at: new Date().toISOString() }).eq('id', id).select('id')
+    if (prefErr || !wrote?.length) {
+      return NextResponse.json({ error: `Preferences NOT saved: ${prefErr?.message || 'no row matched'}` }, { status: 500 })
+    }
+    await logBookingChange(supabase, {
+      bookingId: id, actor: adminActorId(req),
+      summary: 'Party preferences updated: ' + Object.keys(before).join(', '),
+      oldData: before,
+    })
+    return NextResponse.json({ ok: true, action: 'preferences_set', changed: Object.keys(before) })
   }
 
   if (action === 'add_line_item') {

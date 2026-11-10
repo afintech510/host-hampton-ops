@@ -222,6 +222,38 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       return { ok: true, status: res.status, message: `Added ${input.name} to ${input.bookingRef}.${warningNote(json)}${totalsNote(json)}` }
     }
 
+    case 'edit_line_item': {
+      const input = proposal.input as { bookingId: string; bookingRef: string; lineItemId: string; changes: Record<string, unknown> }
+      const { res, json } = await replayPartyAction(original, input.bookingId, {
+        action: 'edit_line_item',
+        line_item_id: input.lineItemId,
+        ...onlyLineEdits(input.changes),
+      })
+      if (!res.ok || json.ok !== true) return refused('Not changed', res, json)
+      return { ok: true, status: res.status, message: `Changed the line on ${input.bookingRef}.${warningNote(json)}${totalsNote(json)}` }
+    }
+
+    case 'edit_rental': {
+      const input = proposal.input as { bookingId: string; bookingRef: string; startTime: string; endTime: string }
+      const { res, json } = await replayPartyAction(original, input.bookingId, {
+        action: 'edit_rental',
+        startTime: input.startTime,
+        endTime: input.endTime,
+      })
+      if (!res.ok || json.ok !== true) return refused('Rental not changed', res, json)
+      return { ok: true, status: res.status, message: `Rental on ${input.bookingRef} is now ${input.startTime}-${input.endTime}.${warningNote(json)}${totalsNote(json)}` }
+    }
+
+    case 'set_preferences': {
+      const input = proposal.input as { bookingId: string; bookingRef: string; preferences: Record<string, unknown> }
+      const { res, json } = await replayPartyAction(original, input.bookingId, {
+        action: 'set_preferences',
+        ...onlyPreferences(input.preferences),
+      })
+      if (!res.ok || json.ok !== true) return refused('Not saved', res, json)
+      return { ok: true, status: res.status, message: `Saved the party preferences on ${input.bookingRef}.` }
+    }
+
     case 'remove_line_item': {
       const input = proposal.input as { bookingId: string; bookingRef: string; lineItemId: string }
       const { res, json } = await replayPartyAction(original, input.bookingId, {
@@ -439,6 +471,21 @@ async function replayPartyAction(original: NextRequest, bookingId: string, body:
  * from this list; filtering again here means a status or a total can never ride
  * through on `update_party` even if a future proposal builder forgets.
  */
+/** The line fields a chat card may change; anything else on the card is dropped. */
+const LINE_EDIT_KEYS = ['unit_price_cents', 'quantity', 'name', 'description', 'is_optional', 'guest_multiplied'] as const
+function onlyLineEdits(changes: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const k of LINE_EDIT_KEYS) if (changes && changes[k] !== undefined) out[k] = changes[k]
+  return out
+}
+
+const PREFERENCE_KEYS = ['pizzaOrBagels', 'cupcakeFlavor', 'partyPreferences', 'characterRequest'] as const
+function onlyPreferences(prefs: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const k of PREFERENCE_KEYS) if (prefs && prefs[k] !== undefined) out[k] = prefs[k]
+  return out
+}
+
 export const CHAT_EDITABLE_COLUMNS = [
   'party_date', 'party_time', 'guest_count_approx', 'child_name', 'child_age', 'package_type',
   'contact_name', 'contact_email', 'contact_phone', 'party_type', 'admin_notes',
