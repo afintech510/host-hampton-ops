@@ -1,5 +1,5 @@
 /**
- * The upcoming-weekend prep list (lib/crew/weekendSummary.ts) for /admin/crew.
+ * The upcoming-weekend prep list (lib/crew/weekendSummary.ts) for the crew dashboard.
  * Admin only; read-only; names the customer's child and parent (the admin sees them
  * everywhere else on the crew pages too).
  */

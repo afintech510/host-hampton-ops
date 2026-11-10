@@ -285,9 +285,9 @@ describe('N6: every crew message has a dedupe key built from an id', () => {
       }
     }
     expect(offenders).toEqual([])
-    // 24 call sites at Phase 4 (2026-10-27), 28 once autopilot added its own (2026-11-05), 26 once a release became always a cover request
-    // and the early-release notices went (2026-11-05). A drop below that means the walker stopped seeing them.
-    expect(examined).toBeGreaterThanOrEqual(26)
+    // 26 after the early-release notices went; 25 after attendance alerts were removed.
+    // A drop below that means the walker stopped seeing a notification call site.
+    expect(examined).toBeGreaterThanOrEqual(25)
     // The one call that sends an Ask: counted, so the `a.key` branch above cannot quietly pass nothing.
     expect(viaAsk).toBe(1)
   })

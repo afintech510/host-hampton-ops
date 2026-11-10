@@ -403,10 +403,6 @@ function PickCard({ pick, busy, live, cardClass, onApprove, onAssign, onStandby 
           </button>
         )}
       </div>
-      <p className="text-hampton-navy/50 text-xs mb-3">
-        Put each person on the party or on standby. Ranked by who worked least recently, then who has fewer parties in the 30 days around this one;
-        answering faster counts for nothing. Anyone approved for another party that is ahead counts as recent.
-      </p>
       {pick.volunteers.length === 0 ? (
         <p className="text-hampton-navy/50 text-sm">Nobody has said they are available yet.</p>
       ) : (

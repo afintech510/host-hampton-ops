@@ -8,7 +8,7 @@ import fs from 'fs'
 import path from 'path'
 import { DEFAULT_SETTINGS, type CrewSettings } from '@/lib/crew/rules'
 import {
-  approveAllRecommended, approvePicks, loadPickPanel, moveToStandby, notifyPickRound, rankVolunteers, recommendPicks, saveResponse,
+  approveAllRecommended, approvePicks, loadPickPanel, moveToStandby, notifyPickRound, partiesNeedingPicks, rankVolunteers, recommendPicks, saveResponse,
   type PickCandidate, type RankedVolunteer,
 } from '@/lib/crew/pick'
 import { assignMember, publishParty } from '@/lib/crew/adminActions'
@@ -192,6 +192,25 @@ describe('loadPickPanel', () => {
     const r = await loadPickPanel(db.sb, 'p1', S)
     if (r.kind !== 'ok' || !r.data) throw new Error('no panel')
     expect(r.data.noResponse.map(x => x.memberId).sort()).toEqual(['b', 'c', 'd', 'e'])
+  })
+})
+
+describe('partiesNeedingPicks', () => {
+  it('ignores a work response from someone already assigned to the party', async () => {
+    const db = world({ responses: [answer('p1', 'b', 'work')] })
+    Object.assign(db.tables.crew_slots.find(s => s.id === 'p1-c1')!, { status: 'assigned', member_id: 'b' })
+    const need = await partiesNeedingPicks(db.sb, NOW, S)
+    expect(need).toMatchObject({ kind: 'ok', data: [] })
+  })
+
+  it('ignores a test member response to a real booking, but keeps a real volunteer', async () => {
+    const db = world({ responses: [answer('p1', 'b', 'work')] })
+    Object.assign(db.tables.crew_members.find(m => m.id === 'b')!, { is_test: true })
+    expect(await partiesNeedingPicks(db.sb, NOW, S)).toMatchObject({ kind: 'ok', data: [] })
+    db.tables.crew_party_responses.push(answer('p1', 'c', 'work'))
+    const need = await partiesNeedingPicks(db.sb, NOW, S)
+    if (need.kind !== 'ok') throw new Error(need.error)
+    expect(need.data.map(p => p.party.id)).toEqual(['p1'])
   })
 })
 

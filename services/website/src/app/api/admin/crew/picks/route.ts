@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const sb = getSupabase()
   const settings = await loadCrewSettings(sb)
   if (settings.kind !== 'ok') return NextResponse.json({ error: `Could not read the crew rules: ${settings.error}` }, { status: 503 })
-  const need = await partiesNeedingPicks(sb, new Date())
+  const need = await partiesNeedingPicks(sb, new Date(), settings.settings)
   if (need.kind !== 'ok') return NextResponse.json({ error: `Could not read the parties: ${need.error}` }, { status: 503 })
 
   const parties = []
