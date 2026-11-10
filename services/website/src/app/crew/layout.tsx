@@ -4,6 +4,8 @@ import localFont from 'next/font/local'
 import { NOINDEX } from '@/lib/seo'
 import { TENANT } from '@/tenant'
 import { crewAppOpen } from '@/lib/crew/settings'
+import { currentCrewMember, viewAsCookiePresent } from '@/lib/crew/auth'
+import ViewAsBanner from './_components/ViewAsBanner'
 import { DEFAULT_THEME, themeCss } from '@/lib/crew/themes'
 
 /**
@@ -166,8 +168,14 @@ dialog.crew-modal::backdrop{background:var(--c-scrim)}
 @media (max-width:380px){.crew-wordmark{font-size:1.45rem}.crew-logo{height:30px}}
 `
 
-export default function CrewLayout({ children }: { children: React.ReactNode }) {
-  if (!crewAppOpen()) notFound()
+export default async function CrewLayout({ children }: { children: React.ReactNode }) {
+  const viewAs = viewAsCookiePresent()
+  // An admin's read-only preview (hh_crew_view) opens the shell even with every crew switch off.
+  if (!viewAs) {
+    if (!crewAppOpen()) notFound()
+  }
+  const session = viewAs ? await currentCrewMember() : null
+  const viewingName = session && session.kind === 'ok' && session.viewing ? session.member.first_name : null
   const theme = DEFAULT_THEME
   // The brand's own two colours, for the wordmark: the same on every theme.
   const brand = { '--c-brand-navy': TENANT.brand.colors.navy, '--c-brand-blue': TENANT.brand.colors.blue } as React.CSSProperties
@@ -175,6 +183,7 @@ export default function CrewLayout({ children }: { children: React.ReactNode }) 
     <div className={`crew-root ${FONT_VARS}`} data-theme={theme} style={brand}>
       {/* eslint-disable-next-line react/no-danger */}
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
+      {viewingName && <ViewAsBanner name={viewingName} />}
       {children}
     </div>
   )

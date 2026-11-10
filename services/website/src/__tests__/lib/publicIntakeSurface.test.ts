@@ -305,6 +305,8 @@ const DELIBERATELY_PUBLIC = new Set([
   'POST crew/auth/verify',
   // Clears the caller's own cookie; touches no row.
   'POST crew/auth/logout',
+  // Ends an admin's read-only crew preview: clears the caller's own cookie; touches no row.
+  'POST crew/view-as/exit',
   // The test picker (CREW_TEST_LOGIN). 404 unless that is exactly `true`; the id
   // in the body is a request, not a credential: the member is re-read and anything
   // but an active, is_test, non-owner row is a 403. Rate-limited first.
