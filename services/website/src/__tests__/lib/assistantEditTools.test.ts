@@ -32,6 +32,9 @@ jest.mock('@/lib/quoteRequest', () => ({
     },
   }),
 }))
+let mockIntroduced: boolean | null = false
+jest.mock('@/lib/assistant/threadIntro', () => ({ threadHasIntroduced: async () => mockIntroduced }))
+jest.mock('@/lib/phoneStop', () => ({ phoneHasExplicitStop: async () => 'clear' }))
 jest.mock('@/app/api/admin/parties/create/route', () => ({ POST: jest.fn() }))
 jest.mock('@/app/api/admin/parties/[id]/route', () => ({ POST: jest.fn(), PATCH: jest.fn() }))
 jest.mock('@/app/api/plan/[ref]/pay-link/route', () => ({ POST: jest.fn() }))
@@ -251,5 +254,54 @@ describe('propose_record_payment with a tip', () => {
   it('refuses a zero or junk tip instead of dropping it', async () => {
     const out = await runAssistantTool('propose_record_payment', { booking_ref: BOOKING.booking_ref, amount_cents: 20000, payment_method: 'venmo', tip_cents: 0 }, CTX)
     expect(out.isError).toBe(true)
+  })
+})
+
+describe('propose_send_message', () => {
+  const texts = (out: { result: unknown }) =>
+    (out.result as { message_preview: { channels: { channel: string; text: string; editable: boolean }[] } }).message_preview.channels
+  beforeEach(() => { mockIntroduced = false })
+
+  it('the first message to a number introduces Allie, adds the STOP line, and is not editable in place', async () => {
+    const out = await runAssistantTool('propose_send_message', { booking_ref: BOOKING.booking_ref, channel: 'text', message: 'We are all set for Saturday at 2.' }, CTX)
+    expect(out.isError).toBeFalsy()
+    const sms = texts(out)[0]
+    expect(sms.text).toBe("Hi Pat! It's Allie from Host Hampton 🎉\nWe are all set for Saturday at 2.\nReply STOP to opt out")
+    expect(sms.editable).toBe(false)
+    expect(out.proposal?.proposal.kind).toBe('send_message')
+    expect(out.proposal?.proposal.input).toMatchObject({ sms: true, email: false, introduced: false })
+  })
+
+  it('later messages do not name Allie again', async () => {
+    mockIntroduced = true
+    const out = await runAssistantTool('propose_send_message', { booking_ref: BOOKING.booking_ref, channel: 'text', message: 'Running 5 minutes early.' }, CTX)
+    expect(texts(out)[0].text).toBe('Hi Pat!\nRunning 5 minutes early.\nReply STOP to opt out')
+    expect(texts(out)[0].text).not.toMatch(/Allie/)
+  })
+
+  it('an email gets a subject and the sign-off only on the first message', async () => {
+    const first = await runAssistantTool('propose_send_message', { booking_ref: BOOKING.booking_ref, channel: 'email', message: 'Please bring socks.', subject: 'Socks' }, CTX)
+    expect(texts(first)[0].text).toBe('Hi Pat,\n\nPlease bring socks.\n\nAllie\nHost Hampton')
+    mockIntroduced = true
+    const later = await runAssistantTool('propose_send_message', { booking_ref: BOOKING.booking_ref, channel: 'email', message: 'Please bring socks.' }, CTX)
+    expect(texts(later)[0].text).toBe('Hi Pat,\n\nPlease bring socks.')
+  })
+
+  it.each([
+    ['a link', 'See https://example.com/deal'],
+    ['a bare domain', 'Visit sparkleparties.co'],
+    ['a promise of a discount', 'We will give you 20% off'],
+    ['a payment handle', 'Venmo @someone-else'],
+    ['the owner as the sender', 'This is Adam from the studio'],
+    ['a link placeholder', 'Your link: {portal}'],
+  ])('refuses %s in the body', async (_n, message) => {
+    const out = await runAssistantTool('propose_send_message', { booking_ref: BOOKING.booking_ref, channel: 'text', message }, CTX)
+    expect(out.isError).toBe(true)
+    expect(out.proposal).toBeUndefined()
+  })
+
+  it('refuses a bad channel and an empty message', async () => {
+    expect((await runAssistantTool('propose_send_message', { booking_ref: BOOKING.booking_ref, channel: 'fax', message: 'x' }, CTX)).isError).toBe(true)
+    expect((await runAssistantTool('propose_send_message', { booking_ref: BOOKING.booking_ref, channel: 'text', message: '  ' }, CTX)).isError).toBe(true)
   })
 })

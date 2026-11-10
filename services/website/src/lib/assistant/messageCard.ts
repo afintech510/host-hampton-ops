@@ -323,3 +323,89 @@ export async function buildPhotosCard(
     preview: { recipient: firstNameOf(b.contact_name), channels, level, status },
   }
 }
+
+/* ── a plain message in the manager's words ───────────────────────────── */
+
+/**
+ * A free-form text and/or email. The model supplies the BODY only; the greeting, the
+ * sign-off and the STOP line are added here, and the introduction ("It's Allie from
+ * the business name") only when this thread has not already had one, so Allie is named once
+ * per number rather than on every message. Everything goes through the same screens as
+ * every other customer message (nothing that is not ours, no owner name, no promise the
+ * assistant cannot make, a STOP line on a text). Not editable in the card: a change is a
+ * fresh card (`replaces_proposal_id`).
+ */
+export async function buildMessageCard(
+  supabase: Supa,
+  b: CardBooking,
+  opts: { email: boolean; sms: boolean; message: string; subject?: string; now?: Date; introduced?: boolean },
+): Promise<BuiltCard> {
+  const introduced = opts.introduced ?? (await threadHasIntroduced(supabase, b).catch(() => null)) === true
+  const first = firstNameOf(b.contact_name)
+  const signoff = TENANT.people.customerSignoff
+  const brand = TENANT.business.name
+  const text = opts.message.trim()
+  if (!text) return { ok: false, error: 'The message is empty.' }
+
+  let smsBody = ''
+  let emailSubject = ''
+  let emailBody = ''
+  const notes: Record<string, string[]> = {}
+  if (opts.sms) {
+    const composed = [introduced ? `Hi ${first}!` : `Hi ${first}! It's ${signoff} from ${brand} 🎉`, text, 'Reply STOP to opt out'].join('\n')
+    const r = screenOutboundText(composed, { channel: 'sms', authored: 'model', allowedPlaceholders: [] })
+    if (!r.ok) return { ok: false, error: `Text not drawn: ${r.reason}` }
+    smsBody = r.text
+    notes.sms = r.notes
+  }
+  if (opts.email) {
+    const s = screenOutboundText(opts.subject ?? `A note from ${brand}`, { channel: 'subject', authored: 'model', allowedPlaceholders: [] })
+    if (!s.ok) return { ok: false, error: `Email subject not drawn: ${s.reason}` }
+    const composed = introduced ? `Hi ${first},\n\n${text}` : `Hi ${first},\n\n${text}\n\n${signoff}\n${brand}`
+    const r = screenOutboundText(composed, { channel: 'email', authored: 'model', allowedPlaceholders: [] })
+    if (!r.ok) return { ok: false, error: `Email not drawn: ${r.reason}` }
+    emailSubject = s.text
+    emailBody = r.text
+    notes.email = r.notes
+  }
+
+  const channels: PreviewChannel[] = []
+  if (opts.email) {
+    channels.push({ channel: 'email', to: maskEmail(b.contact_email), subject: emailSubject, template: emailBody, display: emailBody, editable: false, notes: notes.email ?? [] })
+  }
+  if (opts.sms) {
+    channels.push({ channel: 'sms', to: maskPhone(b.contact_phone), template: smsBody, display: smsBody, sms: smsFacts(smsBody, b.booking_ref), editable: false, notes: notes.sms ?? [] })
+  }
+
+  const status: string[] = []
+  let level: 'ok' | 'warn' | 'blocked' = 'ok'
+  if (opts.sms && !b.contact_phone) { level = 'blocked'; status.push('There is no phone number on this booking, so a text would be refused.') }
+  if (opts.email && !b.contact_email) { level = 'blocked'; status.push('There is no email address on this booking, so an email would be refused.') }
+  if (opts.sms && b.contact_phone) {
+    const t = await textStatus(supabase, b.contact_phone, opts.now ?? new Date())
+    level = worst(level, t.level)
+    status.push(...t.lines)
+  }
+  status.push(introduced
+    ? `${signoff} already introduced herself in this thread, so this message has no intro, sign-off or business name.`
+    : `This is the first message in this thread, so it introduces ${signoff} from ${brand}.`)
+  const sms0 = channels.find(c => c.channel === 'sms')?.sms
+  if (sms0 && sms0.segments > 2) {
+    level = worst(level, 'warn')
+    status.push(`The text is about ${sms0.segments} segments. Ask me to shorten it if you like.`)
+  }
+
+  const via = [opts.email && 'email', opts.sms && 'text'].filter(Boolean).join(' + ')
+  const input: Record<string, unknown> = {
+    bookingId: b.id, bookingRef: b.booking_ref, email: opts.email, sms: opts.sms, introduced,
+    ...(opts.email ? { emailSubject, emailBody } : {}),
+    ...(opts.sms ? { smsBody } : {}),
+  }
+  return {
+    ok: true,
+    input,
+    title: `Message ${first === 'there' ? b.booking_ref : first} by ${via}`,
+    details: [`Party: ${b.booking_ref}${b.party_date ? ` on ${b.party_date}` : ''}`, `Plain message — by ${via}. Read it below.`],
+    preview: { recipient: first, channels, level, status },
+  }
+}

@@ -30,7 +30,7 @@ import { maskEmail } from './outboundText'
 import { loadPartyCard, type PartyCardData } from './partyCard'
 import { loadMemories, screenMemoryText, MAX_MEMORIES_PER_SCOPE } from './memory'
 import { clock12 } from './timeFormat'
-import { buildClientLinksCard, buildPhotosCard, type BuiltCard, type MessageEdits, type MessagePreview } from './messageCard'
+import { buildClientLinksCard, buildMessageCard, buildPhotosCard, type BuiltCard, type MessageEdits, type MessagePreview } from './messageCard'
 
 /**
  * The Manager assistant's tools.
@@ -379,6 +379,22 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: 'propose_send_message',
+    description:
+      "PROPOSE a plain text and/or email to the client in the manager's own words (a reminder, an answer, a heads-up). Write ONLY the message itself: no greeting, sign-off or STOP line, the system adds them (the first message to a number is introduced as Allie, later ones are not). No links, prices, discounts, payment details or promises: links go through propose_send_client_links, money through the money tools. Refused outside 8am-9pm Eastern or to a number with a STOP. The card shows the exact message; to change it call this again with replaces_proposal_id. Nothing is sent until the manager clicks Confirm.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        channel: { type: 'string', enum: ['text', 'email', 'both'] },
+        message: { type: 'string', description: 'The message body only.' },
+        subject: { type: 'string', description: 'Email subject (email or both). A plain default is used if omitted.' },
+        replaces_proposal_id: { type: 'string', description: 'The earlier card this one replaces.' },
+      },
+      required: ['booking_ref', 'channel', 'message'],
+    },
+  },
+  {
     name: 'propose_record_payment',
     description:
       'PROPOSE writing down a payment that arrived outside Stripe (cash, Venmo, Zelle, check) against a party. It records money in the books and moves the balance; it takes no money and by default emails the client nothing. Use the amount and method the manager stated; never guess either. Nothing is recorded until the manager clicks Confirm.',
@@ -658,6 +674,8 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await proposeChangeTheme(supabase, input, ctx)
       case 'propose_add_discount':
         return await proposeAddDiscount(supabase, input, ctx)
+      case 'propose_send_message':
+        return await proposeSendMessage(supabase, input, ctx)
       case 'propose_record_payment':
         return await proposeRecordPayment(supabase, input, ctx)
       case 'propose_cancel':
@@ -1219,7 +1237,7 @@ function hasEdits(e: MessageEdits): boolean {
  * request to reword it starts from the text the manager is looking at.
  */
 function messageCardOutcome(
-  kind: 'send_client_links' | 'send_photos',
+  kind: 'send_client_links' | 'send_photos' | 'send_message',
   built: BuiltCard,
   ctx: ToolContext,
   input: Record<string, unknown>,
@@ -1932,6 +1950,24 @@ async function proposeAddDiscount(supabase: Supa, input: Record<string, unknown>
     ctx,
     'Nothing has been discounted.',
   )
+}
+
+async function proposeSendMessage(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const channel = input.channel
+  if (channel !== 'text' && channel !== 'email' && channel !== 'both') return fail('channel must be text, email or both.')
+  const message = str(input.message, 1500)
+  if (!message) return fail('message is required: the body only.')
+  const built = await buildMessageCard(supabase, b, {
+    email: channel === 'email' || channel === 'both',
+    sms: channel === 'text' || channel === 'both',
+    message,
+    ...(input.subject !== undefined ? { subject: str(input.subject, 150) ?? undefined } : {}),
+    now: ctx.now,
+  })
+  return messageCardOutcome('send_message', built, ctx, input)
 }
 
 async function proposeRecordPayment(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
