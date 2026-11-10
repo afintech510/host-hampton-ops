@@ -91,18 +91,20 @@ export default function PartyCard({ b, canLead, linkToDetail = true }: { b: Boar
           <ResponseButtons partyId={v.id} current={v.selection.myResponse} canWork={!b.claimBlock && claimTargets(spots).length > 0}
             managerName={TENANT.people.customerSignoff} />
         )}
-        {!v.mySlot && b.upcoming && v.selection.mode !== 'pick' && !b.claimBlock && claimTargets(spots).map(s => (
-          <CommitButton key={s.slotId} slotId={s.slotId} partyTitle={title}
-            when={`${partyDayLabel(v.startsAt)}, ${partyTimeLabel(s.shiftStartsAt, s.shiftEndsAt)}`} roleWord={roleWord(s.role)}
-            label={`Commit to Party${s.role === 'lead' ? ' as Party Lead' : ''}${s.payCents != null ? ` (${formatCents(s.payCents)})` : ''}`} />
-        ))}
         {!v.mySlot && b.upcoming && v.selection.mode !== 'pick' && (
-          <ActionButton
-            endpoint="/api/crew/standby" body={{ partyId: v.id, on: !v.iAmStandby }} variant="ghost"
-            label={v.iAmStandby
-              ? (spots.length === 0 ? "I'm on the waitlist ✓ (tap to leave)" : "I'm a standby ✓ (tap to stop)")
-              : (spots.length === 0 ? 'Join the waitlist' : 'I can cover (standby)')}
-          />
+          <div className="crew-party-actions">
+            {!b.claimBlock && claimTargets(spots).map(s => (
+              <CommitButton key={s.slotId} slotId={s.slotId} partyTitle={title}
+                when={`${partyDayLabel(v.startsAt)}, ${partyTimeLabel(s.shiftStartsAt, s.shiftEndsAt)}`} roleWord={roleWord(s.role)}
+                label={`Commit to Party${s.role === 'lead' ? ' as Party Lead' : ''}${s.payCents != null ? ` (${formatCents(s.payCents)})` : ''}`} />
+            ))}
+            <ActionButton
+              endpoint="/api/crew/standby" body={{ partyId: v.id, on: !v.iAmStandby }} variant="ghost"
+              label={v.iAmStandby
+                ? (spots.length === 0 ? "I'm on the waitlist ✓ (tap to leave)" : "I'm a standby ✓ (tap to stop)")
+                : (spots.length === 0 ? 'Join the waitlist' : 'I can cover (standby)')}
+            />
+          </div>
         )}
         {!linkToDetail && v.mySlot && v.mySlot.status === 'assigned' && b.upcoming && (
           <FindCover slotId={v.mySlot.slotId} partyId={v.id} ownerName={TENANT.people.customerSignoff} ownerPhone={STUDIO_PHONE_DISPLAY} />

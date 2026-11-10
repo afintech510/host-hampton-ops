@@ -88,6 +88,7 @@ export default function CrewMembersPage() {
   const [adding, setAdding] = useState<FormState | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [showRemoved, setShowRemoved] = useState(false)
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
 
   const reload = roster.reload
   const load = useCallback(async () => { await reload() }, [reload])
@@ -104,6 +105,7 @@ export default function CrewMembersPage() {
 
   // Allie (the owner row) is not a crew member to schedule, so she shows only with the removed ones.
   const members = (data?.members ?? []).filter(m => showRemoved || (m.status !== 'removed' && !m.isOwner))
+  const visibleMembers = selectedMemberId ? members.filter(m => m.id === selectedMemberId) : members
 
   return (
     <CrewFrame active="/admin/crew/members" title="Party Crew" wordmark>
@@ -114,7 +116,7 @@ export default function CrewMembersPage() {
       <div className="flex flex-wrap gap-2 mb-5">
         <button onClick={() => setAdding(adding ? null : { ...EMPTY })} className={BTN_PRIMARY}>{adding ? 'Close' : 'Add a crew member'}</button>
         <label className="flex items-center gap-2 text-sm text-hampton-navy/70 ml-2">
-          <input type="checkbox" checked={showRemoved} onChange={e => setShowRemoved(e.target.checked)} /> Show archived / former staff
+          <input type="checkbox" checked={showRemoved} onChange={e => { setShowRemoved(e.target.checked); setSelectedMemberId(null) }} /> Show archived / former staff
         </label>
       </div>
 
@@ -149,8 +151,24 @@ export default function CrewMembersPage() {
         </div>
       )}
 
+      {members.length > 0 && (
+        <nav aria-label="Filter staff by person" className="max-w-3xl mx-auto mb-4 flex flex-wrap gap-2">
+          <button type="button" onClick={() => setSelectedMemberId(null)} aria-pressed={selectedMemberId === null}
+            className={`rounded-full px-4 py-1.5 text-sm font-semibold border ${selectedMemberId === null ? 'bg-hampton-navy text-white border-hampton-navy' : 'bg-white text-hampton-navy border-hampton-navy/20'}`}>
+            All
+          </button>
+          {members.map(m => (
+            <button key={m.id} type="button" onClick={() => setSelectedMemberId(m.id)} aria-pressed={selectedMemberId === m.id}
+              aria-label={`Show ${m.firstName} ${m.lastName ?? ''}`.trim()}
+              className={`rounded-full px-4 py-1.5 text-sm font-semibold border ${selectedMemberId === m.id ? 'bg-hampton-navy text-white border-hampton-navy' : 'bg-white text-hampton-navy border-hampton-navy/20'}`}>
+              {m.firstName}
+            </button>
+          ))}
+        </nav>
+      )}
+
       <div className="space-y-3 max-w-3xl mx-auto">
-        {members.map(m => (
+        {visibleMembers.map(m => (
           <MemberCard key={m.id} m={m} open={open === m.id}
             onToggle={() => setOpen(open === m.id ? null : m.id)}
             onChanged={async (msg) => { setNotice(msg); setError(''); await load() }}

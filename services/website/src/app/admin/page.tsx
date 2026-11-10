@@ -65,7 +65,7 @@ const TABS: { key: TabKey; label: string; Icon: typeof Ticket; group: string }[]
  */
 const LINKS: { href: string; label: string; Icon: typeof Ticket; group: string }[] = [
   { href: '/admin/assistant', label: 'Assistant', Icon: Sparkles, group: 'overview' },
-  { href: '/admin/crew', label: 'Crew', Icon: HardHat, group: 'manage' },
+  { href: '/admin/crew/schedule', label: 'Crew', Icon: HardHat, group: 'manage' },
   { href: '/admin/photo-library', label: 'Photo library', Icon: Image, group: 'content' },
 ]
 

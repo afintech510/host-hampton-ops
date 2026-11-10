@@ -62,7 +62,7 @@ describe('the top menu', () => {
     // The label row is the bar's own order, built from the same tab list so a new tab cannot go unnamed.
     expect(s).toMatch(/const LABELS = \['Assistant', \.\.\.ITEMS\.map\(i => i\.label\), 'Menu'\]/)
     expect(s).toMatch(/LABELS\.map\(/)
-    for (const line of ['Who is working which party', 'The crew rules', 'What the assistant remembers']) expect(s).toContain(line)
+    for (const line of ['The crew rules', 'What the assistant remembers']) expect(s).toContain(line)
     // The hamburger shows an X while the panel is open.
     expect(s).toMatch(/menuOpen \? <X /)
     // A tab, the assistant or a menu item closes the panel.
@@ -86,11 +86,13 @@ describe('the top menu', () => {
     expect(current('/admin/crew/leads', 'Leads')).toBe(true)
     expect(current('/admin/crew/bookings', 'Bookings')).toBe(true)
     expect(current('/admin/crew/payments', 'Payments')).toBe(true)
-    // Staff is the roster; the party-staff page belongs to it.
+    // Both staff views and a party's staffing page belong to Staff.
+    expect(current('/admin/crew/schedule', 'Staff')).toBe(true)
     expect(current('/admin/crew/members', 'Staff')).toBe(true)
     expect(current('/admin/crew/parties/abc', 'Staff')).toBe(true)
-    // The schedule and Settings live in the hamburger, so no tab is "current" on them.
-    expect(html('/admin/crew')).not.toMatch(/aria-current="page"/)
+    expect(html('/admin/crew/schedule')).toMatch(/aria-current="page"[^>]*href="\/admin\/crew\/schedule"/)
+    expect(html('/admin/crew/members')).toMatch(/aria-current="page"[^>]*href="\/admin\/crew\/members"/)
+    // Settings remains in the hamburger.
     expect(html('/admin/crew/rules')).not.toMatch(/aria-current="page"/)
   })
 
@@ -101,24 +103,27 @@ describe('the top menu', () => {
     expect(sectionOf('/admin/crew/rules')).toBe('settings')
     expect(sectionOf('/admin/crew/members')).toBe('staff')
     expect(sectionOf('/admin/crew/parties/abc')).toBe('staff')
-    expect(sectionOf('/admin/crew')).toBe('schedule')
-    expect(sectionOf('/admin/crew/')).toBe('schedule')
+    expect(sectionOf('/admin/crew/schedule')).toBe('staff')
+    expect(sectionOf('/admin/crew')).toBe('staff')
+    expect(sectionOf('/admin/crew/')).toBe('staff')
     expect(sectionOf(null)).toBe('dashboard')
   })
 
-  it('puts the Staff schedule, Settings and Memories in the hamburger, and opens the assistant by event', () => {
+  it('puts Schedule and People under Staff, and keeps only Settings and Memories in the hamburger', () => {
     const s = read('app/admin/crew/_components/CrewAdminBar.tsx')
-    expect(s).toMatch(/href="\/admin\/crew"[\s\S]{0,260}Staff schedule/)
+    expect(html('/admin/crew/schedule')).toMatch(/aria-label="Staff views"/)
+    expect(html('/admin/crew/schedule')).toMatch(/Schedule/)
+    expect(html('/admin/crew/members')).toMatch(/People/)
+    expect(s).not.toMatch(/role="menuitem" href="\/admin\/crew"/)
     expect(s).toMatch(/href="\/admin\/crew\/rules"[\s\S]{0,260}Settings/)
-    // The Staff tab goes to the roster, not the schedule.
-    expect(s).toMatch(/href: '\/admin\/crew\/members', label: 'Staff'/)
+    expect(s).toMatch(/href: '\/admin\/crew\/schedule', label: 'Staff'/)
     expect(s).toMatch(/Memories/)
     expect(s).toMatch(/new CustomEvent\('hh:assistant-open'\)/)
     expect(s).toMatch(/<MemoryPanel \/>/)
   })
 
   it('every crew-management page uses the one frame, and the menu lives in the shell so it never remounts', () => {
-    for (const p of ['page.tsx', 'members/page.tsx', 'rules/page.tsx', 'leads/page.tsx', 'bookings/page.tsx', 'dashboard/page.tsx', '_components/CrewPartyEditor.tsx']) {
+    for (const p of ['schedule/page.tsx', 'members/page.tsx', 'rules/page.tsx', 'leads/page.tsx', 'bookings/page.tsx', 'dashboard/page.tsx', '_components/CrewPartyEditor.tsx']) {
       expect({ p, frame: /<CrewFrame/.test(read(`app/admin/crew/${p}`)) }).toEqual({ p, frame: true })
     }
     expect(read('app/admin/crew/_components/CrewAdminShell.tsx')).toMatch(/<CrewAdminBar \/>/)
@@ -134,7 +139,7 @@ describe('the top menu', () => {
     for (const path of ['crew-app/dashboard', 'crew-app/bookings', 'api/admin/leads', 'crew/members']) expect(shell).toContain(path)
     expect(shell).toMatch(/warm\(WARM_PATHS\)/)
     expect(shell).toMatch(/router\.prefetch\(r\)/)
-    for (const route of ['dashboard', 'leads', 'bookings', 'members']) expect(shell).toContain(`'/admin/crew/${route}'`)
+    for (const route of ['dashboard', 'leads', 'bookings', 'members', 'schedule']) expect(shell).toContain(`'/admin/crew/${route}'`)
     // The pages read through the cache, not a private fetch.
     for (const p of ['dashboard', 'leads', 'bookings', 'members']) expect(read(`app/admin/crew/${p}/page.tsx`)).toMatch(/useAdminData/)
   })

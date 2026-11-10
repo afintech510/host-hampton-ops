@@ -36,6 +36,9 @@ const nextConfig = {
   },
   async redirects() {
     return [
+      // Existing admin links still open the crew schedule at its new address.
+      { source: '/admin/crew', destination: '/admin/crew/schedule', permanent: true },
+
       // cm-cheer pages are retired but kept in the repo as a template. Redirect
       // (temporary) to the fundraiser page instead of serving/deleting them.
       { source: '/cm-cheer', destination: '/fundraiser', permanent: false },
