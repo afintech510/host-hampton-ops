@@ -1151,6 +1151,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'No phone number on file for this booking' }, { status: 400 })
     }
 
+    // A text to a customer: 8am-9pm Eastern and never to a STOP, like every other send. This
+    // action used to mint the link and text it with neither check.
+    const quietNow = checkSmsQuietHours(new Date())
+    if (quietNow.kind !== 'open') {
+      return NextResponse.json({ error: 'The check-in text was NOT sent: it is outside 8am-9pm Eastern. Send it after 8am.' }, { status: 409 })
+    }
+    const stopNow = await phoneHasExplicitStop(supabase, String(booking.contact_phone))
+    if (stopNow !== 'clear') {
+      return NextResponse.json({
+        error: stopNow === 'stopped'
+          ? 'The check-in text was NOT sent: this number has a STOP (opt-out) on file.'
+          : 'The check-in text was NOT sent: could not check this number for a STOP. Try again.',
+      }, { status: 409 })
+    }
+
     let result
     try {
       result = await sendCheckinLinkSms(booking)

@@ -183,6 +183,30 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       return { ok: true, status: res.status, message: `Sent to ${input.bookingRef} by ${sentVia}.${failures}` }
     }
 
+    case 'send_checkin_link': {
+      const input = proposal.input as { bookingId: string; bookingRef: string }
+      const { res, json } = await replayPartyAction(original, input.bookingId, { action: 'send_checkin_link' })
+      if (!res.ok || json.ok !== true) return refused('Check-in link not sent', res, json)
+      return { ok: true, status: res.status, message: `Texted the check-in link for ${input.bookingRef}.` }
+    }
+
+    case 'send_photo_album': {
+      const input = proposal.input as { bookingId: string; bookingRef: string; url: string; occasion: string; email: boolean; sms: boolean; resend?: boolean }
+      const { res, json } = await replayPartyAction(original, input.bookingId, {
+        action: 'send_photo_album',
+        confirm: true,
+        url: input.url,
+        occasion: input.occasion,
+        email: input.email === true,
+        sms: input.sms === true,
+        ...(input.resend === true ? { resend: true } : {}),
+      })
+      if (!res.ok || json.ok !== true) return refused('Album not sent', res, json)
+      const sentVia = Array.isArray(json.sentVia) ? (json.sentVia as string[]).join(' and ') : 'the chosen channel'
+      const failures = Array.isArray(json.failures) && json.failures.length ? ` Problems: ${(json.failures as string[]).join(' ')}` : ''
+      return { ok: true, status: res.status, message: `Photo album sent to ${input.bookingRef} by ${sentVia}.${failures}` }
+    }
+
     case 'create_pay_link': {
       const input = proposal.input as { bookingRef: string; purpose: 'deposit' | 'balance' }
       const res = await planPayLinkRoute(

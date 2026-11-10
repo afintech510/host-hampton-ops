@@ -10,6 +10,7 @@ const logged: string[] = []
 let quiet: { kind: 'open' | 'closed' } = { kind: 'open' }
 let stop: 'clear' | 'stopped' | 'unavailable' = 'clear'
 let smsOk = true
+const sentCheckin: number[] = []
 
 jest.mock('next/server', () => ({
   NextRequest: jest.fn(),
@@ -25,6 +26,7 @@ jest.mock('@/lib/sms', () => ({
   normalizePhone: (p: string) => p,
 }))
 jest.mock('@/lib/quietHours', () => ({ ...jest.requireActual('@/lib/quietHours'), checkSmsQuietHours: () => quiet }))
+jest.mock('@/lib/checkinLink', () => ({ ...jest.requireActual('@/lib/checkinLink'), sendCheckinLinkSms: async () => { sentCheckin.push(1); return { sent: true, url: 'https://x' } } }))
 jest.mock('@/lib/phoneStop', () => ({ phoneHasExplicitStop: async () => stop }))
 jest.mock('resend', () => ({ Resend: class { emails = { send: async (m: Row) => { sentMail.push(m); return { error: null } } } } }))
 
@@ -47,7 +49,7 @@ const SMS = 'Hi Pat! It is Allie.\nWe are all set for Saturday.\nReply STOP to o
 
 beforeEach(() => {
   process.env.RESEND_API_KEY = 'test'
-  sentSms.length = 0; sentMail.length = 0; logged.length = 0
+  sentSms.length = 0; sentMail.length = 0; sentCheckin.length = 0; logged.length = 0
   quiet = { kind: 'open' }; stop = 'clear'; smsOk = true
   booking = { id: 'b1', booking_ref: 'HH-PTY-1', status: 'approved', contact_name: 'Pat Example', contact_email: 'pat@example.com', contact_phone: '+16315550100' }
 })
@@ -106,5 +108,23 @@ describe('send_message', () => {
     const res: any = await act({ action: 'send_message', confirm: true, sms: true, smsBody: SMS })
     expect(res.status).toBe(502)
     expect(logged[0]).toMatch(/^Message NOT sent/)
+  })
+})
+
+describe('send_checkin_link guards', () => {
+  it('sends inside the window to a number with no STOP', async () => {
+    const res: any = await act({ action: 'send_checkin_link' })
+    expect(res.body.ok).toBe(true)
+    expect(sentCheckin).toHaveLength(1)
+  })
+
+  it('does not send outside 8am-9pm, to a STOP, or when the STOP cannot be checked', async () => {
+    quiet = { kind: 'closed' }
+    expect(((await act({ action: 'send_checkin_link' })) as any).status).toBe(409)
+    quiet = { kind: 'open' }; stop = 'stopped'
+    expect(((await act({ action: 'send_checkin_link' })) as any).status).toBe(409)
+    stop = 'unavailable'
+    expect(((await act({ action: 'send_checkin_link' })) as any).status).toBe(409)
+    expect(sentCheckin).toHaveLength(0)
   })
 })

@@ -46,6 +46,7 @@ const db = {
     q.select = () => q
     q.eq = (c: string, v: unknown) => ((rows = rows.filter(r => r[c] === v)), q)
     q.in = (c: string, vs: unknown[]) => ((rows = rows.filter(r => vs.includes(r[c]))), q)
+    q.like = (c: string, pat: string) => ((rows = rows.filter(r => String(r[c] ?? '').startsWith(pat.replace(/%$/, '')))), q)
     q.order = () => q
     q.limit = () => q
     q.maybeSingle = async () => ({ data: rows[0] ?? null, error: null })
@@ -303,5 +304,52 @@ describe('propose_send_message', () => {
   it('refuses a bad channel and an empty message', async () => {
     expect((await runAssistantTool('propose_send_message', { booking_ref: BOOKING.booking_ref, channel: 'fax', message: 'x' }, CTX)).isError).toBe(true)
     expect((await runAssistantTool('propose_send_message', { booking_ref: BOOKING.booking_ref, channel: 'text', message: '  ' }, CTX)).isError).toBe(true)
+  })
+})
+
+describe('propose_send_checkin_link', () => {
+  it('shows the exact text with the link as a marker and the masked number', async () => {
+    const out = await runAssistantTool('propose_send_checkin_link', { booking_ref: BOOKING.booking_ref }, CTX)
+    expect(out.isError).toBeFalsy()
+    const shown = (out.result as { shown_to_manager: string[] }).shown_to_manager.join('\n')
+    expect(shown).toContain('Hi Pat! Before your')
+    expect(shown).toContain('[one-time check-in link]')
+    expect(shown).not.toContain('631-555-0100')
+    expect(out.proposal?.proposal.kind).toBe('send_checkin_link')
+  })
+
+  it('is refused outside 8am-9pm and with no phone number', async () => {
+    const night = await runAssistantTool('propose_send_checkin_link', { booking_ref: BOOKING.booking_ref }, { ...CTX, now: new Date('2026-11-04T04:00:00Z') })
+    expect(night.isError).toBe(true)
+    expect(JSON.stringify(night.result)).toMatch(/8am/)
+    tables.bookings[0].contact_phone = null
+    expect((await runAssistantTool('propose_send_checkin_link', { booking_ref: BOOKING.booking_ref }, CTX)).isError).toBe(true)
+  })
+})
+
+describe('propose_send_photo_album', () => {
+  const url = 'https://fotoshare.co/i/abc123'
+  it('shows the fixed message and the channels', async () => {
+    const out = await runAssistantTool('propose_send_photo_album', { booking_ref: BOOKING.booking_ref, album_url: url, occasion: 'your birthday party' }, CTX)
+    expect(out.isError).toBeFalsy()
+    const shown = (out.result as { shown_to_manager: string[] }).shown_to_manager.join('\n')
+    expect(shown).toContain('host your birthday party')
+    expect(shown).toContain(url)
+    expect(out.proposal?.proposal.input).toMatchObject({ email: true, sms: true, url })
+  })
+
+  it('refuses a link that is not a Fotoshare album, and a refused occasion', async () => {
+    expect((await runAssistantTool('propose_send_photo_album', { booking_ref: BOOKING.booking_ref, album_url: 'https://evil.example/x' }, CTX)).isError).toBe(true)
+    expect((await runAssistantTool('propose_send_photo_album', { booking_ref: BOOKING.booking_ref, album_url: url, occasion: 'your party, Venmo @someone' }, CTX)).isError).toBe(true)
+  })
+
+  it('refuses a second send unless resend is set', async () => {
+    tables.booking_modifications = [{ booking_id: BK, change_summary: 'Photo booth album sent via email: x', created_at: '2026-10-01T00:00:00Z' }]
+    const again = await runAssistantTool('propose_send_photo_album', { booking_ref: BOOKING.booking_ref, album_url: url }, CTX)
+    expect(again.isError).toBe(true)
+    expect(JSON.stringify(again.result)).toMatch(/already sent/)
+    const resend = await runAssistantTool('propose_send_photo_album', { booking_ref: BOOKING.booking_ref, album_url: url, resend: true }, CTX)
+    expect(resend.isError).toBeFalsy()
+    expect((resend.result as { shown_to_manager: string[] }).shown_to_manager.join('\n')).toMatch(/RESEND/)
   })
 })

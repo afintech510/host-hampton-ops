@@ -102,13 +102,13 @@ describe('O1: every write tool is propose_* and has an executor branch', () => {
     const names = ASSISTANT_TOOLS.map(t => t.name)
     const others = names.filter(n => !n.startsWith('propose_'))
     expect(others.sort()).toEqual([...READ_TOOLS].sort())
-    expect(names.filter(n => n.startsWith('propose_')).length).toBe(32)
+    expect(names.filter(n => n.startsWith('propose_')).length).toBe(34)
     for (const t of ASSISTANT_TOOLS.filter(t => t.name.startsWith('propose_'))) expect(t.description).toMatch(/^PROPOSE /)
   })
 
   it('every proposal kind has a `case` in execute.ts, and every case is a kind', () => {
     const kinds = kindsInUnion()
-    expect(kinds.length).toBe(32)
+    expect(kinds.length).toBe(34)
     const exec = src('lib/assistant/execute.ts')
     const cases = Array.from(exec.matchAll(/case '([a-z_]+)':/g)).map(m => m[1])
     expect(cases.sort()).toEqual([...kinds].sort())
@@ -547,6 +547,8 @@ describe('O6: execute.ts replays the right admin action', () => {
     ['change_theme', { bookingId: BK, bookingRef: 'R', themeId: 'th-1', themeName: 'Glow Party', mini: true, fromMobile: true, price_cents: 1 }, { action: 'change_theme', theme_id: 'th-1', mini: true, from_mobile: true }],
     ['add_discount', { bookingId: BK, bookingRef: 'R', label: 'Discount: Returning client', discountCents: 10000, reason: 'Returning client' }, { action: 'add_line_item', name: 'Discount: Returning client', category: 'discount', unit_price_cents: -10000, guest_multiplied: false }],
     ['send_message', { bookingId: BK, bookingRef: 'R', email: false, sms: true, smsBody: 'Hi Pat!\nRunning early.\nReply STOP to opt out' }, { action: 'send_message', confirm: true, email: false, sms: true, smsBody: 'Hi Pat!\nRunning early.\nReply STOP to opt out' }],
+    ['send_checkin_link', { bookingId: BK, bookingRef: 'R' }, { action: 'send_checkin_link' }],
+    ['send_photo_album', { bookingId: BK, bookingRef: 'R', url: 'https://fotoshare.co/i/abc', occasion: 'your party', email: true, sms: false, resend: true }, { action: 'send_photo_album', confirm: true, url: 'https://fotoshare.co/i/abc', occasion: 'your party', email: true, sms: false, resend: true }],
     ['set_preferences', { bookingId: BK, bookingRef: 'R', preferences: { pizzaOrBagels: 'bagels', total_cents: 1 } }, { action: 'set_preferences', pizzaOrBagels: 'bagels' }],
     ['cancel_party', { bookingId: BK, bookingRef: 'R' }, { action: 'cancel' }],
     ['mark_lost', { bookingId: BK, bookingRef: 'R' }, { action: 'mark_lost' }],
