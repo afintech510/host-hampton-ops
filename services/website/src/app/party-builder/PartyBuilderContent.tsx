@@ -866,10 +866,10 @@ export default function PartyBuilderContent({
         // Load custom (admin-added) line items: those with no pricing_item_id.
         // Skip category='theme' rows — that's the auto-generated "Additional
         // Guests" line item; it gets reconstructed from extraGuests on render,
-        // so round-tripping it as a custom would double-count guest fees. A typed
-        // "Additional guest" line under another category is skipped for the same reason.
+        // so round-tripping it as a custom would double-count guest fees. The mobile package line is likewise rebuilt from the
+        // mobile selections. A typed "Additional guest" line under another category is skipped for the same reason.
         const customs = (data.lineItems || []).filter((li: { pricing_item_id?: string | null; category?: string; name?: string }) =>
-          !li.pricing_item_id && li.category !== 'theme' && !/^(additional|extra) (guests?|kids?|children)$/i.test((li.name || '').trim())
+          !li.pricing_item_id && li.category !== 'theme' && li.category !== 'mobile-package' && !/^(additional|extra) (guests?|kids?|children)$/i.test((li.name || '').trim())
         )
         if (customs.length) {
           setCustomItems(customs.map((li: { id: string; name: string; unit_price_cents: number; quantity: number; guest_multiplied: boolean; category: string }) => ({
