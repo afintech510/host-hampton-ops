@@ -16,6 +16,10 @@ import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
 import { ACTIVITY_TAGS, THEME_TAGS } from '@/lib/mediaVocab'
 import { loadQuoteCatalog, quoteFromCatalog, matchTheme, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
 import { screenTipCents } from '@/lib/partyPricing'
+import { buildCheckinSmsBody } from '@/lib/checkinLink'
+import { screenFotoshareUrl, screenOccasion, defaultOccasion, photoAlbumText, PHOTO_ALBUM_SENT_SUMMARY_PREFIX } from '@/lib/photoAlbum'
+import { checkSmsQuietHours } from '@/lib/quietHours'
+import { phoneHasExplicitStop } from '@/lib/phoneStop'
 import { priceRentalWindow } from '@/lib/rentalPricing'
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
@@ -26,7 +30,7 @@ import {
 } from './invoiceFormat'
 import { CREW_TOOLS, isCrewTool, runCrewTool } from './crewTools'
 import { buildEnrolCard } from './nurture'
-import { maskEmail } from './outboundText'
+import { maskEmail, maskPhone, screenOutboundText } from './outboundText'
 import { loadPartyCard, type PartyCardData } from './partyCard'
 import { loadMemories, screenMemoryText, MAX_MEMORIES_PER_SCOPE } from './memory'
 import { clock12 } from './timeFormat'
@@ -395,6 +399,28 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: 'propose_send_checkin_link',
+    description:
+      "PROPOSE texting the client their pre-arrival check-in link (contact details and, for rentals, the agreement). It is a fixed message with a one-time link, sent to the phone number on the booking. Refused outside 8am-9pm Eastern or to a number with a STOP. Nothing is sent until the manager clicks Confirm.",
+    input_schema: { type: 'object', properties: { booking_ref: { type: 'string' } }, required: ['booking_ref'] },
+  },
+  {
+    name: 'propose_send_photo_album',
+    description:
+      "PROPOSE sending the client their photo booth album link (a Fotoshare URL the manager gives you) with the standard thank-you and review request, by text, email or both. The wording is fixed; the card shows it exactly. Refused if it was already sent unless resend is true. Nothing is sent until the manager clicks Confirm.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        album_url: { type: 'string', description: 'The Fotoshare album URL.' },
+        occasion: { type: 'string', description: 'e.g. "your birthday party". Omit to use the standard phrase for the party type.' },
+        channel: { type: 'string', enum: ['text', 'email', 'both'], description: 'Default both.' },
+        resend: { type: 'boolean', description: 'Only if the manager confirms sending it again.' },
+      },
+      required: ['booking_ref', 'album_url'],
+    },
+  },
+  {
     name: 'propose_record_payment',
     description:
       'PROPOSE writing down a payment that arrived outside Stripe (cash, Venmo, Zelle, check) against a party. It records money in the books and moves the balance; it takes no money and by default emails the client nothing. Use the amount and method the manager stated; never guess either. Nothing is recorded until the manager clicks Confirm.',
@@ -676,6 +702,10 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await proposeAddDiscount(supabase, input, ctx)
       case 'propose_send_message':
         return await proposeSendMessage(supabase, input, ctx)
+      case 'propose_send_checkin_link':
+        return await proposeSendCheckinLink(supabase, input, ctx)
+      case 'propose_send_photo_album':
+        return await proposeSendPhotoAlbum(supabase, input, ctx)
       case 'propose_record_payment':
         return await proposeRecordPayment(supabase, input, ctx)
       case 'propose_cancel':
@@ -1968,6 +1998,89 @@ async function proposeSendMessage(supabase: Supa, input: Record<string, unknown>
     now: ctx.now,
   })
   return messageCardOutcome('send_message', built, ctx, input)
+}
+
+/** Would a text go out right now? One read-only answer for the two tools below. */
+async function textBlockReason(supabase: Supa, phone: string, now: Date): Promise<string | null> {
+  if (checkSmsQuietHours(now).kind !== 'open') return 'Texts only go out 8am–9pm Eastern, and it is outside that now. Ask again after 8am; nothing was proposed.'
+  const stop = await phoneHasExplicitStop(supabase, phone)
+  if (stop === 'stopped') return 'This number has a STOP (opt-out) on file, so a text would be refused; nothing was proposed.'
+  if (stop !== 'clear') return 'Could not check this number for a STOP right now; nothing was proposed. Try again.'
+  return null
+}
+
+async function proposeSendCheckinLink(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  if (!b.contact_phone) return fail(`${b.booking_ref} has no phone number on file; nothing was proposed.`)
+  const blocked = await textBlockReason(supabase, b.contact_phone, ctx.now ?? new Date())
+  if (blocked) return fail(blocked)
+  const shown = buildCheckinSmsBody(b.contact_name, '[one-time check-in link]')
+  return cardOutcome(
+    'send_checkin_link',
+    { bookingId: b.id, bookingRef: b.booking_ref },
+    `Text the check-in link for ${b.booking_ref}`,
+    [
+      `Party: ${partyLabel(b)}`,
+      `To: ${maskPhone(b.contact_phone)}`,
+      `Text: ${shown}`,
+      'A fresh one-time link is made when you confirm. The automatic check-in reminders are set up too if they were missing.',
+    ],
+    ctx,
+    'Nothing has been sent.',
+  )
+}
+
+async function proposeSendPhotoAlbum(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const album = screenFotoshareUrl(input.album_url)
+  if (!album.ok) return fail(album.reason)
+  const occ = screenOccasion(input.occasion ?? defaultOccasion(b))
+  if (!occ.ok) return fail(occ.reason)
+  // The occasion is text the model may have written: the same screens as any customer message.
+  const occScreen = screenOutboundText(occ.occasion, { channel: 'subject', authored: 'model', allowedPlaceholders: [] })
+  if (!occScreen.ok) return fail(`The occasion was refused: ${occScreen.reason}`)
+
+  const channel = input.channel === undefined ? 'both' : input.channel
+  if (channel !== 'text' && channel !== 'email' && channel !== 'both') return fail('channel must be text, email or both.')
+  const email = channel === 'email' || channel === 'both'
+  const sms = channel === 'text' || channel === 'both'
+  if (email && !b.contact_email) return fail(`${b.booking_ref} has no email address; use channel text.`)
+  if (sms && !b.contact_phone) return fail(`${b.booking_ref} has no phone number; use channel email.`)
+
+  const { data: prior, error } = await supabase
+    .from('booking_modifications')
+    .select('created_at')
+    .eq('booking_id', b.id)
+    .like('change_summary', `${PHOTO_ALBUM_SENT_SUMMARY_PREFIX}%`)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error) return fail('Could not check whether the album was already sent; nothing was proposed. Try again.')
+  const resend = input.resend === true
+  if ((prior ?? []).length > 0 && !resend) {
+    return fail(`The photo album was already sent for ${b.booking_ref}. Ask the manager; if they want it sent again, call again with resend true.`)
+  }
+
+  const text = photoAlbumText({ contactName: b.contact_name, occasion: occScreen.text, albumUrl: album.url })
+  const status = sms ? await textBlockReason(supabase, b.contact_phone as string, ctx.now ?? new Date()) : null
+  return cardOutcome(
+    'send_photo_album',
+    { bookingId: b.id, bookingRef: b.booking_ref, url: album.url, occasion: occScreen.text, email, sms, ...(resend ? { resend: true } : {}) },
+    `Send the photo album to ${b.booking_ref}`,
+    [
+      `Party: ${partyLabel(b)}`,
+      `By: ${[email && `email to ${maskEmail(b.contact_email)}`, sms && `text to ${maskPhone(b.contact_phone)}`].filter(Boolean).join(' and ')}`,
+      ...(resend ? ['This is a RESEND: it was sent before.'] : []),
+      ...(status ? [`Heads up: the text would be refused right now (${status.replace(/; nothing was proposed\.?/, '')}); the email would still go.`] : []),
+      `Message:\n${text}`,
+      'The album link is also saved on the booking.',
+    ],
+    ctx,
+    'Nothing has been sent.',
+  )
 }
 
 async function proposeRecordPayment(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {

@@ -34,6 +34,8 @@ export type ProposalKind =
   | 'change_theme'
   | 'add_discount'
   | 'send_message'
+  | 'send_checkin_link'
+  | 'send_photo_album'
   | 'record_payment'
   | 'cancel_party'
   | 'mark_lost'
