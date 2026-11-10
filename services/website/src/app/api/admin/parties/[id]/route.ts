@@ -128,6 +128,9 @@ async function syncCalendar(supabase: ReturnType<typeof getSupabase>, id: string
   if (!r.ok) console.error(`admin/parties/${id}: calendar sync failed (non-fatal):`, r.error)
 }
 
+/** Tags the dashboard may change by hand: neither affects a price. */
+const EDITABLE_PARTY_TAGS = ['modifications_unlocked', 'catchy_party_name']
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminAuthorized(req)) return unauthorizedResponse()
 
@@ -137,9 +140,46 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // Admin can update any field
   const updates: Record<string, unknown> = {}
-  const allowed = ['status', 'party_date', 'party_time', 'package_type', 'guest_count_approx', 'child_name', 'child_age', 'total_cents', 'balance_due_cents', 'admin_notes', 'notes', 'contact_name', 'contact_email', 'contact_phone', 'photo_gallery_url', 'party_tags']
+  // Not on this list on purpose. `status` has its own actions (approve / cancel /
+  // mark_lost / reopen), which send the customer email, cancel the check-in texts and
+  // gate on money; a PATCH to `cancelled` skipped all of it. `total_cents` and
+  // `balance_due_cents` are DERIVED from the line items and payments (recalcTotals,
+  // bookingBalance): a raw write leaves a booking disagreeing with its own invoice.
+  // Nothing in the dashboard or the assistant sends any of the three.
+  const allowed = ['party_date', 'party_time', 'package_type', 'guest_count_approx', 'child_name', 'child_age', 'admin_notes', 'notes', 'contact_name', 'contact_email', 'contact_phone', 'photo_gallery_url']
   for (const key of allowed) {
     if (body[key] !== undefined) updates[key] = body[key]
+  }
+  const refusedKeys = ['status', 'total_cents', 'balance_due_cents'].filter(k => body[k] !== undefined)
+  if (refusedKeys.length) {
+    return NextResponse.json(
+      { error: `${refusedKeys.join(', ')} cannot be set here: status has its own actions (approve, cancel, mark_lost, reopen) and the totals follow the line items and payments.` },
+      { status: 400 },
+    )
+  }
+
+  // `party_tags` carries rental times, the address, the custom hourly rate and the
+  // security hold, none of which a raw write re-prices. The dashboard only edits the
+  // unlock switch (and sends the whole object back with it), so: keys the caller did
+  // not change are ignored, a changed key outside the editable set is refused, and the
+  // result is merged into the stored tags rather than replacing them.
+  if (body.party_tags !== undefined) {
+    if (!body.party_tags || typeof body.party_tags !== 'object' || Array.isArray(body.party_tags)) {
+      return NextResponse.json({ error: 'party_tags must be an object' }, { status: 400 })
+    }
+    const { data: tagRow, error: tagErr } = await supabase.from('bookings').select('party_tags').eq('id', id).single()
+    if (tagErr || !tagRow) return NextResponse.json({ error: 'Could not read the booking to merge party_tags' }, { status: 500 })
+    const stored = (tagRow.party_tags as Record<string, unknown> | null) || {}
+    const incoming = body.party_tags as Record<string, unknown>
+    const changed = Object.keys(incoming).filter(k => JSON.stringify(incoming[k]) !== JSON.stringify(stored[k]))
+    const blocked = changed.filter(k => !EDITABLE_PARTY_TAGS.includes(k))
+    if (blocked.length) {
+      return NextResponse.json(
+        { error: `party_tags ${blocked.join(', ')} cannot be edited here: they drive the price. Use the rental time editor, the assistant, or the matching action.` },
+        { status: 400 },
+      )
+    }
+    if (changed.length) updates.party_tags = { ...stored, ...Object.fromEntries(changed.map(k => [k, incoming[k]])) }
   }
 
   // `party_type` is the field the whole Parties tab filters and counts on, and
@@ -171,6 +211,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       summary: 'Admin edit: ' + Object.keys(updates).filter(k => k !== 'updated_at').join(', '),
       newData: updates,
     })
+
+  // A label is not an invoice. Changing the theme name or the party type writes the
+  // column and nothing else; if the lines no longer match, say so now rather than
+  // let the customer's invoice contradict the party. (A real swap rebuilds lines and
+  // needs choices, so it is its own action, not a side effect of this one.)
+  let labelWarning: string | undefined
+  if (updates.package_type !== undefined || updates.party_type !== undefined) {
+    const { data: liRows } = await supabase.from('booking_line_items').select('name, category, pricing_item_id').eq('booking_id', id)
+    const li = (liRows ?? []) as { name: string; category: string; pricing_item_id: string | null }[]
+    const themeLine = li.find(r => r.category === 'theme' && r.pricing_item_id)
+    const hasMobile = li.some(r => r.category === 'mobile-package')
+    const hasRental = li.some(r => r.category === 'rental')
+    const notes: string[] = []
+    if (updates.package_type !== undefined && themeLine && String(updates.package_type).trim().toLowerCase() !== themeLine.name.trim().toLowerCase()) {
+      notes.push(`the invoice still has the "${themeLine.name}" theme line at its old price`)
+    }
+    if (updates.party_type === 'in_studio_theme' && (hasMobile || hasRental)) notes.push('the invoice still has mobile/rental lines')
+    if (updates.party_type === 'mobile_party' && (themeLine || hasRental)) notes.push('the invoice still has in-studio theme or rental lines')
+    if (updates.party_type === 'studio_rental' && (themeLine || hasMobile)) notes.push('the invoice still has theme or mobile lines')
+    if (notes.length) labelWarning = `Saved the label, but ${notes.join(' and ')}. Nothing was repriced: swap the lines to match, or the customer's invoice will contradict the party.`
+  }
 
   // A studio rental is priced from its date (weekday/weekend card) and its
   // window, and carries the window in `party_tags`. Moving the date or start time
@@ -261,7 +322,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   return NextResponse.json({
     ok: true,
-    ...(rentalProblem ? { warning: rentalProblem } : {}),
+    ...(rentalProblem || labelWarning ? { warning: [rentalProblem, labelWarning].filter(Boolean).join(' ') } : {}),
     ...(rentalTotals.totalCents !== undefined ? { totalsUpdated: true, ...rentalTotals } : {}),
     ...(totalsUpdated !== undefined ? { totalsUpdated, totalCents, balanceCents, warning: totalsWarning } : {}),
   })
