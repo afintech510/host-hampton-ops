@@ -14,7 +14,7 @@ import { PARTY_TYPES, isPartyType } from '@/lib/pipelineStages'
 import { ADMIN_PAYMENT_METHODS, PAYMENT_TYPES } from '@/lib/adminMoney'
 import { findPhotos, MAX_PHOTOS_PER_REQUEST } from '@/lib/media'
 import { ACTIVITY_TAGS, THEME_TAGS } from '@/lib/mediaVocab'
-import { loadQuoteCatalog, quoteFromCatalog, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
+import { loadQuoteCatalog, quoteFromCatalog, matchTheme, MAX_QUOTE_GUESTS } from '@/lib/quoteRequest'
 import { priceRentalWindow } from '@/lib/rentalPricing'
 import { mintProposal, type Proposal, type ProposalPhoto } from './proposals'
 import { LEAD_TOOLS, isLeadTool, runLeadTool } from './leadTools'
@@ -332,6 +332,21 @@ export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: 'propose_change_theme',
+    description:
+      "PROPOSE changing an in-studio theme party to a different studio theme, turning the mini-party discount on or off, or converting a MOBILE party into an in-studio theme party. The theme line and its price are swapped for the catalog's, the extra-guest line and the total follow, and the party's package name is updated. Activity lines (included / upgrade) are NOT re-derived: tell the manager to review them against the new theme. The client is not notified. Nothing changes until the manager clicks Confirm.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        booking_ref: { type: 'string' },
+        theme: { type: 'string', description: 'A studio theme by name (see get_pricing).' },
+        mini_party: { type: 'boolean', description: 'true = mini party discount (capped guest count); false = full party. Omit to leave as is.' },
+        convert_from_mobile: { type: 'boolean', description: 'true to turn a mobile party into an in-studio theme party: removes the mobile package line.' },
+      },
+      required: ['booking_ref', 'theme'],
+    },
+  },
+  {
     name: 'propose_set_preferences',
     description:
       "PROPOSE recording what the host chose for a party's menu and requests: pizza or bagels, cupcake flavor, party preferences (allergies, themes, colours) and a character request. These price nothing. Nothing changes until the manager clicks Confirm.",
@@ -622,6 +637,8 @@ export async function runAssistantTool(name: string, rawInput: unknown, ctx: Too
         return await proposeEditRental(supabase, input, ctx)
       case 'propose_set_preferences':
         return await proposeSetPreferences(supabase, input, ctx)
+      case 'propose_change_theme':
+        return await proposeChangeTheme(supabase, input, ctx)
       case 'propose_record_payment':
         return await proposeRecordPayment(supabase, input, ctx)
       case 'propose_cancel':
@@ -1753,6 +1770,58 @@ async function proposeEditRental(supabase: Supa, input: Record<string, unknown>,
     'The calendar block and the check-in texts move with it. The client is not notified.',
   ]
   return cardOutcome('edit_rental', { bookingId: b.id, bookingRef: b.booking_ref, startTime: start, endTime: end }, `Move the rental window on ${b.booking_ref}`, details, ctx, 'Nothing has been changed.')
+}
+
+async function proposeChangeTheme(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
+  const l = await loadBooking(supabase, input)
+  if (!l.ok) return l.out
+  const b = l.b
+  const wanted = str(input.theme, 120)
+  if (!wanted) return fail('theme is required (a studio theme name; see get_pricing).')
+  if (b.event_type === 'studio-rental') return fail(`${b.booking_ref} is a studio rental and has no theme.`)
+
+  const loaded = await loadQuoteCatalog(supabase)
+  if (loaded.kind !== 'ok') return fail('The theme catalog could not be read — say so.')
+  const hit = matchTheme(loaded.data, wanted)
+  if (hit.kind === 'none') return fail(`No studio theme named "${wanted}". Use get_pricing for the list.`)
+  if (hit.kind === 'ambiguous') return fail(`"${wanted}" matches more than one theme: ${hit.names.join('; ')}. Ask which.`)
+  const theme = hit.item
+
+  const { data, error } = await supabase.from('booking_line_items').select('name, category, pricing_item_id, unit_price_cents').eq('booking_id', b.id)
+  if (error) return fail('Could not read the invoice lines — say so.')
+  const rows = (data ?? []) as { name: string; category: string; pricing_item_id: string | null; unit_price_cents: number }[]
+  const hasMobile = rows.some(r => r.category === 'mobile-package')
+  const fromMobile = input.convert_from_mobile === true
+  if (hasMobile && !fromMobile) {
+    return fail('This is a mobile party. To make it an in-studio theme party, call again with convert_from_mobile: true (the mobile package line is removed).')
+  }
+  if (!hasMobile && fromMobile) return fail('That party has no mobile package line to convert.')
+
+  const { data: snapRow } = await supabase.from('bookings').select('quote_snapshot').eq('id', b.id).maybeSingle()
+  const wasMini = (snapRow as { quote_snapshot?: { isMiniParty?: boolean } } | null)?.quote_snapshot?.isMiniParty === true
+  const mini = input.mini_party === undefined ? wasMini : input.mini_party === true
+  const miniOff = loaded.data.cat.guestRules.miniPartyDiscountCents
+  const newPrice = Math.max(0, theme.price_cents - (mini ? miniOff : 0))
+  const oldTheme = rows.find(r => r.category === 'theme' && r.pricing_item_id)
+  const oldMobile = rows.find(r => r.category === 'mobile-package')
+  const before = oldTheme?.unit_price_cents ?? oldMobile?.unit_price_cents ?? 0
+
+  const pic = await moneyPicture(supabase, b.booking_ref)
+  const details = [
+    `Party: ${partyLabel(b)}`,
+    `${fromMobile ? 'Mobile package' : 'Theme'}: ${oldTheme?.name ?? oldMobile?.name ?? 'none'} (${money(before)}) → ${theme.name} (${money(newPrice)}${mini ? `, mini party: ${money(miniOff)} off` : ''})`,
+    ...(fromMobile ? ['Becomes an in-studio theme party; the mobile package line is removed.'] : []),
+    ...(pic ? [`Invoice about ${money(pic.total)} → ${money(pic.total - before + newPrice)} before the extra-guest line is re-derived.`] : []),
+    'The extra-guest line and the total are recalculated. Activity lines are not re-derived: review them against the new theme. The client is not notified.',
+  ]
+  return cardOutcome(
+    'change_theme',
+    { bookingId: b.id, bookingRef: b.booking_ref, themeId: theme.id, themeName: theme.name, ...(input.mini_party !== undefined ? { mini } : {}), ...(fromMobile ? { fromMobile: true } : {}) },
+    `Change ${b.booking_ref} to ${theme.name}`,
+    details,
+    ctx,
+    'Nothing has been changed.',
+  )
 }
 
 async function proposeSetPreferences(supabase: Supa, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {

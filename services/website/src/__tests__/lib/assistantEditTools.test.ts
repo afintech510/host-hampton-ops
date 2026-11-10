@@ -21,6 +21,17 @@ jest.mock('@/lib/pricingCatalog', () => ({
   }),
   loadLineItemAddOns: async () => [],
 }))
+jest.mock('@/lib/quoteRequest', () => ({
+  ...jest.requireActual('@/lib/quoteRequest'),
+  loadQuoteCatalog: async () => ({
+    kind: 'ok',
+    data: {
+      cat: { guestRules: { miniPartyDiscountCents: 20000 } },
+      groups: { themes: [{ id: 'glow', name: 'Glow Party', price_cents: 69500, category: 'party-theme' }] },
+      themeInfo: [],
+    },
+  }),
+}))
 jest.mock('@/app/api/admin/parties/create/route', () => ({ POST: jest.fn() }))
 jest.mock('@/app/api/admin/parties/[id]/route', () => ({ POST: jest.fn(), PATCH: jest.fn() }))
 jest.mock('@/app/api/plan/[ref]/pay-link/route', () => ({ POST: jest.fn() }))
@@ -152,5 +163,37 @@ describe('admin_notes_append', () => {
   it('refuses replace and append together', async () => {
     const out = await runAssistantTool('propose_update_party', { booking_ref: BOOKING.booking_ref, admin_notes: 'x', admin_notes_append: 'y' }, CTX)
     expect(out.isError).toBe(true)
+  })
+})
+
+describe('propose_change_theme', () => {
+  it('previews the swap with the catalog price and says activities are not re-derived', async () => {
+    const out = await runAssistantTool('propose_change_theme', { booking_ref: BOOKING.booking_ref, theme: 'Glow Party' }, CTX)
+    expect(out.isError).toBeFalsy()
+    const shown = (out.result as { shown_to_manager: string[] }).shown_to_manager.join('\n')
+    expect(shown).toContain('Glow Party ($695.00)')
+    expect(shown).toMatch(/Activity lines are not re-derived/)
+    expect(out.proposal?.proposal.input).toMatchObject({ themeId: 'glow', themeName: 'Glow Party' })
+  })
+
+  it('applies the mini discount in the preview', async () => {
+    const out = await runAssistantTool('propose_change_theme', { booking_ref: BOOKING.booking_ref, theme: 'Glow Party', mini_party: true }, CTX)
+    expect((out.result as { shown_to_manager: string[] }).shown_to_manager.join('\n')).toContain('$495.00, mini party: $200.00 off')
+  })
+
+  it('refuses an unknown theme, and a mobile party unless it is a conversion', async () => {
+    expect((await runAssistantTool('propose_change_theme', { booking_ref: BOOKING.booking_ref, theme: 'Nonsense' }, CTX)).isError).toBe(true)
+    tables.booking_line_items = [{ id: 'm', booking_id: BK, name: 'Mobile Party Package', category: 'mobile-package', quantity: 1, unit_price_cents: 135000, guest_multiplied: false }]
+    const plain = await runAssistantTool('propose_change_theme', { booking_ref: BOOKING.booking_ref, theme: 'Glow Party' }, CTX)
+    expect(plain.isError).toBe(true)
+    expect(JSON.stringify(plain.result)).toMatch(/convert_from_mobile/)
+    const conv = await runAssistantTool('propose_change_theme', { booking_ref: BOOKING.booking_ref, theme: 'Glow Party', convert_from_mobile: true }, CTX)
+    expect(conv.isError).toBeFalsy()
+    expect(conv.proposal?.proposal.input).toMatchObject({ fromMobile: true })
+  })
+
+  it('refuses a studio rental', async () => {
+    tables.bookings = [{ ...BOOKING, event_type: 'studio-rental' }]
+    expect((await runAssistantTool('propose_change_theme', { booking_ref: BOOKING.booking_ref, theme: 'Glow Party' }, CTX)).isError).toBe(true)
   })
 })
