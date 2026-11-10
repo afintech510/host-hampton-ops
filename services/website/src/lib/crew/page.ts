@@ -11,12 +11,12 @@
  */
 
 import { notFound, redirect } from 'next/navigation'
-import { crewAccessDenied, currentCrewMember } from '@/lib/crew/auth'
+import { crewAccessDenied, currentCrewMember, viewAsCookiePresent } from '@/lib/crew/auth'
 import { crewAppOpen, type CrewScope } from '@/lib/crew/settings'
 import type { CrewMemberRow } from '@/lib/crew/db'
 
 export async function requireCrewPage(want: CrewScope = 'app'): Promise<CrewMemberRow | 'unavailable'> {
-  if (!crewAppOpen()) notFound()
+  if (!crewAppOpen() && !viewAsCookiePresent()) notFound()
   const s = await currentCrewMember()
   if (s.kind === 'none') redirect('/crew/login')
   if (s.kind === 'unavailable') {

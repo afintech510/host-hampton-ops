@@ -218,6 +218,7 @@ function MemberPanelInner({ m, onChanged, onError }: { m: Member } & MemberHandl
               </div>
             </div> : <button className={BTN_GHOST} onClick={() => setArchive(true)}>Archive staff member</button>)}
             <Invite m={m} onChanged={onChanged} onError={onError} />
+            <ViewAs m={m} onError={onError} />
             <Onboarding m={m} onChanged={onChanged} onError={onError} />
             {m.needsReview && (
               <button className={BTN_GHOST} onClick={async () => {
@@ -358,6 +359,30 @@ function MemberForm({ initial, mode, hasHourlyRate = false, onSave }: {
       </label>
       <div className="sm:col-span-2"><button disabled={busy} className={BTN_PRIMARY}>{busy ? 'Saving…' : mode === 'create' ? 'Add' : 'Save'}</button></div>
     </form>
+  )
+}
+
+/** Open the crew app as this member, read-only (audited). Works with the crew switches off. */
+function ViewAs({ m, onError }: { m: Member; onError: (e: string) => void }) {
+  const api = useAdminApi()
+  const [busy, setBusy] = useState(false)
+  if (m.isOwner) return null
+  return (
+    <button
+      disabled={busy}
+      className={BTN_GHOST}
+      title="See the crew app exactly as they do. Read-only: nothing you click changes anything."
+      onClick={async () => {
+        setBusy(true)
+        const r = await api<{ error?: string; redirect?: string }>(`/api/admin/crew/members/${m.id}/view-as`, { method: 'POST' })
+        if (!r.ok) {
+          setBusy(false)
+          onError(r.data.error || 'Could not start the preview.')
+        } else window.location.href = r.data.redirect || '/crew'
+      }}
+    >
+      View as {m.firstName}
+    </button>
   )
 }
 
