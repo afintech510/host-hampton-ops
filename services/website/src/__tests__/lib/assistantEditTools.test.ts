@@ -197,3 +197,59 @@ describe('propose_change_theme', () => {
     expect((await runAssistantTool('propose_change_theme', { booking_ref: BOOKING.booking_ref, theme: 'Glow Party' }, CTX)).isError).toBe(true)
   })
 })
+
+describe('propose_add_discount', () => {
+  const shown = (out: { result: unknown }) => (out.result as { shown_to_manager: string[] }).shown_to_manager.join('\n')
+
+  it('previews a dollar discount against the invoice and the balance', async () => {
+    const out = await runAssistantTool('propose_add_discount', { booking_ref: BOOKING.booking_ref, amount_cents: 10000, reason: 'Returning client' }, CTX)
+    expect(out.isError).toBeFalsy()
+    expect(shown(out)).toContain('Invoice $900.00 → $800.00')
+    expect(shown(out)).toContain('outstanding $650.00 → $550.00')
+    expect(out.proposal?.proposal.input).toMatchObject({ discountCents: 10000, label: 'Discount: Returning client' })
+  })
+
+  it('works out a percent of the current total', async () => {
+    const out = await runAssistantTool('propose_add_discount', { booking_ref: BOOKING.booking_ref, percent: 10, reason: 'Friends' }, CTX)
+    expect(out.proposal?.proposal.input).toMatchObject({ discountCents: 9000 })
+  })
+
+  it('refuses a discount that would leave the client overpaid (no refunds in chat)', async () => {
+    const out = await runAssistantTool('propose_add_discount', { booking_ref: BOOKING.booking_ref, amount_cents: 70000, reason: 'Too big' }, CTX)
+    expect(out.isError).toBe(true)
+    expect(JSON.stringify(out.result)).toMatch(/overpaid/)
+    expect(out.proposal).toBeUndefined()
+  })
+
+  it.each([
+    [{ reason: 'x' }, /amount_cents OR percent/],
+    [{ amount_cents: 100, percent: 5, reason: 'x' }, /amount_cents OR percent/],
+    [{ amount_cents: 100 }, /reason/],
+    [{ amount_cents: -5, reason: 'x' }, /positive/],
+    [{ percent: 150, reason: 'x' }, /between 0 and 100/],
+  ])('refuses %j', async (extra, why) => {
+    const out = await runAssistantTool('propose_add_discount', { booking_ref: BOOKING.booking_ref, ...(extra as object) }, CTX)
+    expect(out.isError).toBe(true)
+    expect(JSON.stringify(out.result)).toMatch(why as RegExp)
+  })
+
+  it('will not discount an unpriced party', async () => {
+    mockLoadInvoice.mockResolvedValue({ ok: true, invoice: { booking: BOOKING, totalCents: 0, paidCents: 0, outstandingCents: 0, guestCount: 10, depositOwedCents: 0 } })
+    const out = await runAssistantTool('propose_add_discount', { booking_ref: BOOKING.booking_ref, amount_cents: 100, reason: 'x' }, CTX)
+    expect(out.isError).toBe(true)
+  })
+})
+
+describe('propose_record_payment with a tip', () => {
+  it('carries the tip on top of the payment and says it is not credited', async () => {
+    const out = await runAssistantTool('propose_record_payment', { booking_ref: BOOKING.booking_ref, amount_cents: 20000, payment_method: 'venmo', tip_cents: 2500 }, CTX)
+    expect(out.isError).toBeFalsy()
+    expect(out.proposal?.proposal.input).toMatchObject({ amount_cents: 20000, tip_cents: 2500 })
+    expect((out.result as { shown_to_manager: string[] }).shown_to_manager.join('\n')).toMatch(/\$25\.00 tip.*not credited/)
+  })
+
+  it('refuses a zero or junk tip instead of dropping it', async () => {
+    const out = await runAssistantTool('propose_record_payment', { booking_ref: BOOKING.booking_ref, amount_cents: 20000, payment_method: 'venmo', tip_cents: 0 }, CTX)
+    expect(out.isError).toBe(true)
+  })
+})

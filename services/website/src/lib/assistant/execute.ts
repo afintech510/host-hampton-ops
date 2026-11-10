@@ -222,6 +222,21 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
       return { ok: true, status: res.status, message: `Added ${input.name} to ${input.bookingRef}.${warningNote(json)}${totalsNote(json)}` }
     }
 
+    case 'add_discount': {
+      const input = proposal.input as { bookingId: string; bookingRef: string; label: string; discountCents: number; reason?: string | null }
+      const { res, json } = await replayPartyAction(original, input.bookingId, {
+        action: 'add_line_item',
+        name: input.label,
+        category: 'discount',
+        quantity: 1,
+        unit_price_cents: -Math.abs(Math.round(Number(input.discountCents))),
+        guest_multiplied: false,
+        description: input.reason ?? undefined,
+      })
+      if (!res.ok || json.ok !== true) return refused('Discount not added', res, json)
+      return { ok: true, status: res.status, message: `Discount added to ${input.bookingRef}.${warningNote(json)}${totalsNote(json)}` }
+    }
+
     case 'edit_line_item': {
       const input = proposal.input as { bookingId: string; bookingRef: string; lineItemId: string; changes: Record<string, unknown> }
       const { res, json } = await replayPartyAction(original, input.bookingId, {
@@ -285,6 +300,7 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
         payment_type: string
         notes?: string
         send_receipt: boolean
+        tip_cents?: number
       }
       // `send_receipt` is carried as the card showed it (false unless the
       // manager asked for a receipt). `force_ledger` is never sent: the books'
@@ -296,6 +312,7 @@ export async function executeProposal(original: NextRequest, proposal: Proposal)
         payment_type: input.payment_type,
         notes: input.notes,
         send_receipt: input.send_receipt === true,
+        ...(Number(input.tip_cents) > 0 ? { tip_cents: Number(input.tip_cents) } : {}),
       })
       if (!res.ok || json.ok !== true) return refused('Not recorded', res, json)
       return {
