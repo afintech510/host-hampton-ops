@@ -470,6 +470,15 @@ function InvoiceBody({
             latter is 0 and this callout is the only place the page names the
             deposit the pay button is about to charge.
           */}
+          {invoice.optionsPending && (
+            <div className="deposit-callout">
+              <div>
+                <div className="label">{content.depositLabel}</div>
+                <div className="deposit-note">{content.depositNote}</div>
+              </div>
+              <div className="amount">50%</div>
+            </div>
+          )}
           {invoice.depositOwedCents > 0 && (
             <div className="deposit-callout">
               <div>

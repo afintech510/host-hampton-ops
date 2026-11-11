@@ -61,6 +61,11 @@ describe('money', () => {
 })
 
 describe('docTitleFor', () => {
+  it('names a hat bar quote and invoice', () => {
+    expect(docTitleFor('hat_bar', 'lead')).toBe('Hat Bar Quotation')
+    expect(docTitleFor('hat_bar', 'deposit_paid')).toBe('Hat Bar Invoice')
+  })
+
   it('names the product', () => {
     expect(docTitleFor('studio_rental', 'lead')).toBe('Studio Rental Quotation')
     expect(docTitleFor('mobile_party', 'lead')).toBe('Mobile Party Quotation')

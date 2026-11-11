@@ -117,6 +117,11 @@ export const FALLBACK_CONTENT_ROWS: PlanContentRow[] = [
     party_type: 'in_studio_theme', slot: 'deposit_note', sort_order: 1,
     body: 'Due now to reserve the date. It comes off your total, so it is not an extra charge.',
   },
+  { party_type: 'hat_bar', slot: 'deposit_label', body: '50% Deposit — Required to Book', sort_order: 1 },
+  {
+    party_type: 'hat_bar', slot: 'deposit_note', sort_order: 1,
+    body: 'Choose Option 1 or Option 2 above. A 50% deposit of your selected option reserves your date and comes off your total, so it is not an extra charge.',
+  },
   { party_type: 'all', slot: 'deposit_label', body: 'Reservation Deposit — Required to Book', sort_order: 1 },
   {
     party_type: 'all', slot: 'deposit_note', sort_order: 1,

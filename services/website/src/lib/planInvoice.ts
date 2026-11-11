@@ -128,6 +128,8 @@ export interface PlanInvoice {
   /** Featured first, then billed items, then optional ones. */
   lineItems: InvoiceLineItem[]
   totalCents: number
+  /** A hat bar quote whose items are all still unchosen options: no total, no flat deposit. */
+  optionsPending: boolean
   /** The FULL deposit for this plan, paid or not. What the callout prints. */
   depositCents: number
   /**
@@ -236,6 +238,7 @@ export function money(cents: number): string {
 const DOC_TITLES: Record<string, string> = {
   studio_rental: 'Studio Rental Quotation',
   mobile_party: 'Mobile Party Quotation',
+  hat_bar: 'Hat Bar Quotation',
   // "In-Studio" so the document says where the party is — the unclassified
   // fallback below stays plain "Party", because it does not know.
   in_studio_theme: 'In-Studio Party Quotation',
@@ -457,7 +460,14 @@ export async function loadPlanInvoice(
   // An unpriced plan can still take the flat deposit that reserves its date —
   // see `isUnpricedPlan`. Withheld on a booking that may not take money at all,
   // so a cancelled party cannot offer a customer a "reserve your date" button.
-  const reservationDepositCents = isPayableStatus(booking.status) ? BOOKING_DEPOSIT_CENTS : 0
+  //
+  // Not on a hat bar quote that is still only OPTIONS: the customer has not
+  // chosen one, so there is nothing to take a deposit against, and the flat
+  // $250 would sit beside two options whose real deposit is 50% of the pick
+  // (HH-PTY-VVEWJ). The 50% is stated in the callout; the pay button returns
+  // once an option is made billable.
+  const optionsPending = partyType === 'hat_bar' && totalCents === 0 && lineItems.some(i => i.isOptional)
+  const reservationDepositCents = isPayableStatus(booking.status) && !optionsPending ? BOOKING_DEPOSIT_CENTS : 0
   const m = planMoney({ totalCents, depositCents, depositIsSeparate, payments, reservationDepositCents })
 
   const tags = booking.party_tags ?? {}
@@ -508,6 +518,7 @@ export async function loadPlanInvoice(
       }).format(new Date()),
       lineItems,
       totalCents,
+      optionsPending,
       depositCents,
       balanceDueCents: m.balanceDueCents,
       depositOwedCents: m.depositOwedCents,
