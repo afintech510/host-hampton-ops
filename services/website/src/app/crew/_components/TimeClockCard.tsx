@@ -95,18 +95,20 @@ export default function TimeClockCard({ open, noticeAccepted }: { open: string |
           {open
             ? <p style={{ margin: '0 0 .6rem' }}><strong>Punched in at {clock(open)}</strong><br /><span className="crew-muted">{elapsed(open, now)} so far</span></p>
             : <p className="crew-muted" style={{ margin: '0 0 .6rem' }}>You&apos;re punched out.</p>}
-          <button
-            type="button"
-            className={open ? 'crew-btn crew-btn-ghost' : 'crew-btn'}
-            onClick={() => (accepted ? punch() : setShowNotice(true))}
-            disabled={busy}
-          >
-            {busy ? (open ? 'Punching out…' : 'Punching in…') : open ? 'Punch out' : 'Punch in'}
-          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.6rem' }}>
+            <button
+              type="button"
+              className={open ? 'crew-btn crew-btn-ghost' : 'crew-btn'}
+              onClick={() => (accepted ? punch() : setShowNotice(true))}
+              disabled={busy}
+            >
+              {busy ? (open ? 'Punching out…' : 'Punching in…') : open ? 'Punch out' : 'Punch in'}
+            </button>
+            <Link className="crew-btn crew-btn-ghost" href="/crew/time">My hours</Link>
+          </div>
         </>
       )}
       {error && <p role="alert" className="crew-small" style={{ color: 'var(--c-alert-ink)', marginBottom: 0 }}>{error}</p>}
-      <p className="crew-small" style={{ marginBottom: 0 }}><Link className="crew-link" href="/crew/time">My hours</Link></p>
     </section>
   )
 }
