@@ -77,7 +77,7 @@ export function shouldAdvanceToAwaitingDeposit(status: string | null | undefined
 }
 
 /** `bookings.party_type` values from migration 035, plus 'all' for the filter. */
-export const PARTY_TYPES = ['in_studio_theme', 'mobile_party', 'studio_rental', 'unknown'] as const
+export const PARTY_TYPES = ['in_studio_theme', 'mobile_party', 'studio_rental', 'hat_bar', 'unknown'] as const
 
 export type PartyTypeValue = (typeof PARTY_TYPES)[number]
 
@@ -85,6 +85,7 @@ export const PARTY_TYPE_LABELS: Record<string, string> = {
   in_studio_theme: 'In-Studio Theme',
   mobile_party: 'Mobile',
   studio_rental: 'Studio Rental',
+  hat_bar: 'Hat Bar',
   unknown: 'Unclassified',
 }
 
@@ -114,6 +115,7 @@ export function classifyPartyType(eventType: string | null | undefined): PartyTy
   const s = (eventType || '').toLowerCase()
   if (!s.trim()) return 'unknown'
   if (/\bmobile\b|at[-\s]?home|we come to you/.test(s)) return 'mobile_party'
+  if (/\bhat[-\s]?bar\b|trucker hat|patch bar/.test(s)) return 'hat_bar'
   if (/rental|rent the|renting|photoshoot|photo shoot|room[-\s]?rent/.test(s)) return 'studio_rental'
   if (/party|parties|birthday|\bkid|shower|celebration/.test(s)) return 'in_studio_theme'
   return 'unknown'

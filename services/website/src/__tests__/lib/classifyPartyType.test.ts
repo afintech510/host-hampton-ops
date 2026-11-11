@@ -16,6 +16,13 @@
 import { classifyPartyType, isPartyType, PARTY_TYPES } from '@/lib/pipelineStages'
 
 describe('classifyPartyType', () => {
+  it('reads a hat bar as a hat bar, ahead of the generic party words', () => {
+    expect(classifyPartyType('Trucker Hat Bar')).toBe('hat_bar')
+    expect(classifyPartyType('corporate hat-bar holiday party')).toBe('hat_bar')
+    expect(classifyPartyType('what barbecue party')).toBe('in_studio_theme')
+    expect(isPartyType('hat_bar')).toBe(true)
+  })
+
   it('only ever returns a value the CHECK constraint allows', () => {
     const inputs = [
       'kids-party', 'mobile party', 'room-rental', 'Other', '', null, undefined,
