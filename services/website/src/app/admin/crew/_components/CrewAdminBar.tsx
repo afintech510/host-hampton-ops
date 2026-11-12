@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BotMessageSquare, Brain, Calendar, CalendarDays, DollarSign, LayoutDashboard, Menu, Settings, UserPlus, Users, X } from 'lucide-react'
+import { BotMessageSquare, Brain, Calendar, CalendarDays, Clock, DollarSign, LayoutDashboard, Menu, Settings, UserPlus, Users, X } from 'lucide-react'
 import MemoryPanel from '@/components/admin/MemoryPanel'
 
 /**
@@ -39,7 +39,7 @@ export function sectionOf(pathname: string | null | undefined): Section {
   if (p.startsWith('/admin/crew/payments')) return 'payments'
   if (p.startsWith('/admin/crew/leads')) return 'leads'
   if (p.startsWith('/admin/crew/bookings')) return 'bookings'
-  if (p.startsWith('/admin/crew/rules')) return 'settings'
+  if (p.startsWith('/admin/crew/rules') || p.startsWith('/admin/crew/time')) return 'settings'
   if (p.startsWith('/admin/crew/members') || p.startsWith('/admin/crew/parties') || p === '/admin/crew' || p === '/admin/crew/schedule') return 'staff'
   return 'dashboard'
 }
@@ -167,6 +167,13 @@ export default function CrewAdminBar() {
                   <span>
                     <span className="block text-sm font-semibold">Settings</span>
                     <span className="block text-xs text-hampton-navy/60">The crew rules</span>
+                  </span>
+                </Link>
+                <Link role="menuitem" href="/admin/crew/time" prefetch onClick={() => setMenuOpen(false)} className={MENU_ITEM}>
+                  <Clock size={20} aria-hidden="true" className="shrink-0" />
+                  <span>
+                    <span className="block text-sm font-semibold">Time clock</span>
+                    <span className="block text-xs text-hampton-navy/60">Hours by person, week by week</span>
                   </span>
                 </Link>
                 <button

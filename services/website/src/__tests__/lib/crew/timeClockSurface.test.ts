@@ -20,7 +20,7 @@ describe('time clock surface', () => {
   })
 
   it('TC3: every admin time route opens with the admin check', () => {
-    for (const f of ['app/api/admin/crew/time/route.ts', 'app/api/admin/crew/time/punches/route.ts']) {
+    for (const f of ['app/api/admin/crew/time/route.ts', 'app/api/admin/crew/time/punches/route.ts', 'app/api/admin/crew/time/summary/route.ts']) {
       const src = read(f)
       const handlers = src.match(/export async function (GET|PUT|PATCH|POST)/g) ?? []
       expect(handlers.length).toBeGreaterThan(0)
