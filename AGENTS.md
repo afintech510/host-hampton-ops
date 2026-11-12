@@ -35,7 +35,7 @@ git add <files>                          # explicit; never -A or .
 git commit -F <msgfile>                  # shell path (step 2), or the editor widget from a worktree project
 git push -u origin HEAD
 gh pr create --base main --body-file <file>   # complete the PR template
-gh pr checks --watch                     # wait for pr-check; the two Vercel checks fail on every PR and are noise
+gh pr checks --watch                     # wait for pr-check (Vercel was disconnected 2026-11-12; any Vercel check that reappears is stray)
 gh pr merge --squash                     # no --delete-branch while a worktree holds the branch
 gh run list --workflow Deploy --commit <merge sha>   # then: gh run watch <id>; conclusion must be success
 curl -s -o /dev/null -w "%{http_code}\n" https://www.hosthampton.com/    # expect 200
