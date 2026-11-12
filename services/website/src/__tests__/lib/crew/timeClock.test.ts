@@ -1,5 +1,5 @@
 import {
-  distanceFromStudio, etWeekStart, haversineM, hoursLabel, minutesWorked, onStudioNetwork, punchFlags, screenFix,
+  distanceFromStudio, etWeekStart, weeklyBreakdown, haversineM, hoursLabel, minutesWorked, onStudioNetwork, punchFlags, screenFix,
   type PunchRow, type TimeConfig,
 } from '@/lib/crew/timeClock'
 
@@ -66,5 +66,26 @@ describe('hours', () => {
     expect(etWeekStart('2026-11-09T14:00:00Z')).toBe('2026-11-09') // Monday
     expect(etWeekStart('2026-11-15T03:00:00Z')).toBe('2026-11-09') // Saturday night ET
     expect(etWeekStart('2026-11-16T04:30:00Z')).toBe('2026-11-09') // still Sunday night ET
+  })
+})
+
+describe('weeklyBreakdown', () => {
+  it('groups punches by Eastern Monday week, newest first, with a total per week', () => {
+    const now = new Date('2026-11-11T18:00:00Z')
+    const weeks = weeklyBreakdown([
+      punch({ id: 'a', punched_in_at: '2026-11-09T14:00:00Z', punched_out_at: '2026-11-09T22:00:00Z' }),
+      punch({ id: 'b', punched_in_at: '2026-11-10T14:00:00Z', punched_out_at: '2026-11-10T16:30:00Z' }),
+      punch({ id: 'c', punched_in_at: '2026-11-03T14:00:00Z', punched_out_at: '2026-11-03T15:00:00Z' }),
+    ], now)
+    expect(weeks.map(w => [w.weekStart, w.minutes])).toEqual([['2026-11-09', 630], ['2026-11-02', 60]])
+    expect(weeks[0].punches.map(p => p.id)).toEqual(['b', 'a'])
+  })
+  it('counts an open shift up to now', () => {
+    const weeks = weeklyBreakdown([punch({ punched_in_at: '2026-11-11T14:00:00Z', punched_out_at: null })], new Date('2026-11-11T15:30:00Z'))
+    expect(weeks[0].minutes).toBe(90)
+  })
+  it('a Sunday-night punch belongs to the week that began the Monday before', () => {
+    const weeks = weeklyBreakdown([punch({ punched_in_at: '2026-11-09T03:00:00Z', punched_out_at: '2026-11-09T04:00:00Z' })])
+    expect(weeks[0].weekStart).toBe('2026-11-02')
   })
 })

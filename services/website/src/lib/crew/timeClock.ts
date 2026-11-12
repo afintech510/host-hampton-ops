@@ -147,6 +147,28 @@ export function etWeekStart(iso: string): string {
 
 // ── database ────────────────────────────────────────────────────────────────
 
+export interface WeekSummary {
+  weekStart: string
+  minutes: number
+  punches: Array<{ id: string; in: string; out: string | null; minutes: number; edited: boolean }>
+}
+
+/** Group a member's punches by Eastern Monday-start week, newest week first, with a total per week. */
+export function weeklyBreakdown(punches: PunchRow[], now = new Date()): WeekSummary[] {
+  const byWeek = new Map<string, WeekSummary>()
+  for (const p of punches) {
+    const k = etWeekStart(p.punched_in_at)
+    const w = byWeek.get(k) ?? { weekStart: k, minutes: 0, punches: [] }
+    const m = minutesWorked(p, now)
+    w.minutes += m
+    w.punches.push({ id: p.id, in: p.punched_in_at, out: p.punched_out_at, minutes: m, edited: !!p.edited_at })
+    byWeek.set(k, w)
+  }
+  const weeks = Array.from(byWeek.values()).sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1))
+  for (const w of weeks) w.punches.sort((a, b) => (a.in < b.in ? 1 : -1))
+  return weeks
+}
+
 type Result<T> = { kind: 'ok'; data: T } | { kind: 'error'; error: string }
 
 export async function loadTimeConfig(sb: SupabaseClient): Promise<Result<TimeConfig>> {
