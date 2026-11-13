@@ -9,6 +9,8 @@ import { computeSizes } from '@/lib/evites/layout'
 import { honoreeFirstName, inviteImageUrl, invitePageModel, inviteMetadata, unavailableMetadata, type RibbonTone } from '@/lib/evites/pageModel'
 import type { OwnRsvp } from '@/lib/evites/rsvpView'
 import { templateForFacts } from '@/lib/evites/customArt'
+import { pageThemeCss, pageMotionOf } from '@/lib/evites/pageTheme'
+import { registryView } from '@/lib/evites/registry'
 import { loadInvite } from './loadInvite'
 import { loadRsvpPanel } from './loadOwnRsvp'
 
@@ -74,8 +76,16 @@ export default async function InvitePage({ params, searchParams }: Props) {
   let club: { version: string; wording: string } | null = null
   if (model.showRsvp) ({ own, club } = await loadRsvpPanel(r.evite.id, r.facts.audience))
 
+  const registry = registryView(r.evite.registry_url, r.evite.registry_note)
+  const motion = pageMotionOf(r.evite.page_motion)
+
   return (
-    <div className="hh-inv-col">
+    <>
+      {/* Static CSS built only from pageTheme.ts constants (never from a stored value): the host's colour and motion. */}
+      {/* eslint-disable-next-line react/no-danger */}
+      <style dangerouslySetInnerHTML={{ __html: pageThemeCss(r.evite.page_color, r.evite.page_motion) }} />
+      {motion !== 'none' && <div className="hh-inv-fx" aria-hidden="true" />}
+      <div className="hh-inv-col">
       {model.ribbon && (
         <div role="status" className={`mb-4 rounded-xl px-4 py-2.5 text-center ${RIBBON_STYLE[model.ribbon.tone]}`}>
           <p className="text-sm font-bold uppercase tracking-wide">{model.ribbon.text}</p>
@@ -136,7 +146,28 @@ export default async function InvitePage({ params, searchParams }: Props) {
         <RsvpIsland slug={params.slug} own={own} startInEdit={!!own && flag(searchParams?.edit)} honoree={honoreeFirstName(r.facts)} club={club} audience={r.facts.audience} />
       )}
 
+      {registry && (
+        <section aria-label="Registry and message" data-section="registry" className="mt-6 rounded-xl bg-white/10 px-4 py-4 text-sm">
+          <h2 className="mb-2 text-base font-semibold">Registry &amp; message</h2>
+          {registry.note && <p className="whitespace-pre-line text-white/90">{registry.note}</p>}
+          {registry.link && (
+            <p className="mt-3">
+              <a
+                href={registry.link.href}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="inline-flex min-h-[2.75rem] items-center justify-center rounded-lg bg-white px-4 py-2 font-semibold text-[#1b0630]"
+              >
+                Open the registry
+              </a>
+              <span className="ml-3 text-white/70">{registry.link.host}</span>
+            </p>
+          )}
+        </section>
+      )}
+
       <ViewBeacon slug={params.slug} />
-    </div>
+      </div>
+    </>
   )
 }

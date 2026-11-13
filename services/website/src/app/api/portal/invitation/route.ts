@@ -5,7 +5,7 @@ import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { etDateString } from '@/lib/partyTime'
 import { validPartyDate } from '@/lib/evites/partyWindow'
 import { composeHostView, readHostRows, type HostRead } from '@/lib/evites/hostView'
-import { screenHostPatch } from '@/lib/evites/hostScreens'
+import { isPageOnlyPatch, screenHostPatch } from '@/lib/evites/hostScreens'
 import { queueRender } from '@/lib/evites/render'
 
 /**
@@ -25,7 +25,7 @@ import { queueRender } from '@/lib/evites/render'
  *   (`pickHostRsvp`). The response never carries the evite's id, `edit_nonce`, a guest's
  *   reminder email/phone, club fields or consent IP.
  *
- * PATCH. The allow-list and the screens are `screenHostPatch` (six keys; an unknown key is a
+ * PATCH. The allow-list and the screens are `screenHostPatch` (thirteen keys; an unknown key is a
  * 400). The row is found through the booking the COOKIE names, never an id from the body; the
  * UPDATE reads its `{ error }`, requires that a row changed, and is conditional on the evite not
  * having been archived in the meantime. `guardRate` runs before any other work. After the write
@@ -87,7 +87,11 @@ export async function PATCH(req: NextRequest) {
   const screened = screenHostPatch(body, {
     today: etDateString(now),
     partyDate: validPartyDate(loaded.booking.party_date),
-    current: { rsvp_deadline: loaded.evite.rsvp_deadline },
+    current: {
+      rsvp_deadline: loaded.evite.rsvp_deadline,
+      host_contact2_name: loaded.evite.host_contact2_name,
+      host_contact2_phone: loaded.evite.host_contact2_phone,
+    },
   })
   if (!screened.ok) {
     return NextResponse.json({ error: screened.message, field: screened.field }, { status: 400 })
@@ -110,7 +114,8 @@ export async function PATCH(req: NextRequest) {
 
   // Fire-and-forget. The stored image no longer matches the facts, so `renderFresh` is false
   // from this response on, until the render lands.
-  queueRender(loaded.evite.id)
+  // A patch of page-only keys (colour, motion, registry) changes nothing printed on the picture: no render.
+  if (!isPageOnlyPatch(screened.columns)) queueRender(loaded.evite.id)
 
   const merged = { ...loaded, evite: { ...loaded.evite, ...screened.columns } }
   return noStore(NextResponse.json(composeHostView(merged, process.env.SUPABASE_URL, now).payload))

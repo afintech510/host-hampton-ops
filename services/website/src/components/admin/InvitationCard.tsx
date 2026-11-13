@@ -41,6 +41,8 @@ export interface InvitationPayload {
     archivedAt: string | null
     createdAt: string
     canReslug: boolean
+    /** The host's own finished invitation image is set (migration 073). */
+    hasCustomArt?: boolean
   }
   eligible: boolean
   pagesMode: string
@@ -61,6 +63,8 @@ export interface InvitationPayload {
     giftNote: string | null
     rsvpDeadline: string | null
     guestCap: number | null
+    /** 'guests' for an outside event (the card says Guests / host); absent or 'kids' keeps the kids' wording. */
+    audience?: 'kids' | 'guests'
   }
   links?: { publicUrl: string; hostPageUrl: string; hostPageNote: string }
   images?: { invite: string | null; og: string | null }
@@ -110,6 +114,7 @@ const SEND_LABELS: Record<string, string> = {
   invite_ready: 'Invite ready',
   new_rsvp: 'New RSVP (to parent)',
   rsvp_changed: 'RSVP changed (to parent)',
+  // (an outside event reads "to host": see `sendLabel`)
   rsvp_confirmed: 'RSVP confirmed (to guest)',
   week_before: 'Week before',
   day_before: 'Day before',
@@ -129,7 +134,8 @@ function adultsText(n: number, plus: boolean): string {
   return `${n}${plus ? '+' : ''} adult${n === 1 && !plus ? '' : 's'}`
 }
 
-function kidsText(kids: number, cap: number | null): string {
+function kidsText(kids: number, cap: number | null, guests = false): string {
+  if (guests) return cap !== null ? `${kids} of ${cap} guests` : `${kids} guest${kids === 1 ? '' : 's'}`
   return cap !== null ? `${kids} of ${cap} kids` : `${kids} kid${kids === 1 ? '' : 's'}`
 }
 
@@ -144,6 +150,8 @@ export interface InvitationViewProps {
   onReveal: (rsvpId: string) => void
   onPrint: () => void
   onCopy?: (text: string) => void
+  /** Upload the host's own invitation image (a file), or remove it (null). Absent in static renders. */
+  onArt?: (file: File | null) => void
 }
 
 function Warn({ children }: { children: ReactNode }) {
@@ -155,6 +163,7 @@ export function PrintSheet({ data }: { data: InvitationPayload }) {
   const yes = rows.filter((r) => r.status === 'yes')
   const no = rows.filter((r) => r.status === 'no')
   const s = data.summary
+  const g = data.facts?.audience === 'guests'
   return (
     <div className="evite-print-sheet" data-testid="evite-print-sheet">
       <h1>{data.facts?.title ?? 'Party'}</h1>
@@ -164,7 +173,7 @@ export function PrintSheet({ data }: { data: InvitationPayload }) {
       </div>
       {s ? (
         <div>
-          <strong>{kidsText(s.kidsYes, s.cap)}</strong> &middot; {adultsText(s.adultsYes, s.adultsPlus)} &middot; {s.noCount} declined
+          <strong>{kidsText(s.kidsYes, s.cap, g)}</strong> &middot; {g ? null : <>{adultsText(s.adultsYes, s.adultsPlus)} &middot; </>}{s.noCount} declined
         </div>
       ) : (
         <div>RSVPs unavailable when this sheet was printed.</div>
@@ -174,9 +183,9 @@ export function PrintSheet({ data }: { data: InvitationPayload }) {
       <table>
         <thead>
           <tr>
-            <th>Parent</th>
-            <th>Kids</th>
-            <th>Adults</th>
+            <th>{g ? 'Name' : 'Parent'}</th>
+            <th>{g ? 'Guests' : 'Kids'}</th>
+            {g ? null : <th>Adults</th>}
             <th>Allergy</th>
             <th>Here</th>
           </tr>
@@ -186,7 +195,7 @@ export function PrintSheet({ data }: { data: InvitationPayload }) {
             <tr key={r.id}>
               <td>{r.parent_name}</td>
               <td>{(r.children ?? []).map((c) => c.first_name).join(', ')}</td>
-              <td>{r.adult_count >= 2 ? '2+' : r.adult_count}</td>
+              {g ? null : <td>{r.adult_count >= 2 ? '2+' : r.adult_count}</td>}
               <td>{r.has_allergy ? (r.allergy_note ?? (r.allergy_purged_at ? '(note purged)' : 'Yes')) : ''}</td>
               <td>&#9744;</td>
             </tr>
@@ -214,7 +223,7 @@ export function PrintSheet({ data }: { data: InvitationPayload }) {
         <div>None reported.</div>
       )}
 
-      <h2>Notes for the birthday child</h2>
+      <h2>{g ? 'Notes for the host' : 'Notes for the birthday child'}</h2>
       {s && s.notes.length > 0 ? (
         <ul>
           {s.notes.map((n, i) => (
@@ -230,7 +239,7 @@ export function PrintSheet({ data }: { data: InvitationPayload }) {
   )
 }
 
-export function InvitationCardView({ data, busy, message, revealed, onAction, onReveal, onPrint, onCopy }: InvitationViewProps) {
+export function InvitationCardView({ data, busy, message, revealed, onAction, onReveal, onPrint, onCopy, onArt }: InvitationViewProps) {
   const [word, setWord] = useState(data.evite?.themeWord ?? '')
   const [sub, setSub] = useState(data.evite?.themeSub ?? '')
   const [template, setTemplate] = useState(data.evite?.templateSlug ?? 'glow')
@@ -267,6 +276,8 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
   const cancelled = data.booking?.status === 'cancelled' || data.booking?.status === 'lost'
   const archived = !!ev.archivedAt
   const inviteReadySent = data.ledger && data.ledger.available ? data.ledger.groups.some((g) => g.sendType === 'invite_ready' && g.channel === 'email') : false
+  const guests = facts?.audience === 'guests'
+  const who = guests ? 'host' : 'parent'
   const inviteReadyHeld = state === 'live' && !inviteReadySent && data.autosend !== undefined && !data.autosend.allowed
 
   return (
@@ -286,12 +297,12 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
       {message ? <p className={`text-xs ${message.ok ? 'text-green-700' : 'text-red-700'}`} role="status">{message.text}</p> : null}
 
       {data.warnings?.needsTime ? <Warn>Needs a start time. Guests cannot RSVP until the party has one.</Warn> : null}
-      {data.warnings?.noParentEmail ? <Warn>No parent email: share the invitation manually. Nothing can be emailed to this customer.</Warn> : null}
+      {data.warnings?.noParentEmail ? <Warn>No {who} email: share the invitation manually. Nothing can be emailed to this customer.</Warn> : null}
       {inviteReadyHeld ? (
         <Warn>
           <span data-testid="invite-ready-held">
-            Invitation email held{data.autosend?.configured ? ': this party was booked before launch' : ': automatic sending is not configured'}. The parent
-            can still open and share the invitation in their portal. Use &quot;Send invitation email to parent&quot; to email it.
+            Invitation email held{data.autosend?.configured ? ': this party was booked before launch' : ': automatic sending is not configured'}. The {who}
+            can still open and share the invitation in their portal. Use &quot;Send invitation email to {who}&quot; to email it.
           </span>
         </Warn>
       ) : null}
@@ -351,14 +362,14 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
         <div className="text-sm space-y-1">
           <p>
             <strong className={summary.overCap ? 'text-red-600' : 'text-[#1a2744]'} data-testid="headcount">
-              {kidsText(summary.kidsYes, summary.cap)}
+              {kidsText(summary.kidsYes, summary.cap, guests)}
             </strong>
             <span className="text-gray-500">
               {' '}
-              &middot; {adultsText(summary.adultsYes, summary.adultsPlus)} &middot; {summary.yesCount} coming &middot; {summary.noCount} declined
+              &middot; {guests ? null : <>{adultsText(summary.adultsYes, summary.adultsPlus)} &middot; </>}{summary.yesCount} coming &middot; {summary.noCount} declined
             </span>
           </p>
-          {summary.overCap ? <p className="text-xs text-red-600">More kids than the booked guest count.</p> : null}
+          {summary.overCap ? <p className="text-xs text-red-600">{guests ? 'More guests than the booked guest count.' : 'More kids than the booked guest count.'}</p> : null}
           {data.rsvps && data.rsvps.available && data.rsvps.truncated ? (
             <p className="text-xs text-amber-700">Showing the first 500 RSVPs only.</p>
           ) : null}
@@ -379,7 +390,7 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
           </div>
 
           <div>
-            <p className="text-xs font-medium text-[#1a2744] mt-2">Notes to the birthday child</p>
+            <p className="text-xs font-medium text-[#1a2744] mt-2">{guests ? 'Notes to the host' : 'Notes to the birthday child'}</p>
             {summary.notes.length === 0 ? (
               <p className="text-xs text-gray-400">None yet.</p>
             ) : (
@@ -410,7 +421,8 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
                     {r.status === 'yes' ? (
                       <span className="text-gray-500">
                         {' '}
-                        &middot; {(r.children ?? []).map((c) => c.first_name).join(', ')} &middot; {r.adult_count >= 2 ? '2+' : r.adult_count} adult
+                        &middot; {(r.children ?? []).map((c) => c.first_name).join(', ')}
+                        {guests ? null : <> &middot; {r.adult_count >= 2 ? '2+' : r.adult_count} adult</>}
                       </span>
                     ) : null}
                     {r.club_opt_in_at && !r.club_opted_out_at ? <span className="text-gray-400"> &middot; club</span> : null}
@@ -470,7 +482,7 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
           <ul className="space-y-1">
             {data.ledger.groups.map((g) => (
               <li key={`${g.sendType}|${g.channel}`}>
-                <span className="font-medium">{SEND_LABELS[g.sendType] ?? g.sendType}</span>
+                <span className="font-medium">{guests ? (SEND_LABELS[g.sendType] ?? g.sendType).replace('(to parent)', '(to host)') : (SEND_LABELS[g.sendType] ?? g.sendType)}</span>
                 {g.channel === 'sms' ? <span className="text-gray-400"> (sms)</span> : null}
                 <span className="text-gray-600">
                   {' '}
@@ -527,7 +539,7 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
               {busy === 'set_design' ? 'Saving...' : 'Use design'}
             </button>
           </div>
-          <p className="text-gray-400">The parent can also pick one on their invitation page. Theme default = the design for the party&apos;s theme.</p>
+          <p className="text-gray-400">The {who} can also pick one on their invitation page. Theme default = the design for the party&apos;s theme.</p>
         </form>
       ) : null}
 
@@ -564,6 +576,36 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
         <p className="text-gray-400">The template only applies together with a word or sub. Empty = the booking&apos;s own theme.</p>
       </form>
 
+      {/* The host's own finished invitation image (migration 073): fitted to the canvas without cropping, uploaded, then drawn. */}
+      <div className="text-xs space-y-2 p-3 bg-gray-50 rounded-lg" data-testid="custom-art">
+        <p className="font-medium text-[#1a2744]">
+          Host&apos;s own invitation image <span className="font-normal text-gray-400">({ev.hasCustomArt ? 'in use' : 'not used'})</span>
+        </p>
+        <div className="flex gap-2 flex-wrap items-center">
+          <label className={`${btn} cursor-pointer inline-block ${working ? 'opacity-50' : ''}`}>
+            {busy === 'art' ? 'Uploading...' : "Upload the host's own invitation image"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              data-testid="custom-art-file"
+              disabled={working}
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null
+                e.target.value = ''
+                if (f) onArt?.(f)
+              }}
+            />
+          </label>
+          {ev.hasCustomArt ? (
+            <button type="button" className={btn} disabled={working} onClick={() => onArt?.(null)} data-testid="custom-art-clear">
+              {busy === 'art-clear' ? 'Removing...' : 'Remove it'}
+            </button>
+          ) : null}
+        </div>
+        <p className="text-gray-400">JPEG, PNG or WebP, up to 10 MB. The whole picture is kept (never cropped) and drawn as the invitation; the page&apos;s &quot;Any questions?&quot; line still comes from the contact details.</p>
+      </div>
+
       {/* Actions */}
       <div className="flex flex-wrap gap-2">
         <button type="button" className={btn} disabled={working} onClick={() => onAction('rerender')}>
@@ -595,10 +637,10 @@ export function InvitationCardView({ data, busy, message, revealed, onAction, on
             type="button"
             className={btn}
             disabled={working || !!data.warnings?.noParentEmail || inviteReadySent}
-            title={inviteReadySent ? 'Already on the email ledger' : 'Emails the parent their invitation link now'}
+            title={inviteReadySent ? 'Already on the email ledger' : `Emails the ${who} their invitation link now`}
             onClick={() => onAction('send_invite_ready')}
           >
-            {busy === 'send_invite_ready' ? 'Sending...' : 'Send invitation email to parent'}
+            {busy === 'send_invite_ready' ? 'Sending...' : `Send invitation email to ${who}`}
           </button>
         ) : null}
         {cancelled ? (
@@ -664,7 +706,8 @@ export default function InvitationCard({ bookingId, headers, status, partyType, 
   }, [bookingId])
 
   async function onAction(action: InvitationAction, extra: Record<string, unknown> = {}) {
-    const confirmText = CONFIRMS[action]
+    const who = data?.facts?.audience === 'guests' ? 'host' : 'parent'
+    const confirmText = CONFIRMS[action]?.replace('this parent', `this ${who}`)
     if (confirmText && !window.confirm(confirmText)) return
     setBusy(action)
     setMessage(null)
@@ -674,8 +717,36 @@ export default function InvitationCard({ bookingId, headers, status, partyType, 
       if (!res.ok || body?.ok === false) {
         setMessage({ ok: false, text: describeFailure(action, body, res.status) })
       } else {
-        setMessage({ ok: true, text: describeSuccess(action, body) })
+        const text = describeSuccess(action, body)
+        setMessage({ ok: true, text: data?.facts?.audience === 'guests' ? text.replace('to the parent', 'to the host') : text })
         if (action === 'ensure' || action === 'archive' || action === 'unarchive') onChanged?.()
+      }
+      await load()
+    } catch {
+      setMessage({ ok: false, text: 'Something went wrong. Reload and check before trying again.' })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /** The host's own image: a multipart POST to the art route (the JSON actions cannot carry a file). */
+  async function onArt(file: File | null) {
+    if (file === null && !window.confirm('Remove the host’s own image? The invitation goes back to its template design.')) return
+    setBusy(file === null ? 'art-clear' : 'art')
+    setMessage(null)
+    try {
+      const form = new FormData()
+      if (file === null) form.set('clear', '1')
+      else form.set('file', file)
+      // No Content-Type: the browser sets the multipart boundary.
+      const plain = Object.fromEntries(new Headers(headers).entries())
+      delete plain['content-type']
+      const res = await fetch(`${url}/art`, { method: 'POST', headers: plain, body: form })
+      const body = await res.json().catch(() => null)
+      if (!res.ok || body?.ok === false) {
+        setMessage({ ok: false, text: body?.error ?? `That did not work (${res.status}).` })
+      } else {
+        setMessage({ ok: true, text: file === null ? 'Removed; the invitation is redrawing from its template.' : 'Image saved; the invitation is redrawing with it.' })
       }
       await load()
     } catch {
@@ -731,6 +802,7 @@ export default function InvitationCard({ bookingId, headers, status, partyType, 
       onReveal={onReveal}
       onPrint={() => window.print()}
       onCopy={(text) => void navigator.clipboard?.writeText(text)}
+      onArt={(file) => void onArt(file)}
     />
   )
 }

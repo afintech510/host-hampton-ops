@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import HostGuestList from './HostGuestList'
+import { PAGE_COLORS, PAGE_MOTIONS, PAGE_MOTION_LABELS, pageColorOf } from '@/lib/evites/pageTheme'
 import type { HostPayload, HostRsvp } from '@/lib/evites/hostView'
 import {
   adultLabel,
@@ -64,6 +66,8 @@ export interface HostViewProps {
     share?: (kind: 'invite' | 'reshare') => void
     copy?: () => void
     download?: () => void
+    /** The guest list or a manual RSVP changed: reload the summary. */
+    changed?: () => void
   }
 }
 
@@ -294,6 +298,122 @@ function CustomizeForm({ props }: { props: HostViewProps }) {
             <p className="mt-0.5 text-xs text-gray-400">Leave the name and phone blank to use the studio&apos;s. This is printed on the invitation picture.</p>
             <FieldError error={formError} field="host_contact_phone" />
           </div>
+          <div data-section="contact2" className="border-t border-gray-200 pt-3">
+            <p className="mb-2 text-sm font-medium text-[#1a2744]">Second person to ask (optional)</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="hi-contact2-name" className={LABEL}>
+                  Name
+                </label>
+                <input
+                  id="hi-contact2-name"
+                  type="text"
+                  maxLength={40}
+                  value={form.hostContact2Name}
+                  onChange={(e) => set({ hostContact2Name: e.target.value })}
+                  className={INPUT}
+                />
+                <FieldError error={formError} field="host_contact2_name" />
+              </div>
+              <div>
+                <label htmlFor="hi-contact2-phone" className={LABEL}>
+                  Phone
+                </label>
+                <input
+                  id="hi-contact2-phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="off"
+                  value={form.hostContact2Phone}
+                  onChange={(e) => set({ hostContact2Phone: e.target.value })}
+                  className={INPUT}
+                />
+                <FieldError error={formError} field="host_contact2_phone" />
+              </div>
+            </div>
+            <p className="mt-0.5 text-xs text-gray-400">Needs both a name and a phone. Printed on the invitation picture beside the first.</p>
+          </div>
+        </fieldset>
+
+        <fieldset data-section="appearance" className="space-y-3 rounded-lg border border-gray-200 p-3">
+          <legend className="px-1 text-sm font-medium text-[#1a2744]">Appearance</legend>
+          <p className="text-xs text-gray-500">The colour and motion of the page your guests open. The picture itself does not change.</p>
+          <div role="group" aria-label="Page colour" className="flex flex-wrap gap-2">
+            {PAGE_COLORS.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                data-page-color={c.key}
+                aria-pressed={form.pageColor === c.key}
+                aria-label={c.label}
+                title={c.label}
+                onClick={() => set({ pageColor: c.key })}
+                className={`h-10 w-10 rounded-full ${form.pageColor === c.key ? 'ring-2 ring-offset-2 ring-[#1a2744]' : 'ring-1 ring-gray-300'}`}
+                style={{ backgroundColor: c.swatch }}
+              />
+            ))}
+          </div>
+          <div role="group" aria-label="Page motion" className="flex flex-wrap gap-2">
+            {PAGE_MOTIONS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                data-page-motion={m}
+                aria-pressed={form.pageMotion === m}
+                onClick={() => set({ pageMotion: m })}
+                className={`rounded-lg px-3 py-2 text-sm ${form.pageMotion === m ? 'bg-[#1a2744] text-white' : 'border border-gray-300 text-[#1a2744]'}`}
+              >
+                {PAGE_MOTION_LABELS[m]}
+              </button>
+            ))}
+          </div>
+          <div
+            data-section="appearance-preview"
+            aria-hidden="true"
+            className="rounded-lg px-4 py-3 text-center text-sm text-white"
+            style={{ backgroundColor: pageColorOf(form.pageColor).bg, boxShadow: `0 0 18px ${pageColorOf(form.pageColor).glow}` }}
+          >
+            {form.pageMotion === 'sparkle' ? '✦ ' : ''}Your guests&apos; page{form.pageMotion === 'sparkle' ? ' ✦' : ''}
+            {form.pageMotion === 'drift' ? ' (slow shimmer)' : ''}
+          </div>
+          <FieldError error={formError} field="page_color" />
+          <FieldError error={formError} field="page_motion" />
+        </fieldset>
+
+        <fieldset data-section="registry" className="space-y-3 rounded-lg border border-gray-200 p-3">
+          <legend className="px-1 text-sm font-medium text-[#1a2744]">Registry &amp; message (optional)</legend>
+          <div>
+            <label htmlFor="hi-registry-url" className={LABEL}>
+              Registry link
+            </label>
+            <input
+              id="hi-registry-url"
+              type="url"
+              inputMode="url"
+              autoComplete="off"
+              maxLength={298}
+              placeholder="https://"
+              value={form.registryUrl}
+              onChange={(e) => set({ registryUrl: e.target.value })}
+              className={INPUT}
+            />
+            <FieldError error={formError} field="registry_url" />
+          </div>
+          <div>
+            <label htmlFor="hi-registry-note" className={LABEL}>
+              A message for your guests
+            </label>
+            <textarea
+              id="hi-registry-note"
+              maxLength={300}
+              rows={3}
+              value={form.registryNote}
+              onChange={(e) => set({ registryNote: e.target.value })}
+              className={INPUT}
+            />
+            <p className="mt-0.5 text-xs text-gray-400">{form.registryNote.length}/300. Shown at the bottom of the page, below the RSVP form.</p>
+            <FieldError error={formError} field="registry_note" />
+          </div>
         </fieldset>
 
         {formError && !formError.field && (
@@ -430,6 +550,7 @@ export function HostInvitationView(props: HostViewProps) {
         <div className="space-y-6">
           <SharePanel props={props} />
           <RsvpList props={props} />
+          <HostGuestList shareText={data.facts.shareText} reshareText={data.facts.reshareText} inviteUrl={data.url} audience={data.facts.audience} onChanged={() => props.on?.changed?.()} />
           <DesignPicker props={props} />
           <CustomizeForm props={props} />
         </div>

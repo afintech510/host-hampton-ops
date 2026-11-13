@@ -264,6 +264,7 @@ export default function HostInvitation({ initial, preview }: Props) {
         share: (kind) => void share(kind),
         copy: () => void copy(),
         download: trackShare,
+        changed: () => void refresh(),
       }}
     />
   )

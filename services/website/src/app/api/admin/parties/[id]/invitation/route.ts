@@ -230,6 +230,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       archivedAt: evite.archived_at,
       createdAt: evite.created_at,
       canReslug: !evite.went_live_at,
+      hasCustomArt: !!evite.custom_art,
     },
     state,
     facts: {
@@ -245,6 +246,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       giftNote: facts.giftNote,
       rsvpDeadline: facts.rsvpDeadline,
       guestCap: facts.guestCap,
+      audience: facts.audience,
     },
     links: {
       publicUrl: `${CANONICAL_ORIGIN}/i/${evite.slug}`,
