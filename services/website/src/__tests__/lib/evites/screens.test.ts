@@ -259,19 +259,34 @@ describe('guests audience (an adult outside event): same columns, relabelled', (
   })
 
   it('names the guests in its messages', () => {
-    expect(screenRsvpPost({ ...guestsYes, children: [] }, 'guests')).toEqual({ ok: false, field: 'children', message: 'Please add at least one guest, with a first name (up to 6).' })
-    expect(screenRsvpPost({ ...guestsYes, children: [{ firstName: ' ' }] }, 'guests')).toMatchObject({ ok: false, field: 'children' })
+    const msg = 'Please check the names of the people coming with you (up to 5 others).'
+    expect(screenRsvpPost({ ...guestsYes, children: [{ firstName: ' ' }] }, 'guests')).toEqual({ ok: false, field: 'children', message: msg })
+    const six = ['A', 'B', 'C', 'D', 'E', 'F'].map((n) => ({ firstName: n }))
+    expect(screenRsvpPost({ ...guestsYes, children: six }, 'guests')).toEqual({ ok: false, field: 'children', message: msg })
+    expect(screenRsvpPost({ ...guestsYes, children: six.slice(0, 5) }, 'guests')).toMatchObject({ ok: true })
+  })
+
+  it('requires first and last name', () => {
+    expect(screenRsvpPost({ ...guestsYes, parentName: 'Gina' }, 'guests')).toEqual({ ok: false, field: 'parentName', message: 'Please enter your first and last name.' })
+    expect(screenRsvpPost({ ...guestsYes, parentName: undefined }, 'guests')).toMatchObject({ ok: false, field: 'parentName' })
+  })
+
+  it('the answering person is first; extras may be empty or missing; a repeat of the parent is dropped', () => {
+    expect(screenRsvpPost({ ...guestsYes, children: [] }, 'guests')).toMatchObject({ ok: true, value: { children: [{ first_name: 'Gina Guest' }] } })
+    expect(screenRsvpPost({ ...guestsYes, children: undefined }, 'guests')).toMatchObject({ ok: true, value: { children: [{ first_name: 'Gina Guest' }] } })
+    const r = screenRsvpPost({ ...guestsYes, children: [{ firstName: '  gina   GUEST ' }, { firstName: 'Tom' }] }, 'guests')
+    expect(r).toMatchObject({ ok: true, value: { children: [{ first_name: 'Gina Guest' }, { first_name: 'Tom' }] } })
   })
 
   it('stores adultCount 0 whatever the body says (the control does not exist)', () => {
     for (const adultCount of [undefined, 0, 1, 2, 99, 'lots']) {
       const r = screenRsvpPost({ ...guestsYes, adultCount }, 'guests')
-      expect(r).toMatchObject({ ok: true, value: { status: 'yes', adultCount: 0, children: [{ first_name: 'Gina' }, { first_name: 'Tom' }] } })
+      expect(r).toMatchObject({ ok: true, value: { status: 'yes', adultCount: 0, children: [{ first_name: 'Gina Guest' }, { first_name: 'Gina' }, { first_name: 'Tom' }] } })
     }
   })
 
   it('a decline still carries a name and nothing else', () => {
-    expect(screenRsvpPost({ status: 'no', parentName: 'Gina' }, 'guests')).toMatchObject({ ok: true, value: { status: 'no', children: [], adultCount: 0 } })
+    expect(screenRsvpPost({ status: 'no', parentName: 'Gina Guest' }, 'guests')).toMatchObject({ ok: true, value: { status: 'no', children: [], adultCount: 0 } })
   })
 
   const existing: ExistingRsvp = {
@@ -295,20 +310,33 @@ describe('guests audience (an adult outside event): same columns, relabelled', (
   })
 
   it('PATCH: an adultCount in the body is ignored for guests and never written', () => {
-    const r = screenRsvpPatch({ adultCount: 2, parentName: 'Gina G' }, existing, 'guests')
+    const r = screenRsvpPatch({ adultCount: 2, parentName: 'Gina Guest' }, existing, 'guests')
     if (!r.ok) throw new Error(r.message)
     expect(r.value.columns).not.toHaveProperty('adult_count')
     expect(r.value.next.adult_count).toBe(0)
     // a Yes on a stored No brings its guests, with the guest wording, and writes 0 adults
     const back = screenRsvpPatch({ status: 'yes', hasAllergy: false }, { ...existing, status: 'no', children: [], has_allergy: null }, 'guests')
-    expect(back).toEqual({ ok: false, field: 'children', message: 'Please add at least one guest, with a first name (up to 6).' })
-    const ok = screenRsvpPatch({ status: 'yes', hasAllergy: false, children: [{ firstName: 'Gina' }] }, { ...existing, status: 'no', children: [], has_allergy: null }, 'guests')
+    if (!back.ok) throw new Error(back.message)
+    expect(back.value.columns.children).toEqual([{ first_name: 'Gina Guest' }])
+    expect(back.value.columns.adult_count).toBe(0)
+    const ok = screenRsvpPatch({ status: 'yes', hasAllergy: false, children: [{ firstName: 'Tom' }] }, { ...existing, status: 'no', children: [], has_allergy: null }, 'guests')
     if (!ok.ok) throw new Error(ok.message)
     expect(ok.value.columns.adult_count).toBe(0)
+    expect(ok.value.columns.children).toEqual([{ first_name: 'Gina Guest' }, { first_name: 'Tom' }])
   })
 
   it('PATCH: children messages are guest-worded; kids keep the child wording', () => {
-    expect(screenRsvpPatch({ children: [] }, existing, 'guests')).toMatchObject({ ok: false, message: 'Please add at least one guest, with a first name (up to 6).' })
+    expect(screenRsvpPatch({ children: [{ firstName: ' ' }] }, existing, 'guests')).toMatchObject({ ok: false, field: 'children', message: 'Please check the names of the people coming with you (up to 5 others).' })
+    expect(screenRsvpPatch({ children: [] }, existing, 'guests')).toMatchObject({ ok: true })
+    expect(screenRsvpPatch({ parentName: 'Gina' }, existing, 'guests')).toMatchObject({ ok: false, field: 'parentName', message: 'Please enter your first and last name.' })
+    // a rename rewrites the first attendee and keeps the extras; sending children replaces only the extras
+    const two = { ...existing, children: [{ first_name: 'Gina Guest' }, { first_name: 'Tom' }] }
+    const ren = screenRsvpPatch({ parentName: 'Gina Smith' }, two, 'guests')
+    if (!ren.ok) throw new Error(ren.message)
+    expect(ren.value.columns.children).toEqual([{ first_name: 'Gina Smith' }, { first_name: 'Tom' }])
+    const rep = screenRsvpPatch({ children: [{ firstName: 'Ann' }] }, two, 'guests')
+    if (!rep.ok) throw new Error(rep.message)
+    expect(rep.value.columns.children).toEqual([{ first_name: 'Gina Guest' }, { first_name: 'Ann' }])
     expect(screenRsvpPatch({ children: [] }, existing)).toMatchObject({ ok: false, message: 'Please add at least one child, with a first name (up to 6).' })
   })
 

@@ -117,13 +117,14 @@ function DetailsScreen(p: ViewProps) {
         <h2 className="text-lg font-bold">Sorry you can&apos;t make it</h2>
         <div>
           <label htmlFor="rsvp-parent" className={LABEL}>
-            Your name
+            {guests ? 'Your name (first and last)' : 'Your name'}
           </label>
           <input
             id="rsvp-parent"
             className={INPUT}
             type="text"
             autoComplete="name"
+            placeholder={guests ? 'First and last name' : undefined}
             maxLength={PARENT_NAME_MAX}
             value={state.parentName}
             onChange={(e) => dispatch({ type: 'set', field: 'parentName', value: e.target.value })}
@@ -144,61 +145,122 @@ function DetailsScreen(p: ViewProps) {
 
   return (
     <form onSubmit={submit} noValidate aria-label="Who's coming" className="relative mt-6 grid grid-cols-1 gap-5" data-screen="2">
-      <h2 className="text-lg font-bold">Who&apos;s coming?</h2>
+      <h2 className="text-lg font-bold">{guests ? 'RSVP' : 'Who&apos;s coming?'}</h2>
 
-      <fieldset className="grid grid-cols-1 gap-3">
-        <legend className={LABEL}>{guests ? 'Guests coming' : state.children.length > 1 ? 'Children' : 'Child'}</legend>
-        {state.children.map((name, i) => (
-          <div key={i}>
-            <div className="flex gap-2">
-              <input
-                id={`rsvp-child-${i}`}
-                className={INPUT}
-                type="text"
-                aria-label={`${guests ? 'Guest' : 'Child'} ${i + 1} first name`}
-                placeholder="First name"
-                autoComplete="off"
-                maxLength={CHILD_NAME_MAX}
-                value={name}
-                onChange={(e) => dispatch({ type: 'setChild', index: i, value: e.target.value })}
-              />
-              {state.children.length > 1 && (
-                <button
-                  type="button"
-                  aria-label={`Remove ${guests ? 'guest' : 'child'} ${i + 1}`}
-                  className="min-h-[3rem] min-w-[3rem] rounded-xl border border-white/40 text-lg font-semibold"
-                  onClick={() => dispatch({ type: 'removeChild', index: i })}
-                >
-                  &times;
-                </button>
-              )}
-            </div>
-            <ErrorLine state={state} field={`child-${i}`} />
+      {guests ? (
+        <>
+          <div>
+            <label htmlFor="rsvp-parent" className={LABEL}>
+              Your name (first and last)
+            </label>
+            <input
+              id="rsvp-parent"
+              className={INPUT}
+              type="text"
+              autoComplete="name"
+              placeholder="First and last name"
+              maxLength={PARENT_NAME_MAX}
+              value={state.parentName}
+              onChange={(e) => dispatch({ type: 'set', field: 'parentName', value: e.target.value })}
+            />
+            <ErrorLine state={state} field="parentName" />
           </div>
-        ))}
-        <ErrorLine state={state} field="children" />
-        {state.children.length < MAX_CHILDREN && (
-          <button type="button" className={`${BTN_LINK} text-left`} onClick={() => dispatch({ type: 'addChild' })}>
-            {guests ? '+ Add guest' : '+ Add sibling'}
-          </button>
-        )}
-      </fieldset>
 
-      <div>
-        <label htmlFor="rsvp-parent" className={LABEL}>
-          {guests ? 'Your name' : 'Parent or guardian name'}
-        </label>
-        <input
-          id="rsvp-parent"
-          className={INPUT}
-          type="text"
-          autoComplete="name"
-          maxLength={PARENT_NAME_MAX}
-          value={state.parentName}
-          onChange={(e) => dispatch({ type: 'set', field: 'parentName', value: e.target.value })}
-        />
-        <ErrorLine state={state} field="parentName" />
-      </div>
+          <fieldset className="grid grid-cols-1 gap-3">
+            <legend className={LABEL}>
+              Anyone coming with you? <span className="font-normal text-white/70">(optional)</span>
+            </legend>
+            {state.children.map((name, i) => (
+              <div key={i}>
+                <div className="flex gap-2">
+                  <input
+                    id={`rsvp-child-${i}`}
+                    className={INPUT}
+                    type="text"
+                    aria-label={`Guest ${i + 1} name`}
+                    placeholder="First and last name"
+                    autoComplete="off"
+                    maxLength={PARENT_NAME_MAX}
+                    value={name}
+                    onChange={(e) => dispatch({ type: 'setChild', index: i, value: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Remove guest ${i + 1}`}
+                    className="min-h-[3rem] min-w-[3rem] rounded-xl border border-white/40 text-lg font-semibold"
+                    onClick={() => dispatch({ type: 'removeChild', index: i })}
+                  >
+                    &times;
+                  </button>
+                </div>
+                <ErrorLine state={state} field={`child-${i}`} />
+              </div>
+            ))}
+            <ErrorLine state={state} field="children" />
+            {state.children.length < MAX_CHILDREN - 1 && (
+              <button type="button" className={`${BTN_LINK} text-left`} onClick={() => dispatch({ type: 'addChild' })}>
+                + Add guest
+              </button>
+            )}
+          </fieldset>
+        </>
+      ) : (
+        <>
+        <fieldset className="grid grid-cols-1 gap-3">
+          <legend className={LABEL}>{guests ? 'Guests coming' : state.children.length > 1 ? 'Children' : 'Child'}</legend>
+          {state.children.map((name, i) => (
+            <div key={i}>
+              <div className="flex gap-2">
+                <input
+                  id={`rsvp-child-${i}`}
+                  className={INPUT}
+                  type="text"
+                  aria-label={`${guests ? 'Guest' : 'Child'} ${i + 1} first name`}
+                  placeholder="First name"
+                  autoComplete="off"
+                  maxLength={CHILD_NAME_MAX}
+                  value={name}
+                  onChange={(e) => dispatch({ type: 'setChild', index: i, value: e.target.value })}
+                />
+                {state.children.length > 1 && (
+                  <button
+                    type="button"
+                    aria-label={`Remove ${guests ? 'guest' : 'child'} ${i + 1}`}
+                    className="min-h-[3rem] min-w-[3rem] rounded-xl border border-white/40 text-lg font-semibold"
+                    onClick={() => dispatch({ type: 'removeChild', index: i })}
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
+              <ErrorLine state={state} field={`child-${i}`} />
+            </div>
+          ))}
+          <ErrorLine state={state} field="children" />
+          {state.children.length < MAX_CHILDREN && (
+            <button type="button" className={`${BTN_LINK} text-left`} onClick={() => dispatch({ type: 'addChild' })}>
+              {guests ? '+ Add guest' : '+ Add sibling'}
+            </button>
+          )}
+        </fieldset>
+
+        <div>
+          <label htmlFor="rsvp-parent" className={LABEL}>
+            {guests ? 'Your name' : 'Parent or guardian name'}
+          </label>
+          <input
+            id="rsvp-parent"
+            className={INPUT}
+            type="text"
+            autoComplete="name"
+            maxLength={PARENT_NAME_MAX}
+            value={state.parentName}
+            onChange={(e) => dispatch({ type: 'set', field: 'parentName', value: e.target.value })}
+          />
+          <ErrorLine state={state} field="parentName" />
+        </div>
+        </>
+      )}
 
       {!guests && (
         <fieldset>

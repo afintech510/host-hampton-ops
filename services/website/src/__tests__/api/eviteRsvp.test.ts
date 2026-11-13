@@ -956,7 +956,7 @@ describe('v1.2 finding 3: the RSVP API shares the page ceiling (no second enumer
 
 describe('an adult outside event (audience guests)', () => {
   const OUTSIDE = { child_name: 'Maeghan', party_type: 'outside_event', party_tags: { occasion: 'baby shower', venue_name: 'James Joyce', location_type: 'other' } }
-  const GUESTS_YES = { status: 'yes', parentName: 'Gina Guest', children: [{ firstName: 'Gina' }, { firstName: 'Tom' }], adultCount: 0, hasAllergy: false }
+  const GUESTS_YES = { status: 'yes', parentName: 'Gina Guest', children: [{ firstName: 'Tom' }], adultCount: 0, hasAllergy: false }
   const seededGuest = (over: Record<string, unknown> = {}) => {
     const row = rsvpRow({ parent_name: 'Gina Guest', children: [{ first_name: 'Gina' }], adult_count: 0, ...over })
     db = makeRsvpDb({ booking: OUTSIDE, rsvps: [row] })
@@ -973,14 +973,29 @@ describe('an adult outside event (audience guests)', () => {
       db = makeRsvpDb({ booking: OUTSIDE })
       const res = await post({ ...GUESTS_YES, adultCount })
       expect(res.status).toBe(200)
-      expect(rsvps()[0]).toMatchObject({ status: 'yes', parent_name: 'Gina Guest', adult_count: 0, children: [{ first_name: 'Gina' }, { first_name: 'Tom' }] })
+      expect(rsvps()[0]).toMatchObject({ status: 'yes', parent_name: 'Gina Guest', adult_count: 0, children: [{ first_name: 'Gina Guest' }, { first_name: 'Tom' }] })
     }
   })
 
-  it('POST: the empty-list error says guest, and names the field', async () => {
-    const res = await post({ ...GUESTS_YES, children: [] })
+  it('POST: no extras (empty or missing) is fine and stores just the parent; a repeat of the parent is dropped', async () => {
+    for (const children of [[], undefined, [{ firstName: ' gina  guest ' }]]) {
+      db = makeRsvpDb({ booking: OUTSIDE })
+      expect((await post({ ...GUESTS_YES, children })).status).toBe(200)
+      expect(rsvps()[0]).toMatchObject({ parent_name: 'Gina Guest', children: [{ first_name: 'Gina Guest' }] })
+    }
+  })
+
+  it('POST: a single-word name is refused, naming the field', async () => {
+    const res = await post({ ...GUESTS_YES, parentName: 'Gina' })
     expect(res.status).toBe(400)
-    expect(await res.json()).toEqual({ error: 'Please add at least one guest, with a first name (up to 6).', field: 'children' })
+    expect(await res.json()).toEqual({ error: 'Please enter your first and last name.', field: 'parentName' })
+    expect(rsvpInserts()).toHaveLength(0)
+  })
+
+  it('POST: a sixth extra is refused, naming the field', async () => {
+    const res = await post({ ...GUESTS_YES, children: ['A', 'B', 'C', 'D', 'E', 'F'].map((firstName) => ({ firstName })) })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Please check the names of the people coming with you (up to 5 others).', field: 'children' })
     expect(rsvpInserts()).toHaveLength(0)
   })
 
@@ -1017,11 +1032,21 @@ describe('an adult outside event (audience guests)', () => {
 
   it('PATCH: a note to the honoree and an edit of the guests work, with guest wording on refusal and adult_count untouched', async () => {
     const { cookie } = seededGuest()
-    const ok = await patch({ noteToHonoree: 'Congratulations!', children: [{ firstName: 'Gina' }, { firstName: 'Ann' }], adultCount: 2 }, { cookie })
+    const ok = await patch({ noteToHonoree: 'Congratulations!', children: [{ firstName: 'Ann' }], adultCount: 2 }, { cookie })
     expect(ok.status).toBe(200)
-    expect(rsvps()[0]).toMatchObject({ note_to_honoree: 'Congratulations!', adult_count: 0, children: [{ first_name: 'Gina' }, { first_name: 'Ann' }] })
-    const bad = await patch({ children: [] }, { cookie })
+    expect(rsvps()[0]).toMatchObject({ note_to_honoree: 'Congratulations!', adult_count: 0, children: [{ first_name: 'Gina Guest' }, { first_name: 'Ann' }] })
+    const bad = await patch({ children: [{ firstName: ' ' }] }, { cookie })
     expect(bad.status).toBe(400)
-    expect((await bad.json()).error).toBe('Please add at least one guest, with a first name (up to 6).')
+    expect((await bad.json()).error).toBe('Please check the names of the people coming with you (up to 5 others).')
+  })
+
+  it('PATCH: renaming the parent rewrites the first attendee and keeps the extras; one word is refused', async () => {
+    const { cookie } = seededGuest({ children: [{ first_name: 'Gina Guest' }, { first_name: 'Tom' }] })
+    const bad = await patch({ parentName: 'Gina' }, { cookie })
+    expect(bad.status).toBe(400)
+    expect(await bad.json()).toMatchObject({ field: 'parentName', error: 'Please enter your first and last name.' })
+    const ok = await patch({ parentName: 'Gina Smith' }, { cookie })
+    expect(ok.status).toBe(200)
+    expect(rsvps()[0]).toMatchObject({ parent_name: 'Gina Smith', children: [{ first_name: 'Gina Smith' }, { first_name: 'Tom' }] })
   })
 })
