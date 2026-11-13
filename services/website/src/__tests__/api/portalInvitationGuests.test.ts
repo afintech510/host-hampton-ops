@@ -15,13 +15,17 @@ const mockHook = jest.fn()
 jest.mock('@/lib/evites/rsvpHooks', () => ({ fireRsvpHook: (...a: unknown[]) => mockHook(...a) }))
 const mockSend = jest.fn() // any outbound HTTP (Resend, Brevo, Twilio, Quo) goes through fetch
 
-import { GET as GUESTS_GET, POST as GUESTS_POST, DELETE as GUESTS_DELETE } from '@/app/api/portal/invitation/guests/route'
+import { GET as GUESTS_GET, POST as GUESTS_POST, DELETE as GUESTS_DELETE, PATCH as GUESTS_PATCH } from '@/app/api/portal/invitation/guests/route'
 import { GET as RSVPS_GET, POST as RSVPS_POST, DELETE as RSVPS_DELETE } from '@/app/api/portal/invitation/rsvps/route'
 
 const ENV = ['EVITES_PAGES', 'EVITES_PILOT_REFS', 'PORTAL_LINK_SIGNING_SECRET', 'SUPABASE_URL'] as const
 const saved: Record<string, string | undefined> = {}
 const GUEST_A = '11111111-1111-4111-8111-111111111111'
 const GUEST_B = '22222222-2222-4222-8222-222222222222'
+const GUEST_C = '33333333-3333-4333-8333-333333333333'
+const RSVP_1 = 'aaaaaaaa-0000-4000-8000-000000000001'
+const RSVP_OTHER = 'aaaaaaaa-0000-4000-8000-000000000002'
+const RSVP_3 = 'aaaaaaaa-0000-4000-8000-000000000003'
 
 beforeEach(() => {
   jest.useFakeTimers({
@@ -76,6 +80,7 @@ describe('401 / 404', () => {
   const calls: Array<[string, (c: string | null) => Promise<Response>]> = [
     ['guests GET', (cookie) => GUESTS_GET(req('GET', G, { cookie }))],
     ['guests POST', (cookie) => GUESTS_POST(req('POST', G, { cookie, body: { text: 'Ann' } }))],
+    ['guests PATCH', (cookie) => GUESTS_PATCH(req('PATCH', G, { cookie, body: { id: GUEST_A, rsvpId: null } }))],
     ['guests DELETE', (cookie) => GUESTS_DELETE(req('DELETE', G, { cookie, body: { all: true } }))],
     ['rsvps GET', (cookie) => RSVPS_GET(req('GET', R, { cookie }))],
     ['rsvps POST', (cookie) => RSVPS_POST(req('POST', R, { cookie, body: { status: 'no', parentName: 'X' } }))],
@@ -106,8 +111,50 @@ describe('guests', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
     const body = await json(res)
-    expect(body.guests).toEqual([{ id: GUEST_A, name: 'Ann Lee', phone: '(631) 555-1234', phoneE164: '+16315551234', answer: 'yes' }])
+    expect(body.guests).toEqual([
+      { id: GUEST_A, name: 'Ann Lee', phone: '(631) 555-1234', phoneE164: '+16315551234', answer: 'yes', linkedRsvpId: null, matchedRsvpId: RSVP_1 },
+    ])
+    expect(body.unmatchedRsvps).toEqual([])
+    expect(body.summary).toEqual({ invited: 1, yes: 1, no: 0, waiting: 0, peopleComing: 1 })
     expect(JSON.stringify(body)).not.toContain('Not Mine')
+  })
+
+  it('GET reports waiting guests, answers that match nobody, and people coming', async () => {
+    db.tables.evite_guests.push({ id: GUEST_C, evite_id: EVITE_ID, name: 'Zed Waiting', phone_e164: null, created_at: '2026-10-21T12:00:00Z' })
+    db.tables.evite_rsvps.push(rsvpRow({ id: RSVP_3, parent_name: 'Stranger Danger', children: [{ first_name: 'Stan' }, { first_name: 'Sue' }] }))
+    const body = await json(await GUESTS_GET(req('GET', G)))
+    expect(body.unmatchedRsvps).toEqual([{ id: RSVP_3, status: 'yes', name: 'Stranger Danger', guests: ['Stan', 'Sue'] }])
+    expect(body.summary).toEqual({ invited: 2, yes: 1, no: 0, waiting: 1, peopleComing: 3 })
+    expect(JSON.stringify(body)).not.toContain('Other Family')
+  })
+
+  it('PATCH links a guest to an answer, GET then reports it linked, and null unlinks', async () => {
+    db.tables.evite_guests.push({ id: GUEST_C, evite_id: EVITE_ID, name: 'Zed Waiting', phone_e164: null, created_at: '2026-10-21T12:00:00Z' })
+    db.tables.evite_rsvps.push(rsvpRow({ id: RSVP_3, parent_name: 'Stranger Danger', children: [{ first_name: 'Stan' }] }))
+    const ok = await GUESTS_PATCH(req('PATCH', G, { body: { id: GUEST_C, rsvpId: RSVP_3 } }))
+    expect(ok.status).toBe(200)
+    let body = await json(await GUESTS_GET(req('GET', G)))
+    expect(body.guests.find((g: any) => g.id === GUEST_C)).toMatchObject({ answer: 'yes', linkedRsvpId: RSVP_3, matchedRsvpId: RSVP_3 }) // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(body.unmatchedRsvps).toEqual([])
+    expect((await GUESTS_PATCH(req('PATCH', G, { body: { id: GUEST_C, rsvpId: null } }))).status).toBe(200)
+    body = await json(await GUESTS_GET(req('GET', G)))
+    expect(body.guests.find((g: any) => g.id === GUEST_C)).toMatchObject({ answer: null, linkedRsvpId: null }) // eslint-disable-line @typescript-eslint/no-explicit-any
+  })
+
+  it('PATCH refuses a guest or answer from another invitation with a 404', async () => {
+    expect((await GUESTS_PATCH(req('PATCH', G, { body: { id: GUEST_B, rsvpId: RSVP_1 } }))).status).toBe(404)
+    expect((await GUESTS_PATCH(req('PATCH', G, { body: { id: GUEST_A, rsvpId: RSVP_OTHER } }))).status).toBe(404)
+    expect((await GUESTS_PATCH(req('PATCH', G, { body: { id: GUEST_A, rsvpId: RSVP_1, evite_id: OTHER_EVITE_ID } }))).status).toBe(200)
+    expect(guestRows().find((g) => g.id === GUEST_B)?.rsvp_id).toBeUndefined()
+    expect(guestRows().find((g) => g.id === GUEST_A)?.rsvp_id).toBe(RSVP_1)
+  })
+
+  it('PATCH 400 on a malformed body, 409 once the party has happened', async () => {
+    expect((await GUESTS_PATCH(req('PATCH', G, { body: { id: '%', rsvpId: null } }))).status).toBe(400)
+    expect((await GUESTS_PATCH(req('PATCH', G, { body: { id: GUEST_A } }))).status).toBe(400)
+    expect(db.updates).toHaveLength(0)
+    jest.setSystemTime(new Date('2026-11-20T15:00:00Z'))
+    expect((await GUESTS_PATCH(req('PATCH', G, { body: { id: GUEST_A, rsvpId: null } }))).status).toBe(409)
   })
 
   it('POST re-screens the text, adds the new ones, skips ones already on the list', async () => {
