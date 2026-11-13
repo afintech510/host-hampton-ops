@@ -77,6 +77,8 @@ export const EVITE_RENDER_COLUMNS = [
   'theme_sub',
   'host_contact_name',
   'host_contact_phone',
+  'host_contact2_name',
+  'host_contact2_phone',
   'show_host_contact',
   'host_note',
   'gift_note',

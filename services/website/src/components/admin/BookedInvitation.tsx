@@ -60,6 +60,8 @@ export function BookedInvitationView({ entry, busy, message, onCreate, onSend }:
   if (entry === null || !entry.eligible) return null
 
   const ev = entry.evite
+  // An outside event's invitation goes to the host, not a parent (the kids' wording is unchanged).
+  const who = entry.audience === 'guests' ? 'host' : 'parent'
   let body
   if (!ev) {
     body = entry.canEnsure ? (
@@ -84,7 +86,7 @@ export function BookedInvitationView({ entry, busy, message, onCreate, onSend }:
         ) : null}
         {!withdrawn && ev.inviteReadySent ? (
           <span className="text-[11px] text-green-700" data-testid="booked-invite-emailed" title="The invitation email is on the send ledger">
-            Emailed to parent
+            Emailed to {who}
           </span>
         ) : null}
         {!withdrawn && !ev.inviteReadySent ? (
@@ -92,15 +94,15 @@ export function BookedInvitationView({ entry, busy, message, onCreate, onSend }:
             type="button"
             className={BTN}
             disabled={working || entry.noParentEmail}
-            title={entry.noParentEmail ? 'No parent email on this booking' : 'Emails the parent their invitation link'}
+            title={entry.noParentEmail ? `No ${who} email on this booking` : `Emails the ${who} their invitation link`}
             onClick={onSend}
             data-testid="booked-send-invitation"
           >
-            {busy === 'send_invite_ready' ? 'Sending...' : 'Send to parent'}
+            {busy === 'send_invite_ready' ? 'Sending...' : `Send to ${who}`}
           </button>
         ) : null}
         {!withdrawn && !ev.inviteReadySent && entry.noParentEmail ? (
-          <span className="text-[11px] text-amber-700" data-testid="booked-no-parent-email">No parent email</span>
+          <span className="text-[11px] text-amber-700" data-testid="booked-no-parent-email">No {who} email</span>
         ) : null}
         {ev.renderFresh === false && ev.state === 'live' && !ev.inviteReadySent ? (
           <span className="text-[11px] text-amber-700" data-testid="booked-render-stale" title="The image is being redrawn; sending waits for it">

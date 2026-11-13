@@ -17,10 +17,19 @@ export interface EviteRow {
   theme_sub: string | null
   host_contact_name: string | null
   host_contact_phone: string | null
+  /** Migration 097: an optional second person to ask (both set, or neither). */
+  host_contact2_name: string | null
+  host_contact2_phone: string | null
   show_host_contact: boolean
   host_note: string | null
   gift_note: string | null
   rsvp_deadline: string | null
+  /** Migration 097: the page's colour (a PAGE_COLORS key) and motion; page-only, never printed on the image. */
+  page_color: string | null
+  page_motion: string | null
+  /** Migration 097: an https registry link and a short message, shown below the RSVP form. */
+  registry_url: string | null
+  registry_note: string | null
   render_version: number
   render_inputs_hash: string | null
   image_key: string | null

@@ -131,7 +131,7 @@ export type InviteFactsBooking = Pick<
   | 'quote_snapshot'
 >
 
-export type InviteFactsEvite = Partial<Pick<EviteRow, 'template_choice' | 'custom_art' | 'image_key'>> & Pick<
+export type InviteFactsEvite = Partial<Pick<EviteRow, 'template_choice' | 'custom_art' | 'image_key' | 'host_contact2_name' | 'host_contact2_phone'>> & Pick<
   EviteRow,
   | 'template_slug'
   | 'theme_word'
@@ -258,6 +258,13 @@ function hostContactLine(evite: InviteFactsEvite): string | null {
   const name = screenForImage(Array.from(rawName).slice(0, 40).join(''), 'poppins400') || DEFAULT_HOST_NAME
   // The DB CHECK is ^[2-9]xx-xxx-xxxx$; anything else (a stale or hand-edited row) means "studio default".
   const phone = normalizeHostPhone(evite.host_contact_phone) ?? (normalizeHostPhone(STUDIO_PHONE_DISPLAY) as string)
+  // A second person (migration 097) needs BOTH a name and a valid phone; half a pair is ignored, never guessed at.
+  const rawName2 = typeof evite.host_contact2_name === 'string' ? evite.host_contact2_name.replace(/[\x00-\x1f\x7f]+/g, ' ').trim() : ''
+  const name2 = screenForImage(Array.from(rawName2).slice(0, 40).join(''), 'poppins400')
+  const phone2 = normalizeHostPhone(evite.host_contact2_phone)
+  if (name2 !== '' && phone2 !== null) {
+    return screenForImage(`Any questions? Ask ${name}${SEP}${phone} or ${name2}${SEP}${phone2}`, 'poppins400')
+  }
   return screenForImage(`Any questions? Ask ${name}${SEP}${phone}`, 'poppins400')
 }
 

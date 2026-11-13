@@ -24,6 +24,7 @@ import { evitePagesMode, isPilotBooking } from '@/lib/evites/config'
 import { isEviteEligible } from '@/lib/evites/eligibility'
 import { inviteFacts } from '@/lib/evites/facts'
 import { renderInputsHash } from '@/lib/evites/hash'
+import { audienceOf, type EviteAudience } from '@/lib/evites/outsideEvent'
 import { inviteState, type InviteState } from '@/lib/evites/state'
 import { ADMIN_EVITE_COLUMNS } from '@/lib/evites/adminView'
 import { EVITE_BOOKING_COLUMNS, EVITE_LINE_ITEM_COLUMNS, EVITE_PARTY_THEME_COLUMNS, EVITE_PAYMENT_COLUMNS } from '@/lib/evites/views'
@@ -43,6 +44,8 @@ export interface EviteSummary {
   canEnsure: boolean
   /** No usable parent email: "Send to parent" cannot work. */
   noParentEmail: boolean
+  /** 'guests' for an outside event (the buttons say "host", not "parent"); 'kids' is the kids' party wording. */
+  audience: EviteAudience
   evite: null | {
     slug: string
     publicUrl: string
@@ -152,6 +155,7 @@ export async function loadEviteSummaries(supabase: Supa, bookingIds: readonly st
       eligible,
       canEnsure: eligible && pagesMode !== 'off' && (pagesMode === 'on' || isPilotBooking(booking.booking_ref)),
       noParentEmail: !isPlausibleEmailAddress(booking.contact_email),
+      audience: audienceOf(booking),
     }
     const evite = eviteByBooking.get(id)
     if (!evite) {

@@ -198,9 +198,9 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
       this.orderBy = { col, asc: o?.ascending !== false }
       return this
     }
-    insert(row: Row) {
+    insert(row: Row | Row[]) {
       this.op = 'insert'
-      this.patch = row
+      this.patch = row as Row
       return this
     }
     lt(col: string, val: unknown) {
@@ -231,6 +231,19 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
     }
     private run(): Result {
       const rows = tables[this.table] ?? []
+      if (this.op === 'insert' && Array.isArray(this.patch)) {
+        // A bulk insert is each row in turn (the first refusal stops it).
+        const list = this.patch as unknown as Row[]
+        const out: unknown[] = []
+        for (const r of list) {
+          this.patch = r
+          const res = this.run()
+          if (res.error) return res
+          out.push(...((res.data as unknown[] | null) ?? []))
+        }
+        this.patch = list as unknown as Row
+        return { data: this.returning ? out : null, error: null }
+      }
       if (this.op === 'insert') {
         const err = injected(this.table, 'insert', { patch: this.patch })
         if (err) return { data: null, error: err }

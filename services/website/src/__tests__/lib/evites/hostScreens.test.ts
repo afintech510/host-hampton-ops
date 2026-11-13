@@ -14,9 +14,9 @@ const refused = (body: unknown, ctx: HostPatchContext = CTX) => {
   return r
 }
 
-describe('the allow-list is exactly seven keys', () => {
+describe('the allow-list is exactly thirteen keys', () => {
   it('names them', () => {
-    expect([...HOST_PATCH_KEYS]).toEqual(['host_note', 'gift_note', 'rsvp_deadline', 'show_host_contact', 'host_contact_name', 'host_contact_phone', 'template_choice'])
+    expect([...HOST_PATCH_KEYS]).toEqual(['host_note', 'gift_note', 'rsvp_deadline', 'show_host_contact', 'host_contact_name', 'host_contact_phone', 'template_choice', 'host_contact2_name', 'host_contact2_phone', 'page_color', 'page_motion', 'registry_url', 'registry_note'])
   })
 
   it('template_choice: a gallery design, or null for the theme default; plain and unknown slugs are refused', () => {

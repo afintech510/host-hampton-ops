@@ -38,6 +38,7 @@ import { inviteFacts, type InviteFacts } from '@/lib/evites/facts'
 import { renderInputsHash } from '@/lib/evites/hash'
 import { validPartyDate } from '@/lib/evites/partyWindow'
 import { honoreeFirstName } from '@/lib/evites/pageModel'
+import { pageColorOf, pageMotionOf } from '@/lib/evites/pageTheme'
 import { inviteState, type InviteState } from '@/lib/evites/state'
 import { readThemeInputs } from '@/lib/evites/themeInputs'
 import { galleryTemplates, isGallerySlug, sampleImageOf } from '@/lib/evites/templates'
@@ -259,6 +260,13 @@ export interface HostCustomize {
   show_host_contact: boolean
   host_contact_name: string | null
   host_contact_phone: string | null
+  host_contact2_name: string | null
+  host_contact2_phone: string | null
+  /** A `PAGE_COLORS` key and a motion, always known values (unknown or unset reads as the default / 'none'). */
+  page_color: string
+  page_motion: string
+  registry_url: string | null
+  registry_note: string | null
 }
 
 /** One design in the host's gallery. */
@@ -327,6 +335,12 @@ export function composeHostView(loaded: HostLoaded, supabaseUrl: string | undefi
       show_host_contact: evite.show_host_contact !== false,
       host_contact_name: evite.host_contact_name,
       host_contact_phone: evite.host_contact_phone,
+      host_contact2_name: evite.host_contact2_name ?? null,
+      host_contact2_phone: evite.host_contact2_phone ?? null,
+      page_color: pageColorOf(evite.page_color).key,
+      page_motion: pageMotionOf(evite.page_motion),
+      registry_url: evite.registry_url ?? null,
+      registry_note: evite.registry_note ?? null,
     },
     deadlineRange: { min: etDateString(now), max: validPartyDate(booking.party_date) },
     // The party's own art outranks any pick (facts.ts), so a picker would offer choices that change nothing.

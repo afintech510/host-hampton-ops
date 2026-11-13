@@ -195,6 +195,12 @@ export interface HostFormState {
   showHostContact: boolean
   hostContactName: string
   hostContactPhone: string
+  hostContact2Name: string
+  hostContact2Phone: string
+  pageColor: string
+  pageMotion: string
+  registryUrl: string
+  registryNote: string
 }
 
 export interface HostCustomizeValues {
@@ -204,6 +210,12 @@ export interface HostCustomizeValues {
   show_host_contact: boolean
   host_contact_name: string | null
   host_contact_phone: string | null
+  host_contact2_name: string | null
+  host_contact2_phone: string | null
+  page_color: string
+  page_motion: string
+  registry_url: string | null
+  registry_note: string | null
 }
 
 export function formFromCustomize(c: HostCustomizeValues): HostFormState {
@@ -214,6 +226,12 @@ export function formFromCustomize(c: HostCustomizeValues): HostFormState {
     showHostContact: c.show_host_contact,
     hostContactName: c.host_contact_name ?? '',
     hostContactPhone: c.host_contact_phone ?? '',
+    hostContact2Name: c.host_contact2_name ?? '',
+    hostContact2Phone: c.host_contact2_phone ?? '',
+    pageColor: c.page_color,
+    pageMotion: c.page_motion,
+    registryUrl: c.registry_url ?? '',
+    registryNote: c.registry_note ?? '',
   }
 }
 
@@ -233,5 +251,13 @@ export function patchFromForm(form: HostFormState, stored: HostCustomizeValues):
   const phone = text(form.hostContactPhone)
   const phoneOut = phone === null ? null : formatHostPhone(phone)
   if (phoneOut !== stored.host_contact_phone) patch.host_contact_phone = phoneOut
+  if (text(form.hostContact2Name) !== (stored.host_contact2_name ?? null)) patch.host_contact2_name = text(form.hostContact2Name)
+  const phone2 = text(form.hostContact2Phone)
+  const phone2Out = phone2 === null ? null : formatHostPhone(phone2)
+  if (phone2Out !== (stored.host_contact2_phone ?? null)) patch.host_contact2_phone = phone2Out
+  if (form.pageColor !== stored.page_color) patch.page_color = form.pageColor
+  if (form.pageMotion !== stored.page_motion) patch.page_motion = form.pageMotion
+  if (text(form.registryUrl) !== (stored.registry_url ?? null)) patch.registry_url = text(form.registryUrl)
+  if (text(form.registryNote) !== (stored.registry_note ?? null)) patch.registry_note = text(form.registryNote)
   return patch
 }

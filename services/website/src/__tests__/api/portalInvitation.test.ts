@@ -165,7 +165,7 @@ describe('GET: the response is exactly the host view (spec §7.2)', () => {
       'venueName',
     ])
     expect(Object.keys(body.summary).sort()).toEqual(['adultsPlus', 'adultsYes', 'allergies', 'cap', 'kidsYes', 'noCount'])
-    expect(Object.keys(body.customize).sort()).toEqual(['gift_note', 'host_contact_name', 'host_contact_phone', 'host_note', 'rsvp_deadline', 'show_host_contact'])
+    expect(Object.keys(body.customize).sort()).toEqual(['gift_note', 'host_contact2_name', 'host_contact2_phone', 'host_contact_name', 'host_contact_phone', 'host_note', 'page_color', 'page_motion', 'registry_note', 'registry_url', 'rsvp_deadline', 'show_host_contact'])
     expect(Object.keys(body.images).sort()).toEqual(['invite', 'og'])
     expect(res.headers.get('cache-control')).toBe('no-store')
   })
@@ -214,7 +214,20 @@ describe('GET: the response is exactly the host view (spec §7.2)', () => {
   it('prefills the form from the stored customisations', async () => {
     db = makeHostDb({ evite: { host_note: 'Bring a towel', gift_note: 'No gifts', rsvp_deadline: '2026-11-08', show_host_contact: false, host_contact_name: 'Pat', host_contact_phone: '212-555-0100' } })
     const body = await json(await get())
-    expect(body.customize).toEqual({ host_note: 'Bring a towel', gift_note: 'No gifts', rsvp_deadline: '2026-11-08', show_host_contact: false, host_contact_name: 'Pat', host_contact_phone: '212-555-0100' })
+    expect(body.customize).toEqual({
+      host_note: 'Bring a towel',
+      gift_note: 'No gifts',
+      rsvp_deadline: '2026-11-08',
+      show_host_contact: false,
+      host_contact_name: 'Pat',
+      host_contact_phone: '212-555-0100',
+      host_contact2_name: null,
+      host_contact2_phone: null,
+      page_color: 'midnight',
+      page_motion: 'none',
+      registry_url: null,
+      registry_note: null,
+    })
     expect(body.deadlineRange).toEqual({ min: '2026-11-01', max: '2026-11-14' })
     expect(body.facts.hostNote).toBe('Bring a towel')
     expect(body.facts.rsvpDeadline).toBe('2026-11-08')
