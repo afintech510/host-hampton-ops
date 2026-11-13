@@ -405,6 +405,24 @@ export default function PartiesTab({
     setTimeout(() => setCopyToast(''), 2500)
   }
 
+  /**
+   * Copy the host's own invitation page (`/my-booking/invitation`, where they
+   * share the invite and watch RSVPs). The bare URL asks for a sign-in; this
+   * mints the signed link that opens it straight away, the same URL the
+   * customer would be sent. A fresh token every click.
+   */
+  async function copyInvitationLink() {
+    const data = await doAction('generate_portal_url', { destination: 'invitation' })
+    if (!data?.portalUrl) return
+    try {
+      await navigator.clipboard.writeText(data.portalUrl)
+      setCopyToast('Invitation link copied — send this to the customer')
+    } catch {
+      window.prompt('Copy this invitation link:', data.portalUrl)
+    }
+    setTimeout(() => setCopyToast(''), 2500)
+  }
+
   async function copyPortalLink() {
     // Generates a fresh portal token + URL, copies to clipboard. Same backend
     // action as Open Portal — just a different post-success behavior.
@@ -1139,6 +1157,27 @@ export default function PartiesTab({
                   className="border-2 border-hampton-blue/40 text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-hampton-blue/10 disabled:opacity-50"
                 >
                   Copy Invoice Link
+                </button>
+              </div>
+
+              {/* The host's invitation / RSVP page, as a full signed link to copy or open. */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={async () => {
+                    const data = await doAction('generate_portal_url', { destination: 'invitation' })
+                    if (data?.portalUrl) window.open(data.portalUrl, '_blank')
+                  }}
+                  disabled={!!actionLoading}
+                  className="border-2 border-hampton-blue text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-hampton-blue/10 disabled:opacity-50"
+                >
+                  💌 Open Invitation Page
+                </button>
+                <button
+                  onClick={copyInvitationLink}
+                  disabled={!!actionLoading}
+                  className="border-2 border-hampton-blue/40 text-[#1a2744] py-2 rounded-lg text-sm font-medium hover:bg-hampton-blue/10 disabled:opacity-50"
+                >
+                  Copy Invitation Link
                 </button>
               </div>
 
