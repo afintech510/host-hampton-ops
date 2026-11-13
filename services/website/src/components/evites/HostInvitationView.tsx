@@ -3,6 +3,7 @@ import type { HostPayload, HostRsvp } from '@/lib/evites/hostView'
 import {
   adultLabel,
   adultsLine,
+  guestsLine,
   kidsLine,
   overCap,
   shareGate,
@@ -82,7 +83,7 @@ function FieldError({ error, field }: { error: HostViewProps['formError']; field
 
 function SharePanel({ props }: { props: HostViewProps }) {
   const { data, on } = props
-  const gate = shareGate(data.state, data.renderFresh)
+  const gate = shareGate(data.state, data.renderFresh, data.facts.audience)
   const off = gate.enabled ? '' : OFF
   return (
     <section aria-label="Share your invitation" className={CARD}>
@@ -322,24 +323,28 @@ function RsvpList({ props }: { props: HostViewProps }) {
   const s = data.summary
   const yes = data.rsvps.filter((r) => r.status === 'yes').slice().reverse()
   const no = data.rsvps.filter((r) => r.status === 'no').slice().reverse()
+  const guests = data.facts.audience === 'guests'
   const over = overCap(s.kidsYes, s.cap)
   return (
     <section aria-label="RSVPs" className={CARD}>
       <h2 className={H2}>RSVPs</h2>
 
-      <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
+      <div className={`mb-4 grid ${guests ? 'grid-cols-1' : 'grid-cols-2'} gap-3 text-sm`}>
         <div className={`rounded-lg px-3 py-2 ${over ? 'bg-amber-50 text-amber-900' : 'bg-gray-50 text-[#1a2744]'}`}>
-          <p data-summary="kids" className="font-semibold">
-            {kidsLine(s.kidsYes, s.cap)}
+          {/* An adult outside event counts the names the guests gave (the same column the kids' party uses for children). */}
+          <p data-summary={guests ? 'guests' : 'kids'} className="font-semibold">
+            {guests ? guestsLine(s.kidsYes, s.cap) : kidsLine(s.kidsYes, s.cap)}
           </p>
           {over && <p className="text-xs">That&apos;s more than the guest count on your booking.</p>}
         </div>
-        <div className="rounded-lg bg-gray-50 px-3 py-2 text-[#1a2744]">
-          <p data-summary="adults" className="font-semibold">
-            {adultsLine(s.adultsYes, s.adultsPlus)}
-          </p>
-          {s.adultsPlus && <p className="text-xs">&ldquo;2+&rdquo; counts as 2.</p>}
-        </div>
+        {!guests && (
+          <div className="rounded-lg bg-gray-50 px-3 py-2 text-[#1a2744]">
+            <p data-summary="adults" className="font-semibold">
+              {adultsLine(s.adultsYes, s.adultsPlus)}
+            </p>
+            {s.adultsPlus && <p className="text-xs">&ldquo;2+&rdquo; counts as 2.</p>}
+          </div>
+        )}
       </div>
 
       {s.allergies.length > 0 && (
@@ -349,7 +354,7 @@ function RsvpList({ props }: { props: HostViewProps }) {
             {s.allergies.map((a, i) => (
               <li key={i}>
                 {a.children.length > 0 ? a.children.join(', ') : a.parent}
-                {a.children.length > 0 && <span className="text-red-700"> (guest of {a.parent})</span>}
+                {a.children.length > 0 && <span className="text-red-700">{guests ? ` (RSVP from ${a.parent})` : ` (guest of ${a.parent})`}</span>}
                 {a.note ? `: ${a.note}` : ''}
               </li>
             ))}
@@ -367,12 +372,12 @@ function RsvpList({ props }: { props: HostViewProps }) {
             <li key={i} className="py-3 text-sm">
               <p className="font-medium text-[#1a2744]">{r.parent_name}</p>
               <p className="text-gray-600">
-                {names(r)} &middot; {adultLabel(r.adult_count)}
+                {guests ? names(r) : <>{names(r)} &middot; {adultLabel(r.adult_count)}</>}
               </p>
               {r.has_allergy && <p className="mt-0.5 text-red-700">Allergy{r.allergy_note ? `: ${r.allergy_note}` : ''}</p>}
               {r.note_to_honoree && (
                 <p className="mt-1 whitespace-pre-line rounded-lg bg-[#F6F1EB] px-3 py-2 text-[#1a2744]">
-                  {data.facts.honoreeName ? `Note for ${data.facts.honoreeName}: ` : 'Note for the birthday child: '}
+                  {data.facts.honoreeName ? `Note for ${data.facts.honoreeName}: ` : guests ? 'Note for the host: ' : 'Note for the birthday child: '}
                   {r.note_to_honoree}
                 </p>
               )}
@@ -397,7 +402,7 @@ function RsvpList({ props }: { props: HostViewProps }) {
 
 export function HostInvitationView(props: HostViewProps) {
   const { data } = props
-  const banner = stateBanner(data.state, data.renderFresh)
+  const banner = stateBanner(data.state, data.renderFresh, data.facts.audience)
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 md:py-14">
       <p className="mb-1 text-sm">

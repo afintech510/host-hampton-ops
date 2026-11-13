@@ -43,7 +43,8 @@ import { etToUtc, PARTY_TZ } from '@/lib/partyTime'
 import { TENANT } from '@/tenant'
 import { STUDIO_ADDRESS_LINE, STUDIO_LOCALITY, STUDIO_PHONE_DISPLAY, STUDIO_STREET } from '@/lib/studioLocation'
 import { screenForImage } from '@/lib/evites/glyphs'
-import { eviteLocationType, mobileAddressOf, mobileTown, type EviteLocationType } from '@/lib/evites/location'
+import { eviteLocationType, FALLBACK_TOWN, mobileAddressOf, mobileTown, type EviteLocationType } from '@/lib/evites/location'
+import { audienceOf, isOutsideEvent, occasionOf, occasionWords, venueNameOf, type EviteAudience } from '@/lib/evites/outsideEvent'
 import { partyWindow, validPartyDate, type PartyWindow } from '@/lib/evites/partyWindow'
 import { resolveTheme, themeLabelOf, type EviteTemplateSlug } from '@/lib/evites/themes'
 import { customArtPath } from '@/lib/evites/customArt'
@@ -79,6 +80,17 @@ export interface InviteFacts {
   ageOrdinal: string | null
   themeWord: string
   themeSub: string
+  /**
+   * What the event IS, for an outside event ("Baby Shower"), else null. The theme word and sub line are
+   * drawn from it ("BABY" / "SHOWER") unless an admin override says otherwise.
+   */
+  occasion: string | null
+  /** The noun a sentence uses for the event: "Baby Shower", "Glow Party", "Birthday Party". Never empty. */
+  partyNoun: string
+  /** The venue's name for an outside event ("James Joyce"), else null. The street is in `placeLine`. */
+  venueName: string | null
+  /** 'guests' for an adult outside event (the RSVP names who is coming); 'kids' is the kids' party form. */
+  audience: EviteAudience
   /** 'custom' whenever `customArt` is set; otherwise the gallery pick, the admin override or the theme's design. */
   templateSlug: EviteTemplateSlug
   /**
@@ -290,8 +302,13 @@ export function inviteFacts(
 
   const wordOverride = rawWord !== '' ? screenForImage(rawWord, wordFont) : ''
   const subOverride = rawSub !== '' ? screenForImage(rawSub, subFont) : ''
-  const themeWord = screenForImage(wordOverride !== '' ? wordOverride.toLocaleUpperCase('en-US') : resolved.themeWord, wordFont) || resolved.themeWord
-  const themeSub = screenForImage(subOverride !== '' ? subOverride.toLocaleUpperCase('en-US') : resolved.themeSub, subFont) || resolved.themeSub
+  // An outside event has no catalogue theme; its occasion ("Baby Shower") is what the art says.
+  const occasion = occasionOf(booking)
+  const occWords = occasionWords(occasion)
+  const baseWord = occWords?.word ?? resolved.themeWord
+  const baseSub = occWords?.sub ?? resolved.themeSub
+  const themeWord = screenForImage(wordOverride !== '' ? wordOverride.toLocaleUpperCase('en-US') : baseWord, wordFont) || resolved.themeWord
+  const themeSub = screenForImage(subOverride !== '' ? subOverride.toLocaleUpperCase('en-US') : baseSub, subFont) || resolved.themeSub
 
   // ---- name and age
   const rawName = childNameOf(booking)
@@ -333,6 +350,7 @@ export function inviteFacts(
 
   // ---- where
   const locationType = eviteLocationType(booking)
+  const venueName = venueNameOf(booking)
   const studioTown = STUDIO_LOCALITY.split(',')[0].trim()
   let placeLine: string
   let cardPlaceLine: string
@@ -341,6 +359,14 @@ export function inviteFacts(
     placeLine = `Host Hampton${SEP}${STUDIO_STREET}, ${studioTown}`
     cardPlaceLine = `Host Hampton, ${studioTown}`
     calendarLocation = `Host Hampton, ${STUDIO_ADDRESS_LINE}`
+  } else if (isOutsideEvent(booking)) {
+    // A client's venue: named first, then its street. The card (which must not carry a street) says
+    // the venue and its town, or the venue alone when the town cannot be read from the address.
+    const address = mobileAddressOf(booking)
+    const town = address ? mobileTown(address) : FALLBACK_TOWN
+    placeLine = venueName && address ? `${venueName}${SEP}${address}` : address ?? venueName ?? LOCATION_TBC
+    cardPlaceLine = venueName ? (town !== FALLBACK_TOWN ? `${venueName}, ${town}` : venueName) : address ? town : LOCATION_TBC
+    calendarLocation = venueName && address ? `${venueName}, ${address}` : address ?? venueName
   } else {
     const address = mobileAddressOf(booking)
     placeLine = address ?? LOCATION_TBC
@@ -351,19 +377,22 @@ export function inviteFacts(
   cardPlaceLine = screenForImage(cardPlaceLine, 'poppins400') || LOCATION_TBC
 
   // ---- words
-  const partyNoun = label ? `${label} Party` : 'Birthday Party'
-  const unnamedNoun = label ? `${label} Birthday Party` : 'Birthday Party'
+  // The occasion is screened for the title's font (`bungee`), the face every sentence below is drawn in.
+  const occasionNoun = isOutsideEvent(booking) ? screenForImage(occasion ?? 'Event', 'bungee') || 'Event' : ''
+  const partyNoun = occasionNoun !== '' ? occasionNoun : label ? `${label} Party` : 'Birthday Party'
+  const unnamedNoun = occasionNoun !== '' ? occasionNoun : label ? `${label} Birthday Party` : 'Birthday Party'
   const title = screenForImage(hasName ? `${displayName}'s ${partyNoun}` : unnamedNoun, 'bungee')
   const onDate = texts ? ` on ${texts.short}` : ''
   const shareText = hasName
     ? `You're invited to ${displayName}'s ${partyNoun}${onDate}! RSVP here:`
     : `You're invited to ${article(unnamedNoun)} ${unnamedNoun}${onDate}! RSVP here:`
+  const eventWord = occasionNoun !== '' ? 'event' : 'party'
   const reshareText = hasName
-    ? `Still hoping you can make ${displayName}'s party${onDate}! RSVP here:`
-    : `Still hoping you can make the party${onDate}! RSVP here:`
+    ? `Still hoping you can make ${displayName}'s ${eventWord}${onDate}! RSVP here:`
+    : `Still hoping you can make the ${eventWord}${onDate}! RSVP here:`
 
   let description: string
-  if (state === 'preview') description = `${title}. RSVPs open once the party is booked.`
+  if (state === 'preview') description = `${title}. RSVPs open once the ${eventWord} is booked.`
   else if (state === 'needs_time') description = `${title}. ${dateLine}. Start time coming soon.`
   else description = `${title}. ${dateLine}. ${cardPlaceLine}. RSVP online.`
 
@@ -382,6 +411,10 @@ export function inviteFacts(
     timeText,
     themeWord,
     themeSub,
+    occasion,
+    partyNoun,
+    venueName,
+    audience: audienceOf(booking),
     templateSlug,
     customArt,
     dateLine,

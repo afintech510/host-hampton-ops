@@ -43,8 +43,13 @@ export async function loadOwnRsvp(eviteId: string): Promise<OwnRsvp | null> {
  * answer and the CURRENT club wording. A club read that fails (or finds nothing)
  * hides the card rather than showing wording that is not on record.
  */
-export async function loadRsvpPanel(eviteId: string): Promise<{ own: OwnRsvp | null; club: { version: string; wording: string } | null }> {
+export async function loadRsvpPanel(
+  eviteId: string,
+  audience: 'kids' | 'guests' = 'kids',
+): Promise<{ own: OwnRsvp | null; club: { version: string; wording: string } | null }> {
   const own = await loadOwnRsvp(eviteId)
+  // An adult outside event has no Birthday Club: no consent read, and `club` is null so no card is drawn.
+  if (audience === 'guests') return { own, club: null }
   const consent = await readCurrentClubConsent(getSupabase())
   return { own, club: consent.kind === 'ok' ? { version: consent.version, wording: consent.wording } : null }
 }

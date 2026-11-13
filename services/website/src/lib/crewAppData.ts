@@ -9,6 +9,7 @@ import {
   type BookedRow, type EventSummaryRow, type LedgerRow,
 } from '@/lib/dashboardMetrics'
 import { loadLeadCards } from '@/lib/leadCards'
+import { OUTSIDE_EVENT_OR_FILTER } from '@/lib/outsideEventGate'
 
 /**
  * What the crew-management app's screens read. Read only.
@@ -201,6 +202,8 @@ async function inquiryStamps(sb: Supa, today: string): Promise<Array<{ createdAt
       .select('created_at')
       .gte('created_at', since)
       .not('event_type', 'in', '(vendor_registration)')
+      // An invitation for someone else's venue (migration 096) is not an inquiry we chase.
+      .or(OUTSIDE_EVENT_OR_FILTER)
       .order('created_at', { ascending: true })
       .range(offset, offset + CHUNK - 1)
     if (error) return null

@@ -336,7 +336,7 @@ export async function enqueuePartyReminders({
     // Needs party_time, which this function isn't given — read it back.
     const { data: bk, error: bkErr } = await supabase
       .from('bookings')
-      .select('party_time')
+      .select('party_time, party_type')
       .eq('booking_ref', bookingRef)
       .maybeSingle()
 
@@ -347,6 +347,7 @@ export async function enqueuePartyReminders({
     }
 
     await enqueueCheckinReminders({
+      partyType: bk?.party_type ?? null,
       bookingRef,
       contactEmail,
       partyDate,

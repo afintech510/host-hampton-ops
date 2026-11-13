@@ -31,6 +31,7 @@
 import { getSupabase } from '@/lib/supabase'
 import { getDepositCents, BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 import { isPayableStatus } from '@/lib/portalWrite'
+import { takesPayments } from '@/lib/outsideEventGate'
 import { loadPricingCatalog, type PricingCatalog } from '@/lib/pricingCatalog'
 import { loadPlanContent, type PlanContent } from '@/lib/planContent'
 import {
@@ -467,7 +468,10 @@ export async function loadPlanInvoice(
   // (HH-PTY-VVEWJ). The 50% is stated in the callout; the pay button returns
   // once an option is made billable.
   const optionsPending = partyType === 'hat_bar' && totalCents === 0 && lineItems.some(i => i.isOptional)
-  const reservationDepositCents = isPayableStatus(booking.status) && !optionsPending ? BOOKING_DEPOSIT_CENTS : 0
+  // Never on an outside event: an invitation for a client's event at someone else's
+  // venue has nothing to reserve and nothing owed (migration 096).
+  const reservationDepositCents =
+    isPayableStatus(booking.status) && !optionsPending && takesPayments(booking.party_type) ? BOOKING_DEPOSIT_CENTS : 0
   const m = planMoney({ totalCents, depositCents, depositIsSeparate, payments, reservationDepositCents })
 
   const tags = booking.party_tags ?? {}

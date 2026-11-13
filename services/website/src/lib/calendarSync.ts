@@ -31,6 +31,7 @@ import {
 import { bookingStage, etToday, type BookingStage } from '@/lib/bookingStatus'
 import { sumPayments } from '@/lib/bookingBalance'
 import { etToUtc } from '@/lib/partyTime'
+import { isOutsideEventType } from '@/lib/outsideEventGate'
 import { DURATION_MINI_MIN, DURATION_THEME_MIN } from '@/lib/evites/partyWindow'
 
 type Supa = ReturnType<typeof getSupabase>
@@ -181,6 +182,10 @@ export function planBookingCalendar(
 ): BookingPlan {
   const stage = bookingStage({ status: b.status, paidCents, partyDate: b.party_date, today })
   const base = { ref: b.booking_ref, name: (b.contact_name || '').trim(), stage }
+
+  // An invitation for a client's event at someone else's venue is not a party in
+  // our studio: never create an event for it, and never delete one (migration 096).
+  if (isOutsideEventType(b.party_type)) return { ...base, ops: [], keepId: b.google_calendar_event_id }
 
   // A party that has happened is history; its event is left exactly as it is.
   if (stage === 'completed') return { ...base, ops: [], keepId: b.google_calendar_event_id }

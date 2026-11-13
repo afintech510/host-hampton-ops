@@ -15,6 +15,7 @@ import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { screenPublicGuestCount, MAX_PUBLIC_GUEST_COUNT } from '@/lib/publicIntake'
 import { isEditableStatus, isPayableStatus, partyDateIsSet } from '@/lib/portalWrite'
 import { PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
+import { takesPayments } from '@/lib/outsideEventGate'
 import {
   buildPortalPartyDetails,
   PORTAL_INTERNAL_ROW_KEYS,
@@ -165,7 +166,9 @@ export async function GET(req: NextRequest) {
     depositCents: getDepositCents(totalCents, booking.party_type as string | null),
     depositIsSeparate: depositIsSeparateFor(booking.party_type as string | null),
     payments,
-    reservationDepositCents: isPayableStatus(booking.status) ? BOOKING_DEPOSIT_CENTS : 0,
+    // No reservation deposit on an outside event (migration 096): nothing to reserve.
+    reservationDepositCents:
+      isPayableStatus(booking.status) && takesPayments(booking.party_type as string | null) ? BOOKING_DEPOSIT_CENTS : 0,
   })
 
   const permissions = {

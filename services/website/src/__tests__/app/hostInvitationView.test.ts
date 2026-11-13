@@ -39,6 +39,9 @@ const payload = (over: Partial<HostPayload> = {}): HostPayload => ({
     guestCap: 10,
     shareText: "You're invited to Mia's Glow Party on Sat, Nov 14! RSVP here:",
     reshareText: "Still hoping you can make Mia's party on Sat, Nov 14! RSVP here:",
+    audience: 'kids',
+    partyNoun: 'Glow Party',
+    venueName: null,
   },
   url: 'https://www.hosthampton.com/i/mia-glow-7kq2',
   images: { invite: 'https://p.supabase.co/storage/v1/object/public/evites/k/invite-v1-ab12.jpg', og: null },
@@ -238,5 +241,74 @@ describe('the page names no phone number of its own', () => {
     for (const f of ['HostInvitationView.tsx', 'HostInvitation.tsx']) {
       expect(readSrc('components', 'evites', f)).not.toMatch(/\b\d{3}[-.)\s]?\s?\d{3}[-.\s]?\d{4}\b/)
     }
+  })
+})
+
+describe('guests audience (an adult outside event)', () => {
+  const guestsPayload = (over: Partial<HostPayload> = {}): HostPayload => {
+    const base = payload()
+    return payload({
+      facts: { ...base.facts, title: "Maeghan's Baby Shower", honoreeName: 'Maeghan', audience: 'guests', partyNoun: 'Baby Shower', venueName: 'James Joyce', guestCap: null },
+      summary: { kidsYes: 3, adultsYes: 0, adultsPlus: false, noCount: 1, cap: null, allergies: [{ parent: 'Gina Guest', children: ['Gina', 'Tom'], note: 'shellfish' }] },
+      rsvps: [
+        rsvp({ parent_name: 'Gina Guest', children: [{ first_name: 'Gina' }, { first_name: 'Tom' }], adult_count: 0, has_allergy: true, allergy_note: 'shellfish', note_to_honoree: 'Congratulations!' }),
+        rsvp({ parent_name: 'Zoe Zed', children: [{ first_name: 'Zoe' }], adult_count: 0 }),
+        rsvp({ status: 'no', parent_name: 'Nan No', children: [], adult_count: 0 }),
+      ],
+      ...over,
+    })
+  }
+
+  it('shows a Guests count tile and no kids or adults tile', () => {
+    const html = view(guestsPayload())
+    expect(html).toContain('data-summary="guests"')
+    expect(html).toContain('3 guests')
+    expect(html).not.toContain('data-summary="kids"')
+    expect(html).not.toContain('data-summary="adults"')
+    expect(html).not.toContain('2+')
+    expect(html).not.toMatch(/\bkids?\b/i)
+    expect(html).not.toMatch(/adults?\b/i)
+  })
+
+  it('lists each RSVP by guest names, without an adults suffix, and notes go to the honoree by name', () => {
+    const html = view(guestsPayload())
+    expect(html).toContain('Gina, Tom')
+    expect(html).not.toContain('no adults staying')
+    expect(html).toContain('Note for Maeghan: ')
+    expect(html).toContain('Congratulations!')
+    expect(html).toContain('(RSVP from Gina Guest)')
+    expect(html).not.toMatch(/birthday child/i)
+    expect(html).toContain('Can&#x27;t make it (1)')
+  })
+
+  it('without an honoree name the note is for the host', () => {
+    const p = guestsPayload()
+    expect(view({ ...p, facts: { ...p.facts, honoreeName: null } })).toContain('Note for the host: ')
+  })
+
+  it('the banner says event, and never "once your party is booked"', () => {
+    const preview = view(guestsPayload({ state: 'preview' }))
+    expect(preview).toContain('once your event is confirmed')
+    expect(preview).not.toMatch(/party is booked/)
+    expect(preview).toContain('You can share your invitation as soon as your event is confirmed.')
+    const closed = view(guestsPayload({ state: 'closed' }))
+    expect(closed).toContain('This event has happened')
+    expect(closed).not.toContain('celebrating with us')
+  })
+
+  it('kids stays exactly as it was: the kids and adults tiles, "2+", the birthday child', () => {
+    const html = view(
+      payload({
+        summary: { kidsYes: 4, adultsYes: 3, adultsPlus: true, noCount: 0, cap: 10, allergies: [] },
+        rsvps: [rsvp({ note_to_honoree: 'Hi!', adult_count: 2 })],
+        facts: { ...payload().facts, honoreeName: null },
+      }),
+    )
+    expect(html).toContain('data-summary="kids"')
+    expect(html).toContain('4 of 10 kids')
+    expect(html).toContain('data-summary="adults"')
+    expect(html).toContain('3+ adults')
+    expect(html).toContain('2+ adults')
+    expect(html).toContain('Note for the birthday child: ')
   })
 })

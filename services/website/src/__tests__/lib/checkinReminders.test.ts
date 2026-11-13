@@ -125,6 +125,18 @@ describe('enqueueCheckinReminders', () => {
     expect(fake.refusals).toHaveLength(0)
   })
 
+  it('schedules nothing for an outside event (migration 096), and still schedules a normal or untyped booking', async () => {
+    const outside = setup()
+    await enqueueCheckinReminders({ ...base, partyType: 'outside_event' })
+    expect(outside.tables.scheduled_reminders).toHaveLength(0)
+
+    for (const partyType of ['in_studio_theme', null, undefined]) {
+      const fake = setup()
+      await enqueueCheckinReminders({ ...base, partyType })
+      expect(fake.tables.scheduled_reminders).toHaveLength(2)
+    }
+  })
+
   it('THE DEFECT, PINNED: the pre-044 uuid column refused both rows', async () => {
     const fake = setup({ legacy: true })
 

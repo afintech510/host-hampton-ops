@@ -35,6 +35,9 @@ function tagsOf(tags: unknown): Record<string, unknown> {
 }
 
 export function eviteLocationType(booking: LocationInput): EviteLocationType {
+  // An outside event is never at the studio, whatever a stray location tag says: it is an address
+  // we do not host at, which is what `mobile` means here (the address line, no studio copy).
+  if (booking.party_type === 'outside_event') return 'mobile'
   const loc = tagsOf(booking.party_tags).location_type
   if (loc === 'mobile') return 'mobile'
   if (loc === 'host_hampton') return 'studio'

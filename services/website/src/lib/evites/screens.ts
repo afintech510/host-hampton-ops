@@ -83,6 +83,19 @@ export interface ScreenedChild {
   first_name: string
 }
 
+/**
+ * Who the RSVP form is talking to. 'kids' is the kids' party form exactly as it always was; 'guests' is an
+ * adult outside event (a shower) where the same columns carry relabelled data: `children` holds the first
+ * names of the guests coming, `parent_name` is the guest's own name, `adult_count` is always 0, and there is
+ * no Birthday Club. The default everywhere is 'kids', so an existing caller is unchanged.
+ */
+export type RsvpAudience = 'kids' | 'guests'
+
+/** The "no children" message, in the form's own words. */
+export function childrenMessage(audience: RsvpAudience): string {
+  return audience === 'guests' ? 'Please add at least one guest, with a first name (up to 6).' : 'Please add at least one child, with a first name (up to 6).'
+}
+
 /** `[{firstName}]` (or `[{first_name}]`) to `[{first_name}]`: 1..6 for a yes, exactly 0 for a no. Null when it does not fit. */
 export function screenChildren(raw: unknown, status: 'yes' | 'no'): ScreenedChild[] | null {
   if (status === 'no') return []
@@ -149,7 +162,7 @@ export interface ScreenedRsvp {
 }
 
 /** `POST` body (screens 1-2). The honeypot is read by the route before this runs. */
-export function screenRsvpPost(body: unknown): ScreenResult<ScreenedRsvp> {
+export function screenRsvpPost(body: unknown, audience: RsvpAudience = 'kids'): ScreenResult<ScreenedRsvp> {
   const o = asObject(body)
   if (!o) return bad('body', 'Please fill in the form.')
 
@@ -165,9 +178,10 @@ export function screenRsvpPost(body: unknown): ScreenResult<ScreenedRsvp> {
   }
 
   const children = screenChildren(o.children, 'yes')
-  if (children === null) return bad('children', 'Please add at least one child, with a first name (up to 6).')
+  if (children === null) return bad('children', childrenMessage(audience))
 
-  const adultCount = screenAdultCount(o.adultCount)
+  // Guests have no "adults staying" question: whatever was sent, the stored count is 0.
+  const adultCount = audience === 'guests' ? 0 : screenAdultCount(o.adultCount)
   if (adultCount === null) return bad('adultCount', 'Please choose how many adults are staying.')
 
   if (typeof o.hasAllergy !== 'boolean') return bad('hasAllergy', 'Please tell us whether there is a food allergy.')
@@ -224,7 +238,7 @@ export interface ScreenedPatch {
  * adults, and a `yes` must have a child. So `status: 'no'` zeroes the party
  * itself, and `status: 'yes'` on a stored `no` must bring its children.
  */
-export function screenRsvpPatch(body: unknown, existing: ExistingRsvp): ScreenResult<ScreenedPatch> {
+export function screenRsvpPatch(body: unknown, existing: ExistingRsvp, audience: RsvpAudience = 'kids'): ScreenResult<ScreenedPatch> {
   const o = asObject(body)
   if (!o) return bad('body', 'Please fill in the form.')
   const has = (k: string) => Object.prototype.hasOwnProperty.call(o, k) && o[k] !== undefined
@@ -260,13 +274,15 @@ export function screenRsvpPatch(body: unknown, existing: ExistingRsvp): ScreenRe
   } else {
     if (has('children')) {
       const c = screenChildren(o.children, 'yes')
-      if (c === null) return bad('children', 'Please add at least one child, with a first name (up to 6).')
+      if (c === null) return bad('children', childrenMessage(audience))
       children = c
       touched++
     } else if (existing.status === 'no') {
-      return bad('children', 'Please add at least one child, with a first name (up to 6).')
+      return bad('children', childrenMessage(audience))
     }
-    if (has('adultCount')) {
+    if (audience === 'guests') {
+      adultCount = 0 // no such question for guests: never read from the body
+    } else if (has('adultCount')) {
       const a = screenAdultCount(o.adultCount)
       if (a === null) return bad('adultCount', 'Please choose how many adults are staying.')
       adultCount = a
@@ -291,7 +307,7 @@ export function screenRsvpPatch(body: unknown, existing: ExistingRsvp): ScreenRe
 
   if (status !== existing.status) columns.status = status
   if (status === 'no' || has('children') || existing.status === 'no') columns.children = children
-  if (status === 'no' || has('adultCount') || existing.status === 'no') columns.adult_count = adultCount
+  if (status === 'no' || (audience === 'kids' && has('adultCount')) || existing.status === 'no') columns.adult_count = adultCount
   if (status === 'no' || has('hasAllergy') || existing.status === 'no') columns.has_allergy = hasAllergy
   if (status === 'no' || has('allergyNote') || has('hasAllergy') || existing.status === 'no') columns.allergy_note = allergyNote
 
@@ -337,6 +353,8 @@ export function screenRsvpPatch(body: unknown, existing: ExistingRsvp): ScreenRe
 
   // ---- the club
   let club: ScreenedClub | null = null
+  // Hiding the card on an outside event is cosmetic; the refusal is here. There is no Birthday Club for a shower.
+  if (audience === 'guests' && has('club')) return bad('club', 'The Birthday Club is not part of this invitation.')
   if (has('club')) {
     const c = asObject(o.club)
     if (!c || c.optIn !== true) return bad('club', 'Invalid request.')

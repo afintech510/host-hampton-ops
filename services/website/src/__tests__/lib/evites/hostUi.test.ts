@@ -4,6 +4,7 @@ import {
   formatHostPhone,
   formFromCustomize,
   isHostPhone,
+  guestsLine,
   isIosUserAgent,
   kidsLine,
   overCap,
@@ -170,5 +171,45 @@ describe('patchFromForm: only what changed, with empty as null', () => {
 
   it('the show/hide toggle', () => {
     expect(patchFromForm({ ...formFromCustomize(stored), showHostContact: false }, stored)).toEqual({ show_host_contact: false })
+  })
+})
+
+describe('guests audience (an adult outside event)', () => {
+  it('kids is the default: the strings are the ones every existing caller sees', () => {
+    for (const s of STATES) {
+      expect(stateBanner(s, true)).toEqual(stateBanner(s, true, 'kids'))
+      expect(shareGate(s, true)).toEqual(shareGate(s, true, 'kids'))
+    }
+    expect(stateBanner('preview', true).body).toMatch(/once your party is booked/)
+  })
+
+  it('banner and share gate say event, never party, kids or birthday', () => {
+    for (const s of STATES) {
+      for (const fresh of [true, false]) {
+        const text = JSON.stringify([stateBanner(s, fresh, 'guests'), shareGate(s, fresh, 'guests')])
+        expect(text).not.toMatch(/party|birthday|kids|children/i)
+      }
+    }
+    expect(stateBanner('preview', true, 'guests').body).toMatch(/once your event is confirmed/)
+    expect(stateBanner('needs_time', true, 'guests').body).toMatch(/Your event is confirmed/)
+    expect(stateBanner('closed', true, 'guests').title).toMatch(/^This event has happened/)
+    expect(stateBanner('closed', true, 'guests').body).toBe('Here is who answered. Thank you!')
+    expect(shareGate('preview', true, 'guests').message).toMatch(/event is confirmed/)
+    expect(shareGate('closed', true, 'guests').message).toMatch(/This event has happened/)
+  })
+
+  it('the enabled/disabled logic is the same for guests', () => {
+    const on = STATES.flatMap((s) => [true, false].map((f) => [s, f] as const)).filter(([s, f]) => shareGate(s, f, 'guests').enabled)
+    expect(on).toEqual([['live', true]])
+    expect(shareGate('live', false, 'guests')).toEqual({ enabled: false, message: UPDATING_MESSAGE })
+    expect(stateBanner('live', true, 'guests').tone).toBe('live')
+    expect(stateBanner('live', false, 'guests').tone).toBe('updating')
+  })
+
+  it('guestsLine', () => {
+    expect(guestsLine(1, null)).toBe('1 guest')
+    expect(guestsLine(0, null)).toBe('0 guests')
+    expect(guestsLine(12, null)).toBe('12 guests')
+    expect(guestsLine(4, 30)).toBe('4 of 30 guests')
   })
 })

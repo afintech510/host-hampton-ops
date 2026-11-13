@@ -8,6 +8,7 @@ import { escapeHtml } from '@/lib/escapeHtml'
 import { mailHref } from '@/lib/emailSafety'
 import { guardRate, ownerNotifyRule } from '@/lib/rateLimit'
 import { screenPledgeCents, MAX_PLEDGE_CENTS, isPayableStatus } from '@/lib/portalWrite'
+import { takesPayments } from '@/lib/outsideEventGate'
 
 export async function POST(req: NextRequest) {
   // Email + billed SMS to Adam on every call, on a cookie alone. Four real
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabase()
   const { data: booking, error: readErr } = await supabase
     .from('bookings')
-    .select('id, booking_ref, status, contact_name, contact_email, contact_phone, balance_due_cents, party_date, party_time')
+    .select('id, booking_ref, status, party_type, contact_name, contact_email, contact_phone, balance_due_cents, party_date, party_time')
     .eq('booking_ref', bookingRef)
     .maybeSingle()
 
@@ -62,6 +63,13 @@ export async function POST(req: NextRequest) {
       { error: 'This booking is no longer taking payments. Please give us a call before sending anything.' },
       { status: 409 },
     )
+  }
+
+  // An invitation for someone else's venue owes us nothing (migration 096): there
+  // is no money to expect and no pledge to reconcile.
+  if (!takesPayments(booking.party_type)) {
+    console.warn(`portal notify-payment: refused a pledge on an outside event — ${bookingRef}`)
+    return NextResponse.json({ error: 'There is nothing to pay on this booking.' }, { status: 409 })
   }
 
   // Log the notification as a booking_modification (admin reconciles later).

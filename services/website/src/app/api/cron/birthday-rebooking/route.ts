@@ -7,6 +7,7 @@ import { findContactsByEmail } from '@/lib/contactLookup'
 import { enqueueReminders, smsCost, type ReminderRow } from '@/lib/reminderQueue'
 import { smsBirthdayRebook } from '@/lib/sms-templates'
 import { etDateString, etToUtc } from '@/lib/partyTime'
+import { OUTSIDE_EVENT_OR_FILTER } from '@/lib/outsideEventGate'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,6 +71,8 @@ export async function GET(req: NextRequest) {
     .lte('party_date', ymd(to))
     .not('child_name', 'is', null)
     .not('status', 'in', `(${NOT_REBOOKABLE.join(',')})`)
+    // Not a client's event at someone else's venue (migration 096): no "rebook your party" nudge.
+    .or(OUTSIDE_EVENT_OR_FILTER)
     .order('party_date', { ascending: true })
     .limit(MAX_PER_RUN)
 

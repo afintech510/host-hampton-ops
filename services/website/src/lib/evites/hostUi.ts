@@ -5,7 +5,10 @@
  * - `shareGate`        when the Share panel is live, and what to say when it is not
  * - `stateBanner`      the state banner's copy (spec §4)
  * - `smsHref`          the `sms:` fallback body, iOS vs everything else
- * - `kidsLine` ...     the headcount text ("11 of 10 kids")
+ * - `kidsLine` ...     the headcount text ("11 of 10 kids"); `guestsLine` is its analogue for an adult outside event
+ *
+ * Every copy function takes an optional `audience` ('kids' by default, so every existing caller is unchanged);
+ * 'guests' is an adult outside event, which says "event" where a kids' party says "party" and has no kids or adults.
  * - the form helpers   customise form <-> `PATCH` body, sending only what changed
  *
  * Nothing here imports another module: `formatHostPhone` / `isHostPhone` live here (and are
@@ -14,6 +17,9 @@
  */
 
 export type HostState = 'preview' | 'needs_time' | 'live' | 'closed'
+
+/** Mirrors `EviteAudience` (outsideEvent.ts); spelled here so this file stays import-free. */
+export type HostAudience = 'kids' | 'guests'
 
 // ---------------------------------------------------------------- the Share panel
 
@@ -30,7 +36,19 @@ export const UPDATING_MESSAGE = 'Updating your invitation…'
  * (spec §7.2), so the first text a host sends never carries a stale "Pick your date" card.
  * Every other state gets its own explanation, never a bare disabled button.
  */
-export function shareGate(state: HostState, renderFresh: boolean): ShareGate {
+export function shareGate(state: HostState, renderFresh: boolean, audience: HostAudience = 'kids'): ShareGate {
+  if (audience === 'guests') {
+    switch (state) {
+      case 'live':
+        return renderFresh ? { enabled: true, message: null } : { enabled: false, message: UPDATING_MESSAGE }
+      case 'preview':
+        return { enabled: false, message: 'You can share your invitation as soon as your event is confirmed.' }
+      case 'needs_time':
+        return { enabled: false, message: 'You can share your invitation as soon as your event’s start time is set.' }
+      case 'closed':
+        return { enabled: false, message: 'This event has happened, so there is nothing left to share.' }
+    }
+  }
   switch (state) {
     case 'live':
       return renderFresh ? { enabled: true, message: null } : { enabled: false, message: UPDATING_MESSAGE }
@@ -52,7 +70,29 @@ export interface StateBanner {
 }
 
 /** Spec §4's four visible states, in the host's voice. */
-export function stateBanner(state: HostState, renderFresh: boolean): StateBanner {
+export function stateBanner(state: HostState, renderFresh: boolean, audience: HostAudience = 'kids'): StateBanner {
+  if (audience === 'guests') {
+    switch (state) {
+      case 'preview':
+        return {
+          tone: 'preview',
+          title: 'Preview',
+          body: 'This is how your invitation will look. Guests can RSVP, and you can share it, once your event is confirmed.',
+        }
+      case 'needs_time':
+        return {
+          tone: 'soon',
+          title: 'Time coming soon',
+          body: 'Your event is confirmed, but we still need the start time. Guests will see “Time coming soon” until it is set, and sharing opens then.',
+        }
+      case 'live':
+        return renderFresh
+          ? { tone: 'live', title: 'Your invitation is live', body: 'Share it with your guests below. RSVPs show up here as they come in.' }
+          : { tone: 'updating', title: UPDATING_MESSAGE, body: 'We are redrawing the picture with your latest details. Sharing turns back on in a moment.' }
+      case 'closed':
+        return { tone: 'done', title: 'This event has happened \u{1F389}', body: 'Here is who answered. Thank you!' }
+    }
+  }
   switch (state) {
     case 'preview':
       return {
@@ -101,6 +141,12 @@ export function pollIntervalMs(state: HostState, renderFresh: boolean): number {
 export function kidsLine(kidsYes: number, cap: number | null): string {
   if (cap === null) return `${kidsYes} ${kidsYes === 1 ? 'kid' : 'kids'}`
   return `${kidsYes} of ${cap} kids`
+}
+
+/** '4 of 12 guests', '4 guests', '1 guest': the headcount for an adult outside event (the RSVP's names are the guests). */
+export function guestsLine(guestsYes: number, cap: number | null): string {
+  if (cap === null) return `${guestsYes} ${guestsYes === 1 ? 'guest' : 'guests'}`
+  return `${guestsYes} of ${cap} guests`
 }
 
 export function overCap(kidsYes: number, cap: number | null): boolean {

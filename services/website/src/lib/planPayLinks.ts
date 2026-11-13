@@ -48,6 +48,7 @@ import { money, type PlanInvoice } from '@/lib/planInvoice'
 import { getSupabase } from '@/lib/supabase'
 import { writeLedger } from '@/lib/marketing/graph'
 import { hasPartyTeam, type PaymentRow } from '@/lib/planBalance'
+import { takesPayments } from '@/lib/outsideEventGate'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -335,6 +336,13 @@ export async function createPlanPayLink(opts: {
       meta: { job: 'pay_link_refused', reason: 'plan_cancelled', purpose, status: booking.status },
     })
     return { ok: false, reason: 'This plan is cancelled. Please contact us before paying.', retryable: false }
+  }
+
+  // An invitation for a client's event at someone else's venue owes us nothing
+  // (migration 096); the invoice already quotes it $0, this is the hard stop.
+  if (!takesPayments(booking.party_type)) {
+    console.warn(`createPlanPayLink refused: plan ${ref} is an outside event`)
+    return { ok: false, reason: 'There is nothing to pay on this booking.', retryable: false }
   }
 
   const quoted = quoteFor(invoice, purpose, opts.customCents, opts.tipCents)

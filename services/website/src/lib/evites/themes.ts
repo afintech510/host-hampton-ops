@@ -34,6 +34,7 @@
  */
 
 import type { EviteBookingRow, EviteLineItemRow, PartyThemeRow } from '@/lib/evites/types'
+import { occasionOf } from '@/lib/evites/outsideEvent'
 import type { TemplateSlug } from '@/lib/evites/templates/types'
 
 export type EviteTemplateSlug = TemplateSlug
@@ -65,7 +66,7 @@ export interface ResolvedTheme {
   source: 'line_item' | 'name' | 'fallback'
 }
 
-type ThemeBooking = Pick<EviteBookingRow, 'package_type' | 'quote_snapshot' | 'party_tags'>
+type ThemeBooking = Pick<EviteBookingRow, 'package_type' | 'quote_snapshot' | 'party_tags'> & Partial<Pick<EviteBookingRow, 'party_type'>>
 
 const FILLER = new Set([
   'party', 'parties', 'theme', 'themed', 'package', 'packages', 'birthday', 'bday', 'custom',
@@ -176,7 +177,7 @@ function matchByName(text: string, themes: readonly PartyThemeRow[]): PartyTheme
   return best ? best.row : null
 }
 
-export function resolveTheme(
+function resolveCatalogTheme(
   booking: ThemeBooking,
   lineItems: readonly EviteLineItemRow[],
   partyThemes: readonly PartyThemeRow[],
@@ -214,4 +215,20 @@ export function resolveTheme(
     if (word !== GENERIC_THEME_WORD) return build(null, word, 'fallback')
   }
   return build(null, GENERIC_THEME_WORD, 'fallback')
+}
+
+/**
+ * The booking's theme. An outside event (migration 096) has no catalogue theme: it is named by its
+ * occasion, so its slug says so ("maeghan-babyshower-7kq2", not "...-birthday-...") and every caller
+ * that mints a slug from `.short` gets that for free. The words the ART draws come from the same
+ * occasion in facts.ts, where an admin theme override can still change them.
+ */
+export function resolveTheme(
+  booking: ThemeBooking,
+  lineItems: readonly EviteLineItemRow[],
+  partyThemes: readonly PartyThemeRow[],
+): ResolvedTheme {
+  const resolved = resolveCatalogTheme(booking, lineItems, partyThemes)
+  const occasion = occasionOf(booking)
+  return occasion ? { ...resolved, short: themeShortOf(occasion) } : resolved
 }

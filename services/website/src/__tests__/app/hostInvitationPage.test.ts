@@ -156,3 +156,27 @@ describe('the page file', () => {
     expect(src).not.toMatch(/\.insert\(|\.update\(|\.upsert\(/)
   })
 })
+
+describe('an adult outside event (audience guests)', () => {
+  const OUTSIDE = { child_name: 'Maeghan', party_type: 'outside_event', party_tags: { occasion: 'baby shower', venue_name: 'James Joyce', location_type: 'other' } }
+  it('counts Guests, hides the adults tile, and never says kids, adults or the birthday child', async () => {
+    mockDb = makeHostDb({
+      booking: OUTSIDE,
+      rsvps: [guest({ parent_name: 'Gina Guest', children: [{ first_name: 'Gina' }, { first_name: 'Tom' }], child_count: 2, adult_count: 0, note_to_honoree: 'Congrats!' })],
+    })
+    const out = await html()
+    expect(out).toContain('data-summary="guests"')
+    expect(out).toContain('2 guests')
+    expect(out).not.toContain('data-summary="kids"')
+    expect(out).not.toContain('data-summary="adults"')
+    expect(out).toContain('Note for Maeghan: ')
+    expect(out).not.toMatch(/birthday child/i)
+  })
+  it('a kids party is unchanged', async () => {
+    mockDb = makeHostDb({ rsvps: [guest()] })
+    const out = await html()
+    expect(out).toContain('data-summary="kids"')
+    expect(out).toContain('data-summary="adults"')
+    expect(out).not.toContain('data-summary="guests"')
+  })
+})

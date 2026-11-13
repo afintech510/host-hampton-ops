@@ -18,6 +18,7 @@ import { autoIgnoreReason } from '@/lib/agent/triage'
 import { notifyOwnerSms } from '@/lib/ownerNotify'
 import { recordVenmoReceipt } from '@/lib/venmoReconcile'
 import { isVenmoSender } from '@/lib/venmoReceipt'
+import { OUTSIDE_EVENT_OR_FILTER } from '@/lib/outsideEventGate'
 
 export const dynamic = 'force-dynamic'
 
@@ -139,6 +140,8 @@ async function bookingFor(supabase: Supa, contactId: string | null): Promise<str
     .select('id')
     .eq('contact_id', contactId)
     .not('status', 'in', '("cancelled","lost","completed")')
+    // An invitation for someone else's venue (migration 096) is not the plan a thread belongs to.
+    .or(OUTSIDE_EVENT_OR_FILTER)
     .order('created_at', { ascending: false })
     .limit(1)
   return ((data ?? [])[0] as { id: string } | undefined)?.id ?? null

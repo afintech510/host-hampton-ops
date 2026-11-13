@@ -951,3 +951,77 @@ describe('v1.2 finding 3: the RSVP API shares the page ceiling (no second enumer
     expect(third.status).toBe(429)
   })
 })
+
+// ──────────────────────────────────────────────────────────────── an adult outside event
+
+describe('an adult outside event (audience guests)', () => {
+  const OUTSIDE = { child_name: 'Maeghan', party_type: 'outside_event', party_tags: { occasion: 'baby shower', venue_name: 'James Joyce', location_type: 'other' } }
+  const GUESTS_YES = { status: 'yes', parentName: 'Gina Guest', children: [{ firstName: 'Gina' }, { firstName: 'Tom' }], adultCount: 0, hasAllergy: false }
+  const seededGuest = (over: Record<string, unknown> = {}) => {
+    const row = rsvpRow({ parent_name: 'Gina Guest', children: [{ first_name: 'Gina' }], adult_count: 0, ...over })
+    db = makeRsvpDb({ booking: OUTSIDE, rsvps: [row] })
+    return { row, cookie: cookieFor(EVITE_ID, tokenFor(row)) }
+  }
+  const consentReads = () => db.selects.filter((s) => s.table === 'evite_consent_texts' || /consent/.test(String(s.table)))
+
+  beforeEach(() => {
+    db = makeRsvpDb({ booking: OUTSIDE })
+  })
+
+  it('POST: a guest RSVP stores the names in the same column and adult_count 0, even if the body says otherwise', async () => {
+    for (const adultCount of [0, 2, undefined]) {
+      db = makeRsvpDb({ booking: OUTSIDE })
+      const res = await post({ ...GUESTS_YES, adultCount })
+      expect(res.status).toBe(200)
+      expect(rsvps()[0]).toMatchObject({ status: 'yes', parent_name: 'Gina Guest', adult_count: 0, children: [{ first_name: 'Gina' }, { first_name: 'Tom' }] })
+    }
+  })
+
+  it('POST: the empty-list error says guest, and names the field', async () => {
+    const res = await post({ ...GUESTS_YES, children: [] })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Please add at least one guest, with a first name (up to 6).', field: 'children' })
+    expect(rsvpInserts()).toHaveLength(0)
+  })
+
+  it('a kids party in the same suite still says child and still needs adults', async () => {
+    db = makeRsvpDb()
+    const res = await post({ ...GUESTS_YES, children: [] })
+    expect(await res.json()).toEqual({ error: 'Please add at least one child, with a first name (up to 6).', field: 'children' })
+    expect((await post({ ...GUESTS_YES, adultCount: undefined })).status).toBe(400)
+  })
+
+  it('PATCH: refuses a club opt-in with a 400 naming the field, before any consent read, write or hook', async () => {
+    const { cookie, row } = seededGuest()
+    let hooked = false
+    clubHooks.recordClubOptIn = () => {
+      hooked = true
+    }
+    const res = await patch({ club: { optIn: true, email: 'gina@example.com', birthdayMonth: 6, consentVersion: 'club-v1' } }, { cookie })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ field: 'club' })
+    expect(rsvps()[0].club_opt_in_at).toBeNull()
+    expect(rsvps()[0].club_email).toBeNull()
+    expect(rsvps()[0].revision).toBe(row.revision)
+    expect(consentReads()).toHaveLength(0)
+    expect(db.updates).toHaveLength(0)
+    expect(events()).toEqual([])
+    expect(hooked).toBe(false)
+  })
+
+  it('PATCH: the same club body is still accepted for a kids party', async () => {
+    db = makeRsvpDb({ rsvps: [rsvpRow()] })
+    const cookie = cookieFor(EVITE_ID, tokenFor(db.tables.evite_rsvps[0] as never))
+    expect((await patch({ club: { optIn: true, email: 'pat@example.com', consentVersion: 'club-v1' } }, { cookie })).status).toBe(200)
+  })
+
+  it('PATCH: a note to the honoree and an edit of the guests work, with guest wording on refusal and adult_count untouched', async () => {
+    const { cookie } = seededGuest()
+    const ok = await patch({ noteToHonoree: 'Congratulations!', children: [{ firstName: 'Gina' }, { firstName: 'Ann' }], adultCount: 2 }, { cookie })
+    expect(ok.status).toBe(200)
+    expect(rsvps()[0]).toMatchObject({ note_to_honoree: 'Congratulations!', adult_count: 0, children: [{ first_name: 'Gina' }, { first_name: 'Ann' }] })
+    const bad = await patch({ children: [] }, { cookie })
+    expect(bad.status).toBe(400)
+    expect((await bad.json()).error).toBe('Please add at least one guest, with a first name (up to 6).')
+  })
+})

@@ -39,7 +39,7 @@ interface ViewProps {
   onLeaveClub: () => void
   /** `/i/<slug>/cal`. */
   calendarUrl: string
-  /** The birthday child's first name, or null. */
+  /** The honoree's first name (the birthday child, or the guest of honour at an outside event), or null. */
   honoree: string | null
   /** The current consent wording from the database, or null (the club card is hidden). */
   club: ClubOffer | null
@@ -109,6 +109,7 @@ function DetailsScreen(p: ViewProps) {
   }
   const sending = state.busy
   const verb = state.saved ? 'Update my RSVP' : 'Send my RSVP'
+  const guests = state.audience === 'guests'
 
   if (state.choice === 'no') {
     return (
@@ -146,7 +147,7 @@ function DetailsScreen(p: ViewProps) {
       <h2 className="text-lg font-bold">Who&apos;s coming?</h2>
 
       <fieldset className="grid grid-cols-1 gap-3">
-        <legend className={LABEL}>{state.children.length > 1 ? 'Children' : 'Child'}</legend>
+        <legend className={LABEL}>{guests ? 'Guests coming' : state.children.length > 1 ? 'Children' : 'Child'}</legend>
         {state.children.map((name, i) => (
           <div key={i}>
             <div className="flex gap-2">
@@ -154,7 +155,7 @@ function DetailsScreen(p: ViewProps) {
                 id={`rsvp-child-${i}`}
                 className={INPUT}
                 type="text"
-                aria-label={`Child ${i + 1} first name`}
+                aria-label={`${guests ? 'Guest' : 'Child'} ${i + 1} first name`}
                 placeholder="First name"
                 autoComplete="off"
                 maxLength={CHILD_NAME_MAX}
@@ -164,7 +165,7 @@ function DetailsScreen(p: ViewProps) {
               {state.children.length > 1 && (
                 <button
                   type="button"
-                  aria-label={`Remove child ${i + 1}`}
+                  aria-label={`Remove ${guests ? 'guest' : 'child'} ${i + 1}`}
                   className="min-h-[3rem] min-w-[3rem] rounded-xl border border-white/40 text-lg font-semibold"
                   onClick={() => dispatch({ type: 'removeChild', index: i })}
                 >
@@ -178,14 +179,14 @@ function DetailsScreen(p: ViewProps) {
         <ErrorLine state={state} field="children" />
         {state.children.length < MAX_CHILDREN && (
           <button type="button" className={`${BTN_LINK} text-left`} onClick={() => dispatch({ type: 'addChild' })}>
-            + Add sibling
+            {guests ? '+ Add guest' : '+ Add sibling'}
           </button>
         )}
       </fieldset>
 
       <div>
         <label htmlFor="rsvp-parent" className={LABEL}>
-          Parent or guardian name
+          {guests ? 'Your name' : 'Parent or guardian name'}
         </label>
         <input
           id="rsvp-parent"
@@ -199,17 +200,19 @@ function DetailsScreen(p: ViewProps) {
         <ErrorLine state={state} field="parentName" />
       </div>
 
-      <fieldset>
-        <legend className={LABEL}>Adults staying</legend>
-        <div className="flex gap-2" role="group" aria-label="Adults staying">
-          {([0, 1, 2] as const).map((n) => (
-            <button key={n} type="button" aria-pressed={state.adultCount === n} className={segment(state.adultCount === n)} onClick={() => dispatch({ type: 'setAdults', value: n })}>
-              {n === 2 ? '2+' : String(n)}
-            </button>
-          ))}
-        </div>
-        <ErrorLine state={state} field="adultCount" />
-      </fieldset>
+      {!guests && (
+        <fieldset>
+          <legend className={LABEL}>Adults staying</legend>
+          <div className="flex gap-2" role="group" aria-label="Adults staying">
+            {([0, 1, 2] as const).map((n) => (
+              <button key={n} type="button" aria-pressed={state.adultCount === n} className={segment(state.adultCount === n)} onClick={() => dispatch({ type: 'setAdults', value: n })}>
+                {n === 2 ? '2+' : String(n)}
+              </button>
+            ))}
+          </div>
+          <ErrorLine state={state} field="adultCount" />
+        </fieldset>
+      )}
 
       <fieldset>
         <legend className={LABEL}>Food allergy?</legend>
@@ -275,8 +278,10 @@ function DetailsScreen(p: ViewProps) {
 function ConfirmedScreen(p: ViewProps) {
   const { state, dispatch, club, honoree } = p
   const saved = state.saved
+  const guests = state.audience === 'guests'
+  const noun = guests ? 'event' : 'party'
   const joined = !!saved && saved.club_opt_in_at !== null && saved.club_opted_out_at === null
-  const noteLabel = honoree ? `Leave a note for ${honoree} (optional)` : 'Leave a note for the birthday child (optional)'
+  const noteLabel = honoree ? `Leave a note for ${honoree} (optional)` : guests ? 'Leave a note for the host (optional)' : 'Leave a note for the birthday child (optional)'
 
   return (
     <section aria-label="You're on the list" className="mt-6 grid grid-cols-1 gap-5" data-screen="3">
@@ -285,7 +290,7 @@ function ConfirmedScreen(p: ViewProps) {
         {saved && (
           <p className="mt-1 text-sm text-white/80">
             {saved.children.map((c) => c.first_name).join(', ')}
-            {saved.adult_count > 0 ? ` · ${saved.adult_count === 2 ? '2+' : '1'} adult${saved.adult_count === 1 ? '' : 's'}` : ''}
+            {!guests && saved.adult_count > 0 ? ` · ${saved.adult_count === 2 ? '2+' : '1'} adult${saved.adult_count === 1 ? '' : 's'}` : ''}
           </p>
         )}
       </div>
@@ -294,11 +299,11 @@ function ConfirmedScreen(p: ViewProps) {
         Add to calendar
       </a>
 
-      {saved?.reminder_email && !saved.reminder_opt_out_at && <p className="text-center text-sm text-white/80">We&apos;ll email a reminder before the party.</p>}
+      {saved?.reminder_email && !saved.reminder_opt_out_at && <p className="text-center text-sm text-white/80">{`We'll email a reminder before the ${noun}.`}</p>}
       {saved?.reminder_phone_e164 && <p className="text-center text-sm text-white/80">Add it to your calendar so your phone reminds you.</p>}
       {state.reminderDropped && (
         <p role="status" className="text-center text-sm text-white/80">
-          We couldn&apos;t set up an email reminder for that address. Add the party to your calendar and your phone will remind you.
+          {`We couldn't set up an email reminder for that address. Add the ${noun} to your calendar and your phone will remind you.`}
         </p>
       )}
 
@@ -317,7 +322,7 @@ function ConfirmedScreen(p: ViewProps) {
         <ErrorLine state={state} field="note" />
       </div>
 
-      {club && (
+      {club && !guests && (
         <>
           <hr className="border-white/25" />
           <div className="rounded-2xl bg-white/10 p-4" aria-label="Birthday Club">

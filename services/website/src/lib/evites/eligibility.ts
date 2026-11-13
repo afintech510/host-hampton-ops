@@ -1,7 +1,8 @@
 /**
  * Which bookings get an invitation (spec §2 `eligibility.ts`).
  *
- * Eligible when `party_type` is `in_studio_theme` or `mobile_party`; or when
+ * Eligible when `party_type` is `in_studio_theme`, `mobile_party` or `outside_event`
+ * (a client's event at a venue that is not ours, migration 096); or when
  * `party_type` is NULL / `unknown` and `party_tags.location_type` is
  * `host_hampton` or `mobile` (the values the planner and `admin/parties/create`
  * write). NEVER `studio_rental`, and never a `cancelled` or `lost` booking.
@@ -19,7 +20,7 @@ export interface EviteEligibilityInput {
   party_tags?: unknown
 }
 
-const ELIGIBLE_PARTY_TYPES: readonly string[] = ['in_studio_theme', 'mobile_party']
+const ELIGIBLE_PARTY_TYPES: readonly string[] = ['in_studio_theme', 'mobile_party', 'outside_event']
 const ELIGIBLE_LOCATION_TYPES: readonly string[] = ['host_hampton', 'mobile']
 const EXCLUDED_STATUSES: readonly string[] = ['cancelled', 'lost']
 

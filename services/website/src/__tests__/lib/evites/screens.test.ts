@@ -248,3 +248,73 @@ describe('decideClubOptIn: one sign-up per RSVP, bound to its first address (v1.
     }
   })
 })
+
+describe('guests audience (an adult outside event): same columns, relabelled', () => {
+  const guestsYes = { status: 'yes', parentName: 'Gina Guest', children: [{ firstName: 'Gina' }, { firstName: 'Tom' }], hasAllergy: false }
+
+  it('kids is the default: messages and adult handling are exactly what they were', () => {
+    expect(screenRsvpPost({ ...guestsYes, children: [] })).toEqual(screenRsvpPost({ ...guestsYes, children: [] }, 'kids'))
+    expect(screenRsvpPost({ ...guestsYes, children: [] })).toEqual({ ok: false, field: 'children', message: 'Please add at least one child, with a first name (up to 6).' })
+    expect(screenRsvpPost({ ...guestsYes, adultCount: undefined })).toMatchObject({ ok: false, field: 'adultCount' })
+  })
+
+  it('names the guests in its messages', () => {
+    expect(screenRsvpPost({ ...guestsYes, children: [] }, 'guests')).toEqual({ ok: false, field: 'children', message: 'Please add at least one guest, with a first name (up to 6).' })
+    expect(screenRsvpPost({ ...guestsYes, children: [{ firstName: ' ' }] }, 'guests')).toMatchObject({ ok: false, field: 'children' })
+  })
+
+  it('stores adultCount 0 whatever the body says (the control does not exist)', () => {
+    for (const adultCount of [undefined, 0, 1, 2, 99, 'lots']) {
+      const r = screenRsvpPost({ ...guestsYes, adultCount }, 'guests')
+      expect(r).toMatchObject({ ok: true, value: { status: 'yes', adultCount: 0, children: [{ first_name: 'Gina' }, { first_name: 'Tom' }] } })
+    }
+  })
+
+  it('a decline still carries a name and nothing else', () => {
+    expect(screenRsvpPost({ status: 'no', parentName: 'Gina' }, 'guests')).toMatchObject({ ok: true, value: { status: 'no', children: [], adultCount: 0 } })
+  })
+
+  const existing: ExistingRsvp = {
+    status: 'yes',
+    parent_name: 'Gina Guest',
+    children: [{ first_name: 'Gina' }],
+    adult_count: 0,
+    has_allergy: false,
+    allergy_note: null,
+    reminder_email: null,
+    reminder_phone_e164: null,
+  }
+
+  it('PATCH: refuses a club opt-in server-side with a 400-class field error, before anything else', () => {
+    const club = { optIn: true, email: 'gina@example.com', consentVersion: 'club-v1' }
+    expect(screenRsvpPatch({ club }, existing, 'guests')).toMatchObject({ ok: false, field: 'club' })
+    expect(screenRsvpPatch({ parentName: 'Gina G', club }, existing, 'guests')).toMatchObject({ ok: false, field: 'club' })
+    // the same body is fine for the kids' form
+    expect(screenRsvpPatch({ club }, existing, 'kids')).toMatchObject({ ok: true })
+    expect(screenRsvpPatch({ club }, existing)).toMatchObject({ ok: true })
+  })
+
+  it('PATCH: an adultCount in the body is ignored for guests and never written', () => {
+    const r = screenRsvpPatch({ adultCount: 2, parentName: 'Gina G' }, existing, 'guests')
+    if (!r.ok) throw new Error(r.message)
+    expect(r.value.columns).not.toHaveProperty('adult_count')
+    expect(r.value.next.adult_count).toBe(0)
+    // a Yes on a stored No brings its guests, with the guest wording, and writes 0 adults
+    const back = screenRsvpPatch({ status: 'yes', hasAllergy: false }, { ...existing, status: 'no', children: [], has_allergy: null }, 'guests')
+    expect(back).toEqual({ ok: false, field: 'children', message: 'Please add at least one guest, with a first name (up to 6).' })
+    const ok = screenRsvpPatch({ status: 'yes', hasAllergy: false, children: [{ firstName: 'Gina' }] }, { ...existing, status: 'no', children: [], has_allergy: null }, 'guests')
+    if (!ok.ok) throw new Error(ok.message)
+    expect(ok.value.columns.adult_count).toBe(0)
+  })
+
+  it('PATCH: children messages are guest-worded; kids keep the child wording', () => {
+    expect(screenRsvpPatch({ children: [] }, existing, 'guests')).toMatchObject({ ok: false, message: 'Please add at least one guest, with a first name (up to 6).' })
+    expect(screenRsvpPatch({ children: [] }, existing)).toMatchObject({ ok: false, message: 'Please add at least one child, with a first name (up to 6).' })
+  })
+
+  it('the note to the honoree and the reminder still work for guests', () => {
+    const r = screenRsvpPatch({ noteToHonoree: 'Congratulations!' }, existing, 'guests')
+    if (!r.ok) throw new Error(r.message)
+    expect(r.value.columns.note_to_honoree).toBe('Congratulations!')
+  })
+})

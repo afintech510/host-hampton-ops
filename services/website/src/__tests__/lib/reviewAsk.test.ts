@@ -255,16 +255,16 @@ const contactsSpec: TableSpec = {
   },
 }
 
-function setup(contacts: AskContact[], existing: any[] = []) {
+function setup(contacts: AskContact[], existing: any[] = [], bookings: any[] = []) {
   const fake = makeFakeDb(
     {
       scheduled_reminders: scheduledRemindersSpec(),
       contacts: contactsSpec,
-      bookings: { columns: { contact_email: 'text', party_date: 'text', status: 'text' } },
+      bookings: { columns: { contact_email: 'text', party_date: 'text', status: 'text', party_type: 'text' } },
       events: { columns: { id: 'uuid', event_date: 'text' } },
       event_tickets: { columns: { customer_email: 'text', event_id: 'uuid', status: 'text' } },
     },
-    { contacts, scheduled_reminders: existing }
+    { contacts, scheduled_reminders: existing, bookings }
   )
   mockGetSupabase.mockReturnValue(fake.supabase)
   return fake
@@ -354,6 +354,20 @@ describe('GET /api/cron/review-asks', () => {
     expect(res.json()).toMatchObject({ emailQueued: 1, smsQueued: 0 })
     expect(res.json().smsBudgetStop).toContain('cap')
     expect(fake.tables.scheduled_reminders.map(r => r.reminder_type)).toEqual(['review_ask_email'])
+  })
+
+  it('an outside event (migration 096) does not make its client a past client; a studio or untyped party does', async () => {
+    const outsideOnly = person({ status: 'lead' })
+    const studio = person({ status: 'lead' })
+    const untyped = person({ status: 'lead' })
+    const past = (c: AskContact, party_type: string | null) =>
+      ({ contact_email: c.email, party_date: '2026-09-20', status: 'confirmed', party_type })
+    setup([outsideOnly, studio, untyped], [], [
+      past(outsideOnly, 'outside_event'), past(studio, 'in_studio_theme'), past(untyped, null),
+    ])
+    const res = await GET(req({ dryRun: '1' }))
+    expect(res.json().counts.pastClients).toBe(2)
+    expect(res.json().wouldQueue.email).toBe(2)
   })
 
   it('a failed audience read is a 503 that queues nothing (rule 12)', async () => {

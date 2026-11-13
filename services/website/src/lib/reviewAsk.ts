@@ -44,6 +44,7 @@ import type { getSupabase } from '@/lib/supabase'
 import { normalizePhoneKey } from '@/lib/contactLookup'
 import { etDateString, etToUtc, shiftEtDate } from '@/lib/partyTime'
 import type { ReminderRow } from '@/lib/reminderQueue'
+import { OUTSIDE_EVENT_OR_FILTER } from '@/lib/outsideEventGate'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -395,6 +396,8 @@ export async function loadReviewAskInput(supabase: Supa, now: Date): Promise<Inp
     .select('contact_email, party_date, status')
     .lte('party_date', yesterdayEt)
     .not('status', 'in', `(${NOT_A_PAST_PARTY.join(',')})`)
+    // A client's event at someone else's venue is not a party we hosted (migration 096).
+    .or(OUTSIDE_EVENT_OR_FILTER)
   if (bErr) return { kind: 'unavailable', error: `bookings read failed: ${bErr.message}` }
 
   const { data: events, error: eErr } = await supabase

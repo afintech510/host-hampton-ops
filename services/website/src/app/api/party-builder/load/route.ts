@@ -4,6 +4,7 @@ import { getPortalBookingRef, portalSigningSecret } from '@/lib/portalAuth'
 import { isAdminAuthorized } from '@/lib/adminAuth'
 import { getDepositCents, BOOKING_DEPOSIT_CENTS } from '@/lib/partyPricing'
 import { isPayableStatus } from '@/lib/portalWrite'
+import { takesPayments } from '@/lib/outsideEventGate'
 import {
   billedTotalCents,
   depositIsSeparateFor,
@@ -87,7 +88,9 @@ export async function GET(req: NextRequest) {
     depositCents: getDepositCents(totalCents, booking.party_type as string | null),
     depositIsSeparate: depositIsSeparateFor(booking.party_type as string | null),
     payments: billedPayments,
-    reservationDepositCents: isPayableStatus(booking.status) ? BOOKING_DEPOSIT_CENTS : 0,
+    // No reservation deposit on an outside event (migration 096): nothing to reserve.
+    reservationDepositCents:
+      isPayableStatus(booking.status) && takesPayments(booking.party_type as string | null) ? BOOKING_DEPOSIT_CENTS : 0,
   })
 
   return NextResponse.json({

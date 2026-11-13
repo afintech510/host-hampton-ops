@@ -45,7 +45,7 @@ import {
   type AdminPaymentMethod,
   type PaymentType,
 } from '@/lib/adminMoney'
-import { isPartyType } from '@/lib/pipelineStages'
+import { isPartyType, PARTY_TYPES } from '@/lib/pipelineStages'
 
 /**
  * Where a minted portal link should land the customer.
@@ -190,7 +190,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.party_type !== undefined) {
     if (!isPartyType(body.party_type)) {
       return NextResponse.json(
-        { error: `party_type must be one of in_studio_theme, mobile_party, studio_rental, unknown` },
+        { error: `party_type must be one of ${PARTY_TYPES.join(', ')}` },
         { status: 400 },
       )
     }
@@ -269,13 +269,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (updates.party_date !== undefined || updates.party_time !== undefined) {
     const { data: fresh } = await supabase
       .from('bookings')
-      .select('booking_ref, contact_email, party_date, party_time, checkin_status')
+      .select('booking_ref, contact_email, party_date, party_time, checkin_status, party_type')
       .eq('id', id)
       .single()
 
     // Nothing to reschedule once check-in is done.
     if (fresh && fresh.checkin_status !== 'complete') {
       await enqueueCheckinReminders({
+        partyType: fresh.party_type,
         bookingRef: fresh.booking_ref,
         contactEmail: fresh.contact_email,
         partyDate: fresh.party_date,
@@ -1184,6 +1185,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Make sure the automatic sends exist too. A booking created before this
     // feature shipped has no reminder rows; this backfills them on first send.
     await enqueueCheckinReminders({
+      partyType: booking.party_type,
       bookingRef: booking.booking_ref,
       contactEmail: booking.contact_email,
       partyDate: booking.party_date,
@@ -1858,9 +1860,10 @@ async function applyRentalWindow(
 async function rescheduleCheckin(id: string): Promise<void> {
   const supabase = getSupabase()
   const { data: fresh } = await supabase
-    .from('bookings').select('booking_ref, contact_email, party_date, party_time, checkin_status').eq('id', id).single()
+    .from('bookings').select('booking_ref, contact_email, party_date, party_time, checkin_status, party_type').eq('id', id).single()
   if (fresh && fresh.checkin_status !== 'complete') {
     await enqueueCheckinReminders({
+      partyType: fresh.party_type,
       bookingRef: fresh.booking_ref, contactEmail: fresh.contact_email, partyDate: fresh.party_date, partyTime: fresh.party_time,
     })
   }

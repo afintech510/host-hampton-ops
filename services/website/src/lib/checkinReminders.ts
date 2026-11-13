@@ -2,6 +2,7 @@ import { getSupabase } from '@/lib/supabase'
 import { parseTime, etToUtc } from '@/lib/partyTime'
 import { findContactsByEmail } from '@/lib/contactLookup'
 import { enqueueReminders, type ReminderRow } from '@/lib/reminderQueue'
+import { isOutsideEventType } from '@/lib/outsideEventGate'
 
 /**
  * Scheduling for the two automatic check-in link texts.
@@ -87,6 +88,12 @@ interface EnqueueInput {
   contactEmail: string
   partyDate: string | null | undefined
   partyTime: string | null | undefined
+  /**
+   * The booking's `party_type`. An outside event (migration 096) is an invitation
+   * for someone else's venue: nobody arrives at our studio, so no check-in text is
+   * ever scheduled for it. Every caller passes it; `send-reminders` re-checks at send.
+   */
+  partyType?: string | null
   /** Injectable for tests. */
   now?: Date
 }
@@ -103,8 +110,13 @@ export async function enqueueCheckinReminders({
   contactEmail,
   partyDate,
   partyTime,
+  partyType,
   now = new Date(),
 }: EnqueueInput): Promise<void> {
+  if (isOutsideEventType(partyType)) {
+    console.log(`checkin:enqueue — ${bookingRef} is an outside event, no check-in texts`)
+    return
+  }
   if (!checkinLinksEnabled()) {
     console.log(`checkin:enqueue — automatic check-in links are off, not scheduling ${bookingRef}`)
     return

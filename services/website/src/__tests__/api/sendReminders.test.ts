@@ -124,7 +124,7 @@ const bookingsSpec: TableSpec = {
     id: 'uuid', booking_ref: 'text', party_date: 'text', party_time: 'text',
     package_type: 'text', balance_due_cents: 'int', contact_name: 'text',
     contact_phone: 'text', child_name: 'text', child_age: 'int',
-    photo_gallery_url: 'text', checkin_status: 'text', status: 'text',
+    photo_gallery_url: 'text', checkin_status: 'text', status: 'text', party_type: 'text',
   },
 }
 const eventsSpec: TableSpec = {
@@ -471,7 +471,30 @@ describe('GET /api/cron/send-reminders', () => {
     expect(row(fake).last_outcome).toBe('checkin_complete')
   })
 
-  it('skips a check-in text for a cancelled booking', async () => {
+  it('skips a queued check-in text for an outside event (migration 096), with the reason named', async () => {
+    const fake = setup({
+      reminders: [reminder({ channel: 'sms', reminder_type: 'checkin_link_dayof' })],
+      bookings: [booking({ party_type: 'outside_event' })],
+    })
+
+    await GET(makeReq(CRON_SECRET))
+
+    expect(mockSendCheckinLinkSms).not.toHaveBeenCalled()
+    expect(row(fake).last_outcome).toBe('outside_event')
+  })
+
+  it('still sends the check-in text for an in_studio_theme booking', async () => {
+    setup({
+      reminders: [reminder({ channel: 'sms', reminder_type: 'checkin_link_dayof' })],
+      bookings: [booking({ party_type: 'in_studio_theme' })],
+    })
+
+    await GET(makeReq(CRON_SECRET))
+
+    expect(mockSendCheckinLinkSms).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips a cancelled booking check-in text', async () => {
     const fake = setup({
       reminders: [reminder({ channel: 'sms', reminder_type: 'checkin_link_dayof' })],
       bookings: [booking({ status: 'cancelled' })],

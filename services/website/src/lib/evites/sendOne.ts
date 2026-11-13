@@ -46,11 +46,11 @@ import { eviteSendsMode, isPilotBooking } from '@/lib/evites/config'
 import { sendEviteEmail, type EviteMailAttachment } from '@/lib/evites/mail'
 import { claimSend, finishSend, type ClaimedSend, type SendKey } from '@/lib/evites/sends'
 import { emailSuppressed } from '@/lib/evites/suppression'
-import { honoreeFirstName } from '@/lib/evites/pageModel'
+import { honoreeFirstName, placeMapsUrl } from '@/lib/evites/pageModel'
+import { isOutsideEvent } from '@/lib/evites/outsideEvent'
 import { validPartyDate } from '@/lib/evites/partyWindow'
 import { editLink, editTokenExpiry, signEditToken } from '@/lib/evites/rsvpToken'
 import { storedImageUrl, pickHostRsvp, summarizeRsvps } from '@/lib/evites/hostView'
-import { themeLabelOf } from '@/lib/evites/themes'
 import { loadHeadcountRsvps, loadSendContext, readSendGate, type SendContext } from '@/lib/evites/sendContext'
 import type { InviteFacts } from '@/lib/evites/facts'
 import type { EviteSendType } from '@/lib/evites/types'
@@ -128,16 +128,17 @@ function firstToken(name: string | null | undefined): string | null {
 }
 
 function partyOf(facts: InviteFacts): EviteMailParty {
-  const label = themeLabelOf(facts.themeWord)
   return {
     honoree: honoreeFirstName(facts),
-    partyNoun: label ? `${label} Party` : 'Birthday Party',
+    // The facts' own noun: "Glow Party", "Birthday Party", or an outside event's occasion ("Baby Shower").
+    partyNoun: facts.partyNoun,
     title: facts.title,
     dateLine: facts.dateLine,
     placeLine: facts.placeLine,
     fullAddress: facts.calendarLocation,
     hostContactLine: facts.hostContactLine,
     locationType: facts.locationType,
+    audience: facts.audience,
   }
 }
 
@@ -162,6 +163,12 @@ async function hostPortalLinks(
   const bare = { hostUrl: bareHostUrl, plannerUrl: null, invoiceUrl: null }
   const ref = booking.booking_ref
   if (!ref) return bare
+  // An outside event has no party planner and no invoice (it is never priced and never takes a
+  // payment): its host gets the guest list link and nothing else.
+  if (isOutsideEvent(booking)) {
+    const only = await mintPortalLinks(supabase, booking.id, ref, { host: '/my-booking/invitation' })
+    return only.ok ? { hostUrl: only.urls.host, plannerUrl: null, invoiceUrl: null } : bare
+  }
   const tot = await supabase.from('bookings').select('total_cents').eq('id', booking.id).maybeSingle<{ total_cents: number | null }>()
   if (tot.error) console.error(`evites/sendOne: total read failed for the RSVP email links: ${tot.error.message}`)
   const priced = !tot.error && !!tot.data && !isUnpricedPlan(Number(tot.data.total_cents ?? 0))
@@ -292,6 +299,8 @@ async function prepare(supabase: Supa, send: ClaimedSend, ctx: SendContext): Pro
   switch (type) {
     // ------------------------------------------------------------ to the lead / parent
     case 'lead_preview': {
+      // The preview exists to bring an enquirer to the planner. An outside event has no planner to reserve.
+      if (isOutsideEvent(booking)) return skip('outside-event')
       const to = parentAddress(ctx)
       if (!to) return skip('no-email')
       const gate = await suppressionGate(supabase, to)
@@ -426,7 +435,8 @@ async function prepare(supabase: Supa, send: ClaimedSend, ctx: SendContext): Pro
         party,
         guest,
         links,
-        ...(type === 'day_before' ? { mapsUrl: facts.locationType === 'studio' ? STUDIO_MAPS_URL : null } : {}),
+        // The studio's own directions link, or (an outside event) a map search for its address.
+        ...(type === 'day_before' ? { mapsUrl: facts.locationType === 'studio' ? STUDIO_MAPS_URL : isOutsideEvent(booking) ? placeMapsUrl(facts) : null } : {}),
       }
       let mail: EviteEmail
       let method: IcsMethod = 'PUBLISH'

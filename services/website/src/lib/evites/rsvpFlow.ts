@@ -26,6 +26,7 @@ import {
   NOTE_TO_HONOREE_MAX,
   PARENT_NAME_MAX,
   screenReminderContact,
+  type RsvpAudience,
 } from '@/lib/evites/screens'
 import { isPlausibleEmailAddress } from '@/lib/contactLookup'
 
@@ -39,6 +40,8 @@ export interface FlowError {
 
 export interface FlowState {
   screen: Screen
+  /** 'guests' relabels the form for an adult outside event: no adults control, adultCount 0, no club (see `RsvpAudience`). */
+  audience: RsvpAudience
   /** The answer the server holds, if any. When set, a submit is a PATCH. */
   saved: OwnRsvp | null
   /** True while changing a saved answer (the start screen says "Update"). */
@@ -97,6 +100,7 @@ export function screenNumber(screen: Screen): 1 | 2 | 3 {
 }
 
 const BLANK: Omit<FlowState, 'screen'> = {
+  audience: 'kids',
   saved: null,
   editing: false,
   choice: null,
@@ -134,9 +138,11 @@ function prefill(rsvp: OwnRsvp): Partial<FlowState> {
   }
 }
 
-export function initialState(own: OwnRsvp | null, startInEdit = false): FlowState {
-  if (!own) return { ...BLANK, screen: 'start' }
-  const base: FlowState = { ...BLANK, ...prefill(own), saved: own, screen: own.status === 'yes' ? 'confirmed' : 'declined' }
+export function initialState(own: OwnRsvp | null, startInEdit = false, audience: RsvpAudience = 'kids'): FlowState {
+  // A guest is never asked how many adults are staying, so the count starts at 0 (the "choose" check passes).
+  const blank: Omit<FlowState, 'screen'> = audience === 'guests' ? { ...BLANK, audience, adultCount: 0 } : BLANK
+  if (!own) return { ...blank, screen: 'start' }
+  const base: FlowState = { ...blank, ...prefill(own), ...(audience === 'guests' ? { adultCount: 0 as const } : {}), saved: own, screen: own.status === 'yes' ? 'confirmed' : 'declined' }
   return startInEdit ? { ...base, screen: 'start', editing: true, choice: null } : base
 }
 
@@ -149,12 +155,15 @@ export function validateDetails(s: FlowState): FlowError | null {
   if (s.choice === 'no') return null
 
   const names = s.children.map((c) => c.replace(/\s+/g, ' ').trim())
-  if (names.length < 1 || names.length > MAX_CHILDREN) return { field: 'children', message: 'Please add at least one child (up to 6).' }
+  const guests = s.audience === 'guests'
+  if (names.length < 1 || names.length > MAX_CHILDREN) {
+    return { field: 'children', message: guests ? 'Please add at least one guest (up to 6).' : 'Please add at least one child (up to 6).' }
+  }
   const blank = names.findIndex((n) => n === '')
-  if (blank >= 0) return { field: `child-${blank}`, message: 'Please enter the child’s first name.' }
+  if (blank >= 0) return { field: `child-${blank}`, message: guests ? 'Please enter the guest’s first name.' : 'Please enter the child’s first name.' }
   const long = names.findIndex((n) => Array.from(n).length > CHILD_NAME_MAX)
   if (long >= 0) return { field: `child-${long}`, message: 'That name is too long.' }
-  if (s.adultCount === null) return { field: 'adultCount', message: 'Please choose how many adults are staying.' }
+  if (!guests && s.adultCount === null) return { field: 'adultCount', message: 'Please choose how many adults are staying.' }
   if (s.hasAllergy === null) return { field: 'hasAllergy', message: 'Please tell us whether there is a food allergy.' }
   if (s.hasAllergy && s.allergyNote.trim() === '') return { field: 'allergyNote', message: 'Please tell us about the allergy.' }
   if (s.hasAllergy && Array.from(s.allergyNote.trim()).length > ALLERGY_NOTE_MAX) return { field: 'allergyNote', message: 'That note is too long.' }
@@ -171,7 +180,7 @@ export function buildAnswerBody(s: FlowState): Record<string, unknown> {
     status: 'yes',
     parentName: s.parentName,
     children: s.children.map((firstName) => ({ firstName })),
-    adultCount: s.adultCount,
+    adultCount: s.audience === 'guests' ? 0 : s.adultCount,
     hasAllergy: s.hasAllergy,
     ...(s.hasAllergy ? { allergyNote: s.allergyNote } : {}),
     reminderContact: s.reminderContact,
@@ -192,7 +201,7 @@ export function buildExtrasBody(s: FlowState, club: ClubOffer | null): { body: R
     if (Array.from(note).length > NOTE_TO_HONOREE_MAX) return { error: { field: 'note', message: 'That note is too long.' } }
     body.noteToHonoree = note
   }
-  if (s.clubChecked && club) {
+  if (s.clubChecked && club && s.audience !== 'guests') {
     if (!isPlausibleEmailAddress(s.clubEmail.trim())) return { error: { field: 'clubEmail', message: 'Please enter a valid email address.' } }
     body.club = {
       optIn: true,
@@ -207,7 +216,7 @@ export function buildExtrasBody(s: FlowState, club: ClubOffer | null): { body: R
 export function rsvpReducer(s: FlowState, a: FlowAction): FlowState {
   switch (a.type) {
     case 'choose':
-      return { ...s, choice: a.choice, screen: 'details', error: null }
+      return { ...s, choice: a.choice, screen: 'details', error: null, ...(s.audience === 'guests' ? { adultCount: 0 as const } : {}) }
     case 'back':
       if (s.screen === 'details') return { ...s, screen: 'start', error: null }
       return s
