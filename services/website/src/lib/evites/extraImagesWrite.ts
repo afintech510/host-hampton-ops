@@ -16,12 +16,10 @@ import {
   EXTRA_OBJECT,
   MAX_EXTRA_IMAGES,
   cleanExtraAlt,
-  newExtraObject,
-  processExtraImage,
   screenExtraImagesValue,
-  sniffImageType,
   type ExtraImage,
 } from '@/lib/evites/extraImages'
+import { newExtraObject, processExtraImage, sniffImageType } from '@/lib/evites/extraImagesProcess'
 
 type Supa = ReturnType<typeof getSupabase>
 
