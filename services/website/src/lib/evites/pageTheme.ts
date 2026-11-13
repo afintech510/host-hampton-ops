@@ -84,9 +84,9 @@ function specks(count: number, seed: number, sizes: readonly number[], colors: r
   return out.join(',')
 }
 
-const SPARKLE_SMALL = specks(46, 7, [3, 4, 5], ['#ffffff', '#fff6d6'], 3)
-const SPARKLE_GOLD = specks(24, 23, [5, 6, 8], ['#ffe9a3', '#ffd76a', '#fff'], 8)
-const SPARKLE_FLARE = specks(10, 91, [9, 11, 13], ['#ffffff', '#fff2b8'], 16)
+const SPARKLE_SMALL = specks(14, 7, [2, 3], ['#ffffff', '#fff6d6'], 2)
+const SPARKLE_GOLD = specks(6, 23, [3, 4], ['#ffe9a3', '#fff'], 4)
+const SPARKLE_FLARE = specks(3, 91, [5, 6], ['#ffffff', '#fff2b8'], 8)
 
 /** The CSS for one colour and motion. Static strings only. */
 export function pageThemeCss(colorKey: unknown, motion: unknown): string {
@@ -98,12 +98,12 @@ export function pageThemeCss(colorKey: unknown, motion: unknown): string {
   ]
   if (m === 'sparkle') {
     parts.push(
-      `.hh-inv-fx{position:fixed;inset:-10% 0 0 0;pointer-events:none;z-index:0;background:${SPARKLE_SMALL};background-repeat:no-repeat;animation:hh-twinkle-a 1.9s ease-in-out infinite alternate,hh-fall 26s linear infinite}`,
-      `.hh-inv-fx::before{content:"";position:absolute;inset:0;background:${SPARKLE_GOLD};background-repeat:no-repeat;animation:hh-twinkle-b 2.7s ease-in-out infinite alternate,hh-fall 34s linear infinite}`,
-      `.hh-inv-fx::after{content:"";position:absolute;inset:0;background:${SPARKLE_FLARE};background-repeat:no-repeat;filter:drop-shadow(0 0 6px rgba(255,240,180,.9));animation:hh-twinkle-c 3.6s ease-in-out infinite alternate,hh-fall 44s linear infinite}`,
-      '@keyframes hh-twinkle-a{0%{opacity:.25}35%{opacity:1}100%{opacity:.45}}',
-      '@keyframes hh-twinkle-b{0%{opacity:1}50%{opacity:.2}100%{opacity:.9}}',
-      '@keyframes hh-twinkle-c{0%{opacity:.1;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}100%{opacity:.2;transform:scale(.9)}}',
+      `.hh-inv-fx{position:fixed;inset:-10% 0 0 0;pointer-events:none;z-index:0;background:${SPARKLE_SMALL};background-repeat:no-repeat;animation:hh-twinkle-a 4.2s ease-in-out infinite alternate,hh-fall 90s linear infinite}`,
+      `.hh-inv-fx::before{content:"";position:absolute;inset:0;background:${SPARKLE_GOLD};background-repeat:no-repeat;animation:hh-twinkle-b 5.6s ease-in-out infinite alternate,hh-fall 120s linear infinite}`,
+      `.hh-inv-fx::after{content:"";position:absolute;inset:0;background:${SPARKLE_FLARE};background-repeat:no-repeat;animation:hh-twinkle-c 6.5s ease-in-out infinite alternate,hh-fall 150s linear infinite}`,
+      '@keyframes hh-twinkle-a{0%{opacity:.1}50%{opacity:.55}100%{opacity:.15}}',
+      '@keyframes hh-twinkle-b{0%{opacity:.5}50%{opacity:.1}100%{opacity:.45}}',
+      '@keyframes hh-twinkle-c{0%{opacity:.05}50%{opacity:.6}100%{opacity:.1}}',
       '@keyframes hh-fall{from{background-position:0 0}to{background-position:0 110vh}}',
     )
   } else if (m === 'drift') {

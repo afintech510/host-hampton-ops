@@ -5,7 +5,8 @@
  * re-screens the text itself: the client's parse is a courtesy, never a credential.
  *
  *   parseGuestList(text)            -> { guests: [{ name, phone_e164 | null }], skipped: string[] }
- *   matchGuestsToRsvps(guests, rs)  -> ('yes' | 'no' | null)[]   one answer per guest, MATCHED BY NAME
+ *   matchGuests(guests, rs)         -> per-guest answer + which RSVP, and RSVPs no guest matched
+ *   matchGuestsToRsvps(guests, rs)  -> ('yes' | 'no' | null)[]   answers only
  *
  * Accepted lines (one guest each): `Name`, `Name, 631-555-1234`, `Name,6315551234`, `Name<TAB>phone`,
  * quoted CSV cells, a `name,phone` header row (ignored). A text that is ONE line with no digits is a
@@ -172,61 +173,137 @@ export interface MatchableRsvp {
   parent_name: string
   /** First names (strings) or `{ first_name }` objects, as the host view and the table hold them. */
   children: Array<string | { first_name?: string }>
+  /** The RSVP's own id, when the caller has it (needed for links and for "which one matched"). */
+  id?: string
 }
+
+const TITLES = new Set(['mr', 'mrs', 'ms', 'miss', 'mx', 'dr'])
 
 function norm(s: string): string {
   return s
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
+    .replace(/['’`]/g, '')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
 
-/** "Tom & Jen" -> ["tom", "jen"]; a plain name -> [name]. */
+/** Normalised words of one person's name: "Last, First" put right way round, titles dropped. */
+function canonWords(name: string): string[] {
+  let n = name
+  const commas = n.split(',')
+  if (commas.length === 2 && commas[0].trim() !== '' && commas[1].trim() !== '') n = `${commas[1]} ${commas[0]}`
+  const words = norm(n).split(' ').filter(Boolean)
+  while (words.length > 0 && TITLES.has(words[0])) words.shift()
+  return words
+}
+
+const canon = (name: string): string => canonWords(name).join(' ')
+
+/** "Tom & Jen" -> ["tom jen"?]: the whole, then each part; a plain name -> [name]. */
 function parts(name: string): string[] {
-  const whole = norm(name)
+  const whole = canon(name)
   const split = name
     .split(/\s+(?:and|&)\s+|\s*&\s*/i)
-    .map(norm)
+    .map(canon)
     .filter(Boolean)
   return split.length > 1 ? [whole, ...split] : [whole]
+}
+
+/** Chris / Christopher, Jen / Jennifer: one is the start of the other, and the shorter has 3+ letters. */
+function sameFirst(a: string, b: string): boolean {
+  if (a === b) return true
+  const [s, l] = a.length <= b.length ? [a, b] : [b, a]
+  return s.length >= 3 && l.startsWith(s)
+}
+
+/** Two multi-word names that are the same person: same last name AND same (or abbreviated) first name. */
+function fuzzyFullName(a: string, b: string): boolean {
+  const x = a.split(' ')
+  const y = b.split(' ')
+  if (x.length < 2 || y.length < 2) return false
+  if (x[x.length - 1] === y[y.length - 1] && sameFirst(x[0], y[0])) return true
+  // the same words in another order ("Lee Ann" / "Ann Lee")
+  return x.length === y.length && x.length <= 3 && [...x].sort().join(' ') === [...y].sort().join(' ')
+}
+
+export interface GuestMatch {
+  answer: 'yes' | 'no' | null
+  /** The RSVP the answer comes from (the linked one, or the best automatic match), else null. */
+  rsvpId: string | null
+  linked: boolean
+}
+
+export interface GuestMatching {
+  matches: GuestMatch[]
+  /** Indexes into `rsvps` that no guest matched and no guest is linked to. */
+  unmatchedRsvps: number[]
 }
 
 /**
  * For each guest: 'yes' if an RSVP that says yes appears to answer for them, else 'no' if one that says no
  * does, else null. MATCHED BY NAME ONLY, and only a guide: the full name equals the RSVP's name or one of
- * the names given for the party; a one-word guest name also matches a given first name or the first word
- * of the RSVP's name. A household ("Tom & Jen") matches when any one of its parts does. Two different
- * people with the same name will be confused; the host can always add or remove an RSVP by hand.
+ * the names given for the party (case, accents, punctuation and titles ignored, "Last, First" accepted); a
+ * full name also matches when the last names are equal and the first names are equal or one begins the
+ * other (Chris / Christopher); a one-word guest name matches a given first name or the first word of the
+ * RSVP's name. A first name alone never matches a guest who has a last name. A household ("Tom & Jen")
+ * matches when any one of its parts does.
+ *
+ * A manual link wins: a guest with `rsvpId` takes that RSVP's answer, and that RSVP is never auto-matched
+ * to anybody else. Two different people with the same name will be confused; the host can link by hand.
  */
-export function matchGuestsToRsvps(guests: Array<{ name: string }>, rsvps: MatchableRsvp[]): Array<'yes' | 'no' | null> {
+export function matchGuests(guests: Array<{ name: string; rsvpId?: string | null }>, rsvps: MatchableRsvp[]): GuestMatching {
   const prepared = rsvps.map((r) => {
     const full = new Set<string>()
     const firsts = new Set<string>()
     const add = (n: string) => {
-      const x = norm(n)
+      const x = canon(n)
       if (!x) return
       full.add(x)
       firsts.add(x.split(' ')[0])
     }
     add(r.parent_name)
     for (const c of r.children) add(typeof c === 'string' ? c : c?.first_name ?? '')
-    return { status: r.status, full, firsts }
+    return { status: r.status, id: r.id ?? null, full, firsts }
   })
-  return guests.map((g) => {
-    let answer: 'yes' | 'no' | null = null
-    for (const r of prepared) {
-      const hit = parts(g.name).some((p) => {
+
+  const claimed = new Set<number>() // linked by hand
+  const linkedIdx = guests.map((g) => (g.rsvpId ? prepared.findIndex((r) => r.id === g.rsvpId) : -1))
+  for (const i of linkedIdx) if (i >= 0) claimed.add(i)
+
+  const used = new Set<number>()
+  const matches = guests.map((g, gi): GuestMatch => {
+    if (linkedIdx[gi] >= 0) {
+      const r = prepared[linkedIdx[gi]]
+      used.add(linkedIdx[gi])
+      return { answer: r.status, rsvpId: r.id, linked: true }
+    }
+    const gp = parts(g.name)
+    let best: { idx: number; status: 'yes' | 'no' } | null = null
+    prepared.forEach((r, idx) => {
+      if (claimed.has(idx)) return
+      const hit = gp.some((p) => {
         if (!p) return false
         if (r.full.has(p)) return true
-        return !p.includes(' ') && r.firsts.has(p)
+        if (!p.includes(' ')) return r.firsts.has(p)
+        for (const n of Array.from(r.full)) if (fuzzyFullName(p, n)) return true
+        return false
       })
-      if (!hit) continue
-      if (r.status === 'yes') return 'yes'
-      answer = 'no'
-    }
-    return answer
+      if (!hit) return
+      used.add(idx)
+      if (!best || (r.status === 'yes' && best.status === 'no')) best = { idx, status: r.status }
+    })
+    if (!best) return { answer: null, rsvpId: null, linked: false }
+    const b = best as { idx: number; status: 'yes' | 'no' }
+    return { answer: b.status, rsvpId: prepared[b.idx].id, linked: false }
   })
+  const unmatchedRsvps = prepared.map((_, i) => i).filter((i) => !used.has(i))
+  return { matches, unmatchedRsvps }
+}
+
+/** The answers alone, one per guest (no links). */
+export function matchGuestsToRsvps(guests: Array<{ name: string }>, rsvps: MatchableRsvp[]): Array<'yes' | 'no' | null> {
+  return matchGuests(guests, rsvps).matches.map((m) => m.answer)
 }

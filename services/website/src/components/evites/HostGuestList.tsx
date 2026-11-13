@@ -40,6 +40,23 @@ interface GuestItem {
   phone: string | null
   phoneE164: string | null
   answer: 'yes' | 'no' | null
+  linkedRsvpId?: string | null
+  matchedRsvpId?: string | null
+}
+
+interface UnmatchedRsvp {
+  id: string
+  status: 'yes' | 'no'
+  name: string
+  guests: string[]
+}
+
+interface Summary {
+  invited: number
+  yes: number
+  no: number
+  waiting: number
+  peopleComing: number
 }
 
 interface RsvpItem {
@@ -81,6 +98,8 @@ const errorOf = (r: { data: Record<string, unknown> | null }, fallback: string):
 export default function HostGuestList({ shareText, reshareText, inviteUrl, audience, onChanged }: HostGuestListProps) {
   const [guests, setGuests] = useState<GuestItem[] | null>(null)
   const [rsvps, setRsvps] = useState<RsvpItem[]>([])
+  const [unmatched, setUnmatched] = useState<UnmatchedRsvp[]>([])
+  const [summary, setSummary] = useState<Summary | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [paste, setPaste] = useState('')
@@ -98,7 +117,11 @@ export default function HostGuestList({ shareText, reshareText, inviteUrl, audie
 
   const load = useCallback(async () => {
     const [g, r] = await Promise.all([call('GET', GUESTS_API), call('GET', RSVPS_API)])
-    if (g.ok && Array.isArray(g.data?.guests)) setGuests(g.data.guests as GuestItem[])
+    if (g.ok && Array.isArray(g.data?.guests)) {
+      setGuests(g.data.guests as GuestItem[])
+      setUnmatched(Array.isArray(g.data.unmatchedRsvps) ? (g.data.unmatchedRsvps as UnmatchedRsvp[]) : [])
+      setSummary(g.data.summary && typeof g.data.summary === 'object' ? (g.data.summary as Summary) : null)
+    }
     else if (g.status !== 401) setLoadError(errorOf(g, 'Could not load your guest list - try again.'))
     if (r.ok && Array.isArray(r.data?.rsvps)) setRsvps(r.data.rsvps as RsvpItem[])
   }, [])
@@ -153,6 +176,19 @@ export default function HostGuestList({ shareText, reshareText, inviteUrl, audie
     await changed()
   }
 
+  async function linkGuest(id: string, rsvpId: string | null) {
+    if (id === '' || (rsvpId !== null && rsvpId === '')) return
+    const r = await call('PATCH', GUESTS_API, { id, rsvpId })
+    if (!r.ok) setLoadError(errorOf(r, 'Could not save that - try again.'))
+    await changed()
+  }
+
+  async function addUnmatched(name: string) {
+    const r = await call('POST', GUESTS_API, { text: name })
+    if (!r.ok) setLoadError(errorOf(r, 'Could not add that - try again.'))
+    await changed()
+  }
+
   async function removeAll() {
     if (!window.confirm('Remove everyone from your guest list? Answers you have already received stay as they are.')) return
     const r = await call('DELETE', GUESTS_API, { all: true })
@@ -197,6 +233,7 @@ export default function HostGuestList({ shareText, reshareText, inviteUrl, audie
   }
 
   const waiting = (guests ?? []).filter((g) => g.answer === null)
+  const answerLabel = (r: UnmatchedRsvp) => `${r.name || 'Someone'} (${r.status === 'yes' ? 'coming' : 'can’t make it'})`
   const body = (text: string) => `${text} ${inviteUrl}`
 
   async function copyReminder() {
@@ -274,6 +311,79 @@ export default function HostGuestList({ shareText, reshareText, inviteUrl, audie
           </p>
         )}
 
+        {guests && guests.length > 0 && summary && (
+          <p data-guest-summary="" className="mt-5 text-sm font-medium text-[#1a2744]">
+            {summary.invited} on your list: {summary.yes} coming, {summary.no} can&apos;t make it, {summary.waiting} haven&apos;t answered ({summary.peopleComing}{' '}
+            {summary.peopleComing === 1 ? 'person' : 'people'} coming)
+          </p>
+        )}
+
+        {guests && waiting.length > 0 && (
+          <div data-waiting-list="" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
+            <h3 className="text-sm font-semibold text-[#1a2744]">Haven&apos;t answered yet</h3>
+            <ul className="mt-1 divide-y divide-amber-200">
+              {waiting.map((g) => (
+                <li key={g.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
+                  <span className="min-w-0 flex-1 font-medium text-[#1a2744]">{g.name}</span>
+                  {g.phoneE164 && (
+                    <a href={smsLinkFor(g.phoneE164, body(reshareText))} className="text-[#1a2744] underline">
+                      Text
+                    </a>
+                  )}
+                  {unmatched.length > 0 && (
+                    <select
+                      aria-label={`Mark ${g.name} as answered`}
+                      className="max-w-[12rem] rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-[#1a2744]"
+                      value=""
+                      onChange={(e) => void linkGuest(g.id, e.target.value)}
+                    >
+                      <option value="">Mark as answered…</option>
+                      {unmatched.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {answerLabel(u)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {guests && unmatched.length > 0 && (
+          <div data-unmatched="" className="mt-4 rounded-lg border border-gray-200 p-3">
+            <h3 className="text-sm font-semibold text-[#1a2744]">Answers that aren&apos;t on your list</h3>
+            <ul className="mt-1 divide-y divide-gray-100">
+              {unmatched.map((u) => (
+                <li key={u.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
+                  <span className="min-w-0 flex-1 text-[#1a2744]">{answerLabel(u)}</span>
+                  {u.name && (
+                    <button type="button" onClick={() => void addUnmatched(u.name)} className={LINK_BTN}>
+                      Add to my list
+                    </button>
+                  )}
+                  {waiting.length > 0 && (
+                    <select
+                      aria-label={`Who is ${u.name || 'this answer'}?`}
+                      className="max-w-[12rem] rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-[#1a2744]"
+                      value=""
+                      onChange={(e) => void linkGuest(e.target.value, u.id)}
+                    >
+                      <option value="">This is…</option>
+                      {waiting.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {guests && guests.length > 0 && (
           <div className="mt-5">
             <div className="mb-1 flex items-center justify-between">
@@ -304,6 +414,11 @@ export default function HostGuestList({ shareText, reshareText, inviteUrl, audie
                     <a href={smsLinkFor(g.phoneE164, body(g.answer === null ? reshareText : shareText))} className="text-[#1a2744] underline">
                       Text
                     </a>
+                  )}
+                  {g.linkedRsvpId && (
+                    <button type="button" onClick={() => void linkGuest(g.id, null)} className="text-gray-500 underline" aria-label={`Unlink ${g.name}'s answer`}>
+                      Unlink
+                    </button>
                   )}
                   <button type="button" onClick={() => void removeGuest(g.id)} className="text-gray-500 underline" aria-label={`Remove ${g.name}`}>
                     Remove
