@@ -63,6 +63,7 @@ export default async function InvitePage({ params, searchParams }: Props) {
   if (r.kind !== 'ok') notFound()
 
   const model = invitePageModel(r.state, r.facts)
+  const noun = r.facts.audience === 'guests' ? 'event' : 'party'
   const template = templateForFacts(r.facts, process.env.SUPABASE_URL)
   const sizes = computeSizes(template, r.facts)
   // The stored picture when a render exists (a plain responsive <img>); the web canvas only before the first render.
@@ -71,7 +72,7 @@ export default async function InvitePage({ params, searchParams }: Props) {
   // Only a live party takes RSVPs. The caller's own answer (if their cookie verifies) and the current club wording.
   let own: OwnRsvp | null = null
   let club: { version: string; wording: string } | null = null
-  if (model.showRsvp) ({ own, club } = await loadRsvpPanel(r.evite.id))
+  if (model.showRsvp) ({ own, club } = await loadRsvpPanel(r.evite.id, r.facts.audience))
 
   return (
     <div className="hh-inv-col">
@@ -85,7 +86,7 @@ export default async function InvitePage({ params, searchParams }: Props) {
       {flag(searchParams?.stopped) && (
         <div role="status" className="mb-4 rounded-xl bg-emerald-200/95 px-4 py-2.5 text-center text-[#06301a]">
           <p className="text-sm font-bold">Reminders stopped</p>
-          <p className="mt-0.5 text-xs">We won&apos;t send you any more reminders about this party.</p>
+          <p className="mt-0.5 text-xs">We won&apos;t send you any more reminders about this {noun}.</p>
         </div>
       )}
 
@@ -132,7 +133,7 @@ export default async function InvitePage({ params, searchParams }: Props) {
       )}
 
       {model.showRsvp && (
-        <RsvpIsland slug={params.slug} own={own} startInEdit={!!own && flag(searchParams?.edit)} honoree={honoreeFirstName(r.facts)} club={club} />
+        <RsvpIsland slug={params.slug} own={own} startInEdit={!!own && flag(searchParams?.edit)} honoree={honoreeFirstName(r.facts)} club={club} audience={r.facts.audience} />
       )}
 
       <ViewBeacon slug={params.slug} />

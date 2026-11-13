@@ -321,6 +321,30 @@ describe('the amount is still clamped to what is owed', () => {
   })
 })
 
+describe('an outside event (migration 096) owes nothing and is never charged', () => {
+  const OUTSIDE = { party_type: 'outside_event', status: 'confirmed', balance_due_cents: 0, total_cents: 0 }
+
+  it.each([['card'], ['venmo']])('refuses a %s payment, even for the flat reservation deposit', async (paymentMethod) => {
+    created.length = 0
+    __resetRateLimitForTests()
+    seed(OUTSIDE)
+    const res: any = await POST(req({ amountCents: BOOKING_DEPOSIT_CENTS, paymentMethod, paymentType: 'deposit' }))
+    expect(res.status).toBe(409)
+    expect(created).toHaveLength(0)
+  })
+
+  it('a null party_type and an in_studio_theme unpriced booking still take the flat deposit', async () => {
+    for (const party_type of [null, 'in_studio_theme']) {
+      created.length = 0
+      __resetRateLimitForTests()
+      seed({ party_type, status: 'confirmed', balance_due_cents: 0, total_cents: 0 })
+      const res: any = await POST(req({ amountCents: 50_000, paymentMethod: 'card' }))
+      expect(res.status).toBe(200)
+      expect(created[0].metadata.amountCents).toBe(String(BOOKING_DEPOSIT_CENTS))
+    }
+  })
+})
+
 describe('the rate limit', () => {
   it('bounds the PaymentIntents one caller can create, and says it refused', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})

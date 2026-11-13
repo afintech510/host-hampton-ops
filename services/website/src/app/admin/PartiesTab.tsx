@@ -15,6 +15,7 @@ import PhotoAlbumSender from './PhotoAlbumSender'
 import ClientLinksSender from './ClientLinksSender'
 import { isStudioRentalBooking } from '@/lib/clientLinks'
 import InvitationCard from '@/components/admin/InvitationCard'
+import OutsideInvitationForm from '@/components/admin/OutsideInvitationForm'
 
 interface PartyBookingSummary {
   id: string
@@ -523,17 +524,20 @@ export default function PartiesTab({
               Show past parties
             </label>
           </div>
-          <a
-            // ?new=true tells the planner to clear any existing portal cookie
-            // before booting so an admin always gets a blank canvas — without
-            // this, a previous customer's plan loads from the cookie.
-            href="/party-planner?new=true"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 bg-[#1a2744] text-white rounded-lg text-sm font-semibold hover:bg-[#2a3754] transition-colors"
-          >
-            + New Party Plan
-          </a>
+          <div className="flex items-center gap-2 flex-wrap">
+            <OutsideInvitationForm headers={headers} onCreated={() => { void fetchBookings() }} />
+            <a
+              // ?new=true tells the planner to clear any existing portal cookie
+              // before booting so an admin always gets a blank canvas — without
+              // this, a previous customer's plan loads from the cookie.
+              href="/party-planner?new=true"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 bg-[#1a2744] text-white rounded-lg text-sm font-semibold hover:bg-[#2a3754] transition-colors"
+            >
+              + New Party Plan
+            </a>
+          </div>
         </div>
 
         {false && showNewForm && (

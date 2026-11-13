@@ -202,7 +202,7 @@ export default function HostInvitation({ initial, preview }: Props) {
   }
 
   async function share(kind: 'invite' | 'reshare') {
-    if (!shareGate(data.state, data.renderFresh).enabled) return
+    if (!shareGate(data.state, data.renderFresh, data.facts.audience).enabled) return
     trackShare()
     const text = kind === 'invite' ? data.facts.shareText : data.facts.reshareText
     const nav = navigator as Navigator & { share?: (d: { title?: string; text?: string; url?: string }) => Promise<void> }
@@ -219,7 +219,7 @@ export default function HostInvitation({ initial, preview }: Props) {
   }
 
   async function copy() {
-    if (!shareGate(data.state, data.renderFresh).enabled) return
+    if (!shareGate(data.state, data.renderFresh, data.facts.audience).enabled) return
     trackShare()
     if (await copyText(data.url)) {
       setCopied(true)

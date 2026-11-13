@@ -322,6 +322,9 @@ export function makeFakeDb(
             const [col, op, ...rest] = t.split('.')
             const value = rest.join('.')
             if (op === 'eq') return String(r[col] ?? '') === value
+            // SQL `<>`: NULL is neither equal nor unequal, which is why the null-safe
+            // `party_type.is.null,party_type.neq.x` pair exists.
+            if (op === 'neq') return r[col] !== null && r[col] !== undefined && String(r[col]) !== value
             if (op === 'ilike') return likeToRegExp(value.replace(/\*/g, '%')).test(String(r[col] ?? ''))
             if (op === 'is' && value === 'null') return r[col] === null || r[col] === undefined
             if (op === 'not') return true

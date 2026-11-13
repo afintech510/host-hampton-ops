@@ -8,6 +8,8 @@ import {
   placeMapsUrl,
   ogImageUrl,
   PREVIEW_NOTE,
+  PREVIEW_NOTE_EVENT,
+  honoreeFirstName,
   ribbonFor,
   unavailableMetadata,
 } from '@/lib/evites/pageModel'
@@ -165,5 +167,31 @@ describe('inviteMetadata', () => {
     expect(unavailableMetadata()).toEqual(unavailableMetadata())
     expect(unavailableMetadata().robots).toMatchObject({ index: false })
     expect(JSON.stringify(unavailableMetadata())).not.toMatch(/mia|glow/i)
+  })
+})
+
+describe('ribbons for an adult outside event (audience guests)', () => {
+  it('kids strings are identical with or without the audience argument', () => {
+    for (const s of ['live', 'preview', 'needs_time', 'closed'] as const) expect(ribbonFor(s, 'kids')).toEqual(ribbonFor(s))
+  })
+  it('says event, not party', () => {
+    expect(ribbonFor('preview', 'guests')).toEqual({ text: 'Preview', note: PREVIEW_NOTE_EVENT, tone: 'preview' })
+    expect(PREVIEW_NOTE_EVENT).toBe('RSVPs open once the event is booked')
+    expect(ribbonFor('closed', 'guests')?.text).toBe('This event has happened \u{1F389}')
+    expect(ribbonFor('needs_time', 'guests')).toEqual(ribbonFor('needs_time'))
+    expect(ribbonFor('live', 'guests')).toBeNull()
+  })
+  it('invitePageModel reads the audience off the facts', () => {
+    const booking = { party_type: 'outside_event', party_tags: { occasion: 'baby shower', venue_name: 'James Joyce', location_type: 'other' } }
+    const f = factsFor('preview', {}, booking)
+    expect(f.audience).toBe('guests')
+    expect(invitePageModel('preview', f).ribbon?.note).toBe(PREVIEW_NOTE_EVENT)
+    expect(invitePageModel('closed', f).ribbon?.text).toMatch(/This event has happened/)
+    const kids = factsFor('preview')
+    expect(invitePageModel('preview', kids).ribbon?.note).toBe(PREVIEW_NOTE)
+  })
+  it('honoreeFirstName still reads the honoree out of an outside event title', () => {
+    const f = factsFor('live', {}, { child_name: 'Maeghan', party_type: 'outside_event', party_tags: { occasion: 'baby shower' } })
+    expect(honoreeFirstName(f)).toBe('Maeghan')
   })
 })

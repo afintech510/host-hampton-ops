@@ -411,3 +411,19 @@ describe('page source rules', () => {
     expect(renderToStaticMarkup(createElement('div', null, el))).toContain('hh-inv-canvas')
   })
 })
+
+describe('an adult outside event: ribbon copy says event', () => {
+  const OUTSIDE = { child_name: 'Maeghan', party_type: 'outside_event', party_tags: { occasion: 'baby shower', venue_name: 'James Joyce', location_type: 'other' } }
+  it('preview', async () => {
+    mockDb = makeDb({ booking: { ...OUTSIDE, status: 'awaiting_deposit' }, payments: [] })
+    const out = await html()
+    expect(out).toContain('RSVPs open once the event is booked')
+    expect(out).not.toContain('once the party is booked')
+  })
+  it('closed', async () => {
+    mockDb = makeDb({ booking: { ...OUTSIDE, party_date: '2026-10-01' } })
+    const out = await html()
+    expect(out).toContain('This event has happened')
+    expect(out).not.toContain('This party has happened')
+  })
+})

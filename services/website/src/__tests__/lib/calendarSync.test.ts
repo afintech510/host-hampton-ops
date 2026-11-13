@@ -42,6 +42,24 @@ describe('planBookingCalendar — the calendar follows the money', () => {
     expect(p.keepId).toBe('ev1')
   })
 
+  it('never creates or deletes an event for an outside event (migration 096), paid or not', () => {
+    const outside = booking({ party_type: 'outside_event', status: 'confirmed', google_calendar_event_id: 'ev9' })
+    for (const paid of [0, 25000]) {
+      const p = planBookingCalendar(outside, paid, [], TODAY)
+      expect(p.ops).toEqual([])
+      expect(p.keepId).toBe('ev9')
+    }
+    // Even a stray event naming the ref is left alone (no delete op).
+    expect(planBookingCalendar(outside, 0, [event({ id: 'ev9' })], TODAY).ops).toEqual([])
+  })
+
+  it('still creates the event for a normal studio party and a null party_type once paid', () => {
+    for (const party_type of ['in_studio_theme', null]) {
+      const p = planBookingCalendar(booking({ party_type, party_date: '2026-11-14', party_time: '12:00' }), 25000, [], TODAY)
+      expect(p.ops).toEqual([expect.objectContaining({ kind: 'create' })])
+    }
+  })
+
   it('creates the missing event for a paid party (hand-entered deposits had none)', () => {
     const p = planBookingCalendar(booking({ party_date: '2026-11-14', party_time: '12:00' }), 25000, [], TODAY)
     expect(p.ops).toEqual([expect.objectContaining({

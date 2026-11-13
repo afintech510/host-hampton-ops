@@ -77,7 +77,7 @@ export function shouldAdvanceToAwaitingDeposit(status: string | null | undefined
 }
 
 /** `bookings.party_type` values from migration 035, plus 'all' for the filter. */
-export const PARTY_TYPES = ['in_studio_theme', 'mobile_party', 'studio_rental', 'hat_bar', 'unknown'] as const
+export const PARTY_TYPES = ['in_studio_theme', 'mobile_party', 'studio_rental', 'hat_bar', 'outside_event', 'unknown'] as const
 
 export type PartyTypeValue = (typeof PARTY_TYPES)[number]
 
@@ -86,6 +86,7 @@ export const PARTY_TYPE_LABELS: Record<string, string> = {
   mobile_party: 'Mobile',
   studio_rental: 'Studio Rental',
   hat_bar: 'Hat Bar',
+  outside_event: 'Outside Event',
   unknown: 'Unclassified',
 }
 

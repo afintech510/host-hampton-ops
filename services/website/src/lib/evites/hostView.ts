@@ -244,6 +244,12 @@ export interface HostFactsView {
   guestCap: number | null
   shareText: string
   reshareText: string
+  /** 'guests' for an adult outside event (the page says "event" and counts guests, not kids and adults). */
+  audience: 'kids' | 'guests'
+  /** "Birthday Party", "Baby Shower": the noun a sentence uses for the event. */
+  partyNoun: string
+  /** The venue's name for an outside event, else null. */
+  venueName: string | null
 }
 
 export interface HostCustomize {
@@ -305,6 +311,9 @@ export function composeHostView(loaded: HostLoaded, supabaseUrl: string | undefi
       guestCap: facts.guestCap,
       shareText: facts.shareText,
       reshareText: facts.reshareText,
+      audience: facts.audience,
+      partyNoun: facts.partyNoun,
+      venueName: facts.venueName,
     },
     url: `${CANONICAL_ORIGIN}/i/${evite.slug}`,
     images: { invite: storedImageUrl(evite, 'invite', supabaseUrl), og: storedImageUrl(evite, 'og', supabaseUrl) },

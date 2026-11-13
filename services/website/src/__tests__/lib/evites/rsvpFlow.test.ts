@@ -401,3 +401,115 @@ describe('client state only', () => {
     expect(island).not.toMatch(/count|guests? (have|are)|others/i)
   })
 })
+
+// ──────────────────────────────────────────────────────────────── guests (an adult outside event)
+
+describe('guests audience: the same flow, relabelled', () => {
+  const G = () => initialState(null, false, 'guests')
+  const fillGuest: FlowAction[] = [
+    { type: 'choose', choice: 'yes' },
+    { type: 'setChild', index: 0, value: 'Gina' },
+    { type: 'set', field: 'parentName', value: 'Gina Guest' },
+    { type: 'setAllergy', value: false },
+  ]
+
+  it('kids is the default, with no adults chosen yet', () => {
+    expect(initialState(null).audience).toBe('kids')
+    expect(initialState(null).adultCount).toBeNull()
+    expect(G().audience).toBe('guests')
+    expect(G().adultCount).toBe(0)
+  })
+
+  it('a guest never has to choose adults: the form validates and the body carries adultCount 0', () => {
+    const s = run(G(), fillGuest).state
+    expect(validateDetails(s)).toBeNull()
+    expect(buildAnswerBody(s)).toMatchObject({ status: 'yes', parentName: 'Gina Guest', children: [{ firstName: 'Gina' }], adultCount: 0, hasAllergy: false })
+    // the identical fill with the kids' form is refused for the missing adults
+    expect(validateDetails(run(initialState(null), fillGuest).state)?.field).toBe('adultCount')
+  })
+
+  it('adultCount stays 0 after a decline and a second thought', () => {
+    const declined = run(G(), [{ type: 'choose', choice: 'no' }, { type: 'set', field: 'parentName', value: 'Gina' }]).state
+    const own = ownRsvp({ status: 'no', children: [], adult_count: 0, parent_name: 'Gina' })
+    const back = rsvpReducer(rsvpReducer({ ...declined, saved: own, screen: 'declined' }, { type: 'submitted', rsvp: own, reminderDropped: false }), { type: 'edit' })
+    const s = run(back, [{ type: 'choose', choice: 'yes' }, { type: 'setChild', index: 0, value: 'Gina' }, { type: 'setAllergy', value: false }]).state
+    expect(s.adultCount).toBe(0)
+    expect(validateDetails(s)).toBeNull()
+    expect(buildAnswerBody(s).adultCount).toBe(0)
+  })
+
+  it('validation messages name guests', () => {
+    expect(validateDetails(run(G(), [{ type: 'choose', choice: 'yes' }, { type: 'set', field: 'parentName', value: 'Gina' }]).state)).toEqual({
+      field: 'child-0',
+      message: 'Please enter the guest’s first name.',
+    })
+    const kids = run(initialState(null), [{ type: 'choose', choice: 'yes' }, { type: 'set', field: 'parentName', value: 'Pat' }]).state
+    expect(validateDetails(kids)?.message).toBe('Please enter the child’s first name.')
+  })
+
+  it('a returning guest keeps audience and a zero adult count', () => {
+    const s = initialState(ownRsvp({ adult_count: 0, children: [{ first_name: 'Gina' }] }), true, 'guests')
+    expect(s.audience).toBe('guests')
+    expect(s.adultCount).toBe(0)
+    expect(s.editing).toBe(true)
+  })
+
+  it('never builds a club body, even if the box was somehow ticked', () => {
+    const s = { ...confirmedGuest(), clubChecked: true, clubEmail: 'gina@example.com' }
+    expect(buildExtrasBody(s, CLUB)).toBeNull()
+    const kids = { ...initialState(ownRsvp()), clubChecked: true, clubEmail: 'pat@example.com' }
+    expect(buildExtrasBody(kids, CLUB)).toMatchObject({ body: { club: { optIn: true } } })
+  })
+
+  function confirmedGuest(over: Partial<OwnRsvp> = {}): FlowState {
+    return initialState(ownRsvp({ adult_count: 0, children: [{ first_name: 'Gina' }, { first_name: 'Tom' }], parent_name: 'Gina Guest', ...over }), false, 'guests')
+  }
+
+  it('screen 2 (yes): "Guests coming", per-guest labels, "+ Add guest", "Your name"; no adults control', () => {
+    const html = markup(run(G(), [{ type: 'choose', choice: 'yes' }, { type: 'addChild' }]).state)
+    expect(html).toContain('Guests coming')
+    expect(html).toContain('aria-label="Guest 1 first name"')
+    expect(html).toContain('aria-label="Guest 2 first name"')
+    expect(html).toContain('aria-label="Remove guest 2"')
+    expect(html).toContain('+ Add guest')
+    expect(html).toContain('Your name')
+    expect(html).toContain('Food allergy?')
+    for (const gone of ['Adults staying', 'Child 1', 'Remove child', 'sibling', 'Parent or guardian', '2+']) expect(html).not.toContain(gone)
+  })
+
+  it('the allergy detail keeps its label', () => {
+    const html = markup(run(G(), [{ type: 'choose', choice: 'yes' }, { type: 'setAllergy', value: true }]).state)
+    expect(html).toContain('Who, and what to avoid')
+  })
+
+  it('kids screen 2 is unchanged', () => {
+    const html = markup(rsvpReducer(initialState(null), { type: 'choose', choice: 'yes' }))
+    for (const kept of ['Child', 'Child 1 first name', '+ Add sibling', 'Parent or guardian name', 'Adults staying']) expect(html).toContain(kept)
+  })
+
+  it('screen 3: no adults in the summary, a neutral note label, the club card absent even when an offer is passed', () => {
+    const html = markup(confirmedGuest(), { honoree: 'Maeghan' })
+    expect(html).toContain('Gina, Tom')
+    expect(html).not.toContain('adult')
+    expect(html).toContain('Leave a note for Maeghan (optional)')
+    expect(html).not.toContain('Birthday Club')
+    expect(html).not.toContain(WORDING.replace('&', '&amp;'))
+    expect(html).not.toContain('rsvp-club')
+    expect(markup(confirmedGuest(), { honoree: null })).toContain('Leave a note for the host (optional)')
+    expect(markup(confirmedGuest(), { honoree: null })).not.toMatch(/birthday child/i)
+  })
+
+  it('screen 3 says "event", not "party", for a guest reminder', () => {
+    const html = markup({ ...confirmedGuest({ reminder_email: 'g@example.com' }), reminderDropped: true })
+    expect(html).toContain('email a reminder before the event')
+    expect(html).toContain('Add the event to your calendar')
+    expect(html).not.toContain('the party')
+  })
+
+  it('kids screen 3 still shows the club card and the birthday-child fallback', () => {
+    const html = markup(initialState(ownRsvp()), { honoree: null })
+    expect(html).toContain('Birthday Club')
+    expect(html).toContain('Leave a note for the birthday child (optional)')
+    expect(html).toContain('2+ adults')
+  })
+})

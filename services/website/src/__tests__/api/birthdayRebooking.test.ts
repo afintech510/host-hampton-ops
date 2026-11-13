@@ -47,7 +47,7 @@ const bookingsSpec: TableSpec = {
   columns: {
     id: 'uuid', booking_ref: 'text', contact_name: 'text', contact_email: 'text',
     child_name: 'text', child_age: 'int', party_date: 'text', event_type: 'text',
-    status: 'text', created_at: 'timestamptz',
+    status: 'text', created_at: 'timestamptz', party_type: 'text',
   },
 }
 const contactsSpec: TableSpec = {
@@ -164,6 +164,18 @@ describe('GET /api/cron/birthday-rebooking', () => {
 
     await GET(makeReq(CRON_SECRET))
     expect(fake.tables.scheduled_reminders).toHaveLength(0)
+  })
+
+  it('does NOT nudge an outside event (migration 096), and still nudges a studio or untyped party', async () => {
+    const outside = setup({ bookings: [sampleBooking({ party_type: 'outside_event' })], contacts: [sampleContact()] })
+    expect((await GET(makeReq(CRON_SECRET))).json()).toMatchObject({ scanned: 0 })
+    expect(outside.tables.scheduled_reminders).toHaveLength(0)
+
+    for (const party_type of ['in_studio_theme', null]) {
+      const fake = setup({ bookings: [sampleBooking({ party_type })], contacts: [sampleContact()] })
+      expect((await GET(makeReq(CRON_SECRET))).json()).toMatchObject({ scanned: 1, emailQueued: 1 })
+      expect(fake.tables.scheduled_reminders.length).toBeGreaterThan(0)
+    }
   })
 
   it('does NOT nudge a cancelled party', async () => {

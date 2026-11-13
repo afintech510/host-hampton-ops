@@ -4,6 +4,7 @@ import { isAdminAuthorized, unauthorizedResponse } from '@/lib/adminAuth'
 import { sumPayments, computeBalance } from '@/lib/bookingBalance'
 import { partyStatuses, etToday, type BookingStage, type PaymentStatus } from '@/lib/bookingStatus'
 import { foodSelectionsFromColumns, type FoodSelections } from '@/lib/partyFood'
+import { OUTSIDE_EVENT_OR_FILTER } from '@/lib/outsideEventGate'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,7 +44,12 @@ export const dynamic = 'force-dynamic'
 /** Statuses that mean "this party is on the books" even with no payment row. */
 const BOOKED_STATUSES = ['deposit_paid', 'paid_in_full', 'modifications_locked', 'confirmed', 'completed']
 
-/** `bookings` rows that are not parties — same exclusion the Parties tab uses. */
+/**
+ * `bookings` rows that are not parties — same exclusion the Parties tab uses. An
+ * outside event (an invitation for a client's event at someone else's venue,
+ * migration 096) is excluded by `OUTSIDE_EVENT_OR_FILTER` on both queries below:
+ * `confirmed` would otherwise count it as a booked party.
+ */
 const NON_PARTY_EVENT_TYPES = ['vendor_registration']
 
 /**
@@ -164,6 +170,7 @@ export async function GET(req: NextRequest) {
       .select(BOOKING_COLUMNS)
       .in('id', chunk)
       .not('event_type', 'in', `(${NON_PARTY_EVENT_TYPES.join(',')})`)
+      .or(OUTSIDE_EVENT_OR_FILTER)
     if (error) {
       console.error('admin/booked: bookings chunk read failed —', error.message)
       return NextResponse.json(
@@ -186,6 +193,7 @@ export async function GET(req: NextRequest) {
     .select(BOOKING_COLUMNS)
     .in('status', BOOKED_STATUSES)
     .not('event_type', 'in', `(${NON_PARTY_EVENT_TYPES.join(',')})`)
+    .or(OUTSIDE_EVENT_OR_FILTER)
   if (statusErr) {
     console.error('admin/booked: status read failed —', statusErr.message)
     return NextResponse.json(

@@ -444,3 +444,40 @@ describe('reconcileCrewParties against the fake database', () => {
     expect(db.tables.crew_parties.some(p => p.booking_id === 'b-today')).toBe(false)
   })
 })
+
+describe('an outside event (migration 096) is never staffed and never "unclassified"', () => {
+  const outside = () => booking({
+    id: 'b-outside', booking_ref: 'HH-OUTSIDE', status: 'confirmed', party_type: 'outside_event', event_type: 'baby-shower',
+    // The location toggle alone would classify an ordinary booking as a mobile party and staff it.
+    party_tags: { location_type: 'mobile', location_address: '1 Main St, Patchogue, NY 11772', venue_name: 'James Joyce' },
+  })
+
+  it('creates no crew party and reports nothing, even with money recorded and a mobile location', async () => {
+    const db = fakeCrewDb(seed({
+      bookings: [outside()],
+      booking_payments: [{ booking_id: 'b-outside', amount_cents: 25000, payment_type: 'deposit' }],
+    }))
+    const r = await run(db)
+    expect(r.kind).toBe('ok')
+    if (r.kind !== 'ok') return
+    expect(db.tables.crew_parties.some(p => p.booking_id === 'b-outside')).toBe(false)
+    expect(r.summary.unclassified).toEqual(['HH-ODD'])
+    expect(r.summary.created).toBe(3)
+  })
+
+  it('a null party_type and an in_studio_theme booking are classified exactly as before', () => {
+    const inputs = {
+      bookings: [
+        booking({ id: 'b-a', booking_ref: 'HH-A', party_type: null, event_type: 'Kids Birthday Party' }),
+        booking({ id: 'b-b', booking_ref: 'HH-B' }),
+        outside(),
+      ],
+      paidByBooking: new Map([['b-a', 25000], ['b-b', 25000], ['b-outside', 25000]]),
+      helperLines: [], helperItems: [], existing: [], ownerId: OWNER,
+    }
+    const plan = planReconcile(inputs as any, S, NOW)
+    expect(plan.unclassified.map((u: any) => u.ref ?? u.booking_ref ?? u)).toEqual(expect.arrayContaining(['HH-A']))
+    expect(JSON.stringify(plan)).not.toMatch(/HH-OUTSIDE/)
+    expect(plan.creates.map(c => c.bookingRef)).toEqual(['HH-B'])
+  })
+})

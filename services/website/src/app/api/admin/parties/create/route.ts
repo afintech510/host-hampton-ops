@@ -12,6 +12,8 @@ import type { BookingLineItem } from '@/types/booking-flow'
 import { publicOrigin } from '@/lib/publicOrigin'
 import { isPartyType, PARTY_TYPES } from '@/lib/pipelineStages'
 import { ensureEviteNonFatal } from '@/lib/evites/ensureNonFatal'
+import { OUTSIDE_EVENT_TYPE } from '@/lib/evites/outsideEventCreate'
+import { createOutsideEventBooking } from '@/lib/outsideEventIntake'
 
 function formatDate(dateStr: string): string {
   try {
@@ -106,6 +108,17 @@ export async function POST(req: NextRequest) {
         { error: `party_type must be one of: ${PARTY_TYPES.join(', ')}` },
         { status: 400 },
       )
+    }
+
+    // An invitation for a client's event at somebody else's venue is not a party plan: no quote, no
+    // line items, no deposit, no planner link. It has its own screen and its own (much shorter) write.
+    if (partyType === OUTSIDE_EVENT_TYPE) {
+      const made = await createOutsideEventBooking(getSupabase(), {
+        body: body as Record<string, unknown>,
+        actor: adminActorId(req),
+        origin: publicOrigin(req),
+      })
+      return NextResponse.json(made.body, { status: made.status })
     }
 
     const supabase = getSupabase()

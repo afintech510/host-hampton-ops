@@ -37,6 +37,7 @@ import { sumPayments } from '@/lib/bookingBalance'
 import { partyWindow, validPartyDate, PARTY_START_EARLIEST_MIN, PARTY_START_LATEST_MIN } from '@/lib/evites/partyWindow'
 import { eviteLocationType, mobileAddressOf } from '@/lib/evites/location'
 import { STUDIO_ADDRESS_LINE } from '@/lib/studioLocation'
+import { isOutsideEventType } from '@/lib/outsideEventGate'
 import { kindHasLead } from '@/lib/crew/workTypes'
 import { etDateString, etToUtc } from '@/lib/partyTime'
 import { slotsForParty, slotRolesFor, type CrewSettings, type SlotRole } from '@/lib/crew/rules'
@@ -398,6 +399,9 @@ export function planReconcile(inputs: ReconcileInputs, s: CrewSettings, now: Dat
 
   for (const b of inputs.bookings) {
     if (NON_PARTY_EVENT_TYPES.includes((b.event_type ?? '').trim().toLowerCase())) continue
+    // An invitation for a client's event at someone else's venue: nobody of ours works it,
+    // and it is not "unclassified" either (migration 096).
+    if (isOutsideEventType(b.party_type)) continue
     const date = validPartyDate(b.party_date)
     if (!date || date < today) continue
 

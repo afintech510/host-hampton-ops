@@ -38,6 +38,7 @@
 
 import { parseTime, etToUtc } from '@/lib/partyTime'
 import { eviteLocationType } from '@/lib/evites/location'
+import { eventEndOf } from '@/lib/evites/outsideEvent'
 
 export const PARTY_START_EARLIEST_MIN = 8 * 60
 export const PARTY_START_LATEST_MIN = 21 * 60
@@ -91,8 +92,22 @@ function isEntryTier(b: PartyWindowInput): boolean {
   )
 }
 
+/** Longest an outside event's stated window may be; past it the stated end is treated as a typo. */
+export const OUTSIDE_EVENT_MAX_MIN = 12 * 60
+
 /** Minutes the party runs. */
 export function partyDurationMinutes(b: PartyWindowInput): number {
+  // An outside event states its own end ("12-3pm"); without a usable one it is a theme party's 2 hours.
+  if (b.party_type === 'outside_event') {
+    const end = eventEndOf(b)
+    const start = typeof b.party_time === 'string' ? parseTime(b.party_time) : null
+    if (end && start) {
+      const [eh, em] = end.split(':').map(Number)
+      const span = eh * 60 + em - (start.hours * 60 + start.minutes)
+      if (span > 0 && span <= OUTSIDE_EVENT_MAX_MIN) return span
+    }
+    return DURATION_THEME_MIN
+  }
   if (eviteLocationType(b) === 'mobile') {
     return isEntryTier(b) ? DURATION_MOBILE_ENTRY_MIN : DURATION_MOBILE_SIGNATURE_MIN
   }

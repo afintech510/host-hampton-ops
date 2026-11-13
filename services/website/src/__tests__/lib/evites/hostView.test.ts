@@ -121,3 +121,28 @@ describe('storedImageUrl', () => {
     expect(storedImageUrl({ ...evite, invite_object: '../x.jpg' }, 'invite', 'https://p.supabase.co')).toBeNull()
   })
 })
+
+describe('composeHostView: the facts whitelist carries the audience', () => {
+  const build = (booking: Record<string, unknown> = {}) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { bookingRow, evitesRow, LINE_ITEM_ROWS, THEME_ROWS } = require('../../helpers/eviteFixtures')
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { composeHostView } = require('@/lib/evites/hostView')
+    return composeHostView(
+      { evite: evitesRow({ render_inputs_hash: null }), booking: bookingRow(booking), lineItems: LINE_ITEM_ROWS, partyThemes: THEME_ROWS, state: 'live', rsvps: [] },
+      undefined,
+      new Date('2026-11-01T12:00:00Z'),
+    ).payload.facts
+  }
+  it('a kids party says kids, with its noun and no venue name', () => {
+    expect(build()).toMatchObject({ audience: 'kids', venueName: null })
+    expect(typeof build().partyNoun).toBe('string')
+  })
+  it('an outside event says guests, with its occasion and venue', () => {
+    const f = build({ child_name: 'Maeghan', party_type: 'outside_event', party_tags: { occasion: 'baby shower', venue_name: 'James Joyce', location_type: 'other' } })
+    expect(f).toMatchObject({ audience: 'guests', partyNoun: 'Baby Shower', venueName: 'James Joyce', honoreeName: 'Maeghan' })
+  })
+  it('the guest count is the same summary the kids page uses', () => {
+    expect(summarizeRsvps([rsvp({ children: [{ first_name: 'Gina' }, { first_name: 'Tom' }], adult_count: 0 })], null)).toMatchObject({ kidsYes: 2, adultsYes: 0, adultsPlus: false })
+  })
+})

@@ -145,7 +145,8 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
   if (count.count >= rsvpCap(resolved.facts.guestCap)) return json({ error: 'This list is full — please contact the host' }, 429)
 
-  const screened = screenRsvpPost(body)
+  const audience = resolved.facts.audience === 'guests' ? 'guests' : 'kids'
+  const screened = screenRsvpPost(body, audience)
   if (!screened.ok) return json({ error: screened.message, field: screened.field }, 400)
   const v = screened.value
 
@@ -255,7 +256,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     reminder_opt_out_at: typeof existingRow.reminder_opt_out_at === 'string' ? existingRow.reminder_opt_out_at : null,
   }
 
-  const screened = screenRsvpPatch(body, existing)
+  // An adult outside event has no Birthday Club: screenRsvpPatch refuses `club` for 'guests' (400), before any consent read.
+  const audience = resolved.facts.audience === 'guests' ? 'guests' : 'kids'
+  const screened = screenRsvpPatch(body, existing, audience)
   if (!screened.ok) return json({ error: screened.message, field: screened.field }, 400)
   const p = screened.value
 

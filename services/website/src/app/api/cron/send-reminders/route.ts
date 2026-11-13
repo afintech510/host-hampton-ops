@@ -32,6 +32,7 @@ import { CANONICAL_ORIGIN } from '@/lib/publicOrigin'
 import { checkFreshness, reminderMaxLatenessMs } from '@/lib/scheduleFreshness'
 import { checkSmsQuietHours } from '@/lib/quietHours'
 import { optedOutReason } from '@/lib/sequences/processor'
+import { isOutsideEventType } from '@/lib/outsideEventGate'
 
 export const dynamic = 'force-dynamic'
 
@@ -428,12 +429,15 @@ async function processEmailReminder(reminder: any, contact: any, supabase: any):
   } else if (reminder.reference_type === 'booking') {
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, booking_ref, party_date, party_time, package_type, balance_due_cents, contact_name, contact_phone, child_name, photo_gallery_url')
+      .select('id, booking_ref, party_type, party_date, party_time, package_type, balance_due_cents, contact_name, contact_phone, child_name, photo_gallery_url')
       .eq('booking_ref', reminder.reference_id)
       .maybeSingle()
 
     if (bErr) return { kind: 'retry', reason: `booking read failed: ${bErr.message}` }
     if (!booking) return { kind: 'failed', reason: `no booking ${reminder.reference_id}` }
+    // An outside event (migration 096) is not a party we run: no "your party is
+    // tomorrow", balance chase or thank-you, whatever queued it.
+    if (isOutsideEventType(booking.party_type)) return { kind: 'skipped', reason: 'outside_event' }
 
     const dateDisplay = booking.party_date
       ? new Date(booking.party_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -561,12 +565,13 @@ async function processSmsReminder(reminder: any, contact: any, supabase: any): P
   if (isCheckinReminderType(reminder.reminder_type)) {
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, booking_ref, contact_name, contact_phone, checkin_status, status')
+      .select('id, booking_ref, contact_name, contact_phone, checkin_status, status, party_type')
       .eq('booking_ref', reminder.reference_id)
       .maybeSingle()
 
     if (bErr) return { kind: 'retry', reason: `booking read failed: ${bErr.message}` }
     if (!booking) return { kind: 'failed', reason: `no booking ${reminder.reference_id}` }
+    if (isOutsideEventType(booking.party_type)) return { kind: 'skipped', reason: 'outside_event' }
     if (booking.checkin_status === 'complete') return { kind: 'skipped', reason: 'checkin_complete' }
     if (booking.status === 'cancelled' || booking.status === 'lost') return { kind: 'skipped', reason: 'booking_cancelled' }
 

@@ -21,6 +21,8 @@ import { STUDIO_MAPS_URL } from '@/lib/studioLocation'
 export const OG_CARD = { width: 1200, height: 630, type: 'image/jpeg' } as const
 
 export const PREVIEW_NOTE = 'RSVPs open once the party is booked'
+/** The same note for an adult outside event (`audience` 'guests'), which is an event and not a party. */
+export const PREVIEW_NOTE_EVENT = 'RSVPs open once the event is booked'
 
 export type RibbonTone = 'preview' | 'soon' | 'done'
 
@@ -63,15 +65,16 @@ export function honoreeFirstName(facts: Pick<InviteFacts, 'hasName' | 'title'>):
   return at > 0 ? facts.title.slice(0, at) : null
 }
 
-export function ribbonFor(state: VisibleInviteState): InviteRibbon | null {
+export function ribbonFor(state: VisibleInviteState, audience: 'kids' | 'guests' = 'kids'): InviteRibbon | null {
+  const guests = audience === 'guests'
   switch (state) {
     case 'preview':
-      return { text: 'Preview', note: PREVIEW_NOTE, tone: 'preview' }
+      return { text: 'Preview', note: guests ? PREVIEW_NOTE_EVENT : PREVIEW_NOTE, tone: 'preview' }
     case 'needs_time':
       return { text: 'Time coming soon', note: null, tone: 'soon' }
     case 'closed':
       // An emoji is fine on the PAGE. It is never in the image (spec §3).
-      return { text: 'This party has happened \u{1F389}', note: null, tone: 'done' }
+      return { text: guests ? 'This event has happened \u{1F389}' : 'This party has happened \u{1F389}', note: null, tone: 'done' }
     case 'live':
       return null
   }
@@ -92,7 +95,7 @@ export function placeMapsUrl(facts: Pick<InviteFacts, 'locationType' | 'calendar
 export function invitePageModel(state: VisibleInviteState, facts: InviteFacts): InvitePageModel {
   return {
     state,
-    ribbon: ribbonFor(state),
+    ribbon: ribbonFor(state, facts.audience),
     showRsvp: state === 'live',
     details: { dateLine: facts.dateLine, placeLine: facts.placeLine, hostContactLine: facts.hostContactLine, placeMapsUrl: placeMapsUrl(facts) },
     hostNote: facts.hostNote,

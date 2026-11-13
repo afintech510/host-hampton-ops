@@ -15,11 +15,12 @@ type Row = Record<string, any>
 /** A supabase double for the three shapes the refresh uses: read bookings, read ids, insert a message. */
 function world(opts: { bookings: Row[]; recorded?: string[]; insertError?: { code?: string; message: string } }) {
   const inserted: Row[] = []
+  const ors: string[] = []
   const recorded = new Set(opts.recorded ?? [])
   const sb: any = {
     from(table: string) {
       const q: any = {
-        select: () => q, not: () => q, or: () => q, order: () => q, limit: () => q,
+        select: () => q, not: () => q, or: (expr: string) => { ors.push(expr); return q }, order: () => q, limit: () => q,
         in: (_col: string, ids: string[]) => {
           q._ids = ids
           return q
@@ -43,7 +44,7 @@ function world(opts: { bookings: Row[]; recorded?: string[]; insertError?: { cod
       return q
     },
   }
-  return { sb, inserted }
+  return { sb, inserted, ors }
 }
 
 const BOOKINGS = [
@@ -102,6 +103,12 @@ describe('refreshQuoTexts', () => {
     const r = await refreshQuoTexts(sb, NOW, d)
     expect(d.read).toEqual(['631-555-0200'])
     expect(r.checked).toBe(1)
+  })
+
+  it('asks for bookings null-safely without outside events (migration 096)', async () => {
+    const { sb, ors } = world({ bookings: BOOKINGS })
+    await refreshQuoTexts(sb, NOW, deps([], () => ({ kind: 'ok', messages: [] })))
+    expect(ors).toEqual(['party_type.is.null,party_type.neq.outside_event'])
   })
 
   it('counts a STOP but does not act on it', async () => {

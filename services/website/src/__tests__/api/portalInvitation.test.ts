@@ -148,18 +148,21 @@ describe('GET: the response is exactly the host view (spec §7.2)', () => {
     const body = await json(res)
     expect(Object.keys(body).sort()).toEqual(['customize', 'deadlineRange', 'design', 'facts', 'images', 'renderFresh', 'rsvps', 'state', 'summary', 'url'])
     expect(Object.keys(body.facts).sort()).toEqual([
+      'audience',
       'dateLine',
       'giftNote',
       'guestCap',
       'honoreeName',
       'hostContactLine',
       'hostNote',
+      'partyNoun',
       'placeLine',
       'reshareText',
       'rsvpDeadline',
       'shareText',
       'shortDateLine',
       'title',
+      'venueName',
     ])
     expect(Object.keys(body.summary).sort()).toEqual(['adultsPlus', 'adultsYes', 'allergies', 'cap', 'kidsYes', 'noCount'])
     expect(Object.keys(body.customize).sort()).toEqual(['gift_note', 'host_contact_name', 'host_contact_phone', 'host_note', 'rsvp_deadline', 'show_host_contact'])

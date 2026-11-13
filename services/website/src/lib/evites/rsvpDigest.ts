@@ -28,6 +28,7 @@ import { escapeHtml } from '@/lib/escapeHtml'
 import { mailHref } from '@/lib/emailSafety'
 import { etDateString, etToUtc } from '@/lib/partyTime'
 import { mintPortalLink } from '@/lib/portalLinkMint'
+import { audienceOf, occasionOf } from '@/lib/evites/outsideEvent'
 
 type Supa = ReturnType<typeof getSupabase>
 
@@ -55,6 +56,10 @@ export type DigestParty = {
   hostName: string | null
   childName: string | null
   packageType: string | null
+  /** An outside event's occasion ("Baby Shower"), which stands where the package name does; else null. */
+  occasion?: string | null
+  /** True for an adult outside event: its RSVPs name guests, with no kids / adults split. */
+  guests?: boolean
   partyDate: string
   partyTime: string | null
   rsvpDeadline: string | null
@@ -67,6 +72,7 @@ type EviteRow = { id: string; booking_id: string; slug: string; rsvp_deadline: s
 type BookingRow = {
   id: string; booking_ref: string | null; status: string | null; party_date: string | null; party_time: string | null
   package_type: string | null; child_name: string | null; contact_name: string | null
+  party_type?: string | null; party_tags?: unknown
 }
 
 export type DigestRead = { kind: 'ok'; parties: DigestParty[] } | { kind: 'unavailable'; reason: string }
@@ -85,7 +91,7 @@ export async function loadRsvpDigest(supabase: Supa, now: Date): Promise<DigestR
 
   const bk = await supabase
     .from('bookings')
-    .select('id, booking_ref, status, party_date, party_time, package_type, child_name, contact_name')
+    .select('id, booking_ref, status, party_date, party_time, package_type, child_name, contact_name, party_type, party_tags')
     .in('id', evites.map(e => e.booking_id))
     .gte('party_date', today)
   if (bk.error) return { kind: 'unavailable', reason: `bookings read failed: ${bk.error.message}` }
@@ -117,6 +123,8 @@ export async function loadRsvpDigest(supabase: Supa, now: Date): Promise<DigestR
       hostName: b.contact_name?.trim() || null,
       childName: b.child_name?.trim() || null,
       packageType: b.package_type,
+      occasion: occasionOf(b),
+      guests: audienceOf(b) === 'guests',
       partyDate: b.party_date!,
       partyTime: b.party_time,
       rsvpDeadline: e.rsvp_deadline,
@@ -179,7 +187,7 @@ export function digestHtml(parties: DigestParty[], now: Date): { subject: string
 
   const blocks = parties.map(p => {
     const t = partyTotals(p, now)
-    const title = [p.childName ? `${p.childName}'s` : null, p.packageType || 'Party'].filter(Boolean).join(' ')
+    const title = [p.childName ? `${p.childName}'s` : null, p.occasion || p.packageType || 'Party'].filter(Boolean).join(' ')
     const when = [shortDate(p.partyDate), timeLabel(p.partyTime)].filter(Boolean).join(' at ')
 
     const rows = p.rsvps
@@ -194,7 +202,7 @@ export function digestHtml(parties: DigestParty[], now: Date): { subject: string
         const kids = childNames(r.children)
         const detail =
           r.status === 'yes'
-            ? `Coming — ${kids.length ? escapeHtml(kids.join(', ')) : `${kidCount(r)} kid(s)`} · ${adultLabel(r.adult_count)}` +
+            ? `Coming — ${kids.length ? escapeHtml(kids.join(', ')) : `${kidCount(r)} ${p.guests ? 'guest(s)' : 'kid(s)'}`}${p.guests ? '' : ` · ${adultLabel(r.adult_count)}`}` +
               (r.has_allergy ? ` · <strong style="color:#b00020">Allergy:</strong> ${escapeHtml(r.allergy_note || 'yes (no detail)')}` : '')
             : '<span style="color:#888">Not coming</span>'
         return `<li style="margin:3px 0"><strong>${escapeHtml(r.parent_name)}</strong>${badge} — ${detail}</li>`
@@ -208,7 +216,9 @@ export function digestHtml(parties: DigestParty[], now: Date): { subject: string
       (p.rsvpDeadline ? ` · RSVP by ${escapeHtml(shortDate(p.rsvpDeadline))}` : '') +
       `</div>` +
       `<div style="font-size:14px;margin:0 0 6px"><strong>${t.families}</strong> ${t.families === 1 ? 'family' : 'families'} coming · ` +
-      `<strong>${t.kids}</strong> kids · <strong>${t.adults}</strong> adults · ${t.declined} not coming` +
+      (p.guests
+        ? `<strong>${t.kids}</strong> guests · ${t.declined} not coming`
+        : `<strong>${t.kids}</strong> kids · <strong>${t.adults}</strong> adults · ${t.declined} not coming`) +
       (t.allergies ? ` · <strong style="color:#b00020">${t.allergies} with allergies</strong>` : '') +
       (t.recent ? ` · <strong>${t.recent} new/changed today</strong>` : '') +
       `</div>` +

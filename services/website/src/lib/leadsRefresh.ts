@@ -3,6 +3,7 @@ import { etToday } from '@/lib/bookingStatus'
 import { normalizePhoneKey } from '@/lib/contactLookup'
 import { recordInboundEventResult } from '@/lib/agent/events'
 import { smsKeywordIntent } from '@/lib/smsOptOut'
+import { OUTSIDE_EVENT_OR_FILTER } from '@/lib/outsideEventGate'
 import { fetchQuoThread, listRecentQuoConversations, type QuoConversation, type QuoThread } from '@/lib/quo'
 
 /**
@@ -70,6 +71,8 @@ async function loadTargets(sb: Supa, today: string): Promise<Target[] | null> {
     .select('id, contact_phone, party_date, created_at')
     .not('contact_phone', 'is', null)
     .not('status', 'in', '("cancelled","lost","completed")')
+    // An invitation for someone else's venue (migration 096) is not a lead or party to watch texts for.
+    .or(OUTSIDE_EVENT_OR_FILTER)
     .order('created_at', { ascending: false })
     .limit(600)
   if (error) return null

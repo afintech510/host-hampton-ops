@@ -13,6 +13,7 @@ import {
   type FlowState,
 } from '@/lib/evites/rsvpFlow'
 import type { OwnRsvp } from '@/lib/evites/rsvpView'
+import type { RsvpAudience } from '@/lib/evites/screens'
 
 /**
  * The RSVP area of the public invitation (spec §7.5): the three screens, as
@@ -38,6 +39,8 @@ interface Props {
   startInEdit?: boolean
   honoree: string | null
   club: ClubOffer | null
+  /** 'guests' (an adult outside event) relabels the form and removes the adults control and the club card. Default 'kids'. */
+  audience?: RsvpAudience
 }
 
 const NETWORK_ERROR = 'We couldn’t reach the server. Please check your connection and try again.'
@@ -64,14 +67,14 @@ async function call(slug: string, method: 'POST' | 'PATCH', body: Record<string,
   return { ok: res.ok && json?.ok === true && !!json.rsvp, status: res.status, json }
 }
 
-function messageFor(a: Answer): string {
-  if (a.status === 409 && a.json?.error === 'closed') return 'RSVPs for this party have closed.'
+function messageFor(a: Answer, audience: RsvpAudience = 'kids'): string {
+  if (a.status === 409 && a.json?.error === 'closed') return `RSVPs for this ${audience === 'guests' ? 'event' : 'party'} have closed.`
   if (typeof a.json?.error === 'string' && a.json.error !== '') return a.json.error
   return 'Something went wrong. Please try again in a moment.'
 }
 
-export default function RsvpIsland({ slug, own, startInEdit = false, honoree, club }: Props) {
-  const [state, dispatch] = useReducer(rsvpReducer, undefined, () => initialState(own, startInEdit)) as [FlowState, (a: FlowAction) => void]
+export default function RsvpIsland({ slug, own, startInEdit = false, honoree, club, audience = 'kids' }: Props) {
+  const [state, dispatch] = useReducer(rsvpReducer, undefined, () => initialState(own, startInEdit, audience)) as [FlowState, (a: FlowAction) => void]
   const started = useRef(false)
   const top = useRef<HTMLDivElement | null>(null)
   const firstScreen = useRef(true)
@@ -121,7 +124,7 @@ export default function RsvpIsland({ slug, own, startInEdit = false, honoree, cl
     try {
       const a = await call(slug, state.saved ? 'PATCH' : 'POST', buildAnswerBody(state))
       if (a.ok && a.json?.rsvp) dispatch({ type: 'submitted', rsvp: a.json.rsvp, reminderDropped: a.json.reminderDropped === true })
-      else dispatch({ type: 'failed', message: messageFor(a), field: a.status === 400 ? (a.json?.field ?? null) : null })
+      else dispatch({ type: 'failed', message: messageFor(a, audience), field: a.status === 400 ? (a.json?.field ?? null) : null })
     } catch {
       dispatch({ type: 'failed', message: NETWORK_ERROR })
     }
@@ -170,7 +173,7 @@ export default function RsvpIsland({ slug, own, startInEdit = false, honoree, cl
         onLeaveClub={onLeaveClub}
         calendarUrl={`/i/${slug}/cal`}
         honoree={honoree}
-        club={club}
+        club={audience === 'guests' ? null : club}
       />
     </div>
   )

@@ -238,3 +238,51 @@ describe('page source', () => {
     expect(page).toMatch(/if\s*\(\s*model\.showRsvp\s*\)[^\n]*loadRsvpPanel/)
   })
 })
+
+describe('an adult outside event (audience guests)', () => {
+  const OUTSIDE = { child_name: 'Maeghan', party_type: 'outside_event', party_tags: { occasion: 'baby shower', venue_name: 'James Joyce', location_type: 'other' } }
+  const WORDS = [{ version: 'club-v1', channel: 'email', wording: 'Send me party & craft ideas from Host Hampton', created_at: '2026-10-10T00:00:00Z' }]
+  const consentReads = () => mockDb.selects.filter((s) => s.table === 'evite_consent_texts')
+
+  it('the first screen is the same two buttons, and no consent text is read', async () => {
+    mockDb = makeRsvpDb({ booking: OUTSIDE, consent: WORDS })
+    const out = await render()
+    expect(out).toContain('data-screen="1"')
+    expect(consentReads()).toHaveLength(0)
+  })
+
+  it('the page hands the island the audience (the form labels themselves are covered in rsvpFlow.test.ts)', async () => {
+    mockDb = makeRsvpDb({ booking: OUTSIDE, consent: WORDS })
+    const out = await render()
+    expect(out).toContain('data-screen="1"')
+    expect(readSrc('app', 'i', '[slug]', 'page.tsx')).toMatch(/audience=\{r\.facts\.audience\}/)
+  })
+
+  it('a returning guest sees their guest names, no adults, no club card, and the consent table is never read', async () => {
+    const mine = rsvpRow({ parent_name: 'Gina Guest', children: [{ first_name: 'Gina' }, { first_name: 'Tom' }], adult_count: 0 })
+    mockDb = makeRsvpDb({ booking: OUTSIDE, rsvps: [mine], consent: WORDS })
+    mockCookies = { [cookieName(EVITE_ID)]: tokenFor(mine) }
+    const out = await render()
+    expect(out).toContain('data-screen="3"')
+    expect(out).toContain('Gina, Tom')
+    expect(out).toContain('Leave a note for Maeghan (optional)')
+    expect(out).not.toMatch(/Birthday Club|rsvp-club|craft ideas|Unsubscribe anytime|adult/)
+    expect(consentReads()).toHaveLength(0)
+  })
+
+  it('the same database for a kids party still shows the club card', async () => {
+    const mine = rsvpRow()
+    mockDb = makeRsvpDb({ rsvps: [mine], consent: WORDS })
+    mockCookies = { [cookieName(EVITE_ID)]: tokenFor(mine) }
+    const out = await render()
+    expect(out).toContain('Birthday Club')
+    expect(consentReads().length).toBeGreaterThan(0)
+  })
+
+  it('"Reminders stopped" says event', async () => {
+    mockDb = makeRsvpDb({ booking: OUTSIDE })
+    expect(await render({ stopped: '1' })).toContain('any more reminders about this event.')
+    mockDb = makeRsvpDb()
+    expect(await render({ stopped: '1' })).toContain('any more reminders about this party.')
+  })
+})

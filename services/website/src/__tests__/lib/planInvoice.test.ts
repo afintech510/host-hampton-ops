@@ -274,6 +274,27 @@ const STUDIO = {
   invoice_number: '444124-000116',
 }
 
+describe('loadPlanInvoice — an outside event (migration 096) is offered no reservation deposit', () => {
+  const UNPRICED = { ...STUDIO, party_type: 'outside_event', status: 'confirmed' }
+
+  it('an unpriced outside event owes nothing: no deposit to reserve, no balance', async () => {
+    const res = await loadPlanInvoice('HH-PTY-AAA', makeSupabase(UNPRICED, []))
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.invoice.depositOwedCents).toBe(0)
+    expect(res.invoice.outstandingCents).toBe(0)
+  })
+
+  it('the same unpriced booking as in_studio_theme / null party_type still offers the flat $250', async () => {
+    for (const party_type of ['in_studio_theme', null]) {
+      const res = await loadPlanInvoice('HH-PTY-AAA', makeSupabase({ ...UNPRICED, party_type }, []))
+      expect(res.ok).toBe(true)
+      if (!res.ok) return
+      expect(res.invoice.depositOwedCents).toBe(25000)
+    }
+  })
+})
+
 describe('loadPlanInvoice', () => {
   it('STUDIO: the deposit comes off the balance, like every other product', async () => {
     const supabase = makeSupabase(STUDIO, [

@@ -70,6 +70,11 @@ export interface EviteMailParty {
   /** 'Any questions? Ask Allie · 631-998-9325', or null when the host hid it. */
   hostContactLine: string | null
   locationType: 'studio' | 'mobile'
+  /**
+   * 'guests' for an adult outside event (a shower): the RSVP names who is coming, so the host's emails
+   * say "Guests" and carry no adults count. Absent or 'kids' is the kids' party wording, unchanged.
+   */
+  audience?: 'kids' | 'guests'
 }
 
 export interface EviteGuestLinks {
@@ -265,6 +270,13 @@ function kidsText(names: string[]): string {
   return names.length === 0 ? 'no children listed' : names.join(', ')
 }
 
+/** The people an RSVP names: children at a kids' party, guests at an outside event. */
+function namesText(names: string[], guests: boolean): string {
+  return guests ? (names.length === 0 ? 'no guests listed' : names.join(', ')) : kidsText(names)
+}
+
+const isGuests = (p: EviteMailParty): boolean => p.audience === 'guests'
+
 function guestLinksHtml(links: EviteGuestLinks): string {
   return (
     `<p style="color:${BRAND.gray};font-size:14px;line-height:1.9;margin:0 0 16px;">` +
@@ -279,6 +291,11 @@ function guestLinksText(links: EviteGuestLinks): string[] {
 
 const GUEST_FOOTER = 'You are getting this because you RSVP&rsquo;d to this party. Reminders are about this party only.'
 const PARENT_FOOTER = 'You are getting this because you booked a party with Host Hampton.'
+const GUEST_FOOTER_EVENT = 'You are getting this because you RSVP&rsquo;d to this event. Reminders are about this event only.'
+const PARENT_FOOTER_EVENT = 'You are getting this because you hold the invitation to this event.'
+
+const guestFooter = (p: EviteMailParty): string => (isGuests(p) ? GUEST_FOOTER_EVENT : GUEST_FOOTER)
+const parentFooter = (p: EviteMailParty): string => (isGuests(p) ? PARENT_FOOTER_EVENT : PARENT_FOOTER)
 
 /* ── a) lead_preview ──────────────────────────────────────────── */
 
@@ -345,16 +362,25 @@ export function inviteReadyEmail(raw: InviteReadyInput): EviteEmail {
   // Fixed wording, no party data: each step is its HTML (button names in bold) and its plain-text twin.
   // Every promise here is something the system does: the per-RSVP email (new_rsvp), the guest
   // reminders (week_before, day_before: guests who left an email), the host's final_headcount.
+  const g = isGuests(raw.party)
   const steps: Array<{ lead: string; html: string; text: string }> = [
     {
       lead: 'Send it to your guests.',
-      html: 'Tap <strong>Text My Invitation</strong> to text it from your phone, or <strong>Copy link</strong> to paste it into a group chat, an email or the class list. <strong>Download image</strong> saves the picture.',
-      text: 'Tap "Text My Invitation" to text it from your phone, or "Copy link" to paste it into a group chat, an email or the class list. "Download image" saves the picture.',
+      html: g
+        ? 'Tap <strong>Text My Invitation</strong> to text it from your phone, or <strong>Copy link</strong> to paste it into a group chat or an email. <strong>Download image</strong> saves the picture.'
+        : 'Tap <strong>Text My Invitation</strong> to text it from your phone, or <strong>Copy link</strong> to paste it into a group chat, an email or the class list. <strong>Download image</strong> saves the picture.',
+      text: g
+        ? 'Tap "Text My Invitation" to text it from your phone, or "Copy link" to paste it into a group chat or an email. "Download image" saves the picture.'
+        : 'Tap "Text My Invitation" to text it from your phone, or "Copy link" to paste it into a group chat, an email or the class list. "Download image" saves the picture.',
     },
     {
       lead: 'Watch the RSVPs come in.',
-      html: 'Guests answer online, with no app or account. We email you each RSVP as it arrives, and your guest list (kids, adults and any allergies) is always on your invitation page.',
-      text: 'Guests answer online, with no app or account. We email you each RSVP as it arrives, and your guest list (kids, adults and any allergies) is always on your invitation page.',
+      html: g
+        ? 'Guests answer online, with no app or account. We email you each RSVP as it arrives, and your guest list (who is coming and any allergies) is always on your invitation page.'
+        : 'Guests answer online, with no app or account. We email you each RSVP as it arrives, and your guest list (kids, adults and any allergies) is always on your invitation page.',
+      text: g
+        ? 'Guests answer online, with no app or account. We email you each RSVP as it arrives, and your guest list (who is coming and any allergies) is always on your invitation page.'
+        : 'Guests answer online, with no app or account. We email you each RSVP as it arrives, and your guest list (kids, adults and any allergies) is always on your invitation page.',
     },
     {
       lead: 'Make it yours.',
@@ -372,8 +398,8 @@ export function inviteReadyEmail(raw: InviteReadyInput): EviteEmail {
       : []),
     {
       lead: 'We&rsquo;ll handle the reminders.',
-      html: 'Guests who leave an email get a reminder a week before and the day before, and you&rsquo;ll get a final headcount just before the party. Waiting on a few answers? <strong>Re-share with people who haven&rsquo;t answered</strong> gives you a ready-made reminder to text them.',
-      text: "Guests who leave an email get a reminder a week before and the day before, and you'll get a final headcount just before the party. Waiting on a few answers? \"Re-share with people who haven't answered\" gives you a ready-made reminder to text them.",
+      html: `Guests who leave an email get a reminder a week before and the day before, and you&rsquo;ll get a final headcount just before the ${g ? 'event' : 'party'}. Waiting on a few answers? <strong>Re-share with people who haven&rsquo;t answered</strong> gives you a ready-made reminder to text them.`,
+      text: `Guests who leave an email get a reminder a week before and the day before, and you'll get a final headcount just before the ${g ? 'event' : 'party'}. Waiting on a few answers? "Re-share with people who haven't answered" gives you a ready-made reminder to text them.`,
     },
   ]
   const stepsHtml =
@@ -384,7 +410,7 @@ export function inviteReadyEmail(raw: InviteReadyInput): EviteEmail {
 
   const body = `
     ${paragraph(firstNameHello(d.recipientFirstName))}
-    ${paragraph(`Your party is booked, so ${hd.label} invitation is ready to share!`)}
+    ${paragraph(g ? `${hd.cap} invitation is ready to share!` : `Your party is booked, so ${hd.label} invitation is ready to share!`)}
     ${picture}
     ${detailCard([
       { label: 'When', value: d.party.dateLine },
@@ -393,12 +419,12 @@ export function inviteReadyEmail(raw: InviteReadyInput): EviteEmail {
     ${button(raw.magicUrl, 'Open my invitation')}
     <h2 style="color:${BRAND.navy};font-size:18px;font-weight:normal;margin:24px 0 12px;">How it works</h2>
     ${stepsHtml}
-    ${paragraph(`Questions about your invitation or your party? Call or text us at ${STUDIO_PHONE_DISPLAY}.`)}`
+    ${paragraph(g ? `Questions about your invitation? Call or text us at ${STUDIO_PHONE_DISPLAY}.` : `Questions about your invitation or your party? Call or text us at ${STUDIO_PHONE_DISPLAY}.`)}`
 
   const text = [
     firstNameHello(raw.recipientFirstName),
     '',
-    `Your party is booked, so ${rw.label} invitation is ready to share!`,
+    g ? `${rw.cap} invitation is ready to share!` : `Your party is booked, so ${rw.label} invitation is ready to share!`,
     '',
     `When: ${raw.party.dateLine}`,
     `Where: ${raw.party.placeLine}`,
@@ -408,14 +434,14 @@ export function inviteReadyEmail(raw: InviteReadyInput): EviteEmail {
     'HOW IT WORKS',
     ...steps.map((s, i) => `${i + 1}. ${plainLead(s.lead)} ${s.text}`),
     '',
-    `Questions about your invitation or your party? Call or text us at ${STUDIO_PHONE_DISPLAY}.`,
+    g ? `Questions about your invitation? Call or text us at ${STUDIO_PHONE_DISPLAY}.` : `Questions about your invitation or your party? Call or text us at ${STUDIO_PHONE_DISPLAY}.`,
     '',
     SIGNATURE_TEXT,
   ].join('\n')
 
   return {
     subject: oneLine(`${rw.cap} invitation is ready!`),
-    html: shell(`${hd.cap} invitation is ready!`, 'Share it with your guests', body, PARENT_FOOTER),
+    html: shell(`${hd.cap} invitation is ready!`, 'Share it with your guests', body, parentFooter(raw.party)),
     text,
   }
 }
@@ -438,13 +464,14 @@ function parentRsvpEmail(raw: ParentRsvpInput, d: ParentRsvpInput, changed: bool
   const allergyHtml = yes && raw.rsvp.hasAllergy ? (d.rsvp.allergyNote ? `Yes: ${d.rsvp.allergyNote}` : 'Yes') : yes ? 'None listed' : ''
   const allergyText = yes && raw.rsvp.hasAllergy ? (raw.rsvp.allergyNote ? `Yes: ${raw.rsvp.allergyNote}` : 'Yes') : yes ? 'None listed' : ''
 
+  const guests = isGuests(raw.party)
   const rows = [
     { label: 'From', value: d.rsvp.parentName },
     { label: 'Answer', value: yes ? 'Yes, coming' : 'Can&rsquo;t make it' },
     ...(yes
       ? [
-          { label: 'Kids', value: kidsText(d.rsvp.childNames) },
-          { label: 'Adults', value: adultsText(d.rsvp.adultCount, d.rsvp.adultCount === 2) },
+          { label: guests ? 'Guests' : 'Kids', value: namesText(d.rsvp.childNames, guests) },
+          ...(guests ? [] : [{ label: 'Adults', value: adultsText(d.rsvp.adultCount, d.rsvp.adultCount === 2) }]),
           { label: 'Allergies', value: allergyHtml },
         ]
       : []),
@@ -470,7 +497,11 @@ function parentRsvpEmail(raw: ParentRsvpInput, d: ParentRsvpInput, changed: bool
     `From: ${raw.rsvp.parentName}`,
     `Answer: ${yes ? 'Yes, coming' : "Can't make it"}`,
     ...(yes
-      ? [`Kids: ${kidsText(raw.rsvp.childNames)}`, `Adults: ${adultsText(raw.rsvp.adultCount, raw.rsvp.adultCount === 2)}`, `Allergies: ${allergyText}`]
+      ? [
+          guests ? `Guests: ${namesText(raw.rsvp.childNames, true)}` : `Kids: ${kidsText(raw.rsvp.childNames)}`,
+          ...(guests ? [] : [`Adults: ${adultsText(raw.rsvp.adultCount, raw.rsvp.adultCount === 2)}`]),
+          `Allergies: ${allergyText}`,
+        ]
       : []),
     '',
     `See all your RSVPs: ${raw.hostUrl}`,
@@ -480,7 +511,7 @@ function parentRsvpEmail(raw: ParentRsvpInput, d: ParentRsvpInput, changed: bool
     SIGNATURE_TEXT,
   ].join('\n')
 
-  return { subject, html: shell(changed ? 'An RSVP changed' : 'New RSVP', hd.cap, body, PARENT_FOOTER), text }
+  return { subject, html: shell(changed ? 'An RSVP changed' : 'New RSVP', hd.cap, body, parentFooter(raw.party)), text }
 }
 
 export function newRsvpEmail(raw: ParentRsvpInput): EviteEmail {
@@ -528,7 +559,7 @@ export function rsvpConfirmedEmail(raw: GuestMailInput): EviteEmail {
 
   return {
     subject: oneLine(`You're on the list for ${rw.label}`),
-    html: shell(`You&rsquo;re on the list!`, hd.cap, body, GUEST_FOOTER),
+    html: shell(`You&rsquo;re on the list!`, hd.cap, body, guestFooter(raw.party)),
     text,
   }
 }
@@ -569,7 +600,7 @@ export function weekBeforeEmail(raw: GuestMailInput): EviteEmail {
 
   return {
     subject: oneLine(`Reminder: ${rw.label} is ${date}`),
-    html: shell('One week to go!', hd.cap, body, GUEST_FOOTER),
+    html: shell('One week to go!', hd.cap, body, guestFooter(raw.party)),
     text,
   }
 }
@@ -631,7 +662,7 @@ export function dayBeforeEmail(raw: GuestMailInput): EviteEmail {
 
   return {
     subject: oneLine(`${rw.cap} is ${date}`),
-    html: shell(`See you ${dateOnly(d.party.dateLine)}!`, hd.cap, body, GUEST_FOOTER),
+    html: shell(`See you ${dateOnly(d.party.dateLine)}!`, hd.cap, body, guestFooter(raw.party)),
     text,
   }
 }
@@ -674,7 +705,7 @@ export function detailsChangedEmail(raw: GuestMailInput): EviteEmail {
 
   return {
     subject: oneLine(`Update: ${rw.label} is now ${date}`),
-    html: shell('New details', hd.cap, body, GUEST_FOOTER),
+    html: shell('New details', hd.cap, body, guestFooter(raw.party)),
     text,
   }
 }
@@ -708,8 +739,8 @@ export function finalHeadcountEmail(raw: FinalHeadcountInput): EviteEmail {
     ${paragraph(firstNameHello(d.recipientFirstName))}
     ${paragraph(`Here&rsquo;s your final headcount for ${hd.label} on <strong>${dateOnly(d.party.dateLine)}</strong>.`)}
     ${detailCard([
-      { label: 'Kids', value: `${d.summary.kidsYes}${capHtml}` },
-      { label: 'Adults', value: `${d.summary.adultsYes}${d.summary.adultsPlus ? '+' : ''}` },
+      { label: isGuests(raw.party) ? 'Guests' : 'Kids', value: `${d.summary.kidsYes}${capHtml}` },
+      ...(isGuests(raw.party) ? [] : [{ label: 'Adults', value: `${d.summary.adultsYes}${d.summary.adultsPlus ? '+' : ''}` }]),
       { label: 'Can&rsquo;t come', value: `${d.summary.noCount}` },
     ])}
     ${paragraph('<strong>Food allergies</strong>')}
@@ -722,8 +753,8 @@ export function finalHeadcountEmail(raw: FinalHeadcountInput): EviteEmail {
     '',
     `Here's your final headcount for ${rw.label} on ${date}.`,
     '',
-    `Kids: ${s.kidsYes}${capText}`,
-    `Adults: ${s.adultsYes}${s.adultsPlus ? '+' : ''}`,
+    `${isGuests(raw.party) ? 'Guests' : 'Kids'}: ${s.kidsYes}${capText}`,
+    ...(isGuests(raw.party) ? [] : [`Adults: ${s.adultsYes}${s.adultsPlus ? '+' : ''}`]),
     `Can't come: ${s.noCount}`,
     '',
     'Food allergies:',
@@ -739,7 +770,7 @@ export function finalHeadcountEmail(raw: FinalHeadcountInput): EviteEmail {
 
   return {
     subject: oneLine(`Final headcount for ${rw.label} on ${date}`),
-    html: shell('Your final headcount', hd.cap, body, PARENT_FOOTER),
+    html: shell('Your final headcount', hd.cap, body, parentFooter(raw.party)),
     text,
   }
 }
@@ -770,7 +801,7 @@ export function partyCancelledEmail(raw: PartyCancelledInput): EviteEmail {
 
   return {
     subject: oneLine(`Cancelled: ${rw.label} on ${date}`),
-    html: shell('This party has been cancelled', hd.cap, body, GUEST_FOOTER),
+    html: shell(isGuests(raw.party) ? 'This event has been cancelled' : 'This party has been cancelled', hd.cap, body, guestFooter(raw.party)),
     text,
   }
 }

@@ -26,6 +26,7 @@ import {
 import { venmoHandle, zellePhone, PUBLIC_PHONE_DISPLAY } from '@/lib/paymentContacts'
 import { guardRate, plannerRule } from '@/lib/rateLimit'
 import { screenPortalPaymentType, isPayableStatus, PORTAL_PAYMENT_TYPES } from '@/lib/portalWrite'
+import { takesPayments } from '@/lib/outsideEventGate'
 
 /**
  * What the INVOICE says is outstanding, from the same pure functions
@@ -80,7 +81,7 @@ async function derivedPlanMoney(
       depositCents: getDepositCents(totalCents, booking.party_type),
       depositIsSeparate,
       payments: (pays ?? []) as PaymentRow[],
-      reservationDepositCents: BOOKING_DEPOSIT_CENTS,
+      reservationDepositCents: takesPayments(booking.party_type) ? BOOKING_DEPOSIT_CENTS : 0,
     }),
   }
 }
@@ -190,6 +191,15 @@ export async function POST(req: NextRequest) {
       { error: 'This booking is no longer taking payments. Please give us a call so we can sort it out.' },
       { status: 409 },
     )
+  }
+
+  // ── An invitation for someone else's venue owes us nothing (migration 096) ──
+  //
+  // An outside event is a `confirmed` booking with no price, so it is "payable" by
+  // status and would otherwise be offered the flat reservation deposit.
+  if (!takesPayments(booking.party_type)) {
+    console.warn(`portal pay: refused a payment on an outside event — ${bookingRef}`)
+    return NextResponse.json({ error: 'There is nothing to pay on this booking.' }, { status: 409 })
   }
 
   // ── The ceiling, which had a hole in it ────────────────────────────────

@@ -86,8 +86,11 @@ export function renderInputsHash(facts: InviteFacts): string {
 }
 
 /** The calendar entry's title: the child and the occasion, never the theme. */
-export function calTitleOf(facts: Pick<InviteFacts, 'hasName' | 'honoreeDisplay'>): string {
-  return facts.hasName ? `${facts.honoreeDisplay}'s Birthday Party` : 'Birthday Party'
+export function calTitleOf(facts: Pick<InviteFacts, 'hasName' | 'honoreeDisplay'> & Partial<Pick<InviteFacts, 'occasion'>>): string {
+  // An outside event's occasion ("Baby Shower") stands where a birthday party's "Birthday Party" does;
+  // it is null for every other party, so no existing invitation's hash moves.
+  const noun = facts.occasion ?? 'Birthday Party'
+  return facts.hasName ? `${facts.honoreeDisplay}'s ${noun}` : noun
 }
 
 /** Start, end, location and title: the four things a calendar entry shows. */
