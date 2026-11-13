@@ -140,6 +140,7 @@ export const EVITE_PAGE_COLUMNS = [
   'page_motion',
   'registry_url',
   'registry_note',
+  'extra_images',
   'image_key',
   'invite_object',
   'og_object',

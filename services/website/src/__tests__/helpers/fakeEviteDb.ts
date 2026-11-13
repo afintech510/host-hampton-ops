@@ -55,7 +55,7 @@ export interface FakeEviteDbOptions {
 export interface InjectedError {
   /** Table (or 'storage') and operation the error applies to. */
   table: string
-  op: 'select' | 'update' | 'upload' | 'download' | 'insert' | 'delete'
+  op: 'select' | 'update' | 'upload' | 'download' | 'remove' | 'insert' | 'delete'
   /** Only when this returns true for the patch / path (default: always). */
   when?: (info: { patch?: Row; path?: string; filters?: Filter[] }) => boolean
   message?: string
@@ -89,6 +89,7 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
   const updates: UpdateRecord[] = []
   const uploads: UploadRecord[] = []
   const uploaded = new Map<string, Buffer>()
+  const removals: string[] = []
   const selects: Array<{ table: string; cols: string }> = []
   const inserts: Array<{ table: string; row: Row }> = []
   const deletes: Array<{ table: string; filters: Filter[]; matched: number }> = []
@@ -347,6 +348,15 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
           uploads.push({ bucket, path, bytes: body.length, options })
           return { data: { path }, error: null }
         },
+        remove: async (paths: string[]) => {
+          const err = injected('storage', 'remove', { path: paths[0] })
+          if (err) return { data: null, error: err }
+          for (const p of paths) {
+            uploaded.delete(`${bucket}/${p}`)
+            removals.push(`${bucket}/${p}`)
+          }
+          return { data: paths.map((name) => ({ name })), error: null }
+        },
         // Reads back whatever is in `uploaded` (seed it directly for a pre-existing object). Like the real
         // client, a missing object is an ERROR, not empty data.
         download: async (path: string) => {
@@ -360,5 +370,5 @@ export function makeFakeEviteDb(opts: FakeEviteDbOptions) {
     },
   }
 
-  return { supabase: supabase as never, tables, deletes, updates, uploads, uploaded, selects, inserts, rpcCalls, errors, hooks }
+  return { supabase: supabase as never, tables, deletes, updates, uploads, uploaded, removals, selects, inserts, rpcCalls, errors, hooks }
 }

@@ -38,6 +38,7 @@ import { inviteFacts, type InviteFacts } from '@/lib/evites/facts'
 import { renderInputsHash } from '@/lib/evites/hash'
 import { validPartyDate } from '@/lib/evites/partyWindow'
 import { honoreeFirstName } from '@/lib/evites/pageModel'
+import { extraImageUrls, type ExtraImageView } from '@/lib/evites/extraImages'
 import { pageColorOf, pageMotionOf } from '@/lib/evites/pageTheme'
 import { inviteState, type InviteState } from '@/lib/evites/state'
 import { readThemeInputs } from '@/lib/evites/themeInputs'
@@ -299,6 +300,10 @@ export interface HostPayload {
   deadlineRange: { min: string; max: string | null }
   /** Null when the party has its own art (migration 073, `custom_art`): no picker is offered. */
   design: HostDesign | null
+  /** Migration 101: the extra pictures on the page (public URLs; object is what DELETE names). */
+  extraImages: ExtraImageView[]
+  /** True once the invitation has rendered (it has an image_key), which an upload needs. */
+  canAddImages: boolean
 }
 
 export function composeHostView(loaded: HostLoaded, supabaseUrl: string | undefined, now: Date = new Date()): { payload: HostPayload; facts: InviteFacts } {
@@ -343,6 +348,8 @@ export function composeHostView(loaded: HostLoaded, supabaseUrl: string | undefi
       registry_note: evite.registry_note ?? null,
     },
     deadlineRange: { min: etDateString(now), max: validPartyDate(booking.party_date) },
+    extraImages: extraImageUrls(evite, supabaseUrl),
+    canAddImages: typeof evite.image_key === 'string' && IMAGE_KEY.test(evite.image_key),
     // The party's own art outranks any pick (facts.ts), so a picker would offer choices that change nothing.
     design: facts.customArt
       ? null
