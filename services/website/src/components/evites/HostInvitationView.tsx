@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import HostGuestList from './HostGuestList'
+import HostExtraImages from './HostExtraImages'
 import { PAGE_COLORS, PAGE_MOTIONS, PAGE_MOTION_LABELS, pageColorOf } from '@/lib/evites/pageTheme'
 import type { HostPayload, HostRsvp } from '@/lib/evites/hostView'
 import {
@@ -411,7 +412,7 @@ function CustomizeForm({ props }: { props: HostViewProps }) {
               onChange={(e) => set({ registryNote: e.target.value })}
               className={INPUT}
             />
-            <p className="mt-0.5 text-xs text-gray-400">{form.registryNote.length}/300. Shown at the bottom of the page, below the RSVP form.</p>
+            <p className="mt-0.5 text-xs text-gray-400">{form.registryNote.length}/300. Shown on the page above the RSVP form.</p>
             <FieldError error={formError} field="registry_note" />
           </div>
         </fieldset>
@@ -430,6 +431,7 @@ function CustomizeForm({ props }: { props: HostViewProps }) {
           </p>
         )}
       </form>
+      <HostExtraImages initial={data.extraImages ?? []} canAdd={data.canAddImages === true} closed={data.state === 'closed'} />
     </section>
   )
 }

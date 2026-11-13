@@ -113,7 +113,7 @@ describe('registry & message', () => {
     expect(out).not.toContain('Open the registry')
   })
 
-  it('shows the note and a safe button with the hostname only, below the RSVP form', async () => {
+  it('shows the note and a safe button with the hostname only, above the RSVP form', async () => {
     const out = await html({ registry_url: 'https://www.babylist.com/list/mia?utm=secret', registry_note: 'Thank you for celebrating with us!' })
     expect(out).toContain('Registry &amp; message')
     expect(out).toContain('Thank you for celebrating with us!')
@@ -124,7 +124,7 @@ describe('registry & message', () => {
     expect(out).toContain('>babylist.com<')
     // The RSVP form comes first.
     expect(out.indexOf('Yes, we')).toBeGreaterThan(-1)
-    expect(out.indexOf('Registry &amp; message')).toBeGreaterThan(out.indexOf('Yes, we'))
+    expect(out.indexOf('Registry &amp; message')).toBeLessThan(out.indexOf('Yes, we'))
   })
 
   it('a note alone shows no button', async () => {
@@ -146,5 +146,46 @@ describe('registry & message', () => {
     const out = await html({ registry_note: '<img src=x onerror=alert(1)>' })
     expect(out).not.toContain('<img src=x')
     expect(out).toContain('&lt;img')
+  })
+})
+
+describe('extra pictures', () => {
+  const KEY = 'c'.repeat(32)
+  const OBJ = 'extra-0123456789abcdef.jpg'
+
+  it('shows the pictures below the details and before the RSVP form, lazy and with alt, and the registry too', async () => {
+    const out = await html({
+      image_key: KEY,
+      extra_images: [{ object: OBJ, alt: 'Bring diapers to be entered into the raffle' }],
+      registry_note: 'Thank you!',
+    })
+    expect(out).toContain(`src="https://proj.supabase.co/storage/v1/object/public/evites/${KEY}/${OBJ}"`)
+    expect(out).toContain('alt="Bring diapers to be entered into the raffle"')
+    expect(out).toContain('loading="lazy"')
+    const pics = out.indexOf('data-section="extra-images"')
+    const rsvp = out.indexOf('Yes, we')
+    expect(out.indexOf('Party details')).toBeLessThan(pics)
+    expect(pics).toBeGreaterThan(-1)
+    expect(pics).toBeLessThan(out.indexOf('data-section="registry"'))
+    expect(out.indexOf('data-section="registry"')).toBeLessThan(rsvp)
+  })
+
+  it('draws nothing when there are none or there is no image_key', async () => {
+    expect(await html({ image_key: KEY, extra_images: [] })).not.toContain('extra-images')
+    expect(await html({ image_key: null, extra_images: [{ object: OBJ, alt: 'x' }] })).not.toContain('extra-images')
+  })
+
+  it('hostile stored values never reach the page', async () => {
+    const out = await html({
+      image_key: KEY,
+      extra_images: [
+        { object: '"><script>alert(1)</script>.jpg', alt: 'x' },
+        { object: '../../etc/passwd', alt: 'x' },
+        { object: OBJ, alt: '"><script>alert(2)</script>' },
+      ],
+    })
+    expect(out).not.toContain('<script>')
+    expect(out).not.toContain('etc/passwd')
+    expect(out).toContain(OBJ)
   })
 })

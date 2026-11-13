@@ -30,6 +30,8 @@ export interface EviteRow {
   /** Migration 097: an https registry link and a short message, shown below the RSVP form. */
   registry_url: string | null
   registry_note: string | null
+  /** Migration 101: up to four extra pictures for the page, [{ object, alt }] in this row's image_key folder. */
+  extra_images: unknown
   render_version: number
   render_inputs_hash: string | null
   image_key: string | null

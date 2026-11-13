@@ -11,6 +11,7 @@ import type { OwnRsvp } from '@/lib/evites/rsvpView'
 import { templateForFacts } from '@/lib/evites/customArt'
 import { pageThemeCss, pageMotionOf } from '@/lib/evites/pageTheme'
 import { registryView } from '@/lib/evites/registry'
+import { extraImageUrls } from '@/lib/evites/extraImages'
 import { loadInvite } from './loadInvite'
 import { loadRsvpPanel } from './loadOwnRsvp'
 
@@ -78,6 +79,7 @@ export default async function InvitePage({ params, searchParams }: Props) {
 
   const registry = registryView(r.evite.registry_url, r.evite.registry_note)
   const motion = pageMotionOf(r.evite.page_motion)
+  const extraImages = extraImageUrls(r.evite, process.env.SUPABASE_URL)
 
   return (
     <>
@@ -142,10 +144,23 @@ export default async function InvitePage({ params, searchParams }: Props) {
         </section>
       )}
 
-      {model.showRsvp && (
-        <RsvpIsland slug={params.slug} own={own} startInEdit={!!own && flag(searchParams?.edit)} honoree={honoreeFirstName(r.facts)} club={club} audience={r.facts.audience} />
+      {extraImages.length > 0 && (
+        <section aria-label="More pictures" data-section="extra-images" className="mt-5 space-y-4">
+          {extraImages.map((img) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={img.object}
+              src={img.url}
+              alt={img.alt}
+              loading="lazy"
+              decoding="async"
+              data-extra-image=""
+              className="block h-auto w-full rounded-2xl"
+              style={{ maxWidth: 540, margin: '0 auto' }}
+            />
+          ))}
+        </section>
       )}
-
       {registry && (
         <section aria-label="Registry and message" data-section="registry" className="mt-6 rounded-xl bg-white/10 px-4 py-4 text-sm">
           <h2 className="mb-2 text-base font-semibold">Registry &amp; message</h2>
@@ -164,6 +179,10 @@ export default async function InvitePage({ params, searchParams }: Props) {
             </p>
           )}
         </section>
+      )}
+
+      {model.showRsvp && (
+        <RsvpIsland slug={params.slug} own={own} startInEdit={!!own && flag(searchParams?.edit)} honoree={honoreeFirstName(r.facts)} club={club} audience={r.facts.audience} />
       )}
 
       <ViewBeacon slug={params.slug} />
