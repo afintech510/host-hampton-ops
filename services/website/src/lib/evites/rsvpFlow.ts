@@ -122,12 +122,15 @@ const BLANK: Omit<FlowState, 'screen'> = {
 }
 
 /** The form fields filled from a saved answer. */
-function prefill(rsvp: OwnRsvp): Partial<FlowState> {
-  const names = rsvp.children.map((c) => c.first_name)
+function prefill(rsvp: OwnRsvp, audience: RsvpAudience = 'kids'): Partial<FlowState> {
+  const all = rsvp.children.map((c) => c.first_name)
+  // An adult RSVP stores the person answering as the first attendee; the form lists only who they bring.
+  const me = rsvp.parent_name.replace(/\s+/g, ' ').trim().toLowerCase()
+  const names = audience === 'guests' ? all.filter((n) => n.replace(/\s+/g, ' ').trim().toLowerCase() !== me) : all
   return {
     choice: rsvp.status,
     parentName: rsvp.parent_name,
-    children: names.length > 0 ? names : [''],
+    children: names.length > 0 ? names : audience === 'guests' ? [] : [''],
     adultCount: rsvp.status === 'yes' ? ((rsvp.adult_count === 1 || rsvp.adult_count === 2 ? rsvp.adult_count : 0) as 0 | 1 | 2) : null,
     hasAllergy: rsvp.status === 'yes' ? rsvp.has_allergy : null,
     allergyNote: rsvp.allergy_note ?? '',
@@ -140,9 +143,9 @@ function prefill(rsvp: OwnRsvp): Partial<FlowState> {
 
 export function initialState(own: OwnRsvp | null, startInEdit = false, audience: RsvpAudience = 'kids'): FlowState {
   // A guest is never asked how many adults are staying, so the count starts at 0 (the "choose" check passes).
-  const blank: Omit<FlowState, 'screen'> = audience === 'guests' ? { ...BLANK, audience, adultCount: 0 } : BLANK
+  const blank: Omit<FlowState, 'screen'> = audience === 'guests' ? { ...BLANK, audience, adultCount: 0, children: [] } : BLANK
   if (!own) return { ...blank, screen: 'start' }
-  const base: FlowState = { ...blank, ...prefill(own), ...(audience === 'guests' ? { adultCount: 0 as const } : {}), saved: own, screen: own.status === 'yes' ? 'confirmed' : 'declined' }
+  const base: FlowState = { ...blank, ...prefill(own, audience), ...(audience === 'guests' ? { adultCount: 0 as const } : {}), saved: own, screen: own.status === 'yes' ? 'confirmed' : 'declined' }
   return startInEdit ? { ...base, screen: 'start', editing: true, choice: null } : base
 }
 
@@ -150,17 +153,19 @@ export function initialState(own: OwnRsvp | null, startInEdit = false, audience:
 export function validateDetails(s: FlowState): FlowError | null {
   const parent = s.parentName.replace(/\s+/g, ' ').trim()
   if (s.choice === null) return { field: 'status', message: 'Please choose Yes or Can’t make it.' }
-  if (parent === '') return { field: 'parentName', message: 'Please enter your name.' }
+  const adult = s.audience === 'guests'
+  if (parent === '') return { field: 'parentName', message: adult ? 'Please enter your first and last name.' : 'Please enter your name.' }
+  if (adult && parent.split(' ').length < 2) return { field: 'parentName', message: 'Please enter your first and last name.' }
   if (Array.from(parent).length > PARENT_NAME_MAX) return { field: 'parentName', message: 'That name is too long.' }
   if (s.choice === 'no') return null
 
   const names = s.children.map((c) => c.replace(/\s+/g, ' ').trim())
   const guests = s.audience === 'guests'
-  if (names.length < 1 || names.length > MAX_CHILDREN) {
-    return { field: 'children', message: guests ? 'Please add at least one guest (up to 6).' : 'Please add at least one child (up to 6).' }
+  if (names.length < (guests ? 0 : 1) || names.length > (guests ? MAX_CHILDREN - 1 : MAX_CHILDREN)) {
+    return { field: 'children', message: guests ? 'You can add up to 5 other guests.' : 'Please add at least one child (up to 6).' }
   }
   const blank = names.findIndex((n) => n === '')
-  if (blank >= 0) return { field: `child-${blank}`, message: guests ? 'Please enter the guest’s first name.' : 'Please enter the child’s first name.' }
+  if (blank >= 0) return { field: `child-${blank}`, message: guests ? 'Please enter the guest’s name, or remove this line.' : 'Please enter the child’s first name.' }
   const long = names.findIndex((n) => Array.from(n).length > CHILD_NAME_MAX)
   if (long >= 0) return { field: `child-${long}`, message: 'That name is too long.' }
   if (!guests && s.adultCount === null) return { field: 'adultCount', message: 'Please choose how many adults are staying.' }
@@ -233,9 +238,9 @@ export function rsvpReducer(s: FlowState, a: FlowAction): FlowState {
       return { ...s, children, error: s.error?.field === `child-${a.index}` ? null : s.error }
     }
     case 'addChild':
-      return s.children.length >= MAX_CHILDREN ? s : { ...s, children: [...s.children, ''] }
+      return s.children.length >= (s.audience === 'guests' ? MAX_CHILDREN - 1 : MAX_CHILDREN) ? s : { ...s, children: [...s.children, ''] }
     case 'removeChild':
-      return s.children.length <= 1 ? s : { ...s, children: s.children.filter((_, i) => i !== a.index), error: null }
+      return s.children.length <= (s.audience === 'guests' ? 0 : 1) ? s : { ...s, children: s.children.filter((_, i) => i !== a.index), error: null }
     case 'setClub':
       return { ...s, clubChecked: a.checked, error: null }
     case 'setMonth':
@@ -249,7 +254,7 @@ export function rsvpReducer(s: FlowState, a: FlowAction): FlowState {
       const typedEmail = screenReminderContact(s.reminderContact)
       return {
         ...s,
-        ...prefill(a.rsvp),
+        ...prefill(a.rsvp, s.audience),
         // What the guest has typed on screen 3 survives a re-submit of screen 2.
         note: s.note !== '' ? s.note : (a.rsvp.note_to_honoree ?? ''),
         // An address typed into the reminder box is a good guess for the club box even if the reminder itself was declined.

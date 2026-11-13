@@ -93,7 +93,33 @@ export type RsvpAudience = 'kids' | 'guests'
 
 /** The "no children" message, in the form's own words. */
 export function childrenMessage(audience: RsvpAudience): string {
-  return audience === 'guests' ? 'Please add at least one guest, with a first name (up to 6).' : 'Please add at least one child, with a first name (up to 6).'
+  return audience === 'guests' ? 'Please check the names of the people coming with you (up to 5 others).' : 'Please add at least one child, with a first name (up to 6).'
+}
+
+/** A guest's full name: at least two words (first and last). Used for an adult outside event's RSVP. */
+export function hasFirstAndLast(name: string): boolean {
+  return name.trim().split(/\s+/).filter((w) => w !== '').length >= 2
+}
+
+const normName = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
+
+/**
+ * An adult RSVP's attendees: the person answering (always first, by their full name) then anyone they
+ * bring. `raw` is the list of EXTRA guests; an entry that repeats the answering person's own name is
+ * dropped, so a client that sends everyone (the host's form) and one that sends only the extras both land
+ * on the same list. Null when an extra is not a name or the party is over 6.
+ */
+export function screenGuestAttendees(parentName: string, raw: unknown): ScreenedChild[] | null {
+  const extras: unknown[] = raw === undefined || raw === null ? [] : Array.isArray(raw) ? raw : [raw]
+  const out: ScreenedChild[] = [{ first_name: parentName }]
+  for (const c of extras) {
+    const o = c && typeof c === 'object' && !Array.isArray(c) ? (c as Record<string, unknown>) : null
+    const name = o ? screenName(o.firstName ?? o.first_name, PARENT_NAME_MAX) : null
+    if (name === null) return null
+    if (normName(name) === normName(parentName)) continue
+    out.push({ first_name: name })
+  }
+  return out.length > MAX_CHILDREN ? null : out
 }
 
 /** `[{firstName}]` (or `[{first_name}]`) to `[{first_name}]`: 1..6 for a yes, exactly 0 for a no. Null when it does not fit. */
@@ -170,14 +196,15 @@ export function screenRsvpPost(body: unknown, audience: RsvpAudience = 'kids'): 
   if (status !== 'yes' && status !== 'no') return bad('status', 'Please choose Yes or Can’t make it.')
 
   const parentName = screenName(o.parentName, PARENT_NAME_MAX)
-  if (parentName === null) return bad('parentName', 'Please enter your name.')
+  if (parentName === null) return bad('parentName', audience === 'guests' ? 'Please enter your first and last name.' : 'Please enter your name.')
+  if (audience === 'guests' && !hasFirstAndLast(parentName)) return bad('parentName', 'Please enter your first and last name.')
 
   if (status === 'no') {
     // A decline carries no party: whatever else was sent is ignored, not trusted.
     return { ok: true, value: { status, parentName, children: [], adultCount: 0, hasAllergy: null, allergyNote: null, reminder: { kind: 'none' } } }
   }
 
-  const children = screenChildren(o.children, 'yes')
+  const children = audience === 'guests' ? screenGuestAttendees(parentName, o.children) : screenChildren(o.children, 'yes')
   if (children === null) return bad('children', childrenMessage(audience))
 
   // Guests have no "adults staying" question: whatever was sent, the stored count is 0.
@@ -256,7 +283,7 @@ export function screenRsvpPatch(body: unknown, existing: ExistingRsvp, audience:
 
   if (has('parentName')) {
     const n = screenName(o.parentName, PARENT_NAME_MAX)
-    if (n === null) return bad('parentName', 'Please enter your name.')
+    if (n === null || (audience === 'guests' && !hasFirstAndLast(n))) return bad('parentName', audience === 'guests' ? 'Please enter your first and last name.' : 'Please enter your name.')
     columns.parent_name = n
     touched++
   }
@@ -272,10 +299,16 @@ export function screenRsvpPatch(body: unknown, existing: ExistingRsvp, audience:
     hasAllergy = null
     allergyNote = null
   } else {
+    const answering = typeof columns.parent_name === 'string' ? columns.parent_name : existing.parent_name
     if (has('children')) {
-      const c = screenChildren(o.children, 'yes')
+      const c = audience === 'guests' ? screenGuestAttendees(answering, o.children) : screenChildren(o.children, 'yes')
       if (c === null) return bad('children', childrenMessage(audience))
       children = c
+      touched++
+    } else if (audience === 'guests' && (has('parentName') || existing.status === 'no')) {
+      // The answering person is the first attendee: a new name (or a no turned yes) rewrites that entry.
+      const extras = existing.status === 'no' ? [] : existing.children.slice(1)
+      children = [{ first_name: answering }, ...extras]
       touched++
     } else if (existing.status === 'no') {
       return bad('children', childrenMessage(audience))
@@ -306,7 +339,7 @@ export function screenRsvpPatch(body: unknown, existing: ExistingRsvp, audience:
   }
 
   if (status !== existing.status) columns.status = status
-  if (status === 'no' || has('children') || existing.status === 'no') columns.children = children
+  if (status === 'no' || has('children') || existing.status === 'no' || (audience === 'guests' && has('parentName'))) columns.children = children
   if (status === 'no' || (audience === 'kids' && has('adultCount')) || existing.status === 'no') columns.adult_count = adultCount
   if (status === 'no' || has('hasAllergy') || existing.status === 'no') columns.has_allergy = hasAllergy
   if (status === 'no' || has('allergyNote') || has('hasAllergy') || existing.status === 'no') columns.allergy_note = allergyNote

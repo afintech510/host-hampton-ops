@@ -62,19 +62,31 @@ export function pageMotionOf(v: unknown): PageMotion {
   return isPageMotion(v) ? v : 'none'
 }
 
-/** Specks for the sparkle layer: fixed positions so the markup is stable (no randomness at render). */
-const SPARKLE_BG = [
-  'radial-gradient(2px 2px at 8% 12%,#fff,transparent 60%)',
-  'radial-gradient(1.5px 1.5px at 22% 38%,#fff,transparent 60%)',
-  'radial-gradient(2px 2px at 35% 8%,#fff,transparent 60%)',
-  'radial-gradient(1.5px 1.5px at 48% 62%,#fff,transparent 60%)',
-  'radial-gradient(2px 2px at 61% 24%,#fff,transparent 60%)',
-  'radial-gradient(1.5px 1.5px at 74% 78%,#fff,transparent 60%)',
-  'radial-gradient(2px 2px at 86% 44%,#fff,transparent 60%)',
-  'radial-gradient(1.5px 1.5px at 93% 88%,#fff,transparent 60%)',
-  'radial-gradient(2px 2px at 14% 82%,#fff,transparent 60%)',
-  'radial-gradient(1.5px 1.5px at 56% 92%,#fff,transparent 60%)',
-].join(',')
+/**
+ * Glitter for the sparkle motion: three layers of specks at fixed positions (a small seeded generator, so the
+ * CSS is the same on every render and every server). Layer 1 is many small white specks, layer 2 fewer gold
+ * ones with a halo, layer 3 a few big bright flares. Each layer twinkles on its own beat and drifts slowly down.
+ */
+function specks(count: number, seed: number, sizes: readonly number[], colors: readonly string[], halo: number): string {
+  let x = seed
+  const next = (): number => {
+    x = (x * 1664525 + 1013904223) % 4294967296
+    return x / 4294967296
+  }
+  const out: string[] = []
+  for (let i = 0; i < count; i++) {
+    const size = sizes[Math.floor(next() * sizes.length)]
+    const color = colors[Math.floor(next() * colors.length)]
+    const left = (next() * 100).toFixed(1)
+    const top = (next() * 100).toFixed(1)
+    out.push(`radial-gradient(${size + halo}px ${size + halo}px at ${left}% ${top}%,${color} 0,${color} ${Math.round((size / (size + halo)) * 45)}%,transparent 70%)`)
+  }
+  return out.join(',')
+}
+
+const SPARKLE_SMALL = specks(46, 7, [3, 4, 5], ['#ffffff', '#fff6d6'], 3)
+const SPARKLE_GOLD = specks(24, 23, [5, 6, 8], ['#ffe9a3', '#ffd76a', '#fff'], 8)
+const SPARKLE_FLARE = specks(10, 91, [9, 11, 13], ['#ffffff', '#fff2b8'], 16)
 
 /** The CSS for one colour and motion. Static strings only. */
 export function pageThemeCss(colorKey: unknown, motion: unknown): string {
@@ -86,9 +98,13 @@ export function pageThemeCss(colorKey: unknown, motion: unknown): string {
   ]
   if (m === 'sparkle') {
     parts.push(
-      `.hh-inv-fx{position:fixed;inset:0;pointer-events:none;z-index:0;background:${SPARKLE_BG};background-repeat:no-repeat;animation:hh-twinkle 3.2s ease-in-out infinite alternate}`,
-      `.hh-inv-fx::after{content:"";position:absolute;inset:0;background:${SPARKLE_BG};background-repeat:no-repeat;background-position:37% 21%;animation:hh-twinkle 4.6s ease-in-out infinite alternate-reverse}`,
-      '@keyframes hh-twinkle{0%{opacity:.15}50%{opacity:.8}100%{opacity:.3}}',
+      `.hh-inv-fx{position:fixed;inset:-10% 0 0 0;pointer-events:none;z-index:0;background:${SPARKLE_SMALL};background-repeat:no-repeat;animation:hh-twinkle-a 1.9s ease-in-out infinite alternate,hh-fall 26s linear infinite}`,
+      `.hh-inv-fx::before{content:"";position:absolute;inset:0;background:${SPARKLE_GOLD};background-repeat:no-repeat;animation:hh-twinkle-b 2.7s ease-in-out infinite alternate,hh-fall 34s linear infinite}`,
+      `.hh-inv-fx::after{content:"";position:absolute;inset:0;background:${SPARKLE_FLARE};background-repeat:no-repeat;filter:drop-shadow(0 0 6px rgba(255,240,180,.9));animation:hh-twinkle-c 3.6s ease-in-out infinite alternate,hh-fall 44s linear infinite}`,
+      '@keyframes hh-twinkle-a{0%{opacity:.25}35%{opacity:1}100%{opacity:.45}}',
+      '@keyframes hh-twinkle-b{0%{opacity:1}50%{opacity:.2}100%{opacity:.9}}',
+      '@keyframes hh-twinkle-c{0%{opacity:.1;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}100%{opacity:.2;transform:scale(.9)}}',
+      '@keyframes hh-fall{from{background-position:0 0}to{background-position:0 110vh}}',
     )
   } else if (m === 'drift') {
     parts.push(

@@ -408,7 +408,6 @@ describe('guests audience: the same flow, relabelled', () => {
   const G = () => initialState(null, false, 'guests')
   const fillGuest: FlowAction[] = [
     { type: 'choose', choice: 'yes' },
-    { type: 'setChild', index: 0, value: 'Gina' },
     { type: 'set', field: 'parentName', value: 'Gina Guest' },
     { type: 'setAllergy', value: false },
   ]
@@ -423,25 +422,48 @@ describe('guests audience: the same flow, relabelled', () => {
   it('a guest never has to choose adults: the form validates and the body carries adultCount 0', () => {
     const s = run(G(), fillGuest).state
     expect(validateDetails(s)).toBeNull()
-    expect(buildAnswerBody(s)).toMatchObject({ status: 'yes', parentName: 'Gina Guest', children: [{ firstName: 'Gina' }], adultCount: 0, hasAllergy: false })
-    // the identical fill with the kids' form is refused for the missing adults
-    expect(validateDetails(run(initialState(null), fillGuest).state)?.field).toBe('adultCount')
+    expect(buildAnswerBody(s)).toMatchObject({ status: 'yes', parentName: 'Gina Guest', children: [], adultCount: 0, hasAllergy: false })
+    // the identical fill with the kids' form is refused (no children)
+    expect(validateDetails(run(initialState(null), fillGuest).state)?.field).toBe('child-0')
+  })
+
+  it('children holds only the extras: defaults to [], adds blank lines, caps at 5, may be emptied', () => {
+    expect(G().children).toEqual([])
+    const added = run(G(), [{ type: 'choose', choice: 'yes' }, { type: 'addChild' }, { type: 'setChild', index: 0, value: 'Tom Guest' }]).state
+    expect(buildAnswerBody({ ...added, parentName: 'Gina Guest' }).children).toEqual([{ firstName: 'Tom Guest' }])
+    const five = run(G(), [{ type: 'choose', choice: 'yes' }, ...Array.from({ length: 7 }, () => ({ type: 'addChild' }) as FlowAction)]).state
+    expect(five.children).toHaveLength(5)
+    const gone = rsvpReducer(added, { type: 'removeChild', index: 0 })
+    expect(gone.children).toEqual([])
+  })
+
+  it('a blank extra line is an error; six extras are refused; one-word names are refused', () => {
+    const base = run(G(), fillGuest).state
+    expect(validateDetails({ ...base, children: [''] })).toEqual({ field: 'child-0', message: 'Please enter the guest’s name, or remove this line.' })
+    expect(validateDetails({ ...base, children: ['a b', 'c d', 'e f', 'g h', 'i j', 'k l'] })).toEqual({ field: 'children', message: 'You can add up to 5 other guests.' })
+    expect(validateDetails({ ...base, parentName: 'Gina' })).toEqual({ field: 'parentName', message: 'Please enter your first and last name.' })
+  })
+
+  it('prefill drops an entry equal to the parent name', () => {
+    const s = initialState(ownRsvp({ adult_count: 0, parent_name: 'Gina Guest', children: [{ first_name: 'Gina Guest' }, { first_name: 'Tom' }] }), true, 'guests')
+    expect(s.children).toEqual(['Tom'])
+    expect(initialState(ownRsvp({ adult_count: 0, parent_name: 'Gina Guest', children: [{ first_name: 'Gina Guest' }] }), true, 'guests').children).toEqual([])
   })
 
   it('adultCount stays 0 after a decline and a second thought', () => {
-    const declined = run(G(), [{ type: 'choose', choice: 'no' }, { type: 'set', field: 'parentName', value: 'Gina' }]).state
-    const own = ownRsvp({ status: 'no', children: [], adult_count: 0, parent_name: 'Gina' })
+    const declined = run(G(), [{ type: 'choose', choice: 'no' }, { type: 'set', field: 'parentName', value: 'Gina Guest' }]).state
+    const own = ownRsvp({ status: 'no', children: [], adult_count: 0, parent_name: 'Gina Guest' })
     const back = rsvpReducer(rsvpReducer({ ...declined, saved: own, screen: 'declined' }, { type: 'submitted', rsvp: own, reminderDropped: false }), { type: 'edit' })
-    const s = run(back, [{ type: 'choose', choice: 'yes' }, { type: 'setChild', index: 0, value: 'Gina' }, { type: 'setAllergy', value: false }]).state
+    const s = run(back, [{ type: 'choose', choice: 'yes' }, { type: 'setAllergy', value: false }]).state
     expect(s.adultCount).toBe(0)
     expect(validateDetails(s)).toBeNull()
     expect(buildAnswerBody(s).adultCount).toBe(0)
   })
 
   it('validation messages name guests', () => {
-    expect(validateDetails(run(G(), [{ type: 'choose', choice: 'yes' }, { type: 'set', field: 'parentName', value: 'Gina' }]).state)).toEqual({
+    expect(validateDetails(run(G(), [{ type: 'choose', choice: 'yes' }, { type: 'set', field: 'parentName', value: 'Gina Guest' }, { type: 'addChild' }]).state)).toEqual({
       field: 'child-0',
-      message: 'Please enter the guest’s first name.',
+      message: 'Please enter the guest’s name, or remove this line.',
     })
     const kids = run(initialState(null), [{ type: 'choose', choice: 'yes' }, { type: 'set', field: 'parentName', value: 'Pat' }]).state
     expect(validateDetails(kids)?.message).toBe('Please enter the child’s first name.')
@@ -462,19 +484,25 @@ describe('guests audience: the same flow, relabelled', () => {
   })
 
   function confirmedGuest(over: Partial<OwnRsvp> = {}): FlowState {
-    return initialState(ownRsvp({ adult_count: 0, children: [{ first_name: 'Gina' }, { first_name: 'Tom' }], parent_name: 'Gina Guest', ...over }), false, 'guests')
+    return initialState(ownRsvp({ adult_count: 0, children: [{ first_name: 'Gina Guest' }, { first_name: 'Tom' }], parent_name: 'Gina Guest', ...over }), false, 'guests')
   }
 
-  it('screen 2 (yes): "Guests coming", per-guest labels, "+ Add guest", "Your name"; no adults control', () => {
-    const html = markup(run(G(), [{ type: 'choose', choice: 'yes' }, { type: 'addChild' }]).state)
-    expect(html).toContain('Guests coming')
-    expect(html).toContain('aria-label="Guest 1 first name"')
-    expect(html).toContain('aria-label="Guest 2 first name"')
+  it('screen 2 (yes): "Your name (first and last)" first, optional extras, per-guest labels, "+ Add guest"; no adults control', () => {
+    const html = markup(run(G(), [{ type: 'choose', choice: 'yes' }, { type: 'addChild' }, { type: 'addChild' }]).state)
+    expect(html).toContain('Your name (first and last)')
+    expect(html.indexOf('Your name (first and last)')).toBeLessThan(html.indexOf('Anyone coming with you?'))
+    expect(html).toContain('Anyone coming with you?')
+    expect(html).toContain('aria-label="Guest 1 name"')
+    expect(html).toContain('aria-label="Guest 2 name"')
     expect(html).toContain('aria-label="Remove guest 2"')
     expect(html).toContain('+ Add guest')
-    expect(html).toContain('Your name')
+    expect(markup(run(G(), [{ type: 'choose', choice: 'yes' }]).state)).not.toContain('Guest 1 name')
     expect(html).toContain('Food allergy?')
     for (const gone of ['Adults staying', 'Child 1', 'Remove child', 'sibling', 'Parent or guardian', '2+']) expect(html).not.toContain(gone)
+  })
+
+  it('the decline form asks for "Your name (first and last)"', () => {
+    expect(markup(run(G(), [{ type: 'choose', choice: 'no' }]).state)).toContain('Your name (first and last)')
   })
 
   it('the allergy detail keeps its label', () => {
@@ -489,7 +517,7 @@ describe('guests audience: the same flow, relabelled', () => {
 
   it('screen 3: no adults in the summary, a neutral note label, the club card absent even when an offer is passed', () => {
     const html = markup(confirmedGuest(), { honoree: 'Maeghan' })
-    expect(html).toContain('Gina, Tom')
+    expect(html).toContain('Gina Guest, Tom')
     expect(html).not.toContain('adult')
     expect(html).toContain('Leave a note for Maeghan (optional)')
     expect(html).not.toContain('Birthday Club')

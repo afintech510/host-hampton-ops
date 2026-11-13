@@ -176,7 +176,8 @@ export default function HostGuestList({ shareText, reshareText, inviteUrl, audie
       .filter(Boolean)
     const body: Record<string, unknown> = { status: answer, parentName: who }
     if (answer === 'yes') {
-      body.children = names.length > 0 ? names : who.trim() ? [who.trim()] : []
+      // An adult RSVP lists the person answering by their own name; "names" here are only who comes with them.
+      body.children = audience === 'guests' ? names : names.length > 0 ? names : who.trim() ? [who.trim()] : []
       body.hasAllergy = allergy
       if (allergy) body.allergyNote = allergyNote
     }
@@ -356,7 +357,7 @@ export default function HostGuestList({ shareText, reshareText, inviteUrl, audie
           </div>
         )}
         <label htmlFor="hh-rsvp-who" className={LABEL}>
-          Who answered?
+          {audience === 'guests' ? 'Who answered? (first and last name)' : 'Who answered?'}
         </label>
         <input id="hh-rsvp-who" value={who} onChange={(e) => setWho(e.target.value)} maxLength={120} className={INPUT} />
         <fieldset className="mt-3">
@@ -373,9 +374,9 @@ export default function HostGuestList({ shareText, reshareText, inviteUrl, audie
         {answer === 'yes' && (
           <>
             <label htmlFor="hh-rsvp-names" className={`${LABEL} mt-3`}>
-              Who is coming? (first names, separated by commas)
+              {audience === 'guests' ? 'Anyone coming with them? (optional, names separated by commas)' : 'Who is coming? (first names, separated by commas)'}
             </label>
-            <input id="hh-rsvp-names" value={attending} onChange={(e) => setAttending(e.target.value)} placeholder="Ann, Bob" className={INPUT} />
+            <input id="hh-rsvp-names" value={attending} onChange={(e) => setAttending(e.target.value)} placeholder={audience === 'guests' ? 'Ann Lee, Bob Lee' : 'Ann, Bob'} className={INPUT} />
             <label className="mt-3 flex items-center gap-2 text-sm text-[#1a2744]">
               <input type="checkbox" checked={allergy} onChange={(e) => setAllergy(e.target.checked)} /> There is a food allergy
             </label>
