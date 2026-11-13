@@ -1,26 +1,18 @@
 /**
- * Extra pictures on an invitation PAGE (migration 101, `evites.extra_images`). Pure helpers plus one sharp step.
+ * Extra pictures on an invitation PAGE (migration 101, `evites.extra_images`). Pure helpers only: a browser component imports this file, so it must never import sharp or a node module (see extraImagesProcess.ts).
  *
  *   screenExtraImagesValue(v)        the stored jsonb -> a safe list ({ object, alt }), never throwing
  *   extraImageUrls(evite, supabase)  [{ url, alt }] for the page and the host view ('' when there is no image_key)
  *   cleanExtraAlt(v)                 a typed description -> trimmed, control characters removed, <= 120 chars
- *   newExtraObject()                 `extra-<16 hex>.jpg`
- *   processExtraImage(buf)           jpeg/png/webp bytes -> a JPEG, auto-oriented, <= 1200 px wide, never cropped
  *
  * The picture lives in Storage `evites/<image_key>/<object>`, the party's own folder (as public as the
  * invitation itself). The object name is random; no file name is ever read, stored or logged. The
  * value is screened again on the way out, so a row written some other way cannot reach an `<img src>`.
  */
 
-import { randomBytes } from 'crypto'
-import sharp from 'sharp'
-import { CUSTOM_ART_MAX_BYTES } from '@/lib/evites/customArtFit'
-
-export { sniffImageType } from '@/lib/evites/customArtFit'
-
 export const MAX_EXTRA_IMAGES = 4
 export const EXTRA_ALT_MAX = 120
-export const EXTRA_IMAGE_MAX_BYTES = CUSTOM_ART_MAX_BYTES
+export const EXTRA_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 export const EXTRA_IMAGE_MAX_WIDTH = 1200
 export const EXTRA_OBJECT = /^extra-[0-9a-f]{16}\.jpg$/
 const IMAGE_KEY = /^[0-9a-f]{32}$/
@@ -67,18 +59,4 @@ export function extraImageUrls(
     ...e,
     url: `${base}/storage/v1/object/public/evites/${key}/${e.object}`,
   }))
-}
-
-export function newExtraObject(): string {
-  return `extra-${randomBytes(8).toString('hex')}.jpg`
-}
-
-/** Auto-orient, resize to at most 1200 px wide (never enlarged, never cropped), flatten on white, JPEG q86. Throws if unreadable. */
-export async function processExtraImage(input: Buffer): Promise<Buffer> {
-  return sharp(input)
-    .rotate()
-    .resize({ width: EXTRA_IMAGE_MAX_WIDTH, withoutEnlargement: true })
-    .flatten({ background: '#ffffff' })
-    .jpeg({ quality: 86, mozjpeg: true })
-    .toBuffer()
 }

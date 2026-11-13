@@ -5,11 +5,9 @@ import {
   MAX_EXTRA_IMAGES,
   cleanExtraAlt,
   extraImageUrls,
-  newExtraObject,
-  processExtraImage,
   screenExtraImagesValue,
-  sniffImageType,
 } from '@/lib/evites/extraImages'
+import { newExtraObject, processExtraImage, sniffImageType } from '@/lib/evites/extraImagesProcess'
 
 const KEY = 'a'.repeat(32)
 const OBJ = 'extra-0123456789abcdef.jpg'
