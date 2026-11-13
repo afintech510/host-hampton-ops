@@ -117,6 +117,7 @@ const MONEY_MODULES = [
   'lib/stripePaymentNotice.ts', // DISPLAYS the stored balance in the owner's payment email; derives none
   'lib/assistant/tools.ts', // DISPLAYS loadPlanInvoice's figures to the admin; its card total is billedTotalCents; writes nothing
   'lib/assistant/partyCard.ts', // DISPLAYS loadPlanInvoice's total/paid/owed on the party card; each line is billedTotalCents; writes nothing
+  'lib/bookedParties.ts', // the Booked list (was /api/admin/booked): balance_cents via computeBalance over ALL payments, and a paid/outstanding total for the tab; writes nothing; the crew app strips every money field (lib/crew/bookingView.ts)
   'lib/crewAppPayments.ts', // DISPLAYS each booking's balance (bookingBalance's computeBalance over ALL its payments) beside a payment; writes nothing
   'lib/outsideEventIntake.ts', // writes literal 0 for total/deposit/balance on an outside-event invitation (nothing priced, nothing owed); derives no figure
   'lib/assistant/partyBuilders.ts', // PRICES a mobile party / studio rental card from the live catalog (quoteEngine, studio rate card); the card total is billedTotalCents; writes nothing
@@ -146,7 +147,7 @@ describe('R0 · the surface is walked, and every module in it is accounted for',
   it('every named arithmetic module exists on disk', () => {
     const missing = MONEY_MODULES.filter(m => !fs.existsSync(path.join(SRC, m)))
     expect(missing).toEqual([])
-    expect(MONEY_MODULES.length).toBe(15)
+    expect(MONEY_MODULES.length).toBe(16)
   })
 
   it('no arithmetic module has appeared that the list does not name', () => {
@@ -794,7 +795,7 @@ describe('R10 · a duplicate is recognised by code, not by message text', () => 
         if (!/'23505'/.test(before)) offenders.push(`${f}: ${m[0]}`)
       }
     }
-    expect(examined).toBe(15)
+    expect(examined).toBe(16)
     expect(offenders).toEqual([])
   })
 })
