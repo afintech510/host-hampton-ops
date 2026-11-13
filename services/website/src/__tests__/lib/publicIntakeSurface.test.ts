@@ -159,7 +159,8 @@ function gateOf(h: Handler): Gate {
   // re-judged on every request. Matched on the REFUSAL — the gate's result
   // returned when it is not ok — not on the call, so a handler that awaits it
   // and carries on regardless reads as public.
-  if (/const\s+(\w+)\s*=\s*await\s+requireCrewMember\s*\(\s*req\s*(?:,\s*'onboarding'\s*)?\)\s*;?\s*if\s*\(\s*!\s*\1\.ok\s*\)\s*return\s+\1\.response\b/.test(h.body)) return 'crew'
+  // `requireBookingViewer` is that gate plus the read-only Bookings grant (migration 100).
+  if (/const\s+(\w+)\s*=\s*await\s+(?:requireCrewMember\s*\(\s*req\s*(?:,\s*'onboarding'\s*)?\)|requireBookingViewer\s*\(\s*req\s*\))\s*;?\s*if\s*\(\s*!\s*\1\.ok\s*\)\s*return\s+\1\.response\b/.test(h.body)) return 'crew'
   /*
    * `planAccess` is a gate in its own right — it answers "is the human in front
    * of this plan entitled to it" from the ref-scoped portal cookie or an admin

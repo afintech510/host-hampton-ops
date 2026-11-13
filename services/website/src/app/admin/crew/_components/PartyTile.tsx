@@ -73,14 +73,14 @@ export default function PartyTile({
       className={`overflow-hidden rounded-2xl border bg-white shadow-[0_2px_8px_rgba(27,47,69,0.03)] transition-[border-color,box-shadow] ${open ? 'border-hampton-navy/30 shadow-md' : attention ? 'border-amber-300/80' : 'border-hampton-navy/10 hover:border-hampton-navy/25 hover:shadow-md'}`}
       data-lead-card={kind === 'lead' ? '' : undefined}
       data-booking-tile={kind === 'booking' ? '' : undefined}
-      data-ref={bookingRef}
+      data-ref={bookingRef || undefined}
     >
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
         aria-controls={panelId}
-        aria-label={`${open ? 'Hide' : 'View'} details for ${title}, ${bookingRef}`}
+        aria-label={`${open ? 'Hide' : 'View'} details for ${title}${bookingRef ? `, ${bookingRef}` : ''}`}
         className={`block w-full text-left text-hampton-navy outline-none transition-colors hover:bg-[#FCFBF9] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-hampton-navy active:bg-[#F6F1EB] ${open ? 'rounded-t-2xl' : 'rounded-2xl'}`}
       >
         <span className="block p-4 sm:p-5">

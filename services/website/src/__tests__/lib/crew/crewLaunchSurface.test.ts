@@ -121,10 +121,11 @@ describe('LS1: a dollar figure in the crew app is behind a guard', () => {
 
   it('there is no pay tab unless pay is shown: the tab is only passed the switches, and the nav drops it without them', () => {
     const top = squash(read(path.join(SRC, 'app', 'crew', '_components', 'CrewTop.tsx')))
-    expect(top).toMatch(/<CrewNav showPay=\{crewShowPayEnabled\(\) \|\| crewPayLadderEnabled\(\)\} \/>/)
+    // The Bookings grant (migration 100) adds a second prop and a second condition; the pay switches stay the only way the pay tab shows.
+    expect(top).toMatch(/<CrewNav showPay=\{crewShowPayEnabled\(\) \|\| crewPayLadderEnabled\(\)\}( showBookings=\{[^}]+\})? \/>/)
     const nav = squash(read(path.join(SRC, 'app', 'crew', '_components', 'CrewNav.tsx')))
     expect(nav).toMatch(/showPay = false/)
-    expect(nav).toMatch(/TABS\.filter\(t => showPay \|\| t\.href !== '\/crew\/pay'\)/)
+    expect(nav).toMatch(/TABS\.filter\(t => \(showPay \|\| t\.href !== '\/crew\/pay'\)/)
     expect(nav).not.toMatch(/How it works/)
   })
 

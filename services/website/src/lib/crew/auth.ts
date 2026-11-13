@@ -211,6 +211,18 @@ export async function currentCrewMember(): Promise<CrewSession> {
   return sessionFor(jar.get(CREW_COOKIE)?.value ?? null, jar.get(CREW_VIEW_COOKIE)?.value ?? null)
 }
 
+/**
+ * The member id the request's cookies name (view-as first), signature and age checked, no database
+ * read. For decorating a page that has already been authorised (the nav's optional tabs); it is not
+ * a gate. Use `currentCrewMember` / `requireCrewMember` to decide who may see anything.
+ */
+export function crewCookieMemberId(): string | null {
+  const jar = cookies()
+  const secret = portalSigningSecret()
+  return viewMemberIdFromCookieValue(jar.get(CREW_VIEW_COOKIE)?.value ?? null, secret)
+    ?? memberIdFromCookieValue(jar.get(CREW_COOKIE)?.value ?? null, secret)
+}
+
 /** Is a (validly signed, unexpired) view-as cookie present? Cheap: no database read. */
 export function viewAsCookiePresent(): boolean {
   return viewMemberIdFromCookieValue(cookies().get(CREW_VIEW_COOKIE)?.value ?? null, portalSigningSecret()) !== null
