@@ -69,6 +69,8 @@ export interface HostViewProps {
     download?: () => void
     /** The guest list or a manual RSVP changed: reload the summary. */
     changed?: () => void
+    /** Remove one RSVP by id; the handler asks the host to confirm first. */
+    removeRsvp?: (id: string, name: string) => void
   }
 }
 
@@ -492,7 +494,20 @@ function RsvpList({ props }: { props: HostViewProps }) {
         <ul data-rsvps="yes" className="divide-y divide-gray-100">
           {yes.map((r, i) => (
             <li key={i} className="py-3 text-sm">
-              <p className="font-medium text-[#1a2744]">{r.parent_name}</p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-medium text-[#1a2744]">{r.parent_name}</p>
+                {props.on?.removeRsvp && (
+                  <button
+                    type="button"
+                    data-rsvp-remove={r.id}
+                    onClick={() => props.on?.removeRsvp?.(r.id, r.parent_name)}
+                    className="shrink-0 text-gray-500 underline"
+                    aria-label={`Remove the answer from ${r.parent_name}`}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
               <p className="text-gray-600">
                 {guests ? names(r) : <>{names(r)} &middot; {adultLabel(r.adult_count)}</>}
               </p>
@@ -513,7 +528,20 @@ function RsvpList({ props }: { props: HostViewProps }) {
           <h3 className="mb-1.5 text-sm font-semibold text-[#1a2744]">Can&apos;t make it ({no.length})</h3>
           <ul className="space-y-0.5 text-sm text-gray-600">
             {no.map((r, i) => (
-              <li key={i}>{r.parent_name}</li>
+              <li key={i} className="flex items-start justify-between gap-3">
+                <span>{r.parent_name}</span>
+                {props.on?.removeRsvp && (
+                  <button
+                    type="button"
+                    data-rsvp-remove={r.id}
+                    onClick={() => props.on?.removeRsvp?.(r.id, r.parent_name)}
+                    className="shrink-0 text-gray-500 underline"
+                    aria-label={`Remove the answer from ${r.parent_name}`}
+                  >
+                    Remove
+                  </button>
+                )}
+              </li>
             ))}
           </ul>
         </div>

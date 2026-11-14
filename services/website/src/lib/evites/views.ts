@@ -66,6 +66,7 @@ export const PUBLIC_RSVP_SELF_COLUMNS = [
  * Spec §7.2, exactly. **Never reminder contacts, club fields or IP.**
  */
 export const HOST_RSVP_COLUMNS = [
+  'id',
   'status',
   'parent_name',
   'children',
