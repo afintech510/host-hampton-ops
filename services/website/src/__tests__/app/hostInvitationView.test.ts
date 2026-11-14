@@ -12,6 +12,7 @@ import { readSrc } from '../helpers/sourceScan'
  */
 
 const rsvp = (over: Partial<HostRsvp> = {}): HostRsvp => ({
+  id: 'rsvp-1',
   status: 'yes',
   parent_name: 'Pat Parent',
   children: [{ first_name: 'Ava' }],
@@ -310,5 +311,29 @@ describe('guests audience (an adult outside event)', () => {
     expect(html).toContain('3+ adults')
     expect(html).toContain('2+ adults')
     expect(html).toContain('Note for the birthday child: ')
+  })
+})
+
+describe('removing an RSVP from the list', () => {
+  const base = (): HostViewProps => ({
+    data: payload({ rsvps: [rsvp({ id: 'a1', parent_name: 'Yes Person' }), rsvp({ id: 'b2', status: 'no', parent_name: 'No Person', children: [] })] }),
+    preview: null,
+    form: formFromCustomize(payload().customize),
+    dirty: false,
+    saving: false,
+    formError: null,
+    saved: false,
+    copied: false,
+  })
+
+  it('draws a Remove button on a yes row and a no row, naming the person', () => {
+    const html = renderToStaticMarkup(createElement(HostInvitationView, { ...base(), on: { removeRsvp: () => {} } }))
+    expect(html).toContain('data-rsvp-remove="a1"')
+    expect(html).toContain('data-rsvp-remove="b2"')
+    expect(html).toContain('aria-label="Remove the answer from Yes Person"')
+  })
+
+  it('draws none in a static render with no handler', () => {
+    expect(renderToStaticMarkup(createElement(HostInvitationView, base()))).not.toContain('data-rsvp-remove')
   })
 })

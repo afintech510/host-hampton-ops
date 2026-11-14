@@ -22,7 +22,9 @@
  * COLUMN DISCIPLINE. Every read names its columns. The RSVP read is `HOST_RSVP_COLUMNS` and
  * `pickHostRsvp` re-picks exactly those keys, so even a row object that carried more (a fake in
  * a test, a future `select`) cannot leak the reminder email or phone, the club fields, the
- * consent IP, `edit_nonce`, `id` or `evite_id`. The payload carries neither the evite's id nor
+ * consent IP, `edit_nonce` or `evite_id`. An RSVP's own `id` IS carried: the host removes a row by it
+ * (`DELETE /api/portal/invitation/rsvps`, scoped to their evite), and the same GET already hands it
+ * to them. The payload carries neither the evite's id nor
  * `render_*` bookkeeping: the host gets `url` (which holds the slug, a capability they already
  * hold) and two image URLs.
  *
@@ -145,6 +147,7 @@ export async function findEviteIdForRef(supabase: Supa, bookingRef: string): Pro
 export function pickHostRsvp(r: Record<string, unknown>): HostRsvp {
   const kids = Array.isArray(r.children) ? r.children : []
   return {
+    id: String(r.id ?? ''),
     status: r.status === 'no' ? 'no' : 'yes',
     parent_name: typeof r.parent_name === 'string' ? r.parent_name : '',
     children: kids

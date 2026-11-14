@@ -102,6 +102,28 @@ export default function HostInvitation({ initial, preview }: Props) {
     }
   }, [])
 
+  const removeRsvp = useCallback(
+    async (id: string, name: string) => {
+      if (!window.confirm(`Remove ${name || 'this'}'s answer? This can't be undone.`)) return
+      try {
+        const res = await fetch('/api/portal/invitation/rsvps', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        })
+        if (res.status === 401) {
+          window.location.href = LOGIN
+          return
+        }
+        if (!res.ok) window.alert('Could not remove that - try again.')
+      } catch {
+        window.alert('Could not remove that - try again.')
+      }
+      await refresh()
+    },
+    [refresh],
+  )
+
   // ---- polling: only while the tab is visible
   const interval = pollIntervalMs(data.state, data.renderFresh)
   useEffect(() => {
@@ -265,6 +287,7 @@ export default function HostInvitation({ initial, preview }: Props) {
         copy: () => void copy(),
         download: trackShare,
         changed: () => void refresh(),
+        removeRsvp: (id, name) => void removeRsvp(id, name),
       }}
     />
   )

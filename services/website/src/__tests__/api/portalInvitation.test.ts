@@ -186,7 +186,8 @@ describe('GET: the response is exactly the host view (spec §7.2)', () => {
     for (const v of PRIVATE_VALUES) expect(text).not.toContain(v)
     // ...and the evite's own id, the booking id and the bookkeeping never leave either.
     expect(text).not.toContain(EVITE_ID)
-    expect(text).not.toContain('"id"')
+    // each RSVP carries its own id (the host removes a row by it); nothing else is called id
+    expect(text.match(/"id"/g)).toHaveLength(body.rsvps.length)
     expect(text).not.toContain('bk-1')
     expect(text).not.toContain('contact_email')
     expect(text).not.toContain('pat@example.com')
