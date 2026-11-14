@@ -14,7 +14,7 @@
  */
 
 import type Stripe from 'stripe'
-import { matchPlanPayLink, recordPlanPayment, type PlanPayTarget } from '@/lib/planPayment'
+import { matchPlanPayLink, recordPlanPayment, resolveAdjustableTip, type PlanPayTarget } from '@/lib/planPayment'
 import { makePlanDb, writesTo, type Result } from '../mocks/planDb'
 
 jest.mock('@/lib/supabase', () => ({ getSupabase: () => ({ from: () => ({}) }) }))
@@ -502,5 +502,63 @@ describe('recordPlanPayment', () => {
     expect(txn.reference).toBe('stripe-cs_test_1')
     expect(txn.amount_cents).toBe(25750)
     expect(txn.source).toBe('stripe')
+  })
+})
+
+describe('resolveAdjustableTip', () => {
+  const session = (metadata: Record<string, string> | null) =>
+    ({ id: 'cs_tip_1', metadata } as unknown as Stripe.Checkout.Session)
+  const stripeWith = (list: jest.Mock) => ({ checkout: { sessions: { listLineItems: list } } }) as unknown as Stripe
+
+  it('is 0 and reads nothing when the link carries no tip item', async () => {
+    const list = jest.fn()
+    expect(await resolveAdjustableTip(stripeWith(list), session({ type: 'plan_pay_link' }))).toEqual({ ok: true, tipCents: 0 })
+    expect(list).not.toHaveBeenCalled()
+  })
+
+  it('reads the tip off the line carrying the tip price', async () => {
+    const list = jest.fn().mockResolvedValue({
+      has_more: false,
+      data: [
+        { price: { id: 'price_a' }, amount_total: 60000 },
+        { price: { id: 'price_fee' }, amount_total: 1800 },
+        { price: { id: 'price_tip' }, amount_total: 5000 },
+      ],
+    })
+    expect(await resolveAdjustableTip(stripeWith(list), session({ tip_price_id: 'price_tip' }))).toEqual({ ok: true, tipCents: 5000 })
+  })
+
+  it('is 0 when the payer set the tip to nothing (the line is absent)', async () => {
+    const list = jest.fn().mockResolvedValue({ has_more: false, data: [{ price: { id: 'price_a' }, amount_total: 60000 }] })
+    expect(await resolveAdjustableTip(stripeWith(list), session({ tip_price_id: 'price_tip' }))).toEqual({ ok: true, tipCents: 0 })
+  })
+
+  it('FAILS CLOSED when the lines cannot be read — never "no tip"', async () => {
+    const list = jest.fn().mockRejectedValue(new Error('stripe down'))
+    const res = await resolveAdjustableTip(stripeWith(list), session({ tip_price_id: 'price_tip' }))
+    expect(res.ok).toBe(false)
+  })
+
+  it('fails closed on a paginated list it cannot fully see', async () => {
+    const list = jest.fn().mockResolvedValue({ has_more: true, data: [] })
+    expect((await resolveAdjustableTip(stripeWith(list), session({ tip_price_id: 'price_tip' }))).ok).toBe(false)
+  })
+
+  it('a recorded payment keeps the chosen tip out of the credit', async () => {
+    const db = makePlanDb({
+      bookings: [{ data: BOOKING, error: null }],
+      booking_line_items: [{ data: [], error: null }],
+      booking_payments: [{ data: [], error: null }, { data: null, error: null }, { data: [], error: null }],
+    })
+    // 60000 + 1800 fee + 5000 tip charged; the webhook sets target.tipCents = 5000.
+    const target: PlanPayTarget = {
+      payLinkId: 'row-1', bookingRef: 'HH-2026-TEST', purpose: 'custom',
+      expectedAmountCents: 60000, tipCents: 5000, feeCents: 1800, fromMetadataOnly: false,
+    }
+    const res = await recordPlanPayment(target, { id: 'cs_tip_2', payment_status: 'paid', amount_total: 66800, payment_intent: 'pi_t' } as unknown as Stripe.Checkout.Session, db as never)
+    expect(res.ok).toBe(true)
+    const row = writesTo(db, 'booking_payments', 'insert')[0].payload as Record<string, unknown>
+    expect(row.amount_cents).toBe(60000)
+    expect(row.tip_cents).toBe(5000)
   })
 })

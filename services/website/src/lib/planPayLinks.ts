@@ -231,6 +231,12 @@ export function quoteFor(
 
 /* ── Minting ───────────────────────────────────────────────────────────── */
 
+/** Adjustable tip: starts at $1 (Stripe needs a quantity of at least 1), $1 a step, up to $500. */
+export const ADJUSTABLE_TIP_DEFAULT_STEPS = 1
+export const ADJUSTABLE_TIP_MAX_STEPS = 500
+/** First API version measured (2026-11-13, live) to accept `optional_items` on a Payment Link. */
+export const ADJUSTABLE_TIP_API_VERSION = '2025-09-30.clover'
+
 /** Statuses on which no new money should be asked for. */
 const UNPAYABLE_STATUSES = new Set(['cancelled', 'lost'])
 
@@ -313,6 +319,13 @@ export async function createPlanPayLink(opts: {
   customCents?: number
   /** Raw, unscreened. `quoteFor` clamps it and drops it on a non-tippable purpose. */
   tipCents?: unknown
+  /**
+   * Admin only. Adds Stripe's own adjustable add-on to the link: a $1-a-step
+   * gratuity the payer sets (or zeroes) on Stripe's page. The amount is unknown
+   * at mint time, so the webhook reads it back off the session
+   * (`resolveAdjustableTip`). Party-team plans only, and not alongside a fixed tip.
+   */
+  adjustableTip?: boolean
   actor: string
   stripe: Stripe
   db?: Supa
@@ -348,6 +361,14 @@ export async function createPlanPayLink(opts: {
   const quoted = quoteFor(invoice, purpose, opts.customCents, opts.tipCents)
   if (!quoted.ok) return { ok: false, reason: quoted.reason, retryable: false }
   const quote = quoted.quote
+
+  if (opts.adjustableTip && (quote.tipCents > 0 || !hasPartyTeam(invoice.partyType))) {
+    return {
+      ok: false,
+      reason: 'An adjustable tip needs a party with a team, and cannot be combined with a fixed tip.',
+      retryable: false,
+    }
+  }
 
   const voided = await voidLivePayLinks(db, stripe, booking.id, purpose)
   if (!voided.ok) {
@@ -428,19 +449,50 @@ export async function createPlanPayLink(opts: {
       lineItems.push({ price: feePrice.id, quantity: 1 })
     }
 
-    const link = await stripe.paymentLinks.create({
-      line_items: lineItems,
-      metadata,
-      // Stripe itself refuses a second payment on this link. The unique index on
-      // `booking_payments.stripe_session_id` catches a redelivered webhook; this
-      // catches a customer clicking an old email twice, which is a different
-      // failure and needs its own stop.
-      restrictions: { completed_sessions: { limit: 1 } },
-      after_completion: {
-        type: 'redirect',
-        redirect: { url: `${opts.origin}/plan/${encodeURIComponent(ref)}/summary?paid=1` },
-      },
-    })
+    // The adjustable tip is a Stripe `optional_items` entry: $1 a step, starting
+    // at ADJUSTABLE_TIP_DEFAULT_STEPS (Stripe will not take a default of 0) and
+    // editable down to 0 or up to the ceiling. It is NOT fee-bearing; the fee line
+    // above is on the fixed amount only. Its price id goes in the metadata so the
+    // webhook can find the line again.
+    let optionalItems: Record<string, unknown>[] | undefined
+    if (opts.adjustableTip) {
+      const tipProduct = await stripe.products.create({
+        name: 'Gratuity for the party team (adjustable)',
+        metadata: { booking_ref: ref, purpose },
+      })
+      const tipPrice = await stripe.prices.create({
+        product: tipProduct.id,
+        currency: 'usd',
+        unit_amount: 100,
+      })
+      metadata.tip_price_id = tipPrice.id
+      optionalItems = [
+        {
+          price: tipPrice.id,
+          quantity: ADJUSTABLE_TIP_DEFAULT_STEPS,
+          adjustable_quantity: { enabled: true, minimum: 0, maximum: ADJUSTABLE_TIP_MAX_STEPS },
+        },
+      ]
+    }
+
+    const link = await stripe.paymentLinks.create(
+      {
+        line_items: lineItems,
+        metadata,
+        // Stripe itself refuses a second payment on this link. The unique index on
+        // `booking_payments.stripe_session_id` catches a redelivered webhook; this
+        // catches a customer clicking an old email twice, which is a different
+        // failure and needs its own stop.
+        restrictions: { completed_sessions: { limit: 1 } },
+        after_completion: {
+          type: 'redirect',
+          redirect: { url: `${opts.origin}/plan/${encodeURIComponent(ref)}/summary?paid=1` },
+        },
+        ...(optionalItems ? { optional_items: optionalItems } : {}),
+      } as Stripe.PaymentLinkCreateParams,
+      // `optional_items` is newer than the account's pinned 2024-06-20.
+      optionalItems ? ({ apiVersion: ADJUSTABLE_TIP_API_VERSION } as Stripe.RequestOptions) : undefined,
+    )
     payUrl = link.url
     stripeLinkId = link.id
   } catch (err) {
