@@ -12,7 +12,7 @@ import { generatePortalToken, buildPortalUrl, portalSigningSecret } from '@/lib/
 import { createCalendarEvent, addMinutes } from '@/lib/googleCalendar'
 import { enqueueEventReminders, enqueueBookingReminders, enqueueReviewRequest, enqueuePartyReminders } from '@/lib/reminders'
 import { enrollInSequence } from '@/lib/sequences'
-import { matchPlanPayLink, recordPlanPayment, sendPlanPaymentReceipt, isUniqueViolation } from '@/lib/planPayment'
+import { matchPlanPayLink, recordPlanPayment, sendPlanPaymentReceipt, isUniqueViolation, resolveAdjustableTip } from '@/lib/planPayment'
 import { isUnclaimableSession, recordUnclaimedStripeSession } from '@/lib/unclaimedPayment'
 import { publicOrigin, isLocalRequest } from '@/lib/publicOrigin'
 import { escapeHtml } from '@/lib/escapeHtml'
@@ -117,6 +117,7 @@ async function recordFinancialTransaction(supabase: ReturnType<typeof getSupabas
  */
 async function handlePlanPaySession(
   req: NextRequest,
+  stripe: Stripe,
   supabase: ReturnType<typeof getSupabase>,
   session: Stripe.Checkout.Session,
 ): Promise<NextResponse | null> {
@@ -130,6 +131,18 @@ async function handlePlanPaySession(
     return NextResponse.json({ error: 'pay link lookup failed' }, { status: 500 })
   }
   if (planMatch.outcome !== 'matched') return null
+
+  // An adjustable-tip link: the gratuity is whatever the payer set on Stripe's page,
+  // so it is read back off the session. Unreadable = retry, never "no tip" (that
+  // would credit the party team's money against the customer's balance).
+  if (session.metadata?.tip_price_id) {
+    const tip = await resolveAdjustableTip(stripe, session)
+    if (!tip.ok) {
+      console.error('Plan pay link tip unreadable, asking Stripe to retry:', tip.message)
+      return NextResponse.json({ error: 'tip lookup failed' }, { status: 500 })
+    }
+    planMatch.target.tipCents = tip.tipCents
+  }
 
   const rec = await recordPlanPayment(planMatch.target, session, supabase)
   if (!rec.ok) {
@@ -943,7 +956,7 @@ async function handleVerifiedEvent(
     // through into the legacy `pay_link` handler below: that one records a
     // `financial_transactions` row and no `booking_payments` row, which is the
     // untraceable pay link migration 035 exists to replace. See lib/planPayment.ts.
-    const planned = await handlePlanPaySession(req, supabase, session)
+    const planned = await handlePlanPaySession(req, stripe, supabase, session)
     if (planned) return planned
 
     // ── Has this session already been turned into rows? ─────────

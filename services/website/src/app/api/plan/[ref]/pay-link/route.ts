@@ -66,6 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
     purpose?: unknown
     amountDollars?: unknown
     tipCents?: unknown
+    adjustableTip?: unknown
   }
   const purpose = body.purpose
   if (!isPayPurpose(purpose)) {
@@ -122,6 +123,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ref
     // which-purposes-may-tip rule, so there is one place to read and one place
     // to change rather than a screen here and a second screen there.
     tipCents: body.tipCents,
+    // Admin only: a customer minting their own link never gets Stripe's tip box.
+    adjustableTip: isAdmin && body.adjustableTip === true,
     // `adminActorId` returns `admin:<email>` from the signed cookie, or the
     // historical anonymous 'ADMIN' on the shared password. A customer minting
     // their own link is attributed to their portal session.

@@ -739,3 +739,57 @@ describe('voidLivePayLinks', () => {
     expect(writesTo(db, 'booking_pay_links', 'update')).toHaveLength(0)
   })
 })
+
+describe('createPlanPayLink — adjustable tip (admin)', () => {
+  const base = () => ({
+    booking_pay_links: [{ data: [], error: null }, { data: null, error: null }],
+    marketing_ledger: [{ data: null, error: null }],
+  })
+
+  it('adds a $1-step optional tip item, names its price in the metadata, and leaves the credited amount alone', async () => {
+    const db = makePlanDb(base())
+    const { stripe, created } = makeStripe()
+    const res = await createPlanPayLink({
+      invoice: invoice({ totalCents: 100000 }), purpose: 'custom', customCents: 60000,
+      adjustableTip: true, actor: 'ADMIN', stripe, db: db as never, origin: 'https://x',
+    })
+    if (!res.ok) throw new Error(res.reason)
+    // amount, fee (on the amount only), then the tip's $1 price
+    expect(created.prices).toEqual([
+      expect.objectContaining({ unit_amount: 60000 }),
+      expect.objectContaining({ unit_amount: 1800 }),
+      expect.objectContaining({ unit_amount: 100 }),
+    ])
+    const link = created.links[0] as { metadata: Record<string, string>; optional_items: unknown[] }
+    expect(link.metadata.tip_price_id).toBe('price_3')
+    expect(link.metadata.tip_cents).toBe('0')
+    expect(link.optional_items).toEqual([
+      { price: 'price_3', quantity: 1, adjustable_quantity: { enabled: true, minimum: 0, maximum: 500 } },
+    ])
+    expect(res.quote.amountCents).toBe(60000)
+  })
+
+  it('adds nothing when it was not asked for', async () => {
+    const db = makePlanDb(base())
+    const { stripe, created } = makeStripe()
+    await createPlanPayLink({
+      invoice: invoice({ totalCents: 100000 }), purpose: 'custom', customCents: 60000,
+      actor: 'ADMIN', stripe, db: db as never, origin: 'https://x',
+    })
+    const link = created.links[0] as Record<string, unknown>
+    expect(link.optional_items).toBeUndefined()
+    expect((link.metadata as Record<string, string>).tip_price_id).toBeUndefined()
+  })
+
+  it('refuses on a studio rental (no team to tip) and creates nothing', async () => {
+    const db = makePlanDb(base())
+    const { stripe, created } = makeStripe()
+    const res = await createPlanPayLink({
+      invoice: invoice({ totalCents: 100000, partyType: 'studio_rental' }), purpose: 'custom', customCents: 60000,
+      adjustableTip: true, actor: 'ADMIN', stripe, db: db as never, origin: 'https://x',
+    })
+    expect(res.ok).toBe(false)
+    expect(created.links).toHaveLength(0)
+    expect(created.prices).toHaveLength(0)
+  })
+})

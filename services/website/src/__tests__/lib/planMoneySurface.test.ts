@@ -536,13 +536,23 @@ describe('R6 · the charge is derived server-side', () => {
    * request that lowers what is collected, and there is no version of that in
    * this direction. Every other property below is what keeps it honest.
    */
-  const ALLOWED_BODY_FIELDS = ['amountDollars', 'purpose', 'tipCents']
+  /**
+   * `adjustableTip` (2026-11-13) is a BOOLEAN, not an amount, and it is admin-only:
+   * it asks Stripe to show a tip box the payer sets. It carries no figure, and the
+   * webhook reads the chosen tip back off the session, never off the request.
+   */
+  const ALLOWED_BODY_FIELDS = ['adjustableTip', 'amountDollars', 'purpose', 'tipCents']
 
   it('the pay-link route reads only a purpose, an admin-gated amount, and a tip', () => {
     const route = read('app/api/plan/[ref]/pay-link/route.ts')
     expect(route).toMatch(/if\s*\(purpose === 'custom' && !isAdmin\)/)
     const bodyReads = [...route.matchAll(/body\.(\w+)/g)].map(m => m[1])
     expect([...new Set(bodyReads)].sort()).toEqual([...ALLOWED_BODY_FIELDS].sort())
+  })
+
+  it('the adjustable tip is switched on by an admin only, and only as a boolean', () => {
+    const route = read('app/api/plan/[ref]/pay-link/route.ts')
+    expect(route).toMatch(/adjustableTip:\s*isAdmin && body\.adjustableTip === true/)
   })
 
   it('the route does not clamp the tip itself — there is exactly one screen', () => {

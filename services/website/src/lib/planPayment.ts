@@ -199,6 +199,39 @@ export async function matchPlanPayLink(
   return { outcome: 'unmatched' }
 }
 
+export type AdjustableTipResult = { ok: true; tipCents: number } | { ok: false; message: string }
+
+/**
+ * The gratuity a payer chose on an adjustable-tip link (`optional_items`).
+ *
+ * The amount does not exist until the payer picks it, so it cannot be in the
+ * link's metadata; Stripe's own record of the session is the only truth. The
+ * link carries the tip price's id (`tip_price_id`), and the line on the session
+ * with that price is the tip. Returns 0 when the payer set it to 0.
+ *
+ * FAILS CLOSED: if the lines cannot be read, the caller must not record, because
+ * crediting a payment whose tip is unknown pays the customer's balance down with
+ * money meant for the party team. A failure is retryable.
+ */
+export async function resolveAdjustableTip(
+  stripe: Stripe,
+  session: Stripe.Checkout.Session,
+): Promise<AdjustableTipResult> {
+  const tipPriceId = metaString(session.metadata, 'tip_price_id')
+  if (!tipPriceId) return { ok: true, tipCents: 0 }
+  try {
+    const lines = await stripe.checkout.sessions.listLineItems(session.id, { limit: 20 })
+    if (lines.has_more) return { ok: false, message: 'more line items than expected' }
+    const tipCents = lines.data
+      .filter((l) => l.price?.id === tipPriceId)
+      .reduce((sum, l) => sum + (l.amount_total ?? 0), 0)
+    if (!Number.isFinite(tipCents) || tipCents < 0) return { ok: false, message: 'unreadable tip amount' }
+    return { ok: true, tipCents }
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : 'line items read failed' }
+  }
+}
+
 export type RecordResult =
   | {
       ok: true

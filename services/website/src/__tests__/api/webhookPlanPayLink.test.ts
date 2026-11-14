@@ -20,10 +20,12 @@ jest.mock('stripe', () =>
 const matchSpy = jest.fn()
 const recordSpy = jest.fn()
 const receiptSpy = jest.fn()
+const tipSpy = jest.fn()
 jest.mock('@/lib/planPayment', () => ({
   matchPlanPayLink: (...args: unknown[]) => matchSpy(...args),
   recordPlanPayment: (...args: unknown[]) => recordSpy(...args),
   sendPlanPaymentReceipt: (...args: unknown[]) => receiptSpy(...args),
+  resolveAdjustableTip: (...args: unknown[]) => tipSpy(...args),
 }))
 
 jest.mock('resend', () => ({
@@ -170,6 +172,31 @@ describe('POST /api/webhook — plan pay link', () => {
     const res = await POST(req())
     expect(res.status).toBe(500)
     expect(receiptSpy).not.toHaveBeenCalled()
+  })
+
+  it('hands a link with an adjustable tip the tip the payer chose, before recording', async () => {
+    const sessionWithTip = { ...SESSION, metadata: { ...SESSION.metadata, tip_price_id: 'price_tip' } }
+    mockConstructEvent.mockReturnValue({ type: 'checkout.session.completed', data: { object: sessionWithTip } })
+    const target = { ...TARGET }
+    matchSpy.mockResolvedValue({ outcome: 'matched', target })
+    tipSpy.mockResolvedValue({ ok: true, tipCents: 5000 })
+    recordSpy.mockResolvedValue({ ok: true, duplicate: false, bookingRef: 'HH-2026-TEST', amountCents: 25000, newBalanceCents: 75000 })
+    const { POST } = await import('@/app/api/webhook/route')
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    expect(recordSpy.mock.calls[0][0].tipCents).toBe(5000)
+  })
+
+  it('answers 500 and records NOTHING when the chosen tip cannot be read', async () => {
+    // Recording blind would credit the party team's tip against the customer's balance.
+    const sessionWithTip = { ...SESSION, metadata: { ...SESSION.metadata, tip_price_id: 'price_tip' } }
+    mockConstructEvent.mockReturnValue({ type: 'checkout.session.completed', data: { object: sessionWithTip } })
+    matchSpy.mockResolvedValue({ outcome: 'matched', target: { ...TARGET } })
+    tipSpy.mockResolvedValue({ ok: false, message: 'stripe down' })
+    const { POST } = await import('@/app/api/webhook/route')
+    const res = await POST(req())
+    expect(res.status).toBe(500)
+    expect(recordSpy).not.toHaveBeenCalled()
   })
 
   it('stops retrying when the plan genuinely does not exist', async () => {
